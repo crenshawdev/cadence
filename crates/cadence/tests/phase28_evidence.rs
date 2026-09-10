@@ -950,6 +950,281 @@ impl Drop for HistoricalRoot {
     }
 }
 
+fn independent_hash(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+// Test-side byte construction: sorted object names, supplied array order, no
+// production renderer, view assembler or digest implementation is called.
+fn canonical_test_bytes(value: &Value) -> Vec<u8> {
+    fn write(value: &Value) -> String {
+        match value {
+            Value::Object(object) => {
+                let ordered: BTreeMap<_, _> = object.iter().collect();
+                format!("{{{}}}", ordered.into_iter().map(|(k, v)|
+                    format!("{}:{}", serde_json::to_string(k).unwrap(), write(v))).collect::<Vec<_>>().join(","))
+            }
+            Value::Array(array) => format!("[{}]", array.iter().map(write).collect::<Vec<_>>().join(",")),
+            _ => serde_json::to_string(value).unwrap(),
+        }
+    }
+    write(value).into_bytes()
+}
+
+fn authored_items(items: &[Value]) -> Vec<Value> {
+    items.iter().map(|i| json!({"kind":i["kind"],"id":i["id"],"spec":i["spec"],
+        "reason":i["reason"],"associations":i["associations"]})).collect()
+}
+
+fn expected_plan(number: u32, heading: &str, items: Option<&[Value]>) -> Vec<u8> {
+    let mut text = format!("---\nphase: 27\nplan: {number}\nrequirements: [\"T1\"]\nfiles: [\"src/shared.txt\"]\ndirectories: [\"src/extra\"]\nexecution: {{\"schema\":1,\"suite\":\"printf suite\",\"tasks\":[{{\"id\":\"task-1\",\"verify\":[\"printf verified\"]}}]}}\n---\n{heading}");
+    if let Some(items) = items {
+        let map = json!({"mode":"attached","items":authored_items(items)});
+        text.push_str(&format!("## Evidence map\n\n```json\n{}\n```\n\n", serde_json::to_string_pretty(&map).unwrap()));
+    }
+    text.into_bytes()
+}
+
+fn expected_event(request: &Value, number: u32, document: &[u8], items: &[Value]) -> Value {
+    let id = &request["submission"]["request_id"];
+    let identity = json!({"phase":27,"plan":number});
+    let mut revisions = BTreeMap::new();
+    for item in authored_items(items) {
+        let definition = json!({"kind":item["kind"],"id":item["id"],"spec":item["spec"],"reason":item["reason"]});
+        revisions.insert(item["id"].as_str().unwrap().to_owned(), independent_hash(&serde_json::to_vec(&definition).unwrap()));
+    }
+    json!({"revision":independent_hash(&serde_json::to_vec(&json!(["active-cycle:phase:27",id,identity])).unwrap()),
+        "occurrence":"active-cycle:phase:27","request_id":id,
+        "payload_digest":independent_hash(&serde_json::to_vec(&json!([request["submission"],request["approval"]])).unwrap()),
+        "identity":identity,"content_revision":independent_hash(document),
+        "items":authored_items(items),"item_revisions":revisions})
+}
+
+fn expected_view(events: &[Value], current: &[usize], superseded: &[(usize, usize)]) -> Value {
+    let truths = ["T1", "T2"].map(|id| json!({"id":id,"version":1,
+        "text":"When the sender sends the parcel, the recipient gets the parcel from the sender.","kind":"property"}));
+    let mut contributions = vec![];
+    let mut items = BTreeMap::new();
+    let mut associations = vec![];
+    let mut aliases = vec![];
+    let mut projections = vec![];
+    for &index in current {
+        let event = &events[index];
+        let number = event["identity"]["plan"].as_u64().unwrap();
+        contributions.push(json!({"identity":event["identity"],"content_revision":event["content_revision"],
+            "map_revision":event["revision"],"request_id":event["request_id"]}));
+        projections.push(json!({"identity":event["identity"],"current_revision":event["content_revision"],
+            "observed_digest":event["content_revision"],"status":"installed"}));
+        let ordered: BTreeMap<_, _> = event["items"].as_array().unwrap().iter()
+            .map(|item| (item["id"].as_str().unwrap(), item)).collect();
+        for (id, item) in ordered {
+            let revision = &event["item_revisions"][id];
+            items.insert(id.to_owned(), json!({"id":id,"kind":item["kind"],"spec":item["spec"],
+                "reason":item["reason"],"item_revision":revision}));
+            let origin = json!({"plan":number,"map_revision":event["revision"],"item_id":id,"item_revision":revision});
+            aliases.push(json!({"origin":origin,"id":id,"item_revision":revision}));
+            for (position, association) in item["associations"].as_array().unwrap().iter().enumerate() {
+                let mut origin = origin.clone();
+                origin["association_index"] = json!(position);
+                associations.push(json!({"truth_id":association["truth_id"],"truth_version":association["truth_version"],
+                    "reason":association["reason"],"origin":origin}));
+            }
+        }
+    }
+    let mut history: Vec<_> = events.iter().enumerate().map(|(index, event)| {
+        let next = superseded.iter().find(|(old, _)| *old == index).map(|(_, next)| &events[*next]);
+        let successor = next.map(|n| json!({"request_id":n["request_id"],"identity":n["identity"],
+            "content_revision":n["content_revision"],"map_revision":n["revision"]}));
+        json!({"publication":event,"status":if next.is_some() {"superseded"} else {"current"},"superseded_by":successor})
+    }).collect();
+    history.sort_by_key(|h| (h["publication"]["identity"]["plan"].as_u64().unwrap(),
+        h["publication"]["revision"].as_str().unwrap().to_owned()));
+    json!({"schema":"acceptance-map-view-1","phase":27,"occurrence":"active-cycle:phase:27",
+        "truths":truths,"contributions":contributions,"items":items.into_values().collect::<Vec<_>>(),
+        "associations":associations,"aliases":aliases,"history":history,
+        "coverage":{"uncovered":[],"without_check":[],"checks":[
+            {"truth_id":"T1","truth_version":1,"item_ids":["check/one"]},
+            {"truth_id":"T2","truth_version":1,"item_ids":["check/two"]}]},
+        "readiness":"provisional-authoring","projections":projections})
+}
+
+fn assert_view(answer: &Value, expected: &Value) {
+    let mut full = expected.clone();
+    full["status"] = json!("ok");
+    full["operation"] = json!("evidence-read");
+    full["coherence"] = json!("consistent");
+    full["input_digest"] = json!(independent_hash(&canonical_test_bytes(expected)));
+    assert_eq!(*answer, full, "complete authoritative view and independently assembled input digest");
+}
+
+#[test]
+fn phase28_readback_returns_authoritative_map_with_input_digest() {
+    // A complete canonical empty-phase input and its literal SHA-256 are pinned
+    // independently of the production assembly and of transport response bytes.
+    const EMPTY: &str = r#"{"aliases":[],"associations":[],"contributions":[],"coverage":{"checks":[],"uncovered":[],"without_check":[]},"history":[],"items":[],"occurrence":"active-cycle:phase:28","phase":28,"projections":[],"readiness":"provisional-authoring","schema":"acceptance-map-view-1","truths":[]}"#;
+    const EMPTY_HASH: &str = "58ce66f04952ef63b152c07d5b3e4d0d1250d3176556d6911b319cc14a6a8d45";
+    let empty = fixture();
+    let before = tree(empty.path());
+    let mut client = Client::open(empty.path());
+    let answer = client.call("cadence_query", json!({"operation":"evidence-read","phase":28}));
+    assert_eq!(answer["schema"], "acceptance-map-view-1", "authoritative evidence-read operation");
+    let empty_expected: Value = serde_json::from_str(EMPTY).unwrap();
+    assert_eq!(canonical_test_bytes(&empty_expected), EMPTY.as_bytes());
+    assert_eq!(independent_hash(EMPTY.as_bytes()), EMPTY_HASH);
+    assert_view(&answer, &empty_expected);
+    client.finish();
+    assert_eq!(tree(empty.path()), before);
+    assert!(!empty.path().join(".planning/state.json").exists());
+
+    let temp = fixture();
+    let project = temp.path();
+    native_context(project, 27, &["T1", "T2"]);
+    let shared = artifact("shared/address", &["T1", "T2"]);
+    let mut observed = observation("shared/O1", &["T1", "T2"]);
+    observed["associations"][0]["reason"] = json!("The first recipient must see the host delivery.");
+    observed["associations"][1]["reason"] = json!("The second recipient must see the host delivery.");
+    let mut literal = check("check/one", "T1");
+    literal["spec"]["expected"] = json!({"kind":"literal","value":"parcel received"});
+    let first_items = vec![literal, shared.clone(), observed.clone()];
+    let second_items = vec![check("check/two", "T2"), shared, observed];
+    let mut client = Client::open(project);
+    let initial = proposal(&mut client, "view-original", &[attached(first_items.clone()), attached(second_items.clone())],
+        &["# First view\n", "# Second view\n"]);
+    let complete = preview(&mut client, &initial);
+    let approved = approve(final_request(&complete));
+    let first_bytes = expected_plan(1, "# First view\n", Some(&first_items));
+    let second_bytes = expected_plan(2, "# Second view\n", Some(&second_items));
+    assert_eq!(complete["documents"][0]["document"].as_str().unwrap().as_bytes(), first_bytes);
+    assert_eq!(complete["documents"][1]["document"].as_str().unwrap().as_bytes(), second_bytes);
+    let initial = client.call("cadence_apply", approved.clone());
+    assert_eq!(initial["persisted"], true, "{initial}");
+    client.finish();
+    let saved = reopened(project).snapshot;
+    let mut events = vec![expected_event(&approved, 1, &first_bytes, &first_items),
+        expected_event(&approved, 2, &second_bytes, &second_items)];
+    assert_eq!(saved.data["acceptance_maps"]["phases"]["27"]["revisions"], json!(events));
+    let original_expected = expected_view(&events, &[0, 1], &[]);
+    let mut client = Client::open(project);
+    assert_view(&client.call("cadence_query", json!({"operation":"evidence-read","phase":27})), &original_expected);
+    let changed = replacement(&mut client, "view-replacement", 1, &initial["results"][0],
+        std::str::from_utf8(&first_bytes).unwrap(), attached(first_items.clone()), "# Revised first view\n");
+    let complete = preview(&mut client, &changed);
+    let replacement_request = approve(final_request(&complete));
+    let replacement_bytes = expected_plan(1, "# Revised first view\n", Some(&first_items));
+    assert_eq!(complete["documents"][0]["document"].as_str().unwrap().as_bytes(), replacement_bytes);
+    let published = client.call("cadence_apply", replacement_request.clone());
+    assert_eq!(published["persisted"], true, "{published}");
+    client.finish();
+    let saved = reopened(project).snapshot;
+    events.push(expected_event(&replacement_request, 1, &replacement_bytes, &first_items));
+    assert_eq!(saved.data["acceptance_maps"]["phases"]["27"]["revisions"], json!(events));
+    let expected = expected_view(&events, &[2, 1], &[(0, 2)]);
+    assert_ne!(independent_hash(&canonical_test_bytes(&expected)), independent_hash(&canonical_test_bytes(&original_expected)));
+    let path = project.join(".planning/phases/27/PLAN-1.md");
+    assert_eq!(fs::read(&path).unwrap(), replacement_bytes);
+    assert_eq!(fs::read(project.join(".planning/phases/27/PLAN-2.md")).unwrap(), second_bytes);
+    for bytes in [Some(replacement_bytes.as_slice()), Some(replacement_bytes.as_slice()),
+        Some(b"---\nphase: [broken\nplan: 999\n---\n## Evidence map\nNot authority.\n".as_slice()),
+        Some(b"\xff\xfe\x80".as_slice()), None, Some(replacement_bytes.as_slice())] {
+        if let Some(bytes) = bytes { fs::write(&path, bytes).unwrap(); }
+        else { fs::remove_file(&path).unwrap(); }
+        let before = tree(project);
+        let mut variant = expected.clone();
+        variant["projections"][0]["observed_digest"] = bytes.map(independent_hash).into();
+        variant["projections"][0]["status"] = json!(if bytes.is_none() {"missing"}
+            else if bytes == Some(replacement_bytes.as_slice()) {"installed"} else {"drifted"});
+        let mut client = Client::open(project);
+        assert_view(&client.call("cadence_query", json!({"operation":"evidence-read","phase":27})), &variant);
+        client.finish();
+        assert_unchanged(project, &before, &saved);
+        assert_eq!(reopened(project).snapshot, saved);
+    }
+
+    // Real external atomic replacements race the reader. A stable answer must
+    // match one entire old/new input set; a scheduler win is never required.
+    let race_bytes = b"External companion input; saved maps remain authoritative.\n";
+    let mut alternate = expected.clone();
+    alternate["projections"][0]["observed_digest"] = json!(independent_hash(race_bytes));
+    alternate["projections"][0]["status"] = json!("drifted");
+    let companion = project.join("companion-input");
+    fs::write(&companion, &replacement_bytes).unwrap();
+    let mut child = Companion(Command::new("python3").args(["-c",
+        "import os,sys,time\np=sys.argv[1]; old=open(sys.argv[2],'rb').read(); new=b'External companion input; saved maps remain authoritative.\\n'\nprint('ready',flush=True)\ni=0\nwhile True:\n with open(sys.argv[2]+'.next','wb') as f: f.write(old if i%2 else new)\n os.replace(sys.argv[2]+'.next',p)\n i+=1\n time.sleep(0.001)"])
+        .arg(&path).arg(&companion).stdin(Stdio::null()).stdout(Stdio::piped()).spawn().unwrap());
+    let mut ready = String::new();
+    BufReader::new(child.0.stdout.take().unwrap()).read_line(&mut ready).unwrap();
+    assert_eq!(ready, "ready\n");
+    let mut client = Client::open(project);
+    for _ in 0..12 {
+        let answer = client.call("cadence_query", json!({"operation":"evidence-read","phase":27}));
+        if answer["coherence"] == "consistent" {
+            if answer["projections"][0]["status"] == "installed" { assert_view(&answer, &expected); }
+            else { assert_view(&answer, &alternate); }
+        } else { assert_inconsistent(&answer, "phases/27/PLAN-1.md"); }
+    }
+    client.finish();
+    drop(child);
+    fs::write(&path, &replacement_bytes).unwrap();
+    assert_eq!(reopened(project).snapshot, saved);
+
+    // Actual-file presence sentinel ONLY: not a retained transaction test.
+    let sentinel = tempfile::tempdir().unwrap();
+    for (relative, bytes) in tree(project) {
+        let target = sentinel.path().join(relative);
+        if let Some(bytes) = bytes {
+            fs::create_dir_all(target.parent().unwrap()).unwrap(); fs::write(target, bytes).unwrap();
+        } else { fs::create_dir_all(target).unwrap(); }
+    }
+    fs::write(sentinel.path().join(".planning/.store-intent.json"), b"{\"retained\":\"pending owner work\"}\n").unwrap();
+    let sentinel_before = tree(sentinel.path());
+    let mut client = Client::open(sentinel.path());
+    assert_inconsistent(&client.call("cadence_query", json!({"operation":"evidence-read","phase":27})), ".store-intent.json");
+    client.finish();
+    assert_eq!(tree(sentinel.path()), sentinel_before);
+    assert_eq!(snapshot(sentinel.path()), saved); // Snapshot::parse only; no recovering writer.
+
+    // Explicitly mapless publication reports missing coverage, never historical borrowing.
+    let mapless = fixture();
+    native_context(mapless.path(), 27, &["T1", "T2"]);
+    let mut client = Client::open(mapless.path());
+    let input = proposal(&mut client, "mapless-view", &[json!({"mode":"provisional"})], &["# Mapless\n"]);
+    let published = publish(&mut client, &input);
+    client.finish();
+    let saved = reopened(mapless.path()).snapshot;
+    let before = tree(mapless.path());
+    let bytes = expected_plan(1, "# Mapless\n", None);
+    assert_eq!(published["results"][0]["revision"], independent_hash(&bytes));
+    let mut missing = empty_expected;
+    missing["phase"] = json!(27);
+    missing["occurrence"] = json!("active-cycle:phase:27");
+    missing["truths"] = expected["truths"].clone();
+    missing["contributions"] = json!([{"identity":{"phase":27,"plan":1},"content_revision":independent_hash(&bytes),
+        "map_revision":null,"request_id":"mapless-view"}]);
+    missing["projections"] = json!([{"identity":{"phase":27,"plan":1},"current_revision":independent_hash(&bytes),
+        "observed_digest":independent_hash(&bytes),"status":"installed"}]);
+    missing["coverage"] = json!({"uncovered":["T1","T2"],"without_check":["T1","T2"],"checks":[
+        {"truth_id":"T1","truth_version":1,"item_ids":[]},{"truth_id":"T2","truth_version":1,"item_ids":[]}]});
+    let mut client = Client::open(mapless.path());
+    assert_view(&client.call("cadence_query", json!({"operation":"evidence-read","phase":27})), &missing);
+    client.finish();
+    assert_unchanged(mapless.path(), &before, &saved);
+    assert_eq!(reopened(mapless.path()).snapshot, saved);
+}
+
+fn assert_inconsistent(answer: &Value, input: &str) {
+    assert_eq!(answer["status"], "ok", "{answer}");
+    assert_eq!(answer["coherence"], "inconsistent", "{answer}");
+    assert_eq!(answer["rule"], "inconsistent-inputs", "{answer}");
+    assert!(answer["inputs"].as_array().unwrap().iter().any(|v| v == input), "{answer}");
+    assert!(answer.get("input_digest").is_none_or(Value::is_null), "{answer}");
+}
+
+struct Companion(Child);
+impl Drop for Companion {
+    fn drop(&mut self) { let _ = self.0.kill(); let _ = self.0.wait(); }
+}
+
 #[test]
 fn phase28_accepted_map_is_attached_to_published_plan() {
     for (prefix, suffix, reverse, replace) in [
