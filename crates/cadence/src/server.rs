@@ -242,6 +242,8 @@ enum QueryArguments {
         phase_address: String,
         /// Optional non-reserving preview count (1 through 64); omit for readback.
         count: Option<u32>,
+        /// Complete read-only draft preview; mutually exclusive with count.
+        submission: Option<Box<cadence::plan::model::Submission>>,
     },
     #[serde(rename = "context-intake")]
     ContextIntake { phase: NonZeroU32 },
@@ -563,7 +565,7 @@ impl ServerHandler for PublicServer {
                 ),
                 tool::<QueryOutput>(
                     "cadence_query",
-                    "Read supported configuration, role routing, native execution, review records, exact material risk status or structural surface evidence in the bound project. plan-read uses phase_address and optional count for read-only plan intake, current readback and non-reserving ordered allocation preview; it returns the exact plan-submit contract and provisional authoring readiness. context-intake reads phase scope and truths. review-next returns provider pending promptly: poll the same fire; canceling a poll does not cancel or restart resident provider work. A local dispatch requires the host to run it once, WAIT, and forward actual observations and its unchanged return through cadence_apply before advancing.",
+                    "Read supported configuration, role routing, native execution, review records, exact material risk status or structural surface evidence in the bound project. plan-read uses phase_address and optional count for non-reserving allocation preview. Supply submission instead of count for complete read-only preview: approve its returned final submission, documents and replacement map section. Typed evidence_map publishes with that exact plan; use explicit provisional mode for mapless authoring. Readback returns the plan-submit contract and provisional authoring readiness. context-intake reads phase scope and truths. review-next returns provider pending promptly: poll the same fire; canceling a poll does not cancel or restart resident provider work. A local dispatch requires the host to run it once, WAIT, and forward actual observations and its unchanged return through cadence_apply before advancing.",
                     query_schema(),
                 ),
                 tool::<ApplyOutput>(
@@ -631,6 +633,7 @@ impl ServerHandler for PublicServer {
                         Ok(QueryArguments::PlanRead {
                             phase_address,
                             count,
+                            submission,
                         }) => {
                             self.server
                                 .service
@@ -639,6 +642,7 @@ impl ServerHandler for PublicServer {
                                     plan_service::Command::Read {
                                         phase: phase_address,
                                         count,
+                                        submission,
                                     },
                                 )
                                 .await

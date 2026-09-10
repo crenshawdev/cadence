@@ -9,6 +9,24 @@ pub fn replacement(
     approval: Option<&super::model::Approval>,
     inventory: &super::inventory::Inventory,
 ) -> cadence::store::Result<()> {
+    replacement_inner(data, submission, approval, inventory, false)
+}
+
+pub fn replacement_preview(
+    data: &serde_json::Value,
+    submission: &Submission,
+    inventory: &super::inventory::Inventory,
+) -> cadence::store::Result<()> {
+    replacement_inner(data, submission, None, inventory, true)
+}
+
+fn replacement_inner(
+    data: &serde_json::Value,
+    submission: &Submission,
+    approval: Option<&super::model::Approval>,
+    inventory: &super::inventory::Inventory,
+    preview: bool,
+) -> cadence::store::Result<()> {
     use cadence::store::Error;
     // A stale allocation proposal remains an allocation conflict, not a request
     // to replace the concurrent winner.
@@ -26,12 +44,13 @@ pub fn replacement(
         }
         let identity = format!("phase {phase} plan {number}");
         let authorized = entry.replacement.as_ref().filter(|a| {
-            a.approved && a.target == entry.target && a.content == entry.content
-                && a.owner.as_ref().is_some_and(|s| !s.trim().is_empty())
-                && a.at.as_ref().is_some_and(|s| !s.trim().is_empty())
+            a.target == entry.target && a.content == entry.content
+                && (preview || (a.approved
+                    && a.owner.as_ref().is_some_and(|s| !s.trim().is_empty())
+                    && a.at.as_ref().is_some_and(|s| !s.trim().is_empty())))
         });
         let initial = approval.is_some_and(|a| super::persistence::approve(submission, a).is_ok());
-        let Some(authorized) = authorized.filter(|_| initial) else {
+        let Some(authorized) = authorized.filter(|_| preview || initial) else {
             return Err(Error::Invalid(format!("replacement-authorization: {identity} needs exact identified owner approval of target, old revision/bytes and new content")));
         };
         if admitted(data, phase, number)? {

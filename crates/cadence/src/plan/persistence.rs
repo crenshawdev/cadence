@@ -97,6 +97,8 @@ pub fn contribute(
         return Ok((previous.clone(), receipt.results));
     }
     approve(submission, approval)?;
+    super::validation::replacement(previous, submission, Some(approval), inventory)?;
+    validate_candidate(previous, submission, inventory)?;
     let phase = submission.phase.get();
     if cadence::context::persistence::saved(previous, phase)?.is_none() {
         return Err(Error::Invalid(format!(
@@ -165,6 +167,9 @@ pub fn contribute(
             approval: approval.clone(),
             readiness: Readiness::ProvisionalAuthoring,
             history,
+            map_revision: if matches!(&entry.content.evidence_map, Some(super::evidence::Map::Attached { .. })) {
+                Some(super::map_history::event_id(submission, &entry.target)?)
+            } else { None },
         };
         occurrence.publications.insert(number, publication.clone());
         for (number, sources) in &inventory.provenance {
@@ -193,7 +198,48 @@ pub fn contribute(
         .entry(NAMESPACE)
         .or_insert_with(|| json!({"schema":"plan-1","phases":{}}));
     namespace["phases"][phase.to_string()] = serde_json::to_value(occurrence)?;
+    super::map_history::contribute(&mut proposed, submission, approval, &results)?;
     Ok((proposed, results))
+}
+
+/// Read-only candidate validation is also required by the committing algebra.
+/// It needs no approval and creates neither a session nor a durable reservation.
+pub fn validate_candidate(previous: &Value, submission: &Submission, inventory: &Inventory) -> Result<()> {
+    if let Some(refusal) = super::validation::identities(submission) {
+        return Err(Error::Invalid(serde_json::to_string(&refusal)?));
+    }
+    let phase = submission.phase.get();
+    if cadence::context::persistence::saved(previous, phase)?.is_none() {
+        return Err(Diagnostic { rule: "native-approved-truths".into(), slot: "submission.phase".into(),
+            phase: Some(phase), entry: None, id: None,
+            reason: format!("phase {phase} current native truth authority is absent; use context-submit") }.error());
+    }
+    if submission.occurrence != occurrence(previous, phase)? {
+        return Err(Error::Conflict("phase occurrence changed; preview and approve again".into()));
+    }
+    if submission.inventory_basis != inventory.basis {
+        return Err(Error::Conflict("inventory precondition changed; preview and approve again".into()));
+    }
+    if submission.plans.is_empty() || submission.plans.len() > 64 || submission.request_id.trim().is_empty() {
+        return Err(Error::Invalid("publication needs a request identity and 1 through 64 plans".into()));
+    }
+    let mut high_water = inventory.high_water;
+    let mut targets = std::collections::BTreeSet::new();
+    for entry in &submission.plans {
+        if entry.content.evidence_map.is_none() {
+            return Err(Error::Invalid("evidence-map-mode: new mapless authoring must explicitly choose provisional mode".into()));
+        }
+        let number = if entry.replacement.is_some() { entry.target.plan.get() } else {
+            high_water = high_water.checked_add(1).ok_or_else(|| Error::Invalid("number-exhaustion".into()))?;
+            high_water
+        };
+        if !targets.insert(number) { return Err(Error::Invalid("duplicate publication target".into())); }
+        if entry.target.plan.get() != number {
+            return Err(Error::Conflict(format!("allocation target changed: expected phase {phase} plan {number}")));
+        }
+        render::document(&entry.content)?;
+    }
+    Ok(())
 }
 
 /// The expected-old participant is authority-bearing too. Recovery may see the

@@ -98,6 +98,8 @@ pub struct Publication {
     pub approval: Approval,
     pub readiness: Readiness,
     pub history: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub map_revision: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -147,4 +149,26 @@ pub fn refused(rule: &str, reason: impl Into<String>) -> Answer {
 
 pub fn contract() -> Value {
     json!(schemars::schema_for!(Apply))
+}
+
+/// Located domain failures survive both the service and transaction algebra.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Diagnostic {
+    pub rule: String,
+    pub slot: String,
+    pub phase: Option<u32>,
+    pub entry: Option<usize>,
+    pub id: Option<String>,
+    pub reason: String,
+}
+
+impl Diagnostic {
+    pub fn error(self) -> cadence::store::Error {
+        cadence::store::Error::Invalid(format!("plan-refusal:{}", serde_json::to_string(&self).expect("diagnostic")))
+    }
+
+    pub fn answer(self) -> Answer {
+        Answer::Refused { code: "invalid-plan".into(), rule: self.rule, slot: self.slot,
+            phase: self.phase, entry: self.entry, id: self.id, reason: self.reason }
+    }
 }

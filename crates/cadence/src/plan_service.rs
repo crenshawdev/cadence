@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use std::path::Path;
 
 pub enum Command {
-    Read { phase: String, count: Option<u32> },
+    Read { phase: String, count: Option<u32>, submission: Option<Box<model::Submission>> },
     Apply(Value),
 }
 
@@ -26,7 +26,16 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
         .map(|s| s.data.clone())
         .unwrap_or_else(|| json!({}));
     match command {
-        Command::Read { phase, count } => {
+        Command::Read { phase, count, submission } => {
+            if let Some(submission) = submission {
+                if count.is_some() || submission.phase.to_string() != phase {
+                    return Ok(model::refused("preview-scope", "complete submission must match phase_address and cannot accompany count"));
+                }
+                return match complete_preview(root, &data, *submission) {
+                    Ok(answer) => Ok(answer),
+                    Err(error) => path_error(error),
+                };
+            }
             let inventory = match inventory::read(root, &phase, &data) {
                 Ok(value) => value,
                 Err(error) => return Ok(model::refused("inventory", error.to_string())),
@@ -152,13 +161,6 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             if let Err(error) = persistence::contribute(&data, &submission, &approval, &inventory) {
                 return path_error(error);
             }
-            for entry in &submission.plans {
-                match &entry.content.evidence_map {
-                    Some(cadence::plan::evidence::Map::Provisional) => {}
-                    None => return Ok(model::refused("evidence-map-mode", "new mapless authoring must explicitly choose provisional mode")),
-                    Some(cadence::plan::evidence::Map::Attached { .. }) => return Ok(model::refused("evidence-map-unavailable", "attached map publication is not yet available")),
-                }
-            }
             let roadmap = std::fs::read_to_string(root.join("ROADMAP.md"))?;
             let lifecycle = cadence::derivation::parse_roadmap(&roadmap)
                 .map_err(|e| cadence::store::Error::Invalid(format!("{e:?}")))?;
@@ -256,6 +258,36 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
     }
 }
 
+fn complete_preview(root: &Path, data: &Value, mut submission: model::Submission) -> Result<Answer> {
+    use cadence::plan::{render, validation};
+    let inventory = inventory::read(root, &submission.phase.to_string(), data)?;
+    let saved = persistence::saved(data, submission.phase.get())?;
+    let mut documents = Vec::new();
+    for entry in &mut submission.plans {
+        cadence::store::filesystem::validate_plan_path(root, entry.target.phase.get(), entry.target.plan.get())?;
+        if let Some(replacement) = &entry.replacement
+            && replacement.content != entry.content
+        {
+            return Ok(model::refused("replacement-authorization", "replacement must name the same proposed content"));
+        }
+        entry.content.body = render::normalize(&entry.content)?;
+        if let Some(replacement) = &mut entry.replacement { replacement.content = entry.content.clone(); }
+        let bytes = render::document(&entry.content)?;
+        let old = saved.as_ref().and_then(|s| s.publications.get(&entry.target.plan.get()));
+        let old_section = old.map(|p| render::old_section(&p.content.body)).transpose()?.flatten();
+        let section = match &entry.content.evidence_map {
+            Some(map @ cadence::plan::evidence::Map::Attached { .. }) => Some(render::section(map)?),
+            _ => None,
+        };
+        documents.push(json!({"identity":entry.target,"revision":cadence::store::model::digest(&bytes),
+            "document":String::from_utf8(bytes).expect("UTF-8 document"),"old_section":old_section,"section":section}));
+    }
+    validation::replacement_preview(data, &submission, &inventory)?;
+    persistence::validate_candidate(data, &submission, &inventory)?;
+    Ok(model::ok("plan-read", json!({"persisted":false,"submission":submission,"documents":documents,
+        "readiness":"provisional-authoring"})))
+}
+
 fn replay_answer(root: &Path, data: &Value, receipt: model::Receipt) -> Result<Answer> {
     let mut projections = Vec::new();
     for historical in &receipt.results {
@@ -285,10 +317,18 @@ fn replay_answer(root: &Path, data: &Value, receipt: model::Receipt) -> Result<A
 }
 
 fn path_error(error: cadence::store::Error) -> Result<Answer> {
+    if let Some((_, diagnostic)) = error.to_string().split_once("plan-refusal:") {
+        let diagnostic: model::Diagnostic = serde_json::from_str(diagnostic)?;
+        return Ok(diagnostic.answer());
+    }
     match error {
         cadence::store::Error::Io(_) | cadence::store::Error::Closed => Err(error),
         _ => Ok(model::refused(
-            if error.to_string().contains("request-id-reuse") {
+            if error.to_string().contains("evidence-map-section") {
+                "evidence-map-section"
+            } else if error.to_string().contains("evidence-map-mode") {
+                "evidence-map-mode"
+            } else if error.to_string().contains("request-id-reuse") {
                 "request-id-reuse"
             } else if error.to_string().contains("replacement-authorization") {
                 "replacement-authorization"
