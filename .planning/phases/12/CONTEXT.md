@@ -237,7 +237,13 @@ orchestrator's amendments the owner accepted with it.
   fake only files, clock, other programs and network; skip trivial code;
   write the expected value by hand - compiled into the executor's Rust role
   source and rendered from there into both the state-composed dispatch and
-  the native executor and task skill artifacts. No typed preset catalog
+  the native executor contract and `cad-execute` skill artifacts. The
+  `cad-task` skill renders from the same source when the parked task slice
+  lands (D-107, D-118), not in this phase; it keeps delegating to the frozen
+  workflow until then. (Amended 2026-09-10 after plan check B1: the first
+  wording "executor and task skill artifacts" pulled a parked surface into
+  this phase; the orchestrator narrowed it, reversible by the owner.) No
+  typed preset catalog
   ships now and no free-text rule override is accepted; a catalog is a
   future decision. Style never changes task eligibility and creates no
   coverage or test-count gate. Named command selection uses the existing
