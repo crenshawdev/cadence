@@ -56,6 +56,8 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             let occurrence = native
                 .map(|n| persistence::occurrence(&data, n.get()))
                 .transpose()?;
+            let map_history = native.map(|n| cadence::plan::map_history::view(&data, n.get()))
+                .transpose()?.unwrap_or_default();
             let plans = inventory.occupied.iter().filter_map(|number| {
                 let canonical = format!("phases/{phase}/PLAN-{number}.md");
                 let bare = format!("phases/{phase}/PLAN.md");
@@ -97,7 +99,7 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                 json!({"phase":phase,"persisted":false,"plans":plans,
                 "inventory":inventory,"targets":targets,"occurrence":occurrence,
                 "native_truths_approved":approved,"next":if approved {"plan-submit"} else {"context-intake"},
-                "native":saved,"legacy_readiness":"legacy-input","readiness":"provisional-authoring",
+                "native":saved,"map_history":map_history,"legacy_readiness":"legacy-input","readiness":"provisional-authoring",
                 "contract":model::contract()}),
             ))
         }
