@@ -39,6 +39,20 @@ pub struct Content {
 pub struct Entry {
     pub target: Identity,
     pub content: Content,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replacement: Option<ReplacementApproval>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReplacementApproval {
+    pub approved: bool,
+    pub owner: Option<String>,
+    pub at: Option<String>,
+    pub target: Identity,
+    pub old_revision: String,
+    pub old_document: String,
+    pub content: Content,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

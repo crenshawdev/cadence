@@ -305,9 +305,7 @@ impl Intent {
                             .iter()
                             .find(|p| p.target == format!("phase-plan:{phase}:{plan}"))
                             .unwrap();
-                        if participant.expected.bytes.is_some() {
-                            return Err(Error::Invalid("occupied plan publication target".into()));
-                        }
+                        cadence::plan::persistence::validate_old_document(&previous.data, *phase, *plan, participant.expected.bytes.as_deref())?;
                         Ok((*plan, participant.bytes.clone()))
                     })
                     .collect::<Result<Vec<_>>>()?;

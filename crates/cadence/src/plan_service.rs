@@ -103,6 +103,23 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                 Ok(value) => value,
                 Err(error) => return Ok(model::refused("submission", error.to_string())),
             };
+            if approval.as_ref().is_some_and(|a| a.approved) {
+                if let Some(refusal) = cadence::plan::validation::identities(&submission) {
+                    return Ok(refusal);
+                }
+                for entry in &submission.plans {
+                    if let Err(error) = cadence::store::filesystem::validate_plan_path(root, entry.target.phase.get(), entry.target.plan.get()) {
+                        return path_error(error);
+                    }
+                }
+            }
+            let inventory = match inventory::read(root, &submission.phase.to_string(), &data) {
+                Ok(value) => value,
+                Err(error) => return Ok(model::refused("inventory", error.to_string())),
+            };
+            if let Err(error) = cadence::plan::validation::replacement(&data, &submission, approval.as_ref(), &inventory) {
+                return path_error(error);
+            }
             let Some(approval) = approval.filter(|a| a.approved) else {
                 return Ok(model::ok(
                     "plan-submit",
@@ -127,22 +144,6 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                     ),
                 ));
             }
-            if let Some(refusal) = cadence::plan::validation::identities(&submission) {
-                return Ok(refusal);
-            }
-            for entry in &submission.plans {
-                if let Err(error) = cadence::store::filesystem::validate_plan_path(
-                    root,
-                    entry.target.phase.get(),
-                    entry.target.plan.get(),
-                ) {
-                    return path_error(error);
-                }
-            }
-            let inventory = match inventory::read(root, &submission.phase.to_string(), &data) {
-                Ok(value) => value,
-                Err(error) => return Ok(model::refused("inventory", error.to_string())),
-            };
             if let Err(error) = persistence::contribute(&data, &submission, &approval, &inventory) {
                 return path_error(error);
             }
@@ -189,14 +190,8 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                     Ok(value) => value,
                     Err(error) => return path_error(error),
                 };
-                if expected.bytes.is_some() {
-                    return Ok(model::refused(
-                        "occupied-target",
-                        format!(
-                            "phase {} plan {} is occupied",
-                            result.identity.phase, result.identity.plan
-                        ),
-                    ));
+                if let Err(error) = persistence::validate_old_document(&view.snapshot.data, result.identity.phase.get(), result.identity.plan.get(), expected.bytes.as_deref()) {
+                    return path_error(error);
                 }
                 external.push(cadence::store::transaction::ExternalChange {
                     target: format!(
@@ -236,7 +231,15 @@ fn path_error(error: cadence::store::Error) -> Result<Answer> {
     match error {
         cadence::store::Error::Io(_) | cadence::store::Error::Closed => Err(error),
         _ => Ok(model::refused(
-            if error.to_string().contains("path-confinement") {
+            if error.to_string().contains("replacement-authorization") {
+                "replacement-authorization"
+            } else if error.to_string().contains("stale-target") {
+                "stale-target"
+            } else if error.to_string().contains("admitted-plan") {
+                "admitted-plan"
+            } else if error.to_string().contains("legacy-read-only") {
+                "legacy-read-only"
+            } else if error.to_string().contains("path-confinement") {
                 "path-confinement"
             } else if error.to_string().contains("number-exhaustion") {
                 "number-exhaustion"

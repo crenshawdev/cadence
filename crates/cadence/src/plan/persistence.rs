@@ -92,6 +92,7 @@ pub fn contribute(
             "phase occurrence changed; preview and approve again".into(),
         ));
     }
+    super::validation::replacement(previous, submission, Some(approval), inventory)?;
     if submission.inventory_basis != inventory.basis {
         return Err(Error::Conflict(
             "inventory precondition changed; preview and approve again".into(),
@@ -116,13 +117,18 @@ pub fn contribute(
         ));
     }
     let mut results = Vec::new();
-    for (index, entry) in submission.plans.iter().enumerate() {
-        let number = inventory
-            .high_water
-            .checked_add(
-                u32::try_from(index + 1).map_err(|_| Error::Invalid("number-exhaustion".into()))?,
-            )
-            .ok_or_else(|| Error::Invalid("number-exhaustion".into()))?;
+    let mut high_water = inventory.high_water;
+    let mut targets = std::collections::BTreeSet::new();
+    for entry in &submission.plans {
+        let number = if entry.replacement.is_some() {
+            entry.target.plan.get()
+        } else {
+            high_water = high_water.checked_add(1).ok_or_else(|| Error::Invalid("number-exhaustion".into()))?;
+            high_water
+        };
+        if !targets.insert(number) {
+            return Err(Error::Invalid(format!("duplicate publication target: phase {phase} plan {number}")));
+        }
         if entry.target.phase.get() != phase || entry.target.plan.get() != number {
             return Err(Error::Conflict(format!(
                 "allocation target changed: expected phase {phase} plan {number}, approved {:?}",
@@ -133,6 +139,8 @@ pub fn contribute(
         cadence::execution::plan::parse_plan(&bytes, phase, number)
             .map_err(|error| Error::Invalid(error.to_string()))?;
         let revision = digest(&bytes);
+        let mut history = occurrence.publications.get(&number).map(|p| p.history.clone()).unwrap_or_default();
+        history.push(revision.clone());
         let publication = Publication {
             identity: entry.target.clone(),
             occurrence: occurrence.id.clone(),
@@ -140,7 +148,7 @@ pub fn contribute(
             content: entry.content.clone(),
             approval: approval.clone(),
             readiness: Readiness::ProvisionalAuthoring,
-            history: vec![revision],
+            history,
         };
         occurrence.publications.insert(number, publication.clone());
         for (number, sources) in &inventory.provenance {
@@ -151,7 +159,7 @@ pub fn contribute(
         occurrence.consumed.push(number);
         occurrence.consumed.sort_unstable();
         occurrence.consumed.dedup();
-        occurrence.high_water = number;
+        occurrence.high_water = high_water;
         results.push(publication);
     }
     occurrence.receipts.insert(
@@ -170,6 +178,18 @@ pub fn contribute(
         .or_insert_with(|| json!({"schema":"plan-1","phases":{}}));
     namespace["phases"][phase.to_string()] = serde_json::to_value(occurrence)?;
     Ok((proposed, results))
+}
+
+/// The expected-old participant is authority-bearing too. Recovery may see the
+/// installed new projection, but the intent must still retain the exact old one.
+pub fn validate_old_document(previous: &Value, phase: u32, plan: u32, bytes: Option<&[u8]>) -> Result<()> {
+    let old = saved(previous, phase)?;
+    let expected = old.as_ref().and_then(|o| o.publications.get(&plan))
+        .map(|p| render::document(&p.content)).transpose()?;
+    if expected.as_deref() != bytes {
+        return Err(Error::Conflict(format!("stale-target: phase {phase} plan {plan} expected old publication bytes changed")));
+    }
+    Ok(())
 }
 
 /// Validate the complete namespace delta against its exact approval and the

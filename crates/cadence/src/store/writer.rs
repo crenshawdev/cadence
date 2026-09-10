@@ -593,11 +593,12 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         for change in external {
             let plan_target = super::filesystem::phase_plan_target(&change.target)?;
             if let Some((phase, plan)) = plan_target {
-                if plan_phase.is_some_and(|old| old != phase) || change.expected.bytes.is_some() {
+                if plan_phase.is_some_and(|old| old != phase) {
                     return Err(Error::Invalid(
-                        "plan publication requires unoccupied same-phase targets".into(),
+                        "plan publication requires same-phase targets".into(),
                     ));
                 }
+                cadence::plan::persistence::validate_old_document(&self.view.snapshot.data, phase, plan, change.expected.bytes.as_deref())?;
                 plan_phase = Some(phase);
                 plan_documents.push((plan, change.bytes.clone()));
             }
