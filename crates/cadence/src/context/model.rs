@@ -44,6 +44,32 @@ pub struct Approval {
     pub submission: Option<Submission>,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind { Literal, Property }
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Status { Pending, Met, Concerns, Unmet, Waived }
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Truth {
+    pub id: String,
+    pub phase: u32,
+    pub version: u32,
+    pub pattern: String,
+    pub text: String,
+    pub kind: Kind,
+    pub status: Status,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ApprovedContext {
+    pub submission: Submission,
+    pub approval: Approval,
+    pub truths: Vec<Truth>,
+}
+
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(tag = "operation", deny_unknown_fields)]
 pub enum Apply {

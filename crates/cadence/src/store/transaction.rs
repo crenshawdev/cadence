@@ -11,6 +11,7 @@ pub const INTENT: &str = ".store-intent.json";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum IntentKind {
+    ContextPublication { phase: u32 },
     ExecutionFinalizeRiskV1 {
         phase: u32,
         decision_id: String,
@@ -150,13 +151,18 @@ impl Intent {
         }
         let mut names = BTreeSet::new();
         let mut summary_phase = None;
+        let mut context_phase = None;
         for participant in &self.participants {
             let known = matches!(
                 participant.target.as_str(),
                 ITEMS | DECISIONS | STATE | "repo-config" | "global-config"
             );
             let phase = super::filesystem::phase_summary_target(&participant.target)?;
-            if (!known && phase.is_none()) || !names.insert(participant.target.as_str()) {
+            let context = super::filesystem::phase_context_target(&participant.target)?;
+            if let Some(context) = context {
+                if context_phase.replace(context).is_some() { return Err(Error::Invalid("duplicate context participant".into())); }
+            }
+            if (!known && phase.is_none() && context.is_none()) || !names.insert(participant.target.as_str()) {
                 return Err(Error::Invalid(
                     "invalid or duplicate intent participant".into(),
                 ));
@@ -168,6 +174,13 @@ impl Intent {
                     "invalid or duplicate intent participant".into(),
                 ));
             }
+        }
+        match self.kind {
+            IntentKind::ContextPublication { phase } if phase > 0 && context_phase == Some(phase) && summary_phase.is_none()
+                && !names.contains("repo-config") && !names.contains("global-config") => {},
+            IntentKind::ContextPublication { .. } => return Err(Error::Invalid("invalid context intent participants".into())),
+            _ if context_phase.is_some() => return Err(Error::Invalid("context requires its approved publication intent".into())),
+            _ => {},
         }
         if self.participants.last().map(|value| value.target.as_str()) != Some(STATE) {
             return Err(Error::Invalid(
@@ -242,6 +255,12 @@ impl Intent {
                         "routed dispatch requires current boundary admission".into(),
                     ));
                 }
+            }
+            IntentKind::ContextPublication { phase } => {
+                let previous: Snapshot = serde_json::from_slice(self.participants.last().and_then(|p| p.expected.bytes.as_deref())
+                    .ok_or_else(|| Error::Invalid("context requires prior snapshot".into()))?)?;
+                cadence::context::persistence::validate_publication(&previous.data, &snapshot.data, phase, bytes(&format!("phase-context:{phase}"))?)
+                    .map_err(|error| Error::Invalid(error.to_string()))?;
             }
             IntentKind::ExecutionPatch {
                 phase,

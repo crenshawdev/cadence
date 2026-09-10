@@ -99,6 +99,9 @@ impl Filesystem {
     }
 
     fn target(&self, target: &str) -> Result<PathBuf> {
+        if let Some(phase) = phase_context_target(target)? {
+            return Ok(self.root.join("phases").join(phase.to_string()).join("CONTEXT.md"));
+        }
         if let Some(path) = self.participants.get(target) {
             return Ok(path.clone());
         }
@@ -195,6 +198,11 @@ fn ensure_directory(path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn phase_context_target(target: &str) -> Result<Option<u32>> {
+    let Some(value) = target.strip_prefix("phase-context:") else { return Ok(None); };
+    phase_summary_target(&format!("phase-summary:{value}"))
+}
+
 pub(crate) fn phase_summary_target(target: &str) -> Result<Option<u32>> {
     let Some(value) = target.strip_prefix("phase-summary:") else {
         return Ok(None);
@@ -258,6 +266,21 @@ impl Storage for Filesystem {
     }
 
     fn read(&mut self, target: &str) -> Result<Observed> {
+        if phase_context_target(target)?.is_some() {
+            // Only the approved writer path requests this participant. Bind and
+            // sync its parents before capturing the expected-file identity.
+            if self.directories.get(&self.root) != Some(&directory_identity(&self.root)?) {
+                return Err(Error::Conflict("context root directory changed".into()));
+            }
+            let path = self.target(target)?;
+            let parent = path.parent().unwrap();
+            ensure_directory(parent)?;
+            let identity = directory_identity(parent)?;
+            if self.directories.get(parent).is_some_and(|old| old != &identity) {
+                return Err(Error::Conflict("context directory changed".into()));
+            }
+            self.directories.insert(parent.into(), identity);
+        }
         let target = self.target(target)?;
         let mut identity = String::new();
         for parent in target.parent().unwrap().ancestors() {
