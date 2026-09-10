@@ -14,6 +14,7 @@ files:
   - crates/cadence/src/plan_service.rs
   - crates/cadence/src/server.rs
   - crates/cadence/tests/phase27_plan.rs
+  - crates/cadence/tests/fixtures/phase27_absent_map.json
   - crates/cadence/tests/phase28_evidence.rs
 ---
 
@@ -279,7 +280,8 @@ is not another link or acceptance test in this implementation plan.
   `crates/cadence/src/plan/mod.rs`, `crates/cadence/src/plan/model.rs`
   (`Content`, `Submission`, `ReplacementApproval`, `contract`),
   `crates/cadence/src/plan_service.rs` (`execute`),
-  `crates/cadence/tests/phase27_plan.rs` (`request`, `replacement_request`).
+  `crates/cadence/tests/phase27_plan.rs` (`request`, `replacement_request`),
+  `crates/cadence/tests/fixtures/phase27_absent_map.json` (new captured fixture).
 - **Action:** Deliver P28-T1-A1. Define the wire grammar chosen in Notes,
   preserving all four specs, reasons and explicit per-truth associations.
   Extend the existing approved content, not an attach operation; replacement's
@@ -288,7 +290,46 @@ is not another link or acceptance test in this implementation plan.
   old mapless publications/approvals/receipts with absent optional fields;
   never default an old map into an approved attachment. New mapless requests
   must explicitly choose provisional authoring. Update phase 27's request
-  fixtures to choose that mode while keeping their opaque-body expectations;
+  fixtures to choose that mode while keeping their opaque-body expectations.
+  BEFORE any schema/helper edit, capture the historical fixture for PLAN-2's
+  existing C6 using a binary built from unmodified dispatch HEAD `df43af15`.
+  Use the fixed absolute project root `/tmp/cadence-phase27-absent-map-df43af15`,
+  independent of TMPDIR, for capture and every C6 restore. Before either run,
+  hold an exclusive OS file lock on its sibling path with suffix `.lock` until
+  cleanup completes; use a regular, non-symlink, current-user-owned lock file
+  with mode 0600, and leave that file in place to avoid lock-inode races.
+  Refuse a competing holder. Refuse an existing project root unless it is a
+  non-symlink directory owned by the current user with a regular, non-symlink
+  `.cadence-fixture-owner` file containing exactly `phase27-absent-map-df43af15`
+  plus a newline. Under the lock, remove any such owned prior root on entry,
+  recreate it with mode 0700 and that marker, and require its canonical path
+  to equal the fixed spelling. Never remove an unowned root or follow a symlink.
+  Register failure/unwind cleanup before setup: stop and reap every child,
+  remove the owned project root on success or failure, then release the lock.
+  A hard-killed run's owned leftovers are removed on the next locked entry;
+  an unavailable lock/path or mapping mismatch fails setup, never skips the case.
+  At that root follow phase27_plan.rs's fixture file contents, `Client` and
+  `native_context` setup, with `CADENCE_GLOBAL_CONFIG` empty for both binaries:
+  initialize MCP, approve `context-submit` for phase
+  27/T1, obtain `plan-read` allocation, then submit one exactly approved plan
+  using the unmodified `request`/`approve` shape and an opaque Evidence map body.
+  Both submission and approval must omit `content.evidence_map` entirely, with
+  no provisional field. Require `persisted: true`, stop the server and confirm
+  journal absence before inspecting the saved publication and request receipt.
+  Capture the complete `.planning` tree as relative paths and exact file-byte
+  arrays in the leased JSON fixture, together with the exact MCP request/approval,
+  acknowledgment, original receipt/payload digest, publication/result and PLAN
+  bytes. Record the canonical absolute project/planning roots, empty global
+  configuration setting and manifest's exact active configuration paths in
+  fixture provenance, beside source revision, binary hash and setup/call
+  transcript. Verify `import.active.repo` is the fixed root's
+  `.planning/config.v4.json` and `import.active.global` is absent/null; C6 must
+  compare that mapping before replay or replacement. Preserve the emitted
+  snapshot/JSONL bytes and their integrity; do not relocate, normalize, rewrite
+  or rehash captured state. The ownership marker/lock are harness files outside
+  the captured `.planning` tree. Apply the cleanup protocol after capture;
+  do not synthesize records, retrofit maps or regenerate this fixture with the
+  extended schema. PLAN-2 Task 2 restores these captured files verbatim for C6;
   do not rewrite old maps or expand those tests into phase-28 acceptance checks.
   Keep map metadata out of native execution frontmatter. Derived schema must
   advertise the typed map through the existing `contract` entrypoint. Do not

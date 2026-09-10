@@ -15,6 +15,7 @@ files:
   - crates/cadence/src/plan/instructions.rs
   - crates/cadence/src/server.rs
   - crates/cadence/tests/phase28_evidence.rs
+  - crates/cadence/tests/fixtures/phase27_absent_map.json
   - skills/cad-plan/SKILL.md
 ---
 
@@ -63,7 +64,11 @@ digest assembly to produce the oracle.
 
 Before final assertions exit the server, release handles and reopen the files
 and snapshot with the actual JSONL records. Check journal absence before
-reopening a real `Filesystem` / `Store` and `Operation::ReadVerified`. Restart
+reopening a real `Filesystem` / `Store` and `Operation::ReadVerified`. C7's
+actual-file intent presence sentinel explicitly uses PLAN-1's retained-intent
+read-only exception instead: keep the sentinel present, inspect saved bytes
+with `Snapshot::parse`, and never open a recovering writer or assert journal
+absence for that case. Restart
 the real binary to read current and retained records. Drift/missing controls
 change actual files; read-only reads must not repair them. Refusal assertions
 name the rule and the affected truth/item/association or publication precondition,
@@ -93,6 +98,39 @@ value crossing between two components.
   retrievable after a changed spec; unaffected plans retain their contributions.
   Missing/stale/wrong-new-map replacement authorization and invalid replacement
   associations refuse without superseding the winner.
+  Historical absent-field case in this SAME C6: restore PLAN-1 Task 1's captured
+  `crates/cadence/tests/fixtures/phase27_absent_map.json` tree byte-for-byte into
+  exactly the canonical absolute root recorded in its provenance,
+  `/tmp/cadence-phase27-absent-map-df43af15`, independent of TMPDIR. Apply PLAN-1
+  Task 1's exclusive sibling-file lock and ownership-marker protocol: refuse
+  an active holder or existing unowned/symlink root, remove only an owned prior
+  root on entry, recreate it, and hold the lock through all calls and cleanup.
+  Before starting the case, require the canonical project/planning roots and
+  manifest's active paths to equal the captured mapping: repo configuration is
+  that root's `.planning/config.v4.json`, global is absent/null, and both binary
+  launches use empty `CADENCE_GLOBAL_CONFIG`. Fail any mismatch without changing
+  captured bytes; replay success alone cannot prove replacement writer admission.
+  Keep both replays and the replacement on this same root. On exit or failure,
+  including assertion unwind, stop/reap children and remove the owned root before
+  releasing the lock; use the same next-entry cleanup for hard-kill leftovers.
+  Do not relocate, normalize, rewrite or rehash the fixture. This is a real
+  pre-extension publication/receipt,
+  not a newly provisional request or a fabricated store record. Check the
+  captured request and approval have no `content.evidence_map` or provisional
+  field, and the saved publication/receipt retain their original absent shape.
+  Start the extended real binary and replay the captured request verbatim:
+  require `replayed: true`, the original results/identity/revision and payload
+  digest, historical map absence and the original `installed` projection.
+  Stop/reopen and compare all saved bytes with the capture. Then preview and
+  explicitly approve a replacement at that identity naming its actual old
+  bytes/revision, changing the body and submitting the first complete attached
+  map for native T1 through `plan-submit`. Stop/restart and replay the original
+  absent-field request again. Assert the original payload digest, receipt
+  serialization, results and historical map absence remain unchanged; projection
+  reports `newer-authorized` with the replacement's current revision. The new
+  map alone is current, its approved PLAN bytes remain installed, and this replay
+  leaves the entire post-replacement tree unchanged. Restore only captured
+  historical files; never seed approved map authority directly through the store.
   Replay controls in the SAME test: after replacement and restart, resubmit the
   original R1 request verbatim. It returns the original historical result/map
   binding without reinstalling M1, changing R2, advancing map history or
@@ -101,7 +139,7 @@ value crossing between two components.
   and drifted current projections; replay reports their state without repair.
   Two real callers with competing previews/approvals cannot both replace the
   same old revision: the loser names the changed target/precondition, preserves
-  the winner and requires fresh preview/approval. No seeded receipt or mocked
+  the winner and requires fresh preview/approval. No manufactured receipt or mocked
   conditional transaction is used. After all calls reopen actual map records,
   receipt results, PLAN bytes and store; assert history/current bindings by hand.
   Boundary real: public replacement/replay, snapshot, store and filesystem;
@@ -158,10 +196,21 @@ value crossing between two components.
   changes a participating file while readback runs, with no fake read hook;
   responses must either describe one stable observed input set with its digest
   or explicitly identify changed/inconsistent inputs, never claim a coherent
-  blend. A retained real intent's presence is another deterministic inconsistent
-  input control: the read reports it without recovery or writer acquisition.
+  blend. Add an actual-file presence sentinel in a separate temporary copy of
+  the normally published fixture, after stopping its server: write exactly
+  `{"retained":"pending owner work"}` plus a newline to
+  `.planning/.store-intent.json`, as in phase27_plan.rs. This proves presence
+  handling only; it is NOT evidence of a retained transaction. Save all input
+  bytes including the sentinel, start the real binary and call `evidence-read`.
+  Require an inconsistent answer naming the outstanding intent, with no usable
+  coherent-view `input_digest`. Stop the server and apply PLAN-1's read-only
+  retained-intent exception: inspect PLAN/state/JSONL and sentinel bytes directly,
+  parse with `Snapshot::parse`, assert the entire input tree is unchanged, and
+  never open `Filesystem` / `Store` for recovery. Dispose of this isolated temp
+  project only after those assertions; no intent recovery is part of teardown.
   An empty/mapless phase returns explicit absence/missing coverage, never an
-  inferred map. All final comparisons follow filesystem/store reopen.
+  inferred map. Final comparisons follow the reopen protocol and its explicit
+  read-only sentinel exception above.
   Boundary real: binary read operation, native authority, retained history and
   actual filesystem; only clock/caller inputs may be faked.
   Command: `cargo test -p cadence --test phase28_evidence phase28_readback_returns_authoritative_map_with_input_digest -- --exact`.
@@ -235,7 +284,8 @@ value crossing between two components.
   `crates/cadence/src/plan/persistence.rs` (`replay`, `payload_digest`,
   `contribute`, `validate_publication`),
   `crates/cadence/src/plan_service.rs` (`execute`, `replay_answer`, `path_error`),
-  `crates/cadence/tests/phase28_evidence.rs`.
+  `crates/cadence/tests/phase28_evidence.rs`,
+  `crates/cadence/tests/fixtures/phase27_absent_map.json` (read-only; captured in PLAN-1 Task 1).
 - **Action:** Complete P28-T6-C and deliver P28-T6-A2. Add its specified replay
   and competing-request controls to the SAME test and observe failure before
   implementing any missing behavior. Bind full ids, kind/spec, item reasons,
@@ -254,7 +304,9 @@ value crossing between two components.
   allocator, second writer, reader-start guard, transaction rewrite or context
   revision hook. Old phase-27 receipts retain their original serialization,
   payload digests and historical map absence, including after an approved
-  phase-28 replacement adds the first map.
+  phase-28 replacement adds the first map. Exercise the captured absent-field
+  case specified in C6 before and after that replacement; never rebuild its
+  request with the now-provisional phase-27 helpers or rewrite its saved bytes.
 - **Verify:** `cargo test -p cadence --test phase28_evidence phase28_republication_supersedes_previous_map -- --exact`
   selects one passing complete C6: exact replay returns historical binding,
   map-only changes refuse request reuse, and reopened current/history/projection
@@ -371,6 +423,10 @@ value crossing between two components.
   belongs in that object. The read-race case uses actual external file writes,
   accepts only a coherent old/new result or explicit inconsistency, and uses
   bounded attempts; it cannot depend on winning a particular scheduler race.
+  C7's separate actual-file presence sentinel deterministically exercises the
+  outstanding-intent response, not transaction retention or recovery. Its
+  read-only exception overrides journal-absence/Store reopen: inspect saved
+  bytes, require no usable coherent-view digest, and preserve every input byte.
 - Immutability does not require changing a historical payload to add a flag.
   Retain payloads and receipt results byte-for-byte; a separate append-only
   supersession relation plus current reference makes their superseded status
