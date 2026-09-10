@@ -589,11 +589,29 @@ impl ServerHandler for PublicServer {
             }
             "cadence_query" => {
                 if raw.as_ref().and_then(|v| v["operation"].as_str()) == Some("context-intake") {
-                    let answer = match serde_json::from_value::<QueryArguments>(raw.clone().unwrap()) {
-                        Ok(QueryArguments::ContextIntake { phase }) => self.server.service.context(&self.root, context_service::Command::Intake(phase.get())).await,
-                        _ => Ok(cadence::context::model::refused("phase", "phase", "context intake needs a positive phase number", None, None, None)),
-                    };
-                    return structured_result(answer.map(|answer| QueryOutput::Context(Box::new(answer))));
+                    let answer =
+                        match serde_json::from_value::<QueryArguments>(raw.clone().unwrap()) {
+                            Ok(QueryArguments::ContextIntake { phase }) => {
+                                self.server
+                                    .service
+                                    .context(
+                                        &self.root,
+                                        context_service::Command::Intake(phase.get()),
+                                    )
+                                    .await
+                            }
+                            _ => Ok(cadence::context::model::refused(
+                                "phase",
+                                "phase",
+                                "context intake needs a positive phase number",
+                                None,
+                                None,
+                                None,
+                            )),
+                        };
+                    return structured_result(
+                        answer.map(|answer| QueryOutput::Context(Box::new(answer))),
+                    );
                 }
                 if raw
                     .as_ref()
@@ -641,7 +659,9 @@ impl ServerHandler for PublicServer {
                                 .map(|answer| QueryOutput::Config(Box::new(answer))),
                         );
                     }
-                    Some(QueryArguments::ContextIntake { .. }) => unreachable!("context intake is decoded before execution fallback"),
+                    Some(QueryArguments::ContextIntake { .. }) => {
+                        unreachable!("context intake is decoded before execution fallback")
+                    }
                     None if raw.as_ref().and_then(|value| value["operation"].as_str())
                         == Some("route") =>
                     {
@@ -758,7 +778,13 @@ impl ServerHandler for PublicServer {
             }
             "cadence_apply" => {
                 if raw.as_ref().and_then(|v| v["operation"].as_str()) == Some("context-submit") {
-                    return structured_result(self.server.service.context(&self.root, context_service::Command::Apply(raw.unwrap())).await.map(|answer| ApplyOutput::Context(Box::new(answer))));
+                    return structured_result(
+                        self.server
+                            .service
+                            .context(&self.root, context_service::Command::Apply(raw.unwrap()))
+                            .await
+                            .map(|answer| ApplyOutput::Context(Box::new(answer))),
+                    );
                 }
                 if raw
                     .as_ref()

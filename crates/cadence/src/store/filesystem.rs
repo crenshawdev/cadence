@@ -100,7 +100,11 @@ impl Filesystem {
 
     fn target(&self, target: &str) -> Result<PathBuf> {
         if let Some(phase) = phase_context_target(target)? {
-            return Ok(self.root.join("phases").join(phase.to_string()).join("CONTEXT.md"));
+            return Ok(self
+                .root
+                .join("phases")
+                .join(phase.to_string())
+                .join("CONTEXT.md"));
         }
         if let Some(path) = self.participants.get(target) {
             return Ok(path.clone());
@@ -199,7 +203,9 @@ fn ensure_directory(path: &Path) -> Result<()> {
 }
 
 pub(crate) fn phase_context_target(target: &str) -> Result<Option<u32>> {
-    let Some(value) = target.strip_prefix("phase-context:") else { return Ok(None); };
+    let Some(value) = target.strip_prefix("phase-context:") else {
+        return Ok(None);
+    };
     phase_summary_target(&format!("phase-summary:{value}"))
 }
 
@@ -276,7 +282,11 @@ impl Storage for Filesystem {
             let parent = path.parent().unwrap();
             ensure_directory(parent)?;
             let identity = directory_identity(parent)?;
-            if self.directories.get(parent).is_some_and(|old| old != &identity) {
+            if self
+                .directories
+                .get(parent)
+                .is_some_and(|old| old != &identity)
+            {
                 return Err(Error::Conflict("context directory changed".into()));
             }
             self.directories.insert(parent.into(), identity);

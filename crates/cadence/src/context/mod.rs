@@ -1,3 +1,4 @@
+pub mod instructions;
 pub mod model;
 pub mod persistence;
 pub mod render;

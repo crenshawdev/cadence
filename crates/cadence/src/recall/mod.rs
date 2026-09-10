@@ -396,8 +396,14 @@ mod resident {
                 let mut caches = BTreeMap::<PathBuf, Option<Cached>>::new();
                 while let Some(request) = receiver.recv().await {
                     match request {
-                        Request::Context { root, command, reply } => {
-                            let result = crate::server::context_service::execute(&factory, &root, command).await;
+                        Request::Context {
+                            root,
+                            command,
+                            reply,
+                        } => {
+                            let result =
+                                crate::server::context_service::execute(&factory, &root, command)
+                                    .await;
                             let _ = reply.send(result);
                         }
                         Request::Review {
@@ -530,10 +536,19 @@ mod resident {
         }
 
         pub async fn context(
-            &self, root: &Path, command: crate::server::context_service::Command,
+            &self,
+            root: &Path,
+            command: crate::server::context_service::Command,
         ) -> Result<cadence::context::model::Answer> {
             let (reply, receive) = oneshot::channel();
-            self.requests.send(Request::Context { root: root.into(), command, reply }).await.map_err(|_| Error::Closed)?;
+            self.requests
+                .send(Request::Context {
+                    root: root.into(),
+                    command,
+                    reply,
+                })
+                .await
+                .map_err(|_| Error::Closed)?;
             receive.await.map_err(|_| Error::Closed)?
         }
 

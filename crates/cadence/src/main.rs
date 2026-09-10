@@ -30,6 +30,8 @@ enum Command {
     Guard,
     /// Observe an attributed reviewer stop without closing missing delivery.
     ReviewStop,
+    /// Render the compiled context-role skill without opening a project.
+    ContextInstructions,
 }
 
 fn main() -> std::process::ExitCode {
@@ -45,6 +47,16 @@ fn run_command(command: Command) -> std::process::ExitCode {
         Command::Serve => run_serve(None),
         Command::Guard => guard::run(),
         Command::ReviewStop => review_hook::run(),
+        Command::ContextInstructions => {
+            use std::io::Write;
+            match std::io::stdout()
+                .lock()
+                .write_all(cadence::context::instructions::markdown().as_bytes())
+            {
+                Ok(()) => std::process::ExitCode::SUCCESS,
+                Err(_) => std::process::ExitCode::FAILURE,
+            }
+        }
     }
 }
 

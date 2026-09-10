@@ -51,7 +51,10 @@ pub type InputCheck = Box<dyn FnMut() -> Result<()> + Send>;
 
 pub enum Operation {
     /// Captures the dedicated participant after approval, under store ownership.
-    ObserveContext { phase: u32, reply: oneshot::Sender<Result<Observed>> },
+    ObserveContext {
+        phase: u32,
+        reply: oneshot::Sender<Result<Observed>>,
+    },
     CheckedTransact {
         check: InputCheck,
         transaction: Option<super::transaction::Transaction>,
@@ -472,9 +475,15 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         let operation_name = match operation {
             Operation::ObserveContext { phase, reply } => {
                 self.revalidate()?;
-                self.policy.validate(&MutationContext { operation: "context_prepare", snapshot: &self.view.snapshot })?;
-                let result = if phase == 0 { Err(Error::Invalid("context needs a positive phase".into())) }
-                    else { self.storage.read(&format!("phase-context:{phase}")) };
+                self.policy.validate(&MutationContext {
+                    operation: "context_prepare",
+                    snapshot: &self.view.snapshot,
+                })?;
+                let result = if phase == 0 {
+                    Err(Error::Invalid("context needs a positive phase".into()))
+                } else {
+                    self.storage.read(&format!("phase-context:{phase}"))
+                };
                 let _ = reply.send(result);
                 return Ok(next);
             }
@@ -567,11 +576,19 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         for change in external {
             let phase = super::filesystem::phase_context_target(&change.target)?;
             if let Some(phase) = phase {
-                if context_phase.replace(phase).is_some() { return Err(Error::Invalid("duplicate context participant".into())); }
-                cadence::context::persistence::validate_publication(&self.view.snapshot.data, &next.snapshot.data, phase, &change.bytes)
-                    .map_err(|error| Error::Invalid(error.to_string()))?;
+                if context_phase.replace(phase).is_some() {
+                    return Err(Error::Invalid("duplicate context participant".into()));
+                }
+                cadence::context::persistence::validate_publication(
+                    &self.view.snapshot.data,
+                    &next.snapshot.data,
+                    phase,
+                    &change.bytes,
+                )
+                .map_err(|error| Error::Invalid(error.to_string()))?;
             }
-            if phase.is_none() && !matches!(change.target.as_str(), "repo-config" | "global-config") {
+            if phase.is_none() && !matches!(change.target.as_str(), "repo-config" | "global-config")
+            {
                 return Err(Error::Invalid("unknown external participant".into()));
             }
             change.validate(&self.storage.read(&change.target)?, false)?;
