@@ -357,6 +357,7 @@ fn refusals(project: &Path, input: &Value) -> [Value; 2] {
     let mut client = Client::open(project);
     let applied = client.call("cadence_apply", approve(input.clone()));
     client.finish();
+    assert_eq!(applied["status"], "refused", "publication must refuse: {applied}");
     unchanged(project, &before, &prior);
     [preview, applied]
 }
@@ -472,4 +473,171 @@ fn phase29_check_without_expected_output_is_refused() {
     assert_eq!(answer["validation"], "draft");
     client.finish();
     unchanged(project, &before, &prior);
+}
+
+fn origin(identity: &Value, source: &str, slot: &str) -> Value {
+    json!({"phase":identity["phase"],"plan":identity["plan"],"source":source,"slot":slot})
+}
+
+fn conflicts(answer: &Value, truth: &str, checks: Value) {
+    assert_eq!(answer["status"], "refused", "{answer}");
+    assert_eq!(answer["code"], "invalid-plan");
+    assert_eq!(answer["rule"], "truth-check-limit", "{answer}");
+    assert_eq!(answer["id"], truth);
+    assert_eq!(answer["phase"], 27);
+    assert_eq!(answer["slot"], "submission.plans");
+    assert_eq!(answer["entry"], Value::Null);
+    assert_eq!(answer["details"], json!({"truth_id":truth,"truth_version":1,"checks":checks}));
+    let reason = answer["reason"].as_str().unwrap();
+    assert!(reason.contains(truth) && reason.contains("1"));
+    for check in checks.as_array().unwrap() {
+        assert!(reason.contains(check["id"].as_str().unwrap()));
+        for origin in check["origins"].as_array().unwrap() {
+            assert!(reason.contains(origin["source"].as_str().unwrap()));
+            assert!(reason.contains(origin["slot"].as_str().unwrap()));
+            assert!(reason.contains(&format!("plan {}", origin["plan"])));
+        }
+    }
+}
+
+#[test]
+fn phase29_distinct_checks_across_plans_are_refused() {
+    let temp = fixture();
+    let project = temp.path();
+    let truth = "truth/full/delivery";
+    native_context(project, &[(truth, "the sender sends the parcel", "the recipient", "a receipt")]);
+    let original = proposal(project, "saved", &[(None, attached(vec![check("check/saved", &[truth])]))]);
+    let saved = publish(project, &original);
+    let input = proposal(project, "second", &[(None, attached(vec![check("check/proposed", &[truth])]))]);
+    let saved_origin = origin(&saved["results"][0]["identity"], "saved", "current.plans[1].evidence_map.items[0]");
+    let proposed_origin = origin(&input["submission"]["plans"][0]["target"], "proposed", "submission.plans[0].content.evidence_map.items[0]");
+    for answer in refusals(project, &input) {
+        conflicts(&answer, truth, json!([
+            {"id":"check/proposed","origins":[proposed_origin]},
+            {"id":"check/saved","origins":[saved_origin]}
+        ]));
+    }
+    // All distinct ids are reported, regardless of item input order or equal specs.
+    for ids in [["check/z", "check/a", "check/m"], ["check/m", "check/z", "check/a"]] {
+        let input = proposal(project, "within", &[(Some(1), attached(ids.iter().map(|id| check(id, &[truth])).collect()))]);
+        let mut rows = Vec::new();
+        for id in ["check/a", "check/m", "check/z"] {
+            let index = ids.iter().position(|candidate| *candidate == id).unwrap();
+            rows.push(json!({"id":id,"origins":[origin(&saved["results"][0]["identity"], "proposed",
+                &format!("submission.plans[0].content.evidence_map.items[{index}]"))]}));
+        }
+        for answer in refusals(project, &input) { conflicts(&answer, truth, json!(rows)); }
+    }
+    let input = proposal(project, "two-within", &[(Some(1), attached(vec![check("check/a", &[truth]), check("check/z", &[truth])]))]);
+    for answer in refusals(project, &input) {
+        conflicts(&answer, truth, json!([
+            {"id":"check/a","origins":[origin(&saved["results"][0]["identity"], "proposed", "submission.plans[0].content.evidence_map.items[0]")]},
+            {"id":"check/z","origins":[origin(&saved["results"][0]["identity"], "proposed", "submission.plans[0].content.evidence_map.items[1]")]}
+        ]));
+    }
+    // One definition may have multiple origins; aliases count only once.
+    let alias = publish(project, &proposal(project, "alias", &[(None, attached(vec![check("check/saved", &[truth])]))]));
+    let second_saved = origin(&alias["results"][0]["identity"], "saved", "current.plans[2].evidence_map.items[0]");
+    let input = proposal(project, "alias-conflict", &[(None, attached(vec![check("check/proposed", &[truth])]))]);
+    for answer in refusals(project, &input) {
+        conflicts(&answer, truth, json!([
+            {"id":"check/proposed","origins":[origin(&input["submission"]["plans"][0]["target"], "proposed", "submission.plans[0].content.evidence_map.items[0]")]},
+            {"id":"check/saved","origins":[saved_origin,second_saved]}
+        ]));
+    }
+    let input = proposal(project, "partial-replace", &[(Some(1), attached(vec![check("check/new", &[truth])]))]);
+    for answer in refusals(project, &input) {
+        conflicts(&answer, truth, json!([
+            {"id":"check/new","origins":[origin(&saved["results"][0]["identity"], "proposed", "submission.plans[0].content.evidence_map.items[0]")]},
+            {"id":"check/saved","origins":[second_saved]}
+        ]));
+    }
+    // Reordering a replacement batch changes only the accurate origin paths.
+    for numbers in [[1, 2], [2, 1]] {
+        let input = proposal(project, "reordered-batch", &numbers.iter().map(|n|
+            (Some(*n), attached(vec![check(if *n == 1 { "check/a" } else { "check/z" }, &[truth])]))).collect::<Vec<_>>());
+        let rows = ["check/a", "check/z"].iter().enumerate().map(|(n, id)| {
+            let entry = numbers.iter().position(|number| *number == n as u32 + 1).unwrap();
+            json!({"id":id,"origins":[origin(&input["submission"]["plans"][entry]["target"], "proposed",
+                &format!("submission.plans[{entry}].content.evidence_map.items[0]"))]})
+        }).collect::<Vec<_>>();
+        for answer in refusals(project, &input) { conflicts(&answer, truth, json!(rows)); }
+    }
+    let prior = snapshot(project);
+    let coordinated = proposal(project, "coordinated", &[
+        (Some(2), attached(vec![check("check/new", &[truth])])),
+        (Some(1), attached(vec![check("check/new", &[truth])]))]);
+    let replaced = publish(project, &coordinated);
+    let after = reopened(project).snapshot;
+    let old_maps = prior.data["acceptance_maps"]["phases"]["27"]["revisions"].as_array().unwrap();
+    assert_eq!(&after.data["acceptance_maps"]["phases"]["27"]["revisions"].as_array().unwrap()[..old_maps.len()], old_maps);
+    for id in ["saved", "alias"] {
+        assert_eq!(after.data["plan_publications"]["phases"]["27"]["receipts"][id], prior.data["plan_publications"]["phases"]["27"]["receipts"][id]);
+    }
+    for (old, new) in [(&saved["results"][0], &replaced["results"][1]), (&alias["results"][0], &replaced["results"][0])] {
+        assert_eq!(after.data["acceptance_maps"]["phases"]["27"]["superseded"][old["map_revision"].as_str().unwrap()], json!({
+            "request_id":"coordinated","identity":new["identity"],"content_revision":new["revision"],"map_revision":new["map_revision"]}));
+    }
+    let before = tree(project);
+    let mut client = Client::open(project);
+    let replay = client.call("cadence_apply", approve(original));
+    assert_eq!(replay["results"], saved["results"]);
+    assert_eq!(replay["replayed"], true);
+    assert_eq!(replay["projections"][0]["status"], "newer-authorized");
+    client.finish();
+    unchanged(project, &before, &after);
+
+    // The first attached multi-plan batch, following a valid provisional winner.
+    let initial = fixture();
+    let root = initial.path();
+    native_context(root, &[(truth, "the sender sends the parcel", "the recipient", "a receipt")]);
+    let provisional = proposal(root, "provisional", &[(None, json!({"mode":"provisional"}))]);
+    let mut client = Client::open(root);
+    assert_eq!(preview(&mut client, &provisional)["status"], "ok");
+    assert_eq!(client.call("cadence_apply", approve(provisional))["persisted"], true);
+    client.finish();
+    let input = proposal(root, "first-attached-batch", &[(None, attached(vec![check("check/a", &[truth])])),
+        (None, attached(vec![check("check/z", &[truth])]))]);
+    for answer in refusals(root, &input) {
+        conflicts(&answer, truth, json!([
+            {"id":"check/a","origins":[origin(&input["submission"]["plans"][0]["target"], "proposed", "submission.plans[0].content.evidence_map.items[0]")]},
+            {"id":"check/z","origins":[origin(&input["submission"]["plans"][1]["target"], "proposed", "submission.plans[1].content.evidence_map.items[0]")]}
+        ]));
+    }
+
+    // Legal shared check on several truths, then separate checks on each truth.
+    let multi = fixture();
+    let root = multi.path();
+    native_context(root, &[("truth/A", "the sender sends the parcel", "the recipient", "a receipt"),
+        ("truth/B", "the driver arrives", "the customer", "a notification")]);
+    publish(root, &proposal(root, "shared-truths", &[(None, attached(vec![check("check/shared", &["truth/A", "truth/B"])]))]));
+    publish(root, &proposal(root, "separate-truths", &[(Some(1), attached(vec![check("check/A", &["truth/A"])])),
+        (None, attached(vec![check("check/B", &["truth/B"])]))]));
+
+    // A real second caller changes the sole saved check after a legal preview.
+    let racing = fixture();
+    let root = racing.path();
+    native_context(root, &[(truth, "the sender sends the parcel", "the recipient", "a receipt")]);
+    publish(root, &proposal(root, "before-race", &[(None, attached(vec![check("check/old", &[truth])]))]));
+    let early = proposal(root, "early", &[(None, attached(vec![check("check/old", &[truth])]))]);
+    let mut first = Client::open(root);
+    assert_eq!(preview(&mut first, &early)["status"], "ok");
+    let early_approval = approve(early);
+    let winner = publish(root, &proposal(root, "competing", &[(Some(1), attached(vec![check("check/current", &[truth])]))]));
+    let before = tree(root);
+    let prior = snapshot(root);
+    let stale = first.call("cadence_apply", early_approval);
+    assert_eq!(stale["status"], "refused", "{stale}");
+    assert_eq!(stale["rule"], "allocation-conflict", "{stale}");
+    first.finish();
+    unchanged(root, &before, &prior);
+    let refreshed = proposal(root, "fresh-conflict", &[(None, attached(vec![check("check/old", &[truth])]))]);
+    let mut client = Client::open(root);
+    let answer = client.call("cadence_apply", approve(refreshed.clone()));
+    client.finish();
+    conflicts(&answer, truth, json!([
+        {"id":"check/current","origins":[origin(&winner["results"][0]["identity"], "saved", "current.plans[1].evidence_map.items[0]")]},
+        {"id":"check/old","origins":[origin(&refreshed["submission"]["plans"][0]["target"], "proposed", "submission.plans[0].content.evidence_map.items[0]")]}
+    ]));
+    unchanged(root, &before, &prior);
 }
