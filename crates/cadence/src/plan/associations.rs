@@ -4,6 +4,34 @@ use cadence::store::{Error, Result};
 use serde::Serialize;
 use serde_json::Value;
 
+/// Locate a malformed numeric slot before typed decoding loses its JSON path.
+/// Valid numeric values, including zero, are compared to native authority later.
+pub fn malformed_version(raw: &Value) -> Option<Diagnostic> {
+    let submission = &raw["submission"];
+    let plans = submission["plans"].as_array()?;
+    for (entry, plan) in plans.iter().enumerate() {
+        let map = &plan["content"]["evidence_map"];
+        if map["mode"] != "attached" { continue; }
+        let Some(items) = map["items"].as_array() else { continue };
+        for (item_index, item) in items.iter().enumerate() {
+            let Some(associations) = item["associations"].as_array() else { continue };
+            for (edge, association) in associations.iter().enumerate() {
+                if association["truth_version"].as_u64().is_some_and(|n| u32::try_from(n).is_ok()) { continue; }
+                return Some(Diagnostic {
+                    rule: "evidence-association-shape".into(),
+                    slot: format!("submission.plans[{entry}].content.evidence_map.items[{item_index}].associations[{edge}].truth_version"),
+                    phase: submission["phase"].as_u64().and_then(|n| u32::try_from(n).ok()),
+                    entry: Some(entry), id: item["id"].as_str().map(str::to_owned),
+                    reason: format!("item {} truth {} has {} truth_version; supply an explicit numeric version with no inferred default",
+                        item["id"], association["truth_id"],
+                        if association.get("truth_version").is_none() { "missing" } else { "malformed" }),
+                });
+            }
+        }
+    }
+    None
+}
+
 pub struct Contribution {
     pub plan: u32,
     pub entry: Option<usize>,
@@ -71,9 +99,14 @@ fn validate_items(truths: &[cadence::context::model::Truth], phase: u32, contrib
                     return Err(refuse("evidence-item-shape", &format!("associations[{edge}].reason"),
                         format!("phase {phase} item {} association needs its own nonblank reason", item.id())));
                 }
-                if !truths.iter().any(|truth| truth.id == association.truth_id) {
+                let Some(truth) = truths.iter().find(|truth| truth.id == association.truth_id) else {
                     return Err(refuse("evidence-item-truth", &format!("associations[{edge}].truth_id"),
                         format!("phase {phase} item {} requests truth {} but current bound-phase membership is absent", item.id(), association.truth_id)));
+                };
+                if association.truth_version != truth.version {
+                    return Err(refuse("truth-version-mismatch", &format!("associations[{edge}].truth_version"),
+                        format!("phase {phase} item {} truth {} requested {}, current {}; an explicit current version is required",
+                            item.id(), truth.id, association.truth_version, truth.version)));
                 }
             }
             let definition = map_history::definition(item)?;

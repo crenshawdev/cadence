@@ -105,6 +105,9 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             if let Some(refusal) = cadence::plan::validation::arguments(&raw) {
                 return Ok(refusal);
             }
+            if let Some(refusal) = cadence::plan::associations::malformed_version(&raw) {
+                return Ok(refusal.answer());
+            }
             let Apply::Submit {
                 submission,
                 approval,
@@ -150,13 +153,11 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                 ));
             }
             if cadence::context::persistence::saved(&data, submission.phase.get())?.is_none() {
-                return Ok(model::refused(
-                    "native-approved-truths",
-                    format!(
-                        "phase {} needs native approved truths; use context-intake and context-submit",
-                        submission.phase
-                    ),
-                ));
+                return Ok(model::Diagnostic {
+                    rule: "native-approved-truths".into(), slot: "submission.phase".into(),
+                    phase: Some(submission.phase.get()), entry: None, id: None,
+                    reason: format!("phase {} current native truth authority is absent; use context-intake and context-submit", submission.phase),
+                }.answer());
             }
             if let Err(error) = persistence::contribute(&data, &submission, &approval, &inventory) {
                 return path_error(error);

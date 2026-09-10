@@ -451,7 +451,7 @@ fn phase28_item_without_bound_truth_is_refused() {
 
     let before = tree(project);
     let mut client = Client::open(project);
-    let bad = proposal(&mut client, "saved-conflict", &[conflicting[1].clone()], &["# Conflicting gap\n"]);
+    let bad = proposal(&mut client, "saved-conflict", std::slice::from_ref(&conflicting[1]), &["# Conflicting gap\n"]);
     for answer in [preview(&mut client, &bad), client.call("cadence_apply", approve(bad))] {
         assert_refusal(&answer, "evidence-item-conflict", "shared/opaque");
         for origin in ["plan 1", "plan 3"] { assert!(answer["reason"].as_str().unwrap().contains(origin), "{answer}"); }
