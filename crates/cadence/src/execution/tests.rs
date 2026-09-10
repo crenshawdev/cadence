@@ -246,6 +246,112 @@ fn native_admission_commits_versioned_extensions() {
     });
 }
 
+#[test]
+fn native_task_records_replay_confirmed_events() {
+    use super::{admission, history::{self, Event, Request, Task}, receipts::*};
+    use crate::store::{filesystem::{Filesystem, Stage as FsStage}, writer::{Store, Operation, PlanningPolicy}, model::digest};
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join(".planning");
+        std::fs::create_dir_all(root.join("phases/12")).unwrap();
+        let (data, documents, contract) = native_unit_contract("custom-delivery-check");
+        for (path, bytes) in documents { std::fs::write(root.join(path), bytes).unwrap(); }
+        let store = Store::open(Filesystem::new(&root).unwrap(), PlanningPolicy).await.unwrap();
+        let view = store.request(Operation::RewriteSnapshot(data)).await.unwrap();
+        let view = store.request(Operation::NativeAdmissionV1 {
+            expected_generation: view.snapshot.generation, expected_integrity: view.snapshot.integrity,
+            request: Box::new(admission::Request { request_id: "admit".into(), expected_set_version: 0, contract }),
+        }).await.unwrap();
+        let basis = admission::records(&view.snapshot.data, 12).unwrap().remove(0);
+        let task = Task { phase: 12, occurrence: "active-cycle:phase:12".into(), admission_digest: basis.request_digest,
+            plan: 1, task: "deliver".into() };
+        let check = basis.request.contract.allocation[0].checks[0].clone();
+        let result = RunResult { run_id: "run-1".into(), disposition: Disposition::Exited { code: 1 },
+            stdout: Capture { bytes: b"answer: expected 7, received 6\n".to_vec(), digest: digest(b"answer: expected 7, received 6\n"), complete: true },
+            stderr: Capture { bytes: vec![], digest: digest(b""), complete: true }, observed_at: 20,
+            observation: Observation::Unknown, material_unchanged: true };
+        let inspection = Inspection { check: check.clone(), test_digest: "unit-test-material".into(),
+            evidence: vec!["run-1".into()], no_subject_stub: false };
+        let classification = Classification { run_id: "run-1".into(), output_identity: result.output_identity(),
+            check: check.clone(), interpretation: Interpretation::RedEligible };
+        let events = vec![
+            Event::Attempt { predecessor: None, checks: vec![check.clone()], base_commit: "unit-base".into() },
+            Event::FailedAttempt { reason: "first attempt stopped".into(), evidence: vec!["owner stop".into()] },
+            Event::Attempt { predecessor: Some("attempt-1".into()), checks: vec![check.clone()], base_commit: "unit-base".into() },
+            Event::Launch(Launch { run_id: "run-1".into(), check: Some(check), stage: Stage::Red,
+                material: Material { commit: "unit-red".into(), tree: "unit-tree".into(), test_file: "test.py".into(),
+                    test_digest: "unit-test-material".into(), command: "custom-delivery-check".into() }, launched_at: 10 }),
+            Event::Result(result),
+            Event::OwnerStatement(OwnerStatement { submission: inspection.clone(), supersedes: None,
+                approval: OwnerApproval { approved: true, owner: "Fixture Owner".into(), at: "2026-09-10T14:00:00Z".into(), submission: inspection } }),
+            Event::OwnerClassification(OwnerClassification { submission: classification.clone(),
+                approval: OwnerApproval { approved: true, owner: "Fixture Owner".into(), at: "2026-09-10T14:01:00Z".into(), submission: classification } }),
+            Event::Progress { text: "subject still returns six".into(), evidence: vec!["run-1".into()] },
+            Event::Deviation { text: "owner interpretation required for custom output".into(), evidence: vec!["run-1".into()] },
+        ];
+        let requests: Vec<_> = events.into_iter().enumerate().map(|(i, event)| Request {
+            request_id: format!("event-{i}"), task: task.clone(), attempt: if i < 2 { "attempt-1" } else { "attempt-2" }.into(),
+            expected_version: i as u64, event,
+        }).collect();
+        drop(store);
+        for (i, request) in requests.iter().enumerate() {
+            let store = Store::open(Filesystem::new(&root).unwrap(), PlanningPolicy).await.unwrap();
+            let view = store.request(Operation::ReadVerified).await.unwrap();
+            let old = history::records(&view.snapshot.data, 12).unwrap();
+            let view = store.request(Operation::NativeTaskV1 { expected_generation: view.snapshot.generation,
+                expected_integrity: view.snapshot.integrity, request: Box::new(request.clone()) }).await.unwrap();
+            let records = history::records(&view.snapshot.data, 12).unwrap();
+            assert_eq!(&records[..i], old);
+            assert_eq!(records[i].request, *request);
+            assert_eq!(records[i].version, i as u64 + 1);
+            assert_eq!(records[i].schema, "native-task-event-1");
+            assert!(!history::project(&records, &task).completed);
+            let baseline = ["state.json", "decisions.jsonl", "items.jsonl"].map(|p| std::fs::read(root.join(p)).unwrap());
+            drop(store);
+            assert!(!root.join(".store-intent.json").exists());
+            let store = Store::open(Filesystem::new(&root).unwrap(), PlanningPolicy).await.unwrap();
+            let replay = store.request(Operation::NativeTaskV1 { expected_generation: 0, expected_integrity: "stale".into(),
+                request: Box::new(request.clone()) }).await.unwrap();
+            assert_eq!(replay, view);
+            assert_eq!(history::replay(&replay.snapshot.data, &records[i].root_binding, request).unwrap(), Some(records[i].clone()));
+            let mut changed = request.clone();
+            changed.event = Event::Progress { text: "changed payload".into(), evidence: vec![] };
+            assert!(store.request(Operation::NativeTaskV1 { expected_generation: 0, expected_integrity: "stale".into(),
+                request: Box::new(changed.clone()) }).await.unwrap_err().to_string().contains("task-request-reuse"));
+            changed.request_id = format!("stale-{i}");
+            assert!(store.request(Operation::NativeTaskV1 { expected_generation: view.snapshot.generation,
+                expected_integrity: view.snapshot.integrity, request: Box::new(changed) }).await.unwrap_err().to_string().contains("task-version"));
+            drop(store);
+            assert_eq!(["state.json", "decisions.jsonl", "items.jsonl"].map(|p| std::fs::read(root.join(p)).unwrap()), baseline);
+        }
+        // Interrupt confirmation after durable rename. Reopening must validate
+        // and finish the actual versioned intent, not reconstruct an event.
+        let filesystem = Filesystem::new(&root).unwrap().with_probe(|stage, path| {
+            if stage == FsStage::Confirmation && path.file_name().is_some_and(|p| p == "state.json") {
+                return Err(crate::store::Error::Io("interrupted native confirmation".into()));
+            }
+            Ok(())
+        });
+        let store = Store::open(filesystem, PlanningPolicy).await.unwrap();
+        let view = store.request(Operation::ReadVerified).await.unwrap();
+        let request = Request { request_id: "lost-reply".into(), task: task.clone(), attempt: "attempt-2".into(),
+            expected_version: 9, event: Event::Progress { text: "repair awaiting approval".into(), evidence: vec!["run-1".into()] } };
+        assert!(store.request(Operation::NativeTaskV1 { expected_generation: view.snapshot.generation,
+            expected_integrity: view.snapshot.integrity, request: Box::new(request.clone()) }).await.unwrap_err().to_string().contains("interrupted native confirmation"));
+        drop(store);
+        assert!(root.join(".store-intent.json").exists());
+        let baseline = std::fs::read(root.join("state.json")).unwrap();
+        let store = Store::open(Filesystem::new(&root).unwrap(), PlanningPolicy).await.unwrap();
+        let view = store.request(Operation::NativeTaskV1 { expected_generation: 0, expected_integrity: "stale".into(), request: Box::new(request) }).await.unwrap();
+        let records = history::records(&view.snapshot.data, 12).unwrap();
+        assert_eq!(records.len(), 10);
+        assert_eq!(history::project(&records, &task), history::Projection { version: 10, attempt: Some("attempt-2".into()), completed: false,
+            progress: vec!["subject still returns six".into(), "repair awaiting approval".into()], unknown_runs: vec![] });
+        assert_eq!(std::fs::read(root.join("state.json")).unwrap(), baseline);
+        assert!(!root.join(".store-intent.json").exists());
+    });
+}
+
 fn schema_fixture() -> serde_json::Value {
     json!({
         "schema": 1, "kind": "executor", "dispatch_id": "dispatch-1",
