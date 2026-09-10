@@ -418,6 +418,8 @@ struct Tiny {
     green: String,
     pairs: Vec<Value>,
 }
+const PROGRESS_WAIT: &str = "exec python3 -B -c \"import pathlib,time; pathlib.Path('.run/child-ready').write_text('ready'); time.sleep(120)\"";
+const PROGRESS_FAIL: &str = "python3 -B -c \"raise RuntimeError('repair failed')\"";
 
 fn git_value(project: &Path, args: &[&str]) -> String {
     let output = Command::new("git").args(["-c", "commit.gpgsign=false", "-c", "user.name=Cadence-Phase12", "-c", "user.email=phase12@example.invalid"])
@@ -476,6 +478,7 @@ impl Tiny {
             entry["content"]["files"] = json!(["src/tiny.py","tests/check.py","src/renamed.py"]);
             entry["content"]["directories"] = json!([]);
             entry["content"]["execution"]["tasks"] = json!([{"id":"A","verify":[command]},{"id":"B","verify":[command]},{"id":"C","verify":[command]}]);
+            if mode=="progress" {entry["content"]["execution"]["tasks"][1]["verify"]=json!([command,PROGRESS_WAIT,PROGRESS_FAIL]);}
         }
         publish(project,&input);
         let mut allocation = contract(project);
@@ -489,6 +492,7 @@ impl Tiny {
         let dispatch = client.call("cadence_query",json!({"operation":"execute-next","phase":12})); client.finish();
         assert_eq!(dispatch["status"],"ok","{dispatch}");
         for (name, allocated) in [("A",json!(&checks[..2])),("B",json!([checks[2]])),("C",json!([]))] {
+            if mode=="progress" && name!="A" {continue;}
             let task = task_state(project,name)["task"].clone();
             let answer = apply(project,json!({"operation":"execution-task-start","request":{"request_id":format!("start-{name}"),"task":task,
                 "attempt":format!("attempt-{name}"),"expected_version":0,"predecessor":null,"checks":allocated}}));
@@ -507,13 +511,13 @@ impl Tiny {
         git_value(project,&["add","tests/check.py"]); git_value(project,&["commit","-m","test(12): tiny check red A"]);
         let red = git_value(project,&["rev-parse","HEAD"]);
         let mut fixture = Self { temp, command, checks, red, green:String::new(), pairs:vec![] };
-        for i in 0..3 { fixture.run(if i < 2 {"A"} else {"B"},&format!("red-{i}"),Some(i),"red"); }
+        for i in 0..if mode=="progress" {2}else{3} { fixture.run(if i < 2 {"A"} else {"B"},&format!("red-{i}"),Some(i),"red"); }
         if mode == "setup-error" { assert!(!fixture.project().join(".run/body").exists(),"setUp error must precede the body"); }
         fs::write(fixture.project().join("src/tiny.py"), "def answer():\n    return 7\n").unwrap();
         git_value(fixture.project(),&["add","src/tiny.py"]); git_value(fixture.project(),&["commit","-S","-m","feat(12): tiny subject green A"]);
         fixture.green = git_value(fixture.project(),&["rev-parse","HEAD"]);
         assert_eq!(git_value(fixture.project(),&["show",&format!("{}:tests/check.py",fixture.red)]),git_value(fixture.project(),&["show",&format!("{}:tests/check.py",fixture.green)]));
-        for i in 0..3 {
+        for i in 0..if mode=="progress" {2}else{3} {
             fixture.run(if i < 2 {"A"} else {"B"},&format!("green-{i}"),Some(i),"green");
             fixture.pairs.push(json!({"check":fixture.checks[i],"red_commit":fixture.red,"green_commit":fixture.green,
                 "red_run":format!("red-{i}"),"green_run":format!("green-{i}")}));
@@ -758,6 +762,113 @@ fn phase12_task_close_requires_owner_no_stub_attestation() {
     let mut close=stale.close("fresh-owner-close");close["request"]["verification"]=json!(["new-green-0"]);
     let answer=apply(stale.project(),close);assert_eq!(answer["status"],"ok","{answer}");
     let after=execution_history(stale.project());for event in old_history["events"].as_array().unwrap() {assert!(after["events"].as_array().unwrap().contains(event));}
+}
+
+fn progress_request(project:&Path,id:&str,event:Value) -> Value {
+    let state=task_state(project,"B");
+    json!({"operation":"execution-task-progress","request":{"request_id":id,"task":state["task"],"attempt":"attempt-B",
+        "expected_version":state["state"]["version"],"event":event}})
+}
+
+#[test]
+fn phase12_acknowledged_progress_survives_restart() {
+    let fixture=Tiny::new("progress");let project=fixture.project();
+    for i in 0..2 {let answer=apply(project,fixture.owner(i,&format!("owner-progress-{i}"),true));assert_eq!(answer["status"],"ok","{answer}");}
+    let closed=apply(project,fixture.close("close-before-stop"));assert_eq!(closed["status"],"ok","{closed}");
+    let b=task_state(project,"B");assert_eq!(b["state"]["version"],0);
+    let start=apply(project,json!({"operation":"execution-task-start","request":{"request_id":"start-B","task":b["task"],"attempt":"attempt-B",
+        "expected_version":0,"predecessor":null,"checks":[fixture.checks[2]]}}));assert_eq!(start["status"],"ok","{start}");
+    let progress=progress_request(project,"partial-B",json!({"kind":"progress","text":"B has one repaired branch","evidence":[fixture.green]}));
+    let _:cadence::execution::history::ProgressApply=serde_json::from_value(progress.clone()).unwrap();
+    // Real failed child result, followed by authored failed-attempt evidence.
+    let mut client=Client::open(project);let b=task_state(project,"B");
+    let failed=client.call("cadence_apply",json!({"operation":"execution-run","request":{"request_id":"failed-B","task":b["task"],"attempt":"attempt-B",
+        "expected_version":b["state"]["version"],"command":PROGRESS_FAIL,"check":null,"stage":"verify"}}));assert_eq!(failed["status"],"ok","{failed}");
+    let deadline=std::time::Instant::now()+std::time::Duration::from_secs(10);
+    loop {
+        let read=client.call("cadence_query",json!({"operation":"execution-history","phase":12}));
+        if let Some(record)=read["events"].as_array().unwrap().iter().find(|r|r["request"]["event"]["kind"]=="result" && r["request"]["event"]["run_id"]=="failed-B") {
+            assert_eq!(record["request"]["event"]["disposition"],json!({"kind":"exited","code":1}));assert_eq!(record["request"]["event"]["observation"],json!({"class":"unknown"}));break;
+        }
+        assert!(std::time::Instant::now()<deadline);std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    client.finish();
+    let progress=progress_request(project,"partial-B",json!({"kind":"progress","text":"B has one repaired branch","evidence":[fixture.green]}));
+    let acknowledged=apply(project,progress.clone());assert_eq!(acknowledged["status"],"ok","{acknowledged}");
+    for (id,event) in [("deviation-B",json!({"kind":"deviation","text":"Owner inspection remains pending","evidence":["failed-B"]})),
+        ("attempt-failure-B",json!({"kind":"failed-attempt","text":"The repair command failed","evidence":["failed-B"]}))] {
+        let answer=apply(project,progress_request(project,id,event));assert_eq!(answer["status"],"ok","{answer}");
+    }
+    let checkpoint=json!({"id":"checkpoint-B","checkpoint_type":"blocked","task_number":2,"task_name":"B","need":"Owner must decide the repair",
+        "completed_work":["close-before-stop","partial-B"],"state":{"status":"unresolved"},"failing_output":"failed-B"});
+    let b=task_state(project,"B");
+    let cp_request=json!({"operation":"execution-task-checkpoint","request":{"request_id":"checkpoint-request","task":b["task"],"attempt":"attempt-B",
+        "expected_version":b["state"]["version"],"checkpoint":checkpoint,"question_id":"question-B","question":"Continue this repair?"}});
+    let cp=apply(project,cp_request.clone());assert_eq!(cp["status"],"ok","{cp}");
+    let b=task_state(project,"B");let answer_payload=json!({"question_id":"question-B","actual_response":"Stop; leave B unfinished","selected_option":null,
+        "adjustment":null,"disposition":"stop","authorization_id":null});
+    let stop_request=json!({"operation":"execution-task-answer","request":{"request_id":"stop-B","task":b["task"],"attempt":"attempt-B",
+        "expected_version":b["state"]["version"],"owner":"Fixture Owner","at":"2026-09-10T16:00:00Z","answer":answer_payload}});
+    let stop=apply(project,stop_request.clone());assert_eq!(stop["status"],"ok","{stop}");
+    // Kill after acknowledged progress/Stop, then compare actual reopened bytes.
+    let before=tree(project);let prior=reopened(project).snapshot;
+    let mut client=Client::open(project);client.child.kill().unwrap();client.child.wait().unwrap();drop(client);
+    unchanged(project,&before,&prior);
+    let read=execution_history(project);
+    assert_eq!(task_state(project,"A")["state"]["completed"],true);
+    assert_eq!(task_state(project,"B")["state"]["completed"],false);
+    assert_eq!(task_state(project,"B")["state"]["progress"],json!(["B has one repaired branch"]));
+    assert_eq!(task_state(project,"C")["state"],json!({"version":0,"attempt":null,"completed":false,"progress":[],"unknown_runs":[]}));
+    let cp_history=read["checkpoint_history"].as_array().unwrap();
+    assert!(cp_history.iter().any(|r|r["fact"]["kind"]=="checkpoint" && r["fact"]["value"]==checkpoint));
+    assert!(cp_history.iter().any(|r|r["fact"]["kind"]=="gate" && r["fact"]["value"]["state"]==json!({"status":"answered","value":answer_payload})));
+    for (request,receipt) in [(progress,acknowledged["receipt"].clone()),(cp_request,cp["receipt"].clone()),(stop_request.clone(),stop["receipt"].clone())] {
+        assert_eq!(apply(project,request)["receipt"],receipt);unchanged(project,&before,&prior);
+    }
+    // Lost reply: observe confirmed disk state without reading the response,
+    // then kill, reopen and replay the exact request.
+    let lost=progress_request(project,"lost-reply-B",json!({"kind":"progress","text":"B checkpoint retained before lost reply","evidence":["checkpoint-B"]}));
+    let mut client=Client::open(project);client.send(json!({"jsonrpc":"2.0","id":88,"method":"tools/call","params":{"name":"cadence_apply","arguments":lost}}));
+    let deadline=std::time::Instant::now()+std::time::Duration::from_secs(10);
+    let lost_record=loop {
+        if !project.join(".planning/.store-intent.json").exists() {
+            let raw:Value=serde_json::from_slice(&fs::read(project.join(".planning/state.json")).unwrap()).unwrap();
+            if let Some(record)=raw["data"]["native_tasks"]["phases"]["12"].as_array().unwrap().iter().find(|r|r["request"]["request_id"]=="lost-reply-B") {break record.clone();}
+        }
+        assert!(std::time::Instant::now()<deadline);std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let before_lost=tree(project);let prior_lost=snapshot(project);
+    client.child.kill().unwrap();client.child.wait().unwrap();drop(client);unchanged(project,&before_lost,&prior_lost);
+    assert_eq!(apply(project,lost.clone())["receipt"],lost_record);unchanged(project,&before_lost,&prior_lost);
+    let mut conflict=lost.clone();conflict["request"]["event"]["text"]=json!("changed replay");close_refused(project,conflict,"task-request-reuse",&[]);
+    let mut stale=lost;stale["request"]["request_id"]=json!("stale-version");stale["request"]["expected_version"]=json!(0);close_refused(project,stale,"task-version",&[]);
+    close_refused(project,fixture.close("restart-duplicate-A"),"task-completed",&[]);
+    let mut overwrite=stop_request;overwrite["request"]["request_id"]=json!("overwrite-stop");overwrite["request"]["expected_version"]=task_state(project,"B")["state"]["version"].clone();
+    overwrite["request"]["answer"]["disposition"]=json!("approve");overwrite["request"]["answer"]["actual_response"]=json!("Overwrite Stop");
+    let answer=apply(project,overwrite);assert_eq!(answer["status"],"refused","{answer}");unchanged(project,&before_lost,&prior_lost);
+    // A real unacknowledged task commit remains uncertain. A later launch claim
+    // does not retroactively acknowledge its task progress.
+    git_value(project,&["commit","--allow-empty","-S","-m","feat(12): unacknowledged work B"]);let unacknowledged=git_value(project,&["rev-parse","HEAD"]);
+    let b=task_state(project,"B");assert_eq!(b["uncertainty"],json!({"commits":[unacknowledged],"requires_reconciliation":true}));
+    let mut client=Client::open(project);let launch=client.call("cadence_apply",json!({"operation":"execution-run","request":{"request_id":"hanging-B","task":b["task"],"attempt":"attempt-B",
+        "expected_version":b["state"]["version"],"command":PROGRESS_WAIT,"check":null,"stage":"verify"}}));assert_eq!(launch["status"],"ok","{launch}");
+    let deadline=std::time::Instant::now()+std::time::Duration::from_secs(10);
+    while !project.join(".run/child-ready").exists() {assert!(std::time::Instant::now()<deadline);std::thread::sleep(std::time::Duration::from_millis(10));}
+    let before_death=tree(project);let prior_death=snapshot(project);client.child.kill().unwrap();client.child.wait().unwrap();drop(client);
+    unchanged(project,&before_death,&prior_death);
+    let read=execution_history(project);let b=task_state(project,"B");
+    assert_eq!(b["state"]["unknown_runs"],json!(["hanging-B"]));assert_eq!(b["state"]["completed"],false);
+    assert_eq!(b["uncertainty"],json!({"commits":[unacknowledged],"requires_reconciliation":true}));
+    assert_eq!(b["state"]["progress"],json!(["B has one repaired branch","B checkpoint retained before lost reply"]));
+    assert!(read["events"].as_array().unwrap().contains(&closed["receipt"]));
+    let b_events:Vec<_>=read["events"].as_array().unwrap().iter().filter(|e|e["request"]["task"]["task"]=="B").collect();
+    assert_eq!(b_events.iter().map(|e|e["request"]["event"]["kind"].as_str().unwrap()).collect::<Vec<_>>(),
+        vec!["attempt","launch","result","acknowledged-progress","deviation","failed-attempt","checkpoint","checkpoint","acknowledged-progress","launch"]);
+    assert_eq!(b_events[4]["request"]["event"]["text"],"Owner inspection remains pending");
+    assert_eq!(b_events[5]["request"]["event"]["reason"],"The repair command failed");
+    assert_eq!(b_events[9]["request"]["event"]["run_id"],"hanging-B");assert!(b_events[9]["request"]["event"].get("observed_at").is_none());
+    assert_eq!(task_state(project,"C")["state"]["version"],0);
+    unchanged(project,&before_death,&prior_death);
 }
 
 struct Historical {root:PathBuf,_lock:fs::File}
