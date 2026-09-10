@@ -238,6 +238,21 @@ the finished boundary, so the tool schema, the typed refusal and the patch shape
 are proven before ten surfaces are built against them. Phase 17 collects what
 belongs to no cluster, phase 18 is the gate, and phase 19 ships.
 
+**Delivery order is not phase number (decided 2026-09-10).** When phase 11 was
+rescoped to the first approved context, its evidence-map slices were parked as
+phases 27, 28 and 29 - and the acceptance design makes both execution and
+verification consumers of that map. The binary refuses a task close without
+red-then-green for every identified check, and refuses a verdict on an item
+not in the map (`docs/architecture/acceptance.md`, "The four refusal points,
+together"). A check is only an identified item once the map is persisted (phase
+28), and the map lives in a saved plan (phase 27). Phase 29's limits gate the
+activation of acceptance-aware execution, not the status arithmetic. So the
+order after phase 11 is **27, 28, 29, 12, 13**, then 14 onward as listed. The
+numbers stay: phase 25 forbids `/cad-phase insert` on this repository until
+completed-row protection lands, and every commit subject, report and memory
+cites the numbers as they are. The
+analysis is `.codex-analysis/phase-13-needs-from-28-29.md`.
+
 **A phase is a unit of work with a plan and a gate; it is not an acceptance
 unit.** Those two boundaries are allowed to differ, and here they do: phases 6
 through 16 implement, and phase 18 accepts. Do not go hunting for an independent
@@ -347,6 +362,9 @@ settled:
   install. Deciding it now would adapt a prose surface that is being replaced.
 
 ## Phases
+
+Delivery order after phase 11 is 27, 28, 29, 12, 13, then 14 onward; see
+"Delivery order is not phase number" above. Numbers are identities, not sequence.
 
 - [x] **Phase 1: The crate skeleton** - a named binary that builds, cross-compiles to four targets from one CI job, and serves a minimal MCP tool surface
 - [x] **Phase 2: The golden harness** - fixtures at the frozen tag and a recorder that captures the JavaScript surface's behavior deterministically
@@ -947,6 +965,15 @@ close.** That hook guards hand-assembled dispatch prompts; once this phase's
 executor dispatches are built by the binary from state, the role text is
 carried by construction and the guard has nothing to catch.
 
+**Depends on phases 27, 28 and 29 (decided 2026-09-10).** The close gate
+above refuses a task without red-then-green for every check it delivers, and
+a check is an identified item only once phase 28 has persisted the evidence
+map against a plan phase 27 stored. Phase 29's refusals complete the planning
+contract before acceptance-aware execution is switched on. This phase owns
+the task-to-check bindings and the red/green receipts; it does not create
+check identities of its own. Hook retirement follows the state-composed
+executor dispatch, not partial task-history delivery.
+
 **Goal.** `cad-execute` in full and `cad-task` run against the binary, with the
 receipts they produce owned by the binary rather than assembled by a
 coordinator.
@@ -1319,14 +1346,20 @@ Whether `/cad-plan` may run without approved truths is decided here.
 **Goal.** A plan's evidence map attaches to the phase's current truths; a
 map that leaves a truth uncovered, an item naming no truth, or an item
 naming a stale truth version is refused. Parked from phase 11 on 2026-09-09
-(candidates T38-T42). Must land before phase 13 needs verdicts.
+(candidates T38-T42). Must land before phase 12 records a check's red-then-green
+or phase 13 accepts a verdict on an evidence item; depends on phase 11's approved
+truths and phase 27's persisted plan. T40 (whether an observation may stand in
+for a required check) stays open until this phase is contexted.
 
 ### Phase 29: Check and link limits
 
 **Goal.** A check without a command or expected output, a second check on
 one truth, and a link its truth does not need are refused. Parked from phase
-11 on 2026-09-09 (candidates T43-T46). Layer 2 of the acceptance design is
-complete only when this lands.
+11 on 2026-09-09 (candidates T43-T46). Consumes phase 28's map and completes
+the planning refusals before acceptance-aware execution (phase 12) is
+activated; the one-check limit is phase-wide across plans. Layer 2 of the
+acceptance design is complete only when this lands; it is not a prerequisite
+of status derivation itself.
 
 ### Phase 30: Plan review handoff
 
