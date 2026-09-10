@@ -228,6 +228,7 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                 snapshot: Some(proposed),
                 external,
             };
+            let coverage = cadence::plan::associations::validate(&view.snapshot.data, &submission)?;
             match store
                 .request(cadence::store::writer::Operation::CompareTransact {
                     expected_generation: view.snapshot.generation,
@@ -238,7 +239,7 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             {
                 Ok(_) => Ok(model::ok(
                     "plan-submit",
-                    json!({"persisted":true,"results":results}),
+                    json!({"persisted":true,"results":results,"coverage":coverage}),
                 )),
                 Err(error) => {
                     // Another approved request may have won after our owned
@@ -284,8 +285,9 @@ fn complete_preview(root: &Path, data: &Value, mut submission: model::Submission
     }
     validation::replacement_preview(data, &submission, &inventory)?;
     persistence::validate_candidate(data, &submission, &inventory)?;
+    let coverage = cadence::plan::associations::validate(data, &submission)?;
     Ok(model::ok("plan-read", json!({"persisted":false,"submission":submission,"documents":documents,
-        "readiness":"provisional-authoring"})))
+        "readiness":"provisional-authoring","coverage":coverage})))
 }
 
 fn replay_answer(root: &Path, data: &Value, receipt: model::Receipt) -> Result<Answer> {
@@ -317,7 +319,9 @@ fn replay_answer(root: &Path, data: &Value, receipt: model::Receipt) -> Result<A
 }
 
 fn path_error(error: cadence::store::Error) -> Result<Answer> {
-    if let Some((_, diagnostic)) = error.to_string().split_once("plan-refusal:") {
+    if let cadence::store::Error::Invalid(message) | cadence::store::Error::Conflict(message) = &error
+        && let Some(diagnostic) = message.strip_prefix("plan-refusal:")
+    {
         let diagnostic: model::Diagnostic = serde_json::from_str(diagnostic)?;
         return Ok(diagnostic.answer());
     }

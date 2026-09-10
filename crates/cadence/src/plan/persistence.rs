@@ -100,25 +100,6 @@ pub fn contribute(
     super::validation::replacement(previous, submission, Some(approval), inventory)?;
     validate_candidate(previous, submission, inventory)?;
     let phase = submission.phase.get();
-    if cadence::context::persistence::saved(previous, phase)?.is_none() {
-        return Err(Error::Invalid(format!(
-            "native-approved-truths: phase {phase} needs context-submit"
-        )));
-    }
-    if submission.occurrence != occurrence(previous, phase)? {
-        return Err(Error::Conflict(
-            "phase occurrence changed; preview and approve again".into(),
-        ));
-    }
-    super::validation::replacement(previous, submission, Some(approval), inventory)?;
-    if submission.inventory_basis != inventory.basis {
-        return Err(Error::Conflict(
-            "inventory precondition changed; preview and approve again".into(),
-        ));
-    }
-    if submission.plans.len() > 64 {
-        return Err(Error::Invalid("publication batch exceeds 64 plans".into()));
-    }
     let mut occurrence = saved(previous, phase)?.unwrap_or_else(|| Occurrence {
         id: submission.occurrence.clone(),
         phase,
@@ -223,6 +204,7 @@ pub fn validate_candidate(previous: &Value, submission: &Submission, inventory: 
     if submission.plans.is_empty() || submission.plans.len() > 64 || submission.request_id.trim().is_empty() {
         return Err(Error::Invalid("publication needs a request identity and 1 through 64 plans".into()));
     }
+    super::associations::validate(previous, submission)?;
     let mut high_water = inventory.high_water;
     let mut targets = std::collections::BTreeSet::new();
     for entry in &submission.plans {

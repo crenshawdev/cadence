@@ -1,5 +1,6 @@
 pub mod instructions;
 pub mod evidence;
+pub mod associations;
 pub mod inventory;
 pub mod model;
 pub mod map_history;
