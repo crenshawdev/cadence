@@ -274,3 +274,47 @@ fn phase11_approved_context_persists_truths_and_decisions() {
         }
     }
 }
+
+fn expect_refusal(answer: &Value, rule: &str, slot: &str, entry: usize, id: &str) {
+    assert_eq!(answer["status"], "refused", "{answer}");
+    assert_eq!(answer["code"], "invalid-context", "{answer}");
+    assert_eq!(answer["rule"], rule, "{answer}");
+    assert_eq!(answer["slot"], slot, "{answer}");
+    assert_eq!(answer["phase"], 11, "{answer}");
+    assert_eq!(answer["entry"], entry, "{answer}");
+    assert_eq!(answer["id"], id, "{answer}");
+    assert!(!answer["reason"].as_str().unwrap().is_empty());
+}
+
+#[test]
+fn phase11_sentence_fault_names_rule_and_slot() {
+    let mut faults = vec![
+        ("trigger", Some(json!("the owner opens or closes the context")), "one-trigger"),
+        ("observer", Some(json!("the owner and the caller")), "one-observer"),
+        ("observer", Some(json!("the owner & the caller")), "one-observer"),
+        ("observer", Some(json!("the owner, the caller")), "one-observer"),
+        ("observer", Some(json!("the owner; the caller")), "one-observer"),
+        ("verb", Some(json!("receives")), "allowed-verb"),
+        ("kind", Some(json!("example")), "allowed-kind"),
+    ];
+    for slot in ["trigger", "observer", "verb", "outcome", "kind"] {
+        for missing in [None, Some(json!("")), Some(json!(" \t\n")), Some(Value::Null), Some(json!(42))] {
+            faults.push((slot, missing, "required-slot"));
+        }
+    }
+    for (slot, value, rule) in faults {
+        for approved in [false, true] {
+            let temp = initialized_fixture(true);
+            let before = tree(temp.path());
+            let mut request = submission();
+            if let Some(value) = value.clone() { request["submission"]["truths"][0][slot] = value; }
+            else { request["submission"]["truths"][0].as_object_mut().unwrap().remove(slot); }
+            if approved { request = approve(request); }
+            let mut client = Client::open(temp.path());
+            let answer = client.call("cadence_apply", request);
+            expect_refusal(&answer, rule, slot, 0, "T1");
+            client.finish();
+            assert_eq!(tree(temp.path()), before);
+        }
+    }
+}
