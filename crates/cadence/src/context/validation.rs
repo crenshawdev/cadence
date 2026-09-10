@@ -30,6 +30,9 @@ pub fn validate(raw: &Value) -> Option<Answer> {
         if truth["observable"] != true {
             return failure("unobservable", "observable", "the owner must attest that the outcome is observable from outside");
         }
+        if truth["fixed_oracle"] != true {
+            return failure("prose-oracle", "fixed_oracle", "the owner must attest that the expected answer is fixed and does not come from model prose");
+        }
     }
     None
 }

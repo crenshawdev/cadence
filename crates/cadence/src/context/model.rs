@@ -21,6 +21,8 @@ pub struct TruthSlots {
     /// Owner attestation, never an internal-name classifier.
     #[schemars(required)]
     pub observable: Option<bool>,
+    /// Separate owner attestation; approval or observability cannot imply it.
+    #[schemars(required)]
     pub fixed_oracle: Option<bool>,
 }
 
