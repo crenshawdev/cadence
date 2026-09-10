@@ -139,12 +139,20 @@ pub fn validate(data: &Value, submission: &Submission) -> Result<Coverage> {
             phase: Some(phase), entry: None, id: None,
             reason: format!("phase {phase} current native truth authority is absent; use context-submit") }.error())?;
     let contributions = candidate(data, submission)?;
-    validate_items(&context.truths, phase, &contributions)?;
+    let attached = submission.plans.iter().any(|entry| matches!(entry.content.evidence_map, Some(Map::Attached { .. })));
+    validate_union(&context, phase, &contributions, attached)
+}
+
+/// Publication and admission share the current-union rules, without inventing
+/// a proposed publication to validate an already retained execution contract.
+pub fn validate_union(context: &cadence::context::model::ApprovedContext, phase: u32,
+    contributions: &[Contribution], attached: bool) -> Result<Coverage>
+{
+    validate_items(&context.truths, phase, contributions)?;
     let uncovered = context.truths.iter().filter(|truth| {
         !contributions.iter().flat_map(|c| &c.items).flat_map(associations)
             .any(|a| a.truth_id == truth.id && a.truth_version == truth.version)
     }).map(|truth| truth.id.clone()).collect::<Vec<_>>();
-    let attached = submission.plans.iter().any(|entry| matches!(entry.content.evidence_map, Some(Map::Attached { .. })));
     if attached
         && let Some(id) = uncovered.first()
     {
@@ -167,9 +175,9 @@ pub fn validate(data: &Value, submission: &Submission) -> Result<Coverage> {
             reason: format!("phase {phase} current truth {id} has evidence but no current check; supplementary evidence cannot replace its check") }.error());
     }
     if attached {
-        super::limits::content(phase, &contributions)?;
-        super::limits::links(&context, phase, &contributions)?;
-        super::limits::checks(phase, &contributions)?;
+        super::limits::content(phase, contributions)?;
+        super::limits::links(context, phase, contributions)?;
+        super::limits::checks(phase, contributions)?;
     }
     Ok(Coverage { uncovered, without_check })
 }

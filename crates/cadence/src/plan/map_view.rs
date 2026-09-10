@@ -112,6 +112,37 @@ pub fn read(root: &Path, phase: u32) -> Result<Answer> {
     Ok(model::ok("evidence-read", view))
 }
 
+/// Check the retained map event and every definition before exposing it as
+/// execution authority. The aggregate readback digest is not an item identity.
+pub fn checked_map(data: &Value, phase: u32, publication: &model::Publication) -> Result<map_history::Revision> {
+    let invalid = |field: &str, id: &str, reason: &str| model::Diagnostic {
+        rule: "map-authority".into(), slot: format!("current.plans[{}].{field}", publication.identity.plan),
+        phase: Some(phase), entry: None, id: Some(id.into()), reason: reason.into(), details: None,
+    }.error();
+    let id = publication.identity.plan.to_string();
+    let revision = publication.map_revision.as_ref().ok_or_else(|| invalid("map_revision", &id, "attached map required"))?;
+    let history = map_history::saved(data, phase)?.ok_or_else(|| invalid("map_revision", &id, "map history absent"))?;
+    let event = history.revisions.iter().find(|r| &r.revision == revision)
+        .ok_or_else(|| invalid("map_revision", &id, "map event absent"))?;
+    let submission = publication.approval.submission.as_ref().ok_or_else(|| invalid("approval", &id, "approval absent"))?;
+    if history.occurrence != publication.occurrence || history.superseded.contains_key(revision)
+        || event.identity != publication.identity || event.content_revision != publication.revision
+        || event.occurrence != publication.occurrence || event.request_id != submission.request_id
+        || event.payload_digest != persistence::payload_digest(submission, &publication.approval)?
+        || event.revision != map_history::event_id(submission, &publication.identity)?
+        || publication.content.evidence_map.as_ref() != Some(&super::evidence::Map::Attached { items: event.items.clone() })
+        || event.item_revisions.len() != event.items.len()
+    {
+        return Err(invalid("map_revision", &id, "map event differs from exact publication authority"));
+    }
+    for item in &event.items {
+        if event.item_revisions.get(item.id()) != Some(&digest(&serde_json::to_vec(&map_history::definition(item)?)?)) {
+            return Err(invalid("item_revision", item.id(), "item revision differs from retained definition"));
+        }
+    }
+    Ok(event.clone())
+}
+
 fn assemble(data: &Value, phase: u32, inputs: &BTreeMap<String, Input>) -> Result<Value> {
     let context = cadence::context::persistence::saved(data, phase)?;
     let mut truths = context.as_ref().map(|c| c.truths.iter().collect::<Vec<_>>()).unwrap_or_default();
@@ -123,15 +154,12 @@ fn assemble(data: &Value, phase: u32, inputs: &BTreeMap<String, Input>) -> Resul
     let mut projections = Vec::new();
     let mut covered = BTreeSet::new();
     let mut checks: BTreeMap<(String, u32), BTreeSet<String>> = BTreeMap::new();
-    let retained = map_history::saved(data, phase)?;
     if let Some(saved) = persistence::saved(data, phase)? {
         for publication in saved.publications.values() {
+            persistence::validate_retained(data, phase, publication)?;
             let number = publication.identity.plan.get();
             let request = publication.approval.submission.as_ref()
                 .ok_or_else(|| cadence::store::Error::Invalid("publication lacks its receipt request".into()))?;
-            let receipt = saved.receipts.get(&request.request_id)
-                .filter(|r| r.results.contains(publication))
-                .ok_or_else(|| cadence::store::Error::Invalid("current publication lacks its exact receipt result".into()))?;
             contributions.push(json!({"identity":publication.identity,"content_revision":publication.revision,
                 "map_revision":publication.map_revision,"request_id":request.request_id}));
             let bytes = inputs[&format!("phases/{phase}/PLAN-{number}.md")].bytes.as_deref();
@@ -141,24 +169,13 @@ fn assemble(data: &Value, phase: u32, inputs: &BTreeMap<String, Input>) -> Resul
                     None => "missing", Some(d) if d == &publication.revision => "installed", _ => "drifted",
                 }}));
             let Some(revision) = &publication.map_revision else { continue };
-            let event = retained.as_ref().and_then(|h| h.revisions.iter().find(|r| &r.revision == revision))
-                .ok_or_else(|| cadence::store::Error::Invalid("current map revision is absent".into()))?;
-            if event.identity != publication.identity || event.content_revision != publication.revision
-                || event.occurrence != saved.id || event.request_id != request.request_id
-                || event.payload_digest != receipt.payload_digest
-                || publication.content.evidence_map.as_ref() != Some(&super::evidence::Map::Attached { items: event.items.clone() })
-            {
-                return Err(cadence::store::Error::Invalid("current map publication binding is inconsistent".into()));
-            }
+            let event = checked_map(data, phase, publication)?;
             let mut ordered = event.items.iter().collect::<Vec<_>>();
             ordered.sort_by_key(|item| item.id());
             for item in ordered {
                 let item_revision = event.item_revisions.get(item.id())
                     .ok_or_else(|| cadence::store::Error::Invalid("item revision is absent".into()))?;
                 let mut definition = map_history::definition(item)?;
-                if digest(&serde_json::to_vec(&definition)?) != *item_revision {
-                    return Err(cadence::store::Error::Invalid("item revision differs from retained definition".into()));
-                }
                 definition["item_revision"] = json!(item_revision);
                 if items.insert(item.id().to_owned(), definition.clone()).is_some_and(|prior| prior != definition) {
                     return Err(cadence::store::Error::Invalid("conflicting current item definitions".into()));

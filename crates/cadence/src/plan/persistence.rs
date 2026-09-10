@@ -270,6 +270,9 @@ pub fn validate_publication(
         .as_ref()
         .ok_or_else(|| Error::Invalid("missing exact plan approval".into()))?;
     let (expected, results) = contribute(previous, submission, approval, inventory)?;
+    for publication in &results {
+        validate_retained(proposed, phase, publication)?;
+    }
     let expected_documents = results
         .iter()
         .map(|p| Ok((p.identity.plan.get(), render::document(&p.content)?)))
@@ -282,6 +285,43 @@ pub fn validate_publication(
         return Err(Error::Invalid(
             "plan participants differ from approved allocation and snapshot".into(),
         ));
+    }
+    Ok(())
+}
+
+/// Exact retained publication authority, shared with admission and readback.
+/// This checks historical approval equality without recertifying an old map
+/// under today's content policy; admission separately validates the whole union.
+pub fn validate_retained(data: &Value, phase: u32, publication: &Publication) -> Result<()> {
+    let invalid = |slot: &str, reason: &str| Diagnostic {
+        rule: "publication-authority".into(), slot: format!("current.plans[{}].{slot}", publication.identity.plan),
+        phase: Some(phase), entry: None, id: Some(publication.identity.plan.to_string()),
+        reason: reason.into(), details: None,
+    }.error();
+    let occurrence = saved(data, phase)?.ok_or_else(|| invalid("occurrence", "missing publication occurrence"))?;
+    let submission = publication.approval.submission.as_ref().ok_or_else(|| invalid("approval", "missing approved submission"))?;
+    approve(submission, &publication.approval).map_err(|_| invalid("approval", "inexact approved submission"))?;
+    if publication.identity.phase.get() != phase || publication.occurrence != occurrence.id
+        || submission.phase.get() != phase || submission.occurrence != occurrence.id
+        || occurrence.publications.get(&publication.identity.plan.get()) != Some(publication)
+    {
+        return Err(invalid("occurrence", "publication is not current in the bound occurrence"));
+    }
+    if !submission.plans.iter().any(|e| e.target == publication.identity && e.content == publication.content)
+        || publication.content.phase != publication.identity.phase || publication.content.plan != publication.identity.plan
+    {
+        return Err(invalid("content", "publication differs from its exact approved content"));
+    }
+    let receipt = occurrence.receipts.get(&submission.request_id).ok_or_else(|| invalid("receipt", "missing publication receipt"))?;
+    if !receipt.results.contains(publication)
+        || receipt.payload_digest != payload_digest(submission, &publication.approval)?
+    {
+        return Err(invalid("receipt", "publication receipt differs from approval"));
+    }
+    if digest(&render::document(&publication.content)?) != publication.revision
+        || publication.history.last() != Some(&publication.revision)
+    {
+        return Err(invalid("revision", "content revision does not identify approved bytes"));
     }
     Ok(())
 }

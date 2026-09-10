@@ -12,6 +12,124 @@ use super::{
 use serde_json::json;
 use std::{collections::BTreeSet, process::Command};
 
+// Constructed unit authority, not a claim of approval through the public API.
+// The acceptance check separately supplies that boundary with real stdio calls.
+fn native_unit_contract(command: &str) -> (serde_json::Value, std::collections::BTreeMap<String, String>, super::admission::Contract) {
+    use crate::{plan::{model::*, evidence::Map}, store::model::digest};
+    let truths = ["truth/A", "truth/B"].map(|id| json!({"id":id,"trigger":"the sender sends the parcel",
+        "observer":"the recipient","verb":"gets","outcome":"a receipt","kind":"property",
+        "observable":true,"fixed_oracle":true}));
+    let submission = json!({"phase":12,"title":"Delivery","scope":"Approved delivery.","decisions":[],
+        "durable_decisions":[],"assumptions":[],"truths":truths});
+    let approval = json!({"approved":true,"owner":"Fixture Owner","at":"2026-09-10T14:00:00Z","submission":submission});
+    let context = crate::context::persistence::approved(serde_json::from_value(submission).unwrap(), serde_json::from_value(approval).unwrap()).unwrap();
+    let edges = ["truth/A", "truth/B"].map(|id| json!({"truth_id":id,"truth_version":1,"reason":"Delivery provides the receipt."}));
+    let map: Map = serde_json::from_value(json!({"mode":"attached","items":[{
+        "kind":"check","id":"check/shared","spec":{"command":command,"expected":{"kind":"literal","value":"receipt"},
+        "test":{"file":"tests/not_yet_written.rs","function":"delivery"},"setup":"","call":"","boundary":"","fakes":[]},
+        "reason":"Removing delivery loses the receipt.","associations":edges},
+        {"kind":"artifact","id":"artifact/delivery","spec":{"locators":["src/delivery.rs"],"substance":"Delivery exists."},
+        "reason":"Delivery needs an implementation.","associations":edges}]})).unwrap();
+    let body = format!("# Delivery\n## Evidence map\n\n```json\n{}\n```\n\n", serde_json::to_string_pretty(&map).unwrap());
+    let entries = (1..=2).map(|n| serde_json::from_value(json!({"target":{"phase":12,"plan":n},"content":{
+        "phase":12,"plan":n,"requirements":["truth/A","truth/B"],"files":["src/delivery.rs"],"directories":[],
+        "execution":{"schema":1,"suite":"printf suite","tasks":[{"id":"deliver","verify":["printf verified"]},
+        {"id":"document","verify":["printf documented"]}]},"body":body,"evidence_map":map}})).unwrap()).collect();
+    let submission = Submission { phase: 12.try_into().unwrap(), occurrence:"active-cycle:phase:12".into(),
+        request_id:"unit-publication".into(), inventory_basis:"unit-inventory".into(), plans:entries };
+    let approval = Approval { approved:true, owner:Some("Fixture Owner".into()), at:Some("2026-09-10T14:00:00Z".into()), submission:Some(submission.clone()) };
+    let mut documents = std::collections::BTreeMap::new();
+    let mut publications = std::collections::BTreeMap::new();
+    let mut revisions = Vec::new();
+    let mut bindings = Vec::new();
+    let payload = crate::plan::persistence::payload_digest(&submission, &approval).unwrap();
+    for entry in &submission.plans {
+        let bytes = crate::plan::render::document(&entry.content).unwrap();
+        let content_revision = digest(&bytes);
+        let map_revision = crate::plan::map_history::event_id(&submission, &entry.target).unwrap();
+        let Map::Attached { items } = &map else { unreachable!() };
+        let item_revisions = items.iter().map(|i| (i.id().into(), digest(&serde_json::to_vec(&crate::plan::map_history::definition(i).unwrap()).unwrap()))).collect();
+        revisions.push(crate::plan::map_history::Revision { revision:map_revision.clone(), occurrence:submission.occurrence.clone(),
+            request_id:submission.request_id.clone(), payload_digest:payload.clone(), identity:entry.target.clone(),
+            content_revision:content_revision.clone(),items:items.clone(),item_revisions });
+        publications.insert(entry.target.plan.get(), Publication { identity:entry.target.clone(), occurrence:submission.occurrence.clone(),
+            revision:content_revision.clone(),content:entry.content.clone(),approval:approval.clone(),readiness:Readiness::ProvisionalAuthoring,
+            history:vec![content_revision.clone()],map_revision:Some(map_revision.clone()) });
+        documents.insert(format!("phases/12/PLAN-{}.md",entry.target.plan), String::from_utf8(bytes).unwrap());
+        bindings.push(super::admission::Binding {plan:entry.target.plan.get(),publication_request:submission.request_id.clone(),content_revision,map_revision});
+    }
+    let receipt = Receipt {payload_digest:payload,results:publications.values().cloned().collect()};
+    let occurrence = Occurrence {id:submission.occurrence.clone(),phase:12,cycle:"active".into(),high_water:2,consumed:vec![1,2],
+        provenance:Default::default(),publications,receipts:std::collections::BTreeMap::from([(submission.request_id,receipt)])};
+    let allocation = (1..=2).flat_map(|plan| ["deliver","document"].map(|task| super::allocation::Assignment {
+        plan,task:task.into(),checks:if plan == 1 && task == "deliver" {vec![super::allocation::Check {
+            id:"check/shared".into(),item_revision:revisions[0].item_revisions["check/shared"].clone()}]} else {vec![]}
+    })).collect();
+    let data = json!({"context":{"schema":"context-1","phases":{"12":context}},
+        "plan_publications":{"schema":"plan-1","phases":{"12":occurrence}},
+        "acceptance_maps":{"schema":"acceptance-map-1","phases":{"12":{"occurrence":submission.occurrence,"revisions":revisions}}}});
+    (data, documents, super::admission::Contract {phase:12,occurrence:submission.occurrence,plans:bindings,allocation})
+}
+
+#[test]
+fn native_admission_validates_authority_and_allocation() {
+    use super::admission::{decode,validate};
+    let (data, documents, contract) = native_unit_contract("custom-delivery-check");
+    let valid = validate(&data,&documents,&contract).unwrap();
+    assert_eq!(valid.plans.iter().map(|p| p.plan).collect::<Vec<_>>(), vec![1,2]);
+    assert_eq!(valid.plans[0].tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), vec!["deliver","document"]);
+    assert_eq!(valid.maps.len(),2);
+    assert_eq!(contract.allocation[1].checks,vec![]);
+    let assert_refusal = |error:crate::store::Error, rule:&str, slot:&str, id:&str| {
+        let crate::store::Error::Invalid(message) = error else {panic!("expected located invalid: {error}")};
+        let diagnostic:crate::plan::model::Diagnostic = serde_json::from_str(message.strip_prefix("plan-refusal:").unwrap()).unwrap();
+        assert_eq!(diagnostic.rule,rule);
+        assert_eq!(diagnostic.slot,slot);
+        if !id.is_empty() {assert_eq!(diagnostic.id.as_deref(),Some(id));}
+    };
+    for field in ["phase","occurrence","plans","allocation"] {
+        let mut raw=serde_json::to_value(&contract).unwrap(); raw.as_object_mut().unwrap().remove(field);
+        assert_refusal(decode(raw).unwrap_err(),"admission-shape",&format!("contract.{field}"),"");
+    }
+    for (pointer,value,rule,slot) in [
+        ("/context",serde_json::Value::Null,"native-approved-truths","context"),
+        ("/context/phases/12/approval/approved",json!(false),"native-approved-truths","context.approval"),
+        ("/context/phases/12/truths/0/version",json!(2),"native-approved-truths","context.approval"),
+        ("/context/phases/12/submission/truths/0/outcome",json!("another outcome"),"native-approved-truths","context.approval"),
+        ("/plan_publications/phases/12/receipts/unit-publication/payload_digest",json!("stale"),"publication-authority","current.plans[1].receipt"),
+        ("/acceptance_maps/phases/12/revisions/0/item_revisions/check~1shared",json!("stale"),"map-authority","current.plans[1].item_revision"),
+        ("/acceptance_maps/phases/12/revisions/0/content_revision",json!("stale"),"map-authority","current.plans[1].map_revision"),
+    ] {
+        let mut changed=data.clone();
+        if pointer=="/context" {changed.as_object_mut().unwrap().remove("context");}
+        else {*changed.pointer_mut(pointer).unwrap()=value;}
+        assert_refusal(validate(&changed,&documents,&contract).unwrap_err(),rule,slot,"");
+    }
+    let mut drift=documents.clone(); drift.get_mut("phases/12/PLAN-1.md").unwrap().push('\n');
+    assert_refusal(validate(&data,&drift,&contract).unwrap_err(),"installed-plan","phases/12/PLAN-1.md","1");
+    let (blank_data,blank_docs,blank_contract)=native_unit_contract("");
+    assert_refusal(validate(&blank_data,&blank_docs,&blank_contract).unwrap_err(),"check-command","current.plans[1].evidence_map.items[0].spec.command","check/shared");
+    for (n,rule,slot,id) in [
+        (0,"allocation-task","contract.allocation","deliver"),
+        (1,"allocation-task","contract.allocation","document"),
+        (2,"allocation-task","contract.allocation[0]","unknown"),
+        (3,"allocation-item","contract.allocation[0].checks[0].id","unknown"),
+        (4,"allocation-kind","contract.allocation[0].checks[0].id","artifact/delivery"),
+        (5,"allocation-revision","contract.allocation[0].checks[0].item_revision","check/shared"),
+        (6,"allocation-check","contract.allocation","check/shared"),
+        (7,"allocation-owner","contract.allocation[2].checks[0]","check/shared"),
+    ] {
+        let mut changed=contract.clone();
+        match n {
+            0=>changed.allocation.clear(),1=>{changed.allocation.remove(1);},2=>changed.allocation[0].task="unknown".into(),
+            3=>changed.allocation[0].checks[0].id="unknown".into(),4=>changed.allocation[0].checks[0].id="artifact/delivery".into(),
+            5=>changed.allocation[0].checks[0].item_revision="stale".into(),6=>changed.allocation[0].checks.clear(),
+            7=>changed.allocation[2].checks=changed.allocation[0].checks.clone(),_=>unreachable!(),
+        }
+        assert_refusal(validate(&data,&documents,&changed).unwrap_err(),rule,slot,id);
+    }
+}
+
 fn schema_fixture() -> serde_json::Value {
     json!({
         "schema": 1, "kind": "executor", "dispatch_id": "dispatch-1",
