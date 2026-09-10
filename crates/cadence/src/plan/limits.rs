@@ -1,5 +1,5 @@
 //! Fresh attached-map policy; retained records keep their historical grammar.
-use super::{associations::Contribution, evidence::Item, model::Diagnostic};
+use super::{associations::Contribution, evidence::{Expected, Item}, model::Diagnostic};
 use cadence::store::{Error, Result};
 use serde_json::Value;
 
@@ -23,6 +23,9 @@ pub fn malformed(raw: &Value) -> Option<Diagnostic> {
                     let id = item["id"].as_str().map(str::to_owned);
                     let rule = if id.is_some() && item["kind"] == "check" && field == "spec.command" {
                         "check-command"
+                    } else if id.is_some() && item["kind"] == "check"
+                        && matches!(field.as_str(), "spec.expected" | "spec.expected.kind" | "spec.expected.value") {
+                        "check-expected"
                     } else { "evidence-item-shape" };
                     return Some(Diagnostic {
                         rule: rule.into(),
@@ -103,14 +106,19 @@ pub fn base(contribution: &Contribution, index: usize) -> String {
 pub fn content(phase: u32, contributions: &[Contribution]) -> Result<()> {
     for contribution in contributions {
         for (index, item) in contribution.items.iter().enumerate() {
-            if let Item::Check { spec, .. } = item
-                && spec.command.trim().is_empty()
-            {
-                return Err(Diagnostic {
-                    rule: "check-command".into(), slot: format!("{}.spec.command", base(contribution, index)),
-                    phase: Some(phase), entry: contribution.entry, id: Some(item.id().into()),
-                    reason: format!("phase {phase} item {} needs a nonblank command", item.id()),
-                }.error());
+            if let Item::Check { spec, .. } = item {
+                let expected = match &spec.expected { Expected::Literal(value) | Expected::Property(value) => value };
+                for (value, rule, field) in [(&spec.command, "check-command", "command"),
+                    (expected, "check-expected", "expected.value")]
+                {
+                    if value.trim().is_empty() {
+                        return Err(Diagnostic {
+                            rule: rule.into(), slot: format!("{}.spec.{field}", base(contribution, index)),
+                            phase: Some(phase), entry: contribution.entry, id: Some(item.id().into()),
+                            reason: format!("phase {phase} item {} needs nonblank {field}", item.id()),
+                        }.error());
+                    }
+                }
             }
         }
     }
