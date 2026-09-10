@@ -285,6 +285,70 @@ fn phase28_uncovered_current_truth_is_refused() {
     assert_unchanged(project, &before, &prior);
 }
 
+#[test]
+fn phase28_current_truth_without_check_is_refused() {
+    for supplementary in [
+        vec![artifact("address", &["T2"])],
+        vec![observation("O1", &["T2"])],
+        vec![link("handoff", "T2")],
+        vec![artifact("address", &["T2"]), observation("O1", &["T2"])],
+    ] {
+        let temp = fixture();
+        let project = temp.path();
+        native_context(project, 27, &["T1", "T2"]);
+        let before = tree(project);
+        let prior = snapshot(project);
+        let mut items = vec![check("one", "T1")];
+        items.extend(supplementary);
+        let mut client = Client::open(project);
+        let input = proposal(&mut client, "no-check", &[attached(items.clone())], &["# Supplementary\n"]);
+        assert_refusal(&preview(&mut client, &input), "truth-without-check", "T2");
+        assert_refusal(&client.call("cadence_apply", approve(input)), "truth-without-check", "T2");
+        client.finish();
+        assert_unchanged(project, &before, &prior);
+        items.push(check("two", "T2"));
+        let mut client = Client::open(project);
+        let corrected = proposal(&mut client, "corrected", &[attached(items.clone())], &["# Has a check\n"]);
+        let published = publish(&mut client, &corrected);
+        client.finish();
+        let saved = reopened(project).snapshot;
+        assert_eq!(saved.data["acceptance_maps"]["phases"]["27"]["revisions"][0]["items"], json!(items));
+        assert_eq!(saved.data["plan_publications"]["phases"]["27"]["publications"]["1"], published["results"][0]);
+    }
+
+    let temp = fixture();
+    let project = temp.path();
+    native_context(project, 27, &["T1", "T2"]);
+    let mut client = Client::open(project);
+    let first = proposal(&mut client, "checks", &[attached(vec![check("one", "T1"), check("two", "T2")])], &["# Both checks\n"]);
+    let first = publish(&mut client, &first);
+    client.finish();
+    reopened(project);
+    let mut client = Client::open(project);
+    let second = proposal(&mut client, "artifact", &[attached(vec![artifact("address", &["T2"])])], &["# Uses the saved check\n"]);
+    let second = publish(&mut client, &second);
+    client.finish();
+    let before = tree(project);
+    let prior = reopened(project).snapshot;
+    let old = fs::read_to_string(project.join(".planning/phases/27/PLAN-1.md")).unwrap();
+    let mut client = Client::open(project);
+    let removes_check = replacement(&mut client, "removes-check", 1, &first["results"][0], &old,
+        attached(vec![check("one", "T1")]), "# T2 artifact survives in the other plan\n");
+    assert_refusal(&preview(&mut client, &removes_check), "truth-without-check", "T2");
+    assert_refusal(&client.call("cadence_apply", approve(removes_check)), "truth-without-check", "T2");
+    client.finish();
+    assert_unchanged(project, &before, &prior);
+    assert_eq!(prior.data["plan_publications"]["phases"]["27"]["publications"]["2"], second["results"][0]);
+    let mut client = Client::open(project);
+    let corrected = replacement(&mut client, "retains-check", 1, &first["results"][0], &old,
+        attached(vec![check("one", "T1"), check("two", "T2")]), "# Both checks retained\n");
+    publish(&mut client, &corrected);
+    client.finish();
+    let saved = reopened(project).snapshot;
+    assert_eq!(saved.data["acceptance_maps"]["phases"]["27"]["revisions"].as_array().unwrap().len(), 3);
+    assert_eq!(saved.data["plan_publications"]["phases"]["27"]["publications"]["2"], second["results"][0]);
+}
+
 fn attached(items: Vec<Value>) -> Value {
     json!({"mode":"attached","items":items})
 }
