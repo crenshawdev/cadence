@@ -489,6 +489,8 @@ fn ac2_strict_plan_and_overlap_selection_are_executable_evidence() {
     let second = parse_plan(source(2, "src/a.rs", "second\n").as_bytes(), 6, 2).unwrap();
     let graph = PlanGraph::build(&[first.clone(), second]).unwrap();
     assert_eq!(first.body, "opaque 日本語\n");
+    assert_eq!(graph.ready(&BTreeSet::new()), [1]);
+    assert_eq!(graph.ready(&BTreeSet::from([1])), [2]);
     assert_eq!(graph.next_ready(&BTreeSet::new()), Some(1));
     assert_eq!(graph.next_ready(&BTreeSet::from([1])), Some(2));
 }

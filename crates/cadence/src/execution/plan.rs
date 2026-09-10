@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -492,10 +492,11 @@ pub fn plan_set_fingerprint(plans: &[ExecutionPlan]) -> Result<String, PlanError
     fingerprint_bytes(&values)
 }
 
+/// Numeric single-plan selection. The public type name is retained for callers;
+/// source overlap and dependency edges no longer participate in scheduling.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlanGraph {
     plans: BTreeSet<u32>,
-    prerequisites: BTreeMap<u32, BTreeSet<u32>>,
 }
 
 impl PlanGraph {
@@ -503,58 +504,17 @@ impl PlanGraph {
         let ordered = plans.iter().collect::<Vec<_>>();
         validate_plan_set(&ordered)?;
         let plan_numbers = plans.iter().map(|plan| plan.plan).collect::<BTreeSet<_>>();
-        let mut prerequisites = plan_numbers
-            .iter()
-            .map(|plan| (*plan, BTreeSet::new()))
-            .collect::<BTreeMap<_, _>>();
-        for (index, left) in plans.iter().enumerate() {
-            for right in &plans[index + 1..] {
-                if left
-                    .files
-                    .iter()
-                    .chain(&left.directories)
-                    .any(|path| covers(&right.files, &right.directories, path))
-                    || right
-                        .files
-                        .iter()
-                        .chain(&right.directories)
-                        .any(|path| covers(&left.files, &left.directories, path))
-                {
-                    let (before, after) = if left.plan < right.plan {
-                        (left.plan, right.plan)
-                    } else {
-                        (right.plan, left.plan)
-                    };
-                    prerequisites.entry(after).or_default().insert(before);
-                }
-            }
-        }
         Ok(Self {
             plans: plan_numbers,
-            prerequisites,
         })
     }
 
-    pub fn prerequisites(&self, plan: u32) -> Option<&BTreeSet<u32>> {
-        self.prerequisites.get(&plan)
-    }
-
     pub fn ready(&self, completed: &BTreeSet<u32>) -> Vec<u32> {
-        self.plans
-            .iter()
-            .filter(|plan| {
-                !completed.contains(plan)
-                    && self
-                        .prerequisites
-                        .get(plan)
-                        .is_some_and(|required| required.is_subset(completed))
-            })
-            .copied()
-            .collect()
+        self.next_ready(completed).into_iter().collect()
     }
 
     pub fn next_ready(&self, completed: &BTreeSet<u32>) -> Option<u32> {
-        self.ready(completed).into_iter().next()
+        self.plans.iter().find(|plan| !completed.contains(plan)).copied()
     }
 }
 
@@ -788,42 +748,40 @@ mod tests {
     }
 
     #[test]
-    fn three_plan_overlap_graph_orders_shared_and_transitive_leases() {
+    fn numeric_order_serializes_shared_leases() {
         let plans = [
             fixture(1, &["src/a.rs"], "one"),
             fixture(2, &["src/a.rs", "src/b.rs"], "two"),
             fixture(3, &["src/b.rs"], "three"),
         ];
         let graph = PlanGraph::build(&plans).unwrap();
-        assert_eq!(graph.prerequisites(1).unwrap(), &BTreeSet::new());
-        assert_eq!(graph.prerequisites(2).unwrap(), &BTreeSet::from([1]));
-        assert_eq!(graph.prerequisites(3).unwrap(), &BTreeSet::from([2]));
         assert_eq!(graph.ready(&BTreeSet::new()), [1]);
         assert_eq!(graph.ready(&BTreeSet::from([1])), [2]);
         assert_eq!(graph.ready(&BTreeSet::from([1, 2])), [3]);
     }
 
     #[test]
-    fn disjoint_leases_are_independent_with_plan_number_tie_break() {
+    fn numeric_order_serializes_disjoint_leases() {
         let plans = [
             fixture(3, &["src/c.rs"], "three"),
             fixture(1, &["src/a.rs"], "one"),
             fixture(2, &["src/b.rs"], "two"),
         ];
         let graph = PlanGraph::build(&plans).unwrap();
-        assert_eq!(graph.ready(&BTreeSet::new()), [1, 2, 3]);
+        assert_eq!(graph.ready(&BTreeSet::new()), [1]);
         assert_eq!(graph.next_ready(&BTreeSet::new()), Some(1));
     }
 
     #[test]
-    fn prose_renames_never_create_overlap_edges() {
+    fn prose_renames_do_not_change_numeric_selection() {
         let plans = [
             fixture(1, &["src/old.rs"], "Rename src/old.rs to src/new.rs"),
             fixture(2, &["src/new.rs"], "Depends on the rename above"),
             fixture(3, &["src/other.rs"], "Files: src/old.rs"),
         ];
         let graph = PlanGraph::build(&plans).unwrap();
-        assert_eq!(graph.ready(&BTreeSet::new()), [1, 2, 3]);
+        assert_eq!(graph.ready(&BTreeSet::new()), [1]);
+        assert_eq!(graph.ready(&BTreeSet::from([1])), [2]);
     }
 
     #[test]
