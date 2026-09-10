@@ -932,8 +932,7 @@ impl HistoricalRoot {
         for (relative, bytes) in capture["files"].as_object().unwrap() {
             let relative = Path::new(relative);
             assert!(relative.components().all(|c| matches!(c, std::path::Component::Normal(_))));
-            assert!(relative.starts_with(".planning"));
-            let target = guard.path.join(relative);
+            let target = guard.path.join(".planning").join(relative);
             if bytes.is_null() { fs::create_dir_all(target).unwrap(); }
             else {
                 fs::create_dir_all(target.parent().unwrap()).unwrap();

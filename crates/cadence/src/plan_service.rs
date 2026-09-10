@@ -318,7 +318,7 @@ fn replay_answer(root: &Path, data: &Value, receipt: model::Receipt) -> Result<A
             "current_revision":current.map(|p| &p.revision)}));
     }
     Ok(model::ok("plan-submit", json!({"persisted":true,"replayed":true,
-        "results":receipt.results,"projections":projections})))
+        "payload_digest":receipt.payload_digest,"results":receipt.results,"projections":projections})))
 }
 
 fn path_error(error: cadence::store::Error) -> Result<Answer> {
