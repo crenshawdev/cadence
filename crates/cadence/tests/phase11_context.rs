@@ -318,3 +318,35 @@ fn phase11_sentence_fault_names_rule_and_slot() {
         }
     }
 }
+
+#[test]
+fn phase11_unobservable_attestation_is_refused() {
+    for position in [0, 1, 2] {
+        for attestation in [None, Some(false)] {
+            for approved in [false, true] {
+                let temp = initialized_fixture(true);
+                let before = tree(temp.path());
+                let mut request = submission();
+                let mut truths = Vec::new();
+                for i in 0..3 {
+                    let mut truth = request["submission"]["truths"][0].clone();
+                    truth["id"] = json!(format!("T{}", i+1));
+                    truths.push(truth);
+                }
+                truths[position]["outcome"] = json!("ContextState.approved equals true inside the writer struct");
+                if let Some(value) = attestation { truths[position]["observable"] = json!(value); }
+                else { truths[position].as_object_mut().unwrap().remove("observable"); }
+                request["submission"]["truths"] = json!(truths);
+                let mut client = Client::open(temp.path());
+                let answer = client.call("cadence_apply", if approved { approve(request.clone()) } else { request.clone() });
+                expect_refusal(&answer, "unobservable", "observable", position, &format!("T{}",position+1));
+                request["submission"]["truths"][position]["observable"] = json!(true);
+                let control = client.call("cadence_apply", request);
+                assert_eq!(control["status"], "ok", "owner attestation controls this decision: {control}");
+                assert_eq!(control["persisted"], false);
+                client.finish();
+                assert_eq!(tree(temp.path()), before);
+            }
+        }
+    }
+}
