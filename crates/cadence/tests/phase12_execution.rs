@@ -409,6 +409,290 @@ fn admission_refusal(project:&Path,request:Value,rule:&str,slot:&str,id:&str) ->
     answer
 }
 
+// Native execution checks use caller-owned inputs and the real stdio service.
+struct Tiny {
+    temp: tempfile::TempDir,
+    command: String,
+    checks: Vec<Value>,
+    red: String,
+    green: String,
+    pairs: Vec<Value>,
+}
+
+fn git_value(project: &Path, args: &[&str]) -> String {
+    let output = Command::new("git").args(["-c", "commit.gpgsign=false", "-c", "user.name=Cadence-Phase12", "-c", "user.email=phase12@example.invalid"])
+        .args(args).current_dir(project).env("GNUPGHOME", project.join(".fixture-gnupg"))
+        .env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1").stdin(Stdio::null()).output().unwrap();
+    assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+    String::from_utf8(output.stdout).unwrap().trim_end().to_owned()
+}
+
+fn execution_history(project: &Path) -> Value {
+    let mut client = Client::open(project);
+    let answer = client.call("cadence_query", json!({"operation":"execution-history","phase":12}));
+    assert_eq!(answer["status"], "ok", "{answer}");
+    client.finish();
+    answer
+}
+
+fn task_state(project: &Path, name: &str) -> Value {
+    execution_history(project)["tasks"].as_array().unwrap().iter()
+        .find(|t| t["task"]["plan"] == 1 && t["task"]["task"] == name).unwrap().clone()
+}
+
+impl Tiny {
+    fn project(&self) -> &Path { self.temp.path() }
+    fn new(mode: &str) -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = fixture(); let project = temp.path();
+        fs::create_dir(project.join(".fixture-gnupg")).unwrap();
+        fs::set_permissions(project.join(".fixture-gnupg"), fs::Permissions::from_mode(0o700)).unwrap();
+        let output = Command::new("gpg").env("GNUPGHOME", project.join(".fixture-gnupg"))
+            .args(["--batch","--pinentry-mode","loopback","--passphrase","","--quick-generate-key",
+                "Cadence-Phase12 <phase12@example.invalid>","ed25519","sign","0"]).stdin(Stdio::null()).output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        git_value(project, &["config","user.signingkey","phase12@example.invalid"]);
+        fs::create_dir(project.join("src")).unwrap(); fs::create_dir(project.join(".run")).unwrap();
+        fs::write(project.join(".gitignore"), ".planning/\n.fixture-gnupg/\n.run/\n__pycache__/\n").unwrap();
+        fs::write(project.join("src/tiny.py"), "def answer():\n    return 6\n").unwrap();
+        fs::write(project.join("outside.txt"), "unchanged rename content for source policy\n").unwrap();
+        git_value(project, &["add",".gitignore","src/tiny.py","outside.txt"]);
+        git_value(project, &["commit","-m","Fixture tiny subject"]);
+        native_context(project, &[("truth/A","the first parcel arrives","the first recipient","a receipt"),
+            ("truth/A2","the second parcel arrives","the second recipient","a receipt"),
+            ("truth/B","the third parcel arrives","the third recipient","a receipt")]);
+        let command = if mode == "missing" { "python3 -B missing.py" } else { "python3 -B tests/check.py" }.to_owned();
+        let items: Vec<_> = [("check/A","truth/A"),("check/A2","truth/A2"),("check/B","truth/B")].into_iter().map(|(id,truth)| {
+            let mut item = check(id, &[truth]);
+            item["spec"]["command"] = json!(command);
+            item["spec"]["test"] = json!({"file":"tests/check.py","function":"Check.test_answer"});
+            item["spec"]["expected"] = json!({"kind":"property","value":"answer is seven"});
+            item
+        }).collect();
+        let map = attached(items);
+        // Shared aliases in a second publication still have one closing owner.
+        let mut input = proposal(project, "tiny-plans", &[(None,map.clone()),(None,map)]);
+        for entry in input["submission"]["plans"].as_array_mut().unwrap() {
+            entry["content"]["files"] = json!(["src/tiny.py","tests/check.py","src/renamed.py"]);
+            entry["content"]["directories"] = json!([]);
+            entry["content"]["execution"]["tasks"] = json!([{"id":"A","verify":[command]},{"id":"B","verify":[command]},{"id":"C","verify":[command]}]);
+        }
+        publish(project,&input);
+        let mut allocation = contract(project);
+        let checks = allocation["allocation"][0]["checks"].as_array().unwrap().clone();
+        allocation["allocation"][0]["checks"] = json!(&checks[..2]);
+        allocation["allocation"][1]["checks"] = json!([checks[2]]);
+        let answer = apply(project,admit_request(allocation,"tiny-admit",0)); assert_eq!(answer["status"],"ok","{answer}");
+        let answer = apply(project,json!({"operation":"execution-authorize","phase":12,"request_id":"tiny-authorize","owner":"Fixture Owner",
+            "at":"2026-09-10T14:00:00Z","response":"Proceed with native execution"})); assert_eq!(answer["status"],"ok","{answer}");
+        let mut client = Client::open(project);
+        let dispatch = client.call("cadence_query",json!({"operation":"execute-next","phase":12})); client.finish();
+        assert_eq!(dispatch["status"],"ok","{dispatch}");
+        for (name, allocated) in [("A",json!(&checks[..2])),("B",json!([checks[2]])),("C",json!([]))] {
+            let task = task_state(project,name)["task"].clone();
+            let answer = apply(project,json!({"operation":"execution-task-start","request":{"request_id":format!("start-{name}"),"task":task,
+                "attempt":format!("attempt-{name}"),"expected_version":0,"predecessor":null,"checks":allocated}}));
+            assert_eq!(answer["status"],"ok","{answer}");
+        }
+        fs::create_dir(project.join("tests")).unwrap();
+        let source = if mode == "custom" {
+            "import sys\nsys.path.insert(0, 'src')\nfrom tiny import answer\nvalue = answer()\nif value != 7:\n    print('answer: expected 7, received 6')\n    sys.exit(1)\nprint('answer is seven')\n".to_owned()
+        } else {
+            let setup = if mode == "setup-error" { "    def setUp(self):\n        if answer() == 6:\n            raise RuntimeError('setup stopped')\n" } else { "" };
+            format!("import sys, unittest, pathlib\nsys.path.insert(0, 'src')\nfrom tiny import answer\nunittest.runner.time.perf_counter = lambda: 0.0\nclass Check(unittest.TestCase):\n{setup}    def test_answer(self):\n        pathlib.Path('.run/body').write_text('body ran')\n        self.assertEqual(answer(), 7)\nif __name__ == '__main__':\n    unittest.main()\n")
+        };
+        fs::write(project.join("tests/check.py"), source).unwrap();
+        if mode == "outside" { fs::write(project.join("outside.txt"),"out-of-lease red evidence\n").unwrap(); git_value(project,&["add","outside.txt"]); }
+        if mode == "rename" { git_value(project,&["mv","outside.txt","src/renamed.py"]); }
+        git_value(project,&["add","tests/check.py"]); git_value(project,&["commit","-m","test(12): tiny check red A"]);
+        let red = git_value(project,&["rev-parse","HEAD"]);
+        let mut fixture = Self { temp, command, checks, red, green:String::new(), pairs:vec![] };
+        for i in 0..3 { fixture.run(if i < 2 {"A"} else {"B"},&format!("red-{i}"),Some(i),"red"); }
+        if mode == "setup-error" { assert!(!fixture.project().join(".run/body").exists(),"setUp error must precede the body"); }
+        fs::write(fixture.project().join("src/tiny.py"), "def answer():\n    return 7\n").unwrap();
+        git_value(fixture.project(),&["add","src/tiny.py"]); git_value(fixture.project(),&["commit","-S","-m","feat(12): tiny subject green A"]);
+        fixture.green = git_value(fixture.project(),&["rev-parse","HEAD"]);
+        assert_eq!(git_value(fixture.project(),&["show",&format!("{}:tests/check.py",fixture.red)]),git_value(fixture.project(),&["show",&format!("{}:tests/check.py",fixture.green)]));
+        for i in 0..3 {
+            fixture.run(if i < 2 {"A"} else {"B"},&format!("green-{i}"),Some(i),"green");
+            fixture.pairs.push(json!({"check":fixture.checks[i],"red_commit":fixture.red,"green_commit":fixture.green,
+                "red_run":format!("red-{i}"),"green_run":format!("green-{i}")}));
+        }
+        fixture
+    }
+    fn run(&self, task: &str, id: &str, check: Option<usize>, stage: &str) -> Value {
+        let state = task_state(self.project(),task);
+        let request = json!({"operation":"execution-run","request":{"request_id":id,"task":state["task"],"attempt":format!("attempt-{task}"),
+            "expected_version":state["state"]["version"],"command":self.command,"check":check.map(|i|self.checks[i].clone()),"stage":stage}});
+        let mut client = Client::open(self.project());
+        let launch = client.call("cadence_apply",request.clone()); assert_eq!(launch["status"],"ok","{launch}");
+        let deadline = std::time::Instant::now()+std::time::Duration::from_secs(20);
+        let result = loop {
+            let history = client.call("cadence_query",json!({"operation":"execution-history","phase":12}));
+            if let Some(record) = history["events"].as_array().unwrap().iter().find(|e| e["request"]["event"]["kind"] == "result" && e["request"]["event"]["run_id"] == id) { break record.clone(); }
+            assert!(std::time::Instant::now()<deadline,"runner result timed out: {history}");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert_eq!(client.call("cadence_apply",request)["receipt"],launch["receipt"],"launch replay");
+        client.finish();
+        let event = &result["request"]["event"];
+        assert_eq!(event["material_unchanged"],true,"{event}");
+        assert!(event["observed_at"].as_u64().unwrap()>=launch["receipt"]["request"]["event"]["launched_at"].as_u64().unwrap());
+        for stream in ["stdout","stderr"] {
+            let bytes:Vec<u8>=serde_json::from_value(event[stream]["bytes"].clone()).unwrap();
+            assert_eq!(event[stream]["digest"],model::digest(&bytes)); assert_eq!(event[stream]["complete"],true);
+        }
+        result
+    }
+    fn owner(&self, i: usize, id: &str, affirmative: bool) -> Value {
+        let task = if i<2 {"A"} else {"B"}; let state=task_state(self.project(),task);
+        let history=execution_history(self.project());
+        let launch=history["events"].as_array().unwrap().iter().find(|e|e["request"]["event"]["run_id"]==format!("red-{i}") && e["request"]["event"]["kind"]=="launch").unwrap();
+        let submission=json!({"check":self.checks[i],"test_digest":launch["request"]["event"]["material"]["test_digest"],
+            "evidence":[format!("red-{i}"),format!("green-{i}")],"no_subject_stub":affirmative});
+        json!({"operation":"execution-owner-attest","request":{"request_id":id,"task":state["task"],"attempt":format!("attempt-{task}"),
+            "expected_version":state["state"]["version"],"statement":{"submission":submission,"supersedes":null,
+                "approval":{"approved":true,"owner":"Fixture Owner","at":"2026-09-10T15:00:00Z","submission":submission}}}})
+    }
+    fn attest(&self) {
+        for i in 0..3 { let answer=apply(self.project(),self.owner(i,&format!("owner-{i}"),true)); assert_eq!(answer["status"],"ok","{answer}"); }
+    }
+    fn close(&self, id: &str) -> Value {
+        let state=task_state(self.project(),"A");
+        json!({"operation":"execution-task-close","request":{"request_id":id,"task":state["task"],"attempt":"attempt-A",
+            "expected_version":state["state"]["version"],"completion":self.green,"checks":&self.pairs[..2],"verification":["green-0"]}})
+    }
+    fn classify(&self, index: usize, red: bool) -> Value {
+        let task=if index<2 {"A"} else {"B"};let state=task_state(self.project(),task);
+        let run=format!("{}-{index}",if red {"red"} else {"green"});
+        let history=execution_history(self.project());
+        let result=&history["events"].as_array().unwrap().iter().find(|r|r["request"]["event"]["kind"]=="result" && r["request"]["event"]["run_id"]==run).unwrap()["request"]["event"];
+        let identity=model::digest(format!("{}\n{}",result["stdout"]["digest"].as_str().unwrap(),result["stderr"]["digest"].as_str().unwrap()).as_bytes());
+        let submission=json!({"run_id":run,"output_identity":identity,"check":self.checks[index],"interpretation":if red {"red-eligible"} else {"green-eligible"}});
+        json!({"operation":"execution-classify-run","request":{"request_id":format!("classify-{run}"),"task":state["task"],"attempt":format!("attempt-{task}"),
+            "expected_version":state["state"]["version"],"statement":{"submission":submission,
+                "approval":{"approved":true,"owner":"Fixture Owner","at":"2026-09-10T15:00:00Z","submission":submission}}}})
+    }
+}
+
+fn close_refused(project:&Path, request:Value, rule:&str, ids:&[&str]) -> Value {
+    let before=tree(project);let prior=reopened(project).snapshot;
+    let answer=apply(project,request);assert_eq!(answer["status"],"refused","{answer}");
+    assert_eq!(answer["rule"],rule,"{answer}");
+    for id in ids {assert!(answer["details"]["unsatisfied"].as_array().unwrap().iter().any(|c|c["id"]==*id),"missing {id}: {answer}");}
+    unchanged(project,&before,&prior);answer
+}
+
+#[test]
+fn phase12_task_close_requires_red_then_green() {
+    let fixture=Tiny::new("unittest");fixture.attest();let project=fixture.project();
+    let good=fixture.close("close-A");
+    // Complete caller input is checked against the real public production type.
+    let _:cadence::execution::receipts::CloseApply=serde_json::from_value(good.clone()).unwrap();
+    let history=execution_history(project);
+    for (id,failed,code,needle) in [("red-0",true,1,"6 != 7"),("green-0",false,0,"OK\n")] {
+        let event=&history["events"].as_array().unwrap().iter().find(|r|r["request"]["event"]["kind"]=="result" && r["request"]["event"]["run_id"]==id).unwrap()["request"]["event"];
+        assert_eq!(event["disposition"],json!({"kind":"exited","code":code}));
+        assert_eq!(event["observation"],json!({"class":"results-observed","summary":{"runner":"unittest","failed":failed,"failures":if failed {1}else{0},"errors":0}}));
+        assert_eq!(event["stdout"]["bytes"],json!([]));
+        let stderr=String::from_utf8(serde_json::from_value(event["stderr"]["bytes"].clone()).unwrap()).unwrap();
+        assert!(stderr.contains("Ran 1 test in 0.000s\n"),"{stderr}");assert!(stderr.contains(needle),"{stderr}");
+        if failed {assert!(stderr.ends_with("FAILED (failures=1)\n"));}
+        else {assert_eq!(stderr,".\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n");}
+    }
+    let unrelated=git_value(project,&["commit-tree",&git_value(project,&["rev-parse","HEAD^{tree}"]),"-m","Unrelated evidence"]);
+    for case in 0..13 {
+        let mut bad=good.clone();bad["request"]["request_id"]=json!(format!("invalid-{case}"));
+        let pair=&mut bad["request"]["checks"][0];
+        match case {
+            0=>bad["request"]["checks"]=json!([]),
+            1=>{pair["green_commit"]=json!("");pair["green_run"]=json!("");},
+            2=>{pair["red_commit"]=json!("");pair["red_run"]=json!("");},
+            3=>{pair["red_commit"]=json!(fixture.green);pair["red_run"]=json!("green-0");},
+            4=>{pair["red_commit"]=json!(fixture.green);pair["green_commit"]=json!(fixture.red);pair["red_run"]=json!("green-0");pair["green_run"]=json!("red-0");},
+            5=>pair["red_commit"]=json!(unrelated),
+            6=>pair["check"]["item_revision"]=json!("stale"),
+            7=>pair["red_commit"]=json!("f".repeat(40)),
+            8=>{pair["red_run"]=json!("unrecorded-red");pair["green_run"]=json!("unrecorded-green");},
+            9=>{pair["exit_code"]=json!(1);pair["output"]=json!("caller says red");},
+            10=>pair["green_commit"]=json!(fixture.red),
+            11=>bad["request"]["checks"]=json!([fixture.pairs[2].clone()]),
+            _=>bad["request"]["checks"]=json!([fixture.pairs[0].clone()]),
+        }
+        let expected:&[&str]=if case==12 {&["check/A2"]} else if matches!(case,0|11) {&["check/A","check/A2"]} else {&["check/A"]};
+        close_refused(project,bad,"red-green",expected);
+    }
+    // Real source dirt is refused before spawning another child.
+    fs::write(project.join("src/tiny.py"),"def answer():\n    return 8\n").unwrap();
+    let state=task_state(project,"A");let before=tree(project);let prior=reopened(project).snapshot;
+    let dirty=apply(project,json!({"operation":"execution-run","request":{"request_id":"dirty-run","task":state["task"],"attempt":"attempt-A",
+        "expected_version":state["state"]["version"],"command":fixture.command,"check":fixture.checks[0],"stage":"red"}}));
+    assert_eq!(dirty["status"],"refused","{dirty}");unchanged(project,&before,&prior);
+    git_value(project,&["restore","src/tiny.py"]);
+    // A passing run with changed test bytes cannot pair with the original red.
+    let test=fs::read(project.join("tests/check.py")).unwrap();fs::write(project.join("tests/check.py"),[test.as_slice(),b"\n# Changed test material\n"].concat()).unwrap();
+    git_value(project,&["add","tests/check.py"]);git_value(project,&["commit","-S","-m","test(12): changed check material A"]);
+    let changed=git_value(project,&["rev-parse","HEAD"]);fixture.run("A","changed-green",Some(0),"green");
+    let mut bad=fixture.close("changed-test");bad["request"]["completion"]=json!(changed);bad["request"]["checks"][0]["green_commit"]=json!(changed);bad["request"]["checks"][0]["green_run"]=json!("changed-green");
+    close_refused(project,bad,"red-green",&["check/A"]);git_value(project,&["reset","--hard",&fixture.green]);
+    let accepted_request=fixture.close("close-A");let accepted=apply(project,accepted_request.clone());assert_eq!(accepted["status"],"ok","real red/green should close: {accepted}");
+    let before=tree(project);let prior=reopened(project).snapshot;
+    assert_eq!(apply(project,accepted_request.clone())["receipt"],accepted["receipt"]);unchanged(project,&before,&prior);
+    let mut malformed=accepted_request;malformed["request"]["checks"][0]["red_run"]=json!("replaced");
+    close_refused(project,malformed,"task-request-reuse",&[]);
+    close_refused(project,fixture.close("duplicate-close"),"task-completed",&[]);
+    assert_eq!(task_state(project,"A")["state"]["completed"],true);
+    assert_eq!(git_value(project,&["show",&format!("{}:src/tiny.py",fixture.red)]),"def answer():\n    return 6");
+    assert_eq!(git_value(project,&["show",&format!("{}:src/tiny.py",fixture.green)]),"def answer():\n    return 7");
+    // Explicit empty allocation still needs a signed conventional completion and
+    // observed named verification, but no invented check or owner record.
+    git_value(project,&["commit","--allow-empty","-S","-m","feat(12): finish empty allocation C"]);
+    let empty_commit=git_value(project,&["rev-parse","HEAD"]);fixture.run("C","empty-verify",None,"verify");
+    let state=task_state(project,"C");let empty=apply(project,json!({"operation":"execution-task-close","request":{"request_id":"close-C","task":state["task"],"attempt":"attempt-C",
+        "expected_version":state["state"]["version"],"completion":empty_commit,"checks":[],"verification":["empty-verify"]}}));
+    assert_eq!(empty["status"],"ok","{empty}");
+
+    for mode in ["setup-error","missing","outside","rename"] {
+        let control=Tiny::new(mode);control.attest();let project=control.project();
+        let history=execution_history(project);let result=&history["events"].as_array().unwrap().iter().find(|r|r["request"]["event"]["kind"]=="result" && r["request"]["event"]["run_id"]=="red-0").unwrap()["request"]["event"];
+        if mode=="setup-error" {
+            assert_eq!(result["observation"],json!({"class":"results-observed","summary":{"runner":"unittest","failed":true,"failures":0,"errors":1}}));
+            let request=control.classify(0,true);let answer=apply(project,request);assert_eq!(answer["status"],"refused","known errors cannot be owner-classified: {answer}");
+        }
+        if mode=="missing" {assert_eq!(result["observation"],json!({"class":"unknown"}));assert_eq!(result["disposition"]["code"],2);}
+        let rule=if matches!(mode,"outside"|"rename") {"lease"} else {"red-green"};
+        let answer=close_refused(project,control.close("invalid-control"),rule,if rule=="red-green" {&["check/A","check/A2"]}else{&[]});
+        if matches!(mode,"outside"|"rename") {assert!(answer["reason"].as_str().unwrap().contains("outside.txt"));}
+    }
+    let custom=Tiny::new("custom");custom.attest();let project=custom.project();
+    let before_classification=execution_history(project);
+    for (id,expected,code) in [("red-0","answer: expected 7, received 6\n",1),("green-0","answer is seven\n",0)] {
+        let result=&before_classification["events"].as_array().unwrap().iter().find(|r|r["request"]["event"]["kind"]=="result" && r["request"]["event"]["run_id"]==id).unwrap()["request"]["event"];
+        assert_eq!(result["observation"],json!({"class":"unknown"}));assert_eq!(result["disposition"],json!({"kind":"exited","code":code}));
+        assert_eq!(result["stdout"]["bytes"],json!(expected.as_bytes()));assert_eq!(result["stderr"]["bytes"],json!([]));assert_eq!(result["stdout"]["digest"],model::digest(expected.as_bytes()));
+    }
+    close_refused(project,custom.close("custom-unclassified"),"red-green",&["check/A","check/A2"]);
+    for case in 0..4 {
+        let mut request=custom.classify(0,true);request["request"]["request_id"]=json!(format!("bad-class-{case}"));
+        match case {
+            0=>request["request"]["statement"]["submission"]["output_identity"]=json!("changed"),
+            1=>request["request"]["statement"]["submission"]["check"]["item_revision"]=json!("stale"),
+            2=>request["request"]["statement"]["submission"]["run_id"]=json!("green-0"),
+            _=>{request["request"]["statement"].as_object_mut().unwrap().remove("approval");request["request"]["statement"]["role"]=json!("owner");},
+        }
+        if case<3 {request["request"]["statement"]["approval"]["submission"]=request["request"]["statement"]["submission"].clone();}
+        let before=tree(project);let prior=reopened(project).snapshot;let answer=apply(project,request);assert_eq!(answer["status"],"refused","{answer}");unchanged(project,&before,&prior);
+    }
+    let first=custom.classify(0,true);let accepted=apply(project,first.clone());assert_eq!(accepted["status"],"ok","{accepted}");
+    assert_eq!(apply(project,first)["receipt"],accepted["receipt"]);
+    close_refused(project,custom.close("custom-half"),"red-green",&["check/A","check/A2"]);
+    for (i,red) in [(0,false),(1,true),(1,false)] {let answer=apply(project,custom.classify(i,red));assert_eq!(answer["status"],"ok","{answer}");}
+    let answer=apply(project,custom.close("custom-close"));assert_eq!(answer["status"],"ok","{answer}");
+    let after=execution_history(project);
+    for event in before_classification["events"].as_array().unwrap() {assert!(after["events"].as_array().unwrap().contains(event),"owner interpretation cannot rewrite an observation");}
+    assert_eq!(task_state(project,"A")["state"]["completed"],true);
+}
+
 struct Historical {root:PathBuf,_lock:fs::File}
 impl Historical {
     fn restore() -> Self {
