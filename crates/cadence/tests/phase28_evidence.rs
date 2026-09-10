@@ -483,6 +483,82 @@ fn phase28_item_without_bound_truth_is_refused() {
     assert_ne!(revised[2]["item_revisions"]["shared/opaque"], events[0]["item_revisions"]["shared/opaque"]);
 }
 
+#[test]
+fn phase28_noncurrent_truth_version_is_refused() {
+    for requested in [2_u32, 0, u32::MAX] {
+        for shared in [false, true] {
+            let temp = fixture();
+            let project = temp.path();
+            native_context(project, 27, &["T1", "T2"]);
+            let before = tree(project);
+            let prior = snapshot(project);
+            assert_eq!(prior.data["context"]["phases"]["27"]["truths"][0]["version"], 1);
+            assert_eq!(prior.data["context"]["phases"]["27"]["truths"][1]["version"], 1);
+            let mut item = artifact("opaque/version-item", if shared { &["T1", "T2"] } else { &["T2"] });
+            let edge = usize::from(shared);
+            item["associations"][edge]["truth_version"] = json!(requested);
+            let mut client = Client::open(project);
+            let input = proposal(&mut client, "wrong-version", &[attached(vec![check("one", "T1"),
+                check("two", "T2"), item])], &["# Wrong numeric version\n"]);
+            for answer in [preview(&mut client, &input), client.call("cadence_apply", approve(input))] {
+                assert_refusal(&answer, "truth-version-mismatch", "opaque/version-item");
+                assert_eq!(answer["entry"], 0);
+                assert_eq!(answer["slot"], format!("submission.plans[0].content.evidence_map.items[2].associations[{edge}].truth_version"));
+                let reason = answer["reason"].as_str().unwrap();
+                for text in ["T2".to_owned(), format!("requested {requested}"), "current 1".into()] {
+                    assert!(reason.contains(&text), "{answer}");
+                }
+            }
+            client.finish();
+            assert_unchanged(project, &before, &prior);
+        }
+    }
+
+    let temp = fixture();
+    let project = temp.path();
+    native_context(project, 27, &["T1", "T2"]);
+    let before = tree(project);
+    let prior = snapshot(project);
+    let mut client = Client::open(project);
+    let mut missing = proposal(&mut client, "missing-version", &[attached(vec![check("one", "T1"),
+        check("two", "T2"), artifact("opaque/version-item", &["T1", "T2"])])], &["# Missing numeric version\n"]);
+    missing["submission"]["plans"][0]["content"]["evidence_map"]["items"][2]["associations"][1]
+        .as_object_mut().unwrap().remove("truth_version");
+    let answer = client.call("cadence_apply", approve(missing));
+    assert_refusal(&answer, "evidence-association-shape", "opaque/version-item");
+    assert_eq!(answer["entry"], 0);
+    assert_eq!(answer["slot"], "submission.plans[0].content.evidence_map.items[2].associations[1].truth_version");
+    assert!(answer["reason"].as_str().unwrap().contains("missing"));
+    client.finish();
+    assert_unchanged(project, &before, &prior);
+
+    let mut client = Client::open(project);
+    let items = vec![check("one", "T1"), check("two", "T2"), artifact("opaque/version-item", &["T1", "T2"])];
+    let current = proposal(&mut client, "current-version", &[attached(items.clone())], &["# Explicit version one\n"]);
+    let published = publish(&mut client, &current);
+    client.finish();
+    let saved = reopened(project).snapshot;
+    assert_eq!(saved.data["acceptance_maps"]["phases"]["27"]["revisions"][0]["items"], json!(items));
+    assert_eq!(saved.data["plan_publications"]["phases"]["27"]["publications"]["1"], published["results"][0]);
+
+    let absent = fixture();
+    fs::write(absent.path().join(".planning/phases/27/CONTEXT.md"),
+        "# Handwritten context\nT1 is mentioned here; this is not native approval.\n").unwrap();
+    let before = tree(absent.path());
+    let mut client = Client::open(absent.path());
+    let input = proposal(&mut client, "no-native-truths", &[attached(vec![check("one", "T1")])], &["# Cannot infer approval\n"]);
+    for answer in [preview(&mut client, &input), client.call("cadence_apply", approve(input))] {
+        assert_eq!(answer["status"], "refused", "{answer}");
+        assert_eq!(answer["rule"], "native-approved-truths");
+        assert_eq!(answer["phase"], 27);
+        let reason = answer["reason"].as_str().unwrap();
+        assert!(reason.contains("current") && reason.contains("absent") && reason.contains("context-submit"), "{answer}");
+    }
+    client.finish();
+    assert_eq!(tree(absent.path()), before);
+    assert!(!absent.path().join(".planning/state.json").exists());
+}
+
 fn attached(items: Vec<Value>) -> Value {
     json!({"mode":"attached","items":items})
 }
