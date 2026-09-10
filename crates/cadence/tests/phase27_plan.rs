@@ -645,6 +645,130 @@ fn occupied_fixture() -> tempfile::TempDir {
     temp
 }
 
+fn plan_names(project: &Path) -> Vec<String> {
+    let mut names = fs::read_dir(project.join(".planning/phases/27"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|n| n.starts_with("PLAN"))
+        .collect::<Vec<_>>();
+    names.sort();
+    names
+}
+
+fn admitted_legacy() -> tempfile::TempDir {
+    let temp = fixture();
+    native_context(temp.path(), 27);
+    fs::write(temp.path().join(".planning/phases/27/PLAN-8.md"),
+        "---\nphase: 27\nplan: 8\nrequirements: [T1]\nfiles: [src/shared.txt]\ndirectories: [src/extra]\nexecution:\n  schema: 1\n  suite: printf suite\n  tasks:\n    - id: task-1\n      verify: [printf verified]\n---\n## Evidence map\nLegacy admitted work.\n").unwrap();
+    execution_authority(temp.path());
+    let mut client = Client::open(temp.path());
+    let answer = client.call("cadence_query", json!({"operation":"execute-next","phase":27}));
+    assert_eq!(answer["status"], "ok", "real legacy admission prerequisite: {answer}");
+    assert_eq!(answer["outcome"], "dispatch", "real legacy admission prerequisite: {answer}");
+    client.finish();
+    assert_eq!(reopened(temp.path()).snapshot.data["execution"]["occurrences"]["27"]["active"]["plan"], 8);
+    temp
+}
+
+#[test]
+fn phase27_gap_plan_uses_previously_unused_identity() {
+    let temp = fixture();
+    let project = temp.path();
+    native_context(project, 27);
+    native_context(project, 28);
+    let phase = project.join(".planning/phases/27");
+    fs::create_dir(phase.join("reports")).unwrap();
+    let legacy = [
+        ("PLAN.md", "# Bare legacy reserves one\n"),
+        ("PLAN-3.md", "---\nphase: 27\nplan: 3\n---\n# Legacy three\n"),
+        ("reports/plan-8.md", "PLAN COMPLETE\nPrior report eight\n"),
+        ("SUMMARY.md", "# Prior summary\n"),
+        ("UAT.md", "# Unresolved gap\n"),
+    ];
+    for (path, bytes) in legacy { fs::write(phase.join(path), bytes).unwrap(); }
+    fs::create_dir_all(project.join(".planning/phases/27.1")).unwrap();
+    fs::write(project.join(".planning/phases/27.1/PLAN-70.md"), "Decimal legacy\n").unwrap();
+    let mut client = Client::open(project);
+    let preview = client.read("27", Some(1));
+    assert_eq!(preview["targets"], json!([{"phase":27,"plan":9}]));
+    let first = client.call("cadence_apply", approve(request(&preview, 27, "nine", &["# Native nine\n"])));
+    assert_eq!(first["persisted"], true, "{first}");
+    client.finish();
+    let prior = reopened(project).snapshot;
+    fs::remove_file(phase.join("PLAN-9.md")).unwrap();
+    let mut client = Client::open(project);
+    let preview = client.read("27", Some(1));
+    assert_eq!(preview["targets"], json!([{"phase":27,"plan":10}]));
+    let gap = client.call("cadence_apply", approve(request(&preview, 27, "gap-ten", &["# Additional gap work\n"])));
+    assert_eq!(gap["persisted"], true, "{gap}");
+    client.finish();
+    assert_eq!(plan_names(project), ["PLAN-10.md", "PLAN-3.md", "PLAN.md"]);
+    for (path, bytes) in legacy { assert_eq!(fs::read_to_string(phase.join(path)).unwrap(), bytes); }
+    let saved = reopened(project).snapshot;
+    let occurrence = &saved.data["plan_publications"]["phases"]["27"];
+    assert_eq!(occurrence["high_water"], 10);
+    assert_eq!(occurrence["consumed"], json!([1,3,8,9,10]));
+    assert_eq!(occurrence["id"], "active-cycle:phase:27");
+    assert_eq!(occurrence["publications"]["9"], prior.data["plan_publications"]["phases"]["27"]["publications"]["9"]);
+    assert_eq!(occurrence["receipts"]["nine"], prior.data["plan_publications"]["phases"]["27"]["receipts"]["nine"]);
+    assert_eq!(cadence::execution::plan::parse_plan(&fs::read(phase.join("PLAN-10.md")).unwrap(),27,10).unwrap().body, "# Additional gap work\n");
+    for key in ["context", "execution", "evidence", "import", "source_evidence"] { assert_eq!(saved.data.get(key), prior.data.get(key)); }
+    let mut client = Client::open(project);
+    fs::remove_file(phase.join("reports/plan-8.md")).unwrap();
+    let preview = client.read("27", Some(1));
+    assert_eq!(preview["targets"], json!([{"phase":27,"plan":11}]));
+    let gap = client.call("cadence_apply", approve(request(&preview, 27, "gap-eleven", &["# Another gap\n"])));
+    assert_eq!(gap["persisted"], true, "{gap}");
+    let other = client.read("28", Some(1));
+    assert_eq!(other["targets"], json!([{"phase":28,"plan":1}]));
+    assert_eq!(other["occurrence"], "active-cycle:phase:28");
+    let decimal = client.read("27.1", None);
+    assert_eq!(decimal["inventory"]["occupied"], json!([70]));
+    assert_eq!(decimal["native_truths_approved"], false);
+    assert!(decimal["occurrence"].is_null());
+    assert_eq!(client.read("27.1", Some(1))["rule"], "native-identity");
+    client.finish();
+    assert_eq!(plan_names(project), ["PLAN-10.md", "PLAN-11.md", "PLAN-3.md", "PLAN.md"]);
+    let saved = reopened(project).snapshot;
+    assert_eq!(saved.data["plan_publications"]["phases"]["27"]["high_water"], 11);
+    assert_eq!(saved.data["plan_publications"]["phases"]["27"]["consumed"], json!([1,3,8,9,10,11]));
+    assert_eq!(fs::read_to_string(project.join(".planning/phases/27.1/PLAN-70.md")).unwrap(), "Decimal legacy\n");
+
+    let admitted = admitted_legacy();
+    let before = reopened(admitted.path()).snapshot;
+    fs::remove_file(admitted.path().join(".planning/phases/27/PLAN-8.md")).unwrap();
+    let mut client = Client::open(admitted.path());
+    let preview = client.read("27", Some(1));
+    assert_eq!(preview["targets"], json!([{"phase":27,"plan":9}]));
+    let gap = client.call("cadence_apply", approve(request(&preview, 27, "after-admission", &["# New work\n"])));
+    assert_eq!(gap["persisted"], true, "{gap}");
+    client.finish();
+    assert_eq!(plan_names(admitted.path()), ["PLAN-9.md"]);
+    let after = reopened(admitted.path()).snapshot;
+    assert_eq!(after.data["execution"], before.data["execution"]);
+    assert_eq!(after.data["plan_publications"]["phases"]["27"]["consumed"], json!([8,9]));
+
+    for inputs in [
+        vec![("PLAN.md", "Bare\n"), ("PLAN-1.md", "Alias\n")],
+        vec![("PLAN-01.md", "Leading zero\n")],
+        vec![("PLAN-3.md", "---\nphase: 27\nplan: 4\n---\nConflict\n")],
+    ] {
+        let temp = fixture();
+        native_context(temp.path(), 27);
+        let mut client = Client::open(temp.path());
+        let clean = client.read("27", Some(1));
+        let input = approve(request(&clean, 27, "ambiguous", &["# Must refuse\n"]));
+        for (path, bytes) in inputs { fs::write(temp.path().join(".planning/phases/27").join(path), bytes).unwrap(); }
+        let before = tree(temp.path());
+        for answer in [client.read("27", Some(1)), client.call("cadence_apply", input)] {
+            assert_eq!(answer["rule"], "inventory", "ambiguous surviving evidence: {answer}");
+            assert!(answer["reason"].as_str().unwrap().contains("explicit resolution"), "{answer}");
+        }
+        client.finish();
+        assert_eq!(tree(temp.path()), before);
+    }
+}
+
 #[test]
 fn phase27_multiple_plans_have_distinct_numeric_order() {
     let temp = occupied_fixture();
