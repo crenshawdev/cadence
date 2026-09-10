@@ -411,3 +411,78 @@ fn phase11_eighth_truth_requires_phase_split() {
         assert_eq!(tree(temp.path()), before);
     }
 }
+
+#[test]
+fn phase11_identity_collision_is_refused() {
+    for (source, destination, slot, index, id) in [
+        ("truths", "truths", "truths.id", 1, "T1"),
+        ("durable_decisions", "durable_decisions", "durable_decisions.id", 1, "D-01"),
+        ("decisions", "decisions", "decisions.id", 1, "D-02"),
+        ("durable_decisions", "decisions", "decisions.id", 0, "D-01"),
+        ("truths", "decisions", "decisions.id", 0, "T1"),
+    ] {
+        for approved in [false, true] {
+            let temp = initialized_fixture(true);
+            let before = tree(temp.path());
+            let mut request = submission();
+            if source == destination {
+                let repeated = request["submission"][source][0].clone();
+                request["submission"][destination].as_array_mut().unwrap().push(repeated);
+            } else {
+                request["submission"][destination][0]["id"] = json!(id);
+            }
+            let mut client = Client::open(temp.path());
+            let answer = client.call("cadence_apply", if approved { approve(request) } else { request });
+            expect_refusal(&answer, "identity-collision", slot, index, id);
+            client.finish();
+            assert_eq!(tree(temp.path()), before);
+        }
+    }
+
+    let temp = initialized_fixture(false);
+    let original = approve(submission());
+    let mut client = Client::open(temp.path());
+    let first = client.call("cadence_apply", original.clone());
+    assert_eq!(first["status"], "ok", "T1 and D-01 share a suffix but are distinct full IDs: {first}");
+    assert_eq!(first["persisted"], true);
+    client.finish();
+    let winner = tree(temp.path());
+    for (family, id) in [("truths", "T1"), ("durable_decisions", "D-01"), ("decisions", "D-02")] {
+        for approved in [false, true] {
+            let mut request = submission();
+            request["submission"]["scope"] = json!("A different submission after the first approval.");
+            request["submission"]["truths"][0]["id"] = json!("fresh-truth");
+            request["submission"]["durable_decisions"][0]["id"] = json!("fresh-durable");
+            request["submission"]["decisions"][0]["id"] = json!("fresh-local");
+            request["submission"][family][0]["id"] = json!(id);
+            let mut client = Client::open(temp.path());
+            let answer = client.call("cadence_apply", if approved { approve(request) } else { request });
+            expect_refusal(&answer, "identity-collision", &format!("{family}.id"), 0, id);
+            client.finish();
+            assert_eq!(tree(temp.path()), winner, "the first approved set wins after restart");
+        }
+    }
+    let mut client = Client::open(temp.path());
+    let retry = client.call("cadence_apply", original);
+    assert_eq!(retry["status"], "ok", "an exact durable receipt is a retry: {retry}");
+    assert_eq!(retry["persisted"], true);
+    client.finish();
+    assert_eq!(tree(temp.path()), winner, "exact retry must not create another approval");
+
+    let mut second = submission();
+    second["submission"]["phase"] = json!(12);
+    second["submission"]["title"] = json!("Next context");
+    let mut client = Client::open(temp.path());
+    let answer = client.call("cadence_apply", approve(second));
+    assert_eq!(answer["status"], "ok", "full identities are phase-scoped: {answer}");
+    client.finish();
+    let after = tree(temp.path());
+    let mut allowed = winner.clone();
+    for path in [".planning/phases/12", ".planning/phases/12/CONTEXT.md", ".planning/state.json"] {
+        allowed.insert(PathBuf::from(path), after[Path::new(path)].clone());
+    }
+    assert_eq!(after, allowed, "phase 11 winner and all unrelated files survive phase 12");
+    let data: Value = serde_json::from_slice(&fs::read(temp.path().join(".planning/state.json")).unwrap()).unwrap();
+    assert_eq!(data["data"]["context"]["phases"]["12"]["truths"][0]["id"], "T1");
+    assert_eq!(data["data"]["context"]["phases"]["11"]["truths"][0]["id"], "T1");
+}
