@@ -416,3 +416,60 @@ fn phase29_check_without_command_is_refused() {
     client.finish();
     unchanged(project, &before, &prior);
 }
+
+#[test]
+fn phase29_check_without_expected_output_is_refused() {
+    let temp = fixture();
+    let project = temp.path();
+    let truth = "truth/full/delivery";
+    native_context(project, &[(truth, "the sender sends the parcel", "the recipient", "a receipt")]);
+    publish(project, &proposal(project, "winner", &[(None, attached(vec![check("check/full/output", &[truth])]))]));
+    let mut cases = vec![(None, "spec.expected"), (Some(Value::Null), "spec.expected"),
+        (Some(json!("receipt")), "spec.expected"), (Some(json!(false)), "spec.expected"),
+        (Some(json!(1)), "spec.expected"), (Some(json!([])), "spec.expected")];
+    for kind in [None, Some(Value::Null), Some(json!(3)), Some(json!([])), Some(json!({})), Some(json!("unknown"))] {
+        let mut expected = json!({"value":"receipt"});
+        if let Some(kind) = kind { expected["kind"] = kind; }
+        cases.push((Some(expected), "spec.expected.kind"));
+    }
+    for kind in ["literal", "property"] {
+        for value in [None, Some(Value::Null), Some(json!(true)), Some(json!(17)), Some(json!({})), Some(json!([])),
+            Some(json!("")), Some(json!("  ")), Some(json!("\t\n")), Some(json!("\u{2003}\u{a0}"))]
+        {
+            let mut expected = json!({"kind":kind});
+            if let Some(value) = value { expected["value"] = value; }
+            cases.push((Some(expected), "spec.expected.value"));
+        }
+    }
+    for (n, (expected, field)) in cases.into_iter().enumerate() {
+        let mut item = check("check/full/output", &[truth]);
+        if let Some(expected) = expected { item["spec"]["expected"] = expected; }
+        else { item["spec"].as_object_mut().unwrap().remove("expected"); }
+        let input = proposal(project, &format!("missing-output-{n}"), &[
+            (None, attached(vec![artifact("first-plan", &[truth])])),
+            (Some(1), attached(vec![artifact("first-item", &[truth]), item]))]);
+        for answer in refusals(project, &input) {
+            located(&answer, "check-expected", "check/full/output", 1, 1, field);
+        }
+    }
+    for (n, expected) in [json!({"kind":"literal","value":"receipt"}),
+        json!({"kind":"property","value":"stdout is empty and the exit status is zero"}),
+        json!({"kind":"literal","value":"  receipt\t\n"}),
+        json!({"kind":"property","value":" \u{2003}owner-defined oracle\n"})].into_iter().enumerate()
+    {
+        let mut item = check("check/full/output", &[truth]);
+        item["spec"]["expected"] = expected;
+        publish(project, &proposal(project, &format!("output-control-{n}"), &[(Some(1), attached(vec![item]))]));
+    }
+    let mut item = check("check/draft", &[truth]);
+    item["spec"]["expected"] = json!({"kind":"literal","value":""});
+    let input = proposal(project, "output-draft", &[(None, attached(vec![item]))]);
+    let before = tree(project);
+    let prior = snapshot(project);
+    let mut client = Client::open(project);
+    let answer = client.call("cadence_apply", input);
+    assert_eq!(answer["persisted"], false);
+    assert_eq!(answer["validation"], "draft");
+    client.finish();
+    unchanged(project, &before, &prior);
+}
