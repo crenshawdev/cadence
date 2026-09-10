@@ -190,6 +190,101 @@ fn reopened(project: &Path) -> cadence::store::writer::View {
     })
 }
 
+fn assert_refusal(answer: &Value, rule: &str, id: &str) {
+    assert_eq!(answer["status"], "refused", "{answer}");
+    assert_eq!(answer["rule"], rule, "{answer}");
+    assert_eq!(answer["phase"], 27, "{answer}");
+    assert_eq!(answer["id"], id, "{answer}");
+}
+
+fn publish(client: &mut Client, input: &Value) -> Value {
+    let completed = preview(client, input);
+    let approved = approve(final_request(&completed));
+    let answer = client.call("cadence_apply", approved);
+    assert_eq!(answer["persisted"], true, "{answer}");
+    answer
+}
+
+#[test]
+fn phase28_uncovered_current_truth_is_refused() {
+    for map in [attached(vec![check("one", "T1")]), attached(vec![])] {
+        let temp = fixture();
+        let project = temp.path();
+        native_context(project, 27, &["T1", "truth/full/T2"]);
+        let before = tree(project);
+        let prior = snapshot(project);
+        let mut client = Client::open(project);
+        let input = proposal(&mut client, "uncovered", std::slice::from_ref(&map), &["# Proposed\n"]);
+        let missing = if map["items"].as_array().unwrap().is_empty() { "T1" } else { "truth/full/T2" };
+        let answer = preview(&mut client, &input);
+        assert_refusal(&answer, "uncovered-truth", missing);
+        let answer = client.call("cadence_apply", approve(input));
+        assert_refusal(&answer, "uncovered-truth", missing);
+        client.finish();
+        assert_unchanged(project, &before, &prior);
+    }
+
+    let temp = fixture();
+    let project = temp.path();
+    native_context(project, 27, &["T1", "truth/full/T2"]);
+    let before = tree(project);
+    let prior = snapshot(project);
+    let mut client = Client::open(project);
+    let split = proposal(&mut client, "split", &[
+        attached(vec![check("one", "T1")]),
+        attached(vec![check("two", "truth/full/T2")]),
+    ], &["# First\n", "# Second\n"]);
+    let previewed = preview(&mut client, &split);
+    let approved = approve(final_request(&previewed));
+    client.finish();
+    assert_unchanged(project, &before, &prior);
+    let mut client = Client::open(project);
+    let published = client.call("cadence_apply", approved);
+    assert_eq!(published["persisted"], true, "{published}");
+    assert_eq!(published["results"].as_array().unwrap().len(), 2);
+    client.finish();
+    let before = tree(project);
+    let prior = reopened(project).snapshot;
+    let old = fs::read_to_string(project.join(".planning/phases/27/PLAN-2.md")).unwrap();
+    let mut client = Client::open(project);
+    let removes_t2 = replacement(&mut client, "removes-t2", 2, &published["results"][1], &old,
+        attached(vec![]), "# Replacement\n");
+    assert_refusal(&preview(&mut client, &removes_t2), "uncovered-truth", "truth/full/T2");
+    assert_refusal(&client.call("cadence_apply", approve(removes_t2)), "uncovered-truth", "truth/full/T2");
+    client.finish();
+    assert_unchanged(project, &before, &prior);
+
+    let mut client = Client::open(project);
+    let gap = proposal(&mut client, "gap", &[attached(vec![artifact("gap-address", &["T1"])])], &["# Gap\n"]);
+    let gap = publish(&mut client, &gap);
+    assert_eq!(gap["results"][0]["identity"], json!({"phase":27,"plan":3}));
+    assert_eq!(gap["results"][0]["content"]["evidence_map"]["items"].as_array().unwrap().len(), 1);
+    client.finish();
+    let saved = reopened(project).snapshot;
+    assert_eq!(saved.data["acceptance_maps"]["phases"]["27"]["revisions"].as_array().unwrap().len(), 3);
+    assert_eq!(saved.data["plan_publications"]["phases"]["27"]["publications"]["1"], published["results"][0]);
+    assert_eq!(saved.data["plan_publications"]["phases"]["27"]["publications"]["2"], published["results"][1]);
+
+    // Provisional removal is not a validated map. Its missing coverage remains visible.
+    let mut client = Client::open(project);
+    let provisional = replacement(&mut client, "provisional-removal", 2, &published["results"][1], &old,
+        json!({"mode":"provisional"}), "# Provisional replacement\n");
+    let complete = preview(&mut client, &provisional);
+    assert_eq!(complete["coverage"]["uncovered"], json!(["truth/full/T2"]));
+    let provisional = client.call("cadence_apply", approve(final_request(&complete)));
+    assert_eq!(provisional["persisted"], true, "{provisional}");
+    assert_eq!(provisional["coverage"]["uncovered"], json!(["truth/full/T2"]));
+    client.finish();
+    let before = tree(project);
+    let prior = reopened(project).snapshot;
+    let mut client = Client::open(project);
+    let stale_history = proposal(&mut client, "old-cannot-cover", &[attached(vec![])], &["# Gap\n"]);
+    assert_refusal(&preview(&mut client, &stale_history), "uncovered-truth", "truth/full/T2");
+    assert_refusal(&client.call("cadence_apply", approve(stale_history)), "uncovered-truth", "truth/full/T2");
+    client.finish();
+    assert_unchanged(project, &before, &prior);
+}
+
 fn attached(items: Vec<Value>) -> Value {
     json!({"mode":"attached","items":items})
 }
