@@ -237,7 +237,10 @@ struct VersionArguments {}
 #[serde(tag = "operation", deny_unknown_fields)]
 enum QueryArguments {
     #[serde(rename = "plan-read")]
-    PlanRead { phase: String, count: Option<u32> },
+    PlanRead {
+        phase_address: String,
+        count: Option<u32>,
+    },
     #[serde(rename = "context-intake")]
     ContextIntake { phase: NonZeroU32 },
     #[serde(rename = "route")]
@@ -623,10 +626,19 @@ impl ServerHandler for PublicServer {
                 }
                 if raw.as_ref().and_then(|v| v["operation"].as_str()) == Some("plan-read") {
                     let answer = match serde_json::from_value::<QueryArguments>(raw.unwrap()) {
-                        Ok(QueryArguments::PlanRead { phase, count }) => {
+                        Ok(QueryArguments::PlanRead {
+                            phase_address,
+                            count,
+                        }) => {
                             self.server
                                 .service
-                                .plan(&self.root, plan_service::Command::Read { phase, count })
+                                .plan(
+                                    &self.root,
+                                    plan_service::Command::Read {
+                                        phase: phase_address,
+                                        count,
+                                    },
+                                )
                                 .await
                         }
                         _ => Ok(cadence::plan::model::refused(

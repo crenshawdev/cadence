@@ -72,7 +72,7 @@ impl Client {
     fn read(&mut self, phase: &str, count: Option<u32>) -> Value {
         self.call(
             "cadence_query",
-            json!({"operation":"plan-read","phase":phase,"count":count}),
+            json!({"operation":"plan-read","phase_address":phase,"count":count}),
         )
     }
     fn finish(mut self) {
