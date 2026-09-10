@@ -71,6 +71,9 @@ pub mod config_service;
 #[path = "review_service.rs"]
 pub mod review_service;
 
+#[path = "context_service.rs"]
+pub mod context_service;
+
 /// What `cadence_version` reports on success.
 ///
 /// A struct rather than a bare string because an `ok` envelope's payload sits
@@ -230,6 +233,8 @@ struct VersionArguments {}
 #[derive(Deserialize, JsonSchema)]
 #[serde(tag = "operation", deny_unknown_fields)]
 enum QueryArguments {
+    #[serde(rename = "context-intake")]
+    ContextIntake { phase: NonZeroU32 },
     #[serde(rename = "route")]
     Route {
         role: String,
@@ -260,6 +265,7 @@ enum QueryArguments {
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyArguments {
+    Context(cadence::context::model::Apply),
     Review(review_service::Apply),
     Config(config_service::Apply),
     Executor(ExecutorPatch),
@@ -270,6 +276,7 @@ enum ApplyArguments {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyOutput {
+    Context(Box<cadence::context::model::Answer>),
     Review(Box<Envelope<review_service::Output>>),
     Config(Box<Envelope<config_service::Output>>),
     Execution(ExecutionEnvelope),
@@ -280,6 +287,7 @@ enum ApplyOutput {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 enum QueryOutput {
+    Context(Box<cadence::context::model::Answer>),
     Review(Box<Envelope<review_service::Output>>),
     Config(Box<Envelope<config_service::Output>>),
     Surfaces(Box<Envelope<cadence::rail::surfaces::Report>>),
@@ -580,6 +588,13 @@ impl ServerHandler for PublicServer {
                 .into())
             }
             "cadence_query" => {
+                if raw.as_ref().and_then(|v| v["operation"].as_str()) == Some("context-intake") {
+                    let answer = match serde_json::from_value::<QueryArguments>(raw.clone().unwrap()) {
+                        Ok(QueryArguments::ContextIntake { phase }) => self.server.service.context(&self.root, context_service::Command::Intake(phase.get())).await,
+                        _ => Ok(cadence::context::model::refused("phase", "phase", "context intake needs a positive phase number", None, None, None)),
+                    };
+                    return structured_result(answer.map(|answer| QueryOutput::Context(Box::new(answer))));
+                }
                 if raw
                     .as_ref()
                     .and_then(|v| v["operation"].as_str())
@@ -626,6 +641,7 @@ impl ServerHandler for PublicServer {
                                 .map(|answer| QueryOutput::Config(Box::new(answer))),
                         );
                     }
+                    Some(QueryArguments::ContextIntake { .. }) => unreachable!("context intake is decoded before execution fallback"),
                     None if raw.as_ref().and_then(|value| value["operation"].as_str())
                         == Some("route") =>
                     {
@@ -741,6 +757,9 @@ impl ServerHandler for PublicServer {
                 structured_result(Ok(QueryOutput::Execution(envelope)))
             }
             "cadence_apply" => {
+                if raw.as_ref().and_then(|v| v["operation"].as_str()) == Some("context-submit") {
+                    return structured_result(self.server.service.context(&self.root, context_service::Command::Apply(raw.unwrap())).await.map(|answer| ApplyOutput::Context(Box::new(answer))));
+                }
                 if raw
                     .as_ref()
                     .and_then(|v| v["operation"].as_str())
@@ -791,6 +810,10 @@ impl ServerHandler for PublicServer {
                                 .await
                                 .map(|answer| ApplyOutput::Config(Box::new(answer))),
                         );
+                    }
+                    Some(ApplyArguments::Context(request)) => {
+                        let cadence::context::model::Apply::Submit { .. } = request;
+                        unreachable!("context submission is decoded before execution fallback")
                     }
                     None if raw
                         .as_ref()

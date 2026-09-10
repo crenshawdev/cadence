@@ -3,6 +3,7 @@ extern crate self as cadence;
 /// Two persisted layers; defaults and migration evidence are never a layer.
 pub mod config;
 pub mod config_service;
+pub mod context;
 pub mod derivation;
 pub mod envelope;
 pub mod evidence;
