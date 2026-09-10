@@ -449,6 +449,66 @@ pub struct ExecutionBasis {
 }
 
 pub const EXECUTION_MATERIAL: &str = "rail_execution_material";
+pub const NATIVE_EXECUTION_MATERIAL: &str = "native_execution_material";
+
+/// Native evidence commits participate in the same risk range, while the
+/// original dispatch and admission remain stable across a gap extension.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeExecutionBasis {
+    pub schema: String,
+    pub task: crate::execution::history::Task,
+    pub execution: ExecutionBasis,
+    pub source: crate::execution::receipts::SourceMaterial,
+}
+
+impl NativeExecutionBasis {
+    pub fn new(active: &crate::execution::model::ActiveDispatch, task: crate::execution::history::Task,
+        source: crate::execution::receipts::SourceMaterial, transition_id: String) -> Result<Self> {
+        if active.phase != task.phase || active.plan != task.plan {
+            return Err(Error::Invalid("native material differs from active dispatch".into()));
+        }
+        let mut commits = source.evidence_commits.clone();
+        commits.retain(|sha| sha != &source.completion);
+        commits.push(source.completion.clone());
+        let execution = ExecutionBasis { version: 1, phase: active.phase, plan: active.plan, dispatch_id: active.id.clone(),
+            plan_set_fingerprint: active.plan_set_fingerprint.clone(), plan_fingerprint: active.plan_fingerprint.clone(),
+            base_id: active.base_sha.clone(), commits, transition_id };
+        execution.validate()?;
+        Ok(Self { schema: "native-execution-material-1".into(), task, execution, source })
+    }
+
+    pub fn material(&self) -> MaterialIdentity {
+        MaterialIdentity::Committed { base_id: self.execution.base_id.clone(), head_id: self.source.completion.clone() }
+    }
+}
+
+pub fn native_execution_bases(data: &serde_json::Value) -> Result<Vec<NativeExecutionBasis>> {
+    let records: Vec<NativeExecutionBasis> = data.get(NATIVE_EXECUTION_MATERIAL).cloned().map(serde_json::from_value).transpose()?.unwrap_or_default();
+    let mut seen = BTreeSet::new();
+    for record in &records {
+        record.execution.validate()?;
+        if record.schema != "native-execution-material-1" || record.task.phase != record.execution.phase || record.task.plan != record.execution.plan
+            || record.execution.commits.last() != Some(&record.source.completion) || !seen.insert(&record.execution.transition_id) {
+            return Err(Error::Invalid("native material identity or encoding differs".into()));
+        }
+    }
+    Ok(records)
+}
+
+pub fn project_native_execution_basis(data: &serde_json::Value, basis: &NativeExecutionBasis) -> Result<serde_json::Value> {
+    let mut records = native_execution_bases(data)?;
+    if let Some(prior) = records.iter().find(|r| r.execution.transition_id == basis.execution.transition_id) {
+        if prior != basis { return Err(Error::Conflict("native material identity reused".into())); }
+        return Ok(data.clone());
+    }
+    records.push(basis.clone());
+    let mut next = data.clone();
+    next.as_object_mut().ok_or_else(|| Error::Invalid("native material snapshot must be an object".into()))?
+        .insert(NATIVE_EXECUTION_MATERIAL.into(), serde_json::to_value(records)?);
+    native_execution_bases(&next)?;
+    Ok(next)
+}
 
 impl ExecutionBasis {
     pub fn from_accepted(

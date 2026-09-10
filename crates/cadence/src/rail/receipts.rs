@@ -593,6 +593,9 @@ pub fn finalize_execution(
     phase: u32,
     requirements: &[Requirement],
 ) -> Result<serde_json::Value> {
+    if !crate::execution::admission::records(data, phase)?.is_empty() {
+        return Err(invalid("native finalization requires the plan-close suite lifecycle"));
+    }
     use crate::execution::model::{ExecutionSnapshot, PlanDisposition, TerminalOutcome};
     let mut execution: ExecutionSnapshot = serde_json::from_value(
         data.get("execution")

@@ -506,6 +506,99 @@ fn native_owner_statements_bind_exact_inspection() {
     });
 }
 
+#[test]
+fn native_material_includes_scoped_evidence_commits() {
+    use super::{admission, history::Task, receipts, dispatch::build_dispatch};
+    use crate::{rail::risk, store::{filesystem::Filesystem, writer::{Store, Operation, PlanningPolicy}, model::digest}};
+    use std::os::unix::fs::PermissionsExt;
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let temp = tempfile::tempdir().unwrap(); let project = temp.path().join("repo"); let root = project.join(".planning");
+        std::fs::create_dir_all(root.join("phases/12")).unwrap(); std::fs::create_dir_all(project.join("src")).unwrap();
+        let home = temp.path().join("gnupg"); std::fs::create_dir(&home).unwrap(); std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let output = Command::new("gpg").env("GNUPGHOME", &home).args(["--batch", "--pinentry-mode", "loopback", "--passphrase", "", "--quick-generate-key",
+            "Cadence-Phase12 <phase12@example.invalid>", "ed25519", "sign", "0"]).stdin(std::process::Stdio::null()).output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        let wrapper = temp.path().join("gpg-fixture");
+        std::fs::write(&wrapper, format!("#!/bin/sh\nexec gpg --homedir '{}' \"$@\"\n", home.to_str().unwrap().replace('\'', "'\\''"))).unwrap();
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let git = |args: &[&str]| {
+            let output = Command::new("git").args(["-c", "commit.gpgsign=false", "-c", "user.name=Cadence-Phase12", "-c", "user.email=phase12@example.invalid"])
+                .args(args).env("GNUPGHOME", &home).env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1")
+                .current_dir(&project).stdin(std::process::Stdio::null()).output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr)); String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        };
+        git(&["init", "--initial-branch=fixture/material"]); git(&["config", "gpg.program", wrapper.to_str().unwrap()]);
+        git(&["config", "user.signingkey", "phase12@example.invalid"]);
+        std::fs::write(project.join(".gitignore"), ".planning/\n").unwrap();
+        std::fs::write(project.join("src/delivery.rs"), "answer six\n").unwrap();
+        std::fs::write(project.join("outside.txt"), "rename material with enough bytes to detect exactly\n").unwrap();
+        git(&["add", ".gitignore", "src/delivery.rs", "outside.txt"]); git(&["commit", "-m", "Fixture base"]);
+        let base = git(&["rev-parse", "HEAD"]);
+        std::fs::write(project.join("test.py"), "assert answer() == 7\n").unwrap();
+        git(&["add", "test.py"]); git(&["commit", "-m", "test(12): failing assertion deliver"]);
+        let red = git(&["rev-parse", "HEAD"]);
+        std::fs::write(project.join("src/delivery.rs"), "answer seven\n").unwrap();
+        git(&["add", "src/delivery.rs"]); git(&["commit", "-S", "-m", "feat(12): correct answer deliver"]);
+        let green = git(&["rev-parse", "HEAD"]);
+        let (data, documents, contract) = native_unit_contract("custom-delivery-check");
+        for (path, bytes) in &documents { std::fs::write(root.join(path), bytes).unwrap(); }
+        let store = Store::open(Filesystem::new(&root).unwrap(), PlanningPolicy).await.unwrap();
+        let view = store.request(Operation::RewriteSnapshot(data)).await.unwrap();
+        let view = store.request(Operation::NativeAdmissionV1 { expected_generation: view.snapshot.generation, expected_integrity: view.snapshot.integrity,
+            request: Box::new(admission::Request { request_id: "admit-material".into(), expected_set_version: 0, contract: contract.clone() }) }).await.unwrap();
+        let basis = admission::records(&view.snapshot.data, 12).unwrap().remove(0);
+        let task = Task { phase: 12, occurrence: contract.occurrence.clone(), admission_digest: basis.request_digest, plan: 1, task: "deliver".into() };
+        let mut plan = parse_plan(documents["phases/12/PLAN-1.md"].as_bytes(), 12, 1).unwrap();
+        // Unit dispatch authority explicitly leases the test and rename target.
+        plan.files.extend(["test.py".into(), "src/renamed.rs".into()]);
+        let active = build_dispatch(&plan, &digest(b"original-set"), 0, &base, 1).unwrap();
+        let material = receipts::observe_source(&project, &active, "deliver", &green, std::slice::from_ref(&red)).unwrap();
+        assert_eq!(material.commit_paths[&red], vec!["test.py"]); assert_eq!(material.commit_paths[&green], vec!["src/delivery.rs"]);
+        assert_eq!(material.staged_objects, Vec::<u8>::new()); assert_eq!(material.staged_paths, Vec::<String>::new());
+        let native = risk::NativeExecutionBasis::new(&active, task, material.clone(), digest(b"unit-close-material")).unwrap();
+        assert_eq!(native.execution.commits, vec![red.clone(), green.clone()]);
+        assert_eq!(native.material(), risk::MaterialIdentity::Committed { base_id: base.clone(), head_id: green.clone() });
+        let data = risk::project_native_execution_basis(&view.snapshot.data, &native).unwrap();
+        let view = store.request(Operation::CompareRewriteSnapshot { expected_generation: view.snapshot.generation, expected_integrity: view.snapshot.integrity, data }).await.unwrap();
+        let retained = serde_json::to_vec(&risk::native_execution_bases(&view.snapshot.data).unwrap()).unwrap();
+        // A real approved gap publication and admission extension preserve the
+        // material's original task/admission/dispatch identity.
+        let inventory = crate::plan::inventory::read(&root, "12", &view.snapshot.data).unwrap();
+        let mut content = crate::plan::persistence::saved(&view.snapshot.data,12).unwrap().unwrap().publications[&1].content.clone();
+        content.plan = 3.try_into().unwrap();
+        let submission = crate::plan::model::Submission { phase: 12.try_into().unwrap(), occurrence: contract.occurrence.clone(), request_id: "material-gap".into(),
+            inventory_basis: inventory.basis.clone(), plans: vec![crate::plan::model::Entry { target: crate::plan::model::Identity { phase: 12.try_into().unwrap(), plan: 3.try_into().unwrap() }, content, replacement: None }] };
+        let approval = crate::plan::model::Approval { approved: true, owner: Some("Fixture Owner".into()), at: Some("2026-09-10T15:00:00Z".into()), submission: Some(submission.clone()) };
+        let (next, publications) = crate::plan::persistence::contribute(&view.snapshot.data, &submission, &approval, &inventory).unwrap();
+        let publication = &publications[0];
+        let view = store.request(Operation::CompareTransact { expected_generation: view.snapshot.generation, expected_integrity: view.snapshot.integrity,
+            transaction: crate::store::transaction::Transaction { id: "gap-publication".into(), items: vec![], decisions: vec![], snapshot: Some(next),
+                external: vec![crate::store::transaction::ExternalChange { target: "phase-plan:12:3".into(),
+                    expected: crate::store::Storage::read(&mut Filesystem::new(&root).unwrap(), "phase-plan:12:3").unwrap(), bytes: crate::plan::render::document(&publication.content).unwrap() }] } }).await.unwrap();
+        let mut extended = contract;
+        extended.plans.push(admission::Binding { plan: 3, publication_request: "material-gap".into(), content_revision: publication.revision.clone(), map_revision: publication.map_revision.clone().unwrap() });
+        for task in ["deliver", "document"] { extended.allocation.push(super::allocation::Assignment { plan: 3, task: task.into(), checks: vec![] }); }
+        store.request(Operation::NativeAdmissionV1 { expected_generation: view.snapshot.generation, expected_integrity: view.snapshot.integrity,
+            request: Box::new(admission::Request { request_id: "extend-material".into(), expected_set_version: 1, contract: extended }) }).await.unwrap();
+        drop(store);
+        let store = Store::open(Filesystem::new(&root).unwrap(), PlanningPolicy).await.unwrap();
+        let view = store.request(Operation::ReadVerified).await.unwrap();
+        assert_eq!(serde_json::to_vec(&risk::native_execution_bases(&view.snapshot.data).unwrap()).unwrap(), retained);
+        assert_eq!(admission::records(&view.snapshot.data, 12).unwrap().len(), 2);
+        std::fs::write(project.join("src/delivery.rs"), "staged correction\n").unwrap(); git(&["add", "src/delivery.rs"]);
+        assert!(receipts::reobserve_source(&project, &active, "deliver", &material).unwrap_err().to_string().contains("staged inputs changed"));
+        git(&["reset", "--hard", &green]);
+        std::fs::write(project.join("outside.txt"), "changed outside lease\n").unwrap(); git(&["add", "outside.txt"]); git(&["commit", "-m", "test(12): evidence outside lease"]);
+        let outside = git(&["rev-parse", "HEAD"]);
+        assert!(receipts::observe_source(&project, &active, "deliver", &green, &[red.clone(), outside]).unwrap_err().to_string().contains("out-of-lease path: outside.txt"));
+        git(&["reset", "--hard", &green]); git(&["mv", "outside.txt", "src/renamed.rs"]); git(&["commit", "-m", "test(12): rename evidence"]);
+        let rename = git(&["rev-parse", "HEAD"]);
+        assert_eq!(receipts::commit_paths(&project, &rename).unwrap(), vec!["outside.txt", "src/renamed.rs"]);
+        assert!(receipts::observe_source(&project, &active, "deliver", &green, &[red, rename]).unwrap_err().to_string().contains("out-of-lease path: outside.txt"));
+        assert_eq!(git(&["show", &format!("{green}:src/delivery.rs")]), "answer seven");
+    });
+}
+
 fn schema_fixture() -> serde_json::Value {
     json!({
         "schema": 1, "kind": "executor", "dispatch_id": "dispatch-1",

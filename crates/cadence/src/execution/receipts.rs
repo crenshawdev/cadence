@@ -176,3 +176,115 @@ pub fn owner_eligible(statement: &OwnerStatement, check: &Check, test_digest: &s
         && statement.submission.check == *check && statement.submission.test_digest == test_digest
         && statement.submission.evidence == evidence
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SourceMaterial {
+    pub completion: String,
+    pub evidence_commits: Vec<String>,
+    pub commit_paths: std::collections::BTreeMap<String, Vec<String>>,
+    pub staged_objects: Vec<u8>,
+    pub staged_paths: Vec<String>,
+}
+
+/// Git's NUL protocol preserves both rename endpoints and rejects lossy paths.
+pub fn read_name_status(bytes: &[u8]) -> Result<Vec<String>, String> {
+    if bytes.is_empty() { return Ok(Vec::new()) }
+    if bytes.last() != Some(&0) { return Err("unterminated Git name-status record".into()) }
+    let mut fields = bytes[..bytes.len() - 1].split(|byte| *byte == 0);
+    let mut paths = std::collections::BTreeSet::new();
+    while let Some(status) = fields.next() {
+        let status = std::str::from_utf8(status).map_err(|_| "invalid Git status")?;
+        let endpoints = match status.as_bytes() {
+            [b'A' | b'D' | b'M' | b'T'] => 1,
+            [b'R' | b'C', score @ ..] if !score.is_empty() && score.iter().all(u8::is_ascii_digit)
+                && std::str::from_utf8(score).ok().and_then(|s| s.parse::<u32>().ok()).is_some_and(|n| n <= 100) => 2,
+            [b'M', score @ ..] if !score.is_empty() && score.iter().all(u8::is_ascii_digit)
+                && std::str::from_utf8(score).ok().and_then(|s| s.parse::<u32>().ok()).is_some_and(|n| n <= 100) => 1,
+            _ => return Err("invalid or unresolved Git name-status record".into()),
+        };
+        for _ in 0..endpoints {
+            let path = fields.next().ok_or("missing Git rename/path endpoint")?;
+            let path = std::str::from_utf8(path).map_err(|_| "Git path is not valid UTF-8")?;
+            if !super::patch::safe_relative_path(path) { return Err("Git path is not a safe relative path".into()) }
+            paths.insert(path.to_owned());
+        }
+    }
+    Ok(paths.into_iter().collect())
+}
+
+pub fn conventional_subject(subject: &str, task_id: &str) -> bool {
+    let Some((prefix, description)) = subject.split_once(": ") else { return false };
+    if description.trim().is_empty() { return false }
+    let prefix = prefix.strip_suffix('!').unwrap_or(prefix);
+    let valid_type = if let Some((kind, scope)) = prefix.split_once('(') {
+        kind.bytes().all(|byte| byte.is_ascii_lowercase()) && !kind.is_empty() && scope.ends_with(')') && scope.len() > 1
+            && !scope[..scope.len() - 1].chars().any(char::is_whitespace)
+    } else { !prefix.is_empty() && prefix.bytes().all(|byte| byte.is_ascii_lowercase()) };
+    valid_type && description.split(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))).any(|word| word == task_id)
+}
+
+pub fn commit_paths(project: &std::path::Path, commit: &str) -> crate::store::Result<Vec<String>> {
+    use super::runner::{git, git_text};
+    use crate::store::Error;
+    let parents = git_text(project, &["show", "-s", "--format=%P", commit])?;
+    let parents: Vec<_> = parents.split_whitespace().collect();
+    let mut paths = std::collections::BTreeSet::new();
+    for parent in parents.iter().copied().map(Some).chain(parents.is_empty().then_some(None)) {
+        let mut args = vec!["diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "-z", "-M", "--no-ext-diff", "--no-textconv"];
+        if let Some(parent) = parent { args.push(parent); }
+        args.extend([commit, "--"]);
+        paths.extend(read_name_status(&git(project, &args)?).map_err(Error::Invalid)?);
+    }
+    Ok(paths.into_iter().collect())
+}
+
+pub fn staged(project: &std::path::Path) -> crate::store::Result<(Vec<u8>, Vec<String>)> {
+    use super::runner::git;
+    let args = ["diff", "--cached", "--raw", "-z", "-M", "--no-abbrev", "--no-ext-diff", "--no-textconv", "--"];
+    let objects = git(project, &args)?;
+    let paths = read_name_status(&git(project, &["diff", "--cached", "--name-status", "-z", "-M", "--no-ext-diff", "--no-textconv", "--"])? )
+        .map_err(crate::store::Error::Invalid)?;
+    if git(project, &args)? != objects { return Err(crate::store::Error::Conflict("staged inputs changed during observation".into())); }
+    Ok((objects, paths))
+}
+
+pub fn observe_source(project: &std::path::Path, active: &super::model::ActiveDispatch, task_id: &str,
+    completion: &str, evidence: &[String]) -> crate::store::Result<SourceMaterial> {
+    use super::runner::{git, git_text};
+    use crate::{rail::risk::valid_object_id, store::Error};
+    let head = git_text(project, &["rev-parse", "HEAD"])?;
+    let mut observed = std::collections::BTreeMap::new();
+    for commit in evidence.iter().map(String::as_str).chain(std::iter::once(completion)) {
+        if !valid_object_id(commit) || commit == active.base_sha {
+            return Err(Error::Invalid("evidence commit requires a full object id strictly after the dispatch base".into()));
+        }
+        git(project, &["cat-file", "-e", &format!("{commit}^{{commit}}")])?;
+        git(project, &["merge-base", "--is-ancestor", &active.base_sha, commit])?;
+        git(project, &["merge-base", "--is-ancestor", commit, &head])?;
+        let paths = commit_paths(project, commit)?;
+        for path in &paths {
+            if !super::lease::covers(&active.files, &active.directories, path) {
+                return Err(super::admission::refuse(active.phase, "lease", "evidence_commits", commit, format!("out-of-lease path: {path}")));
+            }
+        }
+        observed.insert(commit.to_owned(), paths);
+    }
+    git(project, &["verify-commit", completion])?;
+    let subject = git_text(project, &["show", "-s", "--format=%s", completion])?;
+    if !conventional_subject(&subject, task_id) { return Err(Error::Invalid("completion subject must name its task conventionally".into())); }
+    let (staged_objects, staged_paths) = staged(project)?;
+    for path in &staged_paths {
+        if !super::lease::covers(&active.files, &active.directories, path) {
+            return Err(super::admission::refuse(active.phase, "lease", "staged", path, "out-of-lease staged path"));
+        }
+    }
+    Ok(SourceMaterial { completion: completion.into(), evidence_commits: evidence.to_vec(), commit_paths: observed, staged_objects, staged_paths })
+}
+
+pub fn reobserve_source(project: &std::path::Path, active: &super::model::ActiveDispatch, task_id: &str, expected: &SourceMaterial) -> crate::store::Result<()> {
+    if observe_source(project, active, task_id, &expected.completion, &expected.evidence_commits)? != *expected {
+        return Err(crate::store::Error::Conflict("native source or staged inputs changed".into()));
+    }
+    Ok(())
+}

@@ -1663,50 +1663,7 @@ fn validate_commits_blocking(
 
 /// Read Git's unquoted NUL records without normalizing or losing pathname bytes.
 pub(super) fn read_name_status(bytes: &[u8]) -> Result<Vec<String>, String> {
-    if bytes.is_empty() {
-        return Ok(Vec::new());
-    }
-    if bytes.last() != Some(&0) {
-        return Err("unterminated Git name-status record".into());
-    }
-    let mut fields = bytes[..bytes.len() - 1].split(|byte| *byte == 0);
-    let mut paths = BTreeSet::new();
-    while let Some(status) = fields.next() {
-        let status = std::str::from_utf8(status).map_err(|_| "invalid Git status")?;
-        let endpoints = match status.as_bytes() {
-            [b'A' | b'D' | b'M' | b'T'] => 1,
-            [b'R' | b'C', score @ ..]
-                if !score.is_empty()
-                    && score.iter().all(u8::is_ascii_digit)
-                    && std::str::from_utf8(score)
-                        .ok()
-                        .and_then(|s| s.parse::<u32>().ok())
-                        .is_some_and(|n| n <= 100) =>
-            {
-                2
-            }
-            [b'M', score @ ..]
-                if !score.is_empty()
-                    && score.iter().all(u8::is_ascii_digit)
-                    && std::str::from_utf8(score)
-                        .ok()
-                        .and_then(|s| s.parse::<u32>().ok())
-                        .is_some_and(|n| n <= 100) =>
-            {
-                1
-            }
-            _ => return Err("invalid or unresolved Git name-status record".into()),
-        };
-        for _ in 0..endpoints {
-            let path = fields.next().ok_or("missing Git rename/path endpoint")?;
-            let path = std::str::from_utf8(path).map_err(|_| "Git path is not valid UTF-8")?;
-            if !cadence::execution::patch::safe_relative_path(path) {
-                return Err("Git path is not a safe relative path".into());
-            }
-            paths.insert(path.to_owned());
-        }
-    }
-    Ok(paths.into_iter().collect())
+    cadence::execution::receipts::read_name_status(bytes)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1769,26 +1726,7 @@ async fn reobserve_staged(project: &Path, expected: &StagedObservation) -> Resul
 }
 
 fn conventional_subject(subject: &str, task_id: &str) -> bool {
-    let Some((prefix, description)) = subject.split_once(": ") else {
-        return false;
-    };
-    if description.trim().is_empty() {
-        return false;
-    }
-    let prefix = prefix.strip_suffix('!').unwrap_or(prefix);
-    let valid_type = if let Some((kind, scope)) = prefix.split_once('(') {
-        kind.bytes().all(|byte| byte.is_ascii_lowercase())
-            && !kind.is_empty()
-            && scope.ends_with(')')
-            && scope.len() > 1
-            && !scope[..scope.len() - 1].chars().any(char::is_whitespace)
-    } else {
-        !prefix.is_empty() && prefix.bytes().all(|byte| byte.is_ascii_lowercase())
-    };
-    valid_type
-        && description
-            .split(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.')))
-            .any(|word| word == task_id)
+    cadence::execution::receipts::conventional_subject(subject, task_id)
 }
 
 fn git_output(project: &Path, args: &[&str]) -> Result<String, String> {
@@ -2267,6 +2205,17 @@ pub fn risk_material(
     require_current_execution(view).map_err(|error| error.to_string())?;
     if occurrence_id != continuation_scope(root, phase).occurrence {
         return Err("risk source names a foreign execution occurrence".into());
+    }
+    let native = risk::native_execution_bases(&view.snapshot.data).map_err(|e| e.to_string())?;
+    if let Some(basis) = native.iter().rev().find(|b| b.execution.dispatch_id == dispatch_id) {
+        let records = cadence::execution::history::records(&view.snapshot.data, phase).map_err(|e| e.to_string())?;
+        let confirmed = records.iter().any(|record| record.request.task == basis.task
+            && record.request_digest == basis.execution.transition_id
+            && cadence::execution::history::decision(record).is_ok_and(|decision| view.decisions.contains(&decision)));
+        if basis.task.phase != phase || basis.task.plan != plan || !confirmed {
+            return Err("native risk source lacks a confirmed task receipt".into());
+        }
+        return Ok(basis.material());
     }
     let execution = execution_snapshot(view)?;
     let occurrence = execution
