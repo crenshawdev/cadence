@@ -8,6 +8,7 @@ pub mod patch;
 pub mod plan;
 pub mod render;
 pub mod history;
+pub mod instructions;
 pub mod receipts;
 pub mod runner;
 

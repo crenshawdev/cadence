@@ -1,6 +1,6 @@
 ---
 name: cad-execute
-description: "Execute a native phase through the binary's dispatch and executor-patch boundary."
+description: "Execute a native phase: the binary composes each executor dispatch from state and owns every task, run and suite receipt."
 argument-hint: "[phase number]"
 allowed-tools:
   - mcp__cadence__cadence_query
@@ -8,28 +8,27 @@ allowed-tools:
   - Task
 ---
 
+This front door is rendered by `cadence executor-instructions --frontdoor`
+from the compiled `execution::instructions` role. The binary is the only
+continuation authority: keep no local execution state, inspect no project
+files, reconstruct no task list and approve no evidence on the owner's behalf.
+
 <process>
-1. Call `mcp__cadence__cadence_query` with `operation: "execute-next"` and the user's phase spelling unchanged as `phase`. Do not normalize, round, infer, default or repair it. The binary validates it.
-2. Read the structured envelope. For `refused`, `unknown` or `not-applicable`, display its `code` and `reason` and stop. For `judgment-stop`, display the returned stop identifiers and any structured reason and stop. For `complete`, report completion and stop. For `dispatch`, proceed with the returned prompt.
-3. Invoke `Task` with `dispatch.route.choice.agent` and exactly the returned prompt. Pass `dispatch.route.choice.model` only when present; otherwise omit the model argument for session inheritance. Use this admitted selection and issue no fresh route query. Add no instructions or context to an executor dispatch. Review dispatches follow the separate grouped review branch below. Historical dispatches with no route data retain their legacy binding: `cad-executor` with the model argument omitted.
-4. Submit the executor's one JSON object field-for-field to `mcp__cadence__cadence_apply`. Preserve all keys, values, array order and judgment text. Do not classify, rewrite or interpret its deviations, blockers or evidence. If the executor returns no JSON object, report that failure and stop.
-5. Follow the apply envelope: display `code` and `reason` and stop on `refused`, `unknown` or `not-applicable`; display the stop identifiers and any structured reason and stop on `judgment-stop`; report completion and stop on `complete`; repeat from step 1 on `next-plan`. If an envelope supplies `dispatch`, continue at step 3 with that prompt. A server or transport failure stops the loop with its returned failure.
+1. Call `mcp__cadence__cadence_query` with `operation: "execute-next"` and the user's phase spelling unchanged as `phase`. Do not normalize, round, infer, default or repair it; the binary validates it.
+2. Read the structured envelope. For `complete`, report completion and stop. For `judgment-stop`, display the stop identifiers and stop. For `refused`, `unknown` or `not-applicable`, display `code` and `reason`; when the code is `continuation-refusal` or `reconciliation-required` continue at step 3, otherwise stop. For `dispatch`, continue at step 4.
+3. Collect the owner's actual answer in the conversation and submit exactly what the owner states, then repeat from step 1: an unanswered task checkpoint is answered through `execution-task-answer`; a retained Stop is continued or declined through `execution-authorize` naming that `checkpoint`; unacknowledged commits are reconciled through `execution-task-progress`. A restart, a summary or an old report is never an answer.
+4. Invoke `Task` with `dispatch.route.choice.agent` and exactly the returned prompt, unchanged. Pass `dispatch.route.choice.model` only when present; otherwise omit the model argument for session inheritance. Use this admitted selection and issue no fresh route query. Add no instructions or context: the prompt already carries the admitted checks, the current task state and the compiled executor instructions.
+5. Read the executor's digest without interpreting it. The binary holds the closed tasks and receipts; the executor's reply is a digest, not a patch, and a refusal or an Unknown run it reports is displayed and retained, never converted into completion.
+6. Owner records are actual round trips through `mcp__cadence__cadence_apply`, each submitted exactly as the owner states it and shown with the retained bytes it names: the no-subject-stub inspection (`execution-owner-attest`), the separate classification of an Unknown custom-check run (`execution-classify-run`), and the dead-launch absence attestation for a suite launch with no recognized result (`execution-suite-relaunch`). The owner's interpretation is shown beside the binary's observation class and never replaces it.
+7. When the executor reports the plan's suite receipt, request `execution-plan-complete`; it needs both the passing suite receipt and the existing exact risk settlement, and passing one does not erase a pending other. Then repeat from step 1.
 </process>
 
-The binary is the only continuation authority. Keep no local execution state,
-inspect no project files and construct no alternate recovery path. This slice
-has no operator-answer round trip. A fresh invocation starts with step 1.
-
-For `undeclared-files`, the same display-and-stop rule applies. Show the binary's
-reason, including the rejected-commit or staged-index disposition, without
-interpreting paths, granting the executor an MCP tool or inventing a repair
-loop. The operator controls any repair. A later invocation can query the same
-open dispatch and submit a corrected full patch field-for-field; neither the
-lease nor its fingerprint expands on retry. Never rewrite Git history or the
-index to make a refused patch pass.
+The old whole-plan executor patch, and the old rule to run the suite before
+committing the final task, are gone: tasks close one at a time through the
+binary, and the suite is available only after the last task is acknowledged.
 
 <review_delivery>
-Handle a grouped review response before any execution response: run the saved review dispatch through cad-review-delivery and wait for durable return/enqueue acknowledgment. Then retry the original execution query or identical patch; retain its original bytes. Review dispatch is the only additional agent permitted by this skill. Use execute-completion and supplied execute-fix consumer inputs.
+Handle a grouped review response before any execution response: run the saved review dispatch through cad-review-delivery and wait for durable return/enqueue acknowledgment. Then retry the original execution query; retain its original bytes. Review dispatch is the only additional agent permitted by this skill. A delivered review is findings, never proof that its fixes are complete; use execute-completion and supplied execute-fix consumer inputs.
 
 @${CLAUDE_PLUGIN_ROOT}/skills/cad-review-delivery/SKILL.md
 </review_delivery>

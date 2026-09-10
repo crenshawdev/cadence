@@ -34,6 +34,12 @@ enum Command {
     ContextInstructions,
     /// Render the compiled authoring-only planner skill without opening a project.
     PlanInstructions,
+    /// Render the compiled executor contract without opening a project.
+    ExecutorInstructions {
+        /// Render the cad-execute front door from the same compiled source.
+        #[arg(long)]
+        frontdoor: bool,
+    },
 }
 
 fn main() -> std::process::ExitCode {
@@ -65,6 +71,18 @@ fn run_command(command: Command) -> std::process::ExitCode {
                 .lock()
                 .write_all(cadence::context::instructions::markdown().as_bytes())
             {
+                Ok(()) => std::process::ExitCode::SUCCESS,
+                Err(_) => std::process::ExitCode::FAILURE,
+            }
+        }
+        Command::ExecutorInstructions { frontdoor } => {
+            use std::io::Write;
+            let rendered = if frontdoor {
+                cadence::execution::instructions::frontdoor_markdown()
+            } else {
+                cadence::execution::instructions::contract_markdown()
+            };
+            match std::io::stdout().lock().write_all(rendered.as_bytes()) {
                 Ok(()) => std::process::ExitCode::SUCCESS,
                 Err(_) => std::process::ExitCode::FAILURE,
             }
