@@ -441,6 +441,71 @@ fn native_runner_claims_before_spawn_and_replays_once() {
     });
 }
 
+#[test]
+fn native_owner_statements_bind_exact_inspection() {
+    use super::{admission, history::{self, Event, Task, Request}, receipts::*, runner};
+    use crate::store::{filesystem::Filesystem, writer::{Store, Operation, PlanningPolicy}, model::digest};
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let temp = tempfile::tempdir().unwrap(); let root = temp.path().join(".planning");
+        std::fs::create_dir_all(root.join("phases/12")).unwrap();
+        let (data, documents, contract) = native_unit_contract("custom-delivery-check");
+        for (path, bytes) in documents { std::fs::write(root.join(path), bytes).unwrap(); }
+        let store = Store::open(Filesystem::new(&root).unwrap(), PlanningPolicy).await.unwrap();
+        let view = store.request(Operation::RewriteSnapshot(data)).await.unwrap();
+        let view = store.request(Operation::NativeAdmissionV1 { expected_generation: view.snapshot.generation, expected_integrity: view.snapshot.integrity,
+            request: Box::new(admission::Request { request_id: "admit-owner".into(), expected_set_version: 0, contract }) }).await.unwrap();
+        let basis = admission::records(&view.snapshot.data, 12).unwrap().remove(0);
+        let task = Task { phase: 12, occurrence: "active-cycle:phase:12".into(), admission_digest: basis.request_digest, plan: 1, task: "deliver".into() };
+        let check = basis.request.contract.allocation[0].checks[0].clone();
+        let request = |id: &str, version, event| Request { request_id: id.into(), task: task.clone(), attempt: "attempt".into(), expected_version: version, event };
+        runner::append(&store, request("start", 0, Event::Attempt { predecessor: None, checks: vec![check.clone()], base_commit: "unit-base".into() })).await.unwrap();
+        runner::append(&store, request("launch", 1, Event::Launch(Launch { run_id: "inspected-run".into(), check: Some(check.clone()), stage: Stage::Red,
+            material: Material { commit: "unit-commit".into(), tree: "unit-tree".into(), test_file: "test.py".into(), test_digest: "inspected-material".into(), command: "custom-delivery-check".into() }, launched_at: 10 }))).await.unwrap();
+        runner::append(&store, request("result", 2, Event::Result(RunResult { run_id: "inspected-run".into(), disposition: Disposition::Exited { code: 1 },
+            stdout: Capture { bytes: b"custom failed\n".to_vec(), digest: digest(b"custom failed\n"), complete: true },
+            stderr: Capture { bytes: vec![], digest: digest(b""), complete: true }, observed_at: 20, observation: Observation::Unknown, material_unchanged: true }))).await.unwrap();
+        let inspection = Inspection { check: check.clone(), test_digest: "inspected-material".into(), evidence: vec!["inspected-run".into()], no_subject_stub: false };
+        let negative = OwnerStatement { submission: inspection.clone(), approval: OwnerApproval { approved: true, owner: "Fixture Owner".into(),
+            at: "2026-09-10T14:00:00Z".into(), submission: inspection }, supersedes: None };
+        let first = request("negative", 3, Event::OwnerStatement(negative.clone()));
+        let first_receipt = runner::append(&store, first.clone()).await.unwrap();
+        assert!(!owner_eligible(&negative, &check, "inspected-material", &["inspected-run".into()]));
+        let baseline = ["state.json", "decisions.jsonl"].map(|p| std::fs::read(root.join(p)).unwrap());
+        for (i, mut invalid) in (0..5).map(|i| (i, negative.clone())) {
+            match i {
+                0 => invalid.approval.approved = false,
+                1 => invalid.approval.owner.clear(),
+                2 => invalid.submission.no_subject_stub = true,
+                3 => { invalid.submission.test_digest = "stale-material".into(); invalid.approval.submission = invalid.submission.clone(); }
+                _ => { invalid.submission.evidence = vec!["another-run".into()]; invalid.approval.submission = invalid.submission.clone(); }
+            }
+            assert!(runner::append(&store, request(&format!("invalid-{i}"), 4, Event::OwnerStatement(invalid))).await.unwrap_err().to_string().contains("owner-inspection"));
+            assert_eq!(["state.json", "decisions.jsonl"].map(|p| std::fs::read(root.join(p)).unwrap()), baseline);
+        }
+        let wire = json!({"operation":"execution-owner-attest","request":{"request_id":"executor","task":task,"attempt":"attempt","expected_version":4,
+            "statement":{"submission":negative.submission,"supersedes":null,"no_stub":true,"role":"owner"}}});
+        assert!(serde_json::from_value::<OwnerApply>(wire).is_err(), "an executor boolean and self-assigned role cannot replace exact approval");
+        let mut affirmative = negative.clone(); affirmative.submission.no_subject_stub = true;
+        affirmative.approval.submission = affirmative.submission.clone(); affirmative.approval.at = "2026-09-10T14:05:00Z".into();
+        affirmative.supersedes = Some("negative".into());
+        let second = request("affirmative", 4, Event::OwnerStatement(affirmative.clone()));
+        let second_receipt = runner::append(&store, second.clone()).await.unwrap();
+        assert!(owner_eligible(&affirmative, &check, "inspected-material", &["inspected-run".into()]));
+        assert!(!owner_eligible(&affirmative, &check, "stale-material", &["inspected-run".into()]));
+        assert!(!owner_eligible(&affirmative, &check, "inspected-material", &["another-run".into()]));
+        let baseline = ["state.json", "decisions.jsonl"].map(|p| std::fs::read(root.join(p)).unwrap());
+        drop(store);
+        let store = Store::open(Filesystem::new(&root).unwrap(), PlanningPolicy).await.unwrap();
+        assert_eq!(runner::append(&store, first).await.unwrap(), first_receipt);
+        assert_eq!(runner::append(&store, second).await.unwrap(), second_receipt);
+        let view = store.request(Operation::ReadVerified).await.unwrap();
+        let records = history::records(&view.snapshot.data, 12).unwrap();
+        assert_eq!(records[3].request.event, Event::OwnerStatement(negative));
+        assert_eq!(records[4].request.event, Event::OwnerStatement(affirmative));
+        assert_eq!(["state.json", "decisions.jsonl"].map(|p| std::fs::read(root.join(p)).unwrap()), baseline);
+    });
+}
+
 fn schema_fixture() -> serde_json::Value {
     json!({
         "schema": 1, "kind": "executor", "dispatch_id": "dispatch-1",

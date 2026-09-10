@@ -119,3 +119,60 @@ pub struct OwnerClassification {
     pub submission: Classification,
     pub approval: OwnerApproval<Classification>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OwnerInput {
+    pub request_id: String,
+    pub task: super::history::Task,
+    pub attempt: String,
+    pub expected_version: u64,
+    pub statement: OwnerStatement,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "operation", deny_unknown_fields)]
+pub enum OwnerApply {
+    /// Records the owner's inspection; validates its binding, not its truth.
+    #[serde(rename = "execution-owner-attest")]
+    Attest { request: OwnerInput },
+}
+
+pub fn validate_approval<T: PartialEq>(submission: &T, approval: &OwnerApproval<T>) -> bool {
+    approval.approved && !approval.owner.trim().is_empty() && !approval.at.trim().is_empty() && approval.submission == *submission
+}
+
+pub fn validate_inspection(records: &[super::history::Record], task: &super::history::Task, statement: &OwnerStatement) -> crate::store::Result<()> {
+    use super::history::Event;
+    let inspection = &statement.submission;
+    let refuse = |reason: &str| super::admission::refuse(task.phase, "owner-inspection", "statement", &inspection.check.id, reason);
+    if !validate_approval(inspection, &statement.approval) {
+        return Err(refuse("actual attributed/timed owner approval must echo the exact inspection payload"));
+    }
+    if inspection.evidence.is_empty() || inspection.test_digest.is_empty() {
+        return Err(refuse("inspection requires exact test material and inspected run evidence"));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for reference in &inspection.evidence {
+        if !seen.insert(reference) { return Err(refuse("ambiguous repeated inspection reference")); }
+        let launch = records.iter().find_map(|r| match &r.request.event {
+            Event::Launch(launch) if r.request.task == *task && &launch.run_id == reference => Some(launch), _ => None,
+        }).ok_or_else(|| refuse("inspection reference has no retained launch for this task"))?;
+        if launch.check.as_ref() != Some(&inspection.check) || launch.material.test_digest != inspection.test_digest
+            || !records.iter().any(|r| r.request.task == *task && matches!(&r.request.event, Event::Result(result) if &result.run_id == reference)) {
+            return Err(refuse("inspection revision, test material or observed evidence is stale"));
+        }
+    }
+    if let Some(supersedes) = &statement.supersedes
+        && !records.iter().any(|r| r.request.task == *task && r.request.request_id == *supersedes
+            && matches!(&r.request.event, Event::OwnerStatement(prior) if prior.submission.check == inspection.check)) {
+        return Err(refuse("superseding statement must link its prior statement"));
+    }
+    Ok(())
+}
+
+pub fn owner_eligible(statement: &OwnerStatement, check: &Check, test_digest: &str, evidence: &[String]) -> bool {
+    validate_approval(&statement.submission, &statement.approval) && statement.submission.no_subject_stub
+        && statement.submission.check == *check && statement.submission.test_digest == test_digest
+        && statement.submission.evidence == evidence
+}

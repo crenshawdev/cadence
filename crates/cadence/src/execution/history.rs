@@ -154,6 +154,7 @@ pub fn contribute(data: &Value, root: &str, request: &Request) -> Result<(Value,
             if !assignment.checks.contains(&statement.submission.check) {
                 return Err(refuse("task-owner", "owner statement names an unallocated check revision"));
             }
+            super::receipts::validate_inspection(&history, task, statement)?;
         }
         Event::OwnerClassification(statement) => {
             let classification = &statement.submission;

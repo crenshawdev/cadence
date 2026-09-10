@@ -60,6 +60,18 @@ pub(super) fn native_error(error:Error) -> Value {
 }
 
 pub async fn native_apply<I:ConfigIo+Clone+Sync>(factory:&SessionFactory<I>,root:&Path,raw:Value) -> cadence::store::Result<Value> {
+    if raw["operation"] == "execution-owner-attest" {
+        use cadence::execution::{history, receipts::OwnerApply, runner};
+        let input = match serde_json::from_value::<OwnerApply>(raw) {
+            Ok(OwnerApply::Attest { request }) => request,
+            Err(error) => return Ok(native_error(Error::Invalid(error.to_string()))),
+        };
+        let session = factory.first_touch(root).await?;
+        session.config()?;
+        let result = runner::append(session.review_store(), history::Request { request_id: input.request_id, task: input.task,
+            attempt: input.attempt, expected_version: input.expected_version, event: history::Event::OwnerStatement(input.statement) }).await;
+        return Ok(match result { Ok(receipt) => json!({"status":"ok","receipt":receipt}), Err(error) => native_error(error) });
+    }
     if matches!(raw["operation"].as_str(), Some("execution-task-start" | "execution-run")) {
         return super::execution_runner_service::apply(factory, root, raw).await;
     }
