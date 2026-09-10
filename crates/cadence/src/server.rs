@@ -238,7 +238,9 @@ struct VersionArguments {}
 enum QueryArguments {
     #[serde(rename = "plan-read")]
     PlanRead {
+        /// Read-only phase address; decimal legacy inputs cannot publish natively.
         phase_address: String,
+        /// Optional non-reserving preview count (1 through 64); omit for readback.
         count: Option<u32>,
     },
     #[serde(rename = "context-intake")]
@@ -561,12 +563,12 @@ impl ServerHandler for PublicServer {
                 ),
                 tool::<QueryOutput>(
                     "cadence_query",
-                    "Read supported configuration, role routing, native execution, review records, exact material risk status or structural surface evidence in the bound project. review-next returns provider pending promptly: poll the same fire; canceling a poll does not cancel or restart resident provider work. A local dispatch requires the host to run it once, WAIT, and forward actual observations and its unchanged return through cadence_apply before advancing.",
+                    "Read supported configuration, role routing, native execution, review records, exact material risk status or structural surface evidence in the bound project. plan-read uses phase_address and optional count for read-only plan intake, current readback and non-reserving ordered allocation preview; it returns the exact plan-submit contract and provisional authoring readiness. context-intake reads phase scope and truths. review-next returns provider pending promptly: poll the same fire; canceling a poll does not cancel or restart resident provider work. A local dispatch requires the host to run it once, WAIT, and forward actual observations and its unchanged return through cadence_apply before advancing.",
                     query_schema(),
                 ),
                 tool::<ApplyOutput>(
                     "cadence_apply",
-                    "Apply an atomic config batch, executor patch, risk-check, contracted risk fire or consequence. For review dispatches, review-observation forwards actual launch/return events and review-return forwards unchanged raw output or definite launch failure with the supplied identity. Missing or malformed output is failure. Wait for durable acknowledgment, then poll review-next; replay never authorizes a second dispatch.",
+                    "Apply an atomic config batch, executor patch, risk-check, contracted risk fire or consequence. plan-submit publishes provisional authored plans only with native approved truths and exact owner approval; native replacement additionally requires exact target, old revision/bytes and new content consent. Retry the same request ID and approved payload for the historical allocation; inspect replay projections separately for missing, drifted or newer content. Wait for confirmed publication; conflicts require fresh preview and approval, never automatic retargeting. For review dispatches, review-observation forwards actual launch/return events and review-return forwards unchanged raw output or definite launch failure with the supplied identity. Missing or malformed output is failure. Wait for durable acknowledgment, then poll review-next; replay never authorizes a second dispatch.",
                     apply_schema(),
                 ),
             ],
