@@ -74,6 +74,9 @@ pub mod review_service;
 #[path = "context_service.rs"]
 pub mod context_service;
 
+#[path = "plan_service.rs"]
+pub mod plan_service;
+
 /// What `cadence_version` reports on success.
 ///
 /// A struct rather than a bare string because an `ok` envelope's payload sits
@@ -233,6 +236,8 @@ struct VersionArguments {}
 #[derive(Deserialize, JsonSchema)]
 #[serde(tag = "operation", deny_unknown_fields)]
 enum QueryArguments {
+    #[serde(rename = "plan-read")]
+    PlanRead { phase: String, count: Option<u32> },
     #[serde(rename = "context-intake")]
     ContextIntake { phase: NonZeroU32 },
     #[serde(rename = "route")]
@@ -265,6 +270,7 @@ enum QueryArguments {
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyArguments {
+    Plan(cadence::plan::model::Apply),
     Context(cadence::context::model::Apply),
     Review(review_service::Apply),
     Config(config_service::Apply),
@@ -276,6 +282,7 @@ enum ApplyArguments {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyOutput {
+    Plan(Box<cadence::plan::model::Answer>),
     Context(Box<cadence::context::model::Answer>),
     Review(Box<Envelope<review_service::Output>>),
     Config(Box<Envelope<config_service::Output>>),
@@ -287,6 +294,7 @@ enum ApplyOutput {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 enum QueryOutput {
+    Plan(Box<cadence::plan::model::Answer>),
     Context(Box<cadence::context::model::Answer>),
     Review(Box<Envelope<review_service::Output>>),
     Config(Box<Envelope<config_service::Output>>),
@@ -613,6 +621,21 @@ impl ServerHandler for PublicServer {
                         answer.map(|answer| QueryOutput::Context(Box::new(answer))),
                     );
                 }
+                if raw.as_ref().and_then(|v| v["operation"].as_str()) == Some("plan-read") {
+                    let answer = match serde_json::from_value::<QueryArguments>(raw.unwrap()) {
+                        Ok(QueryArguments::PlanRead { phase, count }) => {
+                            self.server
+                                .service
+                                .plan(&self.root, plan_service::Command::Read { phase, count })
+                                .await
+                        }
+                        _ => Ok(cadence::plan::model::refused(
+                            "arguments",
+                            "plan-read needs a phase address and optional plan count",
+                        )),
+                    };
+                    return structured_result(answer.map(|a| QueryOutput::Plan(Box::new(a))));
+                }
                 if raw
                     .as_ref()
                     .and_then(|v| v["operation"].as_str())
@@ -661,6 +684,9 @@ impl ServerHandler for PublicServer {
                     }
                     Some(QueryArguments::ContextIntake { .. }) => {
                         unreachable!("context intake is decoded before execution fallback")
+                    }
+                    Some(QueryArguments::PlanRead { .. }) => {
+                        unreachable!("plan read decoded before execution")
                     }
                     None if raw.as_ref().and_then(|value| value["operation"].as_str())
                         == Some("route") =>
@@ -777,6 +803,15 @@ impl ServerHandler for PublicServer {
                 structured_result(Ok(QueryOutput::Execution(envelope)))
             }
             "cadence_apply" => {
+                if raw.as_ref().and_then(|v| v["operation"].as_str()) == Some("plan-submit") {
+                    return structured_result(
+                        self.server
+                            .service
+                            .plan(&self.root, plan_service::Command::Apply(raw.unwrap()))
+                            .await
+                            .map(|a| ApplyOutput::Plan(Box::new(a))),
+                    );
+                }
                 if raw.as_ref().and_then(|v| v["operation"].as_str()) == Some("context-submit") {
                     return structured_result(
                         self.server
@@ -840,6 +875,10 @@ impl ServerHandler for PublicServer {
                     Some(ApplyArguments::Context(request)) => {
                         let cadence::context::model::Apply::Submit { .. } = request;
                         unreachable!("context submission is decoded before execution fallback")
+                    }
+                    Some(ApplyArguments::Plan(request)) => {
+                        let cadence::plan::model::Apply::Submit { .. } = request;
+                        unreachable!("plan submission decoded before execution")
                     }
                     None if raw
                         .as_ref()

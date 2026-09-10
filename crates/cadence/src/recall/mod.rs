@@ -203,6 +203,11 @@ mod resident {
     };
 
     enum Request {
+        Plan {
+            root: PathBuf,
+            command: crate::server::plan_service::Command,
+            reply: oneshot::Sender<Result<cadence::plan::model::Answer>>,
+        },
         Context {
             root: PathBuf,
             command: crate::server::context_service::Command,
@@ -396,6 +401,16 @@ mod resident {
                 let mut caches = BTreeMap::<PathBuf, Option<Cached>>::new();
                 while let Some(request) = receiver.recv().await {
                     match request {
+                        Request::Plan {
+                            root,
+                            command,
+                            reply,
+                        } => {
+                            let result =
+                                crate::server::plan_service::execute(&factory, &root, command)
+                                    .await;
+                            let _ = reply.send(result);
+                        }
                         Request::Context {
                             root,
                             command,
@@ -533,6 +548,23 @@ mod resident {
                 // Accepted requests drain; canceled reply receivers cannot panic.
             });
             Self { requests }
+        }
+
+        pub async fn plan(
+            &self,
+            root: &Path,
+            command: crate::server::plan_service::Command,
+        ) -> Result<cadence::plan::model::Answer> {
+            let (reply, receive) = oneshot::channel();
+            self.requests
+                .send(Request::Plan {
+                    root: root.into(),
+                    command,
+                    reply,
+                })
+                .await
+                .map_err(|_| Error::Closed)?;
+            receive.await.map_err(|_| Error::Closed)?
         }
 
         pub async fn context(

@@ -12,6 +12,7 @@ pub mod execution;
 pub mod import;
 pub mod next_action;
 pub mod pause;
+pub mod plan;
 pub mod rail;
 pub mod review;
 pub mod store;
