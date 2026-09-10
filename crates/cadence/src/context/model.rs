@@ -18,6 +18,8 @@ pub struct TruthSlots {
     pub outcome: Option<String>,
     #[schemars(with = "Kind")]
     pub kind: Option<String>,
+    /// Owner attestation, never an internal-name classifier.
+    #[schemars(required)]
     pub observable: Option<bool>,
     pub fixed_oracle: Option<bool>,
 }

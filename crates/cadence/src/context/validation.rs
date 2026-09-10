@@ -27,6 +27,9 @@ pub fn validate(raw: &Value) -> Option<Answer> {
         if !matches!(truth["kind"].as_str(), Some("literal" | "property")) {
             return failure("allowed-kind", "kind", "kind must be literal or property");
         }
+        if truth["observable"] != true {
+            return failure("unobservable", "observable", "the owner must attest that the outcome is observable from outside");
+        }
     }
     None
 }
