@@ -7,10 +7,16 @@ use serde_json::Value;
 #[serde(deny_unknown_fields)]
 pub struct TruthSlots {
     pub id: String,
+    #[schemars(required)]
     pub trigger: Option<String>,
+    /// One party: the literal separators " and ", " & ", comma and semicolon are refused.
+    #[schemars(required)]
     pub observer: Option<String>,
+    #[schemars(with = "Verb")]
     pub verb: Option<String>,
+    #[schemars(required)]
     pub outcome: Option<String>,
+    #[schemars(with = "Kind")]
     pub kind: Option<String>,
     pub observable: Option<bool>,
     pub fixed_oracle: Option<bool>,
@@ -47,6 +53,10 @@ pub struct Approval {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind { Literal, Property }
+
+#[derive(JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Verb { Sees, Gets, #[serde(rename = "is refused")] IsRefused }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]

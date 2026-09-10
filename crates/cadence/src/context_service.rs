@@ -29,6 +29,9 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             "persisted":false
         }))),
         Command::Apply(raw) => {
+            if let Some(refusal) = cadence::context::validation::validate(&raw) {
+                return Ok(refusal);
+            }
             let Apply::Submit { submission, approval } = match serde_json::from_value(raw) {
                 Ok(value) => value,
                 Err(error) => return Ok(model::refused("submission", "submission", error.to_string(), None, None, None)),
