@@ -45,6 +45,7 @@ pub struct Filesystem {
 pub struct Prepared {
     target: PathBuf,
     temporary: PathBuf,
+    plan: bool,
 }
 
 impl Filesystem {
@@ -130,6 +131,18 @@ impl Filesystem {
         Ok(self.root.join(target))
     }
 
+    fn check_plan_parent(&self, target: &Path) -> Result<()> {
+        safe_plan_path(target)?;
+        let parent = target.parent().unwrap();
+        if self.directories.get(parent) != Some(&directory_identity(parent)?) {
+            return Err(Error::Conflict(format!(
+                "path-confinement: bound PLAN directory changed: {}",
+                parent.display()
+            )));
+        }
+        Ok(())
+    }
+
     /// Participants bind factory-owned paths, never paths from persisted intents.
     pub fn with_participant(mut self, name: &str, path: impl Into<PathBuf>) -> Result<Self> {
         if !matches!(name, "repo-config" | "global-config") {
@@ -169,6 +182,42 @@ fn directory_identity(path: &Path) -> Result<Vec<(u64, u64)>> {
             Ok((metadata.dev(), metadata.ino()))
         })
         .collect()
+}
+
+/// Observe each ancestor from the outside in, without creating parents or
+/// following an alias. The service uses this before first_touch as well.
+pub fn validate_plan_path(root: &Path, phase: u32, plan: u32) -> Result<()> {
+    if phase == 0 || plan == 0 {
+        return Err(Error::Invalid(
+            "path-confinement: nonpositive PLAN identity".into(),
+        ));
+    }
+    safe_plan_path(&std::path::absolute(root)?.join(format!("phases/{phase}/PLAN-{plan}.md")))
+}
+
+fn safe_plan_path(target: &Path) -> Result<()> {
+    let mut ancestors: Vec<_> = target.ancestors().collect();
+    ancestors.reverse();
+    for path in ancestors {
+        match fs::symlink_metadata(path) {
+            Ok(meta)
+                if !meta.file_type().is_symlink()
+                    && if path == target {
+                        meta.is_file()
+                    } else {
+                        meta.is_dir()
+                    } => {}
+            Ok(_) => {
+                return Err(Error::Conflict(format!(
+                    "path-confinement: unsafe path {}",
+                    path.display()
+                )));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
 }
 
 fn ensure_directory(path: &Path) -> Result<()> {
@@ -287,6 +336,9 @@ impl Storage for Filesystem {
     }
 
     fn read(&mut self, target: &str) -> Result<Observed> {
+        if let Some((phase, plan)) = phase_plan_target(target)? {
+            validate_plan_path(&self.root, phase, plan)?;
+        }
         if let Some(phase) = target.strip_prefix("phase-plan-inventory:") {
             let phase = phase_summary_target(&format!("phase-summary:{phase}"))?.unwrap();
             let inventory = cadence::plan::inventory::read(
@@ -377,7 +429,11 @@ impl Storage for Filesystem {
     }
 
     fn prepare(&mut self, target: &str, bytes: &[u8]) -> Result<Prepared> {
+        let plan = phase_plan_target(target)?.is_some();
         let target = self.target(target)?;
+        if plan {
+            self.check_plan_parent(&target)?;
+        }
         let (temporary, mut file) = loop {
             self.sequence += 1;
             let temporary = target.with_file_name(format!(
@@ -411,10 +467,17 @@ impl Storage for Filesystem {
             fs::remove_file(&temporary)?;
             return Err(error);
         }
-        Ok(Prepared { target, temporary })
+        Ok(Prepared {
+            target,
+            temporary,
+            plan,
+        })
     }
 
     fn install(&mut self, prepared: &Prepared) -> Result<()> {
+        if prepared.plan {
+            self.check_plan_parent(&prepared.target)?;
+        }
         fs::rename(&prepared.temporary, &prepared.target)?;
         (self.probe)(Stage::Renamed, &prepared.target)?;
         let parent = prepared.target.parent().unwrap();
@@ -444,6 +507,9 @@ impl Storage for Filesystem {
 
     fn resync(&mut self, target: &str, bytes: &[u8]) -> Result<Observed> {
         let path = self.target(target)?;
+        if phase_plan_target(target)?.is_some() {
+            self.check_plan_parent(&path)?;
+        }
         (self.probe)(Stage::RecoverySync, &path)?;
         File::open(&path)?.sync_all()?;
         let parent = path.parent().unwrap();

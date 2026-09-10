@@ -81,6 +81,9 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             ))
         }
         Command::Apply(raw) => {
+            if let Some(refusal) = cadence::plan::validation::arguments(&raw) {
+                return Ok(refusal);
+            }
             let Apply::Submit {
                 submission,
                 approval,
@@ -114,6 +117,15 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             }
             if let Some(refusal) = cadence::plan::validation::identities(&submission) {
                 return Ok(refusal);
+            }
+            for entry in &submission.plans {
+                if let Err(error) = cadence::store::filesystem::validate_plan_path(
+                    root,
+                    entry.target.phase.get(),
+                    entry.target.plan.get(),
+                ) {
+                    return path_error(error);
+                }
             }
             let inventory = inventory::read(root, &submission.phase.to_string(), &data)?;
             if let Err(error) = persistence::contribute(&data, &submission, &approval, &inventory) {
@@ -156,7 +168,10 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                         reply,
                     })
                     .await?;
-                let expected = receive.await.map_err(|_| cadence::store::Error::Closed)??;
+                let expected = match receive.await.map_err(|_| cadence::store::Error::Closed)? {
+                    Ok(value) => value,
+                    Err(error) => return path_error(error),
+                };
                 if expected.bytes.is_some() {
                     return Ok(model::refused(
                         "occupied-target",
@@ -194,8 +209,22 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                     "plan-submit",
                     json!({"persisted":true,"results":results}),
                 )),
-                Err(error) => Ok(model::refused("publication", error.to_string())),
+                Err(error) => path_error(error),
             }
         }
+    }
+}
+
+fn path_error(error: cadence::store::Error) -> Result<Answer> {
+    match error {
+        cadence::store::Error::Io(_) | cadence::store::Error::Closed => Err(error),
+        _ => Ok(model::refused(
+            if error.to_string().contains("path-confinement") {
+                "path-confinement"
+            } else {
+                "publication"
+            },
+            error.to_string(),
+        )),
     }
 }
