@@ -112,6 +112,9 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                     ),
                 ));
             }
+            if let Some(refusal) = cadence::plan::validation::identities(&submission) {
+                return Ok(refusal);
+            }
             let inventory = inventory::read(root, &submission.phase.to_string(), &data)?;
             if let Err(error) = persistence::contribute(&data, &submission, &approval, &inventory) {
                 return Ok(model::refused("publication", error.to_string()));

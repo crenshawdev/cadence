@@ -50,6 +50,9 @@ pub fn require_execution_ready(data: &Value, phase: u32) -> Result<()> {
 }
 
 pub fn approve(submission: &Submission, approval: &Approval) -> Result<()> {
+    if let Some(refusal) = super::validation::identities(submission) {
+        return Err(Error::Invalid(serde_json::to_string(&refusal)?));
+    }
     if !approval.approved
         || approval.submission.as_ref() != Some(submission)
         || approval.owner.as_ref().is_none_or(|s| s.trim().is_empty())
