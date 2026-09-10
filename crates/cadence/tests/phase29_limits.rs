@@ -405,7 +405,7 @@ fn phase29_check_without_command_is_refused() {
     }
     let mut item = check("check/full/delivery", &[truth]);
     item["spec"]["command"] = json!("\t");
-    let input = proposal(project, "draft", &[(Some(1), attached(vec![item]))]);
+    let input = proposal(project, "draft", &[(None, attached(vec![item]))]);
     let before = tree(project);
     let prior = snapshot(project);
     let mut client = Client::open(project);
@@ -416,4 +416,3 @@ fn phase29_check_without_command_is_refused() {
     client.finish();
     unchanged(project, &before, &prior);
 }
-

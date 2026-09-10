@@ -657,7 +657,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 &inventory,
                 &plan_documents,
             )
-            .map_err(|e| Error::Conflict(e.to_string()))?;
+            .map_err(|e| cadence::plan::limits::disposition(e, Error::Conflict))?;
             Some(super::transaction::IntentKind::PlanPublication {
                 phase,
                 inventory: Box::new(inventory),

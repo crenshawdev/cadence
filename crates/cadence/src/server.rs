@@ -631,7 +631,13 @@ impl ServerHandler for PublicServer {
                     );
                 }
                 if raw.as_ref().and_then(|v| v["operation"].as_str()).is_some_and(|op| matches!(op, "plan-read" | "evidence-read")) {
-                    let answer = match serde_json::from_value::<QueryArguments>(raw.unwrap()) {
+                    let raw = raw.unwrap();
+                    if let Some(diagnostic) = cadence::plan::associations::malformed_version(&raw)
+                        .or_else(|| cadence::plan::limits::malformed(&raw))
+                    {
+                        return structured_result(Ok(QueryOutput::Plan(Box::new(diagnostic.answer()))));
+                    }
+                    let answer = match serde_json::from_value::<QueryArguments>(raw) {
                         Ok(QueryArguments::EvidenceRead { phase }) => self.server.service
                             .plan(&self.root, plan_service::Command::EvidenceRead { phase: phase.get() }).await,
                         Ok(QueryArguments::PlanRead {
@@ -651,6 +657,7 @@ impl ServerHandler for PublicServer {
                                 )
                                 .await
                         }
+                        Err(error) => Ok(cadence::plan::model::refused("arguments", error.to_string())),
                         _ => Ok(cadence::plan::model::refused(
                             "arguments",
                             "plan-read needs a phase address and optional plan count or submission; evidence-read needs a canonical positive integer phase",

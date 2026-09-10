@@ -115,6 +115,9 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             if let Some(refusal) = cadence::plan::associations::malformed_version(&raw) {
                 return Ok(refusal.answer());
             }
+            if let Some(refusal) = cadence::plan::limits::malformed(&raw) {
+                return Ok(refusal.answer());
+            }
             let Apply::Submit {
                 submission,
                 approval,

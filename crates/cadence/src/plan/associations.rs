@@ -161,5 +161,6 @@ pub fn validate(data: &Value, submission: &Submission) -> Result<Coverage> {
             phase: Some(phase), entry: None, id: Some(id.clone()),
             reason: format!("phase {phase} current truth {id} has evidence but no current check; supplementary evidence cannot replace its check") }.error());
     }
+    if attached { super::limits::content(phase, &contributions)?; }
     Ok(Coverage { uncovered, without_check })
 }

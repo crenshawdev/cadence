@@ -316,7 +316,7 @@ impl Intent {
                     &inventory,
                     &documents,
                 )
-                .map_err(|e| Error::Invalid(e.to_string()))?;
+                .map_err(|e| cadence::plan::limits::disposition(e, Error::Invalid))?;
             }
             IntentKind::ExecutionDispatch { phase } => {
                 cadence::plan::persistence::require_execution_ready(&snapshot.data, phase)?;
