@@ -349,6 +349,140 @@ fn phase28_current_truth_without_check_is_refused() {
     assert_eq!(saved.data["plan_publications"]["phases"]["27"]["publications"]["2"], second["results"][0]);
 }
 
+#[test]
+fn phase28_item_without_bound_truth_is_refused() {
+    for case in ["empty", "unknown", "other-phase", "mixed", "duplicate", "blank-id", "item-reason", "association-reason"] {
+        let temp = fixture();
+        let project = temp.path();
+        native_context(project, 27, &["T1", "parcel/T2"]);
+        native_context(project, 28, &["elsewhere/T2"]);
+        let before = tree(project);
+        let prior = snapshot(project);
+        let mut item = artifact("opaque/item/T2", &["parcel/T2"]);
+        let (rule, slot, requested) = match case {
+            "empty" => {
+                item["associations"] = json!([]);
+                ("evidence-item-truth", "associations", None)
+            }
+            "unknown" => {
+                item["associations"][0]["truth_id"] = json!("unknown/T2");
+                ("evidence-item-truth", "associations[0].truth_id", Some("unknown/T2"))
+            }
+            "other-phase" => {
+                item["associations"][0]["truth_id"] = json!("elsewhere/T2");
+                ("evidence-item-truth", "associations[0].truth_id", Some("elsewhere/T2"))
+            }
+            "mixed" => {
+                item["associations"].as_array_mut().unwrap().push(json!({"truth_id":"unknown/T2","truth_version":1,"reason":"No suffix matching."}));
+                ("evidence-item-truth", "associations[1].truth_id", Some("unknown/T2"))
+            }
+            "duplicate" => ("duplicate-evidence-item", "id", None),
+            "blank-id" => {
+                item["id"] = json!("  ");
+                ("evidence-item-shape", "id", None)
+            }
+            "item-reason" => {
+                item["reason"] = json!(" ");
+                ("evidence-item-shape", "reason", None)
+            }
+            "association-reason" => {
+                item["associations"][0]["reason"] = json!("");
+                ("evidence-item-shape", "associations[0].reason", None)
+            }
+            _ => unreachable!(),
+        };
+        let id = item["id"].as_str().unwrap().to_owned();
+        let mut items = vec![check("one", "T1"), check("two", "parcel/T2"), item.clone()];
+        let index = if case == "duplicate" { items.push(item); 3 } else { 2 };
+        let mut client = Client::open(project);
+        let input = proposal(&mut client, "invalid-edge", &[attached(items)], &["# Membership\n"]);
+        for answer in [preview(&mut client, &input), client.call("cadence_apply", approve(input))] {
+            assert_refusal(&answer, rule, &id);
+            assert_eq!(answer["entry"], 0);
+            assert_eq!(answer["slot"], format!("submission.plans[0].content.evidence_map.items[{index}].{slot}"));
+            if let Some(requested) = requested {
+                assert!(answer["reason"].as_str().unwrap().contains(requested), "{answer}");
+            }
+        }
+        client.finish();
+        assert_unchanged(project, &before, &prior);
+        let mut client = Client::open(project);
+        let corrected = proposal(&mut client, "corrected", &[attached(vec![
+            check("one", "T1"), check("two", "parcel/T2"), artifact("opaque/item/T2", &["parcel/T2"]),
+        ])], &["# Corrected\n"]);
+        publish(&mut client, &corrected);
+        client.finish();
+        let saved = reopened(project).snapshot;
+        assert_eq!(saved.data["acceptance_maps"]["phases"]["27"]["revisions"][0]["items"][2],
+            artifact("opaque/item/T2", &["parcel/T2"]));
+    }
+
+    let temp = fixture();
+    let project = temp.path();
+    native_context(project, 27, &["T1", "parcel/T2"]);
+    let shared_one = artifact("shared/opaque", &["T1"]);
+    let mut shared_two = artifact("shared/opaque", &["parcel/T2"]);
+    shared_two["associations"][0]["reason"] = json!("This second contribution needs the same destination.");
+    let maps = [attached(vec![check("one", "T1"), shared_one.clone()]),
+        attached(vec![check("two", "parcel/T2"), shared_two.clone()])];
+    let before = tree(project);
+    let prior = snapshot(project);
+    let mut client = Client::open(project);
+    let mut conflicting = maps.clone();
+    conflicting[1]["items"][1]["spec"]["substance"] = json!("A conflicting destination.");
+    let bad = proposal(&mut client, "conflict", &conflicting, &["# First\n", "# Second\n"]);
+    for answer in [preview(&mut client, &bad), client.call("cadence_apply", approve(bad))] {
+        assert_refusal(&answer, "evidence-item-conflict", "shared/opaque");
+        assert_eq!(answer["entry"], 1);
+        assert_eq!(answer["slot"], "submission.plans[1].content.evidence_map.items[1].id");
+        for origin in ["plan 1", "plan 2"] { assert!(answer["reason"].as_str().unwrap().contains(origin), "{answer}"); }
+    }
+    client.finish();
+    assert_unchanged(project, &before, &prior);
+    let mut client = Client::open(project);
+    let corrected = proposal(&mut client, "shared", &maps, &["# First\n", "# Second\n"]);
+    let original = publish(&mut client, &corrected);
+    client.finish();
+    let saved = reopened(project).snapshot;
+    let events = &saved.data["acceptance_maps"]["phases"]["27"]["revisions"];
+    assert_eq!(events[0]["items"][1], shared_one);
+    assert_eq!(events[1]["items"][1], shared_two);
+    assert_eq!(events[0]["item_revisions"]["shared/opaque"], events[1]["item_revisions"]["shared/opaque"]);
+
+    let before = tree(project);
+    let mut client = Client::open(project);
+    let bad = proposal(&mut client, "saved-conflict", &[conflicting[1].clone()], &["# Conflicting gap\n"]);
+    for answer in [preview(&mut client, &bad), client.call("cadence_apply", approve(bad))] {
+        assert_refusal(&answer, "evidence-item-conflict", "shared/opaque");
+        for origin in ["plan 1", "plan 3"] { assert!(answer["reason"].as_str().unwrap().contains(origin), "{answer}"); }
+    }
+    client.finish();
+    assert_unchanged(project, &before, &saved);
+
+    // A coordinated replacement can revise the stable id once no conflicting
+    // definition survives in the resulting current set. Prior definitions stay.
+    let old_one = fs::read_to_string(project.join(".planning/phases/27/PLAN-1.md")).unwrap();
+    let old_two = fs::read_to_string(project.join(".planning/phases/27/PLAN-2.md")).unwrap();
+    let mut revised_maps = maps.clone();
+    for map in &mut revised_maps { map["items"][1]["spec"]["substance"] = json!("The newly approved destination."); }
+    let mut client = Client::open(project);
+    let mut left = replacement(&mut client, "revised-shared", 1, &original["results"][0], &old_one,
+        revised_maps[0].clone(), "# Revised first\n");
+    let right = replacement(&mut client, "revised-shared", 2, &original["results"][1], &old_two,
+        revised_maps[1].clone(), "# Revised second\n");
+    left["submission"]["plans"].as_array_mut().unwrap().push(right["submission"]["plans"][0].clone());
+    publish(&mut client, &left);
+    client.finish();
+    let reopened = reopened(project).snapshot;
+    let revised = &reopened.data["acceptance_maps"]["phases"]["27"]["revisions"];
+    assert_eq!(revised.as_array().unwrap().len(), 4);
+    assert_eq!(revised[0], events[0]);
+    assert_eq!(revised[1], events[1]);
+    assert_eq!(revised[2]["items"][1]["spec"]["substance"], "The newly approved destination.");
+    assert_eq!(revised[2]["item_revisions"]["shared/opaque"], revised[3]["item_revisions"]["shared/opaque"]);
+    assert_ne!(revised[2]["item_revisions"]["shared/opaque"], events[0]["item_revisions"]["shared/opaque"]);
+}
+
 fn attached(items: Vec<Value>) -> Value {
     json!({"mode":"attached","items":items})
 }
