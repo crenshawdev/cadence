@@ -655,6 +655,118 @@ fn plan_names(project: &Path) -> Vec<String> {
     names
 }
 
+fn replacement_request(preview: &Value, number: u32, id: &str, old: &str, revision: &Value, body: &str) -> Value {
+    let mut preview = preview.clone();
+    preview["targets"] = json!([{"phase":27,"plan":number}]);
+    let mut input = request(&preview, 27, id, &[body]);
+    let entry = &mut input["submission"]["plans"][0];
+    entry["replacement"] = json!({"approved":true,"owner":"John Crenshaw",
+        "at":"2026-09-10T15:00:00Z","target":{"phase":27,"plan":number},
+        "old_revision":revision,"old_document":old,"content":entry["content"]});
+    approve(input)
+}
+
+#[test]
+fn phase27_unauthorized_replacement_is_refused() {
+    let temp = fixture();
+    let project = temp.path();
+    native_context(project, 27);
+    let mut client = Client::open(project);
+    let preview = client.read("27", Some(1));
+    let original = approve(request(&preview, 27, "original", &["# Original approved content\n"]));
+    let first = client.call("cadence_apply", original.clone());
+    assert_eq!(first["persisted"], true, "{first}");
+    client.finish();
+    let path = project.join(".planning/phases/27/PLAN-1.md");
+    let old = fs::read_to_string(&path).unwrap();
+    let revision = &first["results"][0]["revision"];
+    let before = tree(project);
+    for case in ["absent", "declined", "original-only", "wrong-target", "stale-revision", "stale-bytes", "different-new-content", "no-owner", "no-time", "no-initial-approval", "declined-initial-approval"] {
+        let mut client = Client::open(project);
+        let preview = client.read("27", Some(1));
+        let mut input = replacement_request(&preview, 1, case, &old, revision, "# Unauthorized replacement\n");
+        let replacement = &mut input["submission"]["plans"][0]["replacement"];
+        match case {
+            "absent" | "original-only" => *replacement = Value::Null,
+            "declined" => replacement["approved"] = json!(false),
+            "wrong-target" => replacement["target"]["plan"] = json!(2),
+            "stale-revision" => replacement["old_revision"] = json!("stale-revision"),
+            "stale-bytes" => replacement["old_document"] = json!("Stale old bytes\n"),
+            "different-new-content" => replacement["content"]["body"] = json!("Different approved proposal\n"),
+            "no-owner" => replacement["owner"] = Value::Null,
+            "no-time" => replacement["at"] = Value::Null,
+            _ => {}
+        }
+        input = approve(input);
+        match case {
+            "original-only" => input["approval"] = original["approval"].clone(),
+            "no-initial-approval" => input["approval"] = Value::Null,
+            "declined-initial-approval" => input["approval"]["approved"] = json!(false),
+            _ => {}
+        }
+        let answer = client.call("cadence_apply", input);
+        let expected = if case.starts_with("stale-") { "stale-target" } else { "replacement-authorization" };
+        assert_eq!(answer["status"], "refused", "{case}: {answer}");
+        assert_eq!(answer["rule"], expected, "{case}: {answer}");
+        assert!(answer["reason"].as_str().unwrap().contains("phase 27 plan 1"), "{answer}");
+        client.finish();
+        assert_eq!(tree(project), before, "{case} cannot alter revision, history or allocation");
+    }
+    let mut client = Client::open(project);
+    let preview = client.read("27", Some(1));
+    let winner = replacement_request(&preview, 1, "replacement-winner", &old, revision, "# Authorized new content\n");
+    let loser = replacement_request(&preview, 1, "stale-loser", &old, revision, "# Losing content\n");
+    let replaced = client.call("cadence_apply", winner);
+    assert_eq!(replaced["persisted"], true, "exact replacement must succeed: {replaced}");
+    assert_eq!(replaced["results"][0]["identity"], json!({"phase":27,"plan":1}));
+    assert_ne!(replaced["results"][0]["revision"], *revision);
+    client.finish();
+    let installed = tree(project);
+    let mut client = Client::open(project);
+    let answer = client.call("cadence_apply", loser);
+    assert_eq!(answer["rule"], "stale-target", "{answer}");
+    assert!(answer["reason"].as_str().unwrap().contains("phase 27 plan 1"));
+    client.finish();
+    assert_eq!(tree(project), installed);
+    assert_eq!(plan_names(project), ["PLAN-1.md"]);
+    assert_eq!(cadence::execution::plan::parse_plan(&fs::read(&path).unwrap(),27,1).unwrap().body, "# Authorized new content\n");
+    let saved = reopened(project).snapshot;
+    let occurrence = &saved.data["plan_publications"]["phases"]["27"];
+    assert_eq!(occurrence["id"], "active-cycle:phase:27");
+    assert_eq!(occurrence["high_water"], 1);
+    assert_eq!(occurrence["consumed"], json!([1]));
+    assert_eq!(occurrence["receipts"]["original"]["results"], first["results"]);
+    assert_eq!(occurrence["receipts"]["replacement-winner"]["results"], replaced["results"]);
+    assert_eq!(occurrence["publications"]["1"]["history"], json!([revision,replaced["results"][0]["revision"]]));
+
+    let admitted = admitted_legacy();
+    let before = tree(admitted.path());
+    let path = admitted.path().join(".planning/phases/27/PLAN-8.md");
+    let old = fs::read_to_string(&path).unwrap();
+    let mut client = Client::open(admitted.path());
+    let preview = client.read("27", Some(1));
+    let input = replacement_request(&preview, 8, "admitted", &old, &json!(model::digest(old.as_bytes())), "# Never replace admitted work\n");
+    let answer = client.call("cadence_apply", input);
+    assert_eq!(answer["rule"], "admitted-plan", "{answer}");
+    assert!(answer["reason"].as_str().unwrap().contains("phase 27 plan 8"));
+    client.finish();
+    assert_eq!(tree(admitted.path()), before);
+
+    let legacy = fixture();
+    native_context(legacy.path(), 27);
+    fs::write(legacy.path().join(".planning/phases/27/PLAN.md"), "Bare legacy bytes\n").unwrap();
+    let before = tree(legacy.path());
+    let mut client = Client::open(legacy.path());
+    let preview = client.read("27", Some(1));
+    let input = replacement_request(&preview, 1, "alias", "Bare legacy bytes\n", &json!(model::digest(b"Bare legacy bytes\n")), "# Cannot convert alias\n");
+    let answer = client.call("cadence_apply", input);
+    assert_eq!(answer["rule"], "legacy-read-only", "{answer}");
+    assert!(answer["reason"].as_str().unwrap().contains("phase 27 plan 1"));
+    client.finish();
+    assert_eq!(tree(legacy.path()), before);
+    assert!(!legacy.path().join(".planning/phases/27/PLAN-1.md").exists());
+}
+
 fn admitted_legacy() -> tempfile::TempDir {
     let temp = fixture();
     native_context(temp.path(), 27);
