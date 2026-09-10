@@ -109,3 +109,26 @@ pub struct Specification {
 pub enum Pending {
     Pending,
 }
+
+impl Item {
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Check { id, .. } | Self::Artifact { id, .. }
+            | Self::Link { id, .. } | Self::Observation { id, .. } => id,
+        }
+    }
+
+    pub fn reason(&self) -> &str {
+        match self {
+            Self::Check { reason, .. } | Self::Artifact { reason, .. }
+            | Self::Link { reason, .. } | Self::Observation { reason, .. } => reason,
+        }
+    }
+
+    pub fn associations(&self) -> &[Association] {
+        match self {
+            Self::Check { associations, .. } | Self::Artifact { associations, .. }
+            | Self::Link { associations, .. } | Self::Observation { associations, .. } => associations,
+        }
+    }
+}
