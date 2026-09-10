@@ -164,3 +164,113 @@ fn phase11_unapproved_context_changes_nothing() {
         }
     }
 }
+
+fn approve(mut request: Value) -> Value {
+    request["approval"] = json!({"approved":true,"owner":"John Crenshaw",
+        "at":"2026-09-10T14:00:00Z","submission":request["submission"].clone()});
+    request
+}
+
+fn initialized_fixture(phase_directory: bool) -> tempfile::TempDir {
+    let temp = fixture(false, false, false);
+    let root = temp.path().join(".planning");
+    if phase_directory { fs::create_dir_all(root.join("phases/11")).unwrap(); }
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let factory = cadence::import::SessionFactory::new(None, std::sync::Arc::new(cadence::config::planning_policy));
+        let session = factory.first_touch(&root).await.unwrap();
+        let store = session.review_store();
+        let view = store.request(cadence::store::writer::Operation::ReadVerified).await.unwrap();
+        let mut data = view.snapshot.data;
+        data["unrelated"] = json!({"keep":"unchanged"});
+        store.request(cadence::store::writer::Operation::Transact(cadence::store::transaction::Transaction {
+            id: "fixture-priors".into(),
+            items: vec![model::ItemRecord {
+                version:1,id:"prior-item".into(),revision:1,
+                origin:model::Origin {source:"owner".into(),original:model::Evidence::Missing},
+                text:"Retain the prior item".into(),kind:"todo".into(),
+                disposition:model::Disposition::Captured,completed:false,filing_uncertain:false,
+            }],
+            decisions: vec![model::DecisionRecord {
+                version:1,id:"prior-decision".into(),revision:1,
+                origin:model::Origin {source:"owner".into(),original:model::Evidence::Missing},
+                decision:model::Decision::Gate {outcome:"proceed".into(),evidence:model::Evidence::Text("Prior approval".into())},
+            }],
+            snapshot:Some(data),external:vec![],
+        })).await.unwrap();
+    });
+    temp
+}
+
+#[test]
+fn phase11_approved_context_persists_truths_and_decisions() {
+    let examples = [
+        ("the owner opens the context", "sees", "the approved decisions", "literal", "When the owner opens the context, the owner sees the approved decisions."),
+        ("the owner requests a receipt", "gets", "receipt 42", "property", "When the owner requests a receipt, the owner gets receipt 42."),
+        ("the owner changes an approved set", "is refused", "a revision", "literal", "When the owner changes an approved set, the owner is refused a revision."),
+        ("the owner reads café notes", "sees", "日本語 prose", "property", "When the owner reads café notes, the owner sees 日本語 prose."),
+        ("the owner requests a list", "gets", "three entries", "literal", "When the owner requests a list, the owner gets three entries."),
+        ("the owner submits an empty name", "is refused", "approval", "property", "When the owner submits an empty name, the owner is refused approval."),
+        ("the owner opens the final page", "sees", "the last decision", "literal", "When the owner opens the final page, the owner sees the last decision."),
+    ];
+    for phase_directory in [false, true] {
+        for count in 1..=7 {
+            let temp = initialized_fixture(phase_directory);
+            let root = temp.path().join(".planning");
+            let before = tree(temp.path());
+            let mut request = submission();
+            request["submission"]["truths"] = Value::Array(examples[..count].iter().enumerate().map(|(i,(trigger,verb,outcome,kind,_))| {
+                json!({"id":format!("T{}",i+1),"trigger":trigger,"observer":"the owner","verb":verb,
+                    "outcome":outcome,"kind":kind,"observable":true,"fixed_oracle":true})
+            }).collect());
+            let request = approve(request);
+            let mut client = Client::open(temp.path());
+            let answer = client.call("cadence_apply", request.clone());
+            assert_eq!(answer["status"], "ok", "approved context must publish: {answer}");
+            assert_eq!(answer["persisted"], true, "{answer}");
+            client.finish();
+            let after = tree(temp.path());
+            let markdown = fs::read_to_string(root.join("phases/11/CONTEXT.md")).unwrap();
+            assert!(markdown.starts_with("# Phase 11: First approved context\n"));
+            assert!(markdown.contains("## Scope boundary\n\nOnly the approved phase.\n"));
+            assert!(markdown.contains("## Durable decisions\n\n- D-01. Keep **authored** café prose (`docs/design.md:7`).\n"));
+            assert!(markdown.contains("## Decisions\n\n- D-02. Use the owner's chosen order.\n"));
+            assert!(markdown.contains("## Flagged assumptions\n\n- The reader understands 日本語.\n"));
+            let truth_section = markdown.split("## Truths\n\n").nth(1).unwrap().split("\n## ").next().unwrap().trim_end();
+            let expected_lines = examples[..count].iter().enumerate().map(|(i, example)| format!("- T{}. {}", i+1, example.4)).collect::<Vec<_>>().join("\n");
+            assert_eq!(truth_section, expected_lines);
+            let reopened = tokio::runtime::Runtime::new().unwrap().block_on(async {
+                let store = cadence::store::writer::Store::open(
+                    cadence::store::filesystem::Filesystem::new(&root).unwrap(),
+                    cadence::store::writer::PlanningPolicy,
+                ).await.unwrap();
+                store.request(cadence::store::writer::Operation::ReadVerified).await.unwrap()
+            });
+            assert_eq!(reopened.snapshot.data["unrelated"], json!({"keep":"unchanged"}));
+            let saved = &reopened.snapshot.data["context"]["phases"]["11"];
+            assert_eq!(saved["submission"], request["submission"]);
+            assert_eq!(saved["approval"], request["approval"]);
+            assert_eq!(saved["truths"].as_array().unwrap().len(), count);
+            for (i, example) in examples[..count].iter().enumerate() {
+                assert_eq!(saved["truths"][i], json!({"id":format!("T{}",i+1),"phase":11,"version":1,
+                    "pattern":"when","text":example.4,"kind":example.3,"status":"pending"}));
+            }
+            let prior_snapshot = Snapshot::parse(
+                before[Path::new(".planning/state.json")].as_ref().unwrap(),
+                before[Path::new(".planning/items.jsonl")].as_ref().unwrap(),
+                before[Path::new(".planning/decisions.jsonl")].as_ref().unwrap(),
+            ).unwrap();
+            for (key, value) in prior_snapshot.data.as_object().unwrap() {
+                assert_eq!(&reopened.snapshot.data[key], value, "unrelated snapshot field {key}");
+            }
+            for name in [".planning/items.jsonl", ".planning/decisions.jsonl"] {
+                assert_eq!(after[Path::new(name)], before[Path::new(name)]);
+            }
+            let mut expected_tree = before.clone();
+            expected_tree.insert(PathBuf::from(".planning/phases"), None);
+            expected_tree.insert(PathBuf::from(".planning/phases/11"), None);
+            expected_tree.insert(PathBuf::from(".planning/phases/11/CONTEXT.md"), Some(markdown.into_bytes()));
+            expected_tree.insert(PathBuf::from(".planning/state.json"), after[Path::new(".planning/state.json")].clone());
+            assert_eq!(after, expected_tree, "no pending intent or temporary files after acknowledgment");
+        }
+    }
+}
