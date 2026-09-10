@@ -38,8 +38,32 @@ pub async fn read<I: ConfigIo + Clone + Sync>(factory: &SessionFactory<I>, root:
             if tasks.iter().any(|value: &Value| value["task"]["plan"] == assignment.plan && value["task"]["task"] == assignment.task) { continue }
             let task = history::Task { phase, occurrence: basis.request.contract.occurrence.clone(), admission_digest: basis.request_digest.clone(),
                 plan: assignment.plan, task: assignment.task.clone() };
-            tasks.push(json!({"task":task,"state":history::project(&records,&task)}));
+            let state=history::project(&records,&task);
+            let baseline=records.iter().rev().filter(|r|r.request.task==task).find_map(|r|match &r.request.event {
+                history::Event::AcknowledgedProgress {commit,..}=>Some(commit.clone()),
+                history::Event::Attempt {base_commit,..}=>Some(base_commit.clone()),
+                _=>None,
+            });
+            let mut commits=Vec::new();
+            if !state.completed && let Some(baseline)=baseline {
+                let project=root.parent().ok_or_else(||Error::Invalid("project root missing".into()))?;
+                commits=runner::git_text(project,&["rev-list","--reverse",&format!("{baseline}..HEAD")])?.lines().map(str::to_owned).collect();
+            }
+            let mut uncertainty=json!({"requires_reconciliation":!commits.is_empty(),"commits":commits});
+            if !state.completed && state.attempt.is_some()
+                && !runner::git(root.parent().ok_or_else(||Error::Invalid("project root missing".into()))?,&["status","--porcelain=v1","-z","--untracked-files=all"])?.is_empty() {
+                uncertainty["requires_reconciliation"]=json!(true);
+                uncertainty["dirty_source"]=json!(true);
+            }
+            tasks.push(json!({"task":task,"state":state,"uncertainty":uncertainty}));
         }
     }
-    Ok(json!({"status":"ok","schema":"native-task-history-1","events":records,"tasks":tasks}))
+    let mut checkpoints=Vec::new();
+    for decision in &view.decisions {
+        if let Some(record)=cadence::evidence::persistence::decode_history(decision)?
+            && record.scope.phase==phase.to_string() && record.scope.planning_root==root.to_string_lossy() {
+            checkpoints.push(record);
+        }
+    }
+    Ok(json!({"status":"ok","schema":"native-task-history-1","events":records,"tasks":tasks,"checkpoint_history":checkpoints}))
 }

@@ -697,7 +697,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         use cadence::execution::history;
         let root_binding = self.observed[STATE].directory_identity.clone();
         if let Some(record) = history::replay(&self.view.snapshot.data, &root_binding, &request)? {
-            if !self.view.decisions.contains(&history::decision(&record)?) {
+            if !history::decisions(&record)?.iter().all(|decision|self.view.decisions.contains(decision)) {
                 return Err(Error::Invalid("native task receipt lacks its immutable event".into()));
             }
             return Ok(self.view.clone());
@@ -706,7 +706,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         let (data, record) = history::contribute(&self.view.snapshot.data, &root_binding, &request)?;
         let mut next = self.view.clone();
         next.snapshot.data = data;
-        next.decisions.push(history::decision(&record)?);
+        next.decisions.extend(history::decisions(&record)?);
         self.persist(next, self.view.snapshot.operations.clone(), Vec::new(), "native_task",
             super::transaction::IntentKind::NativeTaskV1 { request: Box::new(request), root_binding })
     }

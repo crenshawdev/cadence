@@ -2,7 +2,7 @@ use super::nonblank;
 use crate::store::{Error, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckpointType {
     Structural,
@@ -12,7 +12,7 @@ pub enum CheckpointType {
     SuiteRed,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum State {
     Unresolved,
@@ -20,7 +20,7 @@ pub enum State {
     Superseded { by: String },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Checkpoint {
     pub id: String,
     pub checkpoint_type: CheckpointType,

@@ -283,6 +283,7 @@ enum QueryArguments {
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyArguments {
+    NativeProgress(cadence::execution::history::ProgressApply),
     NativeClose(cadence::execution::receipts::CloseApply),
     NativeOwner(cadence::execution::receipts::OwnerApply),
     NativeRunner(cadence::execution::runner::Apply),
@@ -945,6 +946,10 @@ impl ServerHandler for PublicServer {
                     Some(ApplyArguments::NativeClose(request)) => {
                         return structured_result(self.server.service.native_execution_apply(&self.root,
                             serde_json::to_value(request).expect("native close operation")).await.map(ApplyOutput::NativeExecution));
+                    }
+                    Some(ApplyArguments::NativeProgress(request)) => {
+                        return structured_result(self.server.service.native_execution_apply(&self.root,
+                            serde_json::to_value(request).expect("native progress operation")).await.map(ApplyOutput::NativeExecution));
                     }
                     None if raw
                         .as_ref()

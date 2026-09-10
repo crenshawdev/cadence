@@ -17,9 +17,11 @@ pub struct Task {
     pub task: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Event {
+    AcknowledgedProgress { text: String, evidence: Vec<String>, commit: String },
+    Checkpoint { records: Vec<crate::evidence::Record>, owner: Option<String>, at: Option<String> },
     Close(Box<CloseProof>),
     Attempt { predecessor: Option<String>, checks: Vec<Check>, base_commit: String },
     Launch(Launch),
@@ -31,7 +33,7 @@ pub enum Event {
     Deviation { text: String, evidence: Vec<String> },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     pub request_id: String,
@@ -41,7 +43,7 @@ pub struct Request {
     pub event: Event,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Record {
     pub schema: String,
@@ -78,7 +80,7 @@ pub fn project(records: &[Record], task: &Task) -> Projection {
             Event::Attempt { .. } => projection.attempt = Some(record.request.attempt.clone()),
             Event::Launch(launch) => projection.unknown_runs.push(launch.run_id.clone()),
             Event::Result(result) => projection.unknown_runs.retain(|id| id != &result.run_id),
-            Event::Progress { text, .. } => projection.progress.push(text.clone()),
+            Event::Progress { text, .. } | Event::AcknowledgedProgress { text, .. } => projection.progress.push(text.clone()),
             _ => {}
         }
     }
@@ -142,6 +144,18 @@ pub fn contribute(data: &Value, root: &str, request: &Request) -> Result<(Value,
             }
             super::receipts::validate_close(data, &history, proof)?;
         }
+        Event::Checkpoint { records, owner, at } => {
+            if records.iter().any(|r|matches!(&r.fact,crate::evidence::Fact::Gate(gate) if matches!(gate.state,crate::evidence::gates::State::Answered(_))))
+                && (owner.as_ref().is_none_or(|s|s.trim().is_empty()) || at.as_ref().is_none_or(|s|s.trim().is_empty())) {
+                return Err(refuse("task-checkpoint", "checkpoint answer requires owner attribution and time"));
+            }
+            checkpoint_projection(data, task, records)?;
+        }
+        Event::AcknowledgedProgress { text, commit, .. } => {
+            if text.trim().is_empty() || !crate::rail::risk::valid_object_id(commit) {
+                return Err(refuse("task-progress", "progress requires authored text and an observed commit"));
+            }
+        }
         Event::Launch(launch) => {
             if launch.run_id.is_empty() || launch.material.commit.is_empty() || launch.material.tree.is_empty()
                 || launch.material.command.trim().is_empty()
@@ -189,6 +203,9 @@ pub fn contribute(data: &Value, root: &str, request: &Request) -> Result<(Value,
     let namespace = proposed.as_object_mut().ok_or_else(|| refuse("task-shape", "snapshot must be an object"))?
         .entry(NAMESPACE).or_insert_with(|| json!({"schema":"native-tasks-1","phases":{}}));
     namespace["phases"][task.phase.to_string()] = serde_json::to_value(history)?;
+    if let Event::Checkpoint {records,..}=&request.event {
+        proposed=checkpoint_projection(&proposed,task,records)?;
+    }
     if let Event::Close(proof) = &request.event {
         let basis = crate::rail::risk::NativeExecutionBasis::new(&proof.dispatch, task.clone(), proof.source.clone(), record.request_digest.clone())?;
         proposed = crate::rail::risk::project_native_execution_basis(&proposed, &basis)?;
@@ -200,4 +217,98 @@ pub fn decision(record: &Record) -> Result<DecisionRecord> {
     Ok(DecisionRecord { version: 1, id: format!("native-task:{}:{}", record.request.task.phase, record.request_digest), revision: 1,
         origin: Origin { source: "native-task-event-1".into(), original: Evidence::Missing },
         decision: Decision::Gate { outcome: "native-task-event-1".into(), evidence: Evidence::Text(serde_json::to_string(record)?) } })
+}
+
+pub fn decisions(record: &Record) -> Result<Vec<DecisionRecord>> {
+    let mut decisions=vec![decision(record)?];
+    if let Event::Checkpoint {records,..}=&record.request.event {
+        for (index,evidence) in records.iter().enumerate() {
+            decisions.push(crate::evidence::persistence::history(&format!("task:{}:{index}",record.request_digest),evidence)?);
+        }
+    }
+    Ok(decisions)
+}
+
+fn checkpoint_projection(data:&Value,task:&Task,records:&[crate::evidence::Record]) -> Result<Value> {
+    use crate::evidence::{Fact,persistence};
+    if records.is_empty() || records.len()>2 {return Err(admission::refuse(task.phase,"task-checkpoint","records",&task.task,"one checkpoint with question, or one answer, required"));}
+    let mut next=data.clone();
+    for record in records {
+        if record.scope.phase!=task.phase.to_string() || record.scope.occurrence!=format!("phase-{}-execution",task.phase)
+            || record.scope.plan!="native-execution" || !matches!(record.fact,Fact::Checkpoint(_)|Fact::Gate(_)) {
+            return Err(admission::refuse(task.phase,"task-checkpoint","scope",&task.task,"checkpoint must use the task's execution occurrence"));
+        }
+        if let Fact::Checkpoint(checkpoint)=&record.fact {
+            let publication=crate::plan::persistence::saved(data,task.phase)?.and_then(|p|p.publications.get(&task.plan).cloned())
+                .ok_or_else(||admission::refuse(task.phase,"task-checkpoint","task",&task.task,"checkpoint task publication missing"))?;
+            let number=publication.content.execution.tasks.iter().position(|t|t.id==task.task).map(|n|n+1);
+            if number!=Some(checkpoint.task_number as usize) || checkpoint.task_name!=task.task {
+                return Err(admission::refuse(task.phase,"task-checkpoint","task",&task.task,"checkpoint task identity differs from admitted task order"));
+            }
+        }
+        if let Fact::Gate(gate)=&record.fact
+            && matches!(gate.state,crate::evidence::gates::State::Answered(_))
+            && !self::records(data,task.phase)?.iter().any(|r|r.request.task==*task && matches!(&r.request.event,
+                Event::Checkpoint {records,..} if records.iter().any(|r|matches!(&r.fact,Fact::Gate(prior) if prior.id==gate.id)))) {
+            return Err(admission::refuse(task.phase,"task-checkpoint","question",&gate.id,"answer must name this task's retained question"));
+        }
+        if matches!(record.fact,Fact::Checkpoint(_)) && persistence::read(&next)?.contains_key(&record.key()?) {
+            return Err(admission::refuse(task.phase,"task-checkpoint","checkpoint",&task.task,"checkpoint identity already retained; create an explicit successor"));
+        }
+        next=persistence::project(&next,record)?;
+    }
+    Ok(next)
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag="kind",rename_all="kebab-case",deny_unknown_fields)]
+pub enum ProgressEvent {
+    Progress {text:String,evidence:Vec<String>},
+    Deviation {text:String,evidence:Vec<String>},
+    FailedAttempt {text:String,evidence:Vec<String>},
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProgressInput {
+    pub request_id:String,
+    pub task:Task,
+    pub attempt:String,
+    pub expected_version:u64,
+    pub event:ProgressEvent,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CheckpointInput {
+    pub request_id:String,
+    pub task:Task,
+    pub attempt:String,
+    pub expected_version:u64,
+    pub checkpoint:crate::evidence::checkpoint::Checkpoint,
+    pub question_id:String,
+    pub question:String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AnswerInput {
+    pub request_id:String,
+    pub task:Task,
+    pub attempt:String,
+    pub expected_version:u64,
+    pub owner:String,
+    pub at:String,
+    pub answer:crate::evidence::gates::Answer,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag="operation",deny_unknown_fields)]
+pub enum ProgressApply {
+    #[serde(rename="execution-task-progress")]
+    Progress {request:ProgressInput},
+    #[serde(rename="execution-task-checkpoint")]
+    Checkpoint {request:CheckpointInput},
+    #[serde(rename="execution-task-answer")]
+    Answer {request:AnswerInput},
 }

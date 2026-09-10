@@ -317,7 +317,7 @@ impl Intent {
                 let old_decisions = self.participants.iter().find(|p| p.target == DECISIONS).unwrap().expected.bytes.as_deref()
                     .ok_or_else(|| Error::Invalid("native task requires previous decisions".into()))?;
                 let mut expected_decisions: Vec<DecisionRecord> = model::parse_lines(old_decisions)?;
-                expected_decisions.push(history::decision(&record)?);
+                expected_decisions.extend(history::decisions(&record)?);
                 if snapshot.data != expected || old_items != Some(items)
                     || decisions != model::render_lines(&expected_decisions)?
                     || snapshot.operations != previous.operations
@@ -956,6 +956,16 @@ fn validate_all<S: Storage>(
     replay: bool,
     kind: &IntentKind,
 ) -> Result<()> {
+    if let IntentKind::NativeTaskV1 {request,root_binding}=kind
+        && let cadence::execution::history::Event::Checkpoint {records,..}=&request.event
+    {
+        for record in records {
+            let mut filesystem=super::filesystem::Filesystem::new(&record.scope.planning_root)?;
+            if filesystem.read(STATE)?.directory_identity!=*root_binding {
+                return Err(Error::Invalid("native checkpoint differs from bound store".into()));
+            }
+        }
+    }
     if let IntentKind::NativeTaskV1 {request,root_binding}=kind
         && let cadence::execution::history::Event::Close(proof)=&request.event
     {

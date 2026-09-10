@@ -64,6 +64,9 @@ pub(super) fn native_error(error:Error) -> Value {
 }
 
 pub async fn native_apply<I:ConfigIo+Clone+Sync>(factory:&SessionFactory<I>,root:&Path,raw:Value) -> cadence::store::Result<Value> {
+    if matches!(raw["operation"].as_str(), Some("execution-task-progress" | "execution-task-checkpoint" | "execution-task-answer")) {
+        return native_progress_apply(factory, root, raw).await;
+    }
     if matches!(raw["operation"].as_str(), Some("execution-task-close" | "execution-classify-run")) {
         return native_close_apply(factory, root, raw).await;
     }
@@ -188,6 +191,62 @@ async fn native_close_apply<I:ConfigIo+Clone+Sync>(factory:&SessionFactory<I>,ro
         }
     };
     Ok(match result {Ok(receipt)=>json!({"status":"ok","receipt":receipt}),Err(error)=>native_error(error)})
+}
+
+async fn native_progress_apply<I:ConfigIo+Clone+Sync>(factory:&SessionFactory<I>,root:&Path,raw:Value) -> cadence::store::Result<Value> {
+    use cadence::{execution::{history::{self,Event,ProgressApply,ProgressEvent},runner},evidence::{self,Fact,gates,checkpoint}};
+    let input=match serde_json::from_value::<ProgressApply>(raw) {Ok(input)=>input,Err(error)=>return Ok(native_error(Error::Invalid(error.to_string())))};
+    let session=factory.first_touch(root).await?;let view=session.derivation_view().await?;
+    let project=root.parent().ok_or_else(||Error::Invalid("project root missing".into()))?;
+    let request=match input {
+        ProgressApply::Progress {request}=>{
+            let event=match request.event {
+                ProgressEvent::Progress {text,evidence}=>{
+                    let prior=history::records(&view.snapshot.data,request.task.phase)?.into_iter().find(|r|r.request.request_id==request.request_id);
+                    let commit=match prior.map(|r|r.request.event) {
+                        Some(Event::AcknowledgedProgress {commit,..})=>commit,
+                        _=>runner::git_text(project,&["rev-parse","HEAD"] )?,
+                    };
+                    Event::AcknowledgedProgress {text,evidence,commit}
+                }
+                ProgressEvent::Deviation {text,evidence}=>Event::Deviation {text,evidence},
+                ProgressEvent::FailedAttempt {text,evidence}=>Event::FailedAttempt {reason:text,evidence},
+            };
+            history::Request {request_id:request.request_id,task:request.task,attempt:request.attempt,expected_version:request.expected_version,event}
+        }
+        ProgressApply::Checkpoint {request}=>{
+            if request.checkpoint.state!=checkpoint::State::Unresolved || request.checkpoint.task_name!=request.task.task {
+                return Ok(native_error(Error::Invalid("checkpoint must identify the unfinished task and an unresolved decision".into())));
+            }
+            let scope=continuation_scope(root,request.task.phase);
+            let purpose=match request.checkpoint.checkpoint_type {
+                checkpoint::CheckpointType::Structural=>gates::Purpose::Structural,
+                checkpoint::CheckpointType::HumanVerify=>gates::Purpose::HumanVerify,
+                checkpoint::CheckpointType::Decision=>gates::Purpose::Decision,
+                checkpoint::CheckpointType::Blocked=>gates::Purpose::Blocked,
+                checkpoint::CheckpointType::SuiteRed=>return Ok(native_error(Error::Invalid("native suite checkpoint requires the plan-close lifecycle".into()))),
+            };
+            let gate=gates::Gate {id:request.question_id,purpose,checkpoint_id:Some(request.checkpoint.id.clone()),question:request.question,
+                need:request.checkpoint.need.clone(),options:vec![],state:gates::State::Unanswered};
+            let records=vec![evidence::Record {version:1,scope:scope.clone(),fact:Fact::Checkpoint(request.checkpoint)},
+                evidence::Record {version:1,scope,fact:Fact::Gate(gate)}];
+            history::Request {request_id:request.request_id,task:request.task,attempt:request.attempt,expected_version:request.expected_version,
+                event:Event::Checkpoint {records,owner:None,at:None}}
+        }
+        ProgressApply::Answer {request}=>{
+            if request.owner.trim().is_empty() || request.at.trim().is_empty() {return Ok(native_error(Error::Invalid("checkpoint answer requires actual owner attribution and time".into())));}
+            let scope=continuation_scope(root,request.task.phase);
+            let records=evidence::persistence::read(&view.snapshot.data)?;
+            let Some(mut record)=records.values().find(|r|r.scope==scope && matches!(&r.fact,Fact::Gate(gate) if gate.id==request.answer.question_id)).cloned() else {
+                return Ok(native_error(Error::Invalid("checkpoint answer lacks its retained question".into())));
+            };
+            let Fact::Gate(gate)=&mut record.fact else {unreachable!("selected gate")};
+            gate.state=gates::State::Answered(request.answer);
+            history::Request {request_id:request.request_id,task:request.task,attempt:request.attempt,expected_version:request.expected_version,
+                event:Event::Checkpoint {records:vec![record],owner:Some(request.owner),at:Some(request.at)}}
+        }
+    };
+    Ok(match runner::append(session.review_store(),request).await {Ok(receipt)=>json!({"status":"ok","receipt":receipt}),Err(error)=>native_error(error)})
 }
 
 fn execution_ready(root:&Path,data:&Value,phase:u32) -> cadence::store::Result<()> {
