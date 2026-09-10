@@ -11,6 +11,18 @@ pub const ENVELOPE_CODEC: u32 = 1;
 pub const MAX_COMPACT_BYTES: usize = 16 * 1024;
 pub const MAX_REASON_BYTES: usize = 1024;
 
+/// Native operations have their own encoding; old boundaries stay unchanged.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag="operation",deny_unknown_fields)]
+pub enum NativeApply {
+    #[serde(rename="execution-admit")]
+    Admit {request:super::admission::Request},
+    #[serde(rename="execution-extend")]
+    Extend {request:super::admission::Request},
+    #[serde(rename="execution-authorize")]
+    Authorize {phase:u32,request_id:String,owner:String,at:String,response:String},
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "scope", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum BoundaryScope {

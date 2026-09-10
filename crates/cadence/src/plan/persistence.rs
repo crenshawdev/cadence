@@ -37,7 +37,7 @@ pub fn occurrence(data: &Value, phase: u32) -> Result<String> {
 /// Publication ownership is an identity property, independent of mutable file
 /// bytes and execution fingerprints. Until activation lands, a retained native
 /// member cannot be admitted as legacy by deleting or changing its projection.
-pub fn require_execution_ready(data: &Value, phase: u32) -> Result<()> {
+pub fn require_legacy_execution(data: &Value, phase: u32) -> Result<()> {
     if let Some(occurrence) = saved(data, phase)?
         && let Some(publication) = occurrence.publications.values().next()
     {
@@ -46,6 +46,16 @@ pub fn require_execution_ready(data: &Value, phase: u32) -> Result<()> {
             publication.identity.phase, publication.identity.plan, occurrence.id
         )));
     }
+    Ok(())
+}
+
+pub fn require_execution_ready(data:&Value,phase:u32,documents:&std::collections::BTreeMap<String,String>) -> Result<()> {
+    use cadence::execution::admission;
+    let Some(current)=saved(data,phase)?.filter(|o|!o.publications.is_empty()) else {return Ok(())};
+    let retained=admission::records(data,phase)?;
+    let number=current.publications.keys().next().expect("nonempty");
+    let record=retained.last().ok_or_else(||admission::refuse(phase,"admission-required","contract",&number.to_string(),format!("phase {phase} plan {number} requires an explicit complete execution admission")))?;
+    admission::validate(data,documents,&record.request.contract)?;
     Ok(())
 }
 

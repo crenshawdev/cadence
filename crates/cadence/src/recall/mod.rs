@@ -260,6 +260,11 @@ mod resident {
             phase: u32,
             reply: oneshot::Sender<execution_service::Answer>,
         },
+        NativeExecutionApply {
+            root: PathBuf,
+            raw: serde_json::Value,
+            reply: oneshot::Sender<Result<serde_json::Value>>,
+        },
         ExecutionApply {
             root: PathBuf,
             patch: cadence::execution::model::ExecutorPatch,
@@ -497,6 +502,9 @@ mod resident {
                             let result =
                                 execution_service::query(&factory, &root, phase, &driver).await;
                             let _ = reply.send(result);
+                        }
+                        Request::NativeExecutionApply {root,raw,reply} => {
+                            let _=reply.send(execution_service::native_apply(&factory,&root,raw).await);
                         }
                         Request::ExecutionApply { root, patch, reply } => {
                             let result =
@@ -793,6 +801,12 @@ mod resident {
                 return resident_closed();
             }
             completion.await.unwrap_or_else(|_| resident_closed())
+        }
+
+        pub async fn native_execution_apply(&self,root:&Path,raw:serde_json::Value) -> Result<serde_json::Value> {
+            let (reply,result)=oneshot::channel();
+            self.requests.send(Request::NativeExecutionApply {root:root.to_path_buf(),raw,reply}).await.map_err(|_|Error::Closed)?;
+            result.await.map_err(|_|Error::Closed)?
         }
 
         pub async fn apply_executor_patch(

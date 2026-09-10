@@ -279,6 +279,7 @@ enum QueryArguments {
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyArguments {
+    NativeExecution(cadence::execution::boundary::NativeApply),
     Plan(cadence::plan::model::Apply),
     Context(cadence::context::model::Apply),
     Review(review_service::Apply),
@@ -291,6 +292,7 @@ enum ApplyArguments {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyOutput {
+    NativeExecution(Value),
     Plan(Box<cadence::plan::model::Answer>),
     Context(Box<cadence::context::model::Answer>),
     Review(Box<Envelope<review_service::Output>>),
@@ -832,6 +834,9 @@ impl ServerHandler for PublicServer {
                 structured_result(Ok(QueryOutput::Execution(envelope)))
             }
             "cadence_apply" => {
+                if raw.as_ref().and_then(|v|v["operation"].as_str()).is_some_and(|op|op.starts_with("execution-")) {
+                    return structured_result(self.server.service.native_execution_apply(&self.root,raw.unwrap()).await.map(ApplyOutput::NativeExecution));
+                }
                 if raw.as_ref().and_then(|v| v["operation"].as_str()) == Some("plan-submit") {
                     return structured_result(
                         self.server
@@ -908,6 +913,10 @@ impl ServerHandler for PublicServer {
                     Some(ApplyArguments::Plan(request)) => {
                         let cadence::plan::model::Apply::Submit { .. } = request;
                         unreachable!("plan submission decoded before execution")
+                    }
+                    Some(ApplyArguments::NativeExecution(request)) => {
+                        return structured_result(self.server.service.native_execution_apply(&self.root,
+                            serde_json::to_value(request).expect("native operation")).await.map(ApplyOutput::NativeExecution));
                     }
                     None if raw
                         .as_ref()

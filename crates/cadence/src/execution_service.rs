@@ -51,6 +51,78 @@ struct Plans {
     fingerprint: String,
 }
 
+fn native_error(error:Error) -> Value {
+    if let Error::Invalid(message)|Error::Conflict(message)=&error
+        && let Some(encoded)=message.strip_prefix("plan-refusal:")
+        && let Ok(diagnostic)=serde_json::from_str::<cadence::plan::model::Diagnostic>(encoded)
+    {return serde_json::to_value(diagnostic.answer()).expect("diagnostic");}
+    json!({"status":"refused","rule":"native-admission","slot":"request","reason":error.to_string()})
+}
+
+pub async fn native_apply<I:ConfigIo+Clone+Sync>(factory:&SessionFactory<I>,root:&Path,raw:Value) -> cadence::store::Result<Value> {
+    use cadence::execution::{admission,boundary::NativeApply};
+    if matches!(raw["operation"].as_str(),Some("execution-admit"|"execution-extend")) {
+        for field in ["request_id","expected_set_version","contract"] {
+            let valid=match field {
+                "request_id"=>raw["request"][field].is_string(),
+                "expected_set_version"=>raw["request"][field].as_u64().is_some(),
+                _=>raw["request"][field].is_object(),
+            };
+            if !valid {return Ok(native_error(admission::refuse(0,"admission-shape",&format!("request.{field}"),"","missing or malformed typed request field")));}
+        }
+    }
+    if matches!(raw["operation"].as_str(),Some("execution-admit"|"execution-extend"))
+        && let Err(error)=admission::decode(raw["request"]["contract"].clone())
+    {return Ok(native_error(error));}
+    let command=match serde_json::from_value::<NativeApply>(raw.clone()) {
+        Ok(command)=>command,
+        Err(error)=>return Ok(native_error(admission::refuse(0,"admission-shape","request","",error.to_string()))),
+    };
+    let session=factory.first_touch(root).await?;
+    let before=session.derivation_view().await?;
+    match command {
+        NativeApply::Admit {request}|NativeApply::Extend {request} => {
+            if (raw["operation"]=="execution-admit") != (request.expected_set_version==0) {
+                return Ok(native_error(admission::refuse(request.contract.phase,"admission-set-version","expected_set_version",&request.request_id,"initial admission requires zero; extension requires an explicit current set version")));
+            }
+            let phase=request.contract.phase;let request_id=request.request_id.clone();
+            let replayed=admission::records(&before.snapshot.data,phase)?.iter().any(|r|r.request.request_id==request_id);
+            let written=match session.request(Operation::NativeAdmissionV1 {expected_generation:before.snapshot.generation,
+                expected_integrity:before.snapshot.integrity,request:Box::new(request)}).await {
+                Ok(written)=>written,Err(error)=>return Ok(native_error(error)),
+            };
+            let receipt=admission::records(&written.snapshot.data,phase)?.into_iter().find(|r|r.request.request_id==request_id)
+                .ok_or_else(||Error::Invalid("confirmed admission receipt missing".into()))?;
+            Ok(json!({"status":"ok","receipt":receipt,"replayed":replayed}))
+        }
+        NativeApply::Authorize {phase,request_id,owner,at,response} => {
+            use cadence::evidence::{Record,Fact,gates::{Gate,State,Purpose,Answer,Disposition}};
+            if phase==0 || [&request_id,&owner,&at,&response].iter().any(|s|s.trim().is_empty()) {
+                return Ok(native_error(admission::refuse(phase,"authorization-answer","response",&request_id,"actual owner, time and response required")));
+            }
+            if admission::records(&before.snapshot.data,phase)?.is_empty() {
+                return Ok(native_error(admission::refuse(phase,"admission-required","phase","","admit the native contract before authorizing execution")));
+            }
+            let scope=continuation_scope(root,phase);
+            let id=format!("execution-authorization:{request_id}");
+            let mut gate=Gate {id:id.clone(),purpose:Purpose::Progress,checkpoint_id:None,
+                question:"Continue native execution?".into(),need:serde_json::to_string(&raw)?,options:vec![],state:State::Unanswered};
+            let record=Record {version:1,scope:scope.clone(),fact:Fact::Gate(gate.clone())};
+            let pending=session.commit_evidence(&before,&format!("{id}:question"),&record).await?;
+            gate.state=State::Answered(Answer {question_id:id.clone(),actual_response:response,selected_option:None,adjustment:None,
+                disposition:Disposition::Approve,authorization_id:Some(digest(&serde_json::to_vec(&raw)?))});
+            let answered=Record {version:1,scope,fact:Fact::Gate(gate)};
+            session.commit_evidence(&pending,&format!("{id}:answer"),&answered).await?;
+            Ok(json!({"status":"ok","authorization":answered}))
+        }
+    }
+}
+
+fn execution_ready(root:&Path,data:&Value,phase:u32) -> cadence::store::Result<()> {
+    let inventory=cadence::plan::inventory::read(root,&phase.to_string(),data)?;
+    cadence::plan::persistence::require_execution_ready(data,phase,&inventory.documents)
+}
+
 pub fn continuation_scope(root: &Path, phase: u32) -> Scope {
     Scope {
         project: root.parent().unwrap_or(root).to_string_lossy().into_owned(),
@@ -175,7 +247,7 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
         .await;
     }
     if let Err(reason) =
-        cadence::plan::persistence::require_execution_ready(&view.snapshot.data, phase)
+        execution_ready(&root,&view.snapshot.data, phase)
     {
         return record_refusal(
             &session,
@@ -190,7 +262,7 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
         )
         .await;
     }
-    let plans = match observe_plans(&root, phase, &phase_record.plans).await {
+    let mut plans = match observe_plans(&root, phase, &phase_record.plans).await {
         Ok(plans) => plans,
         Err((code, reason)) => {
             return record_refusal(
@@ -207,6 +279,13 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
             .await;
         }
     };
+    // Execution's historical grouping fingerprint stays bound to the original
+    // basis. Explicit native extensions have their own set version and retain
+    // all current plan bytes, without rekeying prior dispatch/risk receipts.
+    if let Some(first)=cadence::execution::admission::records(&view.snapshot.data,phase).map_err(store_failure)?.first() {
+        let original=plans.values.iter().filter(|p|first.request.contract.plans.iter().any(|b|b.plan==p.plan)).cloned().collect::<Vec<_>>();
+        plans.fingerprint=plan_set_fingerprint(&original).map_err(|_|Failure::Encoding)?;
+    }
     let execution = match execution_snapshot(&view) {
         Ok(value) => value,
         Err(error) => {
@@ -769,6 +848,10 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
     let request = public_request_digest(BoundaryTool::CadenceApply, Some(&raw));
     let (root, session, initial) = begin(factory, selected_root).await?;
     let phase = dispatch_phase(&initial, &patch.dispatch_id)?.unwrap_or(0);
+    if !cadence::execution::admission::records(&initial.snapshot.data,phase).map_err(store_failure)?.is_empty() {
+        return record_refusal(&session,&initial,phase,BoundaryTool::CadenceApply,"executor",&request,
+            "native-task-close-unavailable","native tasks cannot close through a schema-1 executor patch",Some(patch.dispatch_id.clone())).await;
+    }
     if let Some(answer) = terminal_answer(&session, &initial, &scope(phase)).await? {
         return Ok(answer);
     }
@@ -1417,7 +1500,7 @@ async fn reobserve<I: ConfigIo>(
     let latest_plans = observe_plans(root, phase, names)
         .await
         .map_err(|(code, reason)| format!("{code}: {reason}"))?;
-    if latest_plans.fingerprint != plans.fingerprint || latest_plans.values != plans.values {
+    if latest_plans.values != plans.values {
         return Err("native plan bytes changed during the request".into());
     }
     if let Some(expected_head) = expected_head {
@@ -1432,7 +1515,7 @@ async fn reobserve<I: ConfigIo>(
         .derivation_view()
         .await
         .map_err(|error| error.to_string())?;
-    cadence::plan::persistence::require_execution_ready(&latest.snapshot.data, phase)
+    execution_ready(root,&latest.snapshot.data, phase)
         .map_err(|error| error.to_string())?;
     if latest.snapshot.generation != expected.snapshot.generation
         || latest.snapshot.integrity != expected.snapshot.integrity

@@ -11,6 +11,11 @@ pub const INTENT: &str = ".store-intent.json";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum IntentKind {
+    NativeExecutionDispatchV1 {
+        phase: u32,
+        decision_id: String,
+        inventory: Observed,
+    },
     NativeAdmissionV1 {
         request: Box<cadence::execution::admission::Request>,
         root_binding: String,
@@ -271,6 +276,9 @@ impl Intent {
         model::validate_items(&model::parse_lines(items)?)?;
         model::validate_decisions(&model::parse_lines(decisions)?)?;
         let snapshot = Snapshot::parse(bytes(STATE)?, items, decisions)?;
+        if let IntentKind::ExecutionPatch {phase,..}|IntentKind::ExecutionPatchV1 {phase,..}=&self.kind {
+            cadence::plan::persistence::require_legacy_execution(&snapshot.data,*phase)?;
+        }
         if let Some(previous) = self
             .participants
             .last()
@@ -350,7 +358,7 @@ impl Intent {
                 .map_err(|e| cadence::plan::limits::disposition(e, Error::Invalid))?;
             }
             IntentKind::ExecutionDispatch { phase } => {
-                cadence::plan::persistence::require_execution_ready(&snapshot.data, phase)?;
+                cadence::plan::persistence::require_legacy_execution(&snapshot.data, phase)?;
                 let execution = execution_snapshot(&snapshot)?;
                 let occurrence =
                     execution
@@ -407,6 +415,7 @@ impl Intent {
             | IntentKind::GuardAudit { .. }
             | IntentKind::BoundaryObservationV1 { .. }
             | IntentKind::ExecutionDispatchV1 { .. }
+            | IntentKind::NativeExecutionDispatchV1 { .. }
             | IntentKind::ExecutionPatchV1 { .. }
             | IntentKind::Store
             | IntentKind::ExecutionRefusal { .. }
@@ -671,7 +680,8 @@ impl Intent {
             IntentKind::BoundaryObservationV1 { scope, decision_id } => {
                 (scope.clone(), decision_id, false)
             }
-            IntentKind::ExecutionDispatchV1 { phase, decision_id } => (
+            IntentKind::ExecutionDispatchV1 { phase, decision_id }
+            | IntentKind::NativeExecutionDispatchV1 { phase, decision_id, .. } => (
                 BoundaryScope::Execution { phase: *phase },
                 decision_id,
                 false,
@@ -752,8 +762,12 @@ impl Intent {
                 .map_err(|e| Error::Invalid(e.to_string()))?;
         }
         match &self.kind {
-            IntentKind::ExecutionDispatchV1 { phase, .. } => {
-                cadence::plan::persistence::require_execution_ready(&snapshot.data, *phase)?;
+            IntentKind::ExecutionDispatchV1 { phase, .. }
+            | IntentKind::NativeExecutionDispatchV1 { phase, .. } => {
+                if let IntentKind::NativeExecutionDispatchV1 {inventory,..}=&self.kind {
+                    let inventory:cadence::plan::inventory::Inventory=serde_json::from_slice(inventory.bytes.as_deref().ok_or_else(||Error::Invalid("missing native dispatch inventory".into()))?)?;
+                    cadence::plan::persistence::require_execution_ready(&snapshot.data,*phase,&inventory.documents)?;
+                } else {cadence::plan::persistence::require_legacy_execution(&snapshot.data,*phase)?;}
                 let execution = execution_snapshot(snapshot)?;
                 let active = execution
                     .occurrences
@@ -918,6 +932,11 @@ fn validate_all<S: Storage>(
             return Err(cadence::execution::admission::refuse(request.contract.phase,"admission-inputs-changed","contract.plans","","installed PLAN inventory or root changed before confirmation"));
         }
     }
+    if let IntentKind::NativeExecutionDispatchV1 {phase,inventory,..}=kind
+        && storage.read(&format!("phase-plan-inventory:{phase}"))?!=*inventory
+    {
+        return Err(cadence::execution::admission::refuse(*phase,"admission-inputs-changed","contract.plans","","installed PLAN inventory changed before dispatch confirmation"));
+    }
     // This entire pass finishes before any participant can change.
     for participant in participants {
         let actual = storage.read(&participant.target)?;
@@ -976,7 +995,8 @@ pub(crate) fn commit<S: Storage, P: Policy>(
     intent.integrity = intent.digest()?;
     let prospective = intent.validate()?;
     let route = match &intent.kind {
-        IntentKind::ExecutionDispatchV1 { phase, .. } => execution_snapshot(&prospective)?
+        IntentKind::ExecutionDispatchV1 { phase, .. }
+        | IntentKind::NativeExecutionDispatchV1 { phase, .. } => execution_snapshot(&prospective)?
             .occurrences
             .get(&phase.to_string())
             .and_then(|occurrence| occurrence.active.as_ref())

@@ -718,12 +718,14 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             snapshot: &self.view.snapshot,
         })?;
         require_current_execution(&self.view).map_err(boundary_error)?;
-        if let BoundaryChange::Dispatch { dispatch, .. } = &change {
-            cadence::plan::persistence::require_execution_ready(
-                &self.view.snapshot.data,
-                dispatch.phase,
-            )?;
-        }
+        let native_inventory=if let BoundaryChange::Dispatch {dispatch,..}=&change
+            && cadence::plan::persistence::saved(&self.view.snapshot.data,dispatch.phase)?.is_some_and(|o|!o.publications.is_empty())
+        {
+            let observed=self.storage.read(&format!("phase-plan-inventory:{}",dispatch.phase))?;
+            let inventory:cadence::plan::inventory::Inventory=serde_json::from_slice(observed.bytes.as_deref().ok_or_else(||Error::Invalid("missing native inventory".into()))?)?;
+            cadence::plan::persistence::require_execution_ready(&self.view.snapshot.data,dispatch.phase,&inventory.documents)?;
+            Some(observed)
+        } else {None};
         if !decision.scope.valid() {
             return Err(Error::Invalid("invalid boundary scope".into()));
         }
@@ -870,9 +872,9 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                         .map_err(|error| Error::Conflict(error.to_string()))?;
                 execution.occurrences.insert(phase.to_string(), occurrence);
                 install_execution(&mut next.snapshot.data, execution)?;
-                super::transaction::IntentKind::ExecutionDispatchV1 {
-                    phase,
-                    decision_id: id.clone(),
+                match native_inventory {
+                    Some(inventory)=>super::transaction::IntentKind::NativeExecutionDispatchV1 {phase,decision_id:id.clone(),inventory},
+                    None=>super::transaction::IntentKind::ExecutionDispatchV1 {phase,decision_id:id.clone()},
                 }
             }
             BoundaryChange::Patch {
@@ -885,6 +887,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 let BoundaryScope::Execution { phase } = decision.scope else {
                     return Err(Error::Invalid("patch lacks execution scope".into()));
                 };
+                cadence::plan::persistence::require_legacy_execution(&self.view.snapshot.data,phase)?;
                 let risk_pending = matches!(&decision.receipt, Receipt::Compact {
                     envelope: Envelope::Refused { code, .. }
                 } if code == "risk-pending")
@@ -986,7 +989,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         decision: BoundaryDecision,
     ) -> Result<View> {
         self.revalidate()?;
-        cadence::plan::persistence::require_execution_ready(
+        cadence::plan::persistence::require_legacy_execution(
             &self.view.snapshot.data,
             dispatch.phase,
         )?;
@@ -1013,6 +1016,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         if let Some(view) = self.execution_replay(operation_id, &fingerprint, decision.phase)? {
             return Ok(view);
         }
+        cadence::plan::persistence::require_legacy_execution(&self.view.snapshot.data,decision.phase)?;
         let admission = self.boundary_admission(&decision)?;
         if matches!(admission, BoundaryAdmission::Replay) {
             self.revalidate()?;
