@@ -14,7 +14,7 @@ use std::{
 
 struct Client {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Option<ChildStdin>,
     stdout: BufReader<std::process::ChildStdout>,
 }
 
@@ -30,7 +30,7 @@ impl Client {
             .spawn()
             .unwrap();
         let mut client = Self {
-            stdin: child.stdin.take().unwrap(),
+            stdin: child.stdin.take(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
         };
@@ -44,8 +44,8 @@ impl Client {
         client
     }
     fn send(&mut self, value: Value) {
-        writeln!(self.stdin, "{value}").unwrap();
-        self.stdin.flush().unwrap();
+        writeln!(self.stdin.as_mut().unwrap(), "{value}").unwrap();
+        self.stdin.as_mut().unwrap().flush().unwrap();
     }
     fn recv(&mut self) -> Value {
         let mut line = String::new();
@@ -76,8 +76,16 @@ impl Client {
         )
     }
     fn finish(mut self) {
-        drop(self.stdin);
+        drop(self.stdin.take());
         assert!(self.child.wait().unwrap().success());
+    }
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        drop(self.stdin.take());
+        if !matches!(self.child.try_wait(), Ok(Some(_))) { let _ = self.child.kill(); }
+        let _ = self.child.wait();
     }
 }
 
@@ -762,6 +770,184 @@ fn phase28_republication_supersedes_previous_map() {
         client.finish();
         assert_unchanged(project, &after, &saved);
         assert_eq!(reopened(project).snapshot, saved);
+
+        // Retry the exact original acknowledgment after replacement and restart.
+        for projection in ["newer-authorized", "drifted", "missing"] {
+            match projection {
+                "drifted" => fs::write(&path, b"Caller drift; not evidence.\n").unwrap(),
+                "missing" => fs::remove_file(&path).unwrap(),
+                _ => {},
+            }
+            let before_replay = tree(project);
+            let mut client = Client::open(project);
+            let replay = client.call("cadence_apply", original_request.clone());
+            assert_eq!(replay["replayed"], true, "{replay}");
+            assert_eq!(replay["results"], original["results"]);
+            assert_eq!(replay["payload_digest"], occurrence["receipts"]["original"]["payload_digest"],
+                "replay returns original payload digest");
+            assert_eq!(replay["projections"][0]["status"], projection);
+            assert_eq!(replay["projections"][0]["current_revision"], replacement["results"][0]["revision"]);
+            for changed in ["spec", "association"] {
+                let mut reused = original_request.clone();
+                let item = &mut reused["submission"]["plans"][0]["content"]["evidence_map"]["items"][0];
+                if changed == "spec" { item["spec"]["call"] = json!("Send an altered parcel."); }
+                else { item["associations"][0]["reason"] = json!("A different association reason."); }
+                let refused = client.call("cadence_apply", approve(reused));
+                assert_eq!(refused["rule"], "request-id-reuse", "{refused}");
+                assert!(refused["reason"].as_str().unwrap().contains("original"));
+            }
+            client.finish();
+            assert_unchanged(project, &before_replay, &saved);
+            assert_eq!(reopened(project).snapshot, saved);
+        }
+        fs::write(&path, installed).unwrap();
+    }
+
+    // Two independent real callers preview the same old target before either wins.
+    let temp = fixture();
+    let project = temp.path();
+    native_context(project, 27, &["T1"]);
+    let mut first = Client::open(project);
+    let map = attached(vec![check("delivery", "T1")]);
+    let initial = proposal(&mut first, "competing-original", std::slice::from_ref(&map), &["# Original\n"]);
+    let original = publish(&mut first, &initial);
+    first.finish();
+    let path = project.join(".planning/phases/27/PLAN-1.md");
+    let old = fs::read_to_string(&path).unwrap();
+    let mut first = Client::open(project);
+    let mut second = Client::open(project);
+    let winner = replacement(&mut first, "winner", 1, &original["results"][0], &old, map.clone(), "# Winner\n");
+    let loser = replacement(&mut second, "loser", 1, &original["results"][0], &old, map, "# Loser\n");
+    let winner = approve(final_request(&preview(&mut first, &winner)));
+    let loser = approve(final_request(&preview(&mut second, &loser)));
+    let won = first.call("cadence_apply", winner);
+    assert_eq!(won["persisted"], true, "{won}");
+    first.finish();
+    let before = tree(project);
+    let saved = reopened(project).snapshot;
+    let refused = second.call("cadence_apply", loser);
+    assert_eq!(refused["rule"], "stale-target", "{refused}");
+    assert!(refused["reason"].as_str().unwrap().contains("phase 27 plan 1"));
+    assert!(refused["reason"].as_str().unwrap().contains("fresh approval"));
+    second.finish();
+    assert_unchanged(project, &before, &saved);
+    assert_eq!(reopened(project).snapshot, saved);
+
+    // Restore the captured historical bytes verbatim at their original root.
+    // Guard is declared before clients, so unwind reaps them before root cleanup.
+    let capture: Value = serde_json::from_str(include_str!("fixtures/phase27_absent_map.json")).unwrap();
+    let fixed = HistoricalRoot::restore(&capture);
+    let project = &fixed.path;
+    let original_request = capture["request"].clone();
+    for content in [&original_request["submission"]["plans"][0]["content"],
+        &original_request["approval"]["submission"]["plans"][0]["content"],
+        &capture["publication"]["content"], &capture["receipt"]["results"][0]["content"]] {
+        assert!(content.get("evidence_map").is_none());
+        assert!(content.get("provisional").is_none());
+    }
+    let before = tree(project);
+    let saved = reopened(project).snapshot;
+    assert_eq!(saved.data["import"]["active"], capture["provenance"]["active"]);
+    let mut client = Client::open(project);
+    let replay = client.call("cadence_apply", original_request.clone());
+    assert_eq!(replay["replayed"], true, "{replay}");
+    assert_eq!(replay["results"], capture["acknowledgment"]["results"]);
+    assert_eq!(replay["payload_digest"], capture["payload_digest"]);
+    assert_eq!(replay["projections"][0]["status"], "installed");
+    client.finish();
+    assert_unchanged(project, &before, &saved);
+    let path = project.join(".planning/phases/27/PLAN-1.md");
+    let old = fs::read_to_string(&path).unwrap();
+    assert_eq!(old.as_bytes(), serde_json::from_value::<Vec<u8>>(capture["plan_bytes"].clone()).unwrap());
+    let mut client = Client::open(project);
+    let new = replacement(&mut client, "first-attached-map", 1, &capture["publication"], &old,
+        attached(vec![check("native-first-check", "T1")]), "# First approved attached map\n");
+    let complete = preview(&mut client, &new);
+    let published = client.call("cadence_apply", approve(final_request(&complete)));
+    assert_eq!(published["persisted"], true, "historical replacement writer admission: {published}");
+    client.finish();
+    let after = tree(project);
+    let current = reopened(project).snapshot;
+    let mut client = Client::open(project);
+    let replay = client.call("cadence_apply", original_request.clone());
+    assert_eq!(replay["replayed"], true);
+    assert_eq!(replay["results"], capture["acknowledgment"]["results"]);
+    assert_eq!(replay["payload_digest"], capture["payload_digest"]);
+    assert_eq!(replay["projections"][0]["status"], "newer-authorized");
+    assert_eq!(replay["projections"][0]["current_revision"], published["results"][0]["revision"]);
+    assert!(replay["results"][0]["content"].get("evidence_map").is_none());
+    client.finish();
+    assert_unchanged(project, &after, &current);
+    let persisted = reopened(project).snapshot;
+    let occurrence = &persisted.data["plan_publications"]["phases"]["27"];
+    let id = original_request["submission"]["request_id"].as_str().unwrap();
+    assert_eq!(serde_json::to_vec(&occurrence["receipts"][id]).unwrap(), serde_json::to_vec(&capture["receipt"]).unwrap());
+    assert_eq!(occurrence["publications"]["1"], published["results"][0]);
+    let events = persisted.data["acceptance_maps"]["phases"]["27"]["revisions"].as_array().unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["items"], json!([check("native-first-check", "T1")]));
+    assert_eq!(events[0]["revision"], published["results"][0]["map_revision"]);
+    assert_eq!(fs::read(&path).unwrap(), complete["documents"][0]["document"].as_str().unwrap().as_bytes());
+}
+
+struct HistoricalRoot {
+    path: PathBuf,
+    _lock: fs::File,
+}
+
+impl HistoricalRoot {
+    const MARKER: &'static [u8] = b"phase27-absent-map-df43af15\n";
+
+    fn owned(path: &Path) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        let Ok(meta) = fs::symlink_metadata(path) else { return false };
+        let Ok(marker) = fs::symlink_metadata(path.join(".cadence-fixture-owner")) else { return false };
+        // SAFETY: geteuid has no arguments or memory preconditions.
+        meta.is_dir() && meta.uid() == unsafe { libc::geteuid() } && marker.is_file()
+            && fs::read(path.join(".cadence-fixture-owner")).is_ok_and(|bytes| bytes == Self::MARKER)
+    }
+
+    fn restore(capture: &Value) -> Self {
+        use std::os::{fd::AsRawFd, unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt}};
+        let path = PathBuf::from("/tmp/cadence-phase27-absent-map-df43af15");
+        let lock = fs::OpenOptions::new().read(true).write(true).create(true).truncate(false)
+            .mode(0o600).custom_flags(libc::O_NOFOLLOW).open(path.with_extension("lock")).unwrap();
+        let meta = lock.metadata().unwrap();
+        // SAFETY: geteuid and flock use no borrowed memory; the file is live.
+        assert!(meta.is_file() && meta.uid() == unsafe { libc::geteuid() } && meta.mode() & 0o777 == 0o600);
+        assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) }, 0, "historical fixture lock unavailable");
+        let guard = Self { path, _lock: lock };
+        if fs::symlink_metadata(&guard.path).is_ok() {
+            assert!(Self::owned(&guard.path), "refuse unowned or symlink historical root");
+            fs::remove_dir_all(&guard.path).unwrap();
+        }
+        fs::create_dir(&guard.path).unwrap();
+        fs::set_permissions(&guard.path, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(guard.path.join(".cadence-fixture-owner"), Self::MARKER).unwrap();
+        assert_eq!(fs::canonicalize(&guard.path).unwrap(), guard.path);
+        assert_eq!(capture["provenance"]["project_root"], guard.path.to_str().unwrap());
+        assert_eq!(capture["provenance"]["planning_root"], guard.path.join(".planning").to_str().unwrap());
+        assert_eq!(capture["provenance"]["CADENCE_GLOBAL_CONFIG"], "");
+        assert_eq!(capture["provenance"]["active"], json!({"repo":guard.path.join(".planning/config.v4.json"),"global":null}));
+        for (relative, bytes) in capture["files"].as_object().unwrap() {
+            let relative = Path::new(relative);
+            assert!(relative.components().all(|c| matches!(c, std::path::Component::Normal(_))));
+            assert!(relative.starts_with(".planning"));
+            let target = guard.path.join(relative);
+            if bytes.is_null() { fs::create_dir_all(target).unwrap(); }
+            else {
+                fs::create_dir_all(target.parent().unwrap()).unwrap();
+                fs::write(target, serde_json::from_value::<Vec<u8>>(bytes.clone()).unwrap()).unwrap();
+            }
+        }
+        assert_eq!(fs::canonicalize(guard.path.join(".planning")).unwrap(), guard.path.join(".planning"));
+        guard
+    }
+}
+
+impl Drop for HistoricalRoot {
+    fn drop(&mut self) {
+        if Self::owned(&self.path) { fs::remove_dir_all(&self.path).expect("clean up owned historical root before unlocking"); }
     }
 }
 
