@@ -252,6 +252,7 @@ impl Intent {
         }
         match self.kind.clone() {
             IntentKind::ExecutionDispatch { phase } => {
+                cadence::plan::persistence::require_execution_ready(&snapshot.data, phase)?;
                 let execution = execution_snapshot(&snapshot)?;
                 let occurrence =
                     execution
@@ -654,6 +655,7 @@ impl Intent {
         }
         match &self.kind {
             IntentKind::ExecutionDispatchV1 { phase, .. } => {
+                cadence::plan::persistence::require_execution_ready(&snapshot.data, *phase)?;
                 let execution = execution_snapshot(snapshot)?;
                 let active = execution
                     .occurrences

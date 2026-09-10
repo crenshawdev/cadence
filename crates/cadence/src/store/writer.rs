@@ -624,6 +624,12 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             snapshot: &self.view.snapshot,
         })?;
         require_current_execution(&self.view).map_err(boundary_error)?;
+        if let BoundaryChange::Dispatch { dispatch, .. } = &change {
+            cadence::plan::persistence::require_execution_ready(
+                &self.view.snapshot.data,
+                dispatch.phase,
+            )?;
+        }
         if !decision.scope.valid() {
             return Err(Error::Invalid("invalid boundary scope".into()));
         }
@@ -885,6 +891,11 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         dispatch: ActiveDispatch,
         decision: BoundaryDecision,
     ) -> Result<View> {
+        self.revalidate()?;
+        cadence::plan::persistence::require_execution_ready(
+            &self.view.snapshot.data,
+            dispatch.phase,
+        )?;
         if dispatch.route.is_some()
             || dispatch.policy.rung != cadence::execution::model::ExecutorRung::Fixed
         {

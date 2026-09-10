@@ -31,3 +31,18 @@ pub fn occurrence(data: &Value, phase: u32) -> Result<String> {
     }
     Ok(format!("active-cycle:phase:{phase}"))
 }
+
+/// Publication ownership is an identity property, independent of mutable file
+/// bytes and execution fingerprints. Until activation lands, a retained native
+/// member cannot be admitted as legacy by deleting or changing its projection.
+pub fn require_execution_ready(data: &Value, phase: u32) -> Result<()> {
+    if let Some(occurrence) = saved(data, phase)?
+        && let Some(publication) = occurrence.publications.values().next()
+    {
+        return Err(Error::Conflict(format!(
+            "provisional-authoring: phase {} plan {} in occurrence {} is authoring-only; execution requires phases 28, 29 and 12",
+            publication.identity.phase, publication.identity.plan, occurrence.id
+        )));
+    }
+    Ok(())
+}

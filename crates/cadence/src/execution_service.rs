@@ -174,6 +174,22 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
         )
         .await;
     }
+    if let Err(reason) =
+        cadence::plan::persistence::require_execution_ready(&view.snapshot.data, phase)
+    {
+        return record_refusal(
+            &session,
+            &view,
+            phase,
+            BoundaryTool::CadenceQuery,
+            "execute-next",
+            &raw_request,
+            "provisional-authoring",
+            reason.to_string(),
+            None,
+        )
+        .await;
+    }
     let plans = match observe_plans(&root, phase, &phase_record.plans).await {
         Ok(plans) => plans,
         Err((code, reason)) => {
@@ -1415,6 +1431,8 @@ async fn reobserve<I: ConfigIo>(
     let latest = session
         .derivation_view()
         .await
+        .map_err(|error| error.to_string())?;
+    cadence::plan::persistence::require_execution_ready(&latest.snapshot.data, phase)
         .map_err(|error| error.to_string())?;
     if latest.snapshot.generation != expected.snapshot.generation
         || latest.snapshot.integrity != expected.snapshot.integrity
