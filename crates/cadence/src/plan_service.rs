@@ -139,7 +139,10 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                     return path_error(error);
                 }
             }
-            let inventory = inventory::read(root, &submission.phase.to_string(), &data)?;
+            let inventory = match inventory::read(root, &submission.phase.to_string(), &data) {
+                Ok(value) => value,
+                Err(error) => return Ok(model::refused("inventory", error.to_string())),
+            };
             if let Err(error) = persistence::contribute(&data, &submission, &approval, &inventory) {
                 return path_error(error);
             }
@@ -159,8 +162,10 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             let view = store
                 .request(cadence::store::writer::Operation::ReadVerified)
                 .await?;
-            let inventory =
-                inventory::read(root, &submission.phase.to_string(), &view.snapshot.data)?;
+            let inventory = match inventory::read(root, &submission.phase.to_string(), &view.snapshot.data) {
+                Ok(value) => value,
+                Err(error) => return Ok(model::refused("inventory", error.to_string())),
+            };
             let (proposed, results) = match persistence::contribute(
                 &view.snapshot.data,
                 &submission,

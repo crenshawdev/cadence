@@ -104,6 +104,8 @@ pub struct Occurrence {
     pub cycle: String,
     pub high_water: u32,
     pub consumed: Vec<u32>,
+    #[serde(default)]
+    pub provenance: BTreeMap<u32, std::collections::BTreeSet<String>>,
     pub publications: BTreeMap<u32, Publication>,
     pub receipts: BTreeMap<String, Receipt>,
 }

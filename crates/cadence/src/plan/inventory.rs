@@ -15,6 +15,8 @@ pub struct Inventory {
     pub high_water: u32,
     pub basis: String,
     pub documents: BTreeMap<String, String>,
+    #[serde(default)]
+    pub provenance: BTreeMap<u32, BTreeSet<String>>,
 }
 
 pub fn phase_address(phase: &str) -> bool {
@@ -45,6 +47,7 @@ pub fn read(root: &Path, phase: &str, data: &Value) -> Result<Inventory> {
     let mut occupied = BTreeSet::new();
     let mut documents = BTreeMap::new();
     let mut aliases = BTreeMap::new();
+    let mut provenance: BTreeMap<u32, BTreeSet<String>> = BTreeMap::new();
     for suffix in ["", "/reports"] {
         let dir = root.join(format!("phases/{phase}{suffix}"));
         let entries = match std::fs::read_dir(&dir) {
@@ -55,16 +58,26 @@ pub fn read(root: &Path, phase: &str, data: &Value) -> Result<Inventory> {
         for entry in entries {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
+            let path = format!("phases/{phase}{suffix}/{name}");
+            if matches!(name.as_str(), "SUMMARY.md" | "UAT.md") && entry.file_type()?.is_file() {
+                documents.insert(path.clone(), std::fs::read_to_string(entry.path())?);
+            }
             let Some(n) = number(&name) else {
                 continue;
             };
             occupied.insert(n);
+            provenance.entry(n).or_default().insert(path.clone());
+            if name.starts_with("PLAN-") && name != format!("PLAN-{n}.md") {
+                return Err(Error::Conflict(format!(
+                    "ambiguous plan alias {path} for phase {phase} plan {n}; explicit resolution required"
+                )));
+            }
             if suffix.is_empty()
                 && name.starts_with("PLAN")
                 && aliases.insert(n, name.clone()).is_some()
             {
                 return Err(Error::Conflict(format!(
-                    "ambiguous plan aliases for phase {phase} plan {n}"
+                    "ambiguous plan aliases at {path} for phase {phase} plan {n}; explicit resolution required"
                 )));
             }
             // Symlinks are occupied, but their outside contents are not inputs.
@@ -81,7 +94,7 @@ pub fn read(root: &Path, phase: &str, data: &Value) -> Result<Inventory> {
                             };
                             if mismatch {
                                 return Err(Error::Conflict(format!(
-                                    "conflicting frontmatter in phases/{phase}/{name}: {field}: {value}"
+                                    "conflicting frontmatter in phases/{phase}/{name}: {field}: {value}; explicit resolution required"
                                 )));
                             }
                         }
@@ -98,6 +111,7 @@ pub fn read(root: &Path, phase: &str, data: &Value) -> Result<Inventory> {
             high_water,
             basis: String::new(),
             documents,
+            provenance,
         },
         phase,
         data,
@@ -108,19 +122,29 @@ pub fn with_records(input: Inventory, phase: &str, data: &Value) -> Result<Inven
     let mut occupied: BTreeSet<_> = input.occupied.into_iter().collect();
     let mut high_water = input.high_water;
     let documents = input.documents;
-    if let Ok(phase) = phase.parse::<u32>() {
+    let mut provenance = input.provenance;
+    if let Ok(number) = phase.parse::<u32>() && number.to_string() == phase {
+        let phase = number;
         if let Some(saved) = persistence::saved(data, phase)? {
             high_water = high_water.max(saved.high_water);
             occupied.extend(saved.consumed);
             occupied.extend(saved.publications.keys());
+            for (number, sources) in saved.provenance {
+                provenance.entry(number).or_default().extend(sources);
+            }
         }
         if let Some(execution) = data.get("execution") {
             let execution: cadence::execution::model::ExecutionSnapshot =
                 serde_json::from_value(execution.clone())?;
-            for occurrence in execution.occurrences.values().filter(|o| o.phase == phase) {
-                occupied.extend(occurrence.plans.iter().map(|p| p.plan));
+            for (id, occurrence) in execution.occurrences.iter().filter(|(_, o)| o.phase == phase) {
+                let mut numbers: BTreeSet<_> = occurrence.plans.iter().map(|p| p.plan).collect();
+                numbers.extend(occurrence.receipts.values().map(|r| r.outcome.plan));
                 if let Some(active) = &occurrence.active {
-                    occupied.insert(active.plan);
+                    numbers.insert(active.plan);
+                }
+                for number in numbers {
+                    occupied.insert(number);
+                    provenance.entry(number).or_default().insert(format!("execution:{id}:plan:{number}"));
                 }
             }
         }
@@ -133,5 +157,6 @@ pub fn with_records(input: Inventory, phase: &str, data: &Value) -> Result<Inven
         high_water,
         basis,
         documents,
+        provenance,
     })
 }

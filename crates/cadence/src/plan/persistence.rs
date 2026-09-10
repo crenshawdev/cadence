@@ -106,6 +106,7 @@ pub fn contribute(
         cycle: "active".into(),
         high_water: inventory.high_water,
         consumed: inventory.occupied.clone(),
+        provenance: inventory.provenance.clone(),
         publications: Default::default(),
         receipts: Default::default(),
     });
@@ -142,6 +143,10 @@ pub fn contribute(
             history: vec![revision],
         };
         occurrence.publications.insert(number, publication.clone());
+        for (number, sources) in &inventory.provenance {
+            occurrence.provenance.entry(*number).or_default().extend(sources.iter().cloned());
+        }
+        occurrence.provenance.entry(number).or_default().insert(format!("publication:{}", submission.request_id));
         occurrence.consumed.extend(&inventory.occupied);
         occurrence.consumed.push(number);
         occurrence.consumed.sort_unstable();
