@@ -192,6 +192,14 @@ fn reopened(project: &Path) -> cadence::store::writer::View {
 
 fn git(project: &Path, args: &[&str]) {
     let result = Command::new("git")
+        .args([
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "user.name=John Crenshaw",
+            "-c",
+            "user.email=john@jcrenshaw.dev",
+        ])
         .arg("-C")
         .arg(project)
         .args(args)
@@ -213,14 +221,7 @@ fn execution_authority(project: &Path) {
     git(
         project,
         &[
-            "-c",
-            "user.name=John Crenshaw",
-            "-c",
-            "user.email=john@jcrenshaw.dev",
-            "-c",
-            "user.signingkey=693AB15F91734B0C",
             "commit",
-            "-S",
             "-qm",
             "test(27): fixture source",
         ],
