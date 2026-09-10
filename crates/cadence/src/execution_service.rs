@@ -1891,7 +1891,10 @@ fn public_request_digest(tool: BoundaryTool, raw: Option<&Value>) -> String {
     )
 }
 
-fn stable_reason(code: &str, _detail: &str) -> String {
+fn stable_reason(code: &str, detail: &str) -> String {
+    if code == "provisional-authoring" {
+        return detail.to_owned();
+    }
     match code {
         "invalid-phase" => "phase must be a positive integer; supply the native phase number".into(),
         "foreign-dispatch" => "the patch does not identify a dispatch in this store; request the next execution dispatch".into(),

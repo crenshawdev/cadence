@@ -99,6 +99,9 @@ impl Filesystem {
     }
 
     fn target(&self, target: &str) -> Result<PathBuf> {
+        if let Some((phase, plan)) = phase_plan_target(target)? {
+            return Ok(self.root.join(format!("phases/{phase}/PLAN-{plan}.md")));
+        }
         if let Some(phase) = phase_context_target(target)? {
             return Ok(self
                 .root
@@ -209,6 +212,18 @@ pub(crate) fn phase_context_target(target: &str) -> Result<Option<u32>> {
     phase_summary_target(&format!("phase-summary:{value}"))
 }
 
+pub(crate) fn phase_plan_target(target: &str) -> Result<Option<(u32, u32)>> {
+    let Some(value) = target.strip_prefix("phase-plan:") else {
+        return Ok(None);
+    };
+    let (phase, plan) = value
+        .split_once(':')
+        .ok_or_else(|| Error::Invalid("invalid phase-plan target".into()))?;
+    let phase = phase_summary_target(&format!("phase-summary:{phase}"))?.unwrap();
+    let plan = phase_summary_target(&format!("phase-summary:{plan}"))?.unwrap();
+    Ok(Some((phase, plan)))
+}
+
 pub(crate) fn phase_summary_target(target: &str) -> Result<Option<u32>> {
     let Some(value) = target.strip_prefix("phase-summary:") else {
         return Ok(None);
@@ -272,7 +287,21 @@ impl Storage for Filesystem {
     }
 
     fn read(&mut self, target: &str) -> Result<Observed> {
-        if phase_context_target(target)?.is_some() {
+        if let Some(phase) = target.strip_prefix("phase-plan-inventory:") {
+            let phase = phase_summary_target(&format!("phase-summary:{phase}"))?.unwrap();
+            let inventory = cadence::plan::inventory::read(
+                &self.root,
+                &phase.to_string(),
+                &serde_json::json!({}),
+            )
+            .map_err(|error| Error::Invalid(error.to_string()))?;
+            return Ok(Observed {
+                bytes: Some(serde_json::to_vec(&inventory)?),
+                identity: inventory.basis,
+                directory_identity: String::new(),
+            });
+        }
+        if phase_context_target(target)?.is_some() || phase_plan_target(target)?.is_some() {
             // Only the approved writer path requests this participant. Bind and
             // sync its parents before capturing the expected-file identity.
             if self.directories.get(&self.root) != Some(&directory_identity(&self.root)?) {

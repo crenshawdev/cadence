@@ -8,7 +8,7 @@ use std::{
     path::Path,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Inventory {
     pub occupied: Vec<u32>,
     pub high_water: u32,
@@ -90,7 +90,23 @@ pub fn read(root: &Path, phase: &str, data: &Value) -> Result<Inventory> {
             }
         }
     }
-    let mut high_water = occupied.last().copied().unwrap_or(0);
+    let high_water = occupied.last().copied().unwrap_or(0);
+    with_records(
+        Inventory {
+            occupied: occupied.into_iter().collect(),
+            high_water,
+            basis: String::new(),
+            documents,
+        },
+        phase,
+        data,
+    )
+}
+
+pub fn with_records(input: Inventory, phase: &str, data: &Value) -> Result<Inventory> {
+    let mut occupied: BTreeSet<_> = input.occupied.into_iter().collect();
+    let mut high_water = input.high_water;
+    let documents = input.documents;
     if let Ok(phase) = phase.parse::<u32>() {
         if let Some(saved) = persistence::saved(data, phase)? {
             high_water = high_water.max(saved.high_water);

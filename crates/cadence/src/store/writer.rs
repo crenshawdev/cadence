@@ -50,6 +50,11 @@ pub enum BoundaryChange {
 pub type InputCheck = Box<dyn FnMut() -> Result<()> + Send>;
 
 pub enum Operation {
+    ObservePlan {
+        phase: u32,
+        plan: u32,
+        reply: oneshot::Sender<Result<Observed>>,
+    },
     /// Captures the dedicated participant after approval, under store ownership.
     ObserveContext {
         phase: u32,
@@ -473,6 +478,16 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         let mut external = Vec::new();
         let mut operations = next.snapshot.operations.clone();
         let operation_name = match operation {
+            Operation::ObservePlan { phase, plan, reply } => {
+                self.revalidate()?;
+                self.policy.validate(&MutationContext {
+                    operation: "plan_prepare",
+                    snapshot: &self.view.snapshot,
+                })?;
+                let result = self.storage.read(&format!("phase-plan:{phase}:{plan}"));
+                let _ = reply.send(result);
+                return Ok(next);
+            }
             Operation::ObserveContext { phase, reply } => {
                 self.revalidate()?;
                 self.policy.validate(&MutationContext {
@@ -573,7 +588,19 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         };
         let mut participants = Vec::new();
         let mut context_phase = None;
+        let mut plan_phase = None;
+        let mut plan_documents = Vec::new();
         for change in external {
+            let plan_target = super::filesystem::phase_plan_target(&change.target)?;
+            if let Some((phase, plan)) = plan_target {
+                if plan_phase.is_some_and(|old| old != phase) || change.expected.bytes.is_some() {
+                    return Err(Error::Invalid(
+                        "plan publication requires unoccupied same-phase targets".into(),
+                    ));
+                }
+                plan_phase = Some(phase);
+                plan_documents.push((plan, change.bytes.clone()));
+            }
             let phase = super::filesystem::phase_context_target(&change.target)?;
             if let Some(phase) = phase {
                 if context_phase.replace(phase).is_some() {
@@ -587,7 +614,9 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 )
                 .map_err(|error| Error::Invalid(error.to_string()))?;
             }
-            if phase.is_none() && !matches!(change.target.as_str(), "repo-config" | "global-config")
+            if phase.is_none()
+                && plan_target.is_none()
+                && !matches!(change.target.as_str(), "repo-config" | "global-config")
             {
                 return Err(Error::Invalid("unknown external participant".into()));
             }
@@ -598,15 +627,52 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 bytes: change.bytes,
             });
         }
+        let plan_intent = if let Some(phase) = plan_phase {
+            if context_phase.is_some()
+                || participants.len() != plan_documents.len()
+                || next.items != self.view.items
+                || next.decisions != self.view.decisions
+            {
+                return Err(Error::Invalid("mixed plan publication participants".into()));
+            }
+            let observed = self
+                .storage
+                .read(&format!("phase-plan-inventory:{phase}"))?;
+            let inventory = cadence::plan::inventory::with_records(
+                serde_json::from_slice(
+                    observed
+                        .bytes
+                        .as_deref()
+                        .ok_or_else(|| Error::Invalid("missing plan inventory".into()))?,
+                )?,
+                &phase.to_string(),
+                &self.view.snapshot.data,
+            )
+            .map_err(|e| Error::Conflict(e.to_string()))?;
+            cadence::plan::persistence::validate_publication(
+                &self.view.snapshot.data,
+                &next.snapshot.data,
+                phase,
+                &inventory,
+                &plan_documents,
+            )
+            .map_err(|e| Error::Conflict(e.to_string()))?;
+            Some(super::transaction::IntentKind::PlanPublication {
+                phase,
+                inventory: Box::new(inventory),
+            })
+        } else {
+            None
+        };
         self.persist(
             next,
             operations,
             participants,
             operation_name,
-            match context_phase {
+            plan_intent.unwrap_or_else(|| match context_phase {
                 Some(phase) => super::transaction::IntentKind::ContextPublication { phase },
                 None => super::transaction::IntentKind::Store,
-            },
+            }),
         )
     }
 

@@ -1,7 +1,9 @@
 //! Read-only access does not open a store, acquire ownership or recover an intent.
-use super::model::Occurrence;
+use super::{inventory::Inventory, model::*, render};
+use cadence::store::model::digest;
 use cadence::store::{Error, Result};
 use serde_json::Value;
+use serde_json::json;
 
 pub const NAMESPACE: &str = "plan_publications";
 pub use cadence::context::persistence::read_snapshot;
@@ -43,6 +45,172 @@ pub fn require_execution_ready(data: &Value, phase: u32) -> Result<()> {
             "provisional-authoring: phase {} plan {} in occurrence {} is authoring-only; execution requires phases 28, 29 and 12",
             publication.identity.phase, publication.identity.plan, occurrence.id
         )));
+    }
+    Ok(())
+}
+
+pub fn approve(submission: &Submission, approval: &Approval) -> Result<()> {
+    if !approval.approved
+        || approval.submission.as_ref() != Some(submission)
+        || approval.owner.as_ref().is_none_or(|s| s.trim().is_empty())
+        || approval.at.as_ref().is_none_or(|s| s.trim().is_empty())
+    {
+        return Err(Error::Invalid(
+            "exact-submission-approval: owner, time and complete submission required".into(),
+        ));
+    }
+    if submission.request_id.trim().is_empty() || submission.plans.is_empty() {
+        return Err(Error::Invalid(
+            "publication needs a request identity and plans".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub fn payload_digest(submission: &Submission, approval: &Approval) -> Result<String> {
+    Ok(digest(&serde_json::to_vec(&(submission, approval))?))
+}
+
+pub fn contribute(
+    previous: &Value,
+    submission: &Submission,
+    approval: &Approval,
+    inventory: &Inventory,
+) -> Result<(Value, Vec<Publication>)> {
+    approve(submission, approval)?;
+    let phase = submission.phase.get();
+    if cadence::context::persistence::saved(previous, phase)?.is_none() {
+        return Err(Error::Invalid(format!(
+            "native-approved-truths: phase {phase} needs context-submit"
+        )));
+    }
+    if submission.occurrence != occurrence(previous, phase)? {
+        return Err(Error::Conflict(
+            "phase occurrence changed; preview and approve again".into(),
+        ));
+    }
+    if submission.inventory_basis != inventory.basis {
+        return Err(Error::Conflict(
+            "inventory precondition changed; preview and approve again".into(),
+        ));
+    }
+    if submission.plans.len() != 1 {
+        return Err(Error::Invalid(
+            "ordered batch publication is not yet enabled".into(),
+        ));
+    }
+    let mut occurrence = saved(previous, phase)?.unwrap_or_else(|| Occurrence {
+        id: submission.occurrence.clone(),
+        phase,
+        cycle: "active".into(),
+        high_water: inventory.high_water,
+        consumed: inventory.occupied.clone(),
+        publications: Default::default(),
+        receipts: Default::default(),
+    });
+    if occurrence.receipts.contains_key(&submission.request_id) {
+        return Err(Error::Conflict(
+            "request identity is already consumed".into(),
+        ));
+    }
+    let mut results = Vec::new();
+    for (index, entry) in submission.plans.iter().enumerate() {
+        let number = inventory
+            .high_water
+            .checked_add(
+                u32::try_from(index + 1).map_err(|_| Error::Invalid("number-exhaustion".into()))?,
+            )
+            .ok_or_else(|| Error::Invalid("number-exhaustion".into()))?;
+        if entry.target.phase.get() != phase || entry.target.plan.get() != number {
+            return Err(Error::Conflict(format!(
+                "allocation target changed: expected phase {phase} plan {number}, approved {:?}",
+                entry.target
+            )));
+        }
+        let bytes = render::document(&entry.content)?;
+        cadence::execution::plan::parse_plan(&bytes, phase, number)
+            .map_err(|error| Error::Invalid(error.to_string()))?;
+        let revision = digest(&bytes);
+        let publication = Publication {
+            identity: entry.target.clone(),
+            occurrence: occurrence.id.clone(),
+            revision: revision.clone(),
+            content: entry.content.clone(),
+            approval: approval.clone(),
+            readiness: Readiness::ProvisionalAuthoring,
+            history: vec![revision],
+        };
+        occurrence.publications.insert(number, publication.clone());
+        occurrence.consumed.extend(&inventory.occupied);
+        occurrence.consumed.push(number);
+        occurrence.consumed.sort_unstable();
+        occurrence.consumed.dedup();
+        occurrence.high_water = number;
+        results.push(publication);
+    }
+    occurrence.receipts.insert(
+        submission.request_id.clone(),
+        Receipt {
+            payload_digest: payload_digest(submission, approval)?,
+            results: results.clone(),
+        },
+    );
+    let mut proposed = previous.clone();
+    let object = proposed
+        .as_object_mut()
+        .ok_or_else(|| Error::Invalid("plan snapshot must be an object".into()))?;
+    let namespace = object
+        .entry(NAMESPACE)
+        .or_insert_with(|| json!({"schema":"plan-1","phases":{}}));
+    namespace["phases"][phase.to_string()] = serde_json::to_value(occurrence)?;
+    Ok((proposed, results))
+}
+
+/// Validate the complete namespace delta against its exact approval and the
+/// approved inventory. Both initial commit and crash recovery use this algebra.
+pub fn validate_publication(
+    previous: &Value,
+    proposed: &Value,
+    phase: u32,
+    inventory: &Inventory,
+    documents: &[(u32, Vec<u8>)],
+) -> Result<()> {
+    let old = saved(previous, phase)?;
+    let new =
+        saved(proposed, phase)?.ok_or_else(|| Error::Invalid("missing plan occurrence".into()))?;
+    let receipts: Vec<_> = new
+        .receipts
+        .iter()
+        .filter(|(id, _)| old.as_ref().is_none_or(|o| !o.receipts.contains_key(*id)))
+        .collect();
+    if receipts.len() != 1 {
+        return Err(Error::Invalid(
+            "publication needs one allocation receipt".into(),
+        ));
+    }
+    let (_, receipt) = receipts[0];
+    let first = receipt
+        .results
+        .first()
+        .ok_or_else(|| Error::Invalid("empty publication receipt".into()))?;
+    let approval = &first.approval;
+    let submission = approval
+        .submission
+        .as_ref()
+        .ok_or_else(|| Error::Invalid("missing exact plan approval".into()))?;
+    let (expected, results) = contribute(previous, submission, approval, inventory)?;
+    let expected_documents = results
+        .iter()
+        .map(|p| Ok((p.identity.plan.get(), render::document(&p.content)?)))
+        .collect::<Result<Vec<_>>>()?;
+    if expected != *proposed
+        || results != receipt.results
+        || expected_documents != documents
+        || submission.phase.get() != phase
+    {
+        return Err(Error::Invalid(
+            "plan participants differ from approved allocation and snapshot".into(),
+        ));
     }
     Ok(())
 }

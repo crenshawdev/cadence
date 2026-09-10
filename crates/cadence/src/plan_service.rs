@@ -16,7 +16,7 @@ pub enum Command {
 }
 
 pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
-    _factory: &crate::import::SessionFactory<I>,
+    factory: &crate::import::SessionFactory<I>,
     root: &Path,
     command: Command,
 ) -> Result<Answer> {
@@ -112,10 +112,87 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                     ),
                 ));
             }
-            Ok(model::refused(
-                "publication-unavailable",
-                "approved plan publication is not yet enabled",
-            ))
+            let inventory = inventory::read(root, &submission.phase.to_string(), &data)?;
+            if let Err(error) = persistence::contribute(&data, &submission, &approval, &inventory) {
+                return Ok(model::refused("publication", error.to_string()));
+            }
+            let roadmap = std::fs::read_to_string(root.join("ROADMAP.md"))?;
+            let lifecycle = cadence::derivation::parse_roadmap(&roadmap)
+                .map_err(|e| cadence::store::Error::Invalid(format!("{e:?}")))?;
+            if lifecycle.cycle != cadence::derivation::Cycle::Live {
+                return Ok(model::refused(
+                    "active-cycle",
+                    "publication into another or archived cycle needs explicit resolution",
+                ));
+            }
+            // Exact approval, native membership and read-only preconditions all
+            // precede first_touch. Only the confirmed transaction acknowledges.
+            let session = factory.first_touch(root).await?;
+            let store = session.review_store();
+            let view = store
+                .request(cadence::store::writer::Operation::ReadVerified)
+                .await?;
+            let inventory =
+                inventory::read(root, &submission.phase.to_string(), &view.snapshot.data)?;
+            let (proposed, results) = match persistence::contribute(
+                &view.snapshot.data,
+                &submission,
+                &approval,
+                &inventory,
+            ) {
+                Ok(value) => value,
+                Err(error) => return Ok(model::refused("publication", error.to_string())),
+            };
+            let mut external = Vec::new();
+            for result in &results {
+                let (reply, receive) = tokio::sync::oneshot::channel();
+                store
+                    .request(cadence::store::writer::Operation::ObservePlan {
+                        phase: result.identity.phase.get(),
+                        plan: result.identity.plan.get(),
+                        reply,
+                    })
+                    .await?;
+                let expected = receive.await.map_err(|_| cadence::store::Error::Closed)??;
+                if expected.bytes.is_some() {
+                    return Ok(model::refused(
+                        "occupied-target",
+                        format!(
+                            "phase {} plan {} is occupied",
+                            result.identity.phase, result.identity.plan
+                        ),
+                    ));
+                }
+                external.push(cadence::store::transaction::ExternalChange {
+                    target: format!(
+                        "phase-plan:{}:{}",
+                        result.identity.phase, result.identity.plan
+                    ),
+                    expected,
+                    bytes: cadence::plan::render::document(&result.content)?,
+                });
+            }
+            let transaction = cadence::store::transaction::Transaction {
+                id: format!("plan:{}:{}", submission.occurrence, submission.request_id),
+                items: vec![],
+                decisions: vec![],
+                snapshot: Some(proposed),
+                external,
+            };
+            match store
+                .request(cadence::store::writer::Operation::CompareTransact {
+                    expected_generation: view.snapshot.generation,
+                    expected_integrity: view.snapshot.integrity,
+                    transaction,
+                })
+                .await
+            {
+                Ok(_) => Ok(model::ok(
+                    "plan-submit",
+                    json!({"persisted":true,"results":results}),
+                )),
+                Err(error) => Ok(model::refused("publication", error.to_string())),
+            }
         }
     }
 }

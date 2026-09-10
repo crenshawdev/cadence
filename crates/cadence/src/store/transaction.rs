@@ -11,6 +11,10 @@ pub const INTENT: &str = ".store-intent.json";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum IntentKind {
+    PlanPublication {
+        phase: u32,
+        inventory: Box<cadence::plan::inventory::Inventory>,
+    },
     ContextPublication {
         phase: u32,
     },
@@ -154,6 +158,7 @@ impl Intent {
         let mut names = BTreeSet::new();
         let mut summary_phase = None;
         let mut context_phase = None;
+        let mut plan_targets = Vec::new();
         for participant in &self.participants {
             let known = matches!(
                 participant.target.as_str(),
@@ -161,12 +166,16 @@ impl Intent {
             );
             let phase = super::filesystem::phase_summary_target(&participant.target)?;
             let context = super::filesystem::phase_context_target(&participant.target)?;
+            let plan = super::filesystem::phase_plan_target(&participant.target)?;
+            if let Some(identity) = plan {
+                plan_targets.push(identity);
+            }
             if let Some(context) = context
                 && context_phase.replace(context).is_some()
             {
                 return Err(Error::Invalid("duplicate context participant".into()));
             }
-            if (!known && phase.is_none() && context.is_none())
+            if (!known && phase.is_none() && context.is_none() && plan.is_none())
                 || !names.insert(participant.target.as_str())
             {
                 return Err(Error::Invalid(
@@ -181,10 +190,26 @@ impl Intent {
                 ));
             }
         }
-        match self.kind {
+        match &self.kind {
+            IntentKind::PlanPublication { phase, .. }
+                if *phase > 0
+                    && !plan_targets.is_empty()
+                    && plan_targets.iter().all(|(p, _)| p == phase)
+                    && context_phase.is_none()
+                    && summary_phase.is_none()
+                    && !names.contains("repo-config")
+                    && !names.contains("global-config") => {}
+            IntentKind::PlanPublication { .. } => {
+                return Err(Error::Invalid(
+                    "invalid plan publication participants".into(),
+                ));
+            }
+            _ if !plan_targets.is_empty() => {
+                return Err(Error::Invalid("PLAN needs its publication intent".into()));
+            }
             IntentKind::ContextPublication { phase }
-                if phase > 0
-                    && context_phase == Some(phase)
+                if *phase > 0
+                    && context_phase == Some(*phase)
                     && summary_phase.is_none()
                     && !names.contains("repo-config")
                     && !names.contains("global-config") => {}
@@ -251,6 +276,38 @@ impl Intent {
                 .validate_provenance(&previous.data, &snapshot.data)?;
         }
         match self.kind.clone() {
+            IntentKind::PlanPublication { phase, inventory } => {
+                let previous: Snapshot = serde_json::from_slice(
+                    self.participants
+                        .last()
+                        .and_then(|p| p.expected.bytes.as_deref())
+                        .ok_or_else(|| {
+                            Error::Invalid("plan publication requires prior snapshot".into())
+                        })?,
+                )?;
+                let documents = plan_targets
+                    .iter()
+                    .map(|(phase, plan)| {
+                        let participant = self
+                            .participants
+                            .iter()
+                            .find(|p| p.target == format!("phase-plan:{phase}:{plan}"))
+                            .unwrap();
+                        if participant.expected.bytes.is_some() {
+                            return Err(Error::Invalid("occupied plan publication target".into()));
+                        }
+                        Ok((*plan, participant.bytes.clone()))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                cadence::plan::persistence::validate_publication(
+                    &previous.data,
+                    &snapshot.data,
+                    phase,
+                    &inventory,
+                    &documents,
+                )
+                .map_err(|e| Error::Invalid(e.to_string()))?;
+            }
             IntentKind::ExecutionDispatch { phase } => {
                 cadence::plan::persistence::require_execution_ready(&snapshot.data, phase)?;
                 let execution = execution_snapshot(&snapshot)?;
