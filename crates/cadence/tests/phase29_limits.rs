@@ -641,3 +641,97 @@ fn phase29_distinct_checks_across_plans_are_refused() {
     ]));
     unchanged(root, &before, &prior);
 }
+
+fn link(value: &str, truths: &[&str]) -> Value {
+    json!({"kind":"link","id":"link/full/invoice","reason":"invoice arc package it: losing this value breaks delivery.",
+        "spec":{"caller":"unmentioned producer","callee":"unmentioned consumer","value":value},
+        "associations":edges(truths)})
+}
+
+fn missing_link(answer: &Value, truth: &str, value: &str, association: usize) {
+    located(answer, "link-value-not-named", "link/full/invoice", 0, 1, "spec.value");
+    assert_eq!(answer["details"], json!({"truth_id":truth,"truth_version":1,
+        "association_slot":format!("submission.plans[0].content.evidence_map.items[1].associations[{association}]")}));
+    assert!(answer["reason"].as_str().unwrap().contains(value));
+    assert!(answer["reason"].as_str().unwrap().contains(truth));
+}
+
+#[test]
+fn phase29_link_value_absent_from_truth_is_refused() {
+    let temp = fixture();
+    let project = temp.path();
+    let truth = "truth/full/delivery";
+    let other = "truth/full/invoice";
+    native_context(project, &[(truth, "the sender sends the parcel", "the recipient", "a receipt"),
+        (other, "the courier sends the invoice", "the customer", "a parcel")]);
+    let shared = check("check/full/invoice", &[truth, other]);
+    publish(project, &proposal(project, "winner", &[(None, attached(vec![shared.clone()]))]));
+    // Metadata and the other truth deliberately name the absent values.
+    for (n, value) in ["invoice", "arc", "Parcel", "package", "it", "the  parcel", "sender-sends"].iter().enumerate() {
+        let input = proposal(project, &format!("absent-{n}"), &[(Some(1), attached(vec![shared.clone(), link(value, &[truth])]))]);
+        for answer in refusals(project, &input) { missing_link(&answer, truth, value, 0); }
+    }
+    for (n, value) in ["parcel", " parcel ", "\u{2003}parcel\u{a0}", "the parcel", "recipient", "receipt"].iter().enumerate() {
+        publish(project, &proposal(project, &format!("named-{n}"), &[(Some(1), attached(vec![shared.clone(), link(value, &[truth])]))]));
+    }
+    // Only the first associated truth names receipt; all associations are checked.
+    let input = proposal(project, "second-association", &[(Some(1), attached(vec![shared.clone(), link("receipt", &[truth, other])]))]);
+    for answer in refusals(project, &input) { missing_link(&answer, other, "receipt", 1); }
+    publish(project, &proposal(project, "both-associations", &[(Some(1), attached(vec![shared.clone(), link("parcel", &[truth, other])]))]));
+
+    for field in ["caller", "callee", "value"] {
+        for (n, value) in [None, Some(Value::Null), Some(json!(false)), Some(json!(12)), Some(json!({})), Some(json!([])),
+            Some(json!("")), Some(json!("  ")), Some(json!("\t\n")), Some(json!("\u{2003}\u{a0}"))].into_iter().enumerate()
+        {
+            let mut item = link("parcel", &[truth]);
+            if let Some(value) = value { item["spec"][field] = value; }
+            else { item["spec"].as_object_mut().unwrap().remove(field); }
+            let input = proposal(project, &format!("link-content-{field}-{n}"), &[(Some(1), attached(vec![shared.clone(), item]))]);
+            for answer in refusals(project, &input) {
+                located(&answer, "link-content", "link/full/invoice", 0, 1, &format!("spec.{field}"));
+            }
+        }
+    }
+
+    // Handwritten predicates distinguish Unicode chars from ASCII or bytes.
+    // Every case authors native slots and installs a valid winner first.
+    for (trigger, value, accepts) in [
+        ("the sender sends the parcelé", "parcel", false),
+        ("the sender sends the éparcel", "parcel", false),
+        ("the sender sends the parcel2", "parcel", false),
+        ("the sender sends the 2parcel", "parcel", false),
+        ("sends the parcel_2", "parcel", false),
+        ("sends the _parcel", "parcel", false),
+        ("sends the parcel٢", "parcel", false),
+        ("sends the ٢parcel", "parcel", false),
+        ("sends the parcel界", "parcel", false),
+        ("sends the 界parcel", "parcel", false),
+        ("sends the parcel, then", "parcel", true),
+        ("sends the (parcel)", "parcel", true),
+        ("sends the parcelé then parcel", "parcel", true),
+        ("sends the parcelparcel", "parcel", false),
+        ("sends the Parcel", "parcel", false),
+        ("sends the red  parcel", "red parcel", false),
+        ("sends the red  parcel", "red  parcel", true),
+        ("sends the parcel-id", "parcel_id", false),
+        ("sends the parcel-id", "parcel-id", true),
+    ] {
+        let temp = fixture();
+        let root = temp.path();
+        native_context(root, &[(truth, trigger, "the recipient", "a receipt")]);
+        let item = check("check/full/delivery", &[truth]);
+        publish(root, &proposal(root, "winner", &[(None, attached(vec![item.clone()]))]));
+        let input = proposal(root, "lexical", &[(Some(1), attached(vec![item, link(value, &[truth])]))]);
+        if accepts { publish(root, &input); }
+        else { for answer in refusals(root, &input) { missing_link(&answer, truth, value, 0); } }
+    }
+    let cross = fixture();
+    let root = cross.path();
+    native_context(root, &[(truth, "the sender sends the parcel", "recipient", "a receipt")]);
+    let item = check("check/full/delivery", &[truth]);
+    publish(root, &proposal(root, "winner", &[(None, attached(vec![item.clone()]))]));
+    let input = proposal(root, "cross-slot", &[(Some(1), attached(vec![item, link("parcel recipient", &[truth])]))]);
+    for answer in refusals(root, &input) { missing_link(&answer, truth, "parcel recipient", 0); }
+    // Unresolvable approved authority is inspected in production, never forged
+    // into a native context to claim a runtime case that public authoring forbids.
+}
