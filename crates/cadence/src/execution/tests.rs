@@ -31,9 +31,11 @@ fn native_unit_contract(command: &str) -> (serde_json::Value, std::collections::
         {"kind":"artifact","id":"artifact/delivery","spec":{"locators":["src/delivery.rs"],"substance":"Delivery exists."},
         "reason":"Delivery needs an implementation.","associations":edges}]})).unwrap();
     let body = format!("# Delivery\n## Evidence map\n\n```json\n{}\n```\n\n", serde_json::to_string_pretty(&map).unwrap());
+    // Blank check commands must reach admission with valid task metadata.
+    let verify = if command.is_empty() { "printf verified" } else { command };
     let entries = (1..=2).map(|n| serde_json::from_value(json!({"target":{"phase":12,"plan":n},"content":{
         "phase":12,"plan":n,"requirements":["truth/A","truth/B"],"files":["src/delivery.rs"],"directories":[],
-        "execution":{"schema":1,"suite":"printf suite","tasks":[{"id":"deliver","verify":[command]},
+        "execution":{"schema":1,"suite":"printf suite","tasks":[{"id":"deliver","verify":[verify]},
         {"id":"document","verify":["printf documented"]}]},"body":body,"evidence_map":map}})).unwrap()).collect();
     let submission = Submission { phase: 12.try_into().unwrap(), occurrence:"active-cycle:phase:12".into(),
         request_id:"unit-publication".into(), inventory_basis:"unit-inventory".into(), plans:entries };
