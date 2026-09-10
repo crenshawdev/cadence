@@ -1,6 +1,6 @@
 # State
 
-Phase: 29 of 30 (Check and link limits)
-Status: verified - T1, T3 met; T2, T4 unmet (O1 recorded by the live host in reports/pilot.md, owner review pending)
-Next: /cad-context 12
+Phase: 12 of 30 (Execution and tasks)
+Status: contexted - seven truths T1-T7 and D-107 to D-122; ten promises parked to later slices; self-hosting parked
+Next: /cad-plan 12
 Updated: 2026-09-10

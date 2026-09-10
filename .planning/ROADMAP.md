@@ -960,10 +960,12 @@ full suite once per plan, at the close. When the project has set no test
 style it is given the classical default as guidance - test a unit through
 what it exposes, fake only files, clock, other programs and network, skip
 trivial code, write the expected value by hand - and nothing about style is
-ever refused or counted. **Deletes `~/.claude/hooks/rules-gate.mjs` at
-close.** That hook guards hand-assembled dispatch prompts; once this phase's
-executor dispatches are built by the binary from state, the role text is
-carried by construction and the guard has nothing to catch.
+ever refused or counted. **The `~/.claude/hooks/rules-gate.mjs` deletion
+moved to phase 13's close (D-121, 2026-09-10).** That hook guards
+hand-assembled dispatch prompts for all three roles; this phase's executor
+dispatches are built by the binary from state, the planner's already are
+(phase 28), and the verifier's are phase 13's, so the guard has nothing to
+catch only once phase 13 lands.
 
 **Depends on phases 27, 28 and 29 (decided 2026-09-10).** The close gate
 above refuses a task without red-then-green for every check it delivers, and
@@ -1007,8 +1009,11 @@ catches a staged file outside the plan's declared scope, includes both sides of
 a rename, and protects exactly the source work that the binary-writes rule
 leaves outside its ownership. Delete the pairwise overlap check and the
 concurrency narration; keep declared-scope enforcement, unprovable-lease
-refusal, byte-exact pathname handling and the intentional lockfile and report
-exceptions.
+refusal and byte-exact pathname handling, with zero exemptions as D-32
+settled (the earlier "lockfile and report exceptions" wording here was stale;
+corrected under D-119, 2026-09-10). Pre-commit clearance for an unprovable
+lease (D-31) is parked to a later execution slice with the other parked
+phase 12 promises.
 
 ### Phase 13: Verification and audit
 
@@ -1024,7 +1029,12 @@ as waived beside the met ones and never among them. Rejected evidence stays
 visible with why. CI status is shown at landing as information in its own
 column, never as evidence. The hand-run `.planning/tools/tree-gate.mjs` is
 retired, not ported; the evidence map's artifact and link inspection is what
-replaces "does this function have a caller".
+replaces "does this function have a caller". **Deletes
+`~/.claude/hooks/rules-gate.mjs` and its registration at close (moved here
+from phase 12 by D-121, 2026-09-10):** once the verifier dispatch is composed
+by the binary, all three role blocks the hook guards are carried by
+construction; the installed state is inspected before removal and unrelated
+guards are preserved.
 
 **Goal.** `cad-verify` (with `cad-coverage` folded in), the merged `cad-review`,
 and `cad-audit` run against the binary.
