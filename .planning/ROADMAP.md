@@ -376,7 +376,7 @@ Delivery order after phase 11 is 27, 28, 29, 12, 13, then 14 onward; see
 - [x] **Phase 8: Config and routing** - two-layer effective config, the roles interview, retired-key migration, and `route resolve`
 - [x] **Phase 9: Review delivery and identity** - raw reviewer returns persisted by the binary, shared gate settings, first usable review, and durable snapshot identity
 - [x] **Phase 10: Provider port** - the cross-model provider arm in the binary, on phase 9's delivery lifecycle, with GH-237/239/240 repaired
-- [ ] **Phase 11: First approved context** - truths authored through the binary as typed slots, refused at authoring, persisted only on approval
+- [x] **Phase 11: First approved context** - truths authored through the binary as typed slots, refused at authoring, persisted only on approval
 - [ ] **Phase 12: Execution and tasks** - `cad-execute` in full, and `cad-task`
 - [ ] **Phase 13: Verification and audit** - `cad-verify`, the merged `cad-review` command surface, `cad-audit`
 - [ ] **Phase 14: Receipts and retune** - `cad-progress`, `cad-why`, `cad-suggest`, `cad-capture`
