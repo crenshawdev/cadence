@@ -871,6 +871,166 @@ fn phase12_acknowledged_progress_survives_restart() {
     unchanged(project,&before_death,&prior_death);
 }
 
+// Protected native records: a refused execution query may append its own
+// boundary observation, but never touches these slices or the installed plans.
+fn protected(project:&Path) -> Value {
+    let data=reopened(project).snapshot.data;
+    let mut plans=BTreeMap::new();
+    for entry in fs::read_dir(project.join(".planning/phases/12")).unwrap() {
+        let entry=entry.unwrap();
+        if entry.file_name().to_string_lossy().starts_with("PLAN-") {plans.insert(entry.file_name().to_string_lossy().into_owned(),fs::read(entry.path()).unwrap());}
+    }
+    json!({"native_tasks":data["native_tasks"],"native_admissions":data["native_admissions"],"native_evidence":data["native_evidence"],
+        "native_execution_material":data["native_execution_material"],"acceptance_maps":data["acceptance_maps"],
+        "plan_publications":data["plan_publications"],"plans":plans})
+}
+
+fn execute_next(project:&Path) -> Value {
+    let mut client=Client::open(project);
+    let answer=client.call("cadence_query",json!({"operation":"execute-next","phase":12}));
+    client.finish();answer
+}
+
+fn authorize(project:&Path,id:&str,checkpoint:Option<&str>,disposition:&str,response:&str) -> Value {
+    apply(project,json!({"operation":"execution-authorize","phase":12,"request_id":id,"owner":"Fixture Owner","at":"2026-09-10T17:00:00Z",
+        "response":response,"checkpoint":checkpoint,"disposition":disposition}))
+}
+
+// The executor's operational input is the JSON object the binary places in the
+// real prompt; the test reads that response, never a renderer.
+fn operational(dispatch:&Value) -> Value {
+    let prompt=dispatch["prompt"].as_str().unwrap();
+    let start=prompt.find("Operational input:\n").unwrap()+"Operational input:\n".len();
+    let end=start+prompt[start..].find("\n}\n").unwrap()+2;
+    serde_json::from_str(&prompt[start..end]).unwrap()
+}
+
+fn task_ids(tasks:&Value) -> Vec<String> {
+    tasks.as_array().unwrap().iter().map(|t|t["id"].as_str().unwrap().to_owned()).collect()
+}
+
+fn checkpoint_stop(project:&Path,fixture:&Tiny) -> Value {
+    let b=task_state(project,"B");
+    let start=apply(project,json!({"operation":"execution-task-start","request":{"request_id":"start-B","task":b["task"],"attempt":"attempt-B",
+        "expected_version":0,"predecessor":null,"checks":[fixture.checks[2]]}}));assert_eq!(start["status"],"ok","{start}");
+    let checkpoint=json!({"id":"checkpoint-B","checkpoint_type":"blocked","task_number":2,"task_name":"B","need":"Owner must decide the repair",
+        "completed_work":["close-A"],"state":{"status":"unresolved"},"failing_output":null});
+    let b=task_state(project,"B");
+    let cp=apply(project,json!({"operation":"execution-task-checkpoint","request":{"request_id":"checkpoint-request","task":b["task"],"attempt":"attempt-B",
+        "expected_version":b["state"]["version"],"checkpoint":checkpoint,"question_id":"question-B","question":"Continue this repair?"}}));assert_eq!(cp["status"],"ok","{cp}");
+    let b=task_state(project,"B");
+    let answer=json!({"question_id":"question-B","actual_response":"Stop; leave B unfinished","selected_option":null,"adjustment":null,"disposition":"stop","authorization_id":null});
+    let stop=apply(project,json!({"operation":"execution-task-answer","request":{"request_id":"stop-B","task":b["task"],"attempt":"attempt-B",
+        "expected_version":b["state"]["version"],"owner":"Fixture Owner","at":"2026-09-10T16:00:00Z","answer":answer}}));assert_eq!(stop["status"],"ok","{stop}");
+    answer
+}
+
+#[test]
+fn phase12_continuation_dispatches_only_unfinished_tasks() {
+    let fixture=Tiny::new("progress");let project=fixture.project();
+    for i in 0..2 {let answer=apply(project,fixture.owner(i,&format!("owner-continue-{i}"),true));assert_eq!(answer["status"],"ok","{answer}");}
+    let closed=apply(project,fixture.close("close-A"));assert_eq!(closed["status"],"ok","{closed}");
+    let stop_answer=checkpoint_stop(project,&fixture);
+    let admitted=reopened(project).snapshot.data["native_admissions"]["phases"]["12"][0].clone();
+    let allocation=|name:&str| admitted["request"]["contract"]["allocation"].as_array().unwrap().iter()
+        .find(|a|a["plan"]==1 && a["task"]==name).unwrap()["checks"].clone();
+    assert_eq!(allocation("B"),json!([fixture.checks[2]]));assert_eq!(allocation("C"),json!([]));
+    // Exit, reopen: the retained Stop governs the restarted query before any
+    // active-dispatch replay can hand the executor the whole plan again.
+    let before=protected(project);
+    let refused=execute_next(project);
+    assert_eq!(refused["status"],"refused","the retained Stop must prevent executor dispatch; a dispatch here re-schedules completed A: {refused}");
+    assert_eq!(refused["code"],"continuation-refusal","{refused}");
+    assert_eq!(protected(project),before);
+    // A declined continuation, and an authorization that does not name the
+    // stopped checkpoint, leave B stopped.
+    let declined=authorize(project,"decline-B",Some("checkpoint-B"),"stop","Not yet; B stays stopped");
+    assert_eq!(declined["status"],"ok","{declined}");
+    assert_eq!(execute_next(project)["code"],"continuation-refusal");
+    let unlinked=authorize(project,"unlinked-approval",None,"approve","Proceed with the phase");
+    assert_eq!(unlinked["status"],"ok","{unlinked}");
+    assert_eq!(execute_next(project)["code"],"continuation-refusal");
+    for (id,checkpoint) in [("unknown-checkpoint","checkpoint-Z"),("blank-checkpoint","")] {
+        let before=protected(project);
+        let answer=authorize(project,id,Some(checkpoint),"approve","Continue");
+        assert_eq!(answer["status"],"refused","{answer}");assert_eq!(protected(project),before);
+    }
+    // The explicit owner continuation names the stopped checkpoint; the Stop
+    // record itself is preserved and the successor links to it.
+    let resumed=authorize(project,"resume-B",Some("checkpoint-B"),"approve","Continue B; A stays complete");
+    assert_eq!(resumed["status"],"ok","{resumed}");
+    assert_eq!(resumed["authorization"]["fact"]["value"]["checkpoint_id"],"checkpoint-B");
+    assert_eq!(resumed["authorization"]["fact"]["value"]["state"]["value"]["disposition"],"approve");
+    let evidence=reopened(project).snapshot.data["native_evidence"].clone();
+    let stop_gate=evidence.as_object().unwrap().values().find(|r|r["fact"]["value"]["id"]=="question-B").unwrap().clone();
+    assert_eq!(stop_gate["fact"]["value"]["state"],json!({"status":"answered","value":stop_answer}));
+    let mut client=Client::open(project);client.child.kill().unwrap();client.child.wait().unwrap();drop(client);
+    let dispatch=execute_next(project);
+    assert_eq!(dispatch["status"],"ok","{dispatch}");assert_eq!(dispatch["outcome"],"dispatch");
+    assert_eq!(dispatch["dispatch"]["plan"],1);
+    assert_eq!(task_ids(&dispatch["dispatch"]["tasks"]),vec!["B","C"],"executable dispatch tasks");
+    let ops=operational(&dispatch);
+    assert_eq!(ops["protocol"],"native-execution-dispatch-1");
+    assert_eq!(task_ids(&ops["tasks"]),vec!["B","C"],"executable operational tasks");
+    assert_eq!(ops["tasks"][0]["checks"],allocation("B"));assert_eq!(ops["tasks"][1]["checks"],json!([]));
+    assert_eq!(ops["tasks"][0]["state"]["attempt"],"attempt-B");assert_eq!(ops["tasks"][0]["state"]["completed"],false);
+    assert_eq!(ops["tasks"][1]["state"],json!({"version":0,"attempt":null,"completed":false,"progress":[],"unknown_runs":[]}));
+    assert_eq!(ops["tasks"][0]["checkpoints"],json!([{"id":"checkpoint-B","question":"question-B","answer":stop_answer}]));
+    assert_eq!(ops["completed"].as_array().unwrap().len(),1);
+    assert_eq!(ops["completed"][0]["id"],"A");assert_eq!(ops["completed"][0]["completion"],fixture.green);
+    assert_eq!(ops["completed"][0]["checks"],json!(&fixture.checks[..2]));assert_eq!(ops["completed"][0]["close_request"],"close-A");
+    assert_eq!(ops["continuation"]["question_id"],"execution-authorization:resume-B");
+    assert_eq!(ops["continuation"]["checkpoint"],"checkpoint-B");
+    assert_eq!(ops["admitted_dispatch_id"],reopened(project).snapshot.data["execution"]["occurrences"]["12"]["active"]["id"]);
+    assert_ne!(ops["dispatch_id"],ops["admitted_dispatch_id"]);assert_eq!(ops["dispatch_id"],dispatch["dispatch"]["id"]);
+    // Repeated query: the identical response replays with its retained identity.
+    let replay=execute_next(project);assert_eq!(replay,dispatch);
+    let decisions=reopened(project).decisions;
+    let retained:Vec<_>=decisions.iter().filter(|d|serde_json::to_value(&d.decision).unwrap()["boundary"]["subject_id"]==dispatch["dispatch"]["id"]).collect();
+    assert_eq!(retained.len(),1,"one retained dispatch identity");
+    assert_eq!(serde_json::to_value(&retained[0].decision).unwrap()["boundary"]["receipt"],json!({"receipt":"dispatch","dispatch_id":dispatch["dispatch"]["id"],"prompt_bytes":dispatch["prompt"].as_str().unwrap().len()}));
+    // A new-id duplicate close of A is refused and nothing protected changes.
+    close_refused(project,fixture.close("duplicate-close-A"),"task-completed",&[]);
+    assert_eq!(execute_next(project),dispatch);
+    // A commit for B without acknowledged progress needs explicit reconciliation
+    // before any redispatch; after acknowledgment only unfinished work returns.
+    git_value(project,&["commit","--allow-empty","-S","-m","feat(12): unacknowledged B work"]);let unacknowledged=git_value(project,&["rev-parse","HEAD"]);
+    let uncertain=execute_next(project);
+    assert_eq!(uncertain["status"],"refused","{uncertain}");assert_eq!(uncertain["code"],"reconciliation-required","{uncertain}");
+    assert!(uncertain["reason"].as_str().unwrap().contains("B"),"{uncertain}");
+    let ack=apply(project,progress_request(project,"reconcile-B",json!({"kind":"progress","text":"B work acknowledged after reconciliation","evidence":[unacknowledged]})));
+    assert_eq!(ack["status"],"ok","{ack}");
+    let reconciled=execute_next(project);assert_eq!(reconciled["status"],"ok","{reconciled}");
+    let ops2=operational(&reconciled);
+    assert_eq!(task_ids(&ops2["tasks"]),vec!["B","C"]);assert_eq!(ops2["tasks"][0]["state"]["progress"],json!(["B work acknowledged after reconciliation"]));
+    assert_eq!(ops2["completed"][0]["completion"],fixture.green);
+    assert_ne!(reconciled["dispatch"]["id"],dispatch["dispatch"]["id"],"a fresh linked dispatch reflects the new state");
+    assert_eq!(execute_next(project),reconciled);
+    // A legally approved gap plus an explicit set extension preserves A's
+    // completion, its receipt bytes and the original check ownership.
+    let a_events:Vec<Value>=execution_history(project)["events"].as_array().unwrap().iter().filter(|e|e["request"]["task"]["task"]=="A").cloned().collect();
+    let original_admission=serde_json::to_vec(&admitted).unwrap();
+    let mut gap=proposal(project,"gap",&[(None,attached(vec![artifact("artifact/gap",&["truth/A"])]))]);
+    gap["submission"]["plans"][0]["content"]["execution"]["tasks"]=json!([{"id":"G","verify":[fixture.command]}]);
+    publish(project,&gap);
+    let mut extended=contract(project);
+    extended["allocation"][0]["checks"]=json!(&fixture.checks[..2]);extended["allocation"][1]["checks"]=json!([fixture.checks[2]]);
+    let extension=apply(project,admit_request(extended,"extend",1));assert_eq!(extension["status"],"ok","{extension}");
+    assert_eq!(extension["receipt"]["set_version"],2);
+    let after_gap=execute_next(project);assert_eq!(after_gap["status"],"ok","{after_gap}");
+    let ops3=operational(&after_gap);
+    assert_eq!(after_gap["dispatch"]["plan"],1);assert_eq!(task_ids(&ops3["tasks"]),vec!["B","C"]);
+    assert_eq!(ops3["tasks"][0]["checks"],allocation("B"));assert_eq!(ops3["completed"][0]["checks"],json!(&fixture.checks[..2]));
+    assert_eq!(ops3["set_version"],2);
+    let data=reopened(project).snapshot.data;
+    assert_eq!(serde_json::to_vec(&data["native_admissions"]["phases"]["12"][0]).unwrap(),original_admission);
+    let history=execution_history(project);
+    for event in &a_events {assert!(history["events"].as_array().unwrap().contains(event),"A receipt bytes retained");}
+    assert_eq!(task_state(project,"A")["state"]["completed"],true);
+    assert_eq!(task_state(project,"B")["state"]["completed"],false);
+    assert_eq!(task_state(project,"C")["state"]["version"],0);
+}
+
 struct Historical {root:PathBuf,_lock:fs::File}
 impl Historical {
     fn restore() -> Self {
