@@ -158,7 +158,19 @@ orchestrator's amendments the owner accepted with it.
   completion commit; its red test commits are recorded beside it as
   evidence commits, which revises the frozen "one commit per task" count,
   and their source scope is validated too. A tool or setup failure is
-  retained as a failed attempt, never counted as a behavioral red. The
+  retained as a failed attempt, never counted as a behavioral red.
+  (Clarified 2026-09-10 after plan check B3: a recognized failing summary is
+  a reported failure, not yet a behavioral red. It is red-eligible only where
+  the vocabulary attributes the failure to a test assertion - for Python
+  unittest, `failures` above zero with `errors` at zero; where the vocabulary
+  cannot distinguish, as cargo's `test result: FAILED` cannot, the reported
+  failure is red-eligible and its cause stays inspection. A reported error
+  the vocabulary attributes to setup or tooling is a failed attempt. A run
+  whose output carries no recognized vocabulary is Unknown and becomes
+  red-eligible or green-eligible only through an owner-attributed
+  classification record bound to that run's output digest, retained beside
+  the bytes like the D-111 attestation; the binary infers nothing from
+  arbitrary output. The orchestrator's ruling, reversible by the owner.) The
   test must be present unchanged at red and green; changed test material
   needs a fresh pair. A run is bound to the committed tree it used; a dirty
   tree is refused or separately identified, and the ambient HEAD after a
@@ -200,7 +212,16 @@ orchestrator's amendments the owner accepted with it.
   The owner's amendment: a suite launch that produced no test results at
   all (the process died before reporting, as phase 29's linker crash did on
   2026-09-10) may be relaunched once on explicit operator confirmation, and
-  the history records both the dead launch and the confirmed relaunch. A
+  the history records both the dead launch and the confirmed relaunch.
+  (Clarified 2026-09-10 after plan check B2: the binary cannot decide "no
+  results" for arbitrary output. It classifies a run as `results observed`
+  only when the retained output carries a recognized result line from a
+  finite named vocabulary, and everything else as Unknown; it never has a
+  `no results` class of its own. The relaunch confirmation is therefore an
+  operator attestation over the retained bytes that no results were
+  produced, retained as its own record beside them, and the binary refuses
+  it outright when a recognized result exists. The orchestrator's ruling,
+  reversible by the owner.) A
   suite that ran and failed keeps the plan incomplete; repairing it belongs
   to an explicitly linked gap plan under D-84, not a rerun in the same
   plan. Replayed requests return their receipt, not another process. The
