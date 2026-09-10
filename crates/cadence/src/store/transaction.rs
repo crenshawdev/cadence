@@ -11,6 +11,11 @@ pub const INTENT: &str = ".store-intent.json";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum IntentKind {
+    NativeAdmissionV1 {
+        request: Box<cadence::execution::admission::Request>,
+        root_binding: String,
+        inventory: Observed,
+    },
     PlanPublication {
         phase: u32,
         inventory: Box<cadence::plan::inventory::Inventory>,
@@ -274,8 +279,34 @@ impl Intent {
             let previous: Snapshot = serde_json::from_slice(previous)?;
             self.kind
                 .validate_provenance(&previous.data, &snapshot.data)?;
+            if !matches!(self.kind,IntentKind::NativeAdmissionV1 {..})
+                && previous.data.get(cadence::execution::admission::NAMESPACE)!=snapshot.data.get(cadence::execution::admission::NAMESPACE)
+            {
+                return Err(Error::Invalid("native admission changes require their versioned intent".into()));
+            }
         }
         match self.kind.clone() {
+            IntentKind::NativeAdmissionV1 {request,root_binding,inventory} => {
+                use cadence::execution::admission;
+                if names.len()!=3 {return Err(Error::Invalid("native admission cannot change external participants".into()));}
+                let state=self.participants.last().expect("state participant");
+                if state.expected.directory_identity!=root_binding {return Err(Error::Invalid("native admission root binding changed".into()));}
+                let previous:Snapshot=serde_json::from_slice(state.expected.bytes.as_deref()
+                    .ok_or_else(||Error::Invalid("native admission requires prior snapshot".into()))?)?;
+                let inventory:cadence::plan::inventory::Inventory=serde_json::from_slice(inventory.bytes.as_deref()
+                    .ok_or_else(||Error::Invalid("native admission requires installed inventory".into()))?)?;
+                let (expected,record)=admission::contribute(&previous.data,&inventory.documents,&root_binding,&request)?;
+                let old_items=self.participants.iter().find(|p|p.target==ITEMS).unwrap().expected.bytes.as_deref();
+                let old_decisions=self.participants.iter().find(|p|p.target==DECISIONS).unwrap().expected.bytes.as_deref()
+                    .ok_or_else(||Error::Invalid("native admission requires previous decisions".into()))?;
+                let mut expected_decisions:Vec<DecisionRecord>=model::parse_lines(old_decisions)?;
+                expected_decisions.push(admission::decision(&record)?);
+                if snapshot.data!=expected || old_items!=Some(items)
+                    || decisions!=model::render_lines(&expected_decisions)?
+                    || snapshot.operations!=previous.operations
+                    || snapshot.generation!=previous.generation.checked_add(1).ok_or_else(||Error::Invalid("generation exhausted".into()))?
+                {return Err(Error::Invalid("native admission intent differs from validated immutable transition".into()));}
+            }
             IntentKind::PlanPublication { phase, inventory } => {
                 for target in [ITEMS, DECISIONS] {
                     let participant = self
@@ -879,7 +910,14 @@ fn validate_all<S: Storage>(
     storage: &mut S,
     participants: &[Participant],
     replay: bool,
+    kind: &IntentKind,
 ) -> Result<()> {
+    if let IntentKind::NativeAdmissionV1 {request,root_binding,inventory}=kind {
+        let observed=storage.read(&format!("phase-plan-inventory:{}",request.contract.phase))?;
+        if observed!=*inventory || storage.read(STATE)?.directory_identity!=*root_binding {
+            return Err(cadence::execution::admission::refuse(request.contract.phase,"admission-inputs-changed","contract.plans","","installed PLAN inventory or root changed before confirmation"));
+        }
+    }
     // This entire pass finishes before any participant can change.
     for participant in participants {
         let actual = storage.read(&participant.target)?;
@@ -913,7 +951,7 @@ pub(crate) fn commit<S: Storage, P: Policy>(
             "pending operation requires recovery".into(),
         ));
     }
-    validate_all(storage, &participants, false)?;
+    validate_all(storage, &participants, false, &kind)?;
     let mut prepared = Vec::new();
     for participant in &participants {
         if participant.expected.bytes.as_ref() == Some(&participant.bytes) {
@@ -954,7 +992,7 @@ pub(crate) fn commit<S: Storage, P: Policy>(
         }
     };
     if let Err(error) =
-        validate_all(storage, &intent.participants, false).and_then(|()| match &route {
+        validate_all(storage, &intent.participants, false, &intent.kind).and_then(|()| match &route {
             Some(route) => policy.validate_routing_admission(
                 &MutationContext {
                     operation: context.operation,
@@ -978,7 +1016,7 @@ pub(crate) fn commit<S: Storage, P: Policy>(
     let mut remaining = prepared.into_iter();
     while let Some((target, bytes, file)) = remaining.next() {
         // Check all participants again immediately before each replacement.
-        let result = validate_all(storage, &intent.participants, true)
+        let result = validate_all(storage, &intent.participants, true, &intent.kind)
             .and_then(|()| storage.install(&file))
             .and_then(|()| storage.confirm(&target, &bytes).map(|_| ()));
         storage.discard(file)?;
@@ -989,7 +1027,7 @@ pub(crate) fn commit<S: Storage, P: Policy>(
     }
     // Snapshot is the final semantic participant and holds completion receipts.
     // Removing the intent and syncing its directory is part of completion.
-    validate_all(storage, &intent.participants, true)?;
+    validate_all(storage, &intent.participants, true, &intent.kind)?;
     storage.remove(INTENT)
 }
 
@@ -1002,7 +1040,7 @@ pub(crate) fn recover<S: Storage, P: Policy>(storage: &mut S, policy: &mut P) ->
         return Err(Error::Invalid("unknown operation intent fields".into()));
     }
     let snapshot = intent.validate()?;
-    validate_all(storage, &intent.participants, true)?;
+    validate_all(storage, &intent.participants, true, &intent.kind)?;
     policy.validate(&MutationContext {
         operation: if matches!(intent.kind, IntentKind::GuardAudit { .. }) {
             "guard_audit_recovery"
@@ -1012,7 +1050,7 @@ pub(crate) fn recover<S: Storage, P: Policy>(storage: &mut S, policy: &mut P) ->
         snapshot: &snapshot,
     })?;
     for participant in &intent.participants {
-        validate_all(storage, &intent.participants, true)?;
+        validate_all(storage, &intent.participants, true, &intent.kind)?;
         let current = storage.read(&participant.target)?;
         if current.bytes.as_ref() == Some(&participant.bytes) {
             // Rename may have completed before its directory sync. Reconfirm
@@ -1020,7 +1058,7 @@ pub(crate) fn recover<S: Storage, P: Policy>(storage: &mut S, policy: &mut P) ->
             storage.resync(&participant.target, &participant.bytes)?;
         } else {
             let file = storage.prepare(&participant.target, &participant.bytes)?;
-            let result = validate_all(storage, &intent.participants, true)
+            let result = validate_all(storage, &intent.participants, true, &intent.kind)
                 .and_then(|()| storage.install(&file))
                 .and_then(|()| {
                     storage
@@ -1031,7 +1069,7 @@ pub(crate) fn recover<S: Storage, P: Policy>(storage: &mut S, policy: &mut P) ->
             result?;
         }
     }
-    validate_all(storage, &intent.participants, true)?;
+    validate_all(storage, &intent.participants, true, &intent.kind)?;
     storage.remove(INTENT)
 }
 

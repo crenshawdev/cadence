@@ -30,6 +30,98 @@ pub struct Validated {
     pub maps: Vec<Revision>,
 }
 
+pub const NAMESPACE: &str = "native_admissions";
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Request {
+    pub request_id: String,
+    pub expected_set_version: u64,
+    pub contract: Contract,
+}
+
+/// Each extension retains the complete approved union it validated. Original
+/// records and receipts are never rewritten when the current set advances.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Record {
+    pub schema: String,
+    pub root_binding: String,
+    pub set_version: u64,
+    pub request_digest: String,
+    pub request: Request,
+}
+
+pub fn records(data: &Value, phase: u32) -> Result<Vec<Record>> {
+    let Some(namespace) = data.get(NAMESPACE) else {return Ok(vec![])};
+    if namespace["schema"] != "native-admissions-1" {return Err(refuse(phase,"admission-schema",NAMESPACE,"","unsupported native admission namespace"));}
+    namespace["phases"].get(phase.to_string()).cloned().map(serde_json::from_value).transpose()
+        .map(|records|records.unwrap_or_default()).map_err(Error::from)
+}
+
+pub fn request_digest(request: &Request) -> Result<String> {
+    Ok(digest(&super::boundary::canonical_bytes(request).map_err(|e|Error::Invalid(e.to_string()))?))
+}
+
+pub fn replay(data: &Value, root_binding: &str, request: &Request) -> Result<Option<Record>> {
+    let records=records(data,request.contract.phase)?;
+    if let Some(record)=records.iter().find(|r|r.request.request_id==request.request_id) {
+        if record.root_binding!=root_binding || record.request_digest!=request_digest(request)? || record.request!=*request {
+            return Err(refuse(request.contract.phase,"admission-request-reuse","request_id",&request.request_id,"request identity already names another payload or root"));
+        }
+        return Ok(Some(record.clone()));
+    }
+    Ok(None)
+}
+
+pub fn contribute(data: &Value, documents: &BTreeMap<String,String>, root_binding: &str, request: &Request) -> Result<(Value,Record)> {
+    if let Some(record)=replay(data,root_binding,request)? {return Ok((data.clone(),record))}
+    let phase=request.contract.phase;
+    if request.request_id.trim().is_empty() || root_binding.is_empty() {
+        return Err(refuse(phase,"admission-request","request_id",&request.request_id,"request and bound root required"));
+    }
+    let mut prior=records(data,phase)?;
+    let version=prior.last().map_or(0,|r|r.set_version);
+    if request.expected_set_version!=version {
+        return Err(refuse(phase,"admission-set-version","expected_set_version",&request.request_id,format!("expected current set version {version}")));
+    }
+    validate(data,documents,&request.contract)?;
+    if let Some(old)=prior.last() {
+        if old.root_binding!=root_binding || old.request.contract.occurrence!=request.contract.occurrence {
+            return Err(refuse(phase,"admission-occurrence","contract.occurrence","","extension must retain the same bound root and occurrence"));
+        }
+        for binding in &old.request.contract.plans {
+            if !request.contract.plans.contains(binding) {
+                return Err(refuse(phase,"admitted-plan","contract.plans",&binding.plan.to_string(),"extension must preserve each admitted publication identity and exact authority"));
+            }
+        }
+        for assignment in &old.request.contract.allocation {
+            if !request.contract.allocation.contains(assignment) {
+                return Err(refuse(phase,"admission-reassignment","contract.allocation",&assignment.task,"extension cannot move or rewrite an existing task/check owner"));
+            }
+        }
+        if request.contract.plans.len()<=old.request.contract.plans.len() {
+            return Err(refuse(phase,"admission-extension","contract.plans","","extension requires a new approved gap identity"));
+        }
+    }
+    let record=Record {schema:"native-admission-1".into(),root_binding:root_binding.into(),
+        set_version:version.checked_add(1).ok_or_else(||refuse(phase,"admission-set-version","expected_set_version","","set version exhausted"))?,
+        request_digest:request_digest(request)?,request:request.clone()};
+    prior.push(record.clone());
+    let mut proposed=data.clone();
+    let namespace=proposed.as_object_mut().ok_or_else(||Error::Invalid("snapshot must be an object".into()))?
+        .entry(NAMESPACE).or_insert_with(||serde_json::json!({"schema":"native-admissions-1","phases":{}}));
+    namespace["phases"][phase.to_string()]=serde_json::to_value(prior)?;
+    Ok((proposed,record))
+}
+
+pub fn decision(record:&Record) -> Result<crate::store::model::DecisionRecord> {
+    use crate::store::model::{DecisionRecord,Decision,Origin,Evidence};
+    Ok(DecisionRecord {version:1,id:format!("native-admission:{}:{}:{}",record.request.contract.phase,record.set_version,record.request_digest),
+        revision:1,origin:Origin {source:"native-admission-1".into(),original:Evidence::Missing},
+        decision:Decision::Gate {outcome:"native-admission-1".into(),evidence:Evidence::Text(serde_json::to_string(record)?)} })
+}
+
 pub fn refuse(phase: u32, rule: &str, slot: &str, id: &str, reason: impl Into<String>) -> Error {
     plan::model::Diagnostic { rule: rule.into(), slot: slot.into(), phase: Some(phase),
         entry: None, id: (!id.is_empty()).then(|| id.into()), reason: reason.into(), details: None }.error()

@@ -130,6 +130,122 @@ fn native_admission_validates_authority_and_allocation() {
     }
 }
 
+#[test]
+fn native_admission_commits_versioned_extensions() {
+    use crate::store::{Storage,filesystem::Filesystem,writer::{Store,Operation,PlanningPolicy},transaction::{Transaction,ExternalChange}};
+    use super::admission;
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let temp=tempfile::tempdir().unwrap(); let root=temp.path().join(".planning");
+        std::fs::create_dir_all(root.join("phases/12")).unwrap();
+        let (data,documents,contract)=native_unit_contract("custom-delivery-check");
+        for (path,bytes) in &documents {std::fs::write(root.join(path),bytes).unwrap();}
+        let store=Store::open(Filesystem::new(&root).unwrap(),PlanningPolicy).await.unwrap();
+        let view=store.request(Operation::RewriteSnapshot(data)).await.unwrap();
+        let first=admission::Request {request_id:"admit".into(),expected_set_version:0,contract};
+        let view=store.request(Operation::NativeAdmissionV1 {expected_generation:view.snapshot.generation,
+            expected_integrity:view.snapshot.integrity.clone(),request:Box::new(first.clone())}).await.unwrap();
+        let initial=admission::records(&view.snapshot.data,12).unwrap();
+        assert_eq!(initial.len(),1); assert_eq!(initial[0].set_version,1); assert_eq!(initial[0].request,first);
+        let raw_record=serde_json::to_vec(&initial[0]).unwrap();
+        let before=std::fs::read(root.join("state.json")).unwrap();
+        let before_decisions=std::fs::read(root.join("decisions.jsonl")).unwrap();
+        drop(store);
+        assert!(!root.join(".store-intent.json").exists());
+        let store=Store::open(Filesystem::new(&root).unwrap(),PlanningPolicy).await.unwrap();
+        let view=store.request(Operation::ReadVerified).await.unwrap();
+        assert_eq!(admission::records(&view.snapshot.data,12).unwrap(),initial);
+        assert_eq!(std::fs::read(root.join("state.json")).unwrap(),before);
+        let replay=store.request(Operation::NativeAdmissionV1 {expected_generation:0,expected_integrity:"stale".into(),request:Box::new(first.clone())}).await.unwrap();
+        assert_eq!(replay,view);
+        assert_eq!(std::fs::read(root.join("state.json")).unwrap(),before);
+        let mut reuse=first.clone(); reuse.contract.allocation[0].checks.clear();
+        assert!(store.request(Operation::NativeAdmissionV1 {expected_generation:0,expected_integrity:"stale".into(),request:Box::new(reuse)}).await.unwrap_err().to_string().contains("admission-request-reuse"));
+        assert_eq!(std::fs::read(root.join("decisions.jsonl")).unwrap(),before_decisions);
+        assert!(crate::plan::validation::admitted(&view.snapshot.data,12,2).unwrap(),"undispatched member is protected");
+
+        // Unit setup publishes a gap through the real publication transaction;
+        // no native admission record is seeded or rewritten by setup.
+        let inventory=crate::plan::inventory::read(&root,"12",&view.snapshot.data).unwrap();
+        let old=crate::plan::persistence::saved(&view.snapshot.data,12).unwrap().unwrap().publications[&2].clone();
+        let replacement=crate::plan::model::ReplacementApproval {approved:true,owner:Some("Fixture Owner".into()),
+            at:Some("2026-09-10T15:00:00Z".into()),target:old.identity.clone(),old_revision:old.revision.clone(),
+            old_document:String::from_utf8(crate::plan::render::document(&old.content).unwrap()).unwrap(),content:old.content.clone()};
+        let replacing=crate::plan::model::Submission {phase:12.try_into().unwrap(),occurrence:first.contract.occurrence.clone(),
+            request_id:"replace-undispatched".into(),inventory_basis:inventory.basis.clone(),plans:vec![crate::plan::model::Entry {
+                target:old.identity,content:old.content,replacement:Some(replacement)}]};
+        let approved=crate::plan::model::Approval {approved:true,owner:Some("Fixture Owner".into()),at:Some("2026-09-10T15:00:00Z".into()),submission:Some(replacing.clone())};
+        assert!(crate::plan::persistence::contribute(&view.snapshot.data,&replacing,&approved,&inventory).unwrap_err().to_string().contains("admitted-plan"));
+        let mut content=crate::plan::persistence::saved(&view.snapshot.data,12).unwrap().unwrap().publications[&1].content.clone();
+        content.plan=3.try_into().unwrap();
+        let submission=crate::plan::model::Submission {phase:12.try_into().unwrap(),occurrence:first.contract.occurrence.clone(),request_id:"gap".into(),
+            inventory_basis:inventory.basis.clone(),plans:vec![crate::plan::model::Entry {target:crate::plan::model::Identity {phase:12.try_into().unwrap(),plan:3.try_into().unwrap()},content,replacement:None}]};
+        let approval=crate::plan::model::Approval {approved:true,owner:Some("Fixture Owner".into()),at:Some("2026-09-10T15:00:00Z".into()),submission:Some(submission.clone())};
+        let (next,publications)=crate::plan::persistence::contribute(&view.snapshot.data,&submission,&approval,&inventory).unwrap();
+        let publication=&publications[0];
+        let mut filesystem=Filesystem::new(&root).unwrap();
+        let external=ExternalChange {target:"phase-plan:12:3".into(),expected:filesystem.read("phase-plan:12:3").unwrap(),
+            bytes:crate::plan::render::document(&publication.content).unwrap()};
+        let view=store.request(Operation::CompareTransact {expected_generation:view.snapshot.generation,expected_integrity:view.snapshot.integrity,
+            transaction:Transaction {id:"gap-publication".into(),items:vec![],decisions:vec![],snapshot:Some(next),external:vec![external]}}).await.unwrap();
+        let mut extension=first.clone(); extension.request_id="extend".into(); extension.expected_set_version=1;
+        extension.contract.plans.push(admission::Binding {plan:3,publication_request:"gap".into(),content_revision:publication.revision.clone(),map_revision:publication.map_revision.clone().unwrap()});
+        for task in ["deliver","document"] {extension.contract.allocation.push(super::allocation::Assignment {plan:3,task:task.into(),checks:vec![]});}
+        let before=std::fs::read(root.join("state.json")).unwrap();
+        let before_decisions=std::fs::read(root.join("decisions.jsonl")).unwrap();
+        for (mut invalid,rule) in [(extension.clone(),"admission-set-version"),(extension.clone(),"admission-plan-set"),(extension.clone(),"admission-reassignment")] {
+            match rule {
+                "admission-set-version"=>invalid.expected_set_version=0,
+                "admission-plan-set"=>{invalid.contract.plans.pop();},
+                _=>{invalid.contract.allocation[4].checks=invalid.contract.allocation[0].checks.clone();invalid.contract.allocation[0].checks.clear();}
+            }
+            let error=store.request(Operation::NativeAdmissionV1 {expected_generation:view.snapshot.generation,expected_integrity:view.snapshot.integrity.clone(),request:Box::new(invalid)}).await.unwrap_err();
+            assert!(error.to_string().contains(rule),"{error}");
+            assert_eq!(std::fs::read(root.join("state.json")).unwrap(),before);
+            assert_eq!(std::fs::read(root.join("decisions.jsonl")).unwrap(),before_decisions);
+        }
+        // Changed installed bytes between preparation and owned validation.
+        let path=root.join("phases/12/PLAN-3.md"); let bytes=std::fs::read(&path).unwrap();
+        std::fs::write(&path,[bytes.as_slice(),b"\n"].concat()).unwrap();
+        let error=store.request(Operation::NativeAdmissionV1 {expected_generation:view.snapshot.generation,expected_integrity:view.snapshot.integrity.clone(),request:Box::new(extension.clone())}).await.unwrap_err();
+        assert!(error.to_string().contains("installed-plan"),"{error}");
+        std::fs::write(&path,bytes).unwrap();
+        // The intent's own installed-byte reobservation catches a filesystem
+        // change after validation and preparation, before any confirmed write.
+        drop(store);
+        let drift_path=path.clone();
+        let filesystem=Filesystem::new(&root).unwrap().with_probe(move |stage,path| {
+            if stage==crate::store::filesystem::Stage::Prepared && path.file_name().is_some_and(|n|n==".store-intent.json") {
+                use std::io::Write;
+                std::fs::OpenOptions::new().append(true).open(&drift_path)?.write_all(b"\n")?;
+            }
+            Ok(())
+        });
+        let store=Store::open(filesystem,PlanningPolicy).await.unwrap();
+        let bytes=std::fs::read(&path).unwrap();
+        let error=store.request(Operation::NativeAdmissionV1 {expected_generation:view.snapshot.generation,expected_integrity:view.snapshot.integrity.clone(),request:Box::new(extension.clone())}).await.unwrap_err();
+        assert!(error.to_string().contains("admission-inputs-changed"),"{error}");
+        drop(store);
+        std::fs::write(&path,bytes).unwrap();
+        assert!(!root.join(".store-intent.json").exists());
+        assert_eq!(std::fs::read(root.join("state.json")).unwrap(),before);
+        assert_eq!(std::fs::read(root.join("decisions.jsonl")).unwrap(),before_decisions);
+        let store=Store::open(Filesystem::new(&root).unwrap(),PlanningPolicy).await.unwrap();
+        let view=store.request(Operation::NativeAdmissionV1 {expected_generation:view.snapshot.generation,expected_integrity:view.snapshot.integrity.clone(),request:Box::new(extension.clone())}).await.unwrap();
+        let records=admission::records(&view.snapshot.data,12).unwrap();
+        assert_eq!(records.len(),2); assert_eq!(records[1].set_version,2);
+        assert_eq!(serde_json::to_vec(&records[0]).unwrap(),raw_record);
+        assert!(std::fs::read(root.join("decisions.jsonl")).unwrap().starts_with(&before_decisions));
+        let before=std::fs::read(root.join("state.json")).unwrap();
+        drop(store); assert!(!root.join(".store-intent.json").exists());
+        let store=Store::open(Filesystem::new(&root).unwrap(),PlanningPolicy).await.unwrap();
+        for request in [first,extension] {
+            let replay=store.request(Operation::NativeAdmissionV1 {expected_generation:0,expected_integrity:"old".into(),request:Box::new(request)}).await.unwrap();
+            assert_eq!(admission::records(&replay.snapshot.data,12).unwrap(),records);
+            assert_eq!(std::fs::read(root.join("state.json")).unwrap(),before);
+        }
+    });
+}
+
 fn schema_fixture() -> serde_json::Value {
     json!({
         "schema": 1, "kind": "executor", "dispatch_id": "dispatch-1",

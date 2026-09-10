@@ -72,6 +72,8 @@ fn replacement_inner(
 }
 
 pub fn admitted(data: &serde_json::Value, phase: u32, plan: u32) -> cadence::store::Result<bool> {
+    if cadence::execution::admission::records(data,phase)?.iter()
+        .any(|r|r.request.contract.plans.iter().any(|p|p.plan==plan)) {return Ok(true)}
     let Some(execution) = data.get("execution") else { return Ok(false) };
     let execution: cadence::execution::model::ExecutionSnapshot = serde_json::from_value(execution.clone())?;
     Ok(execution.occurrences.values().filter(|o| o.phase == phase).any(|o| {

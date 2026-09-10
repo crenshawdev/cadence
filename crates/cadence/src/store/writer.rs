@@ -50,6 +50,11 @@ pub enum BoundaryChange {
 pub type InputCheck = Box<dyn FnMut() -> Result<()> + Send>;
 
 pub enum Operation {
+    NativeAdmissionV1 {
+        expected_generation: u64,
+        expected_integrity: String,
+        request: Box<cadence::execution::admission::Request>,
+    },
     ObservePlan {
         phase: u32,
         plan: u32,
@@ -373,6 +378,8 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             self.observed = observed;
         }
         match operation {
+            Operation::NativeAdmissionV1 {expected_generation,expected_integrity,request} =>
+                self.native_admission(expected_generation,&expected_integrity,*request),
             Operation::CheckedTransact {
                 mut check,
                 transaction,
@@ -580,6 +587,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             | Operation::RailObservation { .. }
             | Operation::GuardAudit(..)
             | Operation::BoundaryV1 { .. }
+            | Operation::NativeAdmissionV1 { .. }
             | Operation::AdmitExecution { .. }
             | Operation::ApplyExecutionPatch { .. }
             | Operation::RecordExecutionRefusal { .. } => {
@@ -675,6 +683,25 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 None => super::transaction::IntentKind::Store,
             }),
         )
+    }
+
+    fn native_admission(&mut self, generation:u64, integrity:&str, request:cadence::execution::admission::Request) -> Result<View> {
+        use cadence::execution::admission;
+        let root_binding=self.observed[STATE].directory_identity.clone();
+        if let Some(record)=admission::replay(&self.view.snapshot.data,&root_binding,&request)? {
+            if !self.view.decisions.contains(&admission::decision(&record)?) {
+                return Err(Error::Invalid("native admission receipt lacks its immutable event".into()));
+            }
+            return Ok(self.view.clone());
+        }
+        self.check_expected(generation,integrity)?;
+        let inventory=self.storage.read(&format!("phase-plan-inventory:{}",request.contract.phase))?;
+        let parsed:cadence::plan::inventory::Inventory=serde_json::from_slice(inventory.bytes.as_deref()
+            .ok_or_else(||Error::Invalid("missing plan inventory".into()))?)?;
+        let (data,record)=admission::contribute(&self.view.snapshot.data,&parsed.documents,&root_binding,&request)?;
+        let mut next=self.view.clone(); next.snapshot.data=data; next.decisions.push(admission::decision(&record)?);
+        self.persist(next,self.view.snapshot.operations.clone(),Vec::new(),"native_admission",
+            super::transaction::IntentKind::NativeAdmissionV1 {request:Box::new(request),root_binding,inventory})
     }
 
     fn boundary_v1(
