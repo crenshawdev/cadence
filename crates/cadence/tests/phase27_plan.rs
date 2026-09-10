@@ -630,3 +630,212 @@ fn phase27_out_of_phase_target_is_refused() {
         "Other phase sentinel\n"
     );
 }
+
+fn occupied_fixture() -> tempfile::TempDir {
+    let temp = fixture();
+    native_context(temp.path(), 27);
+    for number in 1..=8 {
+        fs::write(
+            temp.path()
+                .join(format!(".planning/phases/27/PLAN-{number}.md")),
+            format!("# Legacy occupied plan {number}\n"),
+        )
+        .unwrap();
+    }
+    temp
+}
+
+#[test]
+fn phase27_multiple_plans_have_distinct_numeric_order() {
+    let temp = occupied_fixture();
+    let project = temp.path();
+    let before = tree(project);
+    let mut first = Client::open(project);
+    let mut second = Client::open(project);
+    let preview = first.read("27", Some(3));
+    let competing_preview = second.read("27", Some(3));
+    assert_eq!(
+        preview["targets"],
+        json!([{"phase":27,"plan":9},{"phase":27,"plan":10},{"phase":27,"plan":11}])
+    );
+    assert_eq!(preview["targets"], competing_preview["targets"]);
+    assert_eq!(
+        preview["inventory"]["basis"],
+        competing_preview["inventory"]["basis"]
+    );
+    assert_eq!(tree(project), before, "previews do not reserve numbers");
+    let bodies = [
+        "# Ninth — café\n",
+        "# Tenth\r\n## Evidence map\r\nOpaque",
+        "# Eleventh\n日本語\n",
+    ];
+    let winner_request = approve(request(&preview, 27, "batch-winner", &bodies));
+    let loser_request = approve(request(
+        &competing_preview,
+        27,
+        "batch-loser",
+        &["Loser nine", "Loser ten", "Loser eleven"],
+    ));
+    let answer = first.call("cadence_apply", winner_request.clone());
+    assert_eq!(
+        answer["persisted"], true,
+        "ordered approved batch must publish: {answer}"
+    );
+    let numbers: Vec<_> = answer["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["identity"]["plan"].as_u64().unwrap())
+        .collect();
+    assert_eq!(numbers, [9, 10, 11]);
+    let listing = first.read("27", None);
+    assert_eq!(
+        listing["plans"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["identity"]["plan"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    );
+    first.finish();
+    let installed = tree(project);
+    let loser = second.call("cadence_apply", loser_request);
+    assert_eq!(loser["status"], "refused", "{loser}");
+    assert_eq!(loser["rule"], "allocation-conflict", "{loser}");
+    assert!(
+        loser["reason"]
+            .as_str()
+            .unwrap()
+            .contains("inventory precondition changed"),
+        "{loser}"
+    );
+    second.finish();
+    assert_eq!(
+        tree(project),
+        installed,
+        "loser cannot allocate 12 or change the winning batch"
+    );
+    let mut actual = fs::read_dir(project.join(".planning/phases/27"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|name| name.starts_with("PLAN-"))
+        .collect::<Vec<_>>();
+    actual.sort();
+    assert_eq!(
+        actual,
+        [
+            "PLAN-1.md",
+            "PLAN-10.md",
+            "PLAN-11.md",
+            "PLAN-2.md",
+            "PLAN-3.md",
+            "PLAN-4.md",
+            "PLAN-5.md",
+            "PLAN-6.md",
+            "PLAN-7.md",
+            "PLAN-8.md",
+            "PLAN-9.md"
+        ]
+    );
+    let view = reopened(project);
+    let occurrence = &view.snapshot.data["plan_publications"]["phases"]["27"];
+    assert_eq!(occurrence["high_water"], 11);
+    assert_eq!(
+        occurrence["consumed"],
+        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    );
+    for (number, body) in [(9, bodies[0]), (10, bodies[1]), (11, bodies[2])] {
+        let document =
+            fs::read(project.join(format!(".planning/phases/27/PLAN-{number}.md"))).unwrap();
+        assert_eq!(
+            cadence::execution::plan::parse_plan(&document, 27, number)
+                .unwrap()
+                .body,
+            body
+        );
+        assert_eq!(
+            occurrence["publications"][number.to_string()]["content"]["body"],
+            body
+        );
+    }
+    assert_eq!(
+        occurrence["receipts"]["batch-winner"]["results"],
+        answer["results"]
+    );
+    assert!(occurrence["receipts"].get("batch-loser").is_none());
+    let mut client = Client::open(project);
+    let fresh = client.read("27", Some(1));
+    assert_eq!(fresh["targets"], json!([{"phase":27,"plan":12}]));
+    let next = client.call(
+        "cadence_apply",
+        approve(request(
+            &fresh,
+            27,
+            "fresh-twelve",
+            &["# Freshly approved twelve\n"],
+        )),
+    );
+    assert_eq!(next["persisted"], true, "{next}");
+    client.finish();
+    assert_eq!(
+        reopened(project).snapshot.data["plan_publications"]["phases"]["27"]["high_water"],
+        12
+    );
+
+    let conflict = occupied_fixture();
+    let mut client = Client::open(conflict.path());
+    let preview = client.read("27", Some(3));
+    let input = approve(request(&preview, 27, "last-entry-conflict", &bodies));
+    fs::write(
+        conflict.path().join(".planning/phases/27/PLAN-11.md"),
+        "Concurrent final-entry winner\n",
+    )
+    .unwrap();
+    let before = tree(conflict.path());
+    let answer = client.call("cadence_apply", input);
+    assert_eq!(answer["rule"], "allocation-conflict", "{answer}");
+    client.finish();
+    assert_eq!(tree(conflict.path()), before);
+    assert!(
+        !conflict
+            .path()
+            .join(".planning/phases/27/PLAN-9.md")
+            .exists()
+    );
+    assert!(
+        !conflict
+            .path()
+            .join(".planning/phases/27/PLAN-10.md")
+            .exists()
+    );
+    assert!(
+        snapshot(conflict.path())
+            .data
+            .get("plan_publications")
+            .is_none()
+    );
+
+    let exhausted = fixture();
+    native_context(exhausted.path(), 27);
+    fs::write(
+        exhausted
+            .path()
+            .join(".planning/phases/27/PLAN-4294967295.md"),
+        "Consumed maximum\n",
+    )
+    .unwrap();
+    let before = tree(exhausted.path());
+    let mut client = Client::open(exhausted.path());
+    let refusal = client.read("27", Some(1));
+    assert_eq!(refusal["rule"], "number-exhaustion", "{refusal}");
+    let mut raw = client.read("27", None);
+    raw["targets"] = json!([{"phase":27,"plan":4294967295_u32}]);
+    let refusal = client.call(
+        "cadence_apply",
+        approve(request(&raw, 27, "exhausted", &["Never wrap to zero\n"])),
+    );
+    assert_eq!(refusal["rule"], "number-exhaustion", "{refusal}");
+    client.finish();
+    assert_eq!(tree(exhausted.path()), before);
+}
