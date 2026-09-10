@@ -145,7 +145,8 @@ pub fn contribute(data: &Value, root: &str, request: &Request) -> Result<(Value,
             }).ok_or_else(|| refuse("task-result", "result has no matching launch"))?;
             if result.observed_at < launch.launched_at
                 || history.iter().any(|r| matches!(&r.request.event, Event::Result(prior) if prior.run_id == result.run_id))
-                || [&result.stdout, &result.stderr].iter().any(|s| s.bytes.len() > 65536 || digest(&s.bytes) != s.digest) {
+                || [&result.stdout, &result.stderr].iter().any(|s| s.bytes.len() > 65536 || digest(&s.bytes) != s.digest)
+                || result.observation != super::runner::classify(&result.stdout.bytes, &result.stderr.bytes) {
                 return Err(refuse("task-result", "result duplicates a run or has invalid capture/timestamp"));
             }
         }

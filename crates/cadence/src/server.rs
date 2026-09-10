@@ -58,6 +58,8 @@ mod pause_service_tests;
 #[allow(dead_code)]
 #[path = "execution_service.rs"]
 pub mod execution_service;
+#[path = "execution_runner_service.rs"]
+pub mod execution_runner_service;
 #[cfg(test)]
 #[path = "execution_service_tests.rs"]
 mod execution_service_tests;
@@ -236,6 +238,8 @@ struct VersionArguments {}
 #[derive(Deserialize, JsonSchema)]
 #[serde(tag = "operation", deny_unknown_fields)]
 enum QueryArguments {
+    #[serde(rename = "execution-history")]
+    ExecutionHistory { phase: NonZeroU32 },
     #[serde(rename = "evidence-read")]
     EvidenceRead { phase: NonZeroU32 },
     #[serde(rename = "plan-read")]
@@ -279,6 +283,7 @@ enum QueryArguments {
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyArguments {
+    NativeRunner(cadence::execution::runner::Apply),
     NativeExecution(cadence::execution::boundary::NativeApply),
     Plan(cadence::plan::model::Apply),
     Context(cadence::context::model::Apply),
@@ -305,6 +310,7 @@ enum ApplyOutput {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 enum QueryOutput {
+    NativeExecution(Value),
     Plan(Box<cadence::plan::model::Answer>),
     Context(Box<cadence::context::model::Answer>),
     Review(Box<Envelope<review_service::Output>>),
@@ -607,6 +613,13 @@ impl ServerHandler for PublicServer {
                 .into())
             }
             "cadence_query" => {
+                if raw.as_ref().is_some_and(|v| v["operation"] == "execution-history") {
+                    let answer = match serde_json::from_value::<QueryArguments>(raw.unwrap()) {
+                        Ok(QueryArguments::ExecutionHistory { phase }) => self.server.service.native_execution_history(&self.root, phase.get()).await,
+                        _ => Ok(serde_json::json!({"status":"refused","rule":"task-history-shape","reason":"positive phase required"})),
+                    };
+                    return structured_result(answer.map(QueryOutput::NativeExecution));
+                }
                 if raw.as_ref().and_then(|v| v["operation"].as_str()) == Some("context-intake") {
                     let answer =
                         match serde_json::from_value::<QueryArguments>(raw.clone().unwrap()) {
@@ -716,6 +729,7 @@ impl ServerHandler for PublicServer {
                     Some(QueryArguments::ContextIntake { .. }) => {
                         unreachable!("context intake is decoded before execution fallback")
                     }
+                    Some(QueryArguments::ExecutionHistory { .. }) => unreachable!("native history decoded before execution fallback"),
                     Some(QueryArguments::PlanRead { .. } | QueryArguments::EvidenceRead { .. }) => {
                         unreachable!("plan read decoded before execution")
                     }
@@ -917,6 +931,10 @@ impl ServerHandler for PublicServer {
                     Some(ApplyArguments::NativeExecution(request)) => {
                         return structured_result(self.server.service.native_execution_apply(&self.root,
                             serde_json::to_value(request).expect("native operation")).await.map(ApplyOutput::NativeExecution));
+                    }
+                    Some(ApplyArguments::NativeRunner(request)) => {
+                        return structured_result(self.server.service.native_execution_apply(&self.root,
+                            serde_json::to_value(request).expect("native runner operation")).await.map(ApplyOutput::NativeExecution));
                     }
                     None if raw
                         .as_ref()

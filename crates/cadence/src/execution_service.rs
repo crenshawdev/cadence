@@ -51,7 +51,7 @@ struct Plans {
     fingerprint: String,
 }
 
-fn native_error(error:Error) -> Value {
+pub(super) fn native_error(error:Error) -> Value {
     if let Error::Invalid(message)|Error::Conflict(message)=&error
         && let Some(encoded)=message.strip_prefix("plan-refusal:")
         && let Ok(diagnostic)=serde_json::from_str::<cadence::plan::model::Diagnostic>(encoded)
@@ -60,6 +60,9 @@ fn native_error(error:Error) -> Value {
 }
 
 pub async fn native_apply<I:ConfigIo+Clone+Sync>(factory:&SessionFactory<I>,root:&Path,raw:Value) -> cadence::store::Result<Value> {
+    if matches!(raw["operation"].as_str(), Some("execution-task-start" | "execution-run")) {
+        return super::execution_runner_service::apply(factory, root, raw).await;
+    }
     use cadence::execution::{admission,boundary::NativeApply};
     if matches!(raw["operation"].as_str(),Some("execution-admit"|"execution-extend")) {
         for field in ["request_id","expected_set_version","contract"] {

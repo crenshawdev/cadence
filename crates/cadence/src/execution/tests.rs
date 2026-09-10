@@ -33,7 +33,7 @@ fn native_unit_contract(command: &str) -> (serde_json::Value, std::collections::
     let body = format!("# Delivery\n## Evidence map\n\n```json\n{}\n```\n\n", serde_json::to_string_pretty(&map).unwrap());
     let entries = (1..=2).map(|n| serde_json::from_value(json!({"target":{"phase":12,"plan":n},"content":{
         "phase":12,"plan":n,"requirements":["truth/A","truth/B"],"files":["src/delivery.rs"],"directories":[],
-        "execution":{"schema":1,"suite":"printf suite","tasks":[{"id":"deliver","verify":["printf verified"]},
+        "execution":{"schema":1,"suite":"printf suite","tasks":[{"id":"deliver","verify":[command]},
         {"id":"document","verify":["printf documented"]}]},"body":body,"evidence_map":map}})).unwrap()).collect();
     let submission = Submission { phase: 12.try_into().unwrap(), occurrence:"active-cycle:phase:12".into(),
         request_id:"unit-publication".into(), inventory_basis:"unit-inventory".into(), plans:entries };
@@ -349,6 +349,95 @@ fn native_task_records_replay_confirmed_events() {
             progress: vec!["subject still returns six".into(), "repair awaiting approval".into()], unknown_runs: vec![] });
         assert_eq!(std::fs::read(root.join("state.json")).unwrap(), baseline);
         assert!(!root.join(".store-intent.json").exists());
+    });
+}
+
+#[test]
+fn native_runner_claims_before_spawn_and_replays_once() {
+    use super::{admission, history::{self, Task}, runner::{self, Start, Run}, receipts::*};
+    use crate::store::{filesystem::Filesystem, writer::{Store, Operation, PlanningPolicy}, model::digest};
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let temp = tempfile::tempdir().unwrap(); let project = temp.path(); let root = project.join(".planning");
+        std::fs::create_dir_all(root.join("phases/12")).unwrap();
+        std::fs::create_dir_all(project.join("tests")).unwrap();
+        std::fs::create_dir_all(project.join(".runner")).unwrap();
+        std::fs::write(project.join(".gitignore"), ".planning/\n.runner/\n").unwrap();
+        // A real controlled program inspects its confirmed launch before doing
+        // work, then waits for this test's filesystem handshake.
+        std::fs::write(project.join("tests/not_yet_written.rs"), "import json,pathlib,time\nr=pathlib.Path('.runner')\nrun=(r/'run').read_text()\ns=json.loads(pathlib.Path('.planning/state.json').read_text())\nassert any(e['request']['event'].get('run_id')==run for e in s['data']['native_tasks']['phases']['12'])\nwith (r/'markers').open('a') as f: f.write(run+'\\n')\nwhile not (r/'release').exists(): time.sleep(.01)\nmode=(r/'mode').read_text()\nif mode=='custom': print('custom output')\nelif mode=='error':\n import sys\n print('Ran 1 test in 0.000s\\nFAILED (errors=1)',file=sys.stderr)\n sys.exit(1)\nelse: print('test result: ok. 1 passed; 0 failed;')\n").unwrap();
+        let git = |args: &[&str]| {
+            let output = Command::new("git").args(["-c", "commit.gpgsign=false", "-c", "user.name=Cadence-Phase12", "-c", "user.email=phase12@example.invalid"])
+                .args(args).current_dir(project).stdin(std::process::Stdio::null()).output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        };
+        git(&["init", "--initial-branch=fixture/runner"]); git(&["add", ".gitignore", "tests"]); git(&["commit", "-m", "Fixture runner"]);
+        let head = git(&["rev-parse", "HEAD"]); let tree = git(&["rev-parse", "HEAD^{tree}"]);
+        let command = "python3 tests/not_yet_written.rs";
+        let (data, documents, contract) = native_unit_contract(command);
+        for (path, bytes) in documents { std::fs::write(root.join(path), bytes).unwrap(); }
+        let store = Store::open(Filesystem::new(&root).unwrap(), PlanningPolicy).await.unwrap();
+        let view = store.request(Operation::RewriteSnapshot(data)).await.unwrap();
+        let view = store.request(Operation::NativeAdmissionV1 { expected_generation: view.snapshot.generation,
+            expected_integrity: view.snapshot.integrity, request: Box::new(admission::Request { request_id: "admit-runner".into(), expected_set_version: 0, contract }) }).await.unwrap();
+        let basis = admission::records(&view.snapshot.data, 12).unwrap().remove(0);
+        let task = Task { phase: 12, occurrence: "active-cycle:phase:12".into(), admission_digest: basis.request_digest, plan: 1, task: "deliver".into() };
+        let checks = basis.request.contract.allocation[0].checks.clone();
+        let start = Start { request_id: "start".into(), task: task.clone(), attempt: "attempt".into(), expected_version: 0, predecessor: None, checks: checks.clone() };
+        let started = runner::start(&store, project, start.clone()).await.unwrap();
+        assert_eq!(runner::start(&store, project, start).await.unwrap(), started);
+        let mut version = 1;
+        for (id, mode, expected_stdout, expected_stderr, disposition, expected_observation) in [
+            ("cargo-run", "cargo", "test result: ok. 1 passed; 0 failed;\n", "", Disposition::Exited { code: 0 }, Observation::ResultsObserved { summary: Summary::Cargo { failed: false } }),
+            ("custom-run", "custom", "custom output\n", "", Disposition::Exited { code: 0 }, Observation::Unknown),
+            ("error-run", "error", "", "Ran 1 test in 0.000s\nFAILED (errors=1)\n", Disposition::Exited { code: 1 }, Observation::ResultsObserved { summary: Summary::Unittest { failed: true, failures: 0, errors: 1 } }),
+        ] {
+            let _ = std::fs::remove_file(project.join(".runner/release"));
+            std::fs::write(project.join(".runner/run"), id).unwrap(); std::fs::write(project.join(".runner/mode"), mode).unwrap();
+            let input = Run { request_id: id.into(), task: task.clone(), attempt: "attempt".into(), expected_version: version,
+                command: command.into(), check: Some(checks[0].clone()), stage: Stage::Red };
+            let claim = runner::launch(store.clone(), project.to_path_buf(), input.clone()).await.unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while !std::fs::read_to_string(project.join(".runner/markers")).unwrap_or_default().lines().any(|line| line == id) {
+                assert!(std::time::Instant::now() < deadline, "child did not observe confirmed claim");
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+            let live = tokio::time::timeout(std::time::Duration::from_secs(1), store.request(Operation::ReadVerified)).await.unwrap().unwrap();
+            assert_eq!(history::project(&history::records(&live.snapshot.data, 12).unwrap(), &task).unknown_runs, vec![id.to_owned()]);
+            assert_eq!(runner::launch(store.clone(), project.to_path_buf(), input.clone()).await.unwrap(), claim);
+            std::fs::write(project.join(".runner/release"), "continue").unwrap();
+            let result = loop {
+                let view = store.request(Operation::ReadVerified).await.unwrap();
+                if let Some(result) = history::records(&view.snapshot.data, 12).unwrap().into_iter().find_map(|r| match r.request.event {
+                    history::Event::Result(result) if result.run_id == id => Some(result), _ => None,
+                }) { break result }
+                assert!(std::time::Instant::now() < deadline, "result not retained");
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            };
+            assert_eq!(result.stdout.bytes, expected_stdout.as_bytes()); assert_eq!(result.stderr.bytes, expected_stderr.as_bytes());
+            assert_eq!(result.stdout.digest, digest(expected_stdout.as_bytes())); assert_eq!(result.stderr.digest, digest(expected_stderr.as_bytes()));
+            assert!(result.stdout.complete && result.stderr.complete && result.material_unchanged);
+            assert_eq!(result.observation, expected_observation); assert_eq!(result.disposition, disposition);
+            let history::Event::Launch(launch) = &claim.request.event else { panic!("launch required") };
+            assert_eq!(launch.material.commit, head); assert_eq!(launch.material.tree, tree); assert_eq!(launch.material.command, command);
+            assert!(launch.launched_at > 0 && result.observed_at >= launch.launched_at);
+            assert_eq!(runner::launch(store.clone(), project.to_path_buf(), input.clone()).await.unwrap(), claim);
+            version += 2;
+            let mut replacement = input.clone(); replacement.request_id = format!("{id}-replacement"); replacement.expected_version = version;
+            replacement.command = "printf caller-replacement".into();
+            assert!(runner::launch(store.clone(), project.to_path_buf(), replacement).await.unwrap_err().to_string().contains("named-command"));
+        }
+        let markers = std::fs::read_to_string(project.join(".runner/markers")).unwrap();
+        assert_eq!(markers, "cargo-run\ncustom-run\nerror-run\n");
+        std::fs::write(project.join("dirty-source"), "uncommitted").unwrap();
+        assert!(runner::launch(store.clone(), project.to_path_buf(), Run { request_id: "dirty-run".into(), task,
+            attempt: "attempt".into(), expected_version: version, command: command.into(), check: Some(checks[0].clone()), stage: Stage::Red }).await.unwrap_err().to_string().contains("evidence-source-dirty"));
+        assert_eq!(std::fs::read_to_string(project.join(".runner/markers")).unwrap(), markers);
+        let baseline = std::fs::read(root.join("state.json")).unwrap();
+        drop(store);
+        let store = Store::open(Filesystem::new(&root).unwrap(), PlanningPolicy).await.unwrap();
+        assert_eq!(history::records(&store.request(Operation::ReadVerified).await.unwrap().snapshot.data,12).unwrap().len(), 7);
+        assert_eq!(std::fs::read(root.join("state.json")).unwrap(), baseline);
     });
 }
 

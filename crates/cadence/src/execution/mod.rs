@@ -9,6 +9,7 @@ pub mod plan;
 pub mod render;
 pub mod history;
 pub mod receipts;
+pub mod runner;
 
 #[cfg(test)]
 mod tests;

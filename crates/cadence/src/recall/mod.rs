@@ -265,6 +265,11 @@ mod resident {
             raw: serde_json::Value,
             reply: oneshot::Sender<Result<serde_json::Value>>,
         },
+        NativeExecutionHistory {
+            root: PathBuf,
+            phase: u32,
+            reply: oneshot::Sender<Result<serde_json::Value>>,
+        },
         ExecutionApply {
             root: PathBuf,
             patch: cadence::execution::model::ExecutorPatch,
@@ -505,6 +510,9 @@ mod resident {
                         }
                         Request::NativeExecutionApply {root,raw,reply} => {
                             let _=reply.send(execution_service::native_apply(&factory,&root,raw).await);
+                        }
+                        Request::NativeExecutionHistory { root, phase, reply } => {
+                            let _ = reply.send(crate::server::execution_runner_service::read(&factory, &root, phase).await);
                         }
                         Request::ExecutionApply { root, patch, reply } => {
                             let result =
@@ -807,6 +815,12 @@ mod resident {
             let (reply,result)=oneshot::channel();
             self.requests.send(Request::NativeExecutionApply {root:root.to_path_buf(),raw,reply}).await.map_err(|_|Error::Closed)?;
             result.await.map_err(|_|Error::Closed)?
+        }
+
+        pub async fn native_execution_history(&self, root: &Path, phase: u32) -> Result<serde_json::Value> {
+            let (reply, result) = oneshot::channel();
+            self.requests.send(Request::NativeExecutionHistory { root: root.to_path_buf(), phase, reply }).await.map_err(|_| Error::Closed)?;
+            result.await.map_err(|_| Error::Closed)?
         }
 
         pub async fn apply_executor_patch(
