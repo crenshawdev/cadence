@@ -44,6 +44,17 @@ Do not pass another root or destination. Context intake supplies the roadmap and
 context. Plan read returns prior `plans` with their `document` and classification,
 `inventory` with occupied identities and source documents, `native` publication
 records, `occurrence`, `native_truths_approved`, `readiness` and the apply `contract`.
+Read the authoritative phase truths and saved evidence through the same query tool:
+
+```json
+{"operation":"evidence-read","phase":27}
+```
+
+Use its current `truths` records' opaque `id` and numeric `version`; phase 26 has
+not introduced truth revision, so native current versions are presently 1. The
+record supplies the number: never derive it from text, a heading, O1 provenance,
+an item id or this instruction. A missing native truth set requires context
+authoring before publication.
 Read SUMMARY, UAT and reports as well as prior plans, and inspect the existing
 code and callers the tasks will change. Legacy files are inputs, never native
 approval. Decimal phase addresses are read-only and cannot alias native phases.
@@ -69,17 +80,61 @@ never invent a truth version. Write the one check per truth with setup, call,
 handwritten expected result, test file/function and command. The check must cross
 the boundary it claims. Add substantive artifacts, necessary links and explicit
 live observations with a reason explaining what change would break each item.
-An observation remains pending until its actual observer, time and result exist.
+An observation is supplementary to the truth's check. This API accepts only its
+specification and `status: "pending"`; it has no observation-result field.
 
-The authored `## Evidence map` section is preserved as opaque Markdown under the
-plan's content revision. This publication does not type, attach or validate map
-items. Phases 28/29 own those mechanisms, phase 12 owns execution activation and
-history reconciliation, phase 13 owns verdicts, and phase 30 owns selected review
-edits and handoff. Publication is `provisional-authoring`: readable and addressable,
-with a mechanical `execute-next` gate. Do not claim an executable or accepted plan.
+Put the typed map in `content.evidence_map` as `{"mode":"attached","items":[...]}`.
+Each item has an opaque, nonblank, occurrence-scoped `id`, one `kind`, a `spec`,
+its own nonblank `reason` (what change would break this evidence), and explicit
+`associations: [{truth_id, truth_version, reason}]`. Each association has its own
+nonblank reason for serving that particular truth. The four spec shapes are:
+
+- `check`: `command`, `expected: {kind: "literal" | "property", value: <string>}`,
+  `test: {file, function}`, `setup`, `call`, `boundary`, `fakes: [<string>, ...]`.
+- `artifact`: `locators: [<path or symbol>, ...]` and `substance`.
+- `link`: `caller`, `callee`, `value`; only author one when the truth itself
+  names that value crossing between the two things.
+- `observation`: `episode`, `specification: {source, document, approved_by,
+  approved_at}`, and `status: "pending"`. These names/time describe approval of
+  the specification, never an observation result.
+
+Except for numeric `truth_version` and the arrays shown, spec slots are strings.
+The compiled schema below is the exact wire grammar. Kind-specific required
+fields are structural, not proof of check/link semantics. Phase 29 owns missing
+command/output semantics, the second-check refusal and unnecessary-link refusal.
+Author exactly one check per current truth now; do not exploit deferred gates.
+
+Coverage uses the union of current plan contributions after removing everything
+the proposed batch replaces. Publish an initial split phase's maps together in
+one batch; a gap plan may rely on current saved contributions. Every current
+truth needs evidence and a check. Old maps and stale associations cannot cover
+it. One shared artifact or observation keeps one id, with explicit associations
+for each truth and distinct reasons. If multiple plans reference the same id,
+its kind/spec/item reason must agree; associations retain their separate origins.
+Changing its definition requires replacing all conflicting current contributions
+together. A changed spec under the same id retains the old item revision.
+
+The binary renders the canonical `## Evidence map` section from the typed map
+at complete preview, preserving surrounding authored body bytes. Leave that
+section for the binary to insert, or submit the exact canonical section. Duplicate
+sections and disagreement with typed data are refused, never silently adopted.
+An existing opaque phase-27 section is not native map authority; replace the plan
+with an explicitly approved new body and typed map. Inspect the preview's old
+section and proposed canonical section before approval.
+
+For deliberately mapless authoring, explicitly send `{"mode":"provisional"}`.
+Missing map fields are preserved only in historical receipts and cannot authorize
+a new publication. Provisional maps show missing coverage honestly and contribute
+no evidence, even if their body repeats old map text.
+
+All publication remains `provisional-authoring`: readable and addressable, with a
+mechanical `execute-next` gate. Phases 29 and 12 still own semantic gates and
+execution activation; phase 13 owns verdicts, phase 30 owns review handoff. No
+red/green receipt, execution or verdict API is added by typed-map authoring.
 
 Prepare `content` with numeric `phase` and `plan`, `requirements` IDs, project-relative
-`files`, optional `directories`, `execution`, and the exact Markdown `body`.
+`files`, optional `directories`, `execution`, the exact Markdown `body`, and
+the explicit `evidence_map` mode above.
 `execution` has `schema: 1`, the project's nonblank full-suite command in `suite`,
 and `tasks`, each with a stable unique `id` and nonempty `verify` command array.
 These fields describe authored commands. Planning neither runs them nor certifies
@@ -107,7 +162,17 @@ contains `phase`, returned `occurrence`, a fresh durable caller `request_id`,
 `inventory_basis` copied from `inventory.basis`, and ordered `plans`. Each entry
 contains its exact returned `target: {phase, plan}` and matching `content` as above.
 There is no caller-controlled path and no separate gap operation. Preserve all
-authored body bytes and the order shown to the owner.
+authored body bytes and the order shown to the owner. Before approval, send the
+complete `submission` through `cadence_query`, without a `count`:
+
+```json
+{"operation":"plan-read","phase_address":"27","submission":<complete submission>}
+```
+
+Keep the returned final `submission` and `documents`, including each document's
+`revision`, `document`, `old_section` and `section`. This preview validates the
+whole candidate union without a writer, normalizes the map section and updates
+the matching replacement content. Approval must copy this final submission.
 
 Show the entire proposed submission, including every ordered target and the full
 content of every plan. Obtain the identified owner's explicit approval of that
@@ -119,8 +184,9 @@ save progress. Any content or allocation change requires fresh approval.
 
 Wait for `status: ok`, `operation: plan-submit`, `persisted: true` before reporting
 that the transaction was acknowledged. Its ordered `results` contain stable
-identity, original content revision, approval and provisional readiness. Use
-`plan-read` to read the current content and publication record back. Do not infer
+identity, original content revision, approval, `map_revision` for an attached map,
+and provisional readiness. Use `plan-read` for the published document and
+`evidence-read` for the authoritative phase map. Do not infer
 publication from a preview, draft response, storage error or uncertain transport.
 
 ## Replacement is a separate exact authorization
@@ -144,6 +210,14 @@ fresh approval. The binary retains prior publications/approvals and does not
 replace an identity admitted to execution, even after its active dispatch ends.
 Legacy aliases remain read-only even when the canonical filename is absent.
 
+Explicitly resubmit and revalidate the map with every replacement. A changed
+non-map body is a new publication even when the map's bytes are identical.
+Old immutable map/item payloads and original receipt results remain readable;
+`plan-read.map_history` marks retired contributions `superseded` with their
+`superseded_by` publication binding. Only the newly approved map may be current.
+An explicitly provisional mapless replacement removes the old contribution from
+current coverage while retaining its historical payload and retirement relation.
+
 ## Retry the acknowledged request, not a new allocation
 
 Keep the original caller request ID and the exact approved request. If its
@@ -152,13 +226,53 @@ approval identity/time and inventory basis. Do not re-preview, mint another ID
 or silently retarget that retry. Durable receipts are scoped to the occurrence
 and bind the payload digest to ordered original identities and revisions.
 
-A replay returns `replayed: true` and the historical `results` before testing the
+A replay returns `replayed: true`, the original `payload_digest` and historical
+`results` with their original map bindings before testing the
 old preview. `persisted: true` means the historical transaction was committed;
 it does not assert its old bytes are currently installed. Inspect `projections`
 separately: each has `identity`, `current_revision` (the current native record's
 revision), and `status`: `installed`, `newer-authorized`, `missing` or `drifted`.
 Report that state honestly. Replay never restores old bytes, replaces a newer
 revision or allocates another file. A changed payload under the same ID is refused.
+This includes changing only an item spec or an association reason. Replays of
+historical absent-map phase-27 requests preserve the absent fields, even after
+an approved replacement has attached the first map.
+
+## Read the authoritative acceptance inputs
+
+`evidence-read` is read-only and returns `schema: "acceptance-map-view-1"`,
+`phase`, `occurrence`, current `truths` (id/version/text/kind), `contributions`
+(plan identity/content revision/map revision/request id), canonical `items`
+(id/kind/spec/reason/item revision), explicit `associations` with reasons and
+origins, and `aliases` identifying each plan's reference to a shared item.
+Its `history` retains full map definitions and exact current/superseded events;
+`coverage` lists `uncovered`, `without_check`, and distinct check ids per truth.
+A mapless current plan has a null map revision. All views keep
+`readiness: "provisional-authoring"` regardless of coverage.
+
+`projections` reports each current plan identity/revision, observed byte digest
+or absence, and `installed`, `missing` or `drifted` status. Saved maps remain
+authoritative when Markdown is missing, malformed or invalid UTF-8. Readback
+does not parse Markdown to invent evidence, repair files or recover intents.
+
+`coherence: "consistent"` requires unchanged before/after observed inputs and no
+outstanding intent. `input_digest` is lowercase SHA-256 over compact canonical
+JSON of schema/phase/occurrence/truths/contributions/items/associations/aliases/
+history/coverage/readiness/projections. Object keys use UTF-8 order; set arrays
+use stable identities (numeric plan first where applicable), with exact ordering
+and tie-breaking documented in compiled `plan::map_view`. Spec order is retained.
+Publication request ids stay included; transient read ids, clocks, absolute roots,
+coherence and explanatory prose are excluded. Changed projection bytes change
+this digest without changing saved evidence. Later consumers must bind to this
+input identity and inspect projection health separately.
+
+An `inconsistent-inputs` answer has `coherence: "inconsistent"`, names `inputs`
+and provides no usable `input_digest`. Report the outstanding intent or changed
+input and retry readback after it stabilizes; never call it a coherent view or
+acquire a writer to recover it. These are stable observed reads, not a claim of
+filesystem-wide atomicity. Empty phases return explicit empty sets, not inferred
+Markdown maps. Verification must inspect this saved set, never reconstruct its
+own expected set from Markdown or a summary.
 
 ## Correct typed refusals through the same binary
 
@@ -166,6 +280,22 @@ Refusals carry `status: refused`, `code`, `rule`, `reason` and the standard
 location slots. Explain the named identity/path and correct the request:
 
 - `native-approved-truths`: return to context authoring for that phase.
+- `uncovered-truth` or `truth-without-check`: inspect the named current truth
+  and resulting phase union; supply its evidence and its one authored check.
+  An observation cannot stand in for the check.
+- `evidence-item-truth`: correct the named item's association to an actual
+  current truth in the bound phase; spelling and matching text confer no authority.
+- `truth-version-mismatch`: read the current native numeric version and correct
+  the named association explicitly; do not infer or silently coerce a version.
+- `evidence-association-shape`, `evidence-item-shape` or `duplicate-evidence-item`:
+  correct the located numeric slot, nonblank id/reason or duplicate definition.
+- `evidence-item-conflict`: retain the shared definition or replace all current
+  conflicting contributions together in a newly previewed and approved batch.
+- `evidence-map-mode`: choose attached evidence or explicit provisional authoring.
+- `evidence-map-section`: remove duplicate sections or submit the exact canonical
+  section in a corrected full preview; never infer items from authored prose.
+- `preview-scope` or `batch-size`: match the bound phase and use submission or
+  count, not both; allocation previews accept 1 through 64 plans.
 - `identity-mismatch` or `path-confinement`: correct the proposal and obtain its
   exact approval; never change destinations behind the owner's back.
 - `inventory`: resolve the reported legacy ambiguity explicitly; do not rename,
@@ -191,14 +321,23 @@ until the exact request is acknowledged or the actual blocker is resolved.
 
 ## Live-host observation
 
-O1's specification was approved by the owner on 2026-09-10; it is pending/not yet
-seen. The owner must run `/cad-plan` in a real host, see the planner reach the
-binary, see a deliberately mismatched identity return a typed refusal in the
-conversation, and see the approved plan land with nothing written before approval.
-Record a seen episode only when observer, time and result are supplied. Host
-conduct and model-authored plan quality are knowingly untested. Do not turn this
-Markdown into an acceptance check or infer O1 from automated checks. O1 is the
-same observation for T1 and T7; even when seen it caps those truths at concerns.
+P28-O1 is the shared observation for phase-28 T1 and T7, source O1 in
+`.planning/phases/28/CONTEXT.md`. Its specification was approved by the owner on
+2026-09-10 at dispatch HEAD `7d5ccc4f`; it is **pending, not yet seen**:
+
+The owner runs `/cad-plan` for a real phase in a real host, sees the
+planner submit its evidence map with the plan, sees one deliberately
+uncovered truth come back as a typed refusal in the conversation, and sees
+the approved plan land with its map attached and readable back. The map's
+quality is the model's and is not asserted.
+
+Keep one item id and both explicit associations. Its item reason is that
+deterministic stdio checks cannot establish real host conduct; T1's association
+reason is "the owner must see the host submit and publish the attached map";
+T7's is "the owner must see authoritative readback in the host". Specification provenance is not a seen
+result. This API records no observed result; do not infer one from automated
+checks or turn the rendered skill into a check. If observed later, O1 remains
+supplementary and caps those truths at `concerns`.
 
 ## Compiled publication schema
 
@@ -356,6 +495,17 @@ The schema below is also returned as the `plan-read` contract.
         "body": {
           "description": "UTF-8 Markdown, including its original line endings and final newline.",
           "type": "string"
+        },
+        "evidence_map": {
+          "description": "Absence is retained only for historical phase-27 publications.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Map"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -410,6 +560,379 @@ The schema below is also returned as the `plan-read` contract.
       "required": [
         "id",
         "verify"
+      ]
+    },
+    "Map": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Item"
+              }
+            },
+            "mode": {
+              "type": "string",
+              "const": "attached"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "items"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "const": "provisional"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Item": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "spec": {
+              "$ref": "#/$defs/Check"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "associations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Association"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "check"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id",
+            "spec",
+            "reason",
+            "associations"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "spec": {
+              "$ref": "#/$defs/Artifact"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "associations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Association"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "artifact"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id",
+            "spec",
+            "reason",
+            "associations"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "spec": {
+              "$ref": "#/$defs/Link"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "associations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Association"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "link"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id",
+            "spec",
+            "reason",
+            "associations"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "spec": {
+              "$ref": "#/$defs/Observation"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "associations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Association"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "observation"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id",
+            "spec",
+            "reason",
+            "associations"
+          ]
+        }
+      ]
+    },
+    "Check": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/Expected"
+        },
+        "test": {
+          "$ref": "#/$defs/Test"
+        },
+        "setup": {
+          "type": "string"
+        },
+        "call": {
+          "type": "string"
+        },
+        "boundary": {
+          "type": "string"
+        },
+        "fakes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "expected",
+        "test",
+        "setup",
+        "call",
+        "boundary",
+        "fakes"
+      ]
+    },
+    "Expected": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "literal"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "property"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Test": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "function": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "function"
+      ]
+    },
+    "Association": {
+      "type": "object",
+      "properties": {
+        "truth_id": {
+          "type": "string"
+        },
+        "truth_version": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "truth_id",
+        "truth_version",
+        "reason"
+      ]
+    },
+    "Artifact": {
+      "type": "object",
+      "properties": {
+        "locators": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "substance": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "locators",
+        "substance"
+      ]
+    },
+    "Link": {
+      "type": "object",
+      "properties": {
+        "caller": {
+          "type": "string"
+        },
+        "callee": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "caller",
+        "callee",
+        "value"
+      ]
+    },
+    "Observation": {
+      "type": "object",
+      "properties": {
+        "episode": {
+          "type": "string"
+        },
+        "specification": {
+          "$ref": "#/$defs/Specification"
+        },
+        "status": {
+          "$ref": "#/$defs/Pending"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "episode",
+        "specification",
+        "status"
+      ]
+    },
+    "Specification": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "document": {
+          "type": "string"
+        },
+        "approved_by": {
+          "type": "string"
+        },
+        "approved_at": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "document",
+        "approved_by",
+        "approved_at"
+      ]
+    },
+    "Pending": {
+      "type": "string",
+      "enum": [
+        "pending"
       ]
     },
     "ReplacementApproval": {
