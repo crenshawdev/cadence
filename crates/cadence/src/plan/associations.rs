@@ -46,6 +46,7 @@ fn associations(item: &Item) -> &[super::evidence::Association] {
 #[derive(Serialize)]
 pub struct Coverage {
     pub uncovered: Vec<String>,
+    pub without_check: Vec<String>,
 }
 
 pub fn validate(data: &Value, submission: &Submission) -> Result<Coverage> {
@@ -59,12 +60,25 @@ pub fn validate(data: &Value, submission: &Submission) -> Result<Coverage> {
         !contributions.iter().flat_map(|c| &c.items).flat_map(associations)
             .any(|a| a.truth_id == truth.id && a.truth_version == truth.version)
     }).map(|truth| truth.id.clone()).collect::<Vec<_>>();
-    if submission.plans.iter().any(|entry| matches!(entry.content.evidence_map, Some(Map::Attached { .. })))
+    let attached = submission.plans.iter().any(|entry| matches!(entry.content.evidence_map, Some(Map::Attached { .. })));
+    if attached
         && let Some(id) = uncovered.first()
     {
         return Err(Diagnostic { rule: "uncovered-truth".into(), slot: "submission.plans".into(),
             phase: Some(phase), entry: None, id: Some(id.clone()),
             reason: format!("phase {phase} current truth {id} has no evidence association in the resulting current phase set") }.error());
     }
-    Ok(Coverage { uncovered })
+    // Presence is the lower bound: repeated aliases of a shared check cannot
+    // count as extra checks. Phase 29 owns the distinct-check upper bound.
+    let without_check = context.truths.iter().filter(|truth| {
+        !contributions.iter().flat_map(|c| &c.items)
+            .filter(|item| matches!(item, Item::Check { .. })).flat_map(associations)
+            .any(|a| a.truth_id == truth.id && a.truth_version == truth.version)
+    }).map(|truth| truth.id.clone()).collect::<Vec<_>>();
+    if attached && let Some(id) = without_check.first() {
+        return Err(Diagnostic { rule: "truth-without-check".into(), slot: "submission.plans".into(),
+            phase: Some(phase), entry: None, id: Some(id.clone()),
+            reason: format!("phase {phase} current truth {id} has evidence but no current check; supplementary evidence cannot replace its check") }.error());
+    }
+    Ok(Coverage { uncovered, without_check })
 }
