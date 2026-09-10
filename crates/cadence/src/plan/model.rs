@@ -157,6 +157,7 @@ pub enum Answer {
 #[serde(untagged)]
 pub enum Details {
     CheckConflict { truth_id: String, truth_version: u32, checks: Vec<CheckConflict> },
+    LinkTruth { truth_id: String, truth_version: u32, association_slot: String },
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

@@ -26,6 +26,9 @@ pub fn malformed(raw: &Value) -> Option<Diagnostic> {
                     } else if id.is_some() && item["kind"] == "check"
                         && matches!(field.as_str(), "spec.expected" | "spec.expected.kind" | "spec.expected.value") {
                         "check-expected"
+                    } else if id.is_some() && item["kind"] == "link"
+                        && matches!(field.as_str(), "spec.caller" | "spec.callee" | "spec.value") {
+                        "link-content"
                     } else { "evidence-item-shape" };
                     return Some(Diagnostic {
                         details: None,
@@ -122,6 +125,17 @@ pub fn content(phase: u32, contributions: &[Contribution]) -> Result<()> {
                     }
                 }
             }
+            if let Item::Link { spec, .. } = item {
+                for (field, value) in [("caller", &spec.caller), ("callee", &spec.callee), ("value", &spec.value)] {
+                    if value.trim().is_empty() {
+                        return Err(Diagnostic {
+                            rule: "link-content".into(), slot: format!("{}.spec.{field}", base(contribution, index)),
+                            phase: Some(phase), entry: contribution.entry, id: Some(item.id().into()), details: None,
+                            reason: format!("phase {phase} link {} needs nonblank {field}", item.id()),
+                        }.error());
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -176,4 +190,68 @@ pub fn checks(phase: u32, contributions: &[Contribution]) -> Result<()> {
         }.error());
     }
     Ok(())
+}
+
+pub fn links(context: &cadence::context::model::ApprovedContext, phase: u32, contributions: &[Contribution]) -> Result<()> {
+    for contribution in contributions {
+        for (index, item) in contribution.items.iter().enumerate() {
+            let Item::Link { spec, .. } = item else { continue };
+            let value = spec.value.trim_matches(char::is_whitespace);
+            for (edge, association) in item.associations().iter().enumerate() {
+                let refuse = |rule: &str, cause: String| Diagnostic {
+                    rule: rule.into(), slot: format!("{}.spec.value", base(contribution, index)),
+                    phase: Some(phase), entry: contribution.entry, id: Some(item.id().into()),
+                    reason: format!("phase {phase} link {} value {:?}, associated truth {} version {}: {cause}",
+                        item.id(), spec.value, association.truth_id, association.truth_version),
+                    details: Some(super::model::Details::LinkTruth {
+                        truth_id: association.truth_id.clone(), truth_version: association.truth_version,
+                        association_slot: format!("{}.associations[{edge}]", base(contribution, index)),
+                    }),
+                }.error();
+                let slots = approved_slots(context, phase, association)
+                    .map_err(|cause| refuse("link-truth-unresolvable", cause.into()))?;
+                if !slots.iter().any(|slot| names(slot, value)) {
+                    return Err(refuse("link-value-not-named", "value is absent under the exact individual-slot lexical rule".into()));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn approved_slots<'a>(context: &'a cadence::context::model::ApprovedContext, phase: u32,
+    association: &super::evidence::Association) -> std::result::Result<[&'a str; 3], &'static str>
+{
+    if context.submission.phase.get() != phase || !context.approval.approved
+        || context.approval.submission.as_ref() != Some(&context.submission)
+    {
+        return Err("retained submission lacks matching native approval");
+    }
+    let mut truths = context.truths.iter().filter(|truth| truth.id == association.truth_id);
+    let truth = truths.next().ok_or("current full truth identity is unavailable")?;
+    // Phase 11 derives version 1 from this retained approval; no truth revision
+    // mechanism exists yet. A different version cannot borrow these slots.
+    if truths.next().is_some() || truth.phase != phase || truth.version != association.truth_version || truth.version != 1 {
+        return Err("current truth version has no unambiguous retained slot binding");
+    }
+    let mut records = context.submission.truths.iter().filter(|slots| slots.id == association.truth_id);
+    let slots = records.next().ok_or("approved slot record is absent")?;
+    if records.next().is_some() { return Err("approved slot identity is ambiguous"); }
+    let available = |slot: &'a Option<String>| slot.as_deref().filter(|s| !s.trim().is_empty());
+    Ok([available(&slots.trigger).ok_or("approved trigger slot is unavailable")?,
+        available(&slots.observer).ok_or("approved observer slot is unavailable")?,
+        available(&slots.outcome).ok_or("approved outcome slot is unavailable")?])
+}
+
+fn names(slot: &str, value: &str) -> bool {
+    let run = |c: char| c.is_alphanumeric() || c == '_';
+    let begins_run = value.chars().next().is_some_and(run);
+    let ends_run = value.chars().next_back().is_some_and(run);
+    // Character offsets include overlapping occurrences; an embedded first
+    // match must not hide a later delimited occurrence. Slots are never joined.
+    slot.char_indices().any(|(at, _)| {
+        slot[at..].starts_with(value)
+            && (!begins_run || !slot[..at].chars().next_back().is_some_and(run))
+            && (!ends_run || !slot[at + value.len()..].chars().next().is_some_and(run))
+    })
 }

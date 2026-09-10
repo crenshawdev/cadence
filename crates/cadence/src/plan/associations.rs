@@ -168,6 +168,7 @@ pub fn validate(data: &Value, submission: &Submission) -> Result<Coverage> {
     }
     if attached {
         super::limits::content(phase, &contributions)?;
+        super::limits::links(&context, phase, &contributions)?;
         super::limits::checks(phase, &contributions)?;
     }
     Ok(Coverage { uncovered, without_check })
