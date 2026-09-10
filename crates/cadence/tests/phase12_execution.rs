@@ -1218,14 +1218,23 @@ fn suite_events(project:&Path,plan:u32) -> Vec<Value> {
     execution_history(project)["plan_events"].as_array().unwrap().iter().filter(|e|e["request"]["plan"]["plan"]==plan).cloned().collect()
 }
 
-fn wait_suite_result(project:&Path,run_id:&str) -> Value {
+// The launching server owns the suite child, so the same server reads the
+// result; a refused or replayed request never reaches this helper's process.
+fn suite_run(project:&Path,id:&str,plan:u32) -> (Value,Value) {
+    let request=plan_request(project,"execution-suite",id,plan,json!({}));
+    let mut client=Client::open(project);
+    let launch=client.call("cadence_apply",request);
+    assert_eq!(launch["status"],"ok","the suite must be available after the last task is acknowledged: {launch}");
     let deadline=std::time::Instant::now()+std::time::Duration::from_secs(20);
-    loop {
-        if let Some(record)=execution_history(project)["plan_events"].as_array().unwrap().iter()
-            .find(|e|e["request"]["event"]["kind"]=="suite-result" && e["request"]["event"]["run_id"]==run_id) {return record["request"]["event"].clone();}
-        assert!(std::time::Instant::now()<deadline,"suite result timed out");
+    let result=loop {
+        let history=client.call("cadence_query",json!({"operation":"execution-history","phase":12}));
+        if let Some(record)=history["plan_events"].as_array().unwrap().iter()
+            .find(|e|e["request"]["event"]["kind"]=="suite-result" && e["request"]["event"]["run_id"]==id) {break record["request"]["event"].clone();}
+        assert!(std::time::Instant::now()<deadline,"suite result timed out: {history}");
         std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    };
+    client.finish();
+    (launch,result)
 }
 
 fn absence(dead:&str,output_identity:Value) -> Value {
@@ -1274,9 +1283,7 @@ fn phase12_runner_retains_task_commands_and_one_suite() {
     assert_eq!(fs::read_to_string(project.join(".run/markers")).unwrap(),"A\nA\nB\nC\n","task-named commands during work, repairs distinct");
     assert_eq!(suite_markers(project),"","no suite before the last task");
     // The one suite: eligible only now, claimed before the process starts.
-    let suite=plan_apply(project,"execution-suite","suite-1",1,json!({}));
-    assert_eq!(suite["status"],"ok","the suite must be available after the last task is acknowledged: {suite}");
-    let result=wait_suite_result(project,"suite-1");
+    let (suite,result)=suite_run(project,"suite-1",1);
     assert_eq!(suite_markers(project),"suite\n","exactly one suite process");
     assert_eq!(result["observation"],json!({"class":"results-observed","summary":{"runner":"cargo","failed":false}}));
     assert_eq!(result["disposition"],json!({"kind":"exited","code":0}));assert_eq!(result["material_unchanged"],true);
@@ -1366,8 +1373,7 @@ fn phase12_runner_retains_task_commands_and_one_suite() {
     assert_eq!(apply(project,confirmation)["receipt"],confirmed["receipt"],"replay cannot consume another exception");
     plan_refused(project,plan_request(project,"execution-suite-relaunch","relaunch-twice",1,absence("dead-1",Value::Null)),"suite-relaunch-budget");
     fs::write(project.join(".run/relaunch"),"").unwrap();
-    let relaunch=plan_apply(project,"execution-suite","dead-2",1,json!({}));assert_eq!(relaunch["status"],"ok","{relaunch}");
-    let result=wait_suite_result(project,"dead-2");assert_eq!(result["observation"]["class"],"results-observed");
+    let (_,result)=suite_run(project,"dead-2",1);assert_eq!(result["observation"]["class"],"results-observed");
     assert_eq!(suite_markers(project),"suite\nsuite\n");
     plan_refused(project,plan_request(project,"execution-suite","dead-3",1,json!({})),"suite-once");
     let complete=plan_apply(project,"execution-plan-complete","complete-dead-2",1,json!({}));assert_eq!(complete["status"],"ok","{complete}");
@@ -1382,8 +1388,7 @@ fn phase12_runner_retains_task_commands_and_one_suite() {
     // linked gap identity that leaves the original history exact.
     for (mode,expected) in [("runner-failed-cargo",json!({"runner":"cargo","failed":true})),("runner-unittest-errors",json!({"runner":"unittest","failed":true,"failures":0,"errors":1}))] {
         let failed=Tiny::new(mode);let project=failed.project();finish_tasks(&failed);
-        let launched=plan_apply(project,"execution-suite","fail-1",1,json!({}));assert_eq!(launched["status"],"ok","{launched}");
-        let result=wait_suite_result(project,"fail-1");
+        let (_,result)=suite_run(project,"fail-1",1);
         assert_eq!(result["observation"],json!({"class":"results-observed","summary":expected}));
         assert_eq!(result["disposition"]["code"],if mode=="runner-failed-cargo" {101} else {1});
         plan_refused(project,plan_request(project,"execution-suite-relaunch","relaunch-failed",1,absence("fail-1",json!(output_identity(&result)))),"suite-results-observed");
@@ -1416,8 +1421,7 @@ fn phase12_runner_retains_task_commands_and_one_suite() {
     // Unknown terminated output: custom failure text is not a binary finding
     // of absence; nothing completes or relaunches automatically.
     let custom=Tiny::new("runner-custom-fail");let project=custom.project();finish_tasks(&custom);
-    let launched=plan_apply(project,"execution-suite","custom-1",1,json!({}));assert_eq!(launched["status"],"ok","{launched}");
-    let result=wait_suite_result(project,"custom-1");
+    let (_,result)=suite_run(project,"custom-1",1);
     assert_eq!(result["observation"],json!({"class":"unknown"}));assert_eq!(result["disposition"],json!({"kind":"exited","code":1}));
     assert_eq!(result["stdout"],json!({"bytes":b"suite failed: 3 assertions did not hold\n".to_vec(),"digest":model::digest(b"suite failed: 3 assertions did not hold\n"),"complete":true}));
     plan_refused(project,plan_request(project,"execution-suite","custom-2",1,json!({})),"suite-once");
@@ -1426,16 +1430,14 @@ fn phase12_runner_retains_task_commands_and_one_suite() {
     // Custom startup text, then a stop before any test: Unknown, attestable,
     // one relaunch; the original class, bytes and disposition stay.
     let startup=Tiny::new("runner-startup");let project=startup.project();finish_tasks(&startup);
-    let launched=plan_apply(project,"execution-suite","startup-1",1,json!({}));assert_eq!(launched["status"],"ok","{launched}");
-    let result=wait_suite_result(project,"startup-1");
+    let (_,result)=suite_run(project,"startup-1",1);
     assert_eq!(result["observation"],json!({"class":"unknown"}));assert_eq!(result["disposition"],json!({"kind":"exited","code":0}));
     plan_refused(project,plan_request(project,"execution-plan-complete","complete-startup",1,json!({})),"suite-unknown");
     plan_refused(project,plan_request(project,"execution-suite-relaunch","startup-wrong-bytes",1,absence("startup-1",Value::Null)),"suite-relaunch");
     let confirmed=plan_apply(project,"execution-suite-relaunch","startup-relaunch",1,absence("startup-1",json!(output_identity(&result))));
     assert_eq!(confirmed["status"],"ok","{confirmed}");
     fs::write(project.join(".run/relaunch"),"").unwrap();
-    let relaunch=plan_apply(project,"execution-suite","startup-2",1,json!({}));assert_eq!(relaunch["status"],"ok","{relaunch}");
-    let second=wait_suite_result(project,"startup-2");assert_eq!(second["observation"]["class"],"results-observed");
+    let (_,second)=suite_run(project,"startup-2",1);assert_eq!(second["observation"]["class"],"results-observed");
     let retained=suite_events(project,1);
     assert_eq!(retained[1]["request"]["event"],result,"the Unknown result keeps its class, bytes and disposition");
     settle(project,"settle-startup",1);
