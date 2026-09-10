@@ -693,6 +693,73 @@ fn phase12_task_close_requires_red_then_green() {
     assert_eq!(task_state(project,"A")["state"]["completed"],true);
 }
 
+#[test]
+fn phase12_task_close_requires_owner_no_stub_attestation() {
+    let fixture=Tiny::new("unittest");let project=fixture.project();
+    close_refused(project,fixture.close("missing-owner"),"owner-attestation",&["check/A","check/A2"]);
+    for i in 0..2 {let answer=apply(project,fixture.owner(i,&format!("false-{i}"),false));assert_eq!(answer["status"],"ok","{answer}");}
+    close_refused(project,fixture.close("false-owner"),"owner-attestation",&["check/A","check/A2"]);
+    for case in 0..4 {
+        let mut request=fixture.owner(0,&format!("stale-owner-{case}"),true);
+        match case {
+            0=>request["request"]["statement"]["submission"]["check"]["item_revision"]=json!("old-revision"),
+            1=>request["request"]["statement"]["submission"]["test_digest"]=json!("old-test-material"),
+            2=>request["request"]["statement"]["submission"]["evidence"]=json!(["another-inspection"]),
+            _=>{request["request"]["statement"].as_object_mut().unwrap().remove("approval");request["request"]["statement"]["no_stub"]=json!(true);request["request"]["statement"]["role"]=json!("owner");},
+        }
+        if case<3 {request["request"]["statement"]["approval"]["submission"]=request["request"]["statement"]["submission"].clone();}
+        let before=tree(project);let prior=reopened(project).snapshot;let answer=apply(project,request);assert_eq!(answer["status"],"refused","{answer}");unchanged(project,&before,&prior);
+        close_refused(project,fixture.close(&format!("close-stale-owner-{case}")),"owner-attestation",&["check/A","check/A2"]);
+    }
+    let mut first=fixture.owner(0,"affirmative-0",true);first["request"]["statement"]["supersedes"]=json!("false-0");
+    let answer=apply(project,first.clone());assert_eq!(answer["status"],"ok","{answer}");
+    assert_eq!(answer["receipt"]["request"]["event"]["approval"],first["request"]["statement"]["approval"]);
+    let before=tree(project);let prior=reopened(project).snapshot;assert_eq!(apply(project,first)["receipt"],answer["receipt"]);unchanged(project,&before,&prior);
+    close_refused(project,fixture.close("only-one-owner"),"owner-attestation",&["check/A2"]);
+    // An affirmative statement inspecting only the red run is retained honestly,
+    // but does not attest the exact pair offered at close.
+    let mut partial=fixture.owner(1,"partial-inspection",true);partial["request"]["statement"]["submission"]["evidence"]=json!(["red-1"]);
+    partial["request"]["statement"]["approval"]["submission"]=partial["request"]["statement"]["submission"].clone();
+    let answer=apply(project,partial);assert_eq!(answer["status"],"ok","{answer}");
+    close_refused(project,fixture.close("different-inspection"),"owner-attestation",&["check/A2"]);
+    let second=fixture.owner(1,"affirmative-1",true);let answer=apply(project,second.clone());assert_eq!(answer["status"],"ok","{answer}");
+    assert_eq!(answer["receipt"]["request"]["event"]["submission"],second["request"]["statement"]["submission"]);
+    let close=fixture.close("owner-complete");let answer=apply(project,close.clone());assert_eq!(answer["status"],"ok","{answer}");
+    let before=tree(project);let prior=reopened(project).snapshot;assert_eq!(apply(project,close)["receipt"],answer["receipt"]);unchanged(project,&before,&prior);
+    close_refused(project,fixture.close("owner-duplicate"),"task-completed",&[]);
+    // No-check task requires no invented owner statement.
+    git_value(project,&["commit","--allow-empty","-S","-m","feat(12): complete empty owner allocation C"]);
+    let completion=git_value(project,&["rev-parse","HEAD"]);fixture.run("C","owner-empty-verify",None,"verify");let state=task_state(project,"C");
+    let answer=apply(project,json!({"operation":"execution-task-close","request":{"request_id":"owner-empty-close","task":state["task"],"attempt":"attempt-C",
+        "expected_version":state["state"]["version"],"completion":completion,"checks":[],"verification":["owner-empty-verify"]}}));assert_eq!(answer["status"],"ok","{answer}");
+
+    // Previously valid owner records become stale when the actual test material
+    // and inspected runs change, even though the current real pair is valid.
+    let mut stale=Tiny::new("unittest");stale.attest();
+    let old_history=execution_history(stale.project());
+    let old_test=fs::read(stale.project().join("tests/check.py")).unwrap();
+    fs::write(stale.project().join("tests/check.py"),[old_test.as_slice(),b"\n# New inspected material\n"].concat()).unwrap();
+    fs::write(stale.project().join("src/tiny.py"),"def answer():\n    return 6\n").unwrap();
+    git_value(stale.project(),&["add","tests/check.py","src/tiny.py"]);git_value(stale.project(),&["commit","-m","test(12): fresh owner evidence A"]);
+    let red=git_value(stale.project(),&["rev-parse","HEAD"]);
+    for i in 0..2 {stale.run("A",&format!("new-red-{i}"),Some(i),"red");}
+    fs::write(stale.project().join("src/tiny.py"),"def answer():\n    return 7\n").unwrap();git_value(stale.project(),&["add","src/tiny.py"]);
+    git_value(stale.project(),&["commit","-S","-m","feat(12): fresh passing owner evidence A"]);stale.green=git_value(stale.project(),&["rev-parse","HEAD"]);
+    for i in 0..2 {stale.run("A",&format!("new-green-{i}"),Some(i),"green");stale.pairs[i]=json!({"check":stale.checks[i],"red_commit":red,"green_commit":stale.green,"red_run":format!("new-red-{i}"),"green_run":format!("new-green-{i}")});}
+    let mut stale_close=stale.close("material-stale-owner");stale_close["request"]["verification"]=json!(["new-green-0"]);
+    close_refused(stale.project(),stale_close,"owner-attestation",&["check/A","check/A2"]);
+    for i in 0..2 {
+        let mut request=stale.owner(i,&format!("new-owner-{i}"),true);
+        request["request"]["statement"]["submission"]["test_digest"]=json!(model::digest(&fs::read(stale.project().join("tests/check.py")).unwrap()));
+        request["request"]["statement"]["submission"]["evidence"]=json!([format!("new-red-{i}"),format!("new-green-{i}")]);
+        request["request"]["statement"]["approval"]["submission"]=request["request"]["statement"]["submission"].clone();
+        let answer=apply(stale.project(),request);assert_eq!(answer["status"],"ok","{answer}");
+    }
+    let mut close=stale.close("fresh-owner-close");close["request"]["verification"]=json!(["new-green-0"]);
+    let answer=apply(stale.project(),close);assert_eq!(answer["status"],"ok","{answer}");
+    let after=execution_history(stale.project());for event in old_history["events"].as_array().unwrap() {assert!(after["events"].as_array().unwrap().contains(event));}
+}
+
 struct Historical {root:PathBuf,_lock:fs::File}
 impl Historical {
     fn restore() -> Self {
