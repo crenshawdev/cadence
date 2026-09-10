@@ -130,7 +130,7 @@ fn request(preview: &Value, phase: u32, id: &str, bodies: &[&str]) -> Value {
                 "phase":phase,"plan":preview["targets"][i]["plan"],
                 "requirements":["T1"],"files":["src/shared.txt"],"directories":["src/extra"],
                 "execution":{"schema":1,"suite":"printf suite","tasks":[{"id":"task-1","verify":["printf verified"]}]},
-                "body":body}})).collect::<Vec<_>>()}})
+                "body":body,"evidence_map":{"mode":"provisional"}}})).collect::<Vec<_>>()}})
 }
 
 fn snapshot(project: &Path) -> Snapshot {

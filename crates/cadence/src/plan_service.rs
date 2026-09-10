@@ -152,6 +152,13 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             if let Err(error) = persistence::contribute(&data, &submission, &approval, &inventory) {
                 return path_error(error);
             }
+            for entry in &submission.plans {
+                match &entry.content.evidence_map {
+                    Some(cadence::plan::evidence::Map::Provisional) => {}
+                    None => return Ok(model::refused("evidence-map-mode", "new mapless authoring must explicitly choose provisional mode")),
+                    Some(cadence::plan::evidence::Map::Attached { .. }) => return Ok(model::refused("evidence-map-unavailable", "attached map publication is not yet available")),
+                }
+            }
             let roadmap = std::fs::read_to_string(root.join("ROADMAP.md"))?;
             let lifecycle = cadence::derivation::parse_roadmap(&roadmap)
                 .map_err(|e| cadence::store::Error::Invalid(format!("{e:?}")))?;

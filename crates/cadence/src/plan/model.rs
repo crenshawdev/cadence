@@ -32,6 +32,9 @@ pub struct Content {
     pub execution: Execution,
     /// UTF-8 Markdown, including its original line endings and final newline.
     pub body: String,
+    /// Absence is retained only for historical phase-27 publications.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_map: Option<super::evidence::Map>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

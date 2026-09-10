@@ -1,4 +1,5 @@
 pub mod instructions;
+pub mod evidence;
 pub mod inventory;
 pub mod model;
 pub mod persistence;
