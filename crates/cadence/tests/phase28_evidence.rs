@@ -634,6 +634,138 @@ fn assert_unchanged(project: &Path, before: &BTreeMap<PathBuf, Option<Vec<u8>>>,
 }
 
 #[test]
+fn phase28_republication_supersedes_previous_map() {
+    for case in ["body", "spec", "mapless", "shared"] {
+        let temp = fixture();
+        let project = temp.path();
+        native_context(project, 27, &["T1"]);
+        let items = vec![check("delivery", "T1"), artifact("address", &["T1"])];
+        let map = attached(items.clone());
+        let mut client = Client::open(project);
+        let maps = if case == "shared" { vec![map.clone(), map.clone()] } else { vec![map.clone()] };
+        let bodies = if case == "shared" { vec!["# Original\n", "# Unaffected\n"] } else { vec!["# Original\n"] };
+        let input = proposal(&mut client, "original", &maps, &bodies);
+        let original_request = approve(final_request(&preview(&mut client, &input)));
+        let original = client.call("cadence_apply", original_request.clone());
+        assert_eq!(original["persisted"], true, "{original}");
+        client.finish();
+        let first = reopened(project).snapshot;
+        let old_events = first.data["acceptance_maps"]["phases"]["27"]["revisions"].as_array().unwrap().clone();
+        assert_eq!(old_events[0]["items"], json!(items));
+        assert_eq!(old_events[0]["identity"], json!({"phase":27,"plan":1}));
+        assert_eq!(old_events[0]["request_id"], "original");
+        assert_eq!(old_events[0]["content_revision"], original["results"][0]["revision"]);
+        assert_eq!(old_events[0]["payload_digest"], first.data["plan_publications"]["phases"]["27"]["receipts"]["original"]["payload_digest"]);
+        let path = project.join(".planning/phases/27/PLAN-1.md");
+        let old_document = fs::read_to_string(&path).unwrap();
+        let before = tree(project);
+        let mut changed_items = items.clone();
+        changed_items[1]["spec"]["substance"] = json!("A revised usable destination.");
+        let new_map = match case {
+            "spec" => attached(changed_items.clone()),
+            "mapless" => json!({"mode":"provisional"}),
+            _ => map.clone(),
+        };
+        let mut client = Client::open(project);
+        let candidate = replacement(&mut client, "replacement", 1, &original["results"][0],
+            &old_document, new_map.clone(), "# Revised body\n");
+        // Each refusal must preserve both the installed winner and its history.
+        for control in ["missing", "stale", "wrong-map", "invalid-association", "implicit-map"] {
+            let mut bad = candidate.clone();
+            let entry = &mut bad["submission"]["plans"][0];
+            let rule = match control {
+                "missing" => { entry.as_object_mut().unwrap().remove("replacement"); "replacement-authorization" }
+                "stale" => { entry["replacement"]["old_revision"] = json!("stale"); "stale-target" }
+                "wrong-map" => { entry["replacement"]["content"]["evidence_map"] = attached(changed_items.clone()); "replacement-authorization" }
+                "invalid-association" => {
+                    let mut bad_items = items.clone();
+                    bad_items[0]["associations"][0]["truth_version"] = json!(2);
+                    entry["content"]["evidence_map"] = attached(bad_items);
+                    entry["replacement"]["content"] = entry["content"].clone();
+                    "truth-version-mismatch"
+                }
+                "implicit-map" => {
+                    entry["content"].as_object_mut().unwrap().remove("evidence_map");
+                    entry["content"]["body"] = json!(original["results"][0]["content"]["body"]);
+                    entry["replacement"]["content"] = entry["content"].clone();
+                    "evidence-map-mode"
+                }
+                _ => unreachable!(),
+            };
+            // Wrong authorization must differ even when the proposed spec is revised.
+            if control == "wrong-map" {
+                bad["submission"]["plans"][0]["replacement"]["content"]["evidence_map"] = json!({"mode":"provisional"});
+                if case == "mapless" { bad["submission"]["plans"][0]["replacement"]["content"]["evidence_map"] = map.clone(); }
+            }
+            let answer = client.call("cadence_apply", approve(bad));
+            assert_eq!(answer["status"], "refused", "{case}/{control}: {answer}");
+            assert_eq!(answer["rule"], rule, "{case}/{control}: {answer}");
+            client.finish();
+            assert_unchanged(project, &before, &first);
+            client = Client::open(project);
+        }
+        if case == "shared" {
+            let conflict = replacement(&mut client, "conflict", 1, &original["results"][0],
+                &old_document, attached(changed_items.clone()), "# Conflicting definition\n");
+            assert_refusal(&preview(&mut client, &conflict), "evidence-item-conflict", "address");
+            client.finish();
+            assert_unchanged(project, &before, &first);
+            client = Client::open(project);
+        }
+        let complete = preview(&mut client, &candidate);
+        let approved = approve(final_request(&complete));
+        let replacement = client.call("cadence_apply", approved.clone());
+        assert_eq!(replacement["persisted"], true, "{replacement}");
+        assert_ne!(replacement["results"][0]["revision"], original["results"][0]["revision"]);
+        if case == "mapless" {
+            assert_eq!(replacement["coverage"], json!({"uncovered":["T1"],"without_check":["T1"]}));
+            assert!(replacement["results"][0].get("map_revision").is_none());
+        }
+        client.finish();
+        let saved = reopened(project).snapshot;
+        let occurrence = &saved.data["plan_publications"]["phases"]["27"];
+        assert_eq!(occurrence["publications"]["1"], replacement["results"][0]);
+        assert_eq!(occurrence["receipts"]["original"], first.data["plan_publications"]["phases"]["27"]["receipts"]["original"]);
+        assert_eq!(occurrence["receipts"]["original"]["results"][0]["approval"], original_request["approval"]);
+        let history = &saved.data["acceptance_maps"]["phases"]["27"];
+        let events = history["revisions"].as_array().unwrap();
+        assert_eq!(&events[..old_events.len()], old_events.as_slice());
+        assert_eq!(events.len(), old_events.len() + usize::from(case != "mapless"));
+        let successor = json!({"request_id":"replacement","identity":{"phase":27,"plan":1},
+            "content_revision":replacement["results"][0]["revision"],
+            "map_revision":replacement["results"][0].get("map_revision")});
+        let old_id = old_events[0]["revision"].as_str().unwrap();
+        assert_eq!(history["superseded"][old_id], successor, "retained supersession relation");
+        if case != "mapless" {
+            let new_event = events.last().unwrap();
+            assert_eq!(new_event["items"], new_map["items"]);
+            assert_eq!(new_event["revision"], replacement["results"][0]["map_revision"]);
+            assert_eq!(new_event["payload_digest"], occurrence["receipts"]["replacement"]["payload_digest"]);
+            assert_ne!(new_event["revision"], old_events[0]["revision"]);
+            if case == "spec" { assert_ne!(new_event["item_revisions"]["address"], old_events[0]["item_revisions"]["address"]); }
+            else { assert_eq!(new_event["item_revisions"], old_events[0]["item_revisions"]); }
+        }
+        if case == "shared" { assert_eq!(occurrence["publications"]["2"], original["results"][1]); }
+        let installed = fs::read(&path).unwrap();
+        assert_eq!(model::digest(&installed), replacement["results"][0]["revision"]);
+        assert_eq!(installed, complete["documents"][0]["document"].as_str().unwrap().as_bytes());
+        let after = tree(project);
+        let mut client = Client::open(project);
+        let read = client.read("27", None);
+        let visible = read["map_history"].as_array().expect("public retained map history");
+        assert_eq!(visible.len(), events.len());
+        assert_eq!(visible[0], json!({"publication":old_events[0],"status":"superseded","superseded_by":successor}));
+        for (index, event) in events.iter().enumerate().skip(1) {
+            assert_eq!(visible[index], json!({"publication":event,"status":"current","superseded_by":null}));
+        }
+        assert_eq!(read["native"]["publications"]["1"]["readiness"], "provisional-authoring");
+        client.finish();
+        assert_unchanged(project, &after, &saved);
+        assert_eq!(reopened(project).snapshot, saved);
+    }
+}
+
+#[test]
 fn phase28_accepted_map_is_attached_to_published_plan() {
     for (prefix, suffix, reverse, replace) in [
         ("# Plan café\n\n", "## Tasks\nDo the work.\n", false, false),
