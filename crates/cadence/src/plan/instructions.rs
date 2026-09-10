@@ -101,9 +101,47 @@ nonblank reason for serving that particular truth. The four spec shapes are:
 
 Except for numeric `truth_version` and the arrays shown, spec slots are strings.
 The compiled schema below is the exact wire grammar. Kind-specific required
-fields are structural, not proof of check/link semantics. Phase 29 owns missing
-command/output semantics, the second-check refusal and unnecessary-link refusal.
-Author exactly one check per current truth now; do not exploit deferred gates.
+fields are structural, not proof that the check proves its truth or that a handoff
+occurs. Complete preview and fresh approved attached publication enforce:
+
+- `check-command`: command must be nonblank text. Any nonblank custom wrapper,
+  broad command or command with surrounding whitespace is accepted verbatim.
+  Keep the Planner block's narrow command discipline: the binary does not parse
+  runners, execute commands, inspect test existence or enforce test selection.
+- `check-expected`: expected must explicitly tag a `literal` or `property` with
+  a nonblank string value. For silence, write a property such as "stdout is empty
+  and the exit status is zero". Blank text never means silence. Property prose
+  is retained for verification; no predicate evaluator or strength inference runs.
+- `truth-check-limit`: one distinct check id per full current truth id/version
+  across the entire resulting phase union. Different ids with identical specs
+  are distinct checks; aliases of the same shared definition count once. One
+  check may serve several truths through explicit associations. All replaced
+  contributions are removed before this count; historical checks never count.
+- `link-content`: caller, callee and value must each be nonblank strings.
+  Nonblank endpoints need not occur in a truth. `link-value-not-named`: the value
+  must be named in every associated current truth under the lexical rule below.
+
+Only command and expected output are content-checked on a check. Test locator,
+setup, call, boundary and fakes retain their typed grammar; blank strings and
+an empty fakes array remain legal. Test existence, task/check bindings, red/green
+receipts and subject-stub gates belong to phase 12, adequacy to the verifier.
+
+Link comparison uses the same snapshot's native approved trigger, observer and
+outcome slots, resolved by full current truth id/version. Trim only the value's
+outer whitespace for comparison; preserve all submitted bytes. The comparison
+is a case-sensitive contiguous exact phrase inside ONE slot, retaining internal
+whitespace and punctuation. Where a value begins or ends with an alphanumeric
+character or underscore, the adjacent character cannot extend that run. W1's
+implementation interpretation of D-101 uses Rust `char::is_alphanumeric()` or
+`_` for the run and `char::is_whitespace()` for outer trim, per character, never
+per byte. Thus `parcel` matches "sends the parcel, then", but not `parcelé` or
+`parcel_2`; `arc` does not match `parcel`. A later delimited occurrence still
+matches after an earlier embedded one. Never join slots, search ids/reasons/
+titles/plan prose/other truths, fold case, stem or resolve synonyms and pronouns.
+This lexical rule is weaker than semantic necessity. A match permits publication
+for later tracing and proves no handoff. Unavailable or ambiguous approved slots
+produce `link-truth-unresolvable`, distinct from an absent value; never infer
+slots from a rendered sentence or silently accept an unclassifiable link.
 
 Coverage uses the union of current plan contributions after removing everything
 the proposed batch replaces. Publish an initial split phase's maps together in
@@ -129,8 +167,8 @@ a new publication. Provisional maps show missing coverage honestly and contribut
 no evidence, even if their body repeats old map text.
 
 All publication remains `provisional-authoring`: readable and addressable, with a
-mechanical `execute-next` gate. Phases 29 and 12 still own semantic gates and
-execution activation; phase 13 owns verdicts, phase 30 owns review handoff. No
+mechanical `execute-next` gate. Phase 12 still owns execution activation and its
+acceptance contract; phase 13 owns verdicts, phase 30 owns review handoff. No
 red/green receipt, execution or verdict API is added by typed-map authoring.
 
 Prepare `content` with numeric `phase` and `plan`, `requirements` IDs, project-relative
@@ -238,6 +276,13 @@ revision or allocates another file. A changed payload under the same ID is refus
 This includes changing only an item spec or an association reason. Replays of
 historical absent-map phase-27 requests preserve the absent fields, even after
 an approved replacement has attached the first map.
+Historical replay is an acknowledgment, never certification under the new
+planning limits. A fresh attached submission validates all current saved and
+proposed contributions, so an old-policy blank command/output, extra check or
+unnamed link blocks that union. Correct every offending contribution together
+in one explicitly approved replacement batch. Nothing rewrites saved payloads,
+drops history or silently grandfathers invalid current content. Provisional
+mapless authoring remains explicit and does not claim a validated attached map.
 
 ## Read the authoritative acceptance inputs
 
@@ -278,7 +323,34 @@ own expected set from Markdown or a summary.
 ## Correct typed refusals through the same binary
 
 Refusals carry `status: refused`, `code`, `rule`, `reason` and the standard
-location slots. Explain the named identity/path and correct the request:
+location slots (`slot`, `phase`, `entry`, `id`), plus optional structured
+`details`. Explain the named identity/path and correct the complete request:
+
+- `check-command` and `check-expected`: supply the nonblank command or explicit
+  literal/property value. The full item id and exact JSON path identify the
+  missing, malformed or blank field. Expected-container errors locate
+  `spec.expected`, invalid tags locate `.kind`, and invalid values locate `.value`.
+  Auxiliary check/link shape failures retain `evidence-item-shape` and their
+  actual field path, including malformed nested approval/replacement copies.
+- `truth-check-limit`: `id` is the full truth id, `slot` is `submission.plans`,
+  and `details` contains `truth_id`, `truth_version`, and `checks`. Each check
+  has `id` and every `origins: [{phase, plan, source, slot}]`; `source` is
+  `saved` or `proposed`. Saved paths use `current.plans[N].evidence_map.items[j]`,
+  proposed paths use `submission.plans[i].content.evidence_map.items[j]`.
+  Truth/check ids sort by full UTF-8 spelling, versions numerically, origins by
+  numeric phase/plan, source and numeric item position. Reordered inputs retain
+  accurate paths. Inspect all origins, keep one distinct shared definition,
+  and correct all conflicting contributions together with exact approval.
+- `link-content`: correct the named caller/callee/value field to nonblank text.
+- `link-value-not-named`: use a value actually named by every associated truth.
+  `details` carries `truth_id`, `truth_version`, and `association_slot`; `id`
+  remains the link id and `slot` its value field. The reason includes the value.
+  Do not broaden the lexical rule or rewrite the locked truth to force a match;
+  truth revision belongs to phase 26.
+- `link-truth-unresolvable`: the same detail locates the association whose
+  approved slot authority is unavailable, with the cause in the reason.
+  Resolve native authority explicitly; copying truth prose into the plan cannot
+  authorize a link.
 
 - `native-approved-truths`: return to context authoring for that phase.
 - `uncovered-truth` or `truth-without-check`: inspect the named current truth
@@ -339,6 +411,26 @@ T7's is "the owner must see authoritative readback in the host". Specification p
 result. This API records no observed result; do not infer one from automated
 checks or turn the rendered skill into a check. If observed later, O1 remains
 supplementary and caps those truths at `concerns`.
+
+P29-O1 is a separate pending observation, associated with phase-29 T2 and T4,
+source O1 in `.planning/phases/29/CONTEXT.md`. Its specification was approved
+by the owner on 2026-09-10; it is **pending, not yet seen**:
+
+The owner runs `/cad-plan` for a real phase in a real host, sees the
+planner submit a map in which one check has a blank expected output and
+one link names a value its truth does not use, sees each come back as a
+typed refusal in the conversation naming the item, and sees the corrected
+plan land with its map attached. Whether the planner writes a good check
+after the refusal is the model's and is not asserted.
+
+Keep one observation item with both associations: T2's reason is that the
+owner must see the expected-output refusal in the conversation; T4's is that
+the owner must see the unnamed-value refusal and corrected publication.
+The item reason is that deterministic stdio checks cannot establish real host
+conduct. This is specification provenance only, with no observer, observation
+date or result recorded. Automated checks do not make it seen. Observation
+verdicts belong to phase 13; even when seen this supplementary item caps the
+associated truths at `concerns`.
 
 ## Compiled publication schema
 
