@@ -236,6 +236,8 @@ struct VersionArguments {}
 #[derive(Deserialize, JsonSchema)]
 #[serde(tag = "operation", deny_unknown_fields)]
 enum QueryArguments {
+    #[serde(rename = "evidence-read")]
+    EvidenceRead { phase: NonZeroU32 },
     #[serde(rename = "plan-read")]
     PlanRead {
         /// Read-only phase address; decimal legacy inputs cannot publish natively.
@@ -628,8 +630,10 @@ impl ServerHandler for PublicServer {
                         answer.map(|answer| QueryOutput::Context(Box::new(answer))),
                     );
                 }
-                if raw.as_ref().and_then(|v| v["operation"].as_str()) == Some("plan-read") {
+                if raw.as_ref().and_then(|v| v["operation"].as_str()).is_some_and(|op| matches!(op, "plan-read" | "evidence-read")) {
                     let answer = match serde_json::from_value::<QueryArguments>(raw.unwrap()) {
+                        Ok(QueryArguments::EvidenceRead { phase }) => self.server.service
+                            .plan(&self.root, plan_service::Command::EvidenceRead { phase: phase.get() }).await,
                         Ok(QueryArguments::PlanRead {
                             phase_address,
                             count,
@@ -649,7 +653,7 @@ impl ServerHandler for PublicServer {
                         }
                         _ => Ok(cadence::plan::model::refused(
                             "arguments",
-                            "plan-read needs a phase address and optional plan count",
+                            "plan-read needs a phase address and optional plan count or submission; evidence-read needs a canonical positive integer phase",
                         )),
                     };
                     return structured_result(answer.map(|a| QueryOutput::Plan(Box::new(a))));
@@ -703,7 +707,7 @@ impl ServerHandler for PublicServer {
                     Some(QueryArguments::ContextIntake { .. }) => {
                         unreachable!("context intake is decoded before execution fallback")
                     }
-                    Some(QueryArguments::PlanRead { .. }) => {
+                    Some(QueryArguments::PlanRead { .. } | QueryArguments::EvidenceRead { .. }) => {
                         unreachable!("plan read decoded before execution")
                     }
                     None if raw.as_ref().and_then(|value| value["operation"].as_str())

@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use std::path::Path;
 
 pub enum Command {
+    EvidenceRead { phase: u32 },
     Read { phase: String, count: Option<u32>, submission: Option<Box<model::Submission>> },
     Apply(Value),
 }
@@ -20,12 +21,16 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
     root: &Path,
     command: Command,
 ) -> Result<Answer> {
+    if let Command::EvidenceRead { phase } = command {
+        return cadence::plan::map_view::read(root, phase);
+    }
     let observed = persistence::read_snapshot(root)?;
     let data = observed
         .as_ref()
         .map(|s| s.data.clone())
         .unwrap_or_else(|| json!({}));
     match command {
+        Command::EvidenceRead { .. } => unreachable!("evidence read observes its own inputs"),
         Command::Read { phase, count, submission } => {
             if let Some(submission) = submission {
                 if count.is_some() || submission.phase.to_string() != phase {

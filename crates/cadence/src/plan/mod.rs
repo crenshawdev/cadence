@@ -4,6 +4,7 @@ pub mod associations;
 pub mod inventory;
 pub mod model;
 pub mod map_history;
+pub mod map_view;
 pub mod persistence;
 pub mod render;
 pub mod validation;
