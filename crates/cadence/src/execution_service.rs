@@ -1022,8 +1022,8 @@ async fn native_query<I: ConfigIo + Clone + Sync>(
     driver: &Driver,
 ) -> Answer {
     use cadence::execution::{
-        dispatch::{NativeState, native_dispatch, native_operational},
-        history, model::TaskSpec, render::render_native_prompt, runner,
+        dispatch::{NativeState, admitted_checks, native_dispatch, native_operational},
+        history, instructions, model::TaskSpec, render::render_native_prompt, runner,
     };
     let refuse = |code: &'static str, reason: String, subject: Option<String>| {
         record_refusal(session, view, phase, BoundaryTool::CadenceQuery, "execute-next", raw_request, code, reason, subject)
@@ -1097,6 +1097,7 @@ async fn native_query<I: ConfigIo + Clone + Sync>(
     let mut tasks = Vec::new();
     let mut completed = Vec::new();
     let mut executable = Vec::new();
+    let mut unfinished = Vec::new();
     for task in views {
         if let Some(done) = history::completed_view(&records, &task) {
             completed.push(done);
@@ -1111,15 +1112,30 @@ async fn native_query<I: ConfigIo + Clone + Sync>(
         tasks.push(json!({"id":task.task.task,"verify":task.verify,"checks":task.checks,"state":task.state,
             "uncertainty":uncertainty,"checkpoints":history::task_checkpoints(&records, &task.task)}));
         executable.push(TaskSpec { id: task.task.task.clone(), verify: task.verify.clone() });
+        unfinished.push(task);
     }
+    let checks = match admitted_checks(data, phase, basis, &unfinished) {
+        Ok(checks) => checks,
+        Err(error) => return refuse("invalid-execution-store", error.to_string(), Some(admitted.id.clone())).await,
+    };
+    // Configured commands are provenance for proposals; the admitted commands
+    // govern, and a manifest supplies vocabulary only, never a guessed runner.
+    let config = session.config().map_err(store_failure)?;
+    let configured = ["workflow.test_command", "workflow.lint_command"].into_iter().map(|key| instructions::ConfiguredCommand {
+        key: key.into(),
+        value: crate::config::merge::get(&config.effective.values, key).and_then(Value::as_str).map(str::to_owned),
+        layer: config.effective.sources.get(key).and_then(|layer| serde_json::to_value(layer).ok()?.as_str().map(str::to_owned)),
+    }).collect::<Vec<_>>();
+    let present = instructions::MANIFESTS.iter().map(|(name, _)| *name).filter(|name| project.join(name).exists()).collect::<Vec<_>>();
     let state = NativeState { admitted: &admitted, occurrence: &basis.request.contract.occurrence, admission_digest: &basis.request_digest,
-        set_version: latest.set_version, head: &head, tasks, completed, continuation };
+        set_version: latest.set_version, head: &head, tasks, checks, completed, continuation,
+        suite: json!({"command": admitted.suite}), commands: instructions::command_policy(&configured, &present) };
     let operational = native_operational(&state);
     let (mut dispatch, operational) = match native_dispatch(&admitted, operational, executable, candidate.is_some()) {
         Ok(value) => value,
         Err(error) => return refuse(error.code, error.detail, Some(admitted.id.clone())).await,
     };
-    let prompt = render_native_prompt(&operational, None, &plan.body);
+    let prompt = render_native_prompt(&operational, Some(&instructions::dispatch_text()), &plan.body);
     dispatch.prompt_bytes = prompt.len() as u64;
     let response = Response::Dispatch { dispatch: Box::new(dispatch.clone()), prompt };
     #[cfg(test)]

@@ -88,7 +88,9 @@ pub fn build_dispatch(
 pub const NATIVE_PROTOCOL: &str = "native-execution-dispatch-1";
 
 /// Confirmed state the binary composes an executor dispatch from. Executable
-/// tasks are the plan's unfinished tasks; completed work is history only.
+/// tasks are the plan's unfinished tasks; completed work is history only. The
+/// admitted checks, named commands, lease and compiled instruction version
+/// come from retained authority, never from a skill file or the caller.
 pub struct NativeState<'a> {
     pub admitted: &'a ActiveDispatch,
     pub occurrence: &'a str,
@@ -96,14 +98,55 @@ pub struct NativeState<'a> {
     pub set_version: u64,
     pub head: &'a str,
     pub tasks: Vec<serde_json::Value>,
+    pub checks: Vec<serde_json::Value>,
     pub completed: Vec<serde_json::Value>,
     pub continuation: serde_json::Value,
+    pub suite: serde_json::Value,
+    pub commands: serde_json::Value,
+}
+
+/// The admitted checks an executor must deliver: every check allocated to an
+/// executable task, with the retained item revision and specification from
+/// the checked map of the admission's plans.
+pub fn admitted_checks(
+    data: &serde_json::Value,
+    phase: u32,
+    basis: &super::admission::Record,
+    executable: &[super::history::TaskView],
+) -> crate::store::Result<Vec<serde_json::Value>> {
+    use crate::{plan::{evidence::Item, map_view::checked_map, persistence::saved}, store::Error};
+    let publications = saved(data, phase)?
+        .ok_or_else(|| Error::Invalid("admitted plan publications missing".into()))?
+        .publications;
+    let mut specs = std::collections::BTreeMap::new();
+    for binding in &basis.request.contract.plans {
+        let published = publications
+            .get(&binding.plan)
+            .ok_or_else(|| Error::Invalid(format!("admitted plan {} publication missing", binding.plan)))?;
+        let map = checked_map(data, phase, published)?;
+        for item in &map.items {
+            if let Item::Check { id, spec, .. } = item {
+                specs.insert((id.clone(), map.item_revisions[id].clone()), serde_json::to_value(spec)?);
+            }
+        }
+    }
+    let mut checks = Vec::new();
+    for task in executable {
+        for check in &task.checks {
+            let spec = specs
+                .get(&(check.id.clone(), check.item_revision.clone()))
+                .ok_or_else(|| Error::Invalid(format!("admitted check {} revision is not in the retained map", check.id)))?;
+            checks.push(serde_json::json!({"id": check.id, "item_revision": check.item_revision, "task": task.task.task, "spec": spec}));
+        }
+    }
+    Ok(checks)
 }
 
 pub fn native_operational(state: &NativeState<'_>) -> serde_json::Value {
     let admitted = state.admitted;
     let mut operational = serde_json::json!({
         "protocol": NATIVE_PROTOCOL,
+        "instructions": super::instructions::VERSION,
         "admitted_dispatch_id": admitted.id,
         "expected_execution_version": admitted.expected_execution_version,
         "phase": admitted.phase,
@@ -114,8 +157,12 @@ pub fn native_operational(state: &NativeState<'_>) -> serde_json::Value {
         "base_sha": admitted.base_sha,
         "head": state.head,
         "tasks": state.tasks,
+        "checks": state.checks,
         "completed": state.completed,
         "continuation": state.continuation,
+        "suite": state.suite,
+        "lease": {"files": admitted.files, "directories": admitted.directories},
+        "commands": state.commands,
         "policy": admitted.policy,
     });
     if let Some(route) = &admitted.route {

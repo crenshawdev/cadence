@@ -31,9 +31,10 @@ operational input or from `execution-history`:
    predecessor, checks}`: echo the task's admitted `checks` exactly; a resumed
    task names its predecessor attempt.
 2. `execution-run` `{request_id, task, attempt, expected_version, command,
-   check, stage}`: the binary runs the named command itself, claims the launch
-   before spawning and records the observed result. `stage` `red` or `green`
-   needs the delivered `check`; `stage` `verify` runs a named task command.
+   check, stage}`: the binary runs the named command itself; it
+   claims the launch before spawning and records the observed result.
+   `stage` `red` or `green` needs the delivered `check`; `stage` `verify`
+   runs a named task command.
    Only the plan's admitted commands are accepted; lint and typecheck are named
    commands or they are not run through Cadence.
 3. `mcp__cadence__cadence_query` `{"operation": "execution-history", "phase"}`
@@ -85,8 +86,8 @@ and its result recorded after; a crash between them leaves the launch Unknown,
 which is neither success nor a completed run. A suite launch with no
 recognized result may be relaunched exactly once, on the operator's typed
 `execution-suite-relaunch` attestation naming the dead launch over its retained
-bytes; the binary refuses that attestation outright when a recognized result
-exists, keeps both launches, and accepts no second exception. A suite that ran
+bytes; the binary refuses that attestation outright when a recognized result exists,
+keeps both launches, and accepts no second exception. A suite that ran
 and failed keeps the plan incomplete; its repair is an explicitly linked gap
 plan, never a rerun. Replayed requests return their receipt, not another
 process. The runner sees only what it launched: a command you run in your own
