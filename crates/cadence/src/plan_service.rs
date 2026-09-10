@@ -164,6 +164,7 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             }
             if cadence::context::persistence::saved(&data, submission.phase.get())?.is_none() {
                 return Ok(model::Diagnostic {
+                    details: None,
                     rule: "native-approved-truths".into(), slot: "submission.phase".into(),
                     phase: Some(submission.phase.get()), entry: None, id: None,
                     reason: format!("phase {} current native truth authority is absent; use context-intake and context-submit", submission.phase),

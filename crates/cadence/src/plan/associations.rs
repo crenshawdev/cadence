@@ -18,6 +18,7 @@ pub fn malformed_version(raw: &Value) -> Option<Diagnostic> {
             for (edge, association) in associations.iter().enumerate() {
                 if association["truth_version"].as_u64().is_some_and(|n| u32::try_from(n).is_ok()) { continue; }
                 return Some(Diagnostic {
+                    details: None,
                     rule: "evidence-association-shape".into(),
                     slot: format!("submission.plans[{entry}].content.evidence_map.items[{item_index}].associations[{edge}].truth_version"),
                     phase: submission["phase"].as_u64().and_then(|n| u32::try_from(n).ok()),
@@ -78,6 +79,7 @@ fn validate_items(truths: &[cadence::context::model::Truth], phase: u32, contrib
                 None => format!("current.plans[{}].evidence_map.items[{index}]", contribution.plan),
             };
             let refuse = |rule: &str, slot: &str, reason: String| Diagnostic {
+                details: None,
                 rule: rule.into(), slot: format!("{base}.{slot}"), phase: Some(phase),
                 entry: contribution.entry, id: Some(item.id().into()), reason,
             }.error();
@@ -133,6 +135,7 @@ pub fn validate(data: &Value, submission: &Submission) -> Result<Coverage> {
     let phase = submission.phase.get();
     let context = cadence::context::persistence::saved(data, phase)?
         .ok_or_else(|| Diagnostic { rule: "native-approved-truths".into(), slot: "submission.phase".into(),
+            details: None,
             phase: Some(phase), entry: None, id: None,
             reason: format!("phase {phase} current native truth authority is absent; use context-submit") }.error())?;
     let contributions = candidate(data, submission)?;
@@ -146,6 +149,7 @@ pub fn validate(data: &Value, submission: &Submission) -> Result<Coverage> {
         && let Some(id) = uncovered.first()
     {
         return Err(Diagnostic { rule: "uncovered-truth".into(), slot: "submission.plans".into(),
+            details: None,
             phase: Some(phase), entry: None, id: Some(id.clone()),
             reason: format!("phase {phase} current truth {id} has no evidence association in the resulting current phase set") }.error());
     }
@@ -158,9 +162,13 @@ pub fn validate(data: &Value, submission: &Submission) -> Result<Coverage> {
     }).map(|truth| truth.id.clone()).collect::<Vec<_>>();
     if attached && let Some(id) = without_check.first() {
         return Err(Diagnostic { rule: "truth-without-check".into(), slot: "submission.plans".into(),
+            details: None,
             phase: Some(phase), entry: None, id: Some(id.clone()),
             reason: format!("phase {phase} current truth {id} has evidence but no current check; supplementary evidence cannot replace its check") }.error());
     }
-    if attached { super::limits::content(phase, &contributions)?; }
+    if attached {
+        super::limits::content(phase, &contributions)?;
+        super::limits::checks(phase, &contributions)?;
+    }
     Ok(Coverage { uncovered, without_check })
 }

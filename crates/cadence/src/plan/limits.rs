@@ -28,6 +28,7 @@ pub fn malformed(raw: &Value) -> Option<Diagnostic> {
                         "check-expected"
                     } else { "evidence-item-shape" };
                     return Some(Diagnostic {
+                        details: None,
                         rule: rule.into(),
                         slot: format!("{prefix}.plans[{entry}].{suffix}.evidence_map.items[{index}].{field}"),
                         phase: submission["phase"].as_u64().and_then(|n| u32::try_from(n).ok()),
@@ -113,6 +114,7 @@ pub fn content(phase: u32, contributions: &[Contribution]) -> Result<()> {
                 {
                     if value.trim().is_empty() {
                         return Err(Diagnostic {
+                            details: None,
                             rule: rule.into(), slot: format!("{}.spec.{field}", base(contribution, index)),
                             phase: Some(phase), entry: contribution.entry, id: Some(item.id().into()),
                             reason: format!("phase {phase} item {} needs nonblank {field}", item.id()),
@@ -132,4 +134,46 @@ pub fn disposition(error: Error, convert: fn(String) -> Error) -> Error {
         Error::Invalid(message) | Error::Conflict(message) if message.starts_with("plan-refusal:") => convert(message),
         other => convert(other.to_string()),
     }
+}
+
+/// Membership and definition checks run first; aliases share an id, never a
+/// command-based identity. Numeric positions sort origins without lexical [10].
+pub fn checks(phase: u32, contributions: &[Contribution]) -> Result<()> {
+    use super::model::{CheckConflict, CheckOrigin, Details, Source};
+    use std::collections::BTreeMap;
+    type Origins = Vec<(usize, CheckOrigin)>;
+    let mut truths = BTreeMap::<(String, u32), BTreeMap<String, Origins>>::new();
+    for contribution in contributions {
+        for (index, item) in contribution.items.iter().enumerate() {
+            if !matches!(item, Item::Check { .. }) { continue; }
+            for association in item.associations() {
+                let origins = truths.entry((association.truth_id.clone(), association.truth_version))
+                    .or_default().entry(item.id().into()).or_default();
+                let origin = (index, CheckOrigin {
+                    phase, plan: contribution.plan,
+                    source: if contribution.entry.is_some() { Source::Proposed } else { Source::Saved },
+                    slot: base(contribution, index),
+                });
+                if !origins.contains(&origin) { origins.push(origin); }
+            }
+        }
+    }
+    for ((truth_id, truth_version), ids) in truths {
+        if ids.len() <= 1 { continue; }
+        let checks: Vec<_> = ids.into_iter().map(|(id, mut origins)| {
+            origins.sort_by(|(ai, a), (bi, b)| (a.phase, a.plan, &a.source, ai).cmp(&(b.phase, b.plan, &b.source, bi)));
+            CheckConflict { id, origins: origins.into_iter().map(|(_, origin)| origin).collect() }
+        }).collect();
+        let description = checks.iter().map(|check| format!("{} [{}]", check.id, check.origins.iter()
+            .map(|origin| format!("phase {} plan {} {} {}", origin.phase, origin.plan,
+                match origin.source { Source::Proposed => "proposed", Source::Saved => "saved" }, origin.slot))
+            .collect::<Vec<_>>().join(", "))).collect::<Vec<_>>().join("; ");
+        return Err(Diagnostic {
+            rule: "truth-check-limit".into(), slot: "submission.plans".into(), phase: Some(phase),
+            entry: None, id: Some(truth_id.clone()),
+            reason: format!("phase {phase} truth {truth_id} version {truth_version} has distinct checks: {description}; keep one distinct check across the resulting phase"),
+            details: Some(Details::CheckConflict { truth_id, truth_version, checks }),
+        }.error());
+    }
+    Ok(())
 }

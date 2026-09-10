@@ -192,6 +192,7 @@ pub fn validate_candidate(previous: &Value, submission: &Submission, inventory: 
     let phase = submission.phase.get();
     if cadence::context::persistence::saved(previous, phase)?.is_none() {
         return Err(Diagnostic { rule: "native-approved-truths".into(), slot: "submission.phase".into(),
+            details: None,
             phase: Some(phase), entry: None, id: None,
             reason: format!("phase {phase} current native truth authority is absent; use context-submit") }.error());
     }

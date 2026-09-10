@@ -129,10 +129,56 @@ pub struct Occurrence {
     pub receipts: BTreeMap<String, Receipt>,
 }
 
-pub type Answer = cadence::context::model::Answer;
+/// Plan refusals extend their own compatible envelope, not context's contract.
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+pub enum Answer {
+    Ok {
+        operation: String,
+        #[serde(flatten)]
+        data: serde_json::Map<String, Value>,
+    },
+    Refused {
+        code: String,
+        reason: String,
+        rule: String,
+        slot: String,
+        phase: Option<u32>,
+        entry: Option<usize>,
+        id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        details: Option<Details>,
+    },
+    Unknown { reason: String },
+    NotApplicable { reason: String },
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Details {
+    CheckConflict { truth_id: String, truth_version: u32, checks: Vec<CheckConflict> },
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct CheckConflict {
+    pub id: String,
+    pub origins: Vec<CheckOrigin>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CheckOrigin {
+    pub phase: u32,
+    pub plan: u32,
+    pub source: Source,
+    pub slot: String,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Source { Proposed, Saved }
 
 pub fn ok(operation: &str, data: Value) -> Answer {
-    cadence::context::model::ok(operation, data)
+    Answer::Ok { operation: operation.into(), data: data.as_object().expect("plan output object").clone() }
 }
 
 pub fn refused(rule: &str, reason: impl Into<String>) -> Answer {
@@ -144,6 +190,7 @@ pub fn refused(rule: &str, reason: impl Into<String>) -> Answer {
         phase: None,
         entry: None,
         id: None,
+        details: None,
     }
 }
 
@@ -160,6 +207,8 @@ pub struct Diagnostic {
     pub entry: Option<usize>,
     pub id: Option<String>,
     pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<Details>,
 }
 
 impl Diagnostic {
@@ -169,6 +218,6 @@ impl Diagnostic {
 
     pub fn answer(self) -> Answer {
         Answer::Refused { code: "invalid-plan".into(), rule: self.rule, slot: self.slot,
-            phase: self.phase, entry: self.entry, id: self.id, reason: self.reason }
+            phase: self.phase, entry: self.entry, id: self.id, reason: self.reason, details: self.details }
     }
 }
