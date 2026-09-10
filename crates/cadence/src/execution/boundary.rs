@@ -19,8 +19,12 @@ pub enum NativeApply {
     Admit {request:super::admission::Request},
     #[serde(rename="execution-extend")]
     Extend {request:super::admission::Request},
+    /// A `checkpoint` names a stopped task checkpoint this answer continues or
+    /// declines; the retained Stop is preserved and the successor links to it.
     #[serde(rename="execution-authorize")]
-    Authorize {phase:u32,request_id:String,owner:String,at:String,response:String},
+    Authorize {phase:u32,request_id:String,owner:String,at:String,response:String,
+        #[serde(default)] checkpoint:Option<String>,
+        #[serde(default)] disposition:Option<crate::evidence::gates::Disposition>},
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]

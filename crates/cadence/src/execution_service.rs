@@ -120,22 +120,36 @@ pub async fn native_apply<I:ConfigIo+Clone+Sync>(factory:&SessionFactory<I>,root
                 .ok_or_else(||Error::Invalid("confirmed admission receipt missing".into()))?;
             Ok(json!({"status":"ok","receipt":receipt,"replayed":replayed}))
         }
-        NativeApply::Authorize {phase,request_id,owner,at,response} => {
-            use cadence::evidence::{Record,Fact,gates::{Gate,State,Purpose,Answer,Disposition}};
+        NativeApply::Authorize {phase,request_id,owner,at,response,checkpoint,disposition} => {
+            use cadence::evidence::{Record,Fact,gates::{Gate,State,Purpose,Answer,Disposition},persistence};
             if phase==0 || [&request_id,&owner,&at,&response].iter().any(|s|s.trim().is_empty()) {
                 return Ok(native_error(admission::refuse(phase,"authorization-answer","response",&request_id,"actual owner, time and response required")));
             }
             if admission::records(&before.snapshot.data,phase)?.is_empty() {
                 return Ok(native_error(admission::refuse(phase,"admission-required","phase","","admit the native contract before authorizing execution")));
             }
+            let disposition=disposition.unwrap_or(Disposition::Approve);
+            if disposition==Disposition::Adjust {
+                return Ok(native_error(admission::refuse(phase,"authorization-answer","disposition",&request_id,"a continuation answer approves or stops; adjustments are task checkpoint answers")));
+            }
             let scope=continuation_scope(root,phase);
+            // A linked answer continues or declines exactly one retained Stop.
+            if let Some(checkpoint)=&checkpoint {
+                let records=persistence::read(&before.snapshot.data)?;
+                let stopped=records.values().any(|r|r.scope==scope && matches!(&r.fact,Fact::Gate(gate)
+                    if gate.checkpoint_id.as_deref()==Some(checkpoint.as_str())
+                        && matches!(&gate.state,State::Answered(answer) if answer.disposition==Disposition::Stop)));
+                if checkpoint.trim().is_empty() || !stopped {
+                    return Ok(native_error(admission::refuse(phase,"continuation-target","checkpoint",checkpoint,"continuation must name a retained checkpoint whose answer stopped execution")));
+                }
+            }
             let id=format!("execution-authorization:{request_id}");
-            let mut gate=Gate {id:id.clone(),purpose:Purpose::Progress,checkpoint_id:None,
+            let mut gate=Gate {id:id.clone(),purpose:Purpose::Progress,checkpoint_id:checkpoint,
                 question:"Continue native execution?".into(),need:serde_json::to_string(&raw)?,options:vec![],state:State::Unanswered};
             let record=Record {version:1,scope:scope.clone(),fact:Fact::Gate(gate.clone())};
             let pending=session.commit_evidence(&before,&format!("{id}:question"),&record).await?;
             gate.state=State::Answered(Answer {question_id:id.clone(),actual_response:response,selected_option:None,adjustment:None,
-                disposition:Disposition::Approve,authorization_id:Some(digest(&serde_json::to_vec(&raw)?))});
+                disposition,authorization_id:Some(digest(&serde_json::to_vec(&raw)?))});
             let answered=Record {version:1,scope,fact:Fact::Gate(gate)};
             session.commit_evidence(&pending,&format!("{id}:answer"),&answered).await?;
             Ok(json!({"status":"ok","authorization":answered}))
@@ -413,10 +427,12 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
     // Execution's historical grouping fingerprint stays bound to the original
     // basis. Explicit native extensions have their own set version and retain
     // all current plan bytes, without rekeying prior dispatch/risk receipts.
-    if let Some(first)=cadence::execution::admission::records(&view.snapshot.data,phase).map_err(store_failure)?.first() {
+    let admissions=cadence::execution::admission::records(&view.snapshot.data,phase).map_err(store_failure)?;
+    if let Some(first)=admissions.first() {
         let original=plans.values.iter().filter(|p|first.request.contract.plans.iter().any(|b|b.plan==p.plan)).cloned().collect::<Vec<_>>();
         plans.fingerprint=plan_set_fingerprint(&original).map_err(|_|Failure::Encoding)?;
     }
+    let native=!admissions.is_empty();
     let execution = match execution_snapshot(&view) {
         Ok(value) => value,
         Err(error) => {
@@ -477,7 +493,8 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
             )
             .await;
         }
-        if let Some(active) = &occurrence.active {
+        // A native phase authorizes continuation before any replay; see below.
+        if let Some(active) = occurrence.active.as_ref().filter(|_| !native) {
             let Some(plan) = plans.values.iter().find(|plan| plan.plan == active.plan) else {
                 return record_refusal(
                     &session,
@@ -652,6 +669,25 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
         Ok(latest) => latest,
         Err(error) => return store_refusal(phase, error),
     };
+    if native {
+        let ContinuationDecision::Continue { answer, rerun_plans, .. } = &continuation.decision else { unreachable!("checked above") };
+        if !rerun_plans.is_empty() {
+            return record_refusal(&session, &view, phase, BoundaryTool::CadenceQuery, "execute-next", &raw_request,
+                "native-rerun", "native execution never reruns an admitted plan; publish and admit a linked gap plan", None).await;
+        }
+        let continuation_view = match answer {
+            Some(answer) => {
+                let checkpoint = cadence::evidence::persistence::read(&view.snapshot.data).map_err(store_failure)?.into_values()
+                    .find_map(|r| match &r.fact {
+                        cadence::evidence::Fact::Gate(gate) if gate.id == answer.question_id => Some(gate.checkpoint_id.clone()),
+                        _ => None,
+                    }).flatten();
+                json!({"question_id":answer.question_id,"authorization_id":answer.authorization_id,"response":answer.actual_response,"checkpoint":checkpoint})
+            }
+            None => Value::Null,
+        };
+        return native_query(&session, &view, &root, phase, &phase_record.plans, &plans, &admissions, continuation_view, &raw_request, driver).await;
+    }
     let execution = match execution_snapshot(&view) {
         Ok(value) => value,
         Err(error) => {
@@ -966,6 +1002,152 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
         })
         .await
         .map_err(store_failure)?;
+    confirmed_boundary(&written, &decision)?.envelope(Some(response.into_envelope()))
+}
+
+/// Native dispatch is composed from confirmed state after continuation
+/// authority: the admitted plan's unfinished tasks are executable, completed
+/// tasks are history, and the immutable admitted dispatch is never rewritten.
+#[allow(clippy::too_many_arguments)]
+async fn native_query<I: ConfigIo + Clone + Sync>(
+    session: &Arc<Session<I>>,
+    view: &View,
+    root: &Path,
+    phase: u32,
+    names: &[String],
+    plans: &Plans,
+    admissions: &[cadence::execution::admission::Record],
+    continuation: Value,
+    raw_request: &str,
+    driver: &Driver,
+) -> Answer {
+    use cadence::execution::{
+        dispatch::{NativeState, native_dispatch, native_operational},
+        history, model::TaskSpec, render::render_native_prompt, runner,
+    };
+    let refuse = |code: &'static str, reason: String, subject: Option<String>| {
+        record_refusal(session, view, phase, BoundaryTool::CadenceQuery, "execute-next", raw_request, code, reason, subject)
+    };
+    let execution = match execution_snapshot(view) {
+        Ok(value) => value,
+        Err(error) => return refuse("invalid-execution-store", error, None).await,
+    };
+    let occurrence = execution.occurrences.get(&phase.to_string()).cloned().unwrap_or_else(|| ExecutionOccurrence {
+        phase, plan_set_fingerprint: plans.fingerprint.clone(), version: 0, active: None, plans: Vec::new(), terminal: None, receipts: BTreeMap::new(),
+    });
+    if occurrence.plan_set_fingerprint != plans.fingerprint {
+        return refuse("plan-set-changed", "native plan inputs differ from the admitted execution occurrence".into(), None).await;
+    }
+    let data = &view.snapshot.data;
+    let records = history::records(data, phase).map_err(store_failure)?;
+    let Some(project) = root.parent().map(Path::to_path_buf) else {
+        return refuse("invalid-project-root", "planning root has no project parent".into(), None).await;
+    };
+    let head = match git_head(&project).await {
+        Ok(head) => head,
+        Err(reason) => return refuse("git-head", reason, None).await,
+    };
+    let latest = admissions.last().expect("native phase has an admission");
+    let mut candidate = None;
+    let (plan, admitted) = match &occurrence.active {
+        Some(active) => {
+            let Some(plan) = plans.values.iter().find(|plan| plan.plan == active.plan) else {
+                return refuse("active-plan-missing", "the active dispatch plan is no longer admitted".into(), Some(active.id.clone())).await;
+            };
+            if active.plan_fingerprint != plan.fingerprint {
+                return refuse("plan-changed", "the active plan bytes differ from the admitted fingerprint".into(), Some(active.id.clone())).await;
+            }
+            if active.expected_execution_version != occurrence.version || occurrence.version == 0 {
+                return refuse("invalid-active-dispatch", "active dispatch execution version is inconsistent".into(), Some(active.id.clone())).await;
+            }
+            (plan, active.clone())
+        }
+        None => {
+            let mut numbers = latest.request.contract.plans.iter().map(|b| b.plan).collect::<Vec<_>>();
+            numbers.sort_unstable();
+            let Some(next) = numbers.first() else {
+                return refuse("empty-plan-set", "the admitted set names no plan".into(), None).await;
+            };
+            let plan = plans.values.iter().find(|plan| plan.plan == *next).expect("admitted plans are observed");
+            let config = session.config().map_err(store_failure)?;
+            let choice = match super::config_service::route_at(&config, &super::config_service::RouteRequest {
+                role: "cad-executor".into(), phase: std::num::NonZeroU32::new(phase), plan: std::num::NonZeroU32::new(plan.plan), attempt: None,
+            }, root) {
+                Ok(route) => route.choice,
+                Err(error) => return refuse("route-unavailable", error.to_string(), None).await,
+            };
+            let route = cadence::execution::model::DispatchRoute { choice, inputs: super::config_service::routing_inputs(&config) };
+            let built = match build_routed_dispatch(plan, &plans.fingerprint, occurrence.version, &head, 1, route) {
+                Ok(value) => value,
+                Err(error) => return refuse(error.code, error.detail, None).await,
+            };
+            let (_, provisional) = match admit_dispatch(&occurrence, built.clone()) {
+                Ok(value) => value,
+                Err(error) => return refuse(error.code, error.detail, Some(built.id)).await,
+            };
+            candidate = Some(built);
+            (plan, provisional)
+        }
+    };
+    let basis = admissions.iter().find(|r| r.request.contract.plans.iter().any(|b| b.plan == plan.plan)).expect("admitted plan has a basis");
+    let views = match history::plan_task_views(data, &records, phase, plan.plan) {
+        Ok(views) => views,
+        Err(error) => return refuse("invalid-execution-store", error.to_string(), Some(admitted.id.clone())).await,
+    };
+    let mut tasks = Vec::new();
+    let mut completed = Vec::new();
+    let mut executable = Vec::new();
+    for task in views {
+        if let Some(done) = history::completed_view(&records, &task) {
+            completed.push(done);
+            continue;
+        }
+        let uncertainty = runner::uncertainty(&project, &records, &task).map_err(store_failure)?;
+        if uncertainty["requires_reconciliation"] == true {
+            return refuse("reconciliation-required", format!(
+                "task {} has unacknowledged work (commits {}, dirty source {}); acknowledge it through execution-task-progress before continuing",
+                task.task.task, uncertainty["commits"], uncertainty["dirty_source"] == true), Some(admitted.id.clone())).await;
+        }
+        tasks.push(json!({"id":task.task.task,"verify":task.verify,"checks":task.checks,"state":task.state,
+            "uncertainty":uncertainty,"checkpoints":history::task_checkpoints(&records, &task.task)}));
+        executable.push(TaskSpec { id: task.task.task.clone(), verify: task.verify.clone() });
+    }
+    let state = NativeState { admitted: &admitted, occurrence: &basis.request.contract.occurrence, admission_digest: &basis.request_digest,
+        set_version: latest.set_version, head: &head, tasks, completed, continuation };
+    let operational = native_operational(&state);
+    let (mut dispatch, operational) = match native_dispatch(&admitted, operational, executable, candidate.is_some()) {
+        Ok(value) => value,
+        Err(error) => return refuse(error.code, error.detail, Some(admitted.id.clone())).await,
+    };
+    let prompt = render_native_prompt(&operational, None, &plan.body);
+    dispatch.prompt_bytes = prompt.len() as u64;
+    let response = Response::Dispatch { dispatch: Box::new(dispatch.clone()), prompt };
+    #[cfg(test)]
+    {
+        if candidate.is_some() {
+            let event = driver.event.clone();
+            if tokio::task::spawn_blocking(move || event(derivation_service::Event::RoutingObserved)).await.is_err() {
+                return store_refusal(phase, Error::Closed);
+            }
+        }
+    }
+    #[cfg(not(test))]
+    let _ = driver;
+    if let Err(reason) = reobserve(session, view, root, phase, names, plans, Some(&head)).await {
+        return refuse("inputs-changed", reason, Some(dispatch.id.clone())).await;
+    }
+    let decision = boundary(phase, BoundaryTool::CadenceQuery, "execute-next", raw_request, &response, Some(dispatch.id.clone()), Some(dispatch.prompt_bytes))?;
+    let (operation_id, change) = match candidate {
+        Some(mut candidate) => {
+            candidate.prompt_bytes = dispatch.prompt_bytes;
+            (format!("execution-dispatch:{}", dispatch.id), BoundaryChange::Dispatch { plan_set_fingerprint: plans.fingerprint.clone(), dispatch: candidate })
+        }
+        None => (format!("execution-observation:{}", decision.identity()?), BoundaryChange::Observe),
+    };
+    let written = session.request(Operation::BoundaryV1 {
+        expected_generation: view.snapshot.generation, expected_integrity: view.snapshot.integrity.clone(),
+        operation_id, decision: decision.clone(), change: Box::new(change),
+    }).await.map_err(store_failure)?;
     confirmed_boundary(&written, &decision)?.envelope(Some(response.into_envelope()))
 }
 
@@ -2044,7 +2226,7 @@ fn public_request_digest(tool: BoundaryTool, raw: Option<&Value>) -> String {
 }
 
 fn stable_reason(code: &str, detail: &str) -> String {
-    if code == "provisional-authoring" {
+    if matches!(code, "provisional-authoring" | "reconciliation-required") {
         return detail.to_owned();
     }
     match code {

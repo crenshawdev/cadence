@@ -51,6 +51,26 @@ pub fn git_text(project: &Path, args: &[&str]) -> Result<String> {
     String::from_utf8(git(project, args)?).map(|s| s.trim_end().to_owned()).map_err(|_| Error::Invalid("unrepresentable Git output".into()))
 }
 
+/// Commits after the last acknowledged progress, or a dirty tree, are visible
+/// uncertainty that needs explicit reconciliation before any redispatch.
+pub fn uncertainty(project: &Path, records: &[Record], view: &history::TaskView) -> Result<serde_json::Value> {
+    let baseline = records.iter().rev().filter(|r| r.request.task == view.task).find_map(|r| match &r.request.event {
+        Event::AcknowledgedProgress { commit, .. } => Some(commit.clone()),
+        Event::Attempt { base_commit, .. } => Some(base_commit.clone()),
+        _ => None,
+    });
+    let mut commits = Vec::new();
+    if !view.state.completed && let Some(baseline) = baseline {
+        commits = git_text(project, &["rev-list", "--reverse", &format!("{baseline}..HEAD")])?.lines().map(str::to_owned).collect();
+    }
+    let mut uncertainty = serde_json::json!({"requires_reconciliation":!commits.is_empty(),"commits":commits});
+    if !view.state.completed && view.state.attempt.is_some() && clean(project).is_err() {
+        uncertainty["requires_reconciliation"] = serde_json::json!(true);
+        uncertainty["dirty_source"] = serde_json::json!(true);
+    }
+    Ok(uncertainty)
+}
+
 pub fn clean(project: &Path) -> Result<()> {
     if !git(project, &["status", "--porcelain=v1", "-z", "--untracked-files=all"])?.is_empty() {
         return Err(Error::Invalid("evidence-source-dirty: commit source before requesting an evidence run".into()));

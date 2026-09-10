@@ -31,31 +31,15 @@ pub async fn read<I: ConfigIo + Clone + Sync>(factory: &SessionFactory<I>, root:
     let session = factory.first_touch(root).await?;
     let view = session.derivation_view().await?;
     let records = history::records(&view.snapshot.data, phase)?;
-    let admissions = cadence::execution::admission::records(&view.snapshot.data, phase)?;
+    let project = root.parent().ok_or_else(|| Error::Invalid("project root missing".into()))?;
     let mut tasks = Vec::new();
-    for basis in &admissions {
-        for assignment in &basis.request.contract.allocation {
-            if tasks.iter().any(|value: &Value| value["task"]["plan"] == assignment.plan && value["task"]["task"] == assignment.task) { continue }
-            let task = history::Task { phase, occurrence: basis.request.contract.occurrence.clone(), admission_digest: basis.request_digest.clone(),
-                plan: assignment.plan, task: assignment.task.clone() };
-            let state=history::project(&records,&task);
-            let baseline=records.iter().rev().filter(|r|r.request.task==task).find_map(|r|match &r.request.event {
-                history::Event::AcknowledgedProgress {commit,..}=>Some(commit.clone()),
-                history::Event::Attempt {base_commit,..}=>Some(base_commit.clone()),
-                _=>None,
-            });
-            let mut commits=Vec::new();
-            if !state.completed && let Some(baseline)=baseline {
-                let project=root.parent().ok_or_else(||Error::Invalid("project root missing".into()))?;
-                commits=runner::git_text(project,&["rev-list","--reverse",&format!("{baseline}..HEAD")])?.lines().map(str::to_owned).collect();
+    for basis in &cadence::execution::admission::records(&view.snapshot.data, phase)? {
+        for binding in &basis.request.contract.plans {
+            if tasks.iter().any(|value: &Value| value["task"]["plan"] == binding.plan) { continue }
+            for task in history::plan_task_views(&view.snapshot.data, &records, phase, binding.plan)? {
+                let uncertainty = runner::uncertainty(project, &records, &task)?;
+                tasks.push(json!({"task":task.task,"state":task.state,"uncertainty":uncertainty}));
             }
-            let mut uncertainty=json!({"requires_reconciliation":!commits.is_empty(),"commits":commits});
-            if !state.completed && state.attempt.is_some()
-                && !runner::git(root.parent().ok_or_else(||Error::Invalid("project root missing".into()))?,&["status","--porcelain=v1","-z","--untracked-files=all"])?.is_empty() {
-                uncertainty["requires_reconciliation"]=json!(true);
-                uncertainty["dirty_source"]=json!(true);
-            }
-            tasks.push(json!({"task":task,"state":state,"uncertainty":uncertainty}));
         }
     }
     let mut checkpoints=Vec::new();

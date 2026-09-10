@@ -87,6 +87,63 @@ pub fn project(records: &[Record], task: &Task) -> Projection {
     projection
 }
 
+/// One admitted task with its allocation, named commands and current projection.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskView {
+    pub task: Task,
+    pub checks: Vec<Check>,
+    pub verify: Vec<String>,
+    pub state: Projection,
+}
+
+/// A plan's tasks in admitted order; each task keeps the admission basis that
+/// first admitted its plan, so a gap extension never rekeys its receipts.
+pub fn plan_task_views(data: &Value, records: &[Record], phase: u32, plan: u32) -> Result<Vec<TaskView>> {
+    let refuse = |reason: &str| admission::refuse(phase, "task-admission", "plan", &plan.to_string(), reason);
+    let admissions = admission::records(data, phase)?;
+    let basis = admissions.iter().find(|r| r.request.contract.plans.iter().any(|b| b.plan == plan))
+        .ok_or_else(|| refuse("plan is not admitted"))?;
+    let publication = crate::plan::persistence::saved(data, phase)?.and_then(|o| o.publications.get(&plan).cloned())
+        .ok_or_else(|| refuse("admitted plan publication missing"))?;
+    publication.content.execution.tasks.iter().map(|spec| {
+        let assignment = basis.request.contract.allocation.iter().find(|a| a.plan == plan && a.task == spec.id)
+            .ok_or_else(|| refuse("admitted task lacks its allocation"))?;
+        let task = Task { phase, occurrence: basis.request.contract.occurrence.clone(), admission_digest: basis.request_digest.clone(),
+            plan, task: spec.id.clone() };
+        Ok(TaskView { state: project(records, &task), task, checks: assignment.checks.clone(), verify: spec.verify.clone() })
+    }).collect()
+}
+
+/// Retained checkpoints of one task with their questions and owner answers.
+pub fn task_checkpoints(records: &[Record], task: &Task) -> Vec<Value> {
+    use crate::evidence::{Fact, gates::State};
+    let mut checkpoints: Vec<Value> = Vec::new();
+    for record in records.iter().filter(|r| r.request.task == *task) {
+        let Event::Checkpoint { records: facts, .. } = &record.request.event else { continue };
+        for fact in facts {
+            match &fact.fact {
+                Fact::Checkpoint(checkpoint) => checkpoints.push(json!({"id":checkpoint.id,"question":Value::Null,"answer":Value::Null})),
+                Fact::Gate(gate) => {
+                    let Some(entry) = checkpoints.iter_mut().find(|c| c["id"] == *gate.checkpoint_id.as_deref().unwrap_or("")) else { continue };
+                    entry["question"] = json!(gate.id);
+                    if let State::Answered(answer) = &gate.state { entry["answer"] = json!(answer); }
+                }
+                _ => {}
+            }
+        }
+    }
+    checkpoints
+}
+
+/// The confirmed completion of a task, shown as history and never scheduled.
+pub fn completed_view(records: &[Record], view: &TaskView) -> Option<Value> {
+    records.iter().filter(|r| r.request.task == view.task).find_map(|r| match &r.request.event {
+        Event::Close(proof) => Some(json!({"id":view.task.task,"attempt":r.request.attempt,"completion":proof.submission.completion,
+            "checks":view.checks,"close_request":r.request.request_id})),
+        _ => None,
+    })
+}
+
 pub fn request_digest(request: &Request) -> Result<String> {
     Ok(digest(&super::boundary::canonical_bytes(request).map_err(|e| Error::Invalid(e.to_string()))?))
 }

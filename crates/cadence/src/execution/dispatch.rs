@@ -85,6 +85,66 @@ pub fn build_dispatch(
     })
 }
 
+pub const NATIVE_PROTOCOL: &str = "native-execution-dispatch-1";
+
+/// Confirmed state the binary composes an executor dispatch from. Executable
+/// tasks are the plan's unfinished tasks; completed work is history only.
+pub struct NativeState<'a> {
+    pub admitted: &'a ActiveDispatch,
+    pub occurrence: &'a str,
+    pub admission_digest: &'a str,
+    pub set_version: u64,
+    pub head: &'a str,
+    pub tasks: Vec<serde_json::Value>,
+    pub completed: Vec<serde_json::Value>,
+    pub continuation: serde_json::Value,
+}
+
+pub fn native_operational(state: &NativeState<'_>) -> serde_json::Value {
+    let admitted = state.admitted;
+    let mut operational = serde_json::json!({
+        "protocol": NATIVE_PROTOCOL,
+        "admitted_dispatch_id": admitted.id,
+        "expected_execution_version": admitted.expected_execution_version,
+        "phase": admitted.phase,
+        "plan": admitted.plan,
+        "occurrence": state.occurrence,
+        "admission_digest": state.admission_digest,
+        "set_version": state.set_version,
+        "base_sha": admitted.base_sha,
+        "head": state.head,
+        "tasks": state.tasks,
+        "completed": state.completed,
+        "continuation": state.continuation,
+        "policy": admitted.policy,
+    });
+    if let Some(route) = &admitted.route {
+        operational["route"] = serde_json::json!(route);
+    }
+    operational
+}
+
+/// A fresh dispatch carries the admitted identity; a resumed one is a linked
+/// identity over the same admission and the confirmed state it binds.
+pub fn native_dispatch(
+    admitted: &ActiveDispatch,
+    mut operational: serde_json::Value,
+    executable: Vec<super::model::TaskSpec>,
+    fresh: bool,
+) -> Result<(ActiveDispatch, serde_json::Value), PlanError> {
+    let mut dispatch = admitted.clone();
+    if fresh {
+        operational["dispatch_id"] = serde_json::json!(admitted.id);
+    } else {
+        let bytes = super::boundary::canonical_bytes(&("native-resumed-dispatch-1", &admitted.id, &operational))
+            .map_err(|failure| error("dispatch-identity", failure.to_string()))?;
+        dispatch.id = digest(&bytes);
+        operational["dispatch_id"] = serde_json::json!(dispatch.id);
+    }
+    dispatch.tasks = executable;
+    Ok((dispatch, operational))
+}
+
 pub fn admit_dispatch(
     occurrence: &ExecutionOccurrence,
     candidate: ActiveDispatch,
