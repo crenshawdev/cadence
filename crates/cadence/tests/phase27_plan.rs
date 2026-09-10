@@ -518,3 +518,115 @@ fn phase27_identity_mismatch_is_refused() {
         "# Matching approval\n"
     );
 }
+
+#[test]
+fn phase27_out_of_phase_target_is_refused() {
+    let temp = fixture();
+    let project = temp.path();
+    native_context(project, 27);
+    let outside = project.join("sentinel.md");
+    fs::write(&outside, "Outside sentinel café\n").unwrap();
+    fs::create_dir_all(project.join(".planning/phases/28")).unwrap();
+    fs::write(
+        project.join(".planning/phases/28/PLAN-1.md"),
+        "Other phase sentinel\n",
+    )
+    .unwrap();
+    let before = tree(project);
+    for path in [
+        "../sentinel.md".to_owned(),
+        outside.to_string_lossy().into_owned(),
+        "phases/28/PLAN-1.md".to_owned(),
+    ] {
+        let mut client = Client::open(project);
+        let preview = client.read("27", Some(1));
+        let mut input = approve(request(&preview, 27, "unsafe-path", &["# Safe body\n"]));
+        input["destination"] = json!(path);
+        let answer = client.call("cadence_apply", input);
+        assert_eq!(answer["status"], "refused", "{answer}");
+        assert_eq!(
+            answer["rule"], "path-confinement",
+            "forbidden destination must name confinement: {answer}"
+        );
+        assert!(
+            answer["reason"].as_str().unwrap().contains(&path),
+            "{answer}"
+        );
+        client.finish();
+        assert_eq!(tree(project), before);
+        assert_eq!(
+            fs::read(&outside).unwrap(),
+            b"Outside sentinel caf\xc3\xa9\n"
+        );
+    }
+    for ancestor in [false, true] {
+        let mut client = Client::open(project);
+        let preview = client.read("27", Some(1));
+        let input = approve(request(&preview, 27, "symlink-target", &["# Safe body\n"]));
+        let target = project.join(if ancestor {
+            ".planning/phases/27"
+        } else {
+            ".planning/phases/27/PLAN-1.md"
+        });
+        let moved = project.join("outside-phase");
+        if ancestor {
+            fs::rename(&target, &moved).unwrap();
+            std::os::unix::fs::symlink(&moved, &target).unwrap();
+        } else {
+            std::os::unix::fs::symlink(&outside, &target).unwrap();
+        }
+        let unsafe_before = tree(project);
+        let answer = client.call("cadence_apply", input);
+        assert_eq!(answer["status"], "refused", "{answer}");
+        assert_eq!(answer["rule"], "path-confinement", "{answer}");
+        assert!(
+            answer["reason"]
+                .as_str()
+                .unwrap()
+                .contains(target.to_str().unwrap()),
+            "{answer}"
+        );
+        client.finish();
+        assert_eq!(tree(project), unsafe_before);
+        assert_eq!(
+            fs::read(&outside).unwrap(),
+            b"Outside sentinel caf\xc3\xa9\n"
+        );
+        assert!(!moved.join("PLAN-1.md").exists());
+        fs::remove_file(&target).unwrap();
+        if ancestor {
+            fs::rename(&moved, &target).unwrap();
+        }
+    }
+    let mut client = Client::open(project);
+    let preview = client.read("27", Some(1));
+    let answer = client.call(
+        "cadence_apply",
+        approve(request(&preview, 27, "safe-canonical", &["# Safe body\n"])),
+    );
+    assert_eq!(answer["persisted"], true, "{answer}");
+    client.finish();
+    let view = reopened(project);
+    assert_eq!(
+        view.snapshot.data["plan_publications"]["phases"]["27"]["high_water"],
+        1
+    );
+    assert_eq!(
+        cadence::execution::plan::parse_plan(
+            &fs::read(project.join(".planning/phases/27/PLAN-1.md")).unwrap(),
+            27,
+            1
+        )
+        .unwrap()
+        .body,
+        "# Safe body\n"
+    );
+    assert_eq!(
+        fs::read(&outside).unwrap(),
+        b"Outside sentinel caf\xc3\xa9\n"
+    );
+    assert_eq!(
+        fs::read_to_string(project.join(".planning/phases/28/PLAN-1.md")).unwrap(),
+        "Other phase sentinel\n"
+    );
+}
