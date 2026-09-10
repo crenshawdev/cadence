@@ -47,6 +47,18 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             let occurrence = native
                 .map(|n| persistence::occurrence(&data, n.get()))
                 .transpose()?;
+            let plans = inventory.occupied.iter().filter_map(|number| {
+                let canonical = format!("phases/{phase}/PLAN-{number}.md");
+                let bare = format!("phases/{phase}/PLAN.md");
+                let document = inventory.documents.get(&canonical).or_else(|| {
+                    if *number == 1 { inventory.documents.get(&bare) } else { None }
+                })?;
+                let publication = saved.as_ref().and_then(|o| o.publications.get(number));
+                Some(json!({"identity":{"phase":native.map(|p| p.get()),"plan":number},
+                    "phase_address":phase,"document":document,
+                    "classification":if publication.is_some() {"native-publication"} else {"legacy-input"},
+                    "publication":publication}))
+            }).collect::<Vec<_>>();
             let mut targets = Vec::new();
             if let Some(count) = count {
                 if native.is_none() {
@@ -73,7 +85,7 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             }
             Ok(model::ok(
                 "plan-read",
-                json!({"phase":phase,"persisted":false,
+                json!({"phase":phase,"persisted":false,"plans":plans,
                 "inventory":inventory,"targets":targets,"occurrence":occurrence,
                 "native_truths_approved":approved,"next":if approved {"plan-submit"} else {"context-intake"},
                 "native":saved,"legacy_readiness":"legacy-input","readiness":"provisional-authoring",
@@ -129,7 +141,7 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             }
             let inventory = inventory::read(root, &submission.phase.to_string(), &data)?;
             if let Err(error) = persistence::contribute(&data, &submission, &approval, &inventory) {
-                return Ok(model::refused("publication", error.to_string()));
+                return path_error(error);
             }
             let roadmap = std::fs::read_to_string(root.join("ROADMAP.md"))?;
             let lifecycle = cadence::derivation::parse_roadmap(&roadmap)
@@ -156,7 +168,7 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                 &inventory,
             ) {
                 Ok(value) => value,
-                Err(error) => return Ok(model::refused("publication", error.to_string())),
+                Err(error) => return path_error(error),
             };
             let mut external = Vec::new();
             for result in &results {
@@ -221,6 +233,15 @@ fn path_error(error: cadence::store::Error) -> Result<Answer> {
         _ => Ok(model::refused(
             if error.to_string().contains("path-confinement") {
                 "path-confinement"
+            } else if error.to_string().contains("number-exhaustion") {
+                "number-exhaustion"
+            } else if error.to_string().contains("inventory precondition changed")
+                || error.to_string().contains("allocation target changed")
+                || error
+                    .to_string()
+                    .contains("conditional snapshot precondition changed")
+            {
+                "allocation-conflict"
             } else {
                 "publication"
             },

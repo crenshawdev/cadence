@@ -97,10 +97,8 @@ pub fn contribute(
             "inventory precondition changed; preview and approve again".into(),
         ));
     }
-    if submission.plans.len() != 1 {
-        return Err(Error::Invalid(
-            "ordered batch publication is not yet enabled".into(),
-        ));
+    if submission.plans.len() > 64 {
+        return Err(Error::Invalid("publication batch exceeds 64 plans".into()));
     }
     let mut occurrence = saved(previous, phase)?.unwrap_or_else(|| Occurrence {
         id: submission.occurrence.clone(),

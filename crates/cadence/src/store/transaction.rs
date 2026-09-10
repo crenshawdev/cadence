@@ -277,6 +277,18 @@ impl Intent {
         }
         match self.kind.clone() {
             IntentKind::PlanPublication { phase, inventory } => {
+                for target in [ITEMS, DECISIONS] {
+                    let participant = self
+                        .participants
+                        .iter()
+                        .find(|p| p.target == target)
+                        .unwrap();
+                    if participant.expected.bytes.as_deref() != Some(participant.bytes.as_slice()) {
+                        return Err(Error::Invalid(
+                            "plan publication cannot append unrelated records".into(),
+                        ));
+                    }
+                }
                 let previous: Snapshot = serde_json::from_slice(
                     self.participants
                         .last()

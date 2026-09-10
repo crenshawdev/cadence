@@ -9,6 +9,7 @@ use std::{
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Inventory {
     pub occupied: Vec<u32>,
     pub high_water: u32,

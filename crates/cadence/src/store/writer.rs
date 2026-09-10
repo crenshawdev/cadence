@@ -669,7 +669,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             operations,
             participants,
             operation_name,
-            plan_intent.unwrap_or_else(|| match context_phase {
+            plan_intent.unwrap_or(match context_phase {
                 Some(phase) => super::transaction::IntentKind::ContextPublication { phase },
                 None => super::transaction::IntentKind::Store,
             }),
