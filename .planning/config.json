@@ -6,24 +6,22 @@
           "secrets",
           "destructive",
           "untrusted_input"
-        ]
+        ],
+        "tier": "flagship",
+        "effort": "high"
       },
       "diff": {
         "tier": "flagship"
+      },
+      "plan": {
+        "tier": "flagship",
+        "effort": "high"
       }
-    }
+    },
+    "request_timeout_ms": 600000
   },
   "model": {
-    "effort": {
-      "cad-planner": "xhigh",
-      "cad-executor": "xhigh",
-      "cad-plan-checker": "high",
-      "cad-verifier": "high"
-    },
-    "escalate_on_failure": false,
-    "overrides": {
-      "cad-planner": "fable"
-    }
+    "escalate_on_failure": false
   },
   "git": {
     "auto_close": true,
@@ -33,8 +31,8 @@
   },
   "roles": {
     "cad-planner": {
-      "model": "opus",
-      "effort": "high"
+      "model": "fable",
+      "effort": "xhigh"
     },
     "cad-assumptions-analyzer": {
       "model": "opus",
@@ -50,11 +48,24 @@
     },
     "cad-executor": {
       "model": "opus",
-      "effort": "high"
+      "effort": "xhigh"
     },
     "cad-plan-checker": {
       "model": "opus",
       "effort": "high"
     }
+  },
+  "workflow": {
+    "plan_check": true
+  },
+  "parallelization": {
+    "enabled": false,
+    "use_worktrees": false
+  },
+  "planning": {
+    "max_capture_bullets": 25
+  },
+  "memory": {
+    "backend": "none"
   }
 }

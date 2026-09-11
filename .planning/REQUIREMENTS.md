@@ -5,9 +5,97 @@
 
 ## Active
 
-**No cycle open.** The shipped ids are rows under `## Shipped` below; the ids
-under `## Deferred` keep their own reasons and none is promoted here to fill
-this section. `/cad-phase add` is what opens the next cycle.
+**`v4.0.0 - excerpt folds in, the binary owns process` opened 2026-09-05 on
+`cadence/binary-owns-process`.** Three phases, sourced from
+`docs/rationale/architecture-v4.md` written the same day. It is a rewrite and
+not a port: `cadence-core` becomes a session-resident Rust server, the frozen
+reference is the annotated tag `v3.7.12` at commit `c39bbd8c`, and the
+maintenance line is the branch `3.x` cut from that same commit. The theme is one
+claim: the binary owns truth about process, the model owns engineering judgment,
+and nothing hidden sits between them. `/cad-plan` seeds each `## Traceability`
+row as its phase is planned, and the ids below are added the same way - phase by
+phase, as each is planned, rather than reserved here up front. The shipped ids
+from earlier cycles are rows under `## Shipped` below, and the ids under
+`## Deferred` keep their own reasons - none is promoted here to fill this
+section.
+
+Both deferral ids this cycle opened with, `TSL-01` and `TSL-02`, were closed
+on 2026-09-05 OUTSIDE the phase structure and neither is a phase 1 requirement.
+A direct probe answered them in one sitting: a throwaway two-tool MCP server run
+under `claude -p --strict-mcp-config --setting-sources ""`, with the never-loaded
+tool as the paired control the earlier attempt lacked.
+
+`TSL-01` is ANSWERED. Deferral is NOT enforced at call time on CLI 2.1.261.
+`probe_bravo`, never loaded through `ToolSearch`, was called directly as the
+agent's first action; the server logged the call and it returned normally with
+no `InputValidationError`. A paired run showed the agent volunteering a
+`ToolSearch` first and stating it had to load the schema, so the ~900-token load
+is a convention the model follows rather than a requirement the harness imposes.
+The actionable finding inverts the original question: a preamble telling the
+model to load is unnecessary, and a line telling it to SKIP the load would save
+~900 tokens per skill invocation. Writing that line is not scheduled here.
+
+`TSL-02` moves to `## Deferred` below. It asked whether a loaded schema survives
+a compaction; with calls not blocked either way, the answer no longer changes
+what gets written.
+
+Phase 1, the crate skeleton, planned 2026-09-05 as two sequential plans:
+
+- **BIN-01**: A Cargo workspace at the repo root with one member, `crates/cadence`,
+  builds a binary named `cadence` with `cargo build --locked` from a committed
+  `Cargo.lock`, `cargo test --locked` passes, and the test workflow runs both
+  beside the existing Node matrix.
+- **BIN-02**: `cadence serve` answers MCP over stdio with at least one declared
+  tool, and every tool answer is a typed envelope whose tag is one of `ok`,
+  `refused`, `unknown` or `not-applicable`, carried as structured content on a
+  successful call - a refusal is never `isError`.
+- **REL-01**: The existing release workflow, behind its guard job, cross-compiles
+  `cadence` for the four targets into byte-reproducible archives from a tag push
+  or a manual dispatch, and reports each archive's sha256.
+- **REL-02**: The publish job attaches the four archives to the tag's release only
+  when each archive's sha256 equals the value in the committed pin file and the
+  tag, the plugin manifest, the crate and the MCP manifest agree on one version;
+  otherwise the release is refused.
+- **BOT-01**: A POSIX shell SessionStart hook fetches the platform's pinned
+  archive, verifies its sha256 against the committed pin, and installs the binary
+  at a versioned path outside `${CLAUDE_PLUGIN_ROOT}`; any failure leaves the
+  session working, prints nothing on stdout, and records its reason in a log.
+- **BOT-02**: The plugin's committed manifests point the `cadence` MCP server at
+  the installed binary, `SessionStart` is registered with a matching hook-events
+  row so self-verify stays clean, and the install path and the install-then-restart
+  step are documented.
+
+Phase 2, the golden harness, planned 2026-09-05 as three sequential plans - the
+Node-side fixtures, manifest and recorder spine first, then the recorder over
+the whole surface with its committed normalization rules and drift check, then
+the Rust comparison side that reads what the first two wrote. The phase validates the measuring instrument, not
+parity: nothing is ported when it closes, and every id below is a property of
+the harness, proven by showing it can fail.
+
+- **HAR-01**: Fixture `.planning` bundles under `crates/cadence/tests/golden/fixtures/`
+  are built by a committed script from the frozen tag `v3.7.12`, re-rooting its
+  archived phase subtrees as live phases beside synthesized `ROADMAP.md`,
+  `STATE.md` and `REQUIREMENTS.md` and seeded `trace.jsonl`, `reads.jsonl` and
+  `CAPTURE.md`; a rebuild changes no tracked byte, and the slice bundle answers
+  `status` as a live cycle rather than the tag's own closed-milestone answer.
+- **HAR-05**: The Rust envelope's `refused`, `unknown` and `not-applicable` arms
+  serialize a machine `code` field beside the prose `reason`, in the kebab-case
+  spelling the JavaScript seam uses, proven by `cargo test`, with the `ok` arm
+  and the D-07 successful-call property unchanged.
+- **HAR-06**: A Rust integration test loads every committed recording and the
+  invocation manifest without running `node`, compares an operation's answer
+  field-by-field on that operation's declared decision-bearing keys - by `code`
+  for a refusal and byte-for-byte for write-side file contents after the
+  committed normalization rules are applied to the answer - and fails on a
+  deliberately wrong answer with output that names the field that differed,
+  while the recording's own answer passes and an answer differing only in a
+  normalized field passes too.
+- **HAR-07**: Every recording is accounted for by name as compared or pending on
+  every run, a manifest entry with no recording or a recording with no manifest
+  entry fails the test, an activation naming no recorded operation or an
+  operation whose projection names no key fails rather than skips, and
+  `cargo test --locked` at the repo root passes with `insta`, `tempfile` and
+  `regex` present only in the dev-dependency graph.
 
 `v3.7.12 - what each role runs at` opened 2026-09-04 and closed 2026-09-05, the
 LAST 3.x release (4.0.0 is a Rust rewrite, decided 2026-09-05). Three phases,
@@ -149,6 +237,51 @@ true when written.
 one up.
 
 
+## Retired
+
+Requirements a decision deliberately removed from this cycle. Kept for the
+record, and OUT of `## Active` on purpose so `/cad-audit` does not count them
+as unpicked - exclusion here is by SECTION PLACEMENT, the documented exit at
+`references/req-traceability.md:174-188`. Nothing is owed against a row below.
+
+- **HAR-02**: A committed recorder runs the frozen JavaScript over every runtime
+  operation the parity surface names - every leaf arm of `planning.mjs`'s dispatch
+  and of the sixteen other phase-16 entry scripts, plus `worktree-base resolve` -
+  against a scratch copy of the named bundle under an environment built from
+  scratch, building a throwaway git repository with a pinned identity and dates
+  for the operations that need one, and writes one recording per invocation that
+  carries the exit status, the stdout envelope and, for a write operation, the
+  post-run bytes of every created, changed or deleted file; a refusal's recording
+  carries the JavaScript `reason` literal as its machine code.
+  **RETIRED 2026-09-06 in `7d64c4c9`** with the goldens: the recorder is
+  deleted, and "every runtime operation" is the unit the rearchitecture
+  abandoned. Nothing is owed against this row.
+
+- **HAR-03**: Recordings are deterministic by construction: two consecutive
+  recorder runs, and runs from another working directory, temp root, timezone
+  and locale, produce byte-identical recordings; no recording carries an absolute
+  filesystem path, a hostname or a process id; every clock-derived field is
+  covered by a named rule carried as data in a committed `normalization.json`
+  that the recorder and the Rust test both apply, scoped to the lines an
+  operation wrote, or pinned at its source, rather than scrubbed by a blanket
+  date pattern; every recording names the interpreter major that produced it;
+  the three settings overrides pointed at empty files change no recorded byte;
+  and running with the rules disabled changes a recording, so the pin is shown
+  to have force.
+  **RETIRED 2026-09-06 in `7d64c4c9`** with the goldens. Its determinism
+  DISCIPLINE carries to phase 17 as a roadmap-level constraint, sharpened by
+  the defect this row's own check list missed: it varied working directory,
+  temp root, timezone and locale, and never the REPO PATH.
+
+- **HAR-04**: A drift check regenerates every recording into scratch and compares
+  it against the committed set without touching it, exiting non-zero and naming
+  each recording whose bytes differ - including one changed by a single-byte hand
+  edit - refusing by name a run under a Node major other than the one the
+  recordings carry, and the test workflow runs that check on that major beside
+  the existing jobs.
+  **RETIRED 2026-09-06 in `7d64c4c9`** with the goldens: the `golden-drift`
+  job is removed from `.github/workflows/test.yml` and four jobs remain.
+
 ## Shipped
 
 Delivered and verified. Kept as rows for shipped-scope trace; the
@@ -278,7 +411,7 @@ parses only the Traceability table).
 | EXP-01 (No exposure surface leaks a credential or honors an ungated override. `git-publish.mjs:161-163` (also `:209`, `:233`, `planning.mjs:1917-1918`) puts git's stderr into the failure `detail`, and a remote URL carrying userinfo reaches the envelope verbatim - the PAT lands in the transcript permanently and forces a rotation. CORRECTED 2026-08-13 against git 2.55.0, which the audit's own example does not survive: the cited `https://x-access-token:TOKEN@host/...` form is anonymized by git itself before the error is emitted (`unable to access 'https://example.invalid/o/r.git/'`), while `git://` and path-shaped remotes leak it in full (`fatal: unable to look up x-access-token:...@host.invalid`). The defect is real on the transports that do not anonymize; a test built on the https form passes against unpatched code. Six env vars commented "hermetic test injection only" are honored in production with nothing gating them, including `CADENCE_ROUTE_TABLE` (sets every review trigger's gate) and `CADENCE_GLOBAL_CONFIG` (supplies a whole config layer) - which contradicts `review-provider.mjs:445-460`, the repo's own best-reasoned refusal of an env override on exactly these grounds, and which was the lever used to demonstrate CFG-01. CI installs `typescript` and `@types/node` unpinned with lifecycle scripts enabled; blast radius is genuinely small (`contents: read`, no secrets, not `pull_request_target`), so this arm is hygiene, not a finding. Tracked as #118) | 2 | Complete | v3.2.0 |
 | VAL-01 (Unvalidated input cannot reach a destructive or authoritative path. Three sites take `Number(opts.x)` where `parseArgs` gives a valueless flag the boolean `true` and `Number(true) === 1`: `planning.mjs:483` (`phase-done`), `:673` (`uat record`), `:2471` (`renumber`). `lib/require-int.mjs`'s own header names this hazard and `require-int.test.mjs:23` tests it; these three skip it. All reproduced: the wrong phase boxed complete, a UAT item marked pass nobody walked, `renumber remove` targeting phase 1. Trigger is ordinary - `--n "$PHASE"` with `$PHASE` unset. Separately `planning.mjs:118` `read()` collapses ENOENT with EACCES/EISDIR/EIO so `criteria-coverage` (`:1247`) treats an UNREADABLE CONTEXT.md as the "absent is nothing to prove" exemption D-10 wrote for ABSENT: two uncovered breaks become `{"ok":true,"phases":[]}` under `chmod 000`. And `milestone-prune --label` is only trimmed (`:2812`) before `join(dir, '_archive-' + label)` (`:2847`) and mkdir/rename (`:2854-2855`), so a label from PROJECT.md escapes the tree. Tracked as #117) | 2 | Complete | v3.2.0 |
 | RVW-01 (The review arm records what adjudication KILLS, and the cross-model reviewers are held to the same bar as the local one. Today `references/review-triggers.md:238` records only `<n> survivors`, so `lib/trace-suggest.mjs:118` cannot distinguish 0-of-0 (the gate is unnecessary) from 0-of-9 (the reviewer is miscalibrated and the gate is doing real work) and proposes turning the gate off in both cases - this lands FIRST because every other item here becomes measurable rather than asserted once it does. `review-provider.mjs:830` passes a one-line model-authored `instruction` as the external reviewer's ENTIRE system prompt, so it never sees `<stance>`, `<what_to_look_for>`, the severity definitions, "approach differences are NOT findings", or that an empty `findings: []` is valid, and at `review.mode: panel|single` with a `blocking` gate that uncalibrated output can FAIL a gate (~+600 tokens against a 120k cap). The contract demands the reviewer find "a requirement with no task" and "a contradicted locked decision" while the `plan` payload is the PLAN path ALONE, where the sibling gate hands cad-plan-checker ROADMAP, REQUIREMENTS and CONTEXT for the same questions. And cad-reviewer is the ONLY role contract with no `<process>` section, its guardrail "One pass... there is no second look" actively discouraging the self-refutation whose success-criteria assertion was cut in `49ba72e` for ~200 B - `design-notes/sweep-2026-08-10-context-weight.md:46` framed that cut as "easiest to reverse if compliance drops", and this is that condition. Tracked as #120) | 3 | Complete | v3.2.0 |
-| CST-01 (No review fires that nothing consumes. At `shipped` three of five triggers are `advisory` - `plan`, `phase_diff`, `pre_ship` - and an advisory gate blocks nothing by definition: it writes a findings file and execution continues regardless. Measured on a reporting user's 3.1.0 run, `cad-reviewer` was 711,636 of 3,450,628 processed tokens (~20.6%) while the trace recorded it as 0, because `references/review-triggers.md` step 4 inverts the bracket writer for an advisory gate and the reviewer closes its own bracket with no `--tokens`. Evidence the output is not consumed, from this repo: `.planning/phases/1/REVIEW-plan.md` and `.planning/phases/5/REVIEW-plan.md` were both written 2026-08-13, are both untracked, and are referenced by no SUMMARY or CONTEXT; the trace records the phase-2 fire as `plan: 6 raised, unadjudicated (advisory gate)`. Six findings, one full `cad-reviewer` dispatch, zero effect on what shipped. `plan` and `phase_diff` default `off` at `shipped` (the `adjudicated` arm at `critical` is untouched, and a user who does read the files may turn them back on); `pre_ship` is deleted outright with its config key, its wiring-table row, `skills/cad-land/SKILL.md` step 3 and its deferred-reads register row, per the standing CAPTURE item that already recommends it and the `review.triggers.pre_ship.gate=off` already set in this repo.) | 3 | Complete | v3.2.0 |
+| CST-01 (No review fires that nothing consumes. At `shipped` three of five triggers are `advisory` - `plan`, `phase_diff`, `pre_ship` - and an advisory gate blocks nothing by definition: it writes a findings file and execution continues regardless. Measured on a reporting user's 3.1.0 run, `cad-reviewer` was 711,636 of 3,450,628 processed tokens (~20.6%) while the trace recorded it as 0, because `references/review-triggers.md` step 4 inverts the bracket writer for an advisory gate and the reviewer closes its own bracket with no `--tokens`. Evidence the output is not consumed, from this repo: `.planning/phases/1/REVIEW-plan.md` and `.planning/phases/6/REVIEW-plan.md` were both written 2026-08-13, are both untracked, and are referenced by no SUMMARY or CONTEXT; the trace records the phase-2 fire as `plan: 6 raised, unadjudicated (advisory gate)`. Six findings, one full `cad-reviewer` dispatch, zero effect on what shipped. `plan` and `phase_diff` default `off` at `shipped` (the `adjudicated` arm at `critical` is untouched, and a user who does read the files may turn them back on); `pre_ship` is deleted outright with its config key, its wiring-table row, `skills/cad-land/SKILL.md` step 3 and its deferred-reads register row, per the standing CAPTURE item that already recommends it and the `review.triggers.pre_ship.gate=off` already set in this repo.) | 3 | Complete | v3.2.0 |
 | RVW-02 (Which reviewer actually ran is resolved by the seam and recorded, not asserted by prose. The gate half of a fire is structured - `route.mjs resolve --role cad-reviewer` returns `review{plan,diff,risk_surface,phase_diff,pre_ship}` - while the reviewer half is not: `readConfig` (`bin/route.mjs:96-113`) folds `stakes`, `escalate_on_failure`, `overrides`, `effort` and `triggerGates` and reads neither `review.reviewers` nor `review.providers.<name>.tiers`, so the resolved bundle carries no reviewer identity at all and `references/review-triggers.md:65` step 3 is the only thing that says to derive one. Observed 2026-08-13 during `/cad-verify 1`: `review.reviewers` was `["openai"]`, the resolve correctly returned `risk_surface: "blocking"`, and the fire was dispatched to the `cad-reviewer` Claude subagent with step 3 never executed - nothing refused it, and the user caught it. Nothing could catch it afterwards either: the claude-subagent bracket (`:98`) is keyed `--plan cad-reviewer --role cad-reviewer` whichever reviewer was configured, the cross-model arm writes NO bracket by design (`:166`), and the one place the running set is named - step 5's `voices <the reviewers that actually ran>` detail (`:238`) - is free text written by the same model that chose the substitution, which `lib/trace-suggest.mjs:58 parseAdjudication` then discards entirely, capturing only the trigger and the survivor count. Same defect class as CFG-01/CFG-02 one layer up - the config states one thing, the enforcement is prose, so inspection and enforcement can diverge - and it lands on the one trigger that is `blocking` at every stakes level. The fix belongs in the seam: resolve availability there (a provider is available iff its `tiers[<trigger.tier>]` is non-null, `claude-subagent` always available, an empty set falling back to `["claude-subagent"]`), return it per trigger beside `review` with the fallback and its cause stated rather than inferred, and carry the reviewer identity on the lifecycle event so a cross-model review that never happened stops being indistinguishable from one that did. Tracked as #123) | 3 | Complete | v3.2.0 |
 | CST-02 (`risk_surface` fires on the surfaces a project actually has, chosen once by the user rather than assumed. It is the only trigger that scales per plan - blocking at every stakes level, once per plan on a detection match, and a FAIL re-arms for a second full dispatch - so on a security-shaped phase where nearly every plan matches it is the dominant review cost. It must not simply be turned down: it is what makes a blocking review mean anything, and phase 2 shipped five plans of unreviewed security work by suppressing it. Add `review.triggers.risk_surface.surfaces`, the subset of the eight categories at `references/review-triggers.md:285` this project contains, absent meaning all eight so no existing user's coverage silently shrinks. Populate it from a STRUCTURAL scan - dependency manifests, directory existence, file types - never from keyword greps of source text: that approach was tested against this repo on 2026-08-13 and false-positived `auth` (matching `session` x16, meaning Claude sessions) and `money/billing` (matching prose about token cost), failing toward expensive. Present the result as a one-time choice the user cannot skip, at the first `risk_surface` fire on a project that has not answered it, through the ask-user seam: four presets (the seam caps options at four), each stating its cost, with detection run BEFORE the question so it marks the recommendation per seams.md's existing recommended-option convention.) | 3 | Complete | v3.2.0 |
 | CST-03 (The bound that already exists is tuned and described, and no surface reports an unmeasured figure as spend. Every agent file carries `maxTurns: 400` while phase 2's five executors used 36-76 tool calls, so the bound sits 5-11x above anything observed and has never bound anything - and `references/seams.md:56` tells readers "this seam offers no bound and no cancel", which is false against Cadence's own agent frontmatter and is why nobody tuned it. Lower it above observed usage and correct that sentence. PAIRED, landing together or not at all: a standing CAPTURE item records that a truncated `cad-reviewer`, `cad-verifier`, `cad-plan-checker` or `cad-planner` returns prose where a contract-shaped payload was expected with nothing marking it - only the executor family has a consumer-side arm for that signature - so lowering the cap without that arm trades overspend for silent garbage. Separately, `workflows/report.md`'s `compose` step prints the recorded token figure under the heading `Spend:`; `lib/trace.mjs:41` states that figure is "read off the HOST's subagent return", and a reporting user's 3.1.0 run put it 23x below actual transcript telemetry (117,646 recorded against 2,738,992 for `cad-executor`), so `/cad-report` tells a user a number is their cost when it is 3-4% of it. Label what the figure is and name what it excludes; this half adds no new capture.) | 4 | Complete | v3.2.0 |
@@ -361,7 +494,7 @@ parses only the Traceability table).
 | FRG-02 (A forge is a PRECONDITION, not an option (OQ-1). `/cad-land` offers MR and PR, which exist only on a forge; `git.integration_branch` creates a branch for parallel work to merge into; `/cad-milestone` cuts and tags a version. No provider detected or none selected refuses with a reason naming what was looked for and a hint naming the install, under the no-third-party-output discipline `issue-check.mjs` already holds.) | 1 | Complete | v3.7.1 |
 | LOD-02 (`cadence-core/bin/planning.mjs` is split so that no dispatch pays a whole-file read to reach one command. Measured 2026-08-24: the file is 417,009 chars (~104k tokens, 7,853 lines), and of those, 6,033 lines are the 32 `cmd*` handlers while only 1,574 are shared top-level helpers, so the handlers are near-independent leaves rather than an entangled core. It is touched by 158 of the last 400 commits, and `planning.test.mjs` (418,298 chars) by 117, so this is the file the executor reads most and the most expensive one to read. Against a 15,000-token read cap a single handler cannot be reached without seven windowed reads or a truncated one. LOD-01 (`git.md` -> `git-guard.md` + `git-publish.md`) is the standing precedent for a split that moves every citation with it.) | 5 | Complete | v3.7.1 |
 | CEN-01 (Every hand-maintained census count in the repository is registered - the file holding it, what it counts, and the test that asserts it - and a census live in a test but absent from the registry fails the suite naming both. A census is a count a human wrote down that the code must keep true: `self-verify.test.mjs` hand-lists every schema key, `arg-contract.test.mjs` pins the guarded-callsite count, `trace.test.mjs` requires four refusal sentences to appear exactly once. Nothing today knows they exist as a class, which is why a plan can omit one without noticing.) | 2 | Complete | v3.7.1 |
-| CEN-02 (A plan that will invalidate a registered census declares that file before an executor starts. `lease-check` refuses only at commit time, after the work is done, so the cost of the omission is a full re-execution rather than an amended lease: 20 of 39 checkpoints in phase 5 (51%) and 7 of 15 on verbatim (47%) trace to it, worth 14.8% and 17.4% of executor spend. Phase 7's PLAN-1 halted at task 1 with 0 of 8 tasks for 151,683 tokens and cost 242,318 more to redo. The plan-time arm reads the lease and the registry only; it never runs the plan's work to find out, and `/cad-plan` fires it after PLAN.md is written and before any dispatch.) | 2 | Complete | v3.7.1 |
+| CEN-02 (A plan that will invalidate a registered census declares that file before an executor starts. `lease-check` refuses only at commit time, after the work is done, so the cost of the omission is a full re-execution rather than an amended lease: 20 of 39 checkpoints in phase 5 (51%) and 7 of 15 on verbatim (47%) trace to it, worth 14.8% and 17.4% of executor spend. Phase 8's PLAN-1 halted at task 1 with 0 of 8 tasks for 151,683 tokens and cost 242,318 more to redo. The plan-time arm reads the lease and the registry only; it never runs the plan's work to find out, and `/cad-plan` fires it after PLAN.md is written and before any dispatch.) | 2 | Complete | v3.7.1 |
 | CAP-01 (A finding leaves `.planning/CAPTURE.md` at the moment a gate DEFERS it, not at phase close - the deferral is what files it, so the user sees a finding when it is raised rather than in a batch. Phase close only ASSERTS the file is empty. The item grammar has two states today, `- [ ]` and `- [x]`, and `[x]` means done, so a decision NOT to do something has no representation and stays `[ ]` looking like live work. With no way to record a rejection, rejections were written into the bullets instead - the `KEPT <date>` / `recorded not fixed` annotations, 12 of them in this repository - so adjudicating an item made it longer rather than removing it. Resolution is removal, never annotation.) | 3 | Complete | v3.7.1 |
 | CAP-02 (The gate ASKS (batched per gate fire) and a declined finding is DROPPED, with no residue anywhere. It takes a word of its own: `deferral` and `deferred` are already a `FIRE_RECEIPTS` outcome event, a `review.triggers.<t>.gate` value and the `DEFERRED-*.json` queue member, and reusing them repeats the `git.auto_close` collision. Accepted findings become an issue on the repository's OWN tracker, derived from its `origin` remote (Forgejo, GitHub, GitLab) with no host, org or username hardcoded. This project's own history already points there - CAPTURE bullets cite `#238`, `#249`, `#69`, `#29`. A `## Archive` heading inside CAPTURE is not the record and leaves the contract: this repository has 185 such bullets proving that moving items within the file fixes the recall walk and nothing about the 251,968 bytes.) | 3 | Complete | v3.7.1 |
 | CAP-03 (A bound on the walked bullet count that fails loud in `/cad-health`. The 2026-08-08 sweep took the queue to zero and it regrew to 276 walked items in sixteen days, because no workflow drains the file: `workflows/milestone.md` never mentions CAPTURE and the only two workflows that reference it, `plan.md` and `execute.md`, are readers. A sweep without a bound restarts the clock.) | 3 | Complete | v3.7.1 |
@@ -430,6 +563,25 @@ failed. Phases 2-4 are all on that same surface, so the rate would have carried.
 Promote as a group when the identity join has a test that fails on the class the
 UAT missed, or individually on the conditions below.
 
+- **TSL-02**: Whether a tool schema loaded before a compaction is still in
+  context after it, observed WITH a paired never-loaded control. Deferred
+  2026-09-05, not dropped: `TSL-01` showed calls are not blocked on an unloaded
+  tool (CLI 2.1.261), so the answer no longer decides whether anything is
+  written into a skill file. Promote if a future CLI starts enforcing deferral
+  at call time, which would make the post-compaction state load-bearing again.
+
+- **BAS-01**: The 3.x baseline for prompt size per dispatch and main-thread
+  context growth per phase, minable from the frozen archive at
+  `/projects/cadence-archive-v3.7.12/.planning/` - 3,619 lines / 933,844 bytes,
+  574 brackets over 118 `corr` values, spanning 2026-08-07 to 2026-09-05.
+  Deferred out of `v4.0.0` on 2026-09-05, the day it was planned. It was
+  scheduled first as the question that expires, but the plan mined a frozen
+  archive rather than measuring a running 3.x, and a frozen archive does not
+  expire. It also measures tokens, which section 7 of
+  `docs/rationale/architecture-v4.md` declines to sell the architecture on. The
+  rewrite decision is already taken, so this is a scorecard, not an input.
+  Promote when someone wants the before-and-after figure; the corpus keeps.
+
 BUD-03, RSK-05 and RNG-03 were PROMOTED out of this block on 2026-08-26 into
 `v3.7.4`. They were deferred on a reason that did not apply to them: the block
 reason above says the remaining phases sat on the `SubagentStop` identity
@@ -458,7 +610,7 @@ queue triage alone.
 - **EVD-01**: A phase's joined run record has a publishable form. `planning.mjs trace export` reads `.planning/trace.jsonl` and emits a redacted artifact under a STATED rule - what is dropped, what is preserved, and why the raw file stays out of the repo - where a field the rule does not name is dropped rather than emitted, so a future event family cannot leak by default. Publication is an export, never a lifting of the ignore, on the same reasoning D-01 applied to the capture queue in phase 1. Deferred 2026-08-08 with the demotion of `EVD-02`: this machinery exists to PUBLISH a trace, which is an audit-facing want rather than a live defect, and the live defect in the same area - a run record no project keeps out of git at all - is `FLD-02` in phase 3. Promote when a trace is actually going to be shared
 - **BCH-01**: N security reviews run in one process paying one cold prefix, not N invocations paying N (#174). Deferred 2026-08-21 out of `v3.5.7` on a spike that INVALIDATED it before the fidelity question was ever tested: `.planning/spikes/batched-review-fidelity/SPIKE.md`. Batching saves **1.91%** of reviewer spend - a 1,676-token fixed prefix (`skills/cad-reviewer-contract/SKILL.md` 6,240 B + `agents/cad-reviewer.md` 465 B, the definition `CAPTURE.md:271` already used for the executor) against six observed dispatches totalling 438,080 tokens. It does not flip at the "61 invocations" the issue cites: that is 2.09%, because both sides of the ratio scale with N. The bill is PAYLOAD - those six dispatches span 25,753 to 125,100 tokens, a 4.9x spread around a fixed cost of 1,676 - which reproduces `CAPTURE.md:271`'s finding that reviewer cost tracks diff and plan size, not review count. The per-commit scoping #174 correctly names as a real cost would have been traded for a rounding error. Two limits recorded rather than assumed: the 61 figure is not reproducible from `trace.jsonl` (8 reviewer brackets, 6 with tokens), and the verdict excludes the host harness prefix, which batching would also collapse - it flips only if that prefix exceeds ~7,100 tokens, and the spike names the one measurement that would settle it. Promote on that measurement, or if reviewer payloads ever shrink enough that a fixed prefix dominates. The real lever is already filed at `CAPTURE.md:271` (`workflow.max_plan_tokens`, symbol anchors in `files:`, targeted reads over whole-file)
 - **RCL-06**: External memory backends (mem-*/claude-mem/MCP) behind the same `recall(query) → snippets` contract
-- **CTX-02**: Prose that rides every dispatch is stated once rather than restated per file: a writing contract (issue #69) preloaded and asserted to resolve for every agent, and a review minimalism lens (issue #29) reporting what could be deleted, separately from the correctness pass. Deferred out of `v2.5.0` on 2026-08-08 at phase-2 context: both halves ADD resident bytes in the phase that exists to cut them, and the writing contract's premise is false in this tree — nothing restates a writing contract per agent today (grep of `skills/`, `agents/`, `cadence-core/` returns zero), so it is net-new prose on all 19 agent files rather than a deduplication. The minimalism lens as a new review trigger needs coordinated edits across at least six mutually self-verified surfaces, every one of which adds bytes. Neither issue has a statement in this tree to plan against. See `phases/5/CONTEXT.md` D-06
+- **CTX-02**: Prose that rides every dispatch is stated once rather than restated per file: a writing contract (issue #69) preloaded and asserted to resolve for every agent, and a review minimalism lens (issue #29) reporting what could be deleted, separately from the correctness pass. Deferred out of `v2.5.0` on 2026-08-08 at phase-2 context: both halves ADD resident bytes in the phase that exists to cut them, and the writing contract's premise is false in this tree — nothing restates a writing contract per agent today (grep of `skills/`, `agents/`, `cadence-core/` returns zero), so it is net-new prose on all 19 agent files rather than a deduplication. The minimalism lens as a new review trigger needs coordinated edits across at least six mutually self-verified surfaces, every one of which adds bytes. Neither issue has a statement in this tree to plan against. See `phases/6/CONTEXT.md` D-06
 
 - **TRC-07**: the two prompt-cache figures reach the bracket for every worker
   that STOPPED, not only the ones the hook could both identify and call
@@ -521,6 +673,16 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| BIN-01 | Phase 1 | Complete |
+| BIN-02 | Phase 1 | Complete |
+| REL-01 | Phase 1 | Complete |
+| REL-02 | Phase 18 | Pending |
+| BOT-01 | Phase 18 | Pending |
+| BOT-02 | Phase 18 | Pending |
+| HAR-01 | Phase 2 | Complete |
+| HAR-05 | Phase 2 | Complete |
+| HAR-06 | Phase 17 | Deferred |
+| HAR-07 | Phase 17 | Deferred |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its

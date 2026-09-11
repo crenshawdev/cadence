@@ -23,7 +23,14 @@ jobs:
       fail-fast: false
       matrix:
         node: ['22', '24']
-        group: [routing, git, planning, prose, review, other]
+        # `prose` is deliberately absent - see D-29 in
+        # .planning/phases/6/CONTEXT.md. It lints the LIVE skills/ tree against
+        # v3 grammar, and the 4.0 rewrite deliberately stopped speaking it, so
+        # it fails on 4.0 skills by design rather than by defect. The sixteen
+        # names are recorded in .planning/phases/6/known-node-failures.txt. The
+        # remaining groups test frozen behavior that has not been ported yet and
+        # stay in force until phase 18 removes cadence-core entirely.
+        group: [routing, git, planning, review, other]
     steps:
       # fetch-depth: 0, not the default shallow depth-1. `why-record.test.mjs`
       # (the `other` group) reads THIS repository's own history as its fixture
@@ -39,16 +46,17 @@ jobs:
       # Zero-dep repo: no install step, the built-in runner is the framework.
       - run: node cadence-core/bin/test.mjs ${{ matrix.group }}
 
-  self-verify:
-    # The prose<->code drift linter: every config key, script invocation, and
-    # plugin-root path named in the live prose must exist in the code.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '22'
-      - run: node cadence-core/bin/self-verify.mjs
+  # self-verify is REMOVED, not temporarily disabled - see D-29 in
+  # .planning/phases/6/CONTEXT.md. It was the prose<->code drift linter, and it
+  # checked the LIVE skills/ tree against v3 grammar: its deferred-read register
+  # is a hardcoded table at cadence-core/bin/lib/deferred-reads.mjs:216-223,
+  # inside the frozen tree, requiring skills/cad-executor-contract/SKILL.md to
+  # carry ${CLAUDE_PLUGIN_ROOT} Read sentences for two v3 references. The 4.0
+  # contract dropped both because worktree mode is impossible under
+  # `rung: fixed; branch: current`, so satisfying the linter would mean writing
+  # a false instruction into a shipped user-facing file. The frozen reference is
+  # still guarded, exactly and instantly, by the cargo-test job's
+  # `git diff --exit-code v3.7.12 -- cadence-core/`.
 
   typecheck:
     # Honor the @ts-check pragmas. The repo has no package.json; typescript +
@@ -61,3 +69,51 @@ jobs:
           node-version: '22'
       - run: npm install --no-save --no-package-lock typescript @types/node
       - run: npx tsc -p tsconfig.ci.json
+
+  cargo-test:
+    # The Rust binary the 4.0.0 rewrite is moving into, built and tested beside
+    # the Node matrix rather than instead of it: both halves ship for now.
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 is load-bearing, not tidiness. Sixteen tests read the
+      # frozen reference straight out of git - `git show v3.7.12:<path>` in
+      # config/tests.rs and import/tests.rs, and `git archive v3.7.12` for the
+      # .planning extraction fixture. A shallow checkout has no tags, so every
+      # one of them fails with "fatal: not a valid object name: v3.7.12" while
+      # passing locally. The node-test job already fetches full history for the
+      # same reason.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Installed by name, not left to rustup's auto-install: rustup 1.28
+      # stopped installing the toolchain a rust-toolchain.toml names on first
+      # use, so a job that only ran `cargo` would fail on the runner image
+      # rather than build against the pinned compiler.
+      - name: Install the toolchain rust-toolchain.toml pins
+        run: |
+          set -euo pipefail
+          CHANNEL="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          if [ -z "$CHANNEL" ]; then
+            echo "::error::rust-toolchain.toml names no channel"
+            exit 1
+          fi
+          rustup toolchain install "$CHANNEL" --profile minimal
+          rustup default "$CHANNEL"
+          rustc --version
+
+      # --locked on both, because a committed Cargo.lock is the whole of what
+      # "builds offline" means here and an unlocked resolve would quietly test
+      # a dependency graph no commit records.
+      - run: cargo build --locked
+      - run: cargo test --locked
+
+      # The frozen reference guard, and now the ONLY one running in CI: the
+      # self-verify job that used to lint the shipped tree was removed under
+      # D-29. Every 4.0 plan asserts this locally in its Verify block; asserting
+      # it here too means a change to cadence-core/ cannot reach main unnoticed
+      # just because nobody ran a plan. Exact and instant, where the v3 test
+      # suite was a slow and weaker proxy for the same property.
+      - name: The frozen v3 reference is byte-identical to its tag
+        run: git diff --exit-code v3.7.12 -- cadence-core/
+

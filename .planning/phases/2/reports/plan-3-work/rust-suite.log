@@ -1,0 +1,54 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/main.rs (target/debug/deps/cadence-a9d355434cc6f1ff)
+
+running 6 tests
+test envelope::tests::ok_puts_the_payload_fields_beside_the_tag ... ok
+test envelope::tests::every_arm_round_trips_through_serde_json ... ok
+test envelope::tests::not_applicable_keeps_its_hyphen ... ok
+test envelope::tests::refused_carries_a_code_and_prose_reason ... ok
+test envelope::tests::refused_is_a_successful_call_carrying_its_refusal ... ok
+test envelope::tests::unknown_carries_a_code_and_prose_reason ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/golden.rs (target/debug/deps/golden-0a626cbabeea6814)
+
+running 25 tests
+test empty_projection_fails_at_build_by_operation ... ok
+test nonexistent_bundle_names_the_bundle ... ok
+test nested_insertion_order_does_not_create_a_diff ... ok
+test loads_committed_recordings_manifest_and_rules ... ok
+test files_only_control_names_changed_file_and_deleted_list ... ok
+test snapshot_worker ... ok
+test malformed_rule_names_file_and_rule ... ok
+test corrupt_recording_names_its_file ... ok
+test hook_decision_control_rejects_allow ... ok
+test absent_activated_projection_fails_walk_by_operation ... ok
+test cursor_control_normalizes_real_day_in_stdout_and_file ... ok
+test every_recording_is_compared_or_pending ... ok
+test unrecorded_activation_fails_walk_by_operation ... ok
+test every_manifest_bundle_materializes_intact ... ok
+test extra_recording_fails_walk_by_file ... ok
+test empty_activated_projection_fails_walk_before_driver ... ok
+test stdout_root_control_requires_substitution ... ok
+test replay_control_accepts_own_answer_and_names_flipped_key ... ok
+test missing_recording_fails_walk_by_invocation ... ok
+test normalization_preserves_moved_seed_lines_tree_wide ... ok
+test refusal_control_compares_machine_code_for_each_non_ok_arm ... ok
+test flipped_replay_renders_insta_diff - should panic ... ok
+test wrong_control_driver_fails_the_walk_through_insta - should panic ... ok
+test trace_control_normalizes_only_new_fields_and_rejects_restamped_seed ... ok
+test control_driver_accounts_for_each_activated_invocation ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/mcp.rs (target/debug/deps/mcp-9017e80ace26fa73)
+
+running 4 tests
+test initialize_names_the_server_cadence_at_the_crate_version ... ok
+test tools_list_declares_exactly_cadence_version_with_an_output_schema ... ok
+test closing_stdin_exits_the_server_cleanly ... ok
+test cadence_version_returns_an_ok_envelope_as_structured_content ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

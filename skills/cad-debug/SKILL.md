@@ -3,6 +3,9 @@ name: cad-debug
 description: "Systematic debugging - hypothesis and symptom tracked in a state file that survives /clear, with a user-gated second-model consult at dead ends"
 argument-hint: "[list | status <slug> | continue <slug> | --diagnose] [symptom]"
 allowed-tools:
+  - Task
+  - mcp__cadence__cadence_apply
+  - mcp__cadence__cadence_query
   - Read
   - Write
   - Edit
@@ -35,3 +38,14 @@ Persist the state file after every hypothesis test and fix attempt. Never
 auto-loop fixes and never auto-consult - both are deliberate, and the consult
 is always user-gated.
 </process>
+
+<review_delivery>
+At review boundaries, follow the shared `cad-review-delivery` contract below
+with ordinary caller `debug`. Retain the actual plan/diff/staged target,
+wait for raw return and durable acknowledgment, and satisfy deferred enqueue
+before commit preparation, completion or further plan dispatch. This takes
+precedence over frozen review write/trace and gate instructions. Keep the rest
+of this workflow with its existing owner.
+
+@${CLAUDE_PLUGIN_ROOT}/skills/cad-review-delivery/SKILL.md
+</review_delivery>

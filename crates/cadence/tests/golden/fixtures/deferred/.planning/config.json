@@ -1,0 +1,60 @@
+{
+  "review": {
+    "triggers": {
+      "risk_surface": {
+        "surfaces": [
+          "secrets",
+          "destructive",
+          "untrusted_input"
+        ]
+      },
+      "diff": {
+        "tier": "flagship"
+      }
+    }
+  },
+  "model": {
+    "effort": {
+      "cad-planner": "xhigh",
+      "cad-executor": "xhigh",
+      "cad-plan-checker": "high",
+      "cad-verifier": "high"
+    },
+    "escalate_on_failure": false,
+    "overrides": {
+      "cad-planner": "fable"
+    }
+  },
+  "git": {
+    "auto_close": true,
+    "forge_provider": "github",
+    "forge_repo": "crenshawdev/cadence",
+    "forge_host": null
+  },
+  "roles": {
+    "cad-planner": {
+      "model": "opus",
+      "effort": "high"
+    },
+    "cad-assumptions-analyzer": {
+      "model": "opus",
+      "effort": "high"
+    },
+    "cad-verifier": {
+      "model": "opus",
+      "effort": "high"
+    },
+    "cad-reviewer": {
+      "model": "opus",
+      "effort": "high"
+    },
+    "cad-executor": {
+      "model": "opus",
+      "effort": "high"
+    },
+    "cad-plan-checker": {
+      "model": "opus",
+      "effort": "high"
+    }
+  }
+}

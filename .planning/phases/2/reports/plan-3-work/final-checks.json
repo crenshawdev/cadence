@@ -1,0 +1,22 @@
+{
+  "frozen": {
+    "exit": 0,
+    "output": ""
+  },
+  "golden_directory": {
+    "exit": 0,
+    "output": ""
+  },
+  "scope": {
+    "exit": 0,
+    "output": "Cargo.lock\ncrates/cadence/Cargo.toml\ncrates/cadence/src/envelope.rs\ncrates/cadence/tests/golden.rs\n"
+  },
+  "status": {
+    "exit": 0,
+    "output": "?? .planning/phases/2/reports/\n"
+  },
+  "branch": {
+    "exit": 0,
+    "output": "cadence/binary-owns-process\n"
+  }
+}

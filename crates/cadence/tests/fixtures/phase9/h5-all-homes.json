@@ -1,0 +1,5651 @@
+{
+  "phase": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "phase",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "phase",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/phases/9",
+          "fire": "f1"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": false
+  },
+  "task": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/tasks/t1",
+          "fire": "f1"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": false
+  },
+  "root-inline": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "root-inline",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "root-inline",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/reviews/inline/occ1",
+          "fire": "f1"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": false
+  },
+  "root-debug": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "root-debug",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "root-debug",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/reviews/debug/occ1",
+          "fire": "f1"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": false
+  },
+  "root-diagnosis": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "root-diagnosis",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "root-diagnosis",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/reviews/diagnosis/occ1",
+          "fire": "f1"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": false
+  },
+  "advisory": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "advisory",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/tasks/t1",
+          "fire": "f1"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": true
+  },
+  "off": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "off",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/tasks/t1",
+          "fire": "f1"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": true
+  },
+  "sync-failure": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/tasks/t1",
+          "fire": "f1"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": true,
+    "forbid_writes": false
+  },
+  "replay": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/tasks/t1",
+          "fire": "f1"
+        }
+      },
+      "deferred": {
+        "f1": {
+          "member": "f1",
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "references": [
+            {
+              "fire": "f1",
+              "manifest": "m1",
+              "attempt": "a1",
+              "original": "o1"
+            }
+          ],
+          "enqueued_at": 99,
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "state": "unruled"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": true
+  },
+  "same-winner": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/tasks/t1",
+          "fire": "f1"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": false,
+    "winner_records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/tasks/t1",
+          "fire": "f1"
+        }
+      },
+      "deferred": {
+        "f1": {
+          "member": "f1",
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "references": [
+            {
+              "fire": "f1",
+              "manifest": "m1",
+              "attempt": "a1",
+              "original": "o1"
+            }
+          ],
+          "enqueued_at": 99,
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "state": "unruled"
+        }
+      }
+    }
+  },
+  "enumeration": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "phase",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        },
+        "f2": {
+          "fire": "f2",
+          "replay_key": "k2",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h2",
+            "occurrence": "occ2"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m2",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        },
+        "f3": {
+          "fire": "f3",
+          "replay_key": "k3",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "root-debug",
+            "id": "h3",
+            "occurrence": "occ3"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m3",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        },
+        "m2": {
+          "manifest": "m2",
+          "fire": "f2",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        },
+        "m3": {
+          "manifest": "m3",
+          "fire": "f3",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        },
+        "a2": {
+          "attempt": "a2",
+          "fire": "f2",
+          "occurrence": "occ2",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v2",
+            "manifest": "m2",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch2",
+          "host_return": "return2",
+          "state": "accepted",
+          "failure": null,
+          "original": "o2",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        },
+        "a3": {
+          "attempt": "a3",
+          "fire": "f3",
+          "occurrence": "occ3",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v3",
+            "manifest": "m3",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch3",
+          "host_return": "return3",
+          "state": "accepted",
+          "failure": null,
+          "original": "o3",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        },
+        "o2": {
+          "original": "o2",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a2",
+          "host_return": "return2",
+          "artifact": "m2",
+          "view": "v2",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a2",
+            "original": "o2",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o2",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        },
+        "o3": {
+          "original": "o3",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a3",
+          "host_return": "return3",
+          "artifact": "m3",
+          "view": "v3",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a3",
+            "original": "o3",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o3",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "phase",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/phases/9",
+          "fire": "f1"
+        },
+        "occ2": {
+          "home": {
+            "kind": "task",
+            "id": "h2",
+            "occurrence": "occ2"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/tasks/t1",
+          "fire": "f2"
+        },
+        "occ3": {
+          "home": {
+            "kind": "root-debug",
+            "id": "h3",
+            "occurrence": "occ3"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/reviews/debug/occ1",
+          "fire": "f3"
+        }
+      },
+      "deferred": {
+        "f1": {
+          "member": "f1",
+          "home": {
+            "kind": "phase",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "references": [
+            {
+              "fire": "f1",
+              "manifest": "m1",
+              "attempt": "a1",
+              "original": "o1"
+            }
+          ],
+          "enqueued_at": 99,
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "state": "unruled"
+        },
+        "f2": {
+          "member": "f2",
+          "home": {
+            "kind": "task",
+            "id": "h2",
+            "occurrence": "occ2"
+          },
+          "references": [
+            {
+              "fire": "f2",
+              "manifest": "m2",
+              "attempt": "a2",
+              "original": "o2"
+            }
+          ],
+          "enqueued_at": 99,
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "state": "unruled"
+        },
+        "f3": {
+          "member": "f3",
+          "home": {
+            "kind": "root-debug",
+            "id": "h3",
+            "occurrence": "occ3"
+          },
+          "references": [
+            {
+              "fire": "f3",
+              "manifest": "m3",
+              "attempt": "a3",
+              "original": "o3"
+            }
+          ],
+          "enqueued_at": 99,
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "state": "unruled"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": true
+  },
+  "references": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/tasks/t1",
+          "fire": "f1"
+        }
+      },
+      "deferred": {
+        "f1": {
+          "member": "f1",
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "references": [
+            {
+              "fire": "f1",
+              "manifest": "m1",
+              "attempt": "a1",
+              "original": "o1"
+            }
+          ],
+          "enqueued_at": 99,
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "state": "unruled"
+        }
+      }
+    },
+    "renderings": {},
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": true
+  },
+  "with-adjudication-rendering": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "phase",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        },
+        "f2": {
+          "fire": "f2",
+          "replay_key": "k2",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h2",
+            "occurrence": "occ2"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m2",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        },
+        "f3": {
+          "fire": "f3",
+          "replay_key": "k3",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "root-debug",
+            "id": "h3",
+            "occurrence": "occ3"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m3",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        },
+        "m2": {
+          "manifest": "m2",
+          "fire": "f2",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        },
+        "m3": {
+          "manifest": "m3",
+          "fire": "f3",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        },
+        "a2": {
+          "attempt": "a2",
+          "fire": "f2",
+          "occurrence": "occ2",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v2",
+            "manifest": "m2",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch2",
+          "host_return": "return2",
+          "state": "accepted",
+          "failure": null,
+          "original": "o2",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        },
+        "a3": {
+          "attempt": "a3",
+          "fire": "f3",
+          "occurrence": "occ3",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v3",
+            "manifest": "m3",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch3",
+          "host_return": "return3",
+          "state": "accepted",
+          "failure": null,
+          "original": "o3",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        },
+        "o2": {
+          "original": "o2",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a2",
+          "host_return": "return2",
+          "artifact": "m2",
+          "view": "v2",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a2",
+            "original": "o2",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o2",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        },
+        "o3": {
+          "original": "o3",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a3",
+          "host_return": "return3",
+          "artifact": "m3",
+          "view": "v3",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a3",
+            "original": "o3",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o3",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      },
+      "homes": {
+        "occ1": {
+          "home": {
+            "kind": "phase",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/phases/9",
+          "fire": "f1"
+        },
+        "occ2": {
+          "home": {
+            "kind": "task",
+            "id": "h2",
+            "occurrence": "occ2"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/tasks/t1",
+          "fire": "f2"
+        },
+        "occ3": {
+          "home": {
+            "kind": "root-debug",
+            "id": "h3",
+            "occurrence": "occ3"
+          },
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "path": ".planning/reviews/debug/occ1",
+          "fire": "f3"
+        }
+      },
+      "deferred": {
+        "f1": {
+          "member": "f1",
+          "home": {
+            "kind": "phase",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "references": [
+            {
+              "fire": "f1",
+              "manifest": "m1",
+              "attempt": "a1",
+              "original": "o1"
+            }
+          ],
+          "enqueued_at": 99,
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "state": "unruled"
+        },
+        "f2": {
+          "member": "f2",
+          "home": {
+            "kind": "task",
+            "id": "h2",
+            "occurrence": "occ2"
+          },
+          "references": [
+            {
+              "fire": "f2",
+              "manifest": "m2",
+              "attempt": "a2",
+              "original": "o2"
+            }
+          ],
+          "enqueued_at": 99,
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "state": "unruled"
+        },
+        "f3": {
+          "member": "f3",
+          "home": {
+            "kind": "root-debug",
+            "id": "h3",
+            "occurrence": "occ3"
+          },
+          "references": [
+            {
+              "fire": "f3",
+              "manifest": "m3",
+              "attempt": "a3",
+              "original": "o3"
+            }
+          ],
+          "enqueued_at": 99,
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "state": "unruled"
+        }
+      }
+    },
+    "renderings": {
+      "ADJUDICATION-risk_surface-1.md": "supplied disposable rendering"
+    },
+    "clock": 100,
+    "fail_sync": false,
+    "forbid_writes": true
+  }
+}

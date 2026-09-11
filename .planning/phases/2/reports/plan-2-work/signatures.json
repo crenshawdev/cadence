@@ -1,0 +1,37 @@
+[
+  {
+    "sha": "ac1f7df40e6079ed91c6b7fc76b875dcdebc0ff4",
+    "signature_exit": 0,
+    "signature": "gpg: Signature made Sun Sep  6 09:32:50 2026 EDT\ngpg:                using RSA key 904A3ED971D189EBDEABCCA6693AB15F91734B0C\ngpg: Good signature from \"John Crenshaw <john@jcrenshaw.dev>\" [ultimate]\n",
+    "subject": "feat(2-1): record deterministic git fixture operations",
+    "author": "John Crenshaw <john@jcrenshaw.dev>"
+  },
+  {
+    "sha": "d88dc0f1496689ab2ad8d1cd8c8b28173b4cd098",
+    "signature_exit": 0,
+    "signature": "gpg: Signature made Sun Sep  6 09:35:13 2026 EDT\ngpg:                using RSA key 904A3ED971D189EBDEABCCA6693AB15F91734B0C\ngpg: Good signature from \"John Crenshaw <john@jcrenshaw.dev>\" [ultimate]\n",
+    "subject": "feat(2-2): capture all fixture mutations in recordings",
+    "author": "John Crenshaw <john@jcrenshaw.dev>"
+  },
+  {
+    "sha": "c2376bdb922f586afbc6d2ba89f6743b6621e848",
+    "signature_exit": 0,
+    "signature": "gpg: Signature made Sun Sep  6 09:37:57 2026 EDT\ngpg:                using RSA key 904A3ED971D189EBDEABCCA6693AB15F91734B0C\ngpg: Good signature from \"John Crenshaw <john@jcrenshaw.dev>\" [ultimate]\n",
+    "subject": "feat(2-3): share named clock normalization as data",
+    "author": "John Crenshaw <john@jcrenshaw.dev>"
+  },
+  {
+    "sha": "e571d9c3e10c2aba01ab24ddb054aa961eb3facf",
+    "signature_exit": 0,
+    "signature": "gpg: Signature made Sun Sep  6 09:43:18 2026 EDT\ngpg:                using RSA key 904A3ED971D189EBDEABCCA6693AB15F91734B0C\ngpg: Good signature from \"John Crenshaw <john@jcrenshaw.dev>\" [ultimate]\n",
+    "subject": "test(2-4): record the full deterministic parity surface",
+    "author": "John Crenshaw <john@jcrenshaw.dev>"
+  },
+  {
+    "sha": "0f0fa9a0689fa1eaaa7231cadbb5e28f235055d9",
+    "signature_exit": 0,
+    "signature": "gpg: Signature made Sun Sep  6 09:46:35 2026 EDT\ngpg:                using RSA key 904A3ED971D189EBDEABCCA6693AB15F91734B0C\ngpg: Good signature from \"John Crenshaw <john@jcrenshaw.dev>\" [ultimate]\n",
+    "subject": "test(2-5): enforce golden drift and interpreter pin in CI",
+    "author": "John Crenshaw <john@jcrenshaw.dev>"
+  }
+]

@@ -1,0 +1,68 @@
+{
+  "file_limit": {
+    "bytes": "{\"findings\":[{\"file\":\"@TEXT@\",\"line\":1,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"S\"}]}",
+    "character": "雪",
+    "count": 1024
+  },
+  "file_excess": {
+    "bytes": "{\"findings\":[{\"file\":\"@TEXT@\",\"line\":1,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"S\"}]}",
+    "character": "雪",
+    "count": 1025
+  },
+  "file_empty": {
+    "bytes": "{\"findings\":[{\"file\":\"\",\"line\":1,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"S\"}]}"
+  },
+  "file_whitespace": {
+    "bytes": "{\"findings\":[{\"file\":\" \\t\\n\",\"line\":1,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"S\"}]}"
+  },
+  "claim_limit": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":1,\"severity\":\"high\",\"claim\":\"@TEXT@\",\"failure_scenario\":\"S\"}]}",
+    "character": "雪",
+    "count": 2000
+  },
+  "claim_excess": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":1,\"severity\":\"high\",\"claim\":\"@TEXT@\",\"failure_scenario\":\"S\"}]}",
+    "character": "雪",
+    "count": 2001
+  },
+  "claim_empty": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":1,\"severity\":\"high\",\"claim\":\"\",\"failure_scenario\":\"S\"}]}"
+  },
+  "claim_whitespace": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":1,\"severity\":\"high\",\"claim\":\" \\t\\n\",\"failure_scenario\":\"S\"}]}"
+  },
+  "failure_scenario_limit": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":1,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"@TEXT@\"}]}",
+    "character": "雪",
+    "count": 2000
+  },
+  "failure_scenario_excess": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":1,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"@TEXT@\"}]}",
+    "character": "雪",
+    "count": 2001
+  },
+  "failure_scenario_empty": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":1,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"\"}]}"
+  },
+  "failure_scenario_whitespace": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":1,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\" \\t\\n\"}]}"
+  },
+  "line_one": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":1,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"S\"}]}"
+  },
+  "line_max": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":9007199254740991,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"S\"}]}"
+  },
+  "line_zero": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":0,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"S\"}]}"
+  },
+  "line_fraction": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":1.5,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"S\"}]}"
+  },
+  "line_excess": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":9007199254740992,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"S\"}]}"
+  },
+  "surrogate": {
+    "bytes": "{\"findings\":[{\"file\":\"a.rs\",\"line\":1,\"severity\":\"high\",\"claim\":\"\\uD800\",\"failure_scenario\":\"S\"}]}"
+  }
+}

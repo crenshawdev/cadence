@@ -3,6 +3,8 @@ name: cad-plan-review
 description: "On-demand adversarial plan review of a phase PLAN.md before code - for a hand-written, imported or just-edited plan (/cad-plan fires this itself)"
 argument-hint: "[phase number | path/to/PLAN.md]"
 allowed-tools:
+  - mcp__cadence__cadence_apply
+  - mcp__cadence__cadence_query
   - Read
   - Bash
   - Glob
@@ -21,7 +23,7 @@ writes a plan it already fires this trigger, so you do not need this skill in th
 normal flow.
 
 There is no separate reviewer here and no convergence loop (cut in DESIGN §6):
-this delegates to `fire(plan)`, which grounds and adjudicates once.
+this delegates to native ordinary admission; phase 10 owns settlement.
 </objective>
 
 <process>
@@ -34,14 +36,10 @@ this delegates to `fire(plan)`, which grounds and adjudicates once.
    (Resolve the plan path and, for the empty-args case, the cursor read as one
    batched step - independent; conventions.md Parallel work.)
 
-2. **Fire the `plan` trigger** with the resolved PLAN file(s) as the artifact -
-   Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` here,
-   not preloaded (one site). Honor `review.triggers.plan.gate`
-   (default adjudicated) always; its `tier` and `effort` reach cross-model
-   reviewers only. This resolves the reviewer set
-   (claude-subagent and/or a configured cross-model reviewer), runs them, and -
-   for an adjudicated gate - grounds each finding against the real repo, kills
-   false positives, and merges convergent findings.
+2. **Admit the plan review** through cad-review-delivery, ordinary caller
+   manual-plan and trigger plan. Use the binary's configured gate (default
+   advisory), retained target and saved routing. Wait for exact raw delivery and
+   durable acknowledgment; deferred requires durable enqueue before continuation.
 
 3. **Report** the outcome: for advisory, the findings; for blocking, the
    PASS/FAIL and surviving blocker/high findings; for adjudicated, the grounded
@@ -49,3 +47,9 @@ this delegates to `fire(plan)`, which grounds and adjudicates once.
    and let the user decide what to fix (the plan-creation flow triages the same
    way).
 </process>
+
+<review_delivery>
+At the review boundary follow cad-review-delivery for native retained admission, saved dispatch, unchanged raw return and durable acknowledgment. This contract takes precedence over frozen reviewer resolution, writes and lifecycle closes. Keep the remaining specialist/reporting workflow.
+
+@${CLAUDE_PLUGIN_ROOT}/skills/cad-review-delivery/SKILL.md
+</review_delivery>

@@ -3,6 +3,8 @@ name: cad-minimalism-review
 description: "Ranked delete-list over code that works and should not exist - reinvented stdlib, one-implementation abstractions, dead flexibility, config nobody sets"
 argument-hint: "[path | directory | phase number]"
 allowed-tools:
+  - mcp__cadence__cadence_apply
+  - mcp__cadence__cadence_query
   - Read
   - Bash
   - Glob
@@ -38,10 +40,10 @@ or FAIL anything.
    resolves to more than one of those, ask once (ask-user seam). A target that
    does not resolve STOPS the run rather than widening to its parent.
 
-2. **Run the workflow** end-to-end: bracket and dispatch the one `cad-reviewer`
-   worker at the session default, then close its bracket the moment the findings
-   are in hand - as a checkpoint when the dispatch came back unusable, which
-   reports NO list rather than an empty one.
+2. **Admit specialist minimalism** through cad-review-delivery. Retain the
+   file, frozen directory members or resolved phase range and dispatch the one
+   base reviewer with its minimalism intent. Wait for binary acknowledgment;
+   an unusable return reports no list, never a clean empty result.
 
 3. **Present** the delete-list ranked by `severity`, each entry carrying the
    reviewer's own `file`, `line`, `claim` and `failure_scenario` unedited; a
@@ -49,3 +51,9 @@ or FAIL anything.
    a bare "no findings". Do NOT delete, edit or apply any of it - the user
    decides what goes and does it themselves.
 </process>
+
+<review_delivery>
+At the review boundary follow cad-review-delivery for native retained admission, saved dispatch, unchanged raw return and durable acknowledgment. This contract takes precedence over frozen reviewer resolution, writes and lifecycle closes. Keep the remaining specialist/reporting workflow.
+
+@${CLAUDE_PLUGIN_ROOT}/skills/cad-review-delivery/SKILL.md
+</review_delivery>

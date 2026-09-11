@@ -1,0 +1,23 @@
+{
+  "e1": {
+    "entry":"e1","role":"primary","path":"dir/a.rs","label":null,
+    "side":"snapshot","availability":"available","unavailable_reason":null,
+    "content":"01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+    "retained":"material-e1","old_path":null,"new_path":null,
+    "lines":[],"hunks":[],"acquisition":"file1","acquired_at":100,
+    "provenance":"original-view","attempt":"a1","view":"v1"
+  },
+  "e3": {
+    "entry":"e3","role":"supporting","path":"outside/support.rs","label":null,
+    "side":"snapshot","availability":"available","unavailable_reason":null,
+    "content":"c05b56ab6d3d07ccca6778ebd799bf98dfa2b7f10dd43601f0938f04e5070878",
+    "retained":"material-e3","old_path":null,"new_path":null,
+    "lines":[],"hunks":[],"acquisition":"file3","acquired_at":100,
+    "provenance":"original-view","attempt":"a1","view":"v1"
+  },
+  "retained":{"material-e1":"old\n","material-e3":"support\n"},
+  "current":{"dir/a.rs":"new\n","outside/support.rs":null,"directory":["b.rs"],"base":"moved","head":"unreachable"},
+  "directory":{"kind":"directory","path":"dir","members":["a.rs"]},
+  "matches":{"saved":"old\n","proposed":"new\n"},
+  "acquire_directory":{"members":["b.rs","a.rs"],"contents":{"dir/a.rs":"old\n","dir/b.rs":"new\n"}}
+}

@@ -1,0 +1,1 @@
+{"findings":[{"file":"a.rs","line":1,"severity":"high","claim":"C","fix":"S"}]}

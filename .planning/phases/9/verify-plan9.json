@@ -1,0 +1,34 @@
+{
+  "status": "verified",
+  "score": "4/4",
+  "truths": [
+    {
+      "n": 158,
+      "truth": "The execution handoff carries one resolved gate and routing answer into the admission it exposes",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "On a fresh completed receipt, crates/cadence/src/execution_service.rs:2341-2348 checks durable replay before current inputs; :2349-2365 captures one Generation, Route and diff Gate; :2366-2398 skips an off gate before material and acquires material only for an applicable gate; and :2406-2458 moves that same captured resolution into AdmissionResolution::Supplied. crates/cadence/src/review_service.rs:278-293 accepts supplied authority only for execute/diff/committed-range input, :308-358 derives the saved routing and gate from it, :453-490 builds requested voices from its captured route/generation, :524-577 contributes those values, and :584-589 commits them. The named gap158_ run passed all eight criteria, including AC151 at execution_service.rs:2621-2642 and the Rule 8 handoff assertion in AC158 at :2644-2667."
+    },
+    {
+      "n": 160,
+      "truth": "A fresh off gate short-circuits before review-only material work, while a durable replay remains authoritative",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "crates/cadence/src/execution_service.rs:2341-2348 selects a saved replay before configuration, routing or material; :2349-2368 resolves a fresh gate and continues immediately for Gate::Off; material begins only at :2369-2398. Replays retain the saved fire at :2413-2416 and proceed to the saved delivery read at :2469-2472. AC151 constructs the off input and asserts the exact pending-false envelope plus zero material and admission calls at :2621-2642; it passed in the observed gap158_ run."
+    },
+    {
+      "n": 161,
+      "truth": "Only the internal execute/diff handoff can select supplied admission authority",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "AdmissionResolution is a non-deserializable pub(super) enum at crates/cadence/src/review_service.rs:165-172, while the public AdmissionRequest remains deny_unknown_fields at :145-163. Public Apply::Admit selects AdmissionResolution::Refresh at :817-835; the supplied arm independently refuses any caller/trigger/specialist/target shape other than execute/diff/non-specialist/committed-range at :278-293. A repository-wide search found the only production constructions of AdmissionResolution::Supplied in execution_service.rs:2435-2458; the other construction is AC152 test input at review_service.rs:1624-1633. AC157 still asserts the literal refresh value crossing the public caller-to-admit seam at review_service.rs:1762-1785, and passed."
+    },
+    {
+      "n": 162,
+      "truth": "The test-only seams do not hide release-only behavior relevant to the supplied-resolution guarantee",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "No fabricated committed View remains: every dispatching path through admit reaches the unconditional persistence::commit at crates/cadence/src/review_service.rs:584-589; its only cfg(test) collaborators inside the function are the clock and acquired material at :396-438. review_handoff's test-only material seam at crates/cadence/src/execution_service.rs:2369-2388 stubs an AC151/AC158 collaborator, and its admission seam at :2420-2447 is the named Rule 8 callee (or the forbidden call for AC151); release calls admit at :2448-2459. The three remaining caller/callee recorders are confined to execute_inner/execute at review_service.rs:823-854 and :1361-1379 for AC153 and Rule 8 AC155-AC157. AC152 supplies a valid current blocking/high configuration distinct from captured advisory/xhigh at :1593-1633, reads the saved admission from the real store and asserts literal gate/routing/clock values at :1637-1654. Its counter resets after the cached session is primed at :1605-1615 and is pinned to two mandatory commit validations: Store::persist calls SessionPolicy at crates/cadence/src/store/writer.rs:1258-1262, transaction intent admission calls it again at crates/cadence/src/store/transaction.rs:843-853, SessionPolicy refreshes at crates/cadence/src/import/mod.rs:453-460, and each refresh reads the sole repo input at crates/cadence/src/config/reload.rs:163-177. Thus an added supplied-decision session.config() produces a third read rather than being hidden by incidental setup or the post-commit persistence::read. Plan 9 changed no AC other than AC152; the unchanged literal assertions remain at review_service.rs:1657-1785 and execution_service.rs:2621-2667. The targeted AC152 run passed 1/1 and the gap158_ run passed all 8/8."
+    }
+  ]
+}

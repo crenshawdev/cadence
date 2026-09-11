@@ -1,0 +1,31 @@
+config check
+config get
+config keys
+config set
+config unset
+config validate
+forge create
+forge detect
+git-branch decide
+git-branch tags
+git-guard
+git-publish authorized
+git-publish publish
+git-publish reap
+issue-check check
+issue-filing file
+issue-filing unfixed
+land-cleanup cleanup
+land-cleanup gate
+read-trace
+release-bump bump
+review-provider consult
+review-provider detect-models
+review-provider review
+route resolve
+skim
+subagent-trace
+weight
+weight resident
+why
+worktree-base resolve

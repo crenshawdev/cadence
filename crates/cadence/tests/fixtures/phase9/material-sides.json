@@ -1,0 +1,18 @@
+{
+  "entries": {
+    "base": {"entry":"e1","role":"primary","path":"old.rs","label":null,"side":"base","availability":"available","unavailable_reason":null,"content":"base-content","retained":"material-e1","old_path":"old.rs","new_path":"new.rs","lines":[{"line":1,"start":0,"end":4},{"line":2,"start":4,"end":8}],"hunks":[],"acquisition":"b1","acquired_at":100,"provenance":"original-view","attempt":"a1","view":"v1"},
+    "deleted": {"entry":"e1","role":"primary","path":"old.rs","label":null,"side":"base","availability":"available","unavailable_reason":null,"content":"base-content","retained":"material-e1","old_path":"old.rs","new_path":null,"lines":[{"line":1,"start":0,"end":4},{"line":2,"start":4,"end":8}],"hunks":[],"acquisition":"b1","acquired_at":100,"provenance":"original-view","attempt":"a1","view":"v1"},
+    "head": {"entry":"e2","role":"primary","path":"new.rs","label":null,"side":"head","availability":"available","unavailable_reason":null,"content":"head-content","retained":"material-e2","old_path":"old.rs","new_path":"new.rs","lines":[{"line":1,"start":0,"end":4},{"line":2,"start":4,"end":8},{"line":3,"start":8,"end":12}],"hunks":[],"acquisition":"h1","acquired_at":100,"provenance":"original-view","attempt":"a1","view":"v1"},
+    "diff": {"entry":"d1","role":"primary","path":null,"label":"diff","side":"snapshot","availability":"available","unavailable_reason":null,"content":"diff-content","retained":"material-d1","old_path":null,"new_path":null,"lines":[],"hunks":[{"diff_line":4,"source":{"entry":"e1","path":"old.rs","side":"base","line":2}},{"diff_line":5,"source":{"entry":"e2","path":"new.rs","side":"head","line":3}}],"acquisition":"b1:h1","acquired_at":100,"provenance":"original-view","attempt":"a1","view":"v1"},
+    "unavailable": {"entry":"e1","role":"primary","path":"old.rs","label":null,"side":"base","availability":"unavailable","unavailable_reason":"object bytes unavailable","content":"base-content","retained":null,"old_path":"old.rs","new_path":"new.rs","lines":[{"line":1,"start":0,"end":4},{"line":2,"start":4,"end":8}],"hunks":[],"acquisition":"b1","acquired_at":100,"provenance":"original-view","attempt":"a1","view":"v1"}
+  },
+  "cases": {
+    "deleted_reference":{"entries":["deleted","diff"]},
+    "renamed_reference":{"entries":["base","head","diff"]},
+    "absent_side":{"entries":["deleted"]},
+    "missing_source":{"entries":["diff"],"diff_bytes":"saved diff"},
+    "unavailable_source":{"entries":["diff","unavailable","head"]},
+    "record_rename":{"entries":["base","head","diff"],"contents":{"e1":"one\nold\n","e2":"one\ntwo\nnew\n","d1":"diff --git a/old.rs b/new.rs\nrename from old.rs\nrename to new.rs\n--- a/old.rs\n+++ b/new.rs\n@@ -2 +3 @@\n-old\n+new\n"}},
+    "record_delete":{"entries":["deleted","diff"],"contents":{"e1":"one\nold\n","d1":"diff --git a/old.rs b/old.rs\ndeleted file mode 100644\n--- a/old.rs\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-one\n-old\n"}}
+  }
+}

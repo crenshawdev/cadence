@@ -1,0 +1,2 @@
+{"corr":"1","phase":1,"ts":"2026-09-05T12:00:00.000Z","family":"lifecycle","event":"phase_start"}
+{"corr":"1","phase":1,"ts":"2026-09-05T12:00:01.000Z","family":"lifecycle","event":"dispatch","role":"cad-executor","plan":"1"}

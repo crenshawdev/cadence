@@ -1,0 +1,41 @@
+{
+  "status": "gaps",
+  "score": "3/5",
+  "truths": [
+    {
+      "n": 158,
+      "truth": "The execution handoff carries one resolved gate and routing answer into the admission it exposes",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "On a fresh completed receipt, crates/cadence/src/execution_service.rs:2349-2365 captures one Generation, resolves one Route, and derives the diff Gate; :2410-2458 moves those same owned values into AdmissionResolution::Supplied. crates/cadence/src/review_service.rs:279-294 consumes the supplied values, :309-358 derives the saved routing and admitted gate from them, :454-490 uses the captured generation and route for requested voices, and :525-578 contributes the Admission plus full route evidence to the same transaction; crates/cadence/src/review/admission.rs:170-179 inserts the immutable admission and replay binding together. Replay is checked before resolution in execution_service.rs:2341-2348 and review_service.rs:242-252, while store-intent recovery installs the already-projected snapshot rather than reconstructing the admission at crates/cadence/src/store/transaction.rs:883-910; review recovery only reads the saved Admission at crates/cadence/src/review/recovery.rs:85-115."
+    },
+    {
+      "n": 159,
+      "truth": "The supplied execution admission has no second live-configuration or routing dependency between capture and durable persistence",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "A completed d1 captures advisory and cad-reviewer-xhigh at crates/cadence/src/execution_service.rs:2349-2365, then the current config.v4.json becomes unreadable before persistence. Although the supplied arm skips its explicit refresh at crates/cadence/src/review_service.rs:255-294 and :579-584, its release commit at :603-607 reaches Store::persist, whose policy validation at crates/cadence/src/store/writer.rs:1258-1262 and again at crates/cadence/src/store/transaction.rs:843-853 calls Reload::refresh through crates/cadence/src/import/mod.rs:423-462; recovery repeats that live refresh at store/transaction.rs:883-900. The wrong outcome is a config parse/read error and no durable f1 admission, rather than persistence of the already-authoritative advisory/xhigh resolution; the same captured admission can therefore be blocked by a second live configuration read even though no second route is derived."
+    },
+    {
+      "n": 160,
+      "truth": "A fresh off gate short-circuits before review-only material work, while a durable replay remains authoritative",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "crates/cadence/src/execution_service.rs:2341-2348 selects a saved replay before any config, routing, or material work. On the fresh path, :2349-2365 resolves the route and gate, :2366-2368 immediately continues for Gate::Off, and material acquisition does not begin until :2369-2398; every non-off gate reaches the Admit decision at :2406-2416. The admission policy also returns without entering its material closure whenever it sees off at crates/cadence/src/review_service.rs:625-636, and a replay proceeds by saved fire through execution_service.rs:2413-2416 and :2468-2472 rather than being skipped under a newer off setting."
+    },
+    {
+      "n": 161,
+      "truth": "Only the internal execute/diff handoff can select supplied admission authority",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "AdmissionResolution is a non-deserializable pub(super) enum at crates/cadence/src/review_service.rs:166-173, while the public Apply schema exposes only a request Value at :44-49 and AdmissionRequest retains deny_unknown_fields at :146-164. execute_inner hard-codes AdmissionResolution::Refresh for every public review-admit at :836-854; the MCP adapter only decodes Apply and forwards it at crates/cadence/src/server.rs:740-763. Repository-wide production call-site inspection found Supplied only in crates/cadence/src/execution_service.rs:2435-2458, after that function has constructed caller execute, trigger diff, specialist null, and a committed-range target at :2406-2409; review_service.rs:284-291 independently refuses other supplied shapes."
+    },
+    {
+      "n": 162,
+      "truth": "The test-only seams do not hide release-only behavior relevant to the supplied-resolution guarantee",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "The supplied-admission test makes current config deliberately invalid at crates/cadence/src/review_service.rs:1594-1600 and expects admission to succeed. Under its task-local seam, review_service.rs:585-601 fabricates a committed View and returns before the real persistence call at :603-607, so it never exercises Store::persist policy validation at crates/cadence/src/store/writer.rs:1258-1262. The wrong outcome is that this test passes with advisory/xhigh recorded while a release build given the same captured resolution and invalid current config fails during the live Reload::refresh at crates/cadence/src/import/mod.rs:453-460; the cfg(test) seam therefore masks truth 159's production defect even though the seams themselves are absent from release."
+    }
+  ]
+}

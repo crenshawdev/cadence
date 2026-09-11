@@ -1,7 +1,7 @@
 ---
 name: cad-executor-medium
-description: The `medium` rung of `cad-executor`; `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
+description: The medium native executor; works the binary's dispatch through the native task protocol and returns a digest.
+tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search, mcp__cadence__cadence_query, mcp__cadence__cadence_apply
 color: yellow
 effort: medium
 maxTurns: 200

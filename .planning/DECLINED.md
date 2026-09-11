@@ -65,6 +65,20 @@ Query it, do not load it.
 
 ## Decisions
 
+### Phase 3 capture: the roadmap-cannot-ship item
+
+Declined 2026-09-06 on John's call, at the phase 3 UAT close. Dropped from `.planning/CAPTURE.md`.
+
+Captured while phase 2 was halted: it claimed phases 1-4 left 32 modules under `cadence-core/bin/planning/` unscheduled and that `/cad-plan 2` had no PLAN on disk. Overtaken by events - phases 2 and 3 both executed and closed, and the roadmap is 17 phases. The text no longer describes the tree, so it is a stale snapshot rather than open work.
+
+### Phase 3 capture: /cad-plan-checker passes criteria asserting derived state
+
+Declined 2026-09-06 on John's call, at the phase 3 UAT close. Dropped from `.planning/CAPTURE.md`.
+
+The gate passed phase 2 PLAN-1 Task 1, whose criterion asserted `status --dir` would answer `current` non-null after re-rooting an archived phase - impossible, because completion is derived from files (`core.mjs:192`, `status.mjs:160`). Phase 3 produced a second instance: locked decision D-05 claimed crash atomicity was newly testable because of write-then-ack, false against frozen `atomicWrite` (`planning-files.mjs:2787-2788`), caught by the criterion-falsification pass rather than by the gate.
+
+Declined as tracker noise. The falsification pass already catches this class in practice, and it caught both instances; hardening the gate itself is not scheduled work.
+
 ### /cad-stakes: a first-class command for the highest-leverage knob
 
 Declined 2026-08-26. Was GH-97, deleted from the tracker 2026-08-30.

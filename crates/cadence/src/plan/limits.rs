@@ -1,0 +1,257 @@
+//! Fresh attached-map policy; retained records keep their historical grammar.
+use super::{associations::Contribution, evidence::{Expected, Item}, model::Diagnostic};
+use cadence::store::{Error, Result};
+use serde_json::Value;
+
+/// Refine existing typed decode failures, including the independently supplied
+/// approval and replacement copies. This never tests blank content or approval.
+pub fn malformed(raw: &Value) -> Option<Diagnostic> {
+    for (submission, prefix) in [(&raw["submission"], "submission"),
+        (&raw["approval"]["submission"], "approval.submission")]
+    {
+        let Some(plans) = submission["plans"].as_array() else { continue };
+        for (entry, plan) in plans.iter().enumerate() {
+            for (content, suffix) in [(&plan["content"], "content"),
+                (&plan["replacement"]["content"], "replacement.content")]
+            {
+                if content["evidence_map"]["mode"] != "attached" { continue; }
+                let Some(items) = content["evidence_map"]["items"].as_array() else { continue };
+                for (index, item) in items.iter().enumerate() {
+                    if !matches!(item["kind"].as_str(), Some("check" | "link")) { continue; }
+                    if serde_json::from_value::<Item>(item.clone()).is_ok() { continue; }
+                    let field = shape_field(item);
+                    let id = item["id"].as_str().map(str::to_owned);
+                    let rule = if id.is_some() && item["kind"] == "check" && field == "spec.command" {
+                        "check-command"
+                    } else if id.is_some() && item["kind"] == "check"
+                        && matches!(field.as_str(), "spec.expected" | "spec.expected.kind" | "spec.expected.value") {
+                        "check-expected"
+                    } else if id.is_some() && item["kind"] == "link"
+                        && matches!(field.as_str(), "spec.caller" | "spec.callee" | "spec.value") {
+                        "link-content"
+                    } else { "evidence-item-shape" };
+                    return Some(Diagnostic {
+                        details: None,
+                        rule: rule.into(),
+                        slot: format!("{prefix}.plans[{entry}].{suffix}.evidence_map.items[{index}].{field}"),
+                        phase: submission["phase"].as_u64().and_then(|n| u32::try_from(n).ok()),
+                        entry: Some(entry), id,
+                        reason: format!("item {} has missing or malformed {field}; supply the advertised typed field", item["id"]),
+                    });
+                }
+            }
+        }
+    }
+    None
+}
+
+fn unknown(value: &Value, allowed: &[&str]) -> Option<String> {
+    value.as_object()?.keys().find(|key| !allowed.contains(&key.as_str())).cloned()
+}
+
+fn shape_field(item: &Value) -> String {
+    for field in ["id", "reason"] {
+        if !item[field].is_string() { return field.into(); }
+    }
+    if let Some(field) = unknown(item, &["kind", "id", "spec", "reason", "associations"]) { return field; }
+    let spec = &item["spec"];
+    if !spec.is_object() { return "spec".into(); }
+    let fields: &[&str] = if item["kind"] == "check" {
+        &["command", "expected", "test", "setup", "call", "boundary", "fakes"]
+    } else { &["caller", "callee", "value"] };
+    for field in fields {
+        let value = &spec[*field];
+        let suffix = match *field {
+            "expected" => {
+                if !value.is_object() { Some(String::new()) }
+                else if !matches!(value["kind"].as_str(), Some("literal" | "property")) { Some(".kind".into()) }
+                else if !value["value"].is_string() { Some(".value".into()) }
+                else { unknown(value, &["kind", "value"]).map(|s| format!(".{s}")) }
+            }
+            "test" => {
+                if !value.is_object() { Some(String::new()) }
+                else if let Some(key) = ["file", "function"].iter().find(|key| !value[**key].is_string()) {
+                    Some(format!(".{key}"))
+                } else { unknown(value, &["file", "function"]).map(|s| format!(".{s}")) }
+            }
+            "fakes" => match value.as_array() {
+                None => Some(String::new()),
+                Some(values) => values.iter().position(|v| !v.is_string()).map(|n| format!("[{n}]")),
+            },
+            _ => (!value.is_string()).then(String::new),
+        };
+        if let Some(suffix) = suffix { return format!("spec.{field}{suffix}"); }
+    }
+    if let Some(field) = unknown(spec, fields) { return format!("spec.{field}"); }
+    if let Some(edges) = item["associations"].as_array() {
+        for (index, edge) in edges.iter().enumerate() {
+            if !edge.is_object() { return format!("associations[{index}]"); }
+            for field in ["truth_id", "truth_version", "reason"] {
+                let valid = if field == "truth_version" {
+                    edge[field].as_u64().is_some_and(|n| u32::try_from(n).is_ok())
+                } else { edge[field].is_string() };
+                if !valid { return format!("associations[{index}].{field}"); }
+            }
+            if let Some(field) = unknown(edge, &["truth_id", "truth_version", "reason"]) {
+                return format!("associations[{index}].{field}");
+            }
+        }
+    }
+    "associations".into()
+}
+
+pub fn base(contribution: &Contribution, index: usize) -> String {
+    match contribution.entry {
+        Some(entry) => format!("submission.plans[{entry}].content.evidence_map.items[{index}]"),
+        None => format!("current.plans[{}].evidence_map.items[{index}]", contribution.plan),
+    }
+}
+
+pub fn content(phase: u32, contributions: &[Contribution]) -> Result<()> {
+    for contribution in contributions {
+        for (index, item) in contribution.items.iter().enumerate() {
+            if let Item::Check { spec, .. } = item {
+                let expected = match &spec.expected { Expected::Literal(value) | Expected::Property(value) => value };
+                for (value, rule, field) in [(&spec.command, "check-command", "command"),
+                    (expected, "check-expected", "expected.value")]
+                {
+                    if value.trim().is_empty() {
+                        return Err(Diagnostic {
+                            details: None,
+                            rule: rule.into(), slot: format!("{}.spec.{field}", base(contribution, index)),
+                            phase: Some(phase), entry: contribution.entry, id: Some(item.id().into()),
+                            reason: format!("phase {phase} item {} needs nonblank {field}", item.id()),
+                        }.error());
+                    }
+                }
+            }
+            if let Item::Link { spec, .. } = item {
+                for (field, value) in [("caller", &spec.caller), ("callee", &spec.callee), ("value", &spec.value)] {
+                    if value.trim().is_empty() {
+                        return Err(Diagnostic {
+                            rule: "link-content".into(), slot: format!("{}.spec.{field}", base(contribution, index)),
+                            phase: Some(phase), entry: contribution.entry, id: Some(item.id().into()), details: None,
+                            reason: format!("phase {phase} link {} needs nonblank {field}", item.id()),
+                        }.error());
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// These two transaction boundaries change the ordinary error disposition.
+/// Preserve only our typed payload, never parse arbitrary Debug-wrapped text.
+pub fn disposition(error: Error, convert: fn(String) -> Error) -> Error {
+    match error {
+        Error::Invalid(message) | Error::Conflict(message) if message.starts_with("plan-refusal:") => convert(message),
+        other => convert(other.to_string()),
+    }
+}
+
+/// Membership and definition checks run first; aliases share an id, never a
+/// command-based identity. Numeric positions sort origins without lexical [10].
+pub fn checks(phase: u32, contributions: &[Contribution]) -> Result<()> {
+    use super::model::{CheckConflict, CheckOrigin, Details, Source};
+    use std::collections::BTreeMap;
+    type Origins = Vec<(usize, CheckOrigin)>;
+    let mut truths = BTreeMap::<(String, u32), BTreeMap<String, Origins>>::new();
+    for contribution in contributions {
+        for (index, item) in contribution.items.iter().enumerate() {
+            if !matches!(item, Item::Check { .. }) { continue; }
+            for association in item.associations() {
+                let origins = truths.entry((association.truth_id.clone(), association.truth_version))
+                    .or_default().entry(item.id().into()).or_default();
+                let origin = (index, CheckOrigin {
+                    phase, plan: contribution.plan,
+                    source: if contribution.entry.is_some() { Source::Proposed } else { Source::Saved },
+                    slot: base(contribution, index),
+                });
+                if !origins.contains(&origin) { origins.push(origin); }
+            }
+        }
+    }
+    for ((truth_id, truth_version), ids) in truths {
+        if ids.len() <= 1 { continue; }
+        let checks: Vec<_> = ids.into_iter().map(|(id, mut origins)| {
+            origins.sort_by(|(ai, a), (bi, b)| (a.phase, a.plan, &a.source, ai).cmp(&(b.phase, b.plan, &b.source, bi)));
+            CheckConflict { id, origins: origins.into_iter().map(|(_, origin)| origin).collect() }
+        }).collect();
+        let description = checks.iter().map(|check| format!("{} [{}]", check.id, check.origins.iter()
+            .map(|origin| format!("phase {} plan {} {} {}", origin.phase, origin.plan,
+                match origin.source { Source::Proposed => "proposed", Source::Saved => "saved" }, origin.slot))
+            .collect::<Vec<_>>().join(", "))).collect::<Vec<_>>().join("; ");
+        return Err(Diagnostic {
+            rule: "truth-check-limit".into(), slot: "submission.plans".into(), phase: Some(phase),
+            entry: None, id: Some(truth_id.clone()),
+            reason: format!("phase {phase} truth {truth_id} version {truth_version} has distinct checks: {description}; keep one distinct check across the resulting phase"),
+            details: Some(Details::CheckConflict { truth_id, truth_version, checks }),
+        }.error());
+    }
+    Ok(())
+}
+
+pub fn links(context: &cadence::context::model::ApprovedContext, phase: u32, contributions: &[Contribution]) -> Result<()> {
+    for contribution in contributions {
+        for (index, item) in contribution.items.iter().enumerate() {
+            let Item::Link { spec, .. } = item else { continue };
+            let value = spec.value.trim_matches(char::is_whitespace);
+            for (edge, association) in item.associations().iter().enumerate() {
+                let refuse = |rule: &str, cause: String| Diagnostic {
+                    rule: rule.into(), slot: format!("{}.spec.value", base(contribution, index)),
+                    phase: Some(phase), entry: contribution.entry, id: Some(item.id().into()),
+                    reason: format!("phase {phase} link {} value {:?}, associated truth {} version {}: {cause}",
+                        item.id(), spec.value, association.truth_id, association.truth_version),
+                    details: Some(super::model::Details::LinkTruth {
+                        truth_id: association.truth_id.clone(), truth_version: association.truth_version,
+                        association_slot: format!("{}.associations[{edge}]", base(contribution, index)),
+                    }),
+                }.error();
+                let slots = approved_slots(context, phase, association)
+                    .map_err(|cause| refuse("link-truth-unresolvable", cause.into()))?;
+                if !slots.iter().any(|slot| names(slot, value)) {
+                    return Err(refuse("link-value-not-named", "value is absent under the exact individual-slot lexical rule".into()));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn approved_slots<'a>(context: &'a cadence::context::model::ApprovedContext, phase: u32,
+    association: &super::evidence::Association) -> std::result::Result<[&'a str; 3], &'static str>
+{
+    if context.submission.phase.get() != phase || !context.approval.approved
+        || context.approval.submission.as_ref() != Some(&context.submission)
+    {
+        return Err("retained submission lacks matching native approval");
+    }
+    let mut truths = context.truths.iter().filter(|truth| truth.id == association.truth_id);
+    let truth = truths.next().ok_or("current full truth identity is unavailable")?;
+    // Phase 11 derives version 1 from this retained approval; no truth revision
+    // mechanism exists yet. A different version cannot borrow these slots.
+    if truths.next().is_some() || truth.phase != phase || truth.version != association.truth_version || truth.version != 1 {
+        return Err("current truth version has no unambiguous retained slot binding");
+    }
+    let mut records = context.submission.truths.iter().filter(|slots| slots.id == association.truth_id);
+    let slots = records.next().ok_or("approved slot record is absent")?;
+    if records.next().is_some() { return Err("approved slot identity is ambiguous"); }
+    let available = |slot: &'a Option<String>| slot.as_deref().filter(|s| !s.trim().is_empty());
+    Ok([available(&slots.trigger).ok_or("approved trigger slot is unavailable")?,
+        available(&slots.observer).ok_or("approved observer slot is unavailable")?,
+        available(&slots.outcome).ok_or("approved outcome slot is unavailable")?])
+}
+
+fn names(slot: &str, value: &str) -> bool {
+    let run = |c: char| c.is_alphanumeric() || c == '_';
+    let begins_run = value.chars().next().is_some_and(run);
+    let ends_run = value.chars().next_back().is_some_and(run);
+    // Character offsets include overlapping occurrences; an embedded first
+    // match must not hide a later delimited occurrence. Slots are never joined.
+    slot.char_indices().any(|(at, _)| {
+        slot[at..].starts_with(value)
+            && (!begins_run || !slot[..at].chars().next_back().is_some_and(run))
+            && (!ends_run || !slot[at + value.len()..].chars().next().is_some_and(run))
+    })
+}

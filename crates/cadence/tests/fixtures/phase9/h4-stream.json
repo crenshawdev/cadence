@@ -1,0 +1,18 @@
+{
+  "excess": {
+    "envelope": "{\"findings\":[]}",
+    "padding": " ",
+    "bytes": 4194305,
+    "cap": 4194304,
+    "chunk": 8192,
+    "forbid_read_after": 4194305
+  },
+  "exact": {
+    "envelope": "{\"findings\":[]}",
+    "padding": " \t\r\n",
+    "bytes": 4194304,
+    "cap": 4194304,
+    "chunk": 4093,
+    "forbid_read_after": null
+  }
+}

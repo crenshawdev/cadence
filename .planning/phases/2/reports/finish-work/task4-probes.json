@@ -1,0 +1,121 @@
+[
+  {
+    "invocation": "config-keys-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "keys": 94
+    },
+    "changed": null
+  },
+  {
+    "invocation": "config-keys-ignored-argument",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "keys": 94
+    },
+    "changed": null
+  },
+  {
+    "invocation": "git-branch-decide-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "missing-flag-value",
+      "detail": "--dir",
+      "hint": "the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command"
+    },
+    "changed": null
+  },
+  {
+    "invocation": "git-branch-tags-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "missing-flag-value",
+      "detail": "--dir",
+      "hint": "the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command"
+    },
+    "changed": null
+  },
+  {
+    "invocation": "issue-check-check-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "missing-flag-value",
+      "detail": "--dir",
+      "hint": "the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command"
+    },
+    "changed": null
+  },
+  {
+    "invocation": "land-cleanup-cleanup-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "missing-flag-value",
+      "detail": "--dir",
+      "hint": "the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command"
+    },
+    "changed": null
+  },
+  {
+    "invocation": "land-cleanup-gate-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "missing-flag-value",
+      "detail": "--dir",
+      "hint": "the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command"
+    },
+    "changed": null
+  },
+  {
+    "invocation": "read-trace-ok",
+    "exit": 0,
+    "stdout": null,
+    "changed": true
+  },
+  {
+    "invocation": "read-trace-ignored-tool",
+    "exit": 0,
+    "stdout": null,
+    "changed": false
+  },
+  {
+    "invocation": "subagent-trace-ok",
+    "exit": 0,
+    "stdout": null,
+    "changed": true
+  },
+  {
+    "invocation": "subagent-trace-ignored-agent",
+    "exit": 0,
+    "stdout": null,
+    "changed": false
+  },
+  {
+    "invocation": "weight-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "missing-flag-value",
+      "detail": "--root",
+      "hint": "the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command"
+    },
+    "changed": null
+  },
+  {
+    "invocation": "worktree-base-resolve-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "missing-flag-value",
+      "detail": "--dir",
+      "hint": "the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command"
+    },
+    "changed": null
+  }
+]

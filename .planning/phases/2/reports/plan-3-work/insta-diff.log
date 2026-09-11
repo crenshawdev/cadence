@@ -1,0 +1,49 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running tests/golden.rs (target/debug/deps/golden-0a626cbabeea6814)
+
+running 1 test
+
+running 1 test
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Snapshot Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Snapshot file: /tmp/.tmptbDwaw/replay-check-slice.snap
+Snapshot: replay-check-slice
+Source: /code/cadence/crates/cadence:658
+────────────────────────────────────────────────────────────────────────────────
+Expression: actual
+────────────────────────────────────────────────────────────────────────────────
+-old snapshot
++new results
+────────────┬───────────────────────────────────────────────────────────────────
+    1     1 │ {
+    2     2 │   "status.present": true,
+    3     3 │   "status": "ok",
+    4     4 │   "replay.present": true,
+    5       │-  "replay": true,
+          5 │+  "replay": false,
+    6     6 │   "dispatch_set.present": true,
+    7     7 │   "dispatch_set": [],
+    8     8 │   "deleted.present": true,
+    9     9 │   "deleted": []
+────────────┴───────────────────────────────────────────────────────────────────
+Stopped on the first failure. Run `cargo insta test` to run all snapshots.
+test snapshot_worker ... FAILED
+
+failures:
+
+failures:
+    snapshot_worker
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.01s
+
+
+thread 'snapshot_worker' (259213) panicked at /code/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/insta-1.48.0/src/runtime.rs:719:13:
+snapshot assertion for 'replay-check-slice' failed in line 658
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'flipped_replay_renders_insta_diff' (259211) panicked at crates/cadence/tests/golden.rs:640:9:
+golden mismatch: replay (replay-check-slice)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test flipped_replay_renders_insta_diff - should panic ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.02s
+
