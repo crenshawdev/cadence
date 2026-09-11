@@ -1051,6 +1051,42 @@ fn phase12_continuation_dispatches_only_unfinished_tasks() {
     assert_eq!(ops2["completed"][0]["completion"],fixture.green);
     assert_ne!(reconciled["dispatch"]["id"],dispatch["dispatch"]["id"],"a fresh linked dispatch reflects the new state");
     assert_eq!(execute_next(project),reconciled);
+    // An owner Stop that names no checkpoint is obeyed across a restart and is
+    // lifted only by the owner's later resume that names none; the Stop record
+    // is preserved, and the executor still gets only the unfinished [B, C].
+    let stopped=authorize(project,"stop-phase",None,"stop","Stop the phase; nothing resumes until I say so");
+    assert_eq!(stopped["status"],"ok","{stopped}");
+    assert_eq!(stopped["authorization"]["fact"]["value"]["checkpoint_id"],Value::Null);
+    let before_stop=protected(project);
+    let held=execute_next(project);
+    assert_eq!(held["status"],"refused","an unlinked owner Stop must prevent executor dispatch: {held}");
+    assert_eq!(held["code"],"continuation-refusal","{held}");
+    assert_eq!(protected(project),before_stop);
+    let mut client=Client::open(project);client.child.kill().unwrap();client.child.wait().unwrap();drop(client);
+    let held_after_restart=execute_next(project);
+    assert_eq!(held_after_restart["status"],"refused","a restart never lifts a Stop: {held_after_restart}");
+    assert_eq!(held_after_restart["code"],"continuation-refusal","{held_after_restart}");
+    assert_eq!(protected(project),before_stop);
+    let phase_resumed=authorize(project,"resume-phase",None,"approve","Resume the phase; A stays complete");
+    assert_eq!(phase_resumed["status"],"ok","{phase_resumed}");
+    assert_eq!(phase_resumed["authorization"]["fact"]["value"]["checkpoint_id"],Value::Null);
+    let mut client=Client::open(project);client.child.kill().unwrap();client.child.wait().unwrap();drop(client);
+    let after_resume=execute_next(project);
+    assert_eq!(after_resume["status"],"ok","an unlinked owner resume must lift an unlinked Stop: {after_resume}");
+    assert_eq!(after_resume["outcome"],"dispatch");assert_eq!(after_resume["dispatch"]["plan"],1);
+    assert_eq!(task_ids(&after_resume["dispatch"]["tasks"]),vec!["B","C"],"executable dispatch tasks after the unlinked resume");
+    let ops_resumed=operational(&after_resume);
+    assert_eq!(task_ids(&ops_resumed["tasks"]),vec!["B","C"],"executable operational tasks after the unlinked resume");
+    assert_eq!(ops_resumed["completed"].as_array().unwrap().len(),1);
+    assert_eq!(ops_resumed["completed"][0]["id"],"A");assert_eq!(ops_resumed["completed"][0]["completion"],fixture.green);
+    assert_eq!(ops_resumed["completed"][0]["close_request"],"close-A");
+    assert_eq!(ops_resumed["continuation"]["question_id"],"execution-authorization:resume-phase");
+    assert_eq!(ops_resumed["continuation"]["checkpoint"],Value::Null);
+    let evidence_after_stop=reopened(project).snapshot.data["native_evidence"].clone();
+    let phase_stop=evidence_after_stop.as_object().unwrap().values().find(|r|r["fact"]["value"]["id"]=="execution-authorization:stop-phase").unwrap().clone();
+    assert_eq!(phase_stop["fact"]["value"]["checkpoint_id"],Value::Null);
+    assert_eq!(phase_stop["fact"]["value"]["state"]["status"],"answered");
+    assert_eq!(phase_stop["fact"]["value"]["state"]["value"]["disposition"],"stop");
     // A legally approved gap plus an explicit set extension preserves A's
     // completion, its receipt bytes and the original check ownership.
     let a_events:Vec<Value>=execution_history(project)["events"].as_array().unwrap().iter().filter(|e|e["request"]["task"]["task"]=="A").cloned().collect();
