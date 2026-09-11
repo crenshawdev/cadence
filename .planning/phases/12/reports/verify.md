@@ -89,3 +89,17 @@ Paths are repository-relative. `T` = crates/cadence/tests/phase12_execution.rs,
   handwritten expectations, stop-reap-reopen before byte comparison, every
   named case present, one test selected and passing at HEAD.
 - Net: accepted 24 / rejected 0 / not seen 1 (P12-O1, pending the pilot).
+
+## Addendum, 2026-09-11, at 7b2217c3 - PLAN-4
+
+PLAN-4 amended T5 (an owner's unlinked resume lifts an owner's unlinked
+Stop) and extended P12-T5-C in the same function. Rerun at HEAD by the
+plan's exact command:
+
+| item | truth(s) | kind | verdict | observed |
+|---|---|---|---|---|
+| P12-T5-C (extended) | T5 | check | accepted | `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 10.55s` (1 selected). Red a999136a (test only) failed at `T:1075` on `an unlinked owner resume must lift an unlinked Stop` with `continuation-refusal`; green ff78821f changed only the continuation guard. Full suite after PLAN-4: 46 result lines, 896 passed, 0 failed; clippy clean. |
+
+P12-O1 is no longer an item of this phase: observations moved to phase 18
+(7b2217c3). Net for the phase: accepted 25 / rejected 0 / not seen 0.
+
