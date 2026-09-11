@@ -71,8 +71,11 @@ writes exactly one check per truth. Approved by the owner 2026-09-10.
   identified.
 - T4. When execution stops after acknowledged task progress, the owner sees
   that progress in the retained task and checkpoint history after restart.
-- T5. When an acknowledged checkpoint is continued, the executor gets only
-  the plan's unfinished tasks.
+- T5. When the owner continues a stopped plan, whether the Stop named a
+  checkpoint or not, the executor gets only the plan's unfinished tasks.
+  (Amended by the owner 2026-09-11 after the O1 pilot: the original read
+  "When an acknowledged checkpoint is continued"; a Stop that named no
+  checkpoint could never be continued. The checkpoint case is unchanged.)
 - T6. When a plan completes through Cadence's command runner, the owner sees
   a run history containing task-named commands during work and one
   full-suite run after its last task.
