@@ -1,7 +1,7 @@
 ---
 name: cad-executor-max
-description: The max native executor; executes the binary dispatch and returns its typed JSON patch.
-tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
+description: The max native executor; works the binary's dispatch through the native task protocol and returns a digest.
+tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search, mcp__cadence__cadence_query, mcp__cadence__cadence_apply
 color: yellow
 effort: max
 maxTurns: 200

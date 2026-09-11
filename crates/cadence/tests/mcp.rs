@@ -1132,9 +1132,24 @@ fn markdown_parts(relative: &str) -> (Value, String) {
 
 #[test]
 fn skill_contract_matches_wire_patch_and_direct_tool_permissions() {
+    // The two skills are generated artifacts: their bytes are the binary's own
+    // rendering, never a second authority. What they say is C7's subject.
+    for (relative, args) in [
+        ("skills/cad-executor-contract/SKILL.md", vec!["executor-instructions"]),
+        ("skills/cad-execute/SKILL.md", vec!["executor-instructions", "--frontdoor"]),
+    ] {
+        let rendered = Command::new(env!("CARGO_BIN_EXE_cadence"))
+            .args(&args)
+            .current_dir(std::env::temp_dir())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(rendered.status.success(), "{}", String::from_utf8_lossy(&rendered.stderr));
+        let installed = fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(relative)).unwrap();
+        assert_eq!(installed, rendered.stdout, "{relative} is rendered by the binary");
+    }
     let (skill, main) = markdown_parts("skills/cad-execute/SKILL.md");
     let (contract, executor) = markdown_parts("skills/cad-executor-contract/SKILL.md");
-    let (agent, fixed) = markdown_parts("agents/cad-executor.md");
     assert_eq!(skill["name"], "cad-execute");
     assert_eq!(
         skill["allowed-tools"],
@@ -1146,26 +1161,10 @@ fn skill_contract_matches_wire_patch_and_direct_tool_permissions() {
     );
     assert_eq!(contract["name"], "cad-executor-contract");
     assert_eq!(contract["user-invocable"], false);
-    assert_eq!(agent["name"], "cad-executor");
-    assert_eq!(agent["skills"], json!(["cad-executor-contract"]));
-    assert_eq!(
-        agent["tools"]
-            .as_str()
-            .unwrap()
-            .split(", ")
-            .collect::<Vec<_>>(),
-        [
-            "Read",
-            "Write",
-            "Edit",
-            "Bash",
-            "Grep",
-            "Glob",
-            "LSP",
-            "mcp__excerpt__excerpt_read",
-            "mcp__excerpt__excerpt_search"
-        ]
-    );
+    // The five agent manifests are metadata adapters: they name the compiled
+    // contract by reference, carry the routing rung and grant exactly the
+    // Cadence tools the native task protocol needs. They state no policy.
+    let mut bodies = vec![];
     for (path, name, effort) in [
         ("agents/cad-executor.md", "cad-executor", "high"),
         ("agents/cad-executor-low.md", "cad-executor-low", "low"),
@@ -1181,101 +1180,39 @@ fn skill_contract_matches_wire_patch_and_direct_tool_permissions() {
         ),
         ("agents/cad-executor-max.md", "cad-executor-max", "max"),
     ] {
-        let (agent, _) = markdown_parts(path);
+        let (agent, body) = markdown_parts(path);
         assert_eq!(agent["name"], name);
         assert_eq!(agent["effort"], effort);
         assert_eq!(agent["skills"], json!(["cad-executor-contract"]));
+        assert_eq!(
+            agent["tools"]
+                .as_str()
+                .unwrap()
+                .split(", ")
+                .collect::<Vec<_>>(),
+            [
+                "Read",
+                "Write",
+                "Edit",
+                "Bash",
+                "Grep",
+                "Glob",
+                "LSP",
+                "mcp__excerpt__excerpt_read",
+                "mcp__excerpt__excerpt_search",
+                "mcp__cadence__cadence_query",
+                "mcp__cadence__cadence_apply"
+            ],
+            "{path}"
+        );
+        assert!(body.contains("`cad-executor-contract`"), "{path} names its contract by reference");
+        assert!(!body.contains("execution-") && !body.contains("suite"), "{path} copies no policy");
+        bodies.push(body);
     }
-    assert!(main.contains("dispatch.route.choice.agent"));
-    assert!(main.contains("dispatch.route.choice.model"));
-    assert!(main.contains("omit the model argument"));
-    assert!(!main.contains("with the fixed `cad-executor`"));
-    let process = main
-        .split_once("<process>")
-        .unwrap()
-        .1
-        .split_once("</process>")
-        .unwrap()
-        .0;
-    assert_eq!(
-        process
-            .lines()
-            .filter(|line| line.starts_with(|c: char| c.is_ascii_digit()))
-            .count(),
-        5
-    );
-    let query = process.find("mcp__cadence__cadence_query").unwrap();
-    let task = process.find("Task").unwrap();
-    let apply = process.find("mcp__cadence__cadence_apply").unwrap();
-    assert!(query < task && task < apply);
-    for token in [
-        "cad-executor",
-        "unchanged",
-        "exactly the returned prompt",
-        "field-for-field",
-        "refused",
-        "unknown",
-        "not-applicable",
-        "judgment-stop",
-        "complete",
-        "next-plan",
-    ] {
-        assert!(main.contains(token), "missing loop token {token}");
-    }
-    for token in [
-        "signed",
-        "task ID",
-        "suite",
-        "completed",
-        "blocked",
-        "not-run",
-        ".planning/",
-        "rung: fixed",
-        "branch: current",
-        "reviews: disabled",
-        "one JSON object",
-    ] {
-        assert!(executor.contains(token), "missing executor token {token}");
-    }
-    let patch_text = executor
-        .split_once("<patch-shape>\n")
-        .unwrap()
-        .1
-        .split_once("\n</patch-shape>")
-        .unwrap()
-        .0;
-    let patch: Value = serde_json::from_str(patch_text).unwrap();
-    let mut client = Client::spawn();
-    client.handshake();
-    let listing = client.tools_list(2);
-    let schema = &listing["result"]["tools"][2]["inputSchema"];
-    assert!(schema_accepts(schema, schema, &patch));
-    let mut paths = vec![];
-    inspect_schema_objects(
-        schema,
-        &schema["$defs"]["ExecutorPatch"],
-        &patch,
-        "",
-        &mut paths,
-    );
-    assert_eq!(paths.len(), 13);
-    assert_eq!(
-        patch.as_object().unwrap().keys().collect::<BTreeSet<_>>(),
-        schema_fixture()
-            .as_object()
-            .unwrap()
-            .keys()
-            .collect::<BTreeSet<_>>()
-    );
-    assert!(client.finish().success());
-    for text in [
-        &main,
-        &executor,
-        &fixed,
-        &skill.to_string(),
-        &contract.to_string(),
-        &agent.to_string(),
-    ] {
+    for text in [&main, &executor, &skill.to_string(), &contract.to_string()]
+        .into_iter()
+        .chain(bodies.iter())
+    {
         for forbidden in [
             ".mjs",
             "node ",
