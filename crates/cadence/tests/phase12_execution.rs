@@ -1400,7 +1400,7 @@ fn phase12_runner_retains_task_commands_and_one_suite() {
         let original_admission=serde_json::to_vec(&reopened(project).snapshot.data["native_admissions"]["phases"]["12"][0]).unwrap();
         if mode!="runner-failed-cargo" {continue;}
         let mut gap=proposal(project,"gap",&[(None,attached(vec![artifact("artifact/gap",&["truth/A"])]))]);
-        gap["submission"]["plans"][0]["requirements"]=json!(["suite-failed:fail-1"]);
+        gap["submission"]["plans"][0]["content"]["requirements"]=json!(["suite-failed:fail-1"]);
         gap["submission"]["plans"][0]["content"]["execution"]["tasks"]=json!([{"id":"G","verify":[MARK_C]}]);
         publish(project,&gap);
         let mut extended=contract(project);
