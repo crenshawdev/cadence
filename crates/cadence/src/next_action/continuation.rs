@@ -150,19 +150,19 @@ fn decide(
         })
         .filter(|g| !matches!(g.state, State::Superseded { .. }))
         .collect();
-    // A Stop stays in force until a later progress authorization names the
-    // same checkpoint; a restart or an unlinked approval never continues it.
+    // A Stop stays in force until a later progress approval names the same
+    // checkpoint, or names none when the Stop named none; a restart never
+    // continues it, and an unlinked approval never lifts a linked Stop.
     for (index, gate) in gates.iter().enumerate() {
         let State::Answered(answer) = &gate.state else { continue };
         if answer.disposition != Disposition::Stop {
             continue;
         }
-        let continued = gate.checkpoint_id.is_some()
-            && gates[..index].iter().any(|later| {
-                later.purpose == Purpose::Progress
-                    && later.checkpoint_id == gate.checkpoint_id
-                    && matches!(&later.state, State::Answered(a) if a.disposition == Disposition::Approve)
-            });
+        let continued = gates[..index].iter().any(|later| {
+            later.purpose == Purpose::Progress
+                && later.checkpoint_id == gate.checkpoint_id
+                && matches!(&later.state, State::Answered(a) if a.disposition == Disposition::Approve)
+        });
         if !continued {
             return Decision::Stop(answer.clone());
         }
