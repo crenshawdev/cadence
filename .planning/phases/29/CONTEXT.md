@@ -261,14 +261,10 @@ Carried verbatim from ROADMAP.md at `2da6d1af` except where marked.
 
 ## Observations
 
-Evidence a person must see; these cap a truth at `concerns`, never `met`.
-
-- O1. The owner runs `/cad-plan` for a real phase in a real host, sees the
-  planner submit a map in which one check has a blank expected output and
-  one link names a value its truth does not use, sees each come back as a
-  typed refusal in the conversation naming the item, and sees the corrected
-  plan land with its map attached. Whether the planner writes a good check
-  after the refusal is the model's and is not asserted.
+None at this phase. Nothing this phase builds can be run live until the
+binary is installed; the owner's live-host observation for it is held by
+phase 18, the acceptance gate (moved 2026-09-11, see
+docs/architecture/acceptance.md).
 
 ## Flagged assumptions
 

@@ -423,18 +423,10 @@ Carried verbatim from ROADMAP.md at `54baaab9` except where marked.
   is knowingly untested.**
 ## Observations
 
-Evidence a person must see; these cap a truth at `concerns`, never `met`.
-
-- O1. The owner runs `/cad-execute` for a real phase in a real host against
-  an explicitly initialized disposable project, sees the executor receive a
-  dispatch the binary composed from state naming its admitted checks, sees
-  a task close come back refused in the conversation because a check has
-  no red commit, sees the same task close after the executor commits the
-  failing test and then the passing implementation, stops the session
-  after that task, and on resume sees the executor handed only the
-  remaining tasks. Whether the executor obeys the red-first and
-  named-command instructions without being told twice is the model's and
-  is not asserted.
+None at this phase. Nothing this phase builds can be run live until the
+binary is installed; the owner's live-host observation for it is held by
+phase 18, the acceptance gate (moved 2026-09-11, see
+docs/architecture/acceptance.md).
 
 ## Flagged assumptions
 

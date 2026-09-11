@@ -1199,6 +1199,43 @@ queues and explicit shutdown behavior replace what process exit used to do.
 
 ### Phase 18: The acceptance gate
 
+**Owner's live-host observations, moved here 2026-09-11.** Each earlier phase
+carried an O1 that nothing could observe until the binary runs live. They are
+seen or not seen here, by the owner, and cap their phase's truths at `concerns`
+until then:
+
+- Phase 11: The owner runs `/cad-context` for a real phase in a real host, sees
+  the interview reach the binary's authoring operation, sees one deliberately
+  malformed truth come back as a typed refusal in the conversation, and sees
+  the approved set land in that phase's CONTEXT.md with nothing written before
+  approval. The interview's quality is the model's and is not asserted.
+- Phase 27: The owner runs `/cad-plan` for a real phase in a real host, sees
+  the planner reach the binary's plan publication operation, sees one
+  deliberately mismatched identity come back as a typed refusal in the
+  conversation, and sees the approved plan land at `PLAN-<k>.md` with nothing
+  written before approval. The plan's quality is the model's and is not
+  asserted.
+- Phase 28: The owner runs `/cad-plan` for a real phase in a real host, sees
+  the planner submit its evidence map with the plan, sees one deliberately
+  uncovered truth come back as a typed refusal in the conversation, and sees
+  the approved plan land with its map attached and readable back. The map's
+  quality is the model's and is not asserted.
+- Phase 29: The owner runs `/cad-plan` for a real phase in a real host, sees
+  the planner submit a map in which one check has a blank expected output and
+  one link names a value its truth does not use, sees each come back as a typed
+  refusal in the conversation naming the item, and sees the corrected plan land
+  with its map attached. Whether the planner writes a good check after the
+  refusal is the model's and is not asserted.
+- Phase 12: The owner runs `/cad-execute` for a real phase in a real host
+  against an explicitly initialized disposable project, sees the executor
+  receive a dispatch the binary composed from state naming its admitted checks,
+  sees a task close come back refused in the conversation because a check has
+  no red commit, sees the same task close after the executor commits the
+  failing test and then the passing implementation, stops the session after
+  that task, and on resume sees the executor handed only the remaining tasks.
+  Whether the executor obeys the red-first and named-command instructions
+  without being told twice is the model's and is not asserted.
+
 **Goal.** Parity at the user-facing surface is asserted, not claimed - and it is
 asserted at the scenario boundary, because the CLI-invocation boundary died with
 the port model.

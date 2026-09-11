@@ -163,6 +163,13 @@ evidence kinds are things the verifier inspects, not tests anyone writes.
 now, in the same structure, with a different evidence class. Nothing routes
 out of sight.
 
+An observation is written into a phase's map only when what it names can be
+seen at that phase's close. A phase that builds a part nobody can yet run
+carries no observation; the owner's live observations of the assembled thing
+belong to the phase that first makes it runnable. For the 4.0 rewrite that is
+phase 18, the acceptance gate, which holds the owner's live-host
+observations for the phases before it (decided by the owner 2026-09-11).
+
 **What the binary refuses at planning.**
 - A truth with no evidence item.
 - An evidence item naming no truth, or naming a truth version that no longer
