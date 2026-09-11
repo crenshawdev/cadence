@@ -85,6 +85,9 @@ pub async fn native_apply<I:ConfigIo+Clone+Sync>(factory:&SessionFactory<I>,root
     if matches!(raw["operation"].as_str(), Some("execution-task-start" | "execution-run")) {
         return super::execution_runner_service::apply(factory, root, raw).await;
     }
+    if matches!(raw["operation"].as_str(), Some("execution-suite" | "execution-suite-relaunch" | "execution-plan-complete")) {
+        return super::execution_runner_service::plan_apply(factory, root, raw).await;
+    }
     use cadence::execution::{admission,boundary::NativeApply};
     if matches!(raw["operation"].as_str(),Some("execution-admit"|"execution-extend")) {
         for field in ["request_id","expected_set_version","contract"] {
@@ -1063,12 +1066,17 @@ async fn native_query<I: ConfigIo + Clone + Sync>(
             (plan, active.clone())
         }
         None => {
-            let mut numbers = latest.request.contract.plans.iter().map(|b| b.plan).collect::<Vec<_>>();
-            numbers.sort_unstable();
-            let Some(next) = numbers.first() else {
-                return refuse("empty-plan-set", "the admitted set names no plan".into(), None).await;
+            // The next plan is the first admitted plan without a retained outcome;
+            // a failed plan is never rerun, and its repair is a later gap plan.
+            let admitted_plans = history::admitted_plans(data, phase).map_err(store_failure)?;
+            let Some(next) = admitted_plans.iter().map(|(identity, _)| identity.plan)
+                .find(|number| !occurrence.plans.iter().any(|outcome| outcome.plan == *number)) else {
+                if admitted_plans.is_empty() {
+                    return refuse("empty-plan-set", "the admitted set names no plan".into(), None).await;
+                }
+                return refuse("suite-failed", "every admitted plan has an outcome and a failed suite has no completed repair; publish and admit an explicitly linked gap plan through a versioned set extension (D-120)".into(), None).await;
             };
-            let plan = plans.values.iter().find(|plan| plan.plan == *next).expect("admitted plans are observed");
+            let plan = plans.values.iter().find(|plan| plan.plan == next).expect("admitted plans are observed");
             let config = session.config().map_err(store_failure)?;
             let choice = match super::config_service::route_at(&config, &super::config_service::RouteRequest {
                 role: "cad-executor".into(), phase: std::num::NonZeroU32::new(phase), plan: std::num::NonZeroU32::new(plan.plan), attempt: None,
@@ -1127,9 +1135,12 @@ async fn native_query<I: ConfigIo + Clone + Sync>(
         layer: config.effective.sources.get(key).and_then(|layer| serde_json::to_value(layer).ok()?.as_str().map(str::to_owned)),
     }).collect::<Vec<_>>();
     let present = instructions::MANIFESTS.iter().map(|(name, _)| *name).filter(|name| project.join(name).exists()).collect::<Vec<_>>();
+    let plan_events = history::plan_records(data, phase).map_err(store_failure)?;
+    let suite_state = history::plan_project(&plan_events, &history::PlanIdentity { phase, occurrence: basis.request.contract.occurrence.clone(),
+        admission_digest: basis.request_digest.clone(), plan: plan.plan });
     let state = NativeState { admitted: &admitted, occurrence: &basis.request.contract.occurrence, admission_digest: &basis.request_digest,
         set_version: latest.set_version, head: &head, tasks, checks, completed, continuation,
-        suite: json!({"command": admitted.suite}), commands: instructions::command_policy(&configured, &present) };
+        suite: json!({"command": admitted.suite, "state": suite_state}), commands: instructions::command_policy(&configured, &present) };
     let operational = native_operational(&state);
     let (mut dispatch, operational) = match native_dispatch(&admitted, operational, executable, candidate.is_some()) {
         Ok(value) => value,
@@ -1664,6 +1675,46 @@ fn execution_risk<I: ConfigIo>(
 ) -> Result<Vec<cadence::rail::receipts::Requirement>, String> {
     let config = session.config().map_err(|e| e.to_string())?;
     super::rail_service::execution_requirements(view, root, phase, &config)
+}
+
+/// The exact phase-7 settlement a native plan's completion requires: the
+/// plan's dispatch material, its confirmed dispatch boundary and the
+/// configured surfaces, assessed against the retained risk history.
+pub(super) fn native_settlement<I: ConfigIo>(
+    session: &Session<I>,
+    view: &View,
+    root: &Path,
+    phase: u32,
+    plan: u32,
+    dispatch_id: &str,
+) -> Result<cadence::rail::receipts::Requirement, String> {
+    use cadence::rail::{receipts, risk};
+    let config = session.config().map_err(|e| e.to_string())?;
+    let pending = format!("phase-{phase}-execution");
+    let surfaces = crate::config::merge::get(&config.effective.values, "review.triggers.risk_surface.surfaces")
+        .ok_or_else(|| format!("{pending}: missing risk surface selection"))
+        .and_then(|v| risk::configured_surfaces(v).map_err(|e| format!("{pending}: {e}")))?
+        .ok_or_else(|| format!("{pending}: risk surfaces are unanswered"))?;
+    receipts::confirmed_history(view).map_err(|e| format!("{pending}: {e}"))?;
+    let (Some(phase_id), Some(plan_id)) = (std::num::NonZeroU32::new(phase), std::num::NonZeroU32::new(plan)) else {
+        return Err("settlement needs a positive phase and plan".into());
+    };
+    let scope = risk::Scope {
+        project: root.parent().ok_or("planning root lacks project")?.to_string_lossy().into_owned(),
+        planning_root: root.to_string_lossy().into_owned(), cycle: "live".into(), occurrence: pending.clone(),
+        phase: phase_id, worker: Some(plan.to_string()), plan: Some(plan_id),
+    };
+    let source = risk::Source::Execution { plan: plan_id, dispatch_id: dispatch_id.to_owned() };
+    let material = risk_material(view, root, phase, &pending, plan, dispatch_id)?;
+    let wanted = receipts::Requirement {
+        boundary: super::rail_service::receipt_boundary(view, scope, &source).map_err(|e| e.to_string())?, material, surfaces,
+    };
+    let status = receipts::assess(&wanted, &view.snapshot.data).map_err(|e| e.to_string())?;
+    if !status.permits_continuation {
+        return Err(format!("{pending}, plan {plan}, dispatch {dispatch_id}: risk evidence is {:?}; pending fires: {}. Record an exact execution risk-check and any required fire/consequence, then request completion again.",
+            status.state, status.pending_fires.join(", ")));
+    }
+    Ok(wanted)
 }
 
 fn execution_snapshot(view: &View) -> Result<ExecutionSnapshot, String> {

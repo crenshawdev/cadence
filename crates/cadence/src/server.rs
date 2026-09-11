@@ -287,6 +287,7 @@ enum ApplyArguments {
     NativeClose(cadence::execution::receipts::CloseApply),
     NativeOwner(cadence::execution::receipts::OwnerApply),
     NativeRunner(cadence::execution::runner::Apply),
+    NativePlan(cadence::execution::runner::PlanApply),
     NativeExecution(cadence::execution::boundary::NativeApply),
     Plan(cadence::plan::model::Apply),
     Context(cadence::context::model::Apply),
@@ -938,6 +939,10 @@ impl ServerHandler for PublicServer {
                     Some(ApplyArguments::NativeRunner(request)) => {
                         return structured_result(self.server.service.native_execution_apply(&self.root,
                             serde_json::to_value(request).expect("native runner operation")).await.map(ApplyOutput::NativeExecution));
+                    }
+                    Some(ApplyArguments::NativePlan(request)) => {
+                        return structured_result(self.server.service.native_execution_apply(&self.root,
+                            serde_json::to_value(request).expect("native plan operation")).await.map(ApplyOutput::NativeExecution));
                     }
                     Some(ApplyArguments::NativeOwner(request)) => {
                         return structured_result(self.server.service.native_execution_apply(&self.root,

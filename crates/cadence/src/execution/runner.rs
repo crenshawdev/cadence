@@ -37,6 +37,36 @@ pub enum Apply {
     Run { request: Run },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PlanInput {
+    pub request_id: String,
+    pub plan: history::PlanIdentity,
+    pub expected_version: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RelaunchInput {
+    pub request_id: String,
+    pub plan: history::PlanIdentity,
+    pub expected_version: u64,
+    pub statement: history::OwnerAbsence,
+}
+
+/// The plan-level operations: the one suite, the operator's single confirmed
+/// relaunch of a launch with no recognized result, and native completion.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "operation", deny_unknown_fields)]
+pub enum PlanApply {
+    #[serde(rename = "execution-suite")]
+    Suite { request: PlanInput },
+    #[serde(rename = "execution-suite-relaunch")]
+    Relaunch { request: RelaunchInput },
+    #[serde(rename = "execution-plan-complete")]
+    Complete { request: PlanInput },
+}
+
 pub fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis().try_into().unwrap_or(u64::MAX)
 }
@@ -162,6 +192,56 @@ pub async fn launch(store: Store, project: PathBuf, input: Run) -> Result<Record
                 let observed = Request { request_id: format!("{}:result", request.request_id), task: request.task.clone(),
                     attempt: request.attempt.clone(), expected_version, event: Event::Result(result.clone()) };
                 match append(&store, observed).await {
+                    Ok(_) => return,
+                    Err(Error::Conflict(_)) => continue,
+                    Err(_) => return,
+                }
+            }
+        }
+    });
+    Ok(record)
+}
+
+pub async fn plan_append(store: &Store, request: history::PlanRequest) -> Result<history::PlanRecord> {
+    let view = store.request(Operation::ReadVerified).await?;
+    let written = store.request(Operation::NativePlanV1 { expected_generation: view.snapshot.generation,
+        expected_integrity: view.snapshot.integrity, request: Box::new(request.clone()) }).await?;
+    history::plan_records(&written.snapshot.data, request.plan.phase)?.into_iter().find(|r| r.request.request_id == request.request_id)
+        .ok_or_else(|| Error::Invalid("confirmed plan receipt missing".into()))
+}
+
+/// The suite launch is claimed before the process starts, exactly like a task
+/// command; eligibility and the once-per-plan rule are validated in the store.
+pub async fn suite_launch(store: Store, project: PathBuf, input: PlanInput) -> Result<history::PlanRecord> {
+    use history::{PlanEvent, PlanRequest, SuiteLaunch};
+    let view = store.request(Operation::ReadVerified).await?;
+    let history = history::plan_records(&view.snapshot.data, input.plan.phase)?;
+    if let Some(prior) = history.iter().find(|r| r.request.request_id == input.request_id) {
+        if !matches!(prior.request.event, PlanEvent::SuiteLaunch(_)) || prior.request.plan != input.plan || prior.request.expected_version != input.expected_version {
+            return Err(admission::refuse(input.plan.phase, "plan-request-reuse", "request_id", &input.request_id, "request already names another payload"));
+        }
+        return Ok(prior.clone());
+    }
+    let publication = crate::plan::persistence::saved(&view.snapshot.data, input.plan.phase)?
+        .and_then(|p| p.publications.get(&input.plan.plan).cloned())
+        .ok_or_else(|| Error::Invalid("plan publication missing".into()))?;
+    let observed = material(&project, &publication.content.execution.suite, "")?;
+    let launch = SuiteLaunch { run_id: input.request_id.clone(), material: observed, launched_at: now() };
+    let request = PlanRequest { request_id: input.request_id, plan: input.plan, expected_version: input.expected_version,
+        event: PlanEvent::SuiteLaunch(launch.clone()) };
+    let record = plan_append(&store, request.clone()).await?;
+    tokio::spawn(async move {
+        let process_project = project.clone();
+        let process_launch = Launch { run_id: launch.run_id.clone(), check: None, stage: Stage::Verify, material: launch.material.clone(), launched_at: launch.launched_at };
+        let result = tokio::task::spawn_blocking(move || observe_child(&process_project, &process_launch)).await;
+        if let Ok(result) = result {
+            for _ in 0..3 {
+                let Ok(view) = store.request(Operation::ReadVerified).await else { return };
+                let Ok(records) = history::plan_records(&view.snapshot.data, request.plan.phase) else { return };
+                let expected_version = history::plan_project(&records, &request.plan).version;
+                let observed = PlanRequest { request_id: format!("{}:result", request.request_id), plan: request.plan.clone(),
+                    expected_version, event: PlanEvent::SuiteResult(result.clone()) };
+                match plan_append(&store, observed).await {
                     Ok(_) => return,
                     Err(Error::Conflict(_)) => continue,
                     Err(_) => return,

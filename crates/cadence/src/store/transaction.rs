@@ -15,6 +15,10 @@ pub(crate) enum IntentKind {
         request: Box<cadence::execution::history::Request>,
         root_binding: String,
     },
+    NativePlanV1 {
+        request: Box<cadence::execution::history::PlanRequest>,
+        root_binding: String,
+    },
     NativeExecutionDispatchV1 {
         phase: u32,
         decision_id: String,
@@ -301,8 +305,34 @@ impl Intent {
             {
                 return Err(Error::Invalid("native admission changes require their versioned intent".into()));
             }
+            if !matches!(self.kind, IntentKind::NativePlanV1 { .. })
+                && previous.data.get(cadence::execution::history::PLAN_NAMESPACE) != snapshot.data.get(cadence::execution::history::PLAN_NAMESPACE)
+            {
+                return Err(Error::Invalid("native plan changes require their versioned intent".into()));
+            }
         }
         match self.kind.clone() {
+            IntentKind::NativePlanV1 { request, root_binding } => {
+                use cadence::execution::history;
+                if names.len() != 3 { return Err(Error::Invalid("native plan event cannot change external participants".into())); }
+                let state = self.participants.last().expect("state participant");
+                if state.expected.directory_identity != root_binding {
+                    return Err(Error::Invalid("native plan root binding changed".into()));
+                }
+                let previous: Snapshot = serde_json::from_slice(state.expected.bytes.as_deref()
+                    .ok_or_else(|| Error::Invalid("native plan requires prior snapshot".into()))?)?;
+                let (expected, record) = history::plan_contribute(&previous.data, &root_binding, &request)?;
+                let old_items = self.participants.iter().find(|p| p.target == ITEMS).unwrap().expected.bytes.as_deref();
+                let old_decisions = self.participants.iter().find(|p| p.target == DECISIONS).unwrap().expected.bytes.as_deref()
+                    .ok_or_else(|| Error::Invalid("native plan requires previous decisions".into()))?;
+                let mut expected_decisions: Vec<DecisionRecord> = model::parse_lines(old_decisions)?;
+                expected_decisions.push(history::plan_decision(&record)?);
+                if snapshot.data != expected || old_items != Some(items)
+                    || decisions != model::render_lines(&expected_decisions)?
+                    || snapshot.operations != previous.operations
+                    || snapshot.generation != previous.generation.checked_add(1).ok_or_else(|| Error::Invalid("generation exhausted".into()))?
+                { return Err(Error::Invalid("native plan intent differs from validated immutable transition".into())); }
+            }
             IntentKind::NativeTaskV1 { request, root_binding } => {
                 use cadence::execution::history;
                 if names.len() != 3 { return Err(Error::Invalid("native task event cannot change external participants".into())); }

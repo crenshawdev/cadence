@@ -55,6 +55,11 @@ pub enum Operation {
         expected_integrity: String,
         request: Box<cadence::execution::history::Request>,
     },
+    NativePlanV1 {
+        expected_generation: u64,
+        expected_integrity: String,
+        request: Box<cadence::execution::history::PlanRequest>,
+    },
     NativeAdmissionV1 {
         expected_generation: u64,
         expected_integrity: String,
@@ -385,6 +390,8 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         match operation {
             Operation::NativeTaskV1 { expected_generation, expected_integrity, request } =>
                 self.native_task(expected_generation, &expected_integrity, *request),
+            Operation::NativePlanV1 { expected_generation, expected_integrity, request } =>
+                self.native_plan(expected_generation, &expected_integrity, *request),
             Operation::NativeAdmissionV1 {expected_generation,expected_integrity,request} =>
                 self.native_admission(expected_generation,&expected_integrity,*request),
             Operation::CheckedTransact {
@@ -596,6 +603,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             | Operation::BoundaryV1 { .. }
             | Operation::NativeAdmissionV1 { .. }
             | Operation::NativeTaskV1 { .. }
+            | Operation::NativePlanV1 { .. }
             | Operation::AdmitExecution { .. }
             | Operation::ApplyExecutionPatch { .. }
             | Operation::RecordExecutionRefusal { .. } => {
@@ -709,6 +717,24 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         next.decisions.extend(history::decisions(&record)?);
         self.persist(next, self.view.snapshot.operations.clone(), Vec::new(), "native_task",
             super::transaction::IntentKind::NativeTaskV1 { request: Box::new(request), root_binding })
+    }
+
+    fn native_plan(&mut self, generation: u64, integrity: &str, request: cadence::execution::history::PlanRequest) -> Result<View> {
+        use cadence::execution::history;
+        let root_binding = self.observed[STATE].directory_identity.clone();
+        if let Some(record) = history::plan_replay(&self.view.snapshot.data, &root_binding, &request)? {
+            if !self.view.decisions.contains(&history::plan_decision(&record)?) {
+                return Err(Error::Invalid("native plan receipt lacks its immutable event".into()));
+            }
+            return Ok(self.view.clone());
+        }
+        self.check_expected(generation, integrity)?;
+        let (data, record) = history::plan_contribute(&self.view.snapshot.data, &root_binding, &request)?;
+        let mut next = self.view.clone();
+        next.snapshot.data = data;
+        next.decisions.push(history::plan_decision(&record)?);
+        self.persist(next, self.view.snapshot.operations.clone(), Vec::new(), "native_plan",
+            super::transaction::IntentKind::NativePlanV1 { request: Box::new(request), root_binding })
     }
 
     fn native_admission(&mut self, generation:u64, integrity:&str, request:cadence::execution::admission::Request) -> Result<View> {
