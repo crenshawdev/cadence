@@ -1,0 +1,14 @@
+{
+  "failed-a": {"selection":{"mode":"single","choices":["A","B","C"],"fallback":"local"},"attempts":{"A":{"attempt":"a1","state":"failed","raw":null,"usage":null}}},
+  "usable-b": {"selection":{"mode":"single","choices":["A","B","C"],"fallback":"local"},"attempts":{"A":{"attempt":"a1","state":"failed","raw":null,"usage":null},"B":{"attempt":"a2","state":"accepted","raw":"{\"findings\":[{\"file\":\"a.rs\",\"line\":1,\"severity\":\"high\",\"claim\":\"C\",\"failure_scenario\":\"S\"}]}","usage":null}}},
+  "empty-a": {"selection":{"mode":"single","choices":["A","B","C"],"fallback":"local"},"attempts":{"A":{"attempt":"a1","state":"accepted","raw":"{\"findings\":[]}","usage":null}}},
+  "exhausted": {"selection":{"mode":"single","choices":["A","B"],"fallback":"local"},"attempts":{"A":{"attempt":"a1","state":"failed","raw":null,"usage":null},"B":{"attempt":"a2","state":"failed","raw":null,"usage":null}}},
+  "local-empty": {"selection":{"mode":"single","choices":["A","B"],"fallback":"local"},"attempts":{"A":{"attempt":"a1","state":"failed","raw":null,"usage":null},"B":{"attempt":"a2","state":"failed","raw":null,"usage":null},"local":{"attempt":"a3","state":"accepted","raw":"{\"findings\":[]}","usage":null}}},
+  "local-failed": {"selection":{"mode":"single","choices":["A","B"],"fallback":"local"},"attempts":{"A":{"attempt":"a1","state":"failed","raw":null,"usage":null},"B":{"attempt":"a2","state":"failed","raw":null,"usage":null},"local":{"attempt":"a3","state":"failed","raw":null,"usage":null}}},
+  "spent": {"attempt":"a1","state":"failed","raw":null,"usage":{"input":7,"output":3,"cost":"0.02","currency":"USD"}},
+  "unobserved": {"attempt":"a1","state":"failed","raw":null,"usage":null},
+  "pending-a": {"selection":{"mode":"single","choices":["A","B"],"fallback":"local"},"attempts":{"A":{"attempt":"a1","state":"intended","raw":null,"usage":null}}},
+  "interrupted-a": {"selection":{"mode":"single","choices":["A","B"],"fallback":"local"},"attempts":{"A":{"attempt":"a1","state":"interrupted","raw":null,"usage":null}}},
+  "missing-a": {"selection":{"mode":"single","choices":["A","B"],"fallback":"local"},"attempts":{"A":{"attempt":"a1","state":"accepted","raw":null,"usage":null}}},
+  "malformed-a": {"selection":{"mode":"single","choices":["A","B"],"fallback":"local"},"attempts":{"A":{"attempt":"a1","state":"accepted","raw":"not JSON","usage":null}}}
+}

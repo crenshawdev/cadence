@@ -1,12 +1,15 @@
 ---
 name: cad-assumptions-analyzer-medium
 description: The `medium` rung of `cad-assumptions-analyzer`; `bin/route.mjs` picks it, not the user.
-tools: Read, Bash, Grep, Glob, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
+tools: Bash, mcp__cadence__cadence_query
 disallowedTools: Write, Edit, MultiEdit
 color: cyan
 effort: medium
 maxTurns: 200
+mcpServers:
+  - cadence
 skills:
+  - cad-read-contract
   - cad-assumptions-analyzer-contract
 ---
 

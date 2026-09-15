@@ -1,0 +1,62 @@
+{
+  "status": "gaps",
+  "score": "7/8",
+  "truths": [
+    {
+      "n": 151,
+      "truth": "Execution admits configured review before continuation",
+      "status": "VERIFIED",
+      "uat_item": 151,
+      "evidence": "The original no-admission defect is gone. crates/cadence/src/execution_service.rs:2309 enumerates accepted complete receipts, :2317 derives a replay key from execution occurrence/dispatch/transition identity, :2326 checks saved review bindings before current routing or material, :2362 constructs the execute/diff committed-range admission request, and :2372 calls the production admission boundary. crates/cadence/src/review_service.rs:447 creates the conditional transaction, :462 contributes H1/H2/H3 admission state, and :479-484 withhold the reply until commit acknowledgment. crates/cadence/src/execution_service.rs:2382-2385 queries saved delivery and returns review work unless continuation is permitted; crates/cadence/src/server.rs:693-698 and :809-820 put that handoff before and after the public execute-next/apply paths. Observed command `TMPDIR=/tmp CARGO_NET_OFFLINE=true RUSTC_WRAPPER= cargo test -p cadence --lib --bin cadence gap15`: all seven gap151 tests passed within 20 library and 23 binary passes, zero failures. The separately reported resolved-policy race is a new goal-backward gap, not the original absence of any admission path."
+    },
+    {
+      "n": 152,
+      "truth": "Known launch failure closes the issued attempt",
+      "status": "VERIFIED",
+      "uat_item": 152,
+      "evidence": "crates/cadence/src/review_service.rs:738-769 accepts the additive failure_event path without requiring launch and routes it to accept_launch_failure. crates/cadence/src/review/returns.rs:356-405 validates full return identity, an issued attempt, the launch-failure observation kind, bounded event/reason, null unobserved host identity, and a still-closable state. :414-450 preserves observed usage and contributes the observation, failure submission, null-original terminal closure, and failed attempt to one next image; :480-500 conditionally commits before acknowledgment and handles a conflicting writer by checking the winning durable image. :78-118 omits unissued intended choices from FIRST projection, so a failed issued choice can advance. Observed command `TMPDIR=/tmp CARGO_NET_OFFLINE=true RUSTC_WRAPPER= cargo test -p cadence --lib --bin cadence gap15`: all seven gap152 tests passed; the combined result was 20 library and 23 binary passes, zero failures."
+    },
+    {
+      "n": 153,
+      "truth": "Appended evidence cannot retrofit an earlier original view",
+      "status": "VERIFIED",
+      "uat_item": 153,
+      "evidence": "crates/cadence/src/review_service.rs:813-823 validates any claimed delivery against persisted state before append or replay. :864-885 rejects a same-ID replacement view, loads the authoritative saved delivery, and requires exact entry/content membership. crates/cadence/src/review/attempts.rs:189-209 joins the saved delivery to its exact observation and attempt; :212-271 refuses changed membership, original-view replacement, post-closure delivery, foreign manifests, duplicate entries, and content mismatch before persisting the delivery. crates/cadence/src/review_service.rs:887-909 authorizes appended reads only through exact saved delivery membership. Observed command `TMPDIR=/tmp CARGO_NET_OFFLINE=true RUSTC_WRAPPER= cargo test -p cadence --lib --bin cadence gap15`: all eight gap153 tests passed; the combined result was 20 library and 23 binary passes, zero failures."
+    },
+    {
+      "n": 154,
+      "truth": "Ordinary risk admission consumes detector state",
+      "status": "VERIFIED",
+      "uat_item": 154,
+      "evidence": "The former orphan now has a production caller: crates/cadence/src/review/policy.rs:195-213 invokes risk_review_action for risk_surface admission. crates/cadence/src/review_service.rs:299-315 obtains the authoritative observation and calls admit_with_policy before entering the material/acquisition closure; :501-512 returns no-review, wait-for-evidence, or ask-surfaces without running that closure. :515-592 binds saved risk evidence to scope, retained material, configured surfaces, confirmed history, and current confirmation before mapping it to detector state. crates/cadence/src/pause_service.rs:84-90 preserves the three non-dispatch results. Observed `rg -n 'risk_review_action\\(' crates/cadence/src crates/cadence/tests` includes production invocation at review/policy.rs:202. Observed command `TMPDIR=/tmp CARGO_NET_OFFLINE=true RUSTC_WRAPPER= cargo test -p cadence --lib --bin cadence gap15`: all four gap154 tests passed; the combined result was 20 library and 23 binary passes, zero failures."
+    },
+    {
+      "n": 155,
+      "truth": "Minimalism dispatch ignores ordinary routing",
+      "status": "VERIFIED",
+      "uat_item": 155,
+      "evidence": "crates/cadence/src/review_service.rs:206-226 branches minimalism before configuration and route resolution. :489-499 calls the specialist voice builder without invoking the ordinary closure. crates/cadence/src/review/specialist.rs:37-45 produces exactly one cad-reviewer voice with null model, effort, and routing plus specialist selection evidence. crates/cadence/src/review/invoking.rs:11-18 omits a null model when serializing the dispatch, and :34-38 copies that absent override without replacement. Observed command `TMPDIR=/tmp CARGO_NET_OFFLINE=true RUSTC_WRAPPER= cargo test -p cadence --lib --bin cadence gap15`: both gap155 tests passed; the combined result was 20 library and 23 binary passes, zero failures."
+    },
+    {
+      "n": 156,
+      "truth": "Directory targets retain files beneath subdirectories",
+      "status": "VERIFIED",
+      "uat_item": 156,
+      "evidence": "crates/cadence/src/review/material_io.rs:105-142 supplies typed production directory nodes and identities, distinguishing files, directories, symlinks, and special nodes. crates/cadence/src/review/material.rs:284-334 recursively resolves directories while retaining a sorted deduplicated descendant-file set and refusing symlink/special nodes; :374-436 acquires every descendant file, checks parent/listing identity, rechecks all directories, and freezes nested membership and bytes. :235-259 reconstructs nested directory content only from the retained manifest/storage. Observed command `TMPDIR=/tmp CARGO_NET_OFFLINE=true RUSTC_WRAPPER= cargo test -p cadence --lib --bin cadence gap15`: all five gap156 tests passed; the combined result was 20 library and 23 binary passes, zero failures."
+    },
+    {
+      "n": 157,
+      "truth": "Return bytes are bounded before request accumulation",
+      "status": "VERIFIED",
+      "uat_item": 157,
+      "evidence": "crates/cadence/src/main.rs:68-70 installs InputTransport on stdin before rmcp deserialization. crates/cadence/src/review_ingress.rs:336-347 incrementally distinguishes raw wire bytes, counts decoded raw UTF-8 bytes, and refuses a recognized review return above 4,194,304 bytes; :481-580 retains bounded frame, decoder, scratch, and cancellation state; :619-635 deserializes only an accepted bounded frame and poisons the transport on refusal. crates/cadence/src/server.rs:741-768 moves review operations through their strict decoder without the former extra grouped-request clone, while crates/cadence/src/review_service.rs:772-775 retains the bounded raw-reader defense. Observed command `TMPDIR=/tmp CARGO_NET_OFFLINE=true RUSTC_WRAPPER= cargo test -p cadence --lib --bin cadence gap15`: all ten gap157 tests passed within 20 library and 23 binary passes, zero failures. Observed command `TMPDIR=/tmp CARGO_NET_OFFLINE=true RUSTC_WRAPPER= cargo test -p cadence --test phase9_stream stream_`: 2 passed, 0 failed."
+    },
+    {
+      "n": 158,
+      "truth": "The execution handoff carries one resolved gate and routing answer into the admission it exposes",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "behavior wrong - crates/cadence/src/execution_service.rs:2330-2345 resolves the execution boundary's route and diff gate, and execution_review_decision retains that gate, but :2362-2365 builds a request containing neither the resolved gate nor routing evidence; :2371 discards the returned gate with `..` and :2372 calls review_service::admit. That function refreshes configuration and routing again at crates/cadence/src/review_service.rs:206-226 and derives a second gate at :244-286. Concrete failing scenario: a completed receipt d1 has no saved review binding; the outer read resolves diff=advisory, then a concurrent config apply changes diff=off before admit's refresh. The second read returns no-review, crates/cadence/src/execution_service.rs:2377 treats that as skip, and execute-next/apply can expose continuation with no fire, manifest, or attempt even though the boundary's applicable resolved policy required review. The inverse ordering also shows the eager seam: :2346 calls risk_material before the off decision at :2366, so an off gate can fail on review-only material instead of cleanly skipping. The observed gap151 tests all pass because they test execution_review_decision with an already-built request and test the handler with stubbed answers; none carries the production-resolved gate/routing through the real admit call."
+    }
+  ]
+}

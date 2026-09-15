@@ -1,0 +1,19 @@
+{
+  "memory": {
+    "backend": "builtin"
+  },
+  "review": {
+    "triggers": {
+      "risk_surface": {
+        "surfaces": [
+          "secrets",
+          "destructive",
+          "untrusted_input"
+        ]
+      },
+      "diff": {
+        "tier": "flagship"
+      }
+    }
+  }
+}

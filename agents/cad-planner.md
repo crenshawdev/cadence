@@ -1,11 +1,14 @@
 ---
 name: cad-planner
 description: The `high` rung of `cad-planner` (phase plan authoring); `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
+tools: Write, Edit, Bash, mcp__cadence__cadence_query
 color: green
 effort: high
 maxTurns: 200
+mcpServers:
+  - cadence
 skills:
+  - cad-read-contract
   - cad-planner-contract
 ---
 

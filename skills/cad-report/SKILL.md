@@ -3,6 +3,8 @@ name: cad-report
 description: "Render a phase's run record as a receipts narrative - what each dispatch cost, what the gates caught, what got refuted - straight from trace.jsonl and the phase artifacts"
 argument-hint: "[phase] [--all]"
 allowed-tools:
+  - mcp__cadence__cadence_apply
+  - mcp__cadence__cadence_query
   - Read
   - Bash
   - Grep
@@ -23,3 +25,9 @@ it. `--all` spans the whole record for a milestone-shaped view.
 <process>
 Execute end-to-end.
 </process>
+
+<review_delivery>
+Use review-inventory and review-consumer report for modern raw/delivery inputs. Read originals and settlement separately; missing historical findings differ from pending modern delivery. Preserve the remaining reporting workflow.
+
+@${CLAUDE_PLUGIN_ROOT}/skills/cad-review-delivery/SKILL.md
+</review_delivery>

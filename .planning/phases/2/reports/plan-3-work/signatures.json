@@ -1,0 +1,38 @@
+[
+  {
+    "sha": "742683898ef8aab5902b8e90cc0df159cccbfda9",
+    "subject": "test(2-1): keep golden comparison tools out of the shipped binary",
+    "verify_exit": 0,
+    "signature": "gpg: Signature made Sun Sep  6 10:12:05 2026 EDT\ngpg:                using RSA key 904A3ED971D189EBDEABCCA6693AB15F91734B0C\ngpg: Good signature from \"John Crenshaw <john@jcrenshaw.dev>\" [ultimate]\n"
+  },
+  {
+    "sha": "9dc8b48c5dc203350ee14074e269a53769abfe03",
+    "subject": "feat(2-2): distinguish refusal verdicts with machine codes",
+    "verify_exit": 0,
+    "signature": "gpg: Signature made Sun Sep  6 10:13:08 2026 EDT\ngpg:                using RSA key 904A3ED971D189EBDEABCCA6693AB15F91734B0C\ngpg: Good signature from \"John Crenshaw <john@jcrenshaw.dev>\" [ultimate]\n"
+  },
+  {
+    "sha": "3e35298bfe89a9224e376c5325d2a83b85a3a3f0",
+    "subject": "test(2-3): reject golden contract drift before comparison",
+    "verify_exit": 0,
+    "signature": "gpg: Signature made Sun Sep  6 10:14:58 2026 EDT\ngpg:                using RSA key 904A3ED971D189EBDEABCCA6693AB15F91734B0C\ngpg: Good signature from \"John Crenshaw <john@jcrenshaw.dev>\" [ultimate]\n"
+  },
+  {
+    "sha": "43bf56109ea8f9780b5eeb82cb65c4e866f7f3a4",
+    "subject": "test(2-4): give operation drivers intact disposable fixtures",
+    "verify_exit": 0,
+    "signature": "gpg: Signature made Sun Sep  6 10:16:05 2026 EDT\ngpg:                using RSA key 904A3ED971D189EBDEABCCA6693AB15F91734B0C\ngpg: Good signature from \"John Crenshaw <john@jcrenshaw.dev>\" [ultimate]\n"
+  },
+  {
+    "sha": "cd0c18bd68077d909cefd91b5b89657b04b52a58",
+    "subject": "test(2-5): prove wrong golden answers fail on decision fields",
+    "verify_exit": 0,
+    "signature": "gpg: Signature made Sun Sep  6 10:21:39 2026 EDT\ngpg:                using RSA key 904A3ED971D189EBDEABCCA6693AB15F91734B0C\ngpg: Good signature from \"John Crenshaw <john@jcrenshaw.dev>\" [ultimate]\n"
+  },
+  {
+    "sha": "a4fa407e9c2017ccec97303cacad08463af245d7",
+    "subject": "test(2-6): account for every recording without implying agreement",
+    "verify_exit": 0,
+    "signature": "gpg: Signature made Sun Sep  6 10:24:33 2026 EDT\ngpg:                using RSA key 904A3ED971D189EBDEABCCA6693AB15F91734B0C\ngpg: Good signature from \"John Crenshaw <john@jcrenshaw.dev>\" [ultimate]\n"
+  }
+]

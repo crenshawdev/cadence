@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 0 (no active cycle)
-Status: ready to plan
-Next: /cad-phase add
-Updated: 2026-09-05
+Phase: 31 of 33 (The read layer)
+Status: planned, admitted and authorized
+Next: execute 31 plan 1; phases 14 to 26 and 30 re-planned behind 31 to 33
+Updated: 2026-09-12

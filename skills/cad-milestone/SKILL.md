@@ -3,6 +3,8 @@ name: cad-milestone
 description: "Cut a milestone - audit that nothing was dropped, tag when the project tags, prune completed phases from the roadmap, evolve PROJECT and refresh REQUIREMENTS"
 argument-hint: "[version | next-milestone name]"
 allowed-tools:
+  - mcp__cadence__cadence_apply
+  - mcp__cadence__cadence_query
   - Read
   - Write
   - Edit
@@ -37,3 +39,9 @@ blocker/high `risk_surface` finding; otherwise stop at the tag and leave
 publishing to a separate
 `/cad-land`.
 </process>
+
+<review_delivery>
+Before preservation/pruning, request review-consumer milestone and review-inventory for retained modern records. Preserve their identities and originals independently of disposable renderings; do not introduce a milestone review trigger. General carry and milestone ordering remain with their later owners.
+
+@${CLAUDE_PLUGIN_ROOT}/skills/cad-review-delivery/SKILL.md
+</review_delivery>

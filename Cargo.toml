@@ -1,0 +1,9 @@
+# Virtual workspace manifest (D-01): the Rust code lives under `crates/` so a
+# second member can be added without moving the first one. Phase 1 has exactly
+# one member (D-11); excerpt is not vendored here.
+[workspace]
+# Stated rather than inferred. A virtual root has no `edition` of its own, so
+# without this it would fall back to the 2015 resolver while the member is on
+# edition 2024 - two different feature-unification rules over one lockfile.
+resolver = "3"
+members = ["crates/cadence"]

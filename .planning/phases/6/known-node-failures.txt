@@ -1,0 +1,19 @@
+# The 16 Node tests D-29 rules out of scope for the 4.0 skill tree.
+# Task 6 must show EXACTLY these fail and nothing else.
+
+AC3: a contract skill anchor is clean while its Read sentence stands
+AC4: cad-executor-contract / references/worktree-executor.md is unread without its one sentence
+check 13: the live tree satisfies every register row
+D-07: a Read inside <worktree_mode> is anchorable at `worktree_mode`
+D-07: label EXACTNESS, not null-ness, is what blocks a relocation
+entry: a valueless or empty --root refuses instead of linting the cwd
+every deferred-read row states its consult-site count at each anchor
+EXP-05: the executor and the verifier state one rule in one vocabulary
+EXP-05: the executor verifies a task with the run that task names
+EXP-05: the full suite has one site, after the last task and before the digest
+EXP-05: the suite-site check FAILS when the site is deleted
+EXP-05: the targeted-run check FAILS when the sentence is deleted
+grammar: every shipped row's Read line still carries that row's anchor
+plan authority: Action never invents, Verify decides, in all five documents
+the executor dispatch hands over the resolve's answered surfaces, and the contract says what to do with them
+the repo itself passes self-verification

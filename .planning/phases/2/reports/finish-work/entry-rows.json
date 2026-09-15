@@ -1,0 +1,250 @@
+[
+  [
+    "config validate",
+    "config-validate-ok",
+    "config-validate-refused",
+    "handler",
+    "read",
+    "config.mjs:209"
+  ],
+  [
+    "config check",
+    "config-check-ok",
+    "config-check-refused",
+    "handler",
+    "invalid",
+    "config.mjs:581"
+  ],
+  [
+    "config set",
+    "config-set-ok",
+    "config-set-refused",
+    "handler",
+    "invalid",
+    "config.mjs:355"
+  ],
+  [
+    "config unset",
+    "config-unset-ok",
+    "config-unset-refused",
+    "handler",
+    "read",
+    "config.mjs:408"
+  ],
+  [
+    "config get",
+    "config-get-ok",
+    "config-get-refused",
+    "handler",
+    "unknown-key",
+    "config.mjs:477"
+  ],
+  [
+    "config keys",
+    "config-keys-ok",
+    "config-keys-ignored-argument",
+    "none",
+    "both ok; trailing argument ignored",
+    "config.mjs:591; lib/arg-contract.mjs:1165"
+  ],
+  [
+    "route resolve",
+    "route-resolve-ok",
+    "route-resolve-refused",
+    "handler",
+    "unknown-role",
+    "route.mjs:880"
+  ],
+  [
+    "forge detect",
+    "forge-detect-ok",
+    "forge-detect-refused",
+    "handler",
+    "no installed forge provider",
+    "forge.mjs:286"
+  ],
+  [
+    "forge create",
+    "forge-create-no-gh",
+    "forge-create-no-glab",
+    "handler",
+    "provider CLI absent",
+    "forge.mjs:481"
+  ],
+  [
+    "git-branch decide",
+    "git-branch-decide-ok",
+    "git-branch-decide-refused",
+    "door",
+    "missing-flag-value",
+    "git-branch.mjs:132; lib/arg-contract.mjs:1169"
+  ],
+  [
+    "git-branch tags",
+    "git-branch-tags-ok",
+    "git-branch-tags-refused",
+    "door",
+    "missing-flag-value",
+    "git-branch.mjs:132; lib/arg-contract.mjs:1169"
+  ],
+  [
+    "git-guard",
+    "git-guard-ok",
+    "git-guard-refused",
+    "handler",
+    "permissionDecision deny (exit 0)",
+    "git-guard.mjs:158"
+  ],
+  [
+    "git-publish publish",
+    "git-publish-publish-not-authorized",
+    "git-publish-publish-no-remote",
+    "handler",
+    "auto-close-off / remote-not-configured",
+    "git-publish.mjs:181; lib/publish-decision.mjs:105"
+  ],
+  [
+    "git-publish reap",
+    "git-publish-reap-ok",
+    "git-publish-reap-refused",
+    "handler",
+    "protected-branch",
+    "git-publish.mjs:235"
+  ],
+  [
+    "git-publish authorized",
+    "git-publish-authorized-ok",
+    "git-publish-authorized-refused",
+    "handler",
+    "auto-close-off",
+    "git-publish.mjs:306"
+  ],
+  [
+    "issue-check check",
+    "issue-check-check-ok",
+    "issue-check-check-refused",
+    "door",
+    "missing-flag-value",
+    "issue-check.mjs:353; lib/arg-contract.mjs:1244"
+  ],
+  [
+    "issue-filing file",
+    "issue-filing-file-missing-payload",
+    "issue-filing-file-bad-payload",
+    "handler",
+    "no-payload / bad-payload",
+    "issue-filing.mjs:691,698"
+  ],
+  [
+    "issue-filing unfixed",
+    "issue-filing-unfixed-missing-payload",
+    "issue-filing-unfixed-bad-payload",
+    "handler",
+    "no-payload / bad-payload",
+    "issue-filing.mjs:357,366"
+  ],
+  [
+    "land-cleanup cleanup",
+    "land-cleanup-cleanup-ok",
+    "land-cleanup-cleanup-refused",
+    "door",
+    "missing-flag-value",
+    "land-cleanup.mjs:273; lib/arg-contract.mjs:1197"
+  ],
+  [
+    "land-cleanup gate",
+    "land-cleanup-gate-ok",
+    "land-cleanup-gate-refused",
+    "door",
+    "missing-flag-value",
+    "land-cleanup.mjs:276; lib/arg-contract.mjs:1197"
+  ],
+  [
+    "read-trace",
+    "read-trace-ok",
+    "read-trace-ignored-tool",
+    "none",
+    "read appends reads.jsonl; Write input appends nothing",
+    "read-trace.mjs:10,43,54; lib/arg-contract.mjs:1374"
+  ],
+  [
+    "release-bump bump",
+    "release-bump-bump-ok",
+    "release-bump-bump-refused",
+    "handler",
+    "no-target-version",
+    "release-bump.mjs:304"
+  ],
+  [
+    "review-provider review",
+    "review-provider-review-no-openai-key",
+    "review-provider-review-no-gemini-key",
+    "handler",
+    "no-key for two providers",
+    "review-provider.mjs:1313"
+  ],
+  [
+    "review-provider consult",
+    "review-provider-consult-no-openai-key",
+    "review-provider-consult-no-gemini-key",
+    "handler",
+    "no-key for two providers",
+    "review-provider.mjs:1313"
+  ],
+  [
+    "review-provider detect-models",
+    "review-provider-detect-models-no-openai-key",
+    "review-provider-detect-models-no-gemini-key",
+    "handler",
+    "no-key for two providers",
+    "review-provider.mjs:1456"
+  ],
+  [
+    "subagent-trace",
+    "subagent-trace-ok",
+    "subagent-trace-ignored-agent",
+    "none",
+    "mapped worker closes trace bracket; unrelated agent writes nothing",
+    "subagent-trace.mjs:11,146,164; lib/arg-contract.mjs:1382"
+  ],
+  [
+    "weight",
+    "weight-ok",
+    "weight-refused",
+    "door",
+    "missing-flag-value",
+    "weight.mjs:49; lib/arg-contract.mjs:1346"
+  ],
+  [
+    "weight resident",
+    "weight-resident-ok",
+    "weight-resident-refused",
+    "handler",
+    "unknown-command",
+    "weight.mjs:62"
+  ],
+  [
+    "why",
+    "why-ok",
+    "why-refused",
+    "handler",
+    "bad-query",
+    "why.mjs:355"
+  ],
+  [
+    "skim",
+    "skim-ok",
+    "skim-refused",
+    "handler",
+    "no-such-file",
+    "skim.mjs:73"
+  ],
+  [
+    "worktree-base resolve",
+    "worktree-base-resolve-ok",
+    "worktree-base-resolve-refused",
+    "door",
+    "missing-flag-value",
+    "worktree-base.mjs:173; lib/arg-contract.mjs:1314"
+  ]
+]

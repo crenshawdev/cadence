@@ -1,12 +1,15 @@
 ---
 name: cad-plan-checker-medium
 description: The `medium` rung of `cad-plan-checker`; `bin/route.mjs` picks it, not the user.
-tools: Read, Bash, Glob, Grep, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
+tools: Bash, mcp__cadence__cadence_query
 disallowedTools: Write, Edit, MultiEdit
 color: green
 effort: medium
 maxTurns: 200
+mcpServers:
+  - cadence
 skills:
+  - cad-read-contract
   - cad-plan-checker-contract
 ---
 

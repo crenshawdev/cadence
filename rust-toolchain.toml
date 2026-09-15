@@ -1,0 +1,13 @@
+# Pinned to one exact version, never the floating `stable` channel. Phase 4
+# commits an archive checksum from a workflow_dispatch build BEFORE the tag
+# exists, and the tag's own build has to reproduce those bytes; a channel that
+# moves under the release cannot promise that. Bumping this file is a
+# deliberate commit that re-pins the checksums with it.
+#
+# Inert on a machine whose `cargo` is the distribution's own (Arch ships rustc
+# 1.98.1 with no rustup shim); binding on CI, where the workflows install the
+# channel this file names.
+[toolchain]
+channel = "1.98.1"
+# No `rust-docs`, no `rust-analyzer`: CI builds and tests, nothing more.
+profile = "minimal"

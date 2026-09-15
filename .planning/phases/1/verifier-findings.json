@@ -1,0 +1,150 @@
+{
+  "status": "gaps",
+  "score": "8/11",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "cargo build --locked at the repo root produces an executable named cadence and cargo test --locked passes, with Cargo.lock committed and target/ ignored",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "`./target/debug/cadence --version` -> `cadence 3.7.12`, exit 0. `cargo test --locked` -> 6 passed (unit) + 4 passed (tests/mcp.rs), 0 failed. `git ls-files Cargo.lock` lists it; .gitignore:60 carries `target/`; `git status --porcelain` shows only the untracked UAT.md."
+    },
+    {
+      "n": 2,
+      "truth": "A build from an empty target directory succeeds with --locked and the resulting binary completes an initialize + tools/list handshake and exits 0 on stdin close",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "CARGO_TARGET_DIR=<scratch> cargo build --locked --offline -> exit 0, 101 crates compiled from scratch including tree-sitter 0.27.0, tree-sitter-md/json/python/javascript/rust, rmcp 3.2.0, rmcp-macros, grep-searcher. The freshly built binary answered serverInfo {\"name\":\"cadence\",\"version\":\"3.7.12\"} and tools/list [\"cadence_version\"], and `: | cadence serve` exited 0. Caveat: RUSTC_WRAPPER is set on this machine (compile cache), so the 11.59s wall time is not a cold-compiler figure; the repo's own target/ was deliberately not `cargo clean`ed, since deleting it is a mutation the verifier does not make."
+    },
+    {
+      "n": 3,
+      "truth": "cadence serve names the server `cadence` and declares exactly one tool, cadence_version, carrying an outputSchema",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "Spawned `./target/debug/cadence serve` over stdio: initialize -> serverInfo {\"name\":\"cadence\",\"version\":\"3.7.12\"}; tools/list -> 1 tool, `cadence_version`, outputSchema keys ['$defs','$schema','oneOf']. Source: crates/cadence/src/server.rs:73 `#[tool_handler(name = \"cadence\")]`, :48-56 the single `#[tool]`."
+    },
+    {
+      "n": 4,
+      "truth": "A tool call returns the typed envelope as structured content on a successful call - status ok, isError not true - and the same four tags reach the wire schema",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "tools/call cadence_version -> isError false, structuredContent {\"status\":\"ok\",\"version\":\"3.7.12\",\"os\":\"linux\",\"arch\":\"x86_64\"}, plus a mirrored text block. The declared outputSchema's oneOf branches carry status consts ['ok','refused','unknown','not-applicable'] - the hyphen survives to the wire, not just to the unit test. crates/cadence/src/server.rs:56-70 returns `Json<Envelope<VersionReport>>`."
+    },
+    {
+      "n": 5,
+      "truth": "The envelope is one serde-tagged enum whose four tags serialize exactly, and a refused envelope through rmcp's structured-output path is a successful call (D-07)",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "crates/cadence/src/envelope.rs:41 `#[serde(tag = \"status\", rename_all = \"kebab-case\")]`, :59 explicit `rename = \"not-applicable\"`. Named test `envelope::tests::refused_is_a_successful_call_carrying_its_refusal` (envelope.rs:152-176) runs `Json(envelope).into_call_tool_result()` and asserts structured_content[\"status\"] == \"refused\" and is_error != Some(true); it passes. No `CallToolResult::error` or `structured_error` anywhere in the crate."
+    },
+    {
+      "n": 6,
+      "truth": ".github/workflows/test.yml carries a job that builds and tests the crate with --locked beside the untouched Node matrix",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "yaml parse -> jobs ['cargo-test','node-test','self-verify','typecheck']. test.yml:65-92 installs the channel rust-toolchain.toml names, then `cargo build --locked` and `cargo test --locked`. `git diff 290536c9~7 HEAD -- .github/workflows/test.yml` is 29 insertions, 0 deletions, so nothing existing was replaced. Green-on-CI is truth 11's human check."
+    },
+    {
+      "n": 7,
+      "truth": "release.yml carries a build matrix of exactly the four targets, gated on guard, runnable from a tag push or a dispatch, with publish untouched and every action SHA-pinned",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "yaml parse -> jobs ['build','guard','publish'], on = ['push','workflow_dispatch'], jobs.build.needs = 'guard', fail-fast false, targets exactly aarch64-apple-darwin / aarch64-unknown-linux-musl / x86_64-apple-darwin / x86_64-unknown-linux-musl. release.yml:44 gates the reachability step on `github.event_name == 'push'` while the test and self-verify steps run on both events. Every `uses:` in both workflows carries a 40-hex SHA (checkout, setup-node, upload-artifact@043fb46d). 112 insertions, 0 deletions across the phase, so the publish job is byte-unchanged."
+    },
+    {
+      "n": 8,
+      "truth": "package.sh produces a byte-reproducible two-entry archive and prints one sha256sum-format line that sha256sum -c accepts",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "Ran .github/scripts/package.sh twice on the same stand-in binary with the file's mtime changed (touch -t 202001010000 then 202606061212) and umask changed (022 then 077) between runs: identical line a13b185a...bed89, and `cmp` reports the two .tar.gz files byte-identical. `tar tvzf` lists exactly <name>/cadence (0755, uid/gid 0, mtime epoch) and <name>/LICENSE (0644). `sha256sum -c` on the printed line reports OK."
+    },
+    {
+      "n": 9,
+      "truth": "AC5: self-verify reports no issues and no ToolSearch preamble shipped in skills or workflows",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "`node cadence-core/bin/self-verify.mjs` -> {\"ok\":true, ... ,\"problems\":[]} across 30 checks including hook-events. `git grep -l 'ToolSearch' -- skills/ cadence-core/workflows/` returns nothing (exit 1). Note: the SessionStart row the criterion names does not exist yet - `grep -c SessionStart hooks/hooks.json` is 0 - so the row-specific half of AC5 is vacuously clean rather than exercised; phase 4 adds the row (.planning/phases/4/PLAN.md:64)."
+    },
+    {
+      "n": 10,
+      "truth": "AC2: a committed checksum file exists whose pinned sha256 a released archive can be compared against",
+      "status": "FAILED",
+      "uat_item": 3,
+      "evidence": "No pin file anywhere in the tree: `find` for *.sha256* returns nothing and `bin/cadence.pin` does not exist. It is phase 4's task 2 (.planning/phases/4/PLAN.md:11, :159-195), and REQUIREMENTS.md:604 maps REL-02 (the pin and the refusing publish) to Phase 4. What phase 1 does deliver against AC2 is the producing half: a guarded four-target matrix that packages reproducibly and prints each sha256 into the run summary (truths 7 and 8)."
+    },
+    {
+      "n": 11,
+      "truth": "AC3: a SessionStart hook fetches and installs the binary outside ${CLAUDE_PLUGIN_ROOT}",
+      "status": "FAILED",
+      "uat_item": 4,
+      "evidence": "hooks/hooks.json contains no SessionStart row (grep -c SessionStart -> 0) and no bootstrap script exists in the repo. BOT-01/BOT-02 map to Phase 4 in REQUIREMENTS.md:605-606 and the hook is phase 4's own must-be-true (.planning/phases/4/PLAN.md:46-58). Nothing in phase 1 touches this path."
+    },
+    {
+      "n": 12,
+      "truth": "AC4 as written: in a session with the plugin installed, a tool named mcp__cadence__* is servable",
+      "status": "FAILED",
+      "uat_item": 5,
+      "evidence": "The tool surface itself is real and typed (truths 3 and 4), but the plugin declares no MCP server: there is no `.mcp.json` at the plugin root (`git ls-files` finds only .planning/spikes/toolsearch-deferral/mcp.json, a spike fixture). Phase 1's PLAN.md:84-86 puts `.mcp.json` out of scope and phase 4 task 1 creates it (.planning/phases/4/PLAN.md:13, :123-146). So today a plugin-installed session surfaces no `mcp__cadence__*` tool at all; the surface can only be reached with a hand-written --mcp-config, which CONTEXT.md:182-188 itself calls not the shipping path."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Cold start from a clean tree",
+      "evidence": "Build into an empty CARGO_TARGET_DIR with `cargo build --locked --offline` exited 0 after compiling 101 crates from scratch (tree-sitter, rmcp, grep-searcher among them); the freshly built binary answered initialize with serverInfo name `cadence` version 3.7.12, tools/list with [\"cadence_version\"], and exited 0 on stdin close. The repo's own target/ was not deleted (a verifier does not mutate the tree), and RUSTC_WRAPPER is set on this machine, so the wall time is not a cold-compiler figure."
+    },
+    {
+      "k": 2,
+      "name": "The workspace builds and tests",
+      "evidence": "`./target/debug/cadence --version` -> `cadence 3.7.12`; `cargo test --locked` -> 10 tests, 10 passed, 0 failed (6 envelope unit tests, 4 spawned-binary mcp tests). Cargo.lock is committed, target/ is ignored at .gitignore:60, and the working tree is clean."
+    },
+    {
+      "k": 6,
+      "name": "self-verify is clean and no ToolSearch preamble shipped",
+      "evidence": "`node cadence-core/bin/self-verify.mjs` -> ok:true, problems:[] over 30 checks; `git grep -l 'ToolSearch' -- skills/ cadence-core/workflows/` returns nothing. The SessionStart row the criterion names does not exist yet (phase 4), so that half is vacuous, not exercised."
+    }
+  ],
+  "gaps": [
+    {
+      "k": 3,
+      "name": "A tagged release publishes four checksum-pinned archives",
+      "reason": "missing - the committed checksum file the criterion compares against does not exist anywhere in the repo, so the item cannot pass even on a live tag run",
+      "evidence": "No pin file in the tree (`bin/cadence.pin` absent, no *.sha256* files). The producing half IS built: .github/workflows/release.yml:66-165 carries the four-target matrix behind `needs: guard`, packages with .github/scripts/package.sh and appends each sha256 line to $GITHUB_STEP_SUMMARY; package.sh is reproducible byte-for-byte under changed umask and mtime (probed). What is absent is the pin file and the publish-side comparison, which .planning/phases/4/PLAN.md:159-195 owns and REQUIREMENTS.md:604 maps to Phase 4 as REL-02.",
+      "severity": "minor",
+      "missing": "Nothing to fix in phase 1's code. Either re-scope this UAT item to what phase 1 delivers (a dispatch run produces four archives and four sha256 lines) and move the pin-comparison half to phase 4's UAT, or defer the item outright to phase 4."
+    },
+    {
+      "k": 4,
+      "name": "SessionStart lands the binary on a bare machine",
+      "reason": "missing - no SessionStart hook and no bootstrap script were written in this phase, so a live session on a bare machine would fetch nothing",
+      "evidence": "`grep -c SessionStart hooks/hooks.json` is 0; no bootstrap script exists under bin/ or .github/scripts/. Phase 1's PLAN.md:84-86 lists the bootstrap and hooks.json as out of scope, .planning/phases/4/PLAN.md:46-58 carries the hook as its own must-be-true, and REQUIREMENTS.md:605-606 maps BOT-01/BOT-02 to Phase 4.",
+      "severity": "minor",
+      "missing": "Nothing to fix in phase 1's code. Move this item to phase 4's UAT, where the hook, the pin and the install path are built."
+    },
+    {
+      "k": 5,
+      "name": "A cadence tool answers with a typed envelope",
+      "reason": "unwired at the plugin seam - the tool and its envelope are real and were exercised over the wire, but nothing declares the server to a session, so no `mcp__cadence__*` name exists in a plugin-installed session",
+      "evidence": "Proven locally: spawned `cadence serve` answers tools/call cadence_version with isError false and structuredContent {\"status\":\"ok\",\"version\":\"3.7.12\",\"os\":\"linux\",\"arch\":\"x86_64\"}, and the declared outputSchema's oneOf carries all four tags including the hyphenated `not-applicable`. Not wired: there is no `.mcp.json` at the plugin root (git ls-files finds only the spike fixture at .planning/spikes/toolsearch-deferral/mcp.json). PLAN.md:84-86 excludes it; .planning/phases/4/PLAN.md:123-146 creates it.",
+      "severity": "minor",
+      "missing": "Nothing to fix in phase 1's code. Either re-scope the item to the stdio surface (which passes today) or move the plugin-session half to phase 4, where `.mcp.json` lands. The open question CONTEXT.md:189-194 flags - whether the CLI shows the model `structuredContent` at all - is still unobserved and belongs with it."
+    }
+  ],
+  "human_checks": [
+    {
+      "name": "Open a pull request from cadence/binary-owns-process and watch the `cargo-test` job in .github/workflows/test.yml",
+      "expected": "cargo-test green beside node-test, self-verify and typecheck; the toolchain step installs 1.98.1 by name and both `cargo build --locked` and `cargo test --locked` pass on ubuntu-latest",
+      "why_human": "Out of reach here: it needs a push to GitHub and a GitHub Actions runner. The workflow's structure was verified by parsing the YAML, and the same two commands pass locally, but no run exists because nothing has been pushed."
+    },
+    {
+      "name": "Dispatch .github/workflows/release.yml by hand (workflow_dispatch) on this branch",
+      "expected": "guard green with the `tagged commit is reachable from main` step skipped, four build legs green, four artifacts named by target, and four sha256 lines in the run summary",
+      "why_human": "Out of reach here: three of the four legs need macOS and arm64 GitHub-hosted runners, and the runner labels ubuntu-24.04-arm, macos-15-intel and macos-latest are excerpt's as of 2026-09 - a deprecated label fails its leg only at run time, which no local check can see."
+    },
+    {
+      "name": "Point a live Claude Code session at the built binary (--mcp-config declaring `cadence` -> `<path>/cadence serve`) and call cadence_version",
+      "expected": "the tool appears as mcp__cadence__cadence_version, the call succeeds, and the model can see the envelope tag `ok` - specifically whether the host surfaces structuredContent or only the mirrored text block",
+      "why_human": "Needs a live Claude Code session: what the host does with MCP structured content is a property of the CLI, not of this repo, and CONTEXT.md:189-194 flags it as an unverified assumption that D-07 rests on. Nothing in the repo can observe it."
+    }
+  ]
+}
