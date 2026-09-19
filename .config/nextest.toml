@@ -1,0 +1,3 @@
+[profile.default]
+# Half the machine: the resident launches the plan suite beside a running session.
+test-threads = 8

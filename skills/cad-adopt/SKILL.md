@@ -3,12 +3,10 @@ name: cad-adopt
 description: "Initialize .planning/ from a repo that already exists - PROJECT.md, REQUIREMENTS.md and a remaining-work ROADMAP.md derived from the code and the git history"
 argument-hint: ""
 allowed-tools:
-  - Read
+  - mcp__cadence__cadence_query
   - Write
   - Edit
   - Bash
-  - Grep
-  - Glob
   - AskUserQuestion
 ---
 

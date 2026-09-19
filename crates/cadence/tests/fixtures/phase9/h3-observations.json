@@ -1,0 +1,14 @@
+{
+  "accepted": {
+    "schema":"review-1",
+    "attempts":{"a1":{"attempt":"a1","fire":"f1","occurrence":"occ1","round":1,"slot":"A","fallback_for":null,"view":{"view":"v1","manifest":"m1","entries":["e1"]},"requested":{"agent":"reviewer","model":"model-A","effort":null,"routing":null,"selection_evidence":"selection1"},"observed_host":null,"observed_model":null,"launch":"launch1","host_return":"return1","state":"accepted","failure":null,"original":"o1","observations":["obs1"],"usage":{"input":null,"output":null,"cost":null,"currency":null},"contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"}}},
+    "host_returns":{"return1":"a1"},
+    "host_launches":{"launch1":"a1"},
+    "closures":{"a1":{"attempt":"a1","original":"o1","terminal":"accepted","acknowledged_at":100}},
+    "observations":{"obs1":{"observation":"obs1","attempt":"a1","launch":"launch1","host_return":"return1","kind":"return","reference":"host/event1","observed_at":100,"host":null,"model":null,"usage":{"input":null,"output":null,"cost":null,"currency":null},"contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"}}},
+    "originals":{"o1":{"raw":[123,34,102,105,110,100,105,110,103,115,34,58,91,93,125],"parsed":{"findings":[]}}}
+  },
+  "obs1":{"observation":"obs1","attempt":"a1","launch":"launch1","host_return":"return1","kind":"return","reference":"host/event1","observed_at":100,"host":null,"model":null,"usage":{"input":null,"output":null,"cost":null,"currency":null},"contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"}},
+  "obs2":{"observation":"obs2","attempt":"a1","launch":"launch1","host_return":"return1","kind":"usage","reference":"host/event2","observed_at":100,"host":null,"model":"observed-A","usage":{"input":7,"output":null,"cost":null,"currency":null},"contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"}},
+  "winner_attempt":{"attempt":"a1","fire":"f1","occurrence":"occ1","round":1,"slot":"A","fallback_for":null,"view":{"view":"v1","manifest":"m1","entries":["e1"]},"requested":{"agent":"reviewer","model":"model-A","effort":null,"routing":null,"selection_evidence":"selection1"},"observed_host":null,"observed_model":"observed-A","launch":"launch1","host_return":"return1","state":"accepted","failure":null,"original":"o1","observations":["obs1","obs2"],"usage":{"input":7,"output":null,"cost":null,"currency":null},"contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"}}
+}

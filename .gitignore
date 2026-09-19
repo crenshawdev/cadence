@@ -25,6 +25,15 @@ scratch/
 # Raw planning queue — local recall only, keeps candid working notes out of the public repo
 /.planning/CAPTURE.md
 
+# Native 4.0 store, one machine's copy: bound to this directory's identity, and its
+# import carries the raw capture queue and the trace record the two rules around it
+# withhold, so it stays local; the documents beside it are the tracked history
+/.planning/config.v4.json
+/.planning/decisions.jsonl
+/.planning/items.jsonl
+/.planning/state.json
+/.planning/.store-intent.json
+
 # Joined run record — local diagnostics only, one machine's routing/provider/worker events
 # The .1 sibling is the generation a rotation at the record's size bound leaves behind
 # The .claim sidecar dates the claim a rotation holds while it runs, and a process
@@ -33,17 +42,6 @@ scratch/
 /.planning/trace.1.jsonl
 /.planning/trace.1.jsonl.claim
 /.planning/trace.1.jsonl.claim.*
-
-# Per-tool-call read record — same posture, six rules: the live record, the
-# generation ITS rotation leaves behind, that rotation's claim files, and the
-# two private temps a rotation killed mid-window strands — the second of which
-# is a whole generation of up to 8 MiB
-/.planning/reads.jsonl
-/.planning/reads.1.jsonl
-/.planning/reads.1.jsonl.claim
-/.planning/reads.1.jsonl.claim.*
-/.planning/reads.jsonl.rotate.*
-/.planning/reads.1.jsonl.evict.*
 
 # Triage working copies — these hold copies of the raw planning queue, the same
 # candid text the /.planning/CAPTURE.md line above withholds, so tracking them
@@ -54,3 +52,7 @@ scratch/
 # ignoring these copies at exactly the moment they get staged. The same reason
 # covers tasks/<name>/ and spikes/<name>/, which are tracked trees too.
 /.planning/**/triage-work/
+
+# Cargo build output. Not just large - excerpt's own target/ measured 8.0G
+# on 2026-09-05 - but wholly derived from Cargo.lock and the sources beside it.
+target/

@@ -58,8 +58,26 @@ Check six dimensions:
    then contradicts. Naming symbols that already exist is correct and expected.
    The file list is a LEASE: a dependency-adding task without its lockfile
    (`Cargo.lock`, `package-lock.json`, `uv.lock`, `go.sum`, `Gemfile.lock`)
-   declared is a BLOCKER - `lease-check` refuses that commit as
-   `undeclared-files` and the executor halts mid-plan.
+   declared is a BLOCKER: patch-time enforcement refuses the reported commit
+   paths and the whole staged set as `undeclared-files`. There are zero exemptions
+   for new files, lockfiles or legacy reports; check both rename endpoints.
+   Native frontmatter requires `phase`, `plan`, `requirements`, `files`, optional
+   `directories`, and `execution` with `schema: 1`, a nonempty `suite`, and ordered
+   `tasks` containing unique `id` and nonempty `verify` lists. Flag unknown keys,
+   malformed fields, duplicate normalized declarations within either field,
+   more than 256 total declarations and empty total leases.
+   `files` is required and covers exact paths only; a trailing separator in
+   `files`, including backslash, is refused with a field-specific error. Optional
+   `directories` covers roots and descendants at path-component boundaries:
+   `src` covers `src/shared.txt`, not `src-other/shared.txt`. `files: []` requires
+   nonempty directories. Declare files before creation; existence is not required.
+   The sole `covers()` predicate serves admission, native overlap-derived ordering
+   and patch enforcement. Directory/file and nested-directory overlap create
+   dependencies from lower plan numbers to higher ones. Verify the complete
+   frontmatter lease covers every task's actual paths. An undeclared necessary
+   path requires an operator planning correction; changing the lease or body
+   cannot silently widen an active dispatch's fingerprint. Absent or empty
+   directories preserve historical exact-file identity preimages.
 3. **Sequencing** - tasks are ordered so each depends only on prior
    completed work. For split plans (PLAN-1, PLAN-2 ...): slices share no
    files and have no cross-slice ordering; if they do, the split is a
@@ -124,7 +142,7 @@ everything you find now - there is no second look.
 
 <guardrails>
 - Read-only: never edit a plan, never fix an issue yourself.
-- When `mcp__excerpt__excerpt_read` and `mcp__excerpt__excerpt_search` are on your tool list, prefer them over built-in Read and Grep for every read and search here, and prefer `excerpt_search` over shell `grep`/`rg` for code search - the shell channel is not an exemption; when they are absent, the built-ins are the path, not a reason to stop.
+- Read the project only through `cadence_query`, as the preloaded `cad-read-contract` states: `search` to locate, `read` at a location or file reference Cadence issued, `document` for process records. The host's Read, Grep and Glob tools and shell `cat`, `grep` and `rg` are not on the path; the shell channel is not an exemption.
 - Verify against the phase goal, not against how you would have planned it.
   Approach differences are not findings.
 - No severity inflation: a finding that would not stop the goal stays a

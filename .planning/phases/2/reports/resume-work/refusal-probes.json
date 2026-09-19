@@ -1,0 +1,475 @@
+[
+  {
+    "invocation": "status-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-planning-dir",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-lm6jpS/missing not found",
+      "hint": "/cad-new-project"
+    }
+  },
+  {
+    "invocation": "cursor-get-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-cursor",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-5QXp7L/missing/STATE.md not found",
+      "hint": "run /cad-progress, which derives where the project is from the phase artifacts and writes the cursor; /cad-new-project if this project has no .planning/ yet"
+    }
+  },
+  {
+    "invocation": "cursor-set-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-planning-dir",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-OzOMWX/missing not found",
+      "hint": "/cad-new-project"
+    }
+  },
+  {
+    "invocation": "phase-done-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "unknown-phase",
+      "detail": "no \"**Phase 9:**\" line under ## Phases",
+      "hint": "re-run with a phase number that appears in ROADMAP.md's `## Phases` list, or add the phase there first"
+    }
+  },
+  {
+    "invocation": "uat-init-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "uat-exists",
+      "detail": "use refresh, or remove the file deliberately",
+      "hint": "run `uat refresh --phase <N>` to append the new items to the checklist already on disk; deleting UAT.md instead throws away every result already recorded in it"
+    }
+  },
+  {
+    "invocation": "uat-refresh-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-payload",
+      "detail": "expected a JSON array of {name, expected}",
+      "hint": "send an ARRAY, and give every element both a `name` and an `expected` - fix the step that composed the payload and send it again"
+    }
+  },
+  {
+    "invocation": "uat-record-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "unknown-item",
+      "detail": "no item 999 in UAT.md",
+      "hint": "re-run with a number that appears in this phase's UAT.md; if the item you meant was never added, `uat refresh --phase <N>` appends it first"
+    }
+  },
+  {
+    "invocation": "uat-merge-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-payload",
+      "detail": "payload carries none of passes, gaps, human_checks as an array",
+      "hint": "add at least one of those three to the findings payload as an array - an object with none of them would merge nothing while reporting a clean deep pass"
+    }
+  },
+  {
+    "invocation": "uat-status-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-uat",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-odJVdD/.planning/phases/9/UAT.md not found",
+      "hint": "create this phase's checklist first with `uat init --phase <N>`, which /cad-verify runs as its own first step"
+    }
+  },
+  {
+    "invocation": "reads-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "read-failed",
+      "detail": "cannot read /code/cadence/.planning/phases/2/reports/resume-work/probe-MYdGDx/.planning/reads.jsonl",
+      "hint": "make that file readable, or move it aside if it is corrupt - until then this seam has no figures at all, and it is not reporting that the project opened no files"
+    }
+  },
+  {
+    "invocation": "audit-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-requirements",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-Oeaqtg/missing/REQUIREMENTS.md not found",
+      "hint": "point --dir at the .planning/ directory that holds REQUIREMENTS.md, or run /cad-new-project if this project has none yet - the audit reads its `## Traceability` table"
+    }
+  },
+  {
+    "invocation": "criteria-coverage-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-roadmap",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-ALySYC/missing/ROADMAP.md not found",
+      "hint": "point --dir at the .planning/ directory that holds ROADMAP.md - the phase list there is what says which phases have criteria to cover"
+    }
+  },
+  {
+    "invocation": "criteria-size-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-roadmap",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-cHweYw/missing/ROADMAP.md not found",
+      "hint": "point --dir at the .planning/ directory that holds ROADMAP.md - with no --phase this walks the phase list there, so it cannot run without one"
+    }
+  },
+  {
+    "invocation": "plan-overlap-missing-phase",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-phase-dir",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-64kHUr/.planning/phases/9 not found",
+      "hint": "run /cad-plan <N> to write this phase's plans first - the overlap check compares the `files:` lists in the PLAN files that directory holds"
+    }
+  },
+  {
+    "invocation": "replay-check-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-phase-dir",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-uy6kPS/.planning/phases/9 not found",
+      "hint": "run /cad-plan <N> first - this check reads the report each of that phase's plans would have written"
+    }
+  },
+  {
+    "invocation": "plan-size-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "plan-size needs --phase <N>",
+      "hint": "pass --phase <N> naming the phase whose plans should be sized, then re-run"
+    }
+  },
+  {
+    "invocation": "cite-count-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "cite-count --point must be one of planned | committed",
+      "hint": "send one of the two points the detail lists, naming which moment in /cad-plan this count was taken at, or drop --point"
+    }
+  },
+  {
+    "invocation": "seed-reqs-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-phase-dir",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-zXVF8A/.planning/phases/9 not found",
+      "hint": "run /cad-plan <N> first - the ids seeded here come from the `requirements:` lines of the PLAN files in that directory"
+    }
+  },
+  {
+    "invocation": "recall-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "--top must be a positive integer",
+      "hint": "send --top as a whole number of 1 or more, or drop it to take the default 5 results"
+    }
+  },
+  {
+    "invocation": "task-record-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "task-record --slug must be ONE path segment of lowercase letters, digits and single hyphens, at most 64 characters: --slug <name>",
+      "hint": "send a short kebab-case name for the task - `fix-login-redirect` - with no slashes, dots or spaces; it becomes the directory this record is written into"
+    }
+  },
+  {
+    "invocation": "lease-check-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-plan",
+      "detail": "no PLAN-1.md or PLAN.md under /code/cadence/.planning/phases/2/reports/resume-work/probe-CR6nxs/.planning/phases/9",
+      "hint": "/cad-plan 9"
+    }
+  },
+  {
+    "invocation": "detect-commands-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-root",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-lqEKrF/missing cannot be listed (ENOENT)",
+      "hint": "point --root at a directory this process can list - the lint and typecheck commands are read from the project manifests sitting at its top level"
+    }
+  },
+  {
+    "invocation": "detect-surfaces-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-root",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-u4EA9W/missing cannot be listed (ENOENT)",
+      "hint": "point --root at a directory this process can list - the surface scan walks the tree down from there"
+    }
+  },
+  {
+    "invocation": "trace-append-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "trace append --family must be one of routing | provider | lifecycle | outcome",
+      "hint": "send one of the families the detail lists; a coordinator closing a bracket calls `trace close` instead, which picks the family itself - nothing was appended"
+    }
+  },
+  {
+    "invocation": "trace-close-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "trace close --duration-ms needs a duration",
+      "hint": "copy the wall clock off the worker's return as the host prints it (1m 23s, 450ms) or as a plain whole number of milliseconds; nothing was appended, so a corrected re-run writes exactly one event"
+    }
+  },
+  {
+    "invocation": "trace-render-refused",
+    "source": "door",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "trace render --phase needs a phase number: --phase <N>",
+      "hint": "correct the flag the detail names and re-run - nothing was written. A value that itself starts with `--` cannot be protected by a bare `--` separator here: every `--`-prefixed word is read as a flag that consumes the next one, so send such a value through the matching `--<name>-file` flag where one exists"
+    }
+  },
+  {
+    "invocation": "trace-window-refused",
+    "source": "door",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "trace window --phase needs a phase number: --phase <N>",
+      "hint": "correct the flag the detail names and re-run - nothing was written. A value that itself starts with `--` cannot be protected by a bare `--` separator here: every `--`-prefixed word is read as a flag that consumes the next one, so send such a value through the matching `--<name>-file` flag where one exists"
+    }
+  },
+  {
+    "invocation": "trace-suggest-refused",
+    "source": "door",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "trace suggest --phase needs a phase number: --phase <N>",
+      "hint": "correct the flag the detail names and re-run - nothing was written. A value that itself starts with `--` cannot be protected by a bare `--` separator here: every `--`-prefixed word is read as a flag that consumes the next one, so send such a value through the matching `--<name>-file` flag where one exists"
+    }
+  },
+  {
+    "invocation": "trace-ignore-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-root",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-LigMLO/missing not found",
+      "hint": "point --root at the PROJECT root, the directory holding .gitignore - it is deliberately not --dir, which names .planning/"
+    }
+  },
+  {
+    "invocation": "risk-check-run-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "risk-check run takes --head <ref> or --staged, never both - they are two spellings of one scope",
+      "hint": "drop whichever one this check does not cover - --head <ref> for a committed range, --staged for the index against --base - then re-run this check"
+    }
+  },
+  {
+    "invocation": "risk-check-status-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "risk-check status takes --plan <k> --base <ref> and exactly one of --head <ref> or --staged, or none of the four",
+      "hint": "send --plan and --base with ONE scope - --head <ref> for a committed range, --staged for the index against --base - or none of them for the phase-wide answer; a half-named range would report on a record some other range left"
+    }
+  },
+  {
+    "invocation": "adjudication-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-payload",
+      "detail": "payload.voices must be a non-empty array - one block per voice that RAN",
+      "hint": "repair the payload file at the point the detail names, then re-run - nothing was written, so the fire is still unrecorded"
+    }
+  },
+  {
+    "invocation": "deferred-record-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-payload",
+      "detail": "payload.findings must be an array",
+      "hint": "repair the payload file at the point the detail names, then re-run - nothing was queued, and an unqueued finding is one /cad-land will never see"
+    }
+  },
+  {
+    "invocation": "risk-carry-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-planning-dir",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-2FrJ89/missing not found",
+      "hint": "/cad-new-project"
+    }
+  },
+  {
+    "invocation": "deferred-list-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-planning-dir",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-moOqyK/missing not found",
+      "hint": "/cad-new-project"
+    }
+  },
+  {
+    "invocation": "deferred-carry-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-planning-dir",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-uKhbnb/missing not found",
+      "hint": "/cad-new-project"
+    }
+  },
+  {
+    "invocation": "capture-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "capture --kind must be one of todo | seed | note (got: invalid)",
+      "hint": "send one of the kinds the detail lists - it decides which heading of CAPTURE.md the item is filed under, and the recall walk reads them differently"
+    }
+  },
+  {
+    "invocation": "capture-sections-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "unreadable-capture",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-H16s1n/.planning: EISDIR: illegal operation on a directory, read",
+      "hint": "make that file readable and re-run - the queue is PRESENT and could not be opened, so this is not a report that no items are filed outside the recall walk"
+    }
+  },
+  {
+    "invocation": "capture-check-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "unreadable-capture",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-ZLK6NO/.planning: EISDIR: illegal operation on a directory, read",
+      "hint": "make that file readable and re-run - the queue is PRESENT and could not be opened, so this is not a report that the queue is empty, carries no annotated item and holds no `## Archive` heading"
+    }
+  },
+  {
+    "invocation": "debt-harvest-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-root",
+      "detail": "/code/cadence/.planning/phases/2/reports/resume-work/probe-fqfsZ0/missing not found",
+      "hint": "point --root at the project root - the harvest walks the tracked files git lists from there"
+    }
+  },
+  {
+    "invocation": "renumber-insert-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "out-of-range",
+      "detail": "--at must be 1..3",
+      "hint": "pick a position inside that range - 3 appends after the last phase - then re-run; nothing was moved"
+    }
+  },
+  {
+    "invocation": "renumber-remove-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "unknown-phase",
+      "detail": "phase 99 is not in ROADMAP.md",
+      "hint": "re-run with a phase number that appears in ROADMAP.md's `## Phases` list; nothing was moved"
+    }
+  },
+  {
+    "invocation": "milestone-prune-refused",
+    "source": "handler",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "milestone-prune needs --mode <delete|archive> (tagged release: delete - the tag is the archive; untagged: archive)",
+      "hint": "pick the mode from the evidence: --mode delete when this milestone was tagged, since the tag keeps the history, and --mode archive when it was not; nothing was pruned"
+    }
+  }
+]

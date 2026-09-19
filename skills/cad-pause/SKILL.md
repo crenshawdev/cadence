@@ -3,7 +3,7 @@ name: cad-pause
 description: "Pause work cleanly - a WIP commit of in-flight changes plus a STATE cursor set to paused with a one-line resume pointer (/cad-progress offers to resume it)"
 argument-hint: "[one-line note about where you are]"
 allowed-tools:
-  - Read
+  - mcp__cadence__cadence_query
   - Write
   - Edit
   - Bash

@@ -752,14 +752,7 @@ export const CONTRACTS = {
       '--text': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--text-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // `--join` ties each record to the `trace.jsonl` dispatch bracket that
-    // caused it, by role normalization and timestamp containment. Off by
-    // default so the envelope every existing reader parses is unchanged, and
-    // whole-record by construction: `reads.jsonl` carries no phase scoping, so
-    // the brackets it joins to must span every phase.
-    reads: {
-      '--join': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
-    },
+
     // `--read` is ONE comma-separated value, never a repeated flag (parseArgs
     // keeps only the last). Its grammar is deliberately heterogeneous: an
     // element is any verbatim string naming something the site caused the
@@ -1369,20 +1362,7 @@ export const CONTRACTS = {
     '': {},
   },
 
-  // read-trace.mjs is the PostToolUse recorder - like git-guard.mjs it reads
-  // its input on stdin and takes no flags and no subcommand at all.
-  'read-trace.mjs': {
-    '*': {},
-    '': {},
-  },
-  // subagent-trace.mjs is the SubagentStop hook that closes a bracket the
-  // orchestrator opened. Same empty shape and the same reason as the two hooks
-  // above: the payload arrives on stdin, and it takes no flags and no
-  // subcommand at all.
-  'subagent-trace.mjs': {
-    '*': {},
-    '': {},
-  },
+
   // skim.mjs takes a FILE as its positional argument, never a subcommand, so
   // the bare row carries the whole flag set.
   'skim.mjs': {

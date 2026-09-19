@@ -3,11 +3,9 @@ name: cad-undo
 description: "Safely undo a phase - roll back its commits from the SUMMARY manifest, revert (or --no-commit to re-do), and reset the phase status"
 argument-hint: "<phase N> [--no-commit]"
 allowed-tools:
-  - Read
+  - mcp__cadence__cadence_query
   - Edit
   - Bash
-  - Grep
-  - Glob
   - AskUserQuestion
 ---
 

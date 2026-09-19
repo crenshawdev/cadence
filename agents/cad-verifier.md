@@ -1,14 +1,17 @@
 ---
 name: cad-verifier
-description: The `high` rung of `cad-verifier` (goal-backward phase verification); `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Bash, Grep, Glob, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
+description: The high rung of the native verifier; the binary selects it.
+tools: Bash, mcp__cadence__cadence_query, mcp__cadence__cadence_apply
 color: green
 effort: high
 maxTurns: 200
-disallowedTools: Edit, MultiEdit
+disallowedTools: Write, Edit, MultiEdit
+mcpServers:
+  - cadence
 skills:
+  - cad-read-contract
   - cad-verifier-contract
 ---
 
-Follow the preloaded `cad-verifier-contract` skill exactly - it is your full
-contract. This file names that contract and adds nothing else.
+Follow the preloaded `cad-verifier-contract` skill exactly. This metadata
+adapter names the compiled contract and adds no policy.

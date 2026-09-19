@@ -1,0 +1,108 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling cadence v3.7.12 (/code/cadence/crates/cadence)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.47s
+     Running tests/golden.rs (target/debug/deps/golden-0a626cbabeea6814)
+
+running 25 tests
+test empty_projection_fails_at_build_by_operation ... ok
+test nonexistent_bundle_names_the_bundle ... ok
+
+thread 'absent_activated_projection_fails_walk_by_operation' (260827) panicked at crates/cadence/tests/golden.rs:1207:5:
+task-record-ok.json: recording metadata disagrees with operations.json
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test absent_activated_projection_fails_walk_by_operation ... FAILED
+test empty_activated_projection_fails_walk_before_driver ... ok
+recordings=156 invocations=156 rules=6
+test loads_committed_recordings_manifest_and_rules ... ok
+test snapshot_worker ... ok
+test missing_recording_fails_walk_by_invocation ... ok
+
+thread 'every_recording_is_compared_or_pending' (260834) panicked at crates/cadence/tests/golden.rs:1129:84:
+called `Result::unwrap()` on an `Err` value: "task-record-ok.json: recording metadata disagrees with operations.json"
+test corrupt_recording_names_its_file ... ok
+test every_recording_is_compared_or_pending ... FAILED
+test files_only_control_names_changed_file_and_deleted_list ... ok
+test malformed_rule_names_file_and_rule ... ok
+test cursor_control_normalizes_real_day_in_stdout_and_file ... ok
+test hook_decision_control_rejects_allow ... ok
+test extra_recording_fails_walk_by_file ... ok
+bundles_materialized=17
+test nested_insertion_order_does_not_create_a_diff ... ok
+test every_manifest_bundle_materializes_intact ... ok
+
+thread 'control_driver_accounts_for_each_activated_invocation' (260828) panicked at crates/cadence/tests/golden.rs:1225:77:
+called `Result::unwrap()` on an `Err` value: "task-record-ok.json: recording metadata disagrees with operations.json"
+test control_driver_accounts_for_each_activated_invocation ... FAILED
+
+running 1 test
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Snapshot Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Snapshot file: /tmp/.tmpCyhzlv/replay-check-slice.snap
+Snapshot: replay-check-slice
+Source: /code/cadence/crates/cadence:658
+────────────────────────────────────────────────────────────────────────────────
+Expression: actual
+────────────────────────────────────────────────────────────────────────────────
+-old snapshot
++new results
+────────────┬───────────────────────────────────────────────────────────────────
+    1     1 │ {
+    2     2 │   "status.present": true,
+    3     3 │   "status": "ok",
+    4     4 │   "replay.present": true,
+    5       │-  "replay": true,
+          5 │+  "replay": false,
+    6     6 │   "dispatch_set.present": true,
+    7     7 │   "dispatch_set": [],
+    8     8 │   "deleted.present": true,
+    9     9 │   "deleted": []
+────────────┴───────────────────────────────────────────────────────────────────
+Stopped on the first failure. Run `cargo insta test` to run all snapshots.
+test snapshot_worker ... FAILED
+
+failures:
+
+failures:
+    snapshot_worker
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.01s
+
+
+thread 'snapshot_worker' (260858) panicked at /code/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/insta-1.48.0/src/runtime.rs:719:13:
+snapshot assertion for 'replay-check-slice' failed in line 658
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'flipped_replay_renders_insta_diff' (260837) panicked at crates/cadence/tests/golden.rs:640:9:
+golden mismatch: replay (replay-check-slice)
+test normalization_preserves_moved_seed_lines_tree_wide ... ok
+test flipped_replay_renders_insta_diff - should panic ... ok
+test stdout_root_control_requires_substitution ... ok
+
+thread 'wrong_control_driver_fails_the_walk_through_insta' (260856) panicked at crates/cadence/tests/golden.rs:1252:60:
+called `Result::unwrap()` on an `Err` value: "task-record-ok.json: recording metadata disagrees with operations.json"
+test replay_control_accepts_own_answer_and_names_flipped_key ... ok
+test wrong_control_driver_fails_the_walk_through_insta - should panic ... FAILED
+
+thread 'unrecorded_activation_fails_walk_by_operation' (260855) panicked at crates/cadence/tests/golden.rs:1184:5:
+task-record-ok.json: recording metadata disagrees with operations.json
+test unrecorded_activation_fails_walk_by_operation ... FAILED
+test trace_control_normalizes_only_new_fields_and_rejects_restamped_seed ... ok
+test refusal_control_compares_machine_code_for_each_non_ok_arm ... ok
+
+failures:
+
+---- wrong_control_driver_fails_the_walk_through_insta stdout ----
+note: panic did not contain expected string
+      panic message: "called `Result::unwrap()` on an `Err` value: \"task-record-ok.json: recording metadata disagrees with operations.json\""
+ expected substring: "golden mismatch: replay"
+
+failures:
+    absent_activated_projection_fails_walk_by_operation
+    control_driver_accounts_for_each_activated_invocation
+    every_recording_is_compared_or_pending
+    unrecorded_activation_fails_walk_by_operation
+    wrong_control_driver_fails_the_walk_through_insta
+
+test result: FAILED. 20 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `--test golden`

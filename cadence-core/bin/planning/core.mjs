@@ -28,7 +28,6 @@ import { CONTRACTS } from '../lib/arg-contract.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { parseUat, uatComplete } from '../lib/planning-files.mjs';
-import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
 import { RUNG_ORDER } from '../lib/rung-agent.mjs';
@@ -367,64 +366,6 @@ function readPlanReports(pdir, plans) {
   });
 }
 
-/**
- * The ONE `.planning/reads.jsonl` line parse in this file. Two arms read that
- * record now - `cmdReads` and the `trace suggest` arm below - and a second copy
- * of the partial-tail rule would be a second place for it to drift.
- *
- * It REPORTS what it hit and decides nothing. `absent` and `unreadable` are
- * handed back separately rather than collapsed, because the two callers take
- * deliberately different postures on them and a helper that picked one would
- * impose it on both: `reads` fails loudly on an unreadable file (it is the face
- * `/cad-report`'s Reading line is composed from, and a silent empty there reads
- * as a project that opened nothing), while `trace suggest` returns no entry and
- * names the file in `warnings[]`. A permissions error loud on one face and
- * invisible on the other is exactly what this split prevents.
- *
- * It also DROPS the rotation marker and reports the cut, because both are the
- * same fact about the same line and every reader crosses this parse. The
- * marker cannot be made inert the way `lib/trace.mjs:276-280` makes the
- * trace's: `summarizeReads` bills every object it is handed into `calls` and
- * `byAgent`, and `joinReads` pushes an `unresolved` row for any record with no
- * `agent`, so an unfiltered marker becomes a phantom read `/cad-report` prints
- * in its Reading line as a real tool call (D-09). Filtering in the two folds
- * instead would be three sites - `inDispatchReads` folds off `joinReads`'s
- * rows - and three places for one predicate to drift.
- *
- * `rotated` is present ONLY where a marker was seen, so a record that never
- * rotated returns exactly the three fields it has always returned.
- *
- * @param {string} dir the planning directory
- * @returns {{status: 'ok'|'absent'|'unreadable', records: any[], file: string,
- *   rotated?: {file: string, ts: string}}}
- */
-function readReadsRecords(dir) {
-  const file = join(dir, READS_FILE);
-  let text;
-  try {
-    text = readFileSync(file, 'utf8');
-  } catch (e) {
-    return { status: e && e.code === 'ENOENT' ? 'absent' : 'unreadable', records: [], file };
-  }
-  const records = [];
-  /** @type {{file: string, ts: string}|null} */
-  let rotated = null;
-  for (const line of text.split('\n')) {
-    const t = line.trim();
-    if (!t) continue;
-    // A truncated final line is SKIPPED, never fatal: the file is appended to
-    // by a hook that can be killed mid-write, and a partial tail must not cost
-    // the caller every complete record ahead of it.
-    let parsed;
-    try { parsed = JSON.parse(t); } catch { continue; /* partial line */ }
-    if (isReadsRotationMarker(parsed)) {
-      rotated = { file: String(parsed.file || ''), ts: String(parsed.ts || '') };
-      continue;
-    }
-    records.push(parsed);
-  }
-  return { status: 'ok', records, file, ...(rotated ? { rotated } : {}) };
-}
 
 /**
  * The per-role dispatch-window ceilings the `window` arm falls back to when no
@@ -1196,7 +1137,6 @@ export {
   readJsonPayload,
   readPlanReports,
   readQueue,
-  readReadsRecords,
   resolveIndex,
   resolveRange,
   resolveRef,

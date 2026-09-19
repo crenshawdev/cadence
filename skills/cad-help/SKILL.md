@@ -3,7 +3,7 @@ name: cad-help
 description: "Cadence's own help - the command reference for every /cad-* skill, grouped by cluster; pass a command name for just that entry"
 argument-hint: "[command name]"
 allowed-tools:
-  - Read
+  - mcp__cadence__cadence_query
 ---
 
 <objective>

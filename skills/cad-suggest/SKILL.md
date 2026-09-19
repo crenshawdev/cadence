@@ -1,27 +1,24 @@
 ---
 name: cad-suggest
-description: "Turn the run record into evidence-backed retune suggestions - each with its config key, the value in force, a direction and a target - and offer to route the ones you accept to /cad-config"
+description: Show retune suggestions from retained decisions and apply only an accepted payload.
 argument-hint: "[phase]"
 allowed-tools:
-  - Bash
-  - SlashCommand
+  - mcp__cadence__cadence_query
+  - mcp__cadence__cadence_apply
 ---
 
-<objective>
-The retune the run record supports, read back to you: every tweak under a
-heading of its own carrying its config key, the value in force, the direction to
-move it and the target where the record prices one, with the receipts that ask
-for nothing kept separate below. Every figure comes from
-`planning.mjs trace suggest` - this command relays the record, it never
-recomputes it and it writes no config key itself. It ends by offering to route
-the tweaks you accept to `/cad-config`, which is where a write would happen. No
-argument spans the whole record; a phase number scopes it.
-</objective>
+Call `mcp__cadence__cadence_query` once with `{"operation":"suggest"}`.
+If a phase is supplied, require canonical positive digits and add `phase` as a
+JSON integer. Refuse malformed input without rounding or selecting a default.
+If the query is refused, show its exact code and located reason and stop.
 
-<execution_context>
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/suggest.md
-</execution_context>
+Print every returned key, current value, proposed value and counted decisions
+unchanged, including the decision ids and all evidence figures. For an unpriced
+entry, print `priced: false` and its returned count and information; do not
+invent a current or proposed value that the answer omits.
 
-<process>
-Execute end-to-end.
-</process>
+Show each priced entry's exact `apply` payload and ask the owner whether to
+accept it. Send only the accepted `apply` payload unchanged through
+`mcp__cadence__cadence_apply`, then show the returned result. Send nothing on
+decline and nothing before asking. Never re-derive a value, alter a payload,
+combine proposals, or write configuration directly.

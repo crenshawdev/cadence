@@ -1,0 +1,50 @@
+commit b0ab734fd08d974ce75b2090e6dd06febf7b2c13 (b0ab734f)
+date: 2026-01-07T00:00:00Z
+subject: feat(3-1): raise beta after the prune
+phase: NOT RESOLVED - no phase directory on disk and no summary recovered from git history names this commit, so the record does not say which phase produced it
+  no close has pruned this commit yet, so no milestone label covers the gap
+  commit-message scope: 3-1 - read off the subject line as corroboration and explicitly NOT a resolved phase, because those numbers reset every milestone (D-06)
+  git records 1 path(s) touched by this commit:
+    src/thing.py
+plan task: not yet joined
+decision: not yet joined
+deviation: not yet joined
+review: not yet joined
+declared by: not yet joined
+
+commit d259a42f362c6602c5c46412df1ecaa5b89cc7c1 (d259a42f)
+date: 2026-01-04T00:00:00Z
+subject: feat(2-1): double alpha
+phase: an unlabelled close (e1da95a8) phase 2 (recovered from ea815ba1:.planning/phases/2)
+plan task: plan 1, task 1 - double alpha
+decision: not yet joined
+deviation: PHASE-SCOPED - the `corrected by plan-<k> deviation:` marker `workflows/execute.md` prescribes for a deviation that refutes a decision is absent from the whole record, so no deviation below is joined to a decision - the edge is missing on the WRITE side, not empty here
+  (this phase's SUMMARY records no deviation)
+review: no adjudication record in this phase's directory
+declared by: no plan file for this task's plan in the phase directory
+
+commit 1998232541b136c9ddc8d3436ac3766993cb0653 (19982325)
+date: 2026-01-02T00:00:00Z
+subject: feat(1-1): raise gamma
+phase: the open milestone phase 1 (phases/1)
+plan task: plan 1, task 1 - raise gamma
+decision: cited by this task (D-01)
+  D-01: thing keeps three named values, one per line
+deviation: PHASE-SCOPED - the `corrected by plan-<k> deviation:` marker `workflows/execute.md` prescribes for a deviation that refutes a decision is absent from the whole record, so no deviation below is joined to a decision - the edge is missing on the WRITE side, not empty here
+  - D-01 was kept: gamma stays an integer rather than the float the plan proposed
+review: no adjudication record in this phase's directory
+declared by: declared in PLAN-1.md
+  task 1: Seed thing (declares src/thing.py)
+
+commit 0f4169482d0be103583aaef894e959d524eb4237 (0f416948)
+date: 2026-01-01T00:00:00Z
+subject: feat(1-1): seed thing with three lines
+phase: the open milestone phase 1 (phases/1)
+plan task: plan 1, task 1 - seed thing with three lines
+decision: cited by this task (D-01)
+  D-01: thing keeps three named values, one per line
+deviation: PHASE-SCOPED - the `corrected by plan-<k> deviation:` marker `workflows/execute.md` prescribes for a deviation that refutes a decision is absent from the whole record, so no deviation below is joined to a decision - the edge is missing on the WRITE side, not empty here
+  - D-01 was kept: gamma stays an integer rather than the float the plan proposed
+review: no adjudication record in this phase's directory
+declared by: declared in PLAN-1.md
+  task 1: Seed thing (declares src/thing.py)

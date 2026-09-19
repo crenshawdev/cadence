@@ -70,28 +70,10 @@ Batch independent probes: greps, globs and reads whose target does not
 depend on another's result go out in ONE message, never one-then-wait. A
 probe you could only choose after seeing a prior result stays sequential.
 
-When `mcp__excerpt__excerpt_read` and `mcp__excerpt__excerpt_search` are on
-your tool list, prefer them over built-in Read and Grep for every read and
-search below, and prefer `excerpt_search` over shell `grep`/`rg` for code
-search - the shell channel is not an exemption; when they are absent, the
-built-ins are the path, not a reason to stop.
-
-To orient in a JS/TS file over ~20 KB, read it through
-`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/skim.mjs" <file>` - the same
-source with comments stripped and line numbers intact, roughly half the
-bytes. Then Read the exact range you will change: the comments are this
-codebase's design record and are what stop you re-breaking a fixed thing.
-Skim to find, Read to change.
-
-Where `skim.mjs` does not apply - markdown, schemas, JSON - locate with
-`mcp__excerpt__excerpt_search` when it is on your tool list and read the unit
-it returns; otherwise locate with `grep -n` carrying NO `-A`/`-B`/`-C`, then
-read the window those line numbers name. A search returning nothing gets a
-LOOSER PATTERN, never a wider range; recovering a missed heading by dumping
-eighty blind lines pays for the miss twice. On the no-excerpt path,
-`perl -ne 'print if /START/../END/'` takes a section by its boundaries rather
-than by numbers you guessed. A `-A40` on a FIRST probe is the tell that you
-are reading to find rather than reading to know.
+Read the project only through `cadence_query`, as the preloaded `cad-read-contract` states: `search` to locate, `read` at a location or file reference Cadence issued, `document` for process records. The host's Read, Grep and Glob tools and shell `cat`, `grep` and `rg` are not on the path; the shell channel is not an exemption. To orient in a large file, read its file reference for the
+outline of its units, then read the one unit you will change: the comments
+are this codebase's design record and are what stop you re-breaking a fixed
+thing. A search returning nothing gets a LOOSER PATTERN, never a wider range.
 
 Your `<planning_context>` MAY carry a `<recalled_memory>` block of cited
 prior-project snippets, each tagged with a source file and phase. Treat them as
@@ -106,8 +88,11 @@ Every task has exactly three fields, all concrete:
 
 - **Files:** exact paths created or modified. "src/auth/login.rs", never
   "the auth files". It is a LEASE: a path the executor must write but no plan
-  declared, `lease-check` refuses as `undeclared-files`, halting the task at its
-  commit. A dependency change writes the lockfile too (`Cargo.lock`,
+  declared produces an `undeclared-files` refusal at patch application. The
+  binary compares every reported commit path and the whole staged set to the
+  admitted lease, including both rename endpoints. There are zero exemptions:
+  new files, lockfiles and legacy reports must be covered before dispatch.
+  A dependency change writes the lockfile too (`Cargo.lock`,
   `package-lock.json`, `uv.lock`, `go.sum`, `Gemfile.lock`).
   When CONTEXT.md's decisions already cite evidence inside a file this task
   touches, carry that anchor onto the path - file plus SYMBOL (function,
@@ -181,6 +166,45 @@ ${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PLAN.md. The frontmatter
 `requirements` field MUST cover every phase requirement ID from your
 dispatch prompt, distributed across the plan(s); an ID covered by no plan
 is a planning failure.
+
+Native execution requires exactly `phase`, `plan`, `requirements`, `files`,
+optional `directories`, and `execution` in the frontmatter. `execution` contains
+`schema: 1`, the nonempty `suite` command and ordered `tasks`, each with a unique
+`id` and nonempty `verify` command list. Unknown fields and malformed declarations
+are refused. For example:
+
+```yaml
+---
+phase: 7
+plan: 1
+requirements: [AC3]
+files: [Cargo.lock]
+directories: [src/]
+execution:
+  schema: 1
+  suite: cargo test --workspace
+  tasks:
+    - id: T1
+      verify: [cargo test --lib]
+---
+Update the declared source and its dependency lockfile.
+```
+
+`files` is required and covers exact paths only. A trailing separator in `files`
+(including the alternate backslash separator) is a field-specific refusal,
+never silently stripped. Optional `directories` names roots with descendant
+coverage at path-component boundaries: `src` covers `src/shared.txt`, not
+`src-other/shared.txt`. `files: []` is valid only with a nonempty `directories`
+lease. Empty total leases, duplicate normalized declarations within a field and
+more than 256 total declarations are refused. A file need not exist yet.
+
+The sole `covers()` predicate serves admission, native overlap-derived ordering
+and patch enforcement. Directory/file and nested-directory overlap order lower
+plan numbers before higher ones; exact files acquire no recursive coverage.
+The complete frontmatter lease must cover every path any task actually touches.
+An unanticipated path requires an operator planning correction, not an exemption
+or a retry that silently expands the active lease. Lease changes affect the plan
+fingerprint; absent or empty directories preserve historical exact-file hashes.
 
 **One PLAN.md is the default.** Split into PLAN-1.md, PLAN-2.md ... ONLY
 when genuinely independent slices exist: no shared files, no cross-slice

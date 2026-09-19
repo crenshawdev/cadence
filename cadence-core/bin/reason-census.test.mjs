@@ -108,7 +108,7 @@ const REASON_TOKENS = Object.freeze([
   'no-plans', 'no-range', 'no-record', 'no-requirements', 'no-roadmap', 'no-root',
   'no-staged-set', 'no-traceability-table', 'no-uat', 'no-version-field', 'out-of-range',
   'over-cap', 'partial-apply', 'partial-bump', 'partial-flip', 'partial-prune', 'push-failed',
-  'read', 'read-failed', 'reap-failed', 'record-exists', 'surfaces-unanswered',
+  'read', 'reap-failed', 'record-exists', 'surfaces-unanswered',
   'the repository selector is not an owner/name a forge serves',
   'this create was not confirmed: no repository is created without the user answering the question first',
   'uat-exists', 'uncommitted-work', 'undeclared-census-files', 'undeclared-files',

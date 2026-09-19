@@ -3,10 +3,8 @@ name: cad-docs-verify
 description: "Verify docs claims against the live codebase - paths, commands, symbols, config keys - each reported accurate, stale or unverifiable. Reports; it does not rewrite docs"
 argument-hint: "[path or glob | defaults to README + docs/]"
 allowed-tools:
-  - Read
+  - mcp__cadence__cadence_query
   - Bash
-  - Grep
-  - Glob
   - AskUserQuestion
 ---
 

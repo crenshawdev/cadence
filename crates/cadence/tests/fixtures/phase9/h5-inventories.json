@@ -1,0 +1,15 @@
+{
+  "landing": [
+    {"fire":"f1","round":1,"trigger":"risk_surface","gate":"blocking","review_rendering":"REVIEW-risk_surface-1.md","adjudication_rendering":null,"adjudication":null,"deferred":null},
+    {"fire":"f2","round":2,"trigger":"risk_surface","gate":"blocking","review_rendering":"REVIEW-risk_surface-2.md","adjudication_rendering":"ADJUDICATION-risk_surface-2.md","adjudication":"adj2","deferred":null},
+    {"fire":"f3","round":1,"trigger":"plan","gate":"advisory","review_rendering":"REVIEW-plan.md","adjudication_rendering":null,"adjudication":null,"deferred":null}
+  ],
+  "milestone": [
+    {"fire":"f1","round":1,"trigger":"risk_surface","gate":"blocking","review_rendering":"REVIEW-risk_surface-1.md","adjudication_rendering":"ADJUDICATION-risk_surface-1.md","adjudication":"adj1","deferred":null},
+    {"fire":"f2","round":2,"trigger":"risk_surface","gate":"blocking","review_rendering":"REVIEW-risk_surface-2.md","adjudication_rendering":"ADJUDICATION-risk_surface-2.md","adjudication":"adj2","deferred":null},
+    {"fire":"f3","round":1,"trigger":"plan","gate":"advisory","review_rendering":"REVIEW-plan.md","adjudication_rendering":"ADJUDICATION-plan.md","adjudication":"adj3","deferred":null}
+  ],
+  "advisory": [
+    {"fire":"f1","round":1,"trigger":"plan","gate":"advisory","review_rendering":"REVIEW-plan.md","adjudication_rendering":null,"adjudication":null,"deferred":null}
+  ]
+}

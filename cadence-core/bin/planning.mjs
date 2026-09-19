@@ -223,7 +223,6 @@ import { cmdLeaseCheck } from './planning/lease-check.mjs';
 import { cmdTaskRecord } from './planning/task-record.mjs';
 import { cmdDetectCommands } from './planning/detect-commands.mjs';
 import { cmdDetectSurfaces } from './planning/detect-surfaces.mjs';
-import { cmdReads } from './planning/reads.mjs';
 import { cmdCapture } from './planning/capture.mjs';
 import { cmdCaptureSections } from './planning/capture-sections.mjs';
 import { cmdCaptureCheck } from './planning/capture-check.mjs';
@@ -266,7 +265,6 @@ const COMMANDS = {
   },
   'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
-  reads: (dir, _sub, opts) => cmdReads(dir, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
   'criteria-coverage': (dir, _sub, _opts) => cmdCriteriaCoverage(dir),
   'criteria-size': (dir, _sub, opts) => cmdCriteriaSize(dir, opts),

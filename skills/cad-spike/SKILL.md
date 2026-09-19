@@ -3,12 +3,10 @@ name: cad-spike
 description: "Spike - a time-boxed experiment resolving one unknown before you bet on it, risk-first, with a validated | invalidated | inconclusive verdict"
 argument-hint: "<the question or hypothesis to resolve>"
 allowed-tools:
-  - Read
+  - mcp__cadence__cadence_query
   - Write
   - Edit
   - Bash
-  - Grep
-  - Glob
   - AskUserQuestion
 ---
 

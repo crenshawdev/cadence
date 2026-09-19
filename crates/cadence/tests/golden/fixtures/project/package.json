@@ -1,0 +1,12 @@
+{
+  "name": "golden-project",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "passport": "0.7.0"
+  }
+}

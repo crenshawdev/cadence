@@ -1,0 +1,8 @@
+{
+  "human_checks": [
+    {
+      "name": "Golden merge item",
+      "expected": "A result is recorded."
+    }
+  ]
+}

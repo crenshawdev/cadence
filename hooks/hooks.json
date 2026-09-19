@@ -2,24 +2,12 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-guard.mjs\"",
+            "command": "cadence guard",
             "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Read|Grep|Glob|Bash|NotebookRead|mcp__excerpt__excerpt_read|mcp__excerpt__excerpt_search",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/read-trace.mjs\"",
-            "timeout": 5
           }
         ]
       }
@@ -29,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/subagent-trace.mjs\"",
+            "command": "cadence review-stop",
             "timeout": 10
           }
         ]

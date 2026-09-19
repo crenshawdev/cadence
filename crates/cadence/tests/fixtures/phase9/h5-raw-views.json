@@ -1,0 +1,1805 @@
+{
+  "plan": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      }
+    },
+    "renderings": {}
+  },
+  "execute": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      }
+    },
+    "renderings": {}
+  },
+  "report": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      }
+    },
+    "renderings": {}
+  },
+  "deferred": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": "risk_surface",
+          "specialist": null,
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": "deferred",
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      }
+    },
+    "renderings": {}
+  },
+  "specialist-raw": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": null,
+          "specialist": "minimalism",
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": null,
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "49cfe9cf0c1eddf6409b9a84c79979b10619ce1a0d65051bd544c9519264875b",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            123,
+            34,
+            102,
+            105,
+            108,
+            101,
+            34,
+            58,
+            34,
+            97,
+            46,
+            114,
+            115,
+            34,
+            44,
+            34,
+            108,
+            105,
+            110,
+            101,
+            34,
+            58,
+            49,
+            44,
+            34,
+            115,
+            101,
+            118,
+            101,
+            114,
+            105,
+            116,
+            121,
+            34,
+            58,
+            34,
+            104,
+            105,
+            103,
+            104,
+            34,
+            44,
+            34,
+            99,
+            108,
+            97,
+            105,
+            109,
+            34,
+            58,
+            34,
+            67,
+            34,
+            44,
+            34,
+            102,
+            97,
+            105,
+            108,
+            117,
+            114,
+            101,
+            95,
+            115,
+            99,
+            101,
+            110,
+            97,
+            114,
+            105,
+            111,
+            34,
+            58,
+            34,
+            83,
+            34,
+            125,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": [
+              {
+                "file": "a.rs",
+                "line": 1,
+                "severity": "high",
+                "claim": "C",
+                "failure_scenario": "S"
+              }
+            ]
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": [
+            {
+              "finding": {
+                "original": "o1",
+                "index": 0
+              },
+              "submitted": null,
+              "unresolved_reason": "not-supplied"
+            }
+          ]
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      }
+    },
+    "renderings": {}
+  },
+  "specialist-empty": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": null,
+          "specialist": "minimalism",
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": null,
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "accepted",
+          "failure": null,
+          "original": "o1",
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {
+        "o1": {
+          "original": "o1",
+          "content": "9d0f2143c61cfbb6c0cf0425ce8b447811a32d48ec37333ba8b3700218631b36",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "raw": [
+            123,
+            34,
+            102,
+            105,
+            110,
+            100,
+            105,
+            110,
+            103,
+            115,
+            34,
+            58,
+            91,
+            93,
+            125
+          ],
+          "parsed": {
+            "findings": []
+          },
+          "attempt": "a1",
+          "host_return": "return1",
+          "artifact": "m1",
+          "view": "v1",
+          "acceptance": {
+            "state": "accepted"
+          },
+          "closure": {
+            "attempt": "a1",
+            "original": "o1",
+            "terminal": "accepted",
+            "acknowledged_at": 100
+          },
+          "citations": []
+        }
+      },
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      }
+    },
+    "renderings": {}
+  },
+  "specialist-failed": {
+    "records": {
+      "schema": "review-1",
+      "admissions": {
+        "f1": {
+          "fire": "f1",
+          "replay_key": "k1",
+          "scope": {
+            "project": "p1",
+            "root": "r1",
+            "cycle": "c1"
+          },
+          "home": {
+            "kind": "task",
+            "id": "h1",
+            "occurrence": "occ1"
+          },
+          "caller": "task",
+          "trigger": null,
+          "specialist": "minimalism",
+          "discriminator": "d1",
+          "plan": null,
+          "anchor": null,
+          "round": 1,
+          "artifact": "m1",
+          "gate": null,
+          "selection": {
+            "mode": "single",
+            "choices": [
+              "A",
+              "B"
+            ],
+            "fallback": "local"
+          },
+          "routing": {
+            "answer": "local",
+            "evidence": "route1"
+          },
+          "roster": {
+            "required": [
+              "A"
+            ],
+            "completion": "all-required-terminal"
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "settlement": "pending"
+        }
+      },
+      "manifests": {
+        "m1": {
+          "manifest": "m1",
+          "fire": "f1",
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          },
+          "target": {
+            "kind": "named-file",
+            "path": "a.rs",
+            "head": null
+          },
+          "entries": [
+            {
+              "entry": "e1",
+              "role": "primary",
+              "path": "a.rs",
+              "label": null,
+              "side": "snapshot",
+              "availability": "available",
+              "unavailable_reason": null,
+              "content": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+              "retained": "material-old",
+              "old_path": null,
+              "new_path": null,
+              "lines": [
+                {
+                  "line": 1,
+                  "start": 0,
+                  "end": 3
+                }
+              ],
+              "hunks": [],
+              "acquisition": "acq1",
+              "acquired_at": 100,
+              "provenance": "original-view",
+              "attempt": null,
+              "view": null
+            }
+          ]
+        }
+      },
+      "attempts": {
+        "a1": {
+          "attempt": "a1",
+          "fire": "f1",
+          "occurrence": "occ1",
+          "round": 1,
+          "slot": "A",
+          "fallback_for": null,
+          "view": {
+            "view": "v1",
+            "manifest": "m1",
+            "entries": [
+              "e1"
+            ]
+          },
+          "requested": {
+            "agent": "reviewer",
+            "model": "model-A",
+            "effort": null,
+            "routing": null,
+            "selection_evidence": "route1"
+          },
+          "observed_host": null,
+          "observed_model": null,
+          "launch": "launch1",
+          "host_return": "return1",
+          "state": "failed",
+          "failure": "missing-return",
+          "original": null,
+          "observations": [],
+          "usage": {
+            "input": null,
+            "output": null,
+            "cost": null,
+            "currency": null
+          },
+          "contract": {
+            "schema": "review-1",
+            "interpretation": "H1-H5",
+            "validator": "H4-1"
+          }
+        }
+      },
+      "originals": {},
+      "retained": {
+        "material-old": [
+          111,
+          108,
+          100,
+          10
+        ]
+      }
+    },
+    "renderings": {}
+  },
+  "pending": {
+    "delivery": "pending",
+    "findings": null
+  },
+  "failed": {
+    "delivery": "failed",
+    "findings": null
+  },
+  "accepted-empty": {
+    "delivery": "accepted-empty",
+    "findings": null
+  }
+}
