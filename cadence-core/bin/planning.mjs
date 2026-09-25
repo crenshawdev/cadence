@@ -65,19 +65,6 @@
 //                                   declared nothing reports *_found:false and
 //                                   is never compared, so `within` is null
 //                                   when nothing was compared at all
-//   task-record --slug <s> --base <ref> --head <ref>
-//               [--text "<what shipped>" | --text-file <path>]
-//                                   the record a `/cad-task` run leaves:
-//                                   .planning/tasks/<slug>/RECORD.md, written in
-//                                   the corpus's own grammar so `recall` indexes
-//                                   it and `/cad-why` joins a commit back to it.
-//                                   The commits table and the declared-files
-//                                   line are DERIVED from the range, never
-//                                   retyped onto a flag. A slug that is not one
-//                                   safe path segment is refused with nothing
-//                                   written, and a tree with no planning root
-//                                   gets neither one nor a record - `written:
-//                                   false` with a reason, ok:true
 //   recall "<query>"                BM25 over .planning artifacts (SUMMARY
 //                                   deviations and open items, CAPTURE, UAT,
 //                                   CONTEXT decisions, ARCHIVE rows, and each
@@ -167,14 +154,6 @@
 //                                   tree, collected into .planning/CAPTURE.md's
 //                                   own `## Debt markers` section (NOT --dir:
 //                                   it scans source and writes into .planning)
-//   milestone-prune --label <l> --mode <delete|archive>
-//                                   the mechanical half of a milestone close:
-//                                   checked phases leave ROADMAP (line +
-//                                   detail section), their dirs delete
-//                                   (tagged release) or move to
-//                                   _archive-<label>/ (untagged), and their
-//                                   requirements move from Active/Traceability
-//                                   into ## Shipped rows carrying the label
 //   trace window [--phase N]        every paired bracket's terminal `tokens`
 //                                   figure against its role's
 //                                   workflow.max_dispatch_tokens ceiling, as
@@ -220,22 +199,17 @@ import { cmdCiteCount } from './planning/cite-count.mjs';
 import { cmdSeedReqs } from './planning/seed-reqs.mjs';
 import { cmdRecall } from './planning/recall.mjs';
 import { cmdLeaseCheck } from './planning/lease-check.mjs';
-import { cmdTaskRecord } from './planning/task-record.mjs';
 import { cmdDetectCommands } from './planning/detect-commands.mjs';
 import { cmdDetectSurfaces } from './planning/detect-surfaces.mjs';
-import { cmdReads } from './planning/reads.mjs';
 import { cmdCapture } from './planning/capture.mjs';
 import { cmdCaptureSections } from './planning/capture-sections.mjs';
 import { cmdCaptureCheck } from './planning/capture-check.mjs';
 import { cmdDebtHarvest } from './planning/debt-harvest.mjs';
-import { cmdMilestonePrune } from './planning/milestone-prune.mjs';
 import { cmdTrace } from './planning/trace.mjs';
 import { cmdRiskCheck } from './planning/risk-check.mjs';
 import { cmdAdjudication } from './planning/adjudication.mjs';
 import { cmdDeferredRecord } from './planning/deferred-record.mjs';
 import { cmdDeferredList } from './planning/deferred-list.mjs';
-import { cmdDeferredCarry } from './planning/deferred-carry.mjs';
-import { cmdRiskCarry } from './planning/risk-carry.mjs';
 import { cmdRenumber } from './planning/renumber.mjs';
 
 function parseArgs(argv) {
@@ -266,7 +240,6 @@ const COMMANDS = {
   },
   'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
-  reads: (dir, _sub, opts) => cmdReads(dir, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
   'criteria-coverage': (dir, _sub, _opts) => cmdCriteriaCoverage(dir),
   'criteria-size': (dir, _sub, opts) => cmdCriteriaSize(dir, opts),
@@ -283,10 +256,6 @@ const COMMANDS = {
   // failure. tokenize() splits on non-alphanumerics, so the separator is
   // immaterial; `[].join(' ')` is '', which still trips the bad-args guard.
   recall: (dir, _sub, opts, rest) => cmdRecall(dir, rest.join(' '), opts),
-  // The record a `/cad-task` run leaves (FST-01). ONE word, never a two-word
-  // spelling, for the reason the `adjudication` arm below states:
-  // `subcommandKey` consumes a second word only for the `TWO_WORD` families.
-  'task-record': (dir, _sub, opts) => cmdTaskRecord(dir, opts),
   'lease-check': (dir, _sub, opts) => cmdLeaseCheck(dir, opts),
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the
@@ -310,22 +279,14 @@ const COMMANDS = {
   // word, never a two-word spelling: `subcommandKey` consumes a second word only
   // for the `TWO_WORD` families, and one operation does not earn widening it.
   adjudication: (dir, _sub, opts) => cmdAdjudication(dir, opts),
-  // The risk_surface rulings OUT of the phase directory a milestone close is
-  // about to delete (LND-02). ONE word, never a two-word spelling, for the
-  // reason the `adjudication` arm above states: `subcommandKey` consumes a
-  // second word only for the `TWO_WORD` families, one operation does not earn
-  // widening it, and widening it would change how every existing spelling
-  // resolves.
-  'risk-carry': (dir, _sub, opts) => cmdRiskCarry(dir, opts),
   // The DEFERRED gate's queue member, beside that same REVIEW file. TWO words,
-  // unlike `adjudication` above: this is one of three operations on the queue,
+  // unlike `adjudication` above: this is one of two operations on the queue,
   // which is the `risk-check run|status` precedent for widening `TWO_WORD`
   // rather than the single-operation `adjudication` one.
   deferred: (dir, sub, opts) => {
     if (sub === 'record') return cmdDeferredRecord(dir, opts);
     if (sub === 'list') return cmdDeferredList(dir, opts);
-    if (sub === 'carry') return cmdDeferredCarry(dir, opts);
-    return fail('usage', 'deferred record|list|carry');
+    return fail('usage', 'deferred record|list');
   },
   // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
   // queue, which sits beside the global config layer and not in any `.planning`.
@@ -343,7 +304,6 @@ const COMMANDS = {
   'debt-harvest': (_dir, _sub, opts) =>
     cmdDebtHarvest(typeof opts.root === 'string' ? opts.root : process.cwd()),
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
-  'milestone-prune': (dir, _sub, opts) => cmdMilestonePrune(dir, opts),
 };
 
 try {

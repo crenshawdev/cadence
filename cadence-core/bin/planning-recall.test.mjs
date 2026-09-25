@@ -16,10 +16,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PLANNING, makeTree, run } from './planning.test.mjs';
-// The tasks tier is read back out of a record the task-record seam wrote, so
-// its fixtures come from the arms that own that seam rather than a second
-// copy of them here.
-import { taskRepo, runIn, TASK_COMMITS } from './planning-task-record.test.mjs';
+// The tasks tier is read back out of an authored historical RECORD.md. With the
+// JavaScript task-record writer retired, the real-repository fixtures it needs
+// live in support/ rather than in the arms that once owned that seam.
+import { taskRepo, TASK_COMMITS } from './support/task-history-fixtures.mjs';
 
 /** True iff this module is what node was told to run; realpath on both sides so
  * a symlinked checkout still matches (config-seams.test.mjs D-19). */
@@ -412,12 +412,13 @@ test('recall: a RECORD.md symlinked OUT of the planning root is never indexed', 
   assert.equal(r.json.results.some((x) => x.source.startsWith('tasks/')), false);
 });
 
-test('task-record -> recall: a record written by the seam is found by what it says', () => {
-  // The round trip both halves of D-09 exist for: the writer's `## What shipped`
-  // heading and the walk's reader are one fact, and this is where they meet.
-  const { root, dir, shas } = taskRepo(TASK_COMMITS);
-  runIn(root, ['task-record', '--slug', 'bound-plan-size', '--base', `${shas[0]}^`,
-    '--head', shas[1], '--text', 'A ceiling on plan size, enforced at the gate.'], dir);
+test('historical task record -> recall: an authored record is found by what it says', () => {
+  // The surviving half of D-09: the JavaScript writer is retired, but the walk's
+  // reader still joins a query to a record. An AUTHORED historical RECORD.md, in
+  // the corpus's own `## What shipped` grammar, is planted into a real
+  // repository's planning tree and found by what it says.
+  const { dir } = taskRepo(TASK_COMMITS);
+  taskRecordIn(dir, 'bound-plan-size', ['A ceiling on plan size, enforced at the gate.']);
   const r = recall('ceiling plan size gate', dir);
   assert.equal(r.json.ok, true);
   assert.deepEqual(r.json.results.map((x) => x.source), ['tasks/bound-plan-size/RECORD.md']);

@@ -13,7 +13,7 @@
 // written as a literal marker head, because arm (iii) walks every `.mjs` under
 // cadence-core/bin/ including this one: a spelled-out head here would be
 // ingested as a real marked site and would need a second exclusion list to
-// undo. That is the lib/merge-warnings.mjs discipline helper-census.test.mjs
+// undo. That is the discipline helper-census.test.mjs
 // states - the fix belongs in the pattern, never in a second list.
 //
 // No entry in test.mjs's GROUPS: a stem no group names lands in `other`, which
@@ -128,7 +128,7 @@ test('the walk reaches the whole bin tree - more than 60 modules, lib/ and test 
   // measuring nothing, which is the exact failure a census exists against.
   assert.ok(MODULES.length > 60, `only ${MODULES.length} .mjs files found`);
   for (const expected of ['cadence-core/bin/lib/census-registry.mjs',
-    'cadence-core/bin/census-registry.test.mjs', 'cadence-core/bin/self-verify.mjs',
+    'cadence-core/bin/census-registry.test.mjs',
     'cadence-core/bin/planning/lease-check.mjs']) {
     assert.ok(MODULES.includes(expected), `${expected} missing from the walk`);
   }

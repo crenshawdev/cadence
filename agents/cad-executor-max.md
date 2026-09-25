@@ -1,11 +1,14 @@
 ---
 name: cad-executor-max
-description: The `max` rung of `cad-executor`; `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
+description: The max native executor; works the binary's dispatch through the native task protocol and returns a digest.
+tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__cadence__cadence_query, mcp__cadence__cadence_apply
 color: yellow
 effort: max
 maxTurns: 200
+mcpServers:
+  - cadence
 skills:
+  - cad-read-contract
   - cad-executor-contract
 ---
 

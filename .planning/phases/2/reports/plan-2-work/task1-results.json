@@ -1,0 +1,364 @@
+{
+  "prediction": "47 identical pairs, stable risk SHAs across TMPDIR, risk/debt success, written marker, configured github, no GPG",
+  "runs": [
+    {
+      "invocation": "task-record-ok",
+      "identical": true
+    },
+    {
+      "invocation": "task-record-refused",
+      "identical": true
+    },
+    {
+      "invocation": "lease-check-ok",
+      "identical": true
+    },
+    {
+      "invocation": "lease-check-refused",
+      "identical": true
+    },
+    {
+      "invocation": "trace-close-ok",
+      "identical": true
+    },
+    {
+      "invocation": "trace-close-refused",
+      "identical": true
+    },
+    {
+      "invocation": "risk-check-run-ok",
+      "identical": true
+    },
+    {
+      "invocation": "risk-check-run-refused",
+      "identical": true
+    },
+    {
+      "invocation": "risk-check-status-ok",
+      "identical": true
+    },
+    {
+      "invocation": "risk-check-status-refused",
+      "identical": true
+    },
+    {
+      "invocation": "adjudication-ok",
+      "identical": true
+    },
+    {
+      "invocation": "adjudication-refused",
+      "identical": true
+    },
+    {
+      "invocation": "deferred-record-ok",
+      "identical": true
+    },
+    {
+      "invocation": "deferred-record-refused",
+      "identical": true
+    },
+    {
+      "invocation": "debt-harvest-ok",
+      "identical": true
+    },
+    {
+      "invocation": "debt-harvest-refused",
+      "identical": true
+    },
+    {
+      "invocation": "renumber-insert-ok",
+      "identical": true
+    },
+    {
+      "invocation": "renumber-insert-refused",
+      "identical": true
+    },
+    {
+      "invocation": "renumber-remove-ok",
+      "identical": true
+    },
+    {
+      "invocation": "renumber-remove-refused",
+      "identical": true
+    },
+    {
+      "invocation": "forge-detect-ok",
+      "identical": true
+    },
+    {
+      "invocation": "forge-detect-refused",
+      "identical": true
+    },
+    {
+      "invocation": "git-branch-decide-ok",
+      "identical": true
+    },
+    {
+      "invocation": "git-branch-decide-refused",
+      "identical": true
+    },
+    {
+      "invocation": "git-branch-tags-ok",
+      "identical": true
+    },
+    {
+      "invocation": "git-branch-tags-refused",
+      "identical": true
+    },
+    {
+      "invocation": "git-guard-ok",
+      "identical": true
+    },
+    {
+      "invocation": "git-guard-refused",
+      "identical": true
+    },
+    {
+      "invocation": "git-publish-publish-not-authorized",
+      "identical": true
+    },
+    {
+      "invocation": "git-publish-publish-no-remote",
+      "identical": true
+    },
+    {
+      "invocation": "git-publish-reap-ok",
+      "identical": true
+    },
+    {
+      "invocation": "git-publish-reap-refused",
+      "identical": true
+    },
+    {
+      "invocation": "git-publish-authorized-ok",
+      "identical": true
+    },
+    {
+      "invocation": "git-publish-authorized-refused",
+      "identical": true
+    },
+    {
+      "invocation": "issue-check-check-ok",
+      "identical": true
+    },
+    {
+      "invocation": "issue-check-check-refused",
+      "identical": true
+    },
+    {
+      "invocation": "issue-filing-file-missing-payload",
+      "identical": true
+    },
+    {
+      "invocation": "issue-filing-file-bad-payload",
+      "identical": true
+    },
+    {
+      "invocation": "issue-filing-unfixed-missing-payload",
+      "identical": true
+    },
+    {
+      "invocation": "issue-filing-unfixed-bad-payload",
+      "identical": true
+    },
+    {
+      "invocation": "land-cleanup-cleanup-ok",
+      "identical": true
+    },
+    {
+      "invocation": "land-cleanup-cleanup-refused",
+      "identical": true
+    },
+    {
+      "invocation": "land-cleanup-gate-ok",
+      "identical": true
+    },
+    {
+      "invocation": "land-cleanup-gate-refused",
+      "identical": true
+    },
+    {
+      "invocation": "land-cleanup-gate-halt",
+      "identical": true
+    },
+    {
+      "invocation": "why-ok",
+      "identical": true
+    },
+    {
+      "invocation": "why-refused",
+      "identical": true
+    }
+  ],
+  "risk_other_tmp_identical": true,
+  "risk": {
+    "invocation": "risk-check-run-ok",
+    "operation": "risk-check run",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "risk-check",
+      "run",
+      "--phase",
+      "1",
+      "--plan",
+      "1",
+      "--base",
+      "d13361766710e28b272adcd3fc8b0b220c6f4bc2",
+      "--head",
+      "e0e0f7c8b6ed7e26f96185aaba2bd891e8b4c70a",
+      "--surfaces",
+      "auth",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "stdin": null,
+    "env": {
+      "PATH": "<FIXTURE>/.golden-env/bin",
+      "HOME": "<FIXTURE>/.golden-env/home",
+      "TZ": "UTC",
+      "LC_ALL": "C.UTF-8",
+      "LANG": "C.UTF-8",
+      "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+      "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+      "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+      "GIT_CONFIG_GLOBAL": "/dev/null",
+      "GIT_CONFIG_SYSTEM": "/dev/null",
+      "GIT_AUTHOR_NAME": "Golden Fixture",
+      "GIT_AUTHOR_EMAIL": "golden@example.invalid",
+      "GIT_COMMITTER_NAME": "Golden Fixture",
+      "GIT_COMMITTER_EMAIL": "golden@example.invalid",
+      "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+      "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+      "GIT_TERMINAL_PROMPT": "0",
+      "GIT_ALLOW_PROTOCOL": ""
+    },
+    "node": "26",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "phase": 1,
+      "plan": "1",
+      "base": "d13361766710e28b272adcd3fc8b0b220c6f4bc2",
+      "head": "e0e0f7c8b6ed7e26f96185aaba2bd891e8b4c70a",
+      "base_id": "d13361766710e28b272adcd3fc8b0b220c6f4bc2",
+      "head_id": "e0e0f7c8b6ed7e26f96185aaba2bd891e8b4c70a",
+      "checked": true,
+      "categories": [
+        "auth"
+      ],
+      "matches": [
+        {
+          "category": "auth",
+          "signal": "path segment auth"
+        }
+      ],
+      "inconclusive": false,
+      "empty": false,
+      "trace": {
+        "written": true
+      }
+    },
+    "stderr": "",
+    "files": {},
+    "deleted": []
+  },
+  "debt": {
+    "invocation": "debt-harvest-ok",
+    "operation": "debt-harvest",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "debt-harvest",
+      "--root",
+      "<FIXTURE>",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "stdin": null,
+    "env": {
+      "PATH": "<FIXTURE>/.golden-env/bin",
+      "HOME": "<FIXTURE>/.golden-env/home",
+      "TZ": "UTC",
+      "LC_ALL": "C.UTF-8",
+      "LANG": "C.UTF-8",
+      "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+      "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+      "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+      "GIT_CONFIG_GLOBAL": "/dev/null",
+      "GIT_CONFIG_SYSTEM": "/dev/null",
+      "GIT_AUTHOR_NAME": "Golden Fixture",
+      "GIT_AUTHOR_EMAIL": "golden@example.invalid",
+      "GIT_COMMITTER_NAME": "Golden Fixture",
+      "GIT_COMMITTER_EMAIL": "golden@example.invalid",
+      "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+      "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+      "GIT_TERMINAL_PROMPT": "0",
+      "GIT_ALLOW_PROTOCOL": ""
+    },
+    "node": "26",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "root": "<FIXTURE>",
+      "file": "<FIXTURE>/.planning/CAPTURE.md",
+      "markers": 1,
+      "files": 2,
+      "written": true
+    },
+    "stderr": "",
+    "files": {
+      ".planning/CAPTURE.md": "# Capture\n\n## Todos\n\n## Seeds\n\n## Notes\n\n## Debt markers\n\n- `src/auth.mjs:1` literal policy fixture - ceiling: one local policy - trigger: a second policy\n"
+    },
+    "deleted": []
+  },
+  "forge": {
+    "invocation": "forge-detect-ok",
+    "operation": "forge detect",
+    "bundle": "forge-configured",
+    "script": "cadence-core/bin/forge.mjs",
+    "argv": [
+      "detect",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "stdin": null,
+    "env": {
+      "PATH": "<FIXTURE>/.golden-env/bin",
+      "HOME": "<FIXTURE>/.golden-env/home",
+      "TZ": "UTC",
+      "LC_ALL": "C.UTF-8",
+      "LANG": "C.UTF-8",
+      "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+      "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+      "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+      "GIT_CONFIG_GLOBAL": "/dev/null",
+      "GIT_CONFIG_SYSTEM": "/dev/null",
+      "GIT_AUTHOR_NAME": "Golden Fixture",
+      "GIT_AUTHOR_EMAIL": "golden@example.invalid",
+      "GIT_COMMITTER_NAME": "Golden Fixture",
+      "GIT_COMMITTER_EMAIL": "golden@example.invalid",
+      "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+      "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+      "GIT_TERMINAL_PROMPT": "0",
+      "GIT_ALLOW_PROTOCOL": ""
+    },
+    "node": "26",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "action": "configured",
+      "reason": "this repository's forge is already set to github: nothing to ask",
+      "installed": [],
+      "provider": "github",
+      "repo": "golden/fixture",
+      "host": null,
+      "detail": null,
+      "warnings": []
+    },
+    "stderr": "",
+    "files": {},
+    "deleted": []
+  },
+  "gpg_matches": []
+}

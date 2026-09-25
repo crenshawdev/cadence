@@ -1,24 +1,20 @@
 ---
 name: cad-help
-description: "Cadence's own help - the command reference for every /cad-* skill, grouped by cluster; pass a command name for just that entry"
+description: "List Cadence commands shipped under skills/ by cluster, or show one command and its compiled description."
 argument-hint: "[command name]"
 allowed-tools:
-  - Read
+  - mcp__cadence__cadence_query
 ---
 
-<objective>
-Show what Cadence can do. A static reference (references/COMMANDS.md) - the
-clusters are the headings. No search, no state, no side effects.
-</objective>
+Call `mcp__cadence__cadence_query` once with `{"operation":"help"}` when no
+name is supplied. Present every returned cluster in order, with each command's
+name and compiled description.
 
-<execution_context>
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/COMMANDS.md
-</execution_context>
+With a command name, call `{"operation":"help","name":"<command name>"}`.
+One optional leading slash and one optional cad- prefix are accepted: debug,
+cad-debug and /cad-debug select the same command. Present the single row.
+If no row matches, show the returned closest names in their supplied order;
+do not invent a command or treat the suggestions as an exact match.
 
-<process>
-- No argument: present the full command reference above, grouped by cluster.
-- A command name in `$ARGUMENTS` (with or without the `cad-`/`/` prefix): show
-  that command's row and cluster, and point at the skill for detail. If it does
-  not match a known command, say so and list the closest names.
-Read-only: display the reference, do nothing else.
-</process>
+Help reads only the compiled command table. Read nothing else: no project
+files, command reference, search, or state. Help writes nothing.

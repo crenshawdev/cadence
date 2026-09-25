@@ -1,0 +1,47 @@
+[package]
+name = "cadence"
+version = "4.0.0"
+edition = "2024"
+license = "MIT"
+description = "The Cadence plan/execute/verify loop, served over MCP stdio."
+repository = "https://github.com/crenshawdev/cadence"
+rust-version = "1.90"
+# Not published to crates.io: the name is taken by an unrelated crate, and
+# Cadence ships as a GitHub release archive instead (D-03). This is belt and
+# braces on top of that - a stray `cargo publish` refuses rather than errors
+# out at the registry.
+publish = false
+
+# Copied from excerpt (D-10). The parser and walk crates left with the code
+# search; the search crates stay for record search and risk diffs.
+[dependencies]
+rmcp = { version = "3.2.0", features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync", "time", "signal"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+regex = "1"
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde-saphyr = { version = "1.2.0", default-features = false, features = ["deserialize"] }
+# `preserve_order` keeps every key a file already had in the order it had them,
+# and `float_roundtrip` keeps a float this crate does not own byte-identical
+# through a parse and re-serialize. Nothing in phase 1 rewrites a JSON file it
+# did not author, so neither feature is load-bearing yet; they are declared here
+# rather than later because the config and record layers that will do exactly
+# that must not inherit them from a transitive enable another crate could drop.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip", "arbitrary_precision"] }
+schemars = "1"
+clap = { version = "4", features = ["derive", "env"] }
+libc = "0.2"
+# ripgrep as a LIBRARY, never as a spawned `rg` binary: Cadence ships one
+# static binary per target with no runtime dependency, and an external binary
+# it has to find is an external binary it can fail to find.
+grep-searcher = "0.1.17"
+grep-regex = "0.1.14"
+grep-matcher = "0.1.9"
+
+# Dev-only (D-15): these never reach the shipped binary, so the toolchain pin
+# and phase 19 archive checksums are untouched. insta renders comparison
+# failures; tempfile holds writable fixtures and negative-control copies; regex
+# applies shared rules in the same dialect subset as the JavaScript recorder.
+[dev-dependencies]
+tempfile = "3"

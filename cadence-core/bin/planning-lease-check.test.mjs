@@ -350,22 +350,17 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // live in lib/text-flag-file.mjs, which this file-scoped census does not
   // walk, and they are the same caller-named-path class.
   //
-  // `task-record` added BOTH classes at once, which is what this row is for: its
-  // `git log`/`git diff` catch is wrapped, on the same argument as `risk-check
-  // run`'s, and its `mkdirSync`/`atomicWrite` catch is NOT - that detail is an
-  // `fs` error over the path `--dir` just named, the caller-named-path class
-  // `capture --text-file` and phase-done's partial-flip already sit in.
   // `capture-check`'s unreadable-but-present arm is the same caller-named-path
   // class, unwrapped for the same reason `capture-sections`' is: an `fs` error
   // over the path `--file` or `--dir` just named carries no remote credential.
-  // CADENCE-CENSUS: planning-detail-sites | asserts: 15 error-detail sites across the whole planning seam, 6 of them wrapped in redactUrl
+  // CADENCE-CENSUS: planning-detail-sites | asserts: 13 error-detail sites across the whole planning seam, 5 of them wrapped in redactUrl
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = seamSource();
-  assert.equal((src.match(IDIOM) || []).length, 15, 'the planning seam gained or lost a detail site');
-  assert.equal((src.match(WRAPPED) || []).length, 6,
-    'a git-failure detail (no-staged-set, resolveRange, risk-check run\'s diff catch, '
-    + 'task-record\'s range read or groundCitations\' probe) or readQueue\'s '
+  assert.equal((src.match(IDIOM) || []).length, 13, 'the planning seam gained or lost a detail site');
+  assert.equal((src.match(WRAPPED) || []).length, 5,
+    'a git-failure detail (no-staged-set, resolveRange, risk-check run\'s diff catch '
+    + 'or groundCitations\' probe) or readQueue\'s '
     + 'provider-authored parse detail is unredacted');
   assert.match(src, /could not read the staged set: \$\{redactUrl\(/);
 });

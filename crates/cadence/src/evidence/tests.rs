@@ -1,0 +1,366 @@
+use super::*;
+use checkpoint::{Checkpoint, CheckpointType, State};
+use serde_json::json;
+
+fn record(kind: CheckpointType) -> Record {
+    Record {
+        version: VERSION,
+        scope: Scope {
+            project: "/project".into(),
+            planning_root: "/project/.planning".into(),
+            cycle: "v4".into(),
+            occurrence: "dispatch-1".into(),
+            phase: "5".into(),
+            plan: "phases/5/PLAN-1.md".into(),
+            report: "phases/5/reports/plan-1.md".into(),
+        },
+        fact: Fact::Checkpoint(Checkpoint {
+            id: "stop-1".into(),
+            checkpoint_type: kind,
+            task_number: 7,
+            task_name: "  Réparer 日本語\t".into(),
+            need: "\n  Need: ¿sí?\r\n\t保持  \n".into(),
+            completed_work: vec!["60d94a5a".into()],
+            state: State::Unresolved,
+            failing_output: Some("reports/suite.log:17".into()),
+        }),
+    }
+}
+
+/// A checkpoint record of every type in every state.
+fn checkpoints() -> Vec<(CheckpointType, Record)> {
+    let mut all = Vec::new();
+    for kind in [
+        CheckpointType::Structural,
+        CheckpointType::HumanVerify,
+        CheckpointType::Decision,
+        CheckpointType::Blocked,
+        CheckpointType::SuiteRed,
+    ] {
+        for state in [
+            State::Unresolved,
+            State::Resolved {
+                resolution: "approved  \n".into(),
+            },
+            State::Superseded {
+                by: "stop-2".into(),
+            },
+        ] {
+            let mut value = record(kind.clone());
+            let Fact::Checkpoint(checkpoint) = &mut value.fact else {
+                panic!("checkpoint")
+            };
+            checkpoint.state = state;
+            all.push((kind.clone(), value));
+        }
+    }
+    all
+}
+
+#[test]
+fn only_a_suite_red_checkpoint_needs_no_operator_answer() {
+    for (kind, value) in checkpoints() {
+        let Fact::Checkpoint(checkpoint) = &value.fact else {
+            panic!("checkpoint")
+        };
+        assert_eq!(
+            checkpoint.requires_operator_answer(),
+            kind != CheckpointType::SuiteRed
+        );
+    }
+}
+
+#[test]
+fn validate_accepts_every_checkpoint_type_and_state() {
+    for (_, value) in checkpoints() {
+        value.validate().unwrap();
+    }
+}
+
+#[test]
+fn a_checkpoint_record_round_trips_through_json() {
+    for (_, value) in checkpoints() {
+        let decoded: Record =
+            serde_json::from_value(serde_json::to_value(&value).unwrap()).unwrap();
+        assert_eq!(decoded, value);
+    }
+}
+
+#[test]
+fn a_checkpoint_record_round_trips_through_its_history_decision() {
+    for (_, value) in checkpoints() {
+        assert_eq!(
+            persistence::decode_history(&persistence::history("op", &value, Some(1_700_000_000)).unwrap()).unwrap(),
+            Some(value)
+        );
+    }
+}
+
+#[test]
+fn a_record_missing_a_required_field_does_not_deserialize() {
+    let original = serde_json::to_value(record(CheckpointType::SuiteRed)).unwrap();
+    for field in ["version", "scope", "fact"] {
+        let mut value = original.clone();
+        value.as_object_mut().unwrap().remove(field);
+        assert!(serde_json::from_value::<Record>(value).is_err(), "{field}");
+    }
+    for field in [
+        "project",
+        "planning_root",
+        "cycle",
+        "occurrence",
+        "phase",
+        "plan",
+        "report",
+    ] {
+        let mut value = original.clone();
+        value["scope"].as_object_mut().unwrap().remove(field);
+        assert!(serde_json::from_value::<Record>(value).is_err(), "{field}");
+    }
+    for field in [
+        "id",
+        "checkpoint_type",
+        "task_number",
+        "task_name",
+        "need",
+        "state",
+        "completed_work",
+    ] {
+        let mut value = original.clone();
+        value["fact"]["value"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        assert!(serde_json::from_value::<Record>(value).is_err(), "{field}");
+    }
+}
+
+#[test]
+fn validate_refuses_blank_scope_and_checkpoint_fields() {
+    let original = serde_json::to_value(record(CheckpointType::SuiteRed)).unwrap();
+    for field in [
+        "project",
+        "planning_root",
+        "cycle",
+        "occurrence",
+        "phase",
+        "plan",
+        "report",
+    ] {
+        let mut value = original.clone();
+        value["scope"][field] = json!(" \t");
+        assert!(
+            serde_json::from_value::<Record>(value)
+                .unwrap()
+                .validate()
+                .is_err(),
+            "{field}"
+        );
+    }
+    for (field, bad) in [
+        ("id", json!("")),
+        ("task_name", json!(" ")),
+        ("need", json!("\n")),
+        ("task_number", json!(0)),
+        ("failing_output", Value::Null),
+    ] {
+        let mut value = original.clone();
+        value["fact"]["value"][field] = bad;
+        assert!(
+            serde_json::from_value::<Record>(value)
+                .unwrap()
+                .validate()
+                .is_err(),
+            "{field}"
+        );
+    }
+}
+
+#[test]
+fn validate_refuses_an_unsupported_version() {
+    let mut bad = record(CheckpointType::Blocked);
+    bad.version = 99;
+    assert!(bad.validate().is_err());
+}
+
+use serde_json::Value;
+#[test]
+fn project_keeps_every_other_snapshot_key() {
+    let seed = json!({"derivation":{"memo":"hash"}, "import":{"original":"bytes"}, "cursor":"raw", "arbitrary":[1,null," x "]});
+    let data = persistence::project(&seed, &record(CheckpointType::Blocked)).unwrap();
+    for (key, value) in seed.as_object().unwrap() {
+        assert_eq!(&data[key], value);
+    }
+}
+
+#[test]
+fn read_returns_each_occurrence_under_its_own_key_and_nothing_without_the_namespace() {
+    let seed = json!({"cursor":"raw"});
+    let first = record(CheckpointType::Blocked);
+    let mut second = first.clone();
+    second.scope.occurrence = "dispatch-2".into();
+    let data =
+        persistence::project(&persistence::project(&seed, &first).unwrap(), &second).unwrap();
+    let records = persistence::read(&data).unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[&first.key().unwrap()], first);
+    assert_eq!(records[&second.key().unwrap()], second);
+    assert!(persistence::read(&seed).unwrap().is_empty());
+}
+
+#[test]
+fn decode_history_ignores_a_decision_without_the_native_marker() {
+    let mut legacy = persistence::history("legacy", &record(CheckpointType::Blocked), Some(1_700_000_000)).unwrap();
+    legacy.origin.source = "import".into();
+    assert_eq!(persistence::decode_history(&legacy).unwrap(), None);
+}
+
+/// A review-receipt override with its settled counts and finding record.
+fn review_override() -> Record {
+    use overrides::*;
+    let mut value = record(CheckpointType::Decision);
+    value.fact = Fact::Override(Override {
+        id: "range".into(),
+        reason: "  exact reason\n".into(),
+        authorization: Authorization::Invocation {
+            id: "answer".into(),
+            invocation: "accept this range".into(),
+        },
+        meaning: Meaning::Review(ReviewReceipt {
+            base: "B".into(),
+            head: "C".into(),
+            trigger: "execute".into(),
+            plan: Some(value.scope.plan.clone()),
+            correlation: "run".into(),
+            round: Some(1),
+            anchor: None,
+            finding_record: "ADJUDICATION.md:17".into(),
+            settled: SettledCounts {
+                survivors: 3,
+                downgraded: 2,
+                refuted: 1,
+            },
+        }),
+    });
+    value
+}
+
+#[test]
+fn a_review_receipt_round_trips_through_project_and_read() {
+    let value = review_override();
+    let projected = persistence::project(&json!({"legacy":{"reason":null}}), &value).unwrap();
+    assert_eq!(
+        persistence::read(&projected).unwrap()[&value.key().unwrap()],
+        value
+    );
+}
+
+#[test]
+fn a_review_receipt_round_trips_through_its_history_decision() {
+    let value = review_override();
+    assert_eq!(
+        persistence::decode_history(&persistence::history("range", &value, Some(1_700_000_000)).unwrap()).unwrap(),
+        Some(value)
+    );
+}
+
+#[test]
+fn review_receipt_counts_do_not_replace_finding_reference() {
+    use overrides::*;
+    let mut value = review_override();
+    let Fact::Override(o) = &mut value.fact else {
+        unreachable!()
+    };
+    let Meaning::Review(receipt) = &mut o.meaning else {
+        unreachable!()
+    };
+    receipt.finding_record.clear();
+    assert!(
+        value.validate().is_err(),
+        "counts alone cannot support native receipt"
+    );
+    assert!(persistence::project(&json!({}), &value).is_err());
+}
+
+#[test]
+fn a_grant_applies_only_to_its_own_live_occurrence() {
+    use authority::{Occurrence, Permission};
+    use overrides::*;
+    let mut grant = record(CheckpointType::Decision);
+    grant.fact = Fact::Override(Override {
+        id: "pause".into(),
+        reason: "continue later".into(),
+        authorization: Authorization::Invocation {
+            id: "answer".into(),
+            invocation: "pause here".into(),
+        },
+        meaning: Meaning::PausedNext {
+            sentence: "resume exact instruction".into(),
+        },
+    });
+    let pending = persistence::project(&json!({}), &grant).unwrap();
+    let records: Vec<_> = persistence::read(&pending).unwrap().into_values().collect();
+    assert_eq!(authority::permission(&records, &grant.scope, "pause"), Permission::Pending);
+    let mut later = grant.scope.clone();
+    later.occurrence = "another".into();
+    assert_eq!(authority::permission(&records, &later, "pause"), Permission::Absent);
+    for state in [
+        Occurrence::Fulfilled {
+            completion: "done".into(),
+        },
+        Occurrence::Superseded {
+            by: "another".into(),
+        },
+    ] {
+        let transition = Record {
+            version: VERSION,
+            scope: grant.scope.clone(),
+            fact: Fact::Occurrence(state),
+        };
+        let ended: Vec<_> =
+            persistence::read(&persistence::project(&pending, &transition).unwrap())
+                .unwrap()
+                .into_values()
+                .collect();
+        assert!(!authority::permission(&ended, &grant.scope, "pause").active());
+    }
+}
+
+#[test]
+fn an_old_verdict_applies_only_to_unchanged_material() {
+    use checker::{Attempt, CheckedMaterial, Checker, Disposition};
+    use material::{Observation, Observations};
+    let mut checked = record(CheckpointType::Decision);
+    let path = checked.scope.plan.clone();
+    let original = crate::store::model::digest(b"original");
+    checked.fact = Fact::Checker(Checker {
+        id: "check".into(),
+        raw_return: "## VERIFICATION PASSED".into(),
+        disposition: Disposition::Pass,
+        findings: vec![],
+        checked_material: vec![CheckedMaterial {
+            path: path.clone(),
+            content_digest: original.clone(),
+        }],
+        attempt: Attempt::Initial,
+        revision_spent: false,
+    });
+    let records: Vec<_> =
+        persistence::read(&persistence::project(&json!({}), &checked).unwrap())
+            .unwrap()
+            .into_values()
+            .collect();
+    for (observation, expected) in [
+        (Observation::Read(original), true),
+        (
+            Observation::Read(crate::store::model::digest(b"changed")),
+            false,
+        ),
+        (Observation::Failed("PermissionDenied".into()), false),
+    ] {
+        let observed = Observations::from([(path.clone(), observation)]);
+        let result = authority::checker_applicability(&records, &checked.scope, "check", &observed).unwrap();
+        assert_eq!(result.verdict_applicable, expected);
+        assert_eq!(result.continuation_allowed, expected);
+    }
+}

@@ -13,51 +13,94 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  node-test:
-    # One job per GROUP, so a red arm names the seam that broke and the arms
-    # run in parallel. The groups are declared in cadence-core/bin/test.mjs;
-    # anything it does not name lands in `other`, which is in this matrix, so a
-    # new test file is never silently unrun.
+  # The Node matrix and the typecheck job are gone, not disabled. They ran the
+  # 3.x suite in cadence-core/ against a tree the 4.0 binary renders, and had
+  # been red since 2026-09-13 on a citation a rendered skill stopped carrying
+  # in phase 13. There is no further 3.x work; the 3.x branch is that suite's
+  # home, and cadence-core/ leaves this branch surface by surface as the binary
+  # replaces it. The step that held that tree byte-identical to v3.7.12 went
+  # the same way on 2026-09-19: phase 14 plan 4 was the first plan to delete
+  # replaced JavaScript, and a guard that fails on every removal the rule
+  # allows guards nothing. The frozen reference is the tag, and the tests that
+  # need it read the tag.
+  cargo-test:
+    # The Rust binary is the product. This is the suite.
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ['22', '24']
-        group: [routing, git, planning, prose, review, other]
     steps:
-      # fetch-depth: 0, not the default shallow depth-1. `why-record.test.mjs`
-      # (the `other` group) reads THIS repository's own history as its fixture
-      # corpus - archived SUMMARY tables joined to the commits they name - so a
-      # depth-1 checkout fails 23 of its arms with `invalid object name <sha>^`.
-      # The other jobs below walk no history and keep the shallow default.
+      # fetch-depth: 0 is load-bearing, not tidiness. Sixteen tests read the
+      # frozen reference straight out of git - `git show v3.7.12:<path>` in
+      # config/tests.rs and import/tests.rs, and `git archive v3.7.12` for the
+      # .planning extraction fixture. A shallow checkout has no tags, so every
+      # one of them fails with "fatal: not a valid object name: v3.7.12" while
+      # passing locally.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ matrix.node }}
-      # Zero-dep repo: no install step, the built-in runner is the framework.
-      - run: node cadence-core/bin/test.mjs ${{ matrix.group }}
 
-  self-verify:
-    # The prose<->code drift linter: every config key, script invocation, and
-    # plugin-root path named in the live prose must exist in the code.
+      # Installed by name, not left to rustup's auto-install: rustup 1.28
+      # stopped installing the toolchain a rust-toolchain.toml names on first
+      # use, so a job that only ran `cargo` would fail on the runner image
+      # rather than build against the pinned compiler.
+      - name: Install the toolchain rust-toolchain.toml pins
+        run: |
+          set -euo pipefail
+          CHANNEL="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          if [ -z "$CHANNEL" ]; then
+            echo "::error::rust-toolchain.toml names no channel"
+            exit 1
+          fi
+          rustup toolchain install "$CHANNEL" --profile minimal
+          rustup default "$CHANNEL"
+          rustc --version
+
+      # --locked on both, because a committed Cargo.lock is the whole of what
+      # "builds offline" means here and an unlocked resolve would quietly test
+      # a dependency graph no commit records.
+      # nextest runs every test as its own process and every binary at once;
+      # cargo test runs the binaries one after another, and four of them held
+      # three quarters of a fifteen-minute wall clock (D-176). Pinned and
+      # fetched as a prebuilt archive so the job does not build the runner.
+      - name: Install cargo-nextest
+        run: |
+          set -euo pipefail
+          curl -LsSf https://get.nexte.st/0.9.144/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+          cargo nextest --version
+      - run: cargo build --locked
+      - run: cargo nextest run --locked --workspace --no-fail-fast
+
+  clippy:
+    # Lint warnings fail their own check.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '22'
-      - run: node cadence-core/bin/self-verify.mjs
 
-  typecheck:
-    # Honor the @ts-check pragmas. The repo has no package.json; typescript +
-    # @types/node are installed ephemerally for this job only (tsconfig.ci.json).
+      - name: Install the toolchain rust-toolchain.toml pins
+        run: |
+          set -euo pipefail
+          CHANNEL="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          if [ -z "$CHANNEL" ]; then
+            echo "::error::rust-toolchain.toml names no channel"
+            exit 1
+          fi
+          rustup toolchain install "$CHANNEL" --profile minimal
+          rustup default "$CHANNEL"
+          rustc --version
+
+      # The minimal toolchain needs Clippy installed explicitly.
+      - run: rustup component add clippy
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  cargo-deny:
+    # Advisories, licenses and sources for everything in Cargo.lock. Pinned
+    # prebuilt release, same reason as nextest: the job does not build its tool.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '22'
-      - run: npm install --no-save --no-package-lock typescript @types/node
-      - run: npx tsc -p tsconfig.ci.json
+      - name: Install cargo-deny
+        run: |
+          set -euo pipefail
+          V=0.20.2
+          curl -LsSf "https://github.com/EmbarkStudios/cargo-deny/releases/download/$V/cargo-deny-$V-x86_64-unknown-linux-musl.tar.gz" \
+            | tar zxf - --strip-components=1 -C "${CARGO_HOME:-$HOME/.cargo}/bin" "cargo-deny-$V-x86_64-unknown-linux-musl/cargo-deny"
+          cargo deny --version
+      - run: cargo deny --locked check

@@ -6,8 +6,8 @@
 // and reports each one's byte + estimated-token weight as one JSON line.
 // Contrast planning.mjs, which is scoped to the
 // .planning state files; this script measures the shipped plugin prose itself.
-// The measurement lib it imports is the same one self-verify.mjs enforces the
-// budget with, so reported and enforced weight cannot diverge.
+// This reports disk measurements. Native rendered byte ceilings are asserted
+// in crates/cadence/src/instruction_lint.rs against compiled output.
 //
 // The `resident` subcommand answers the other question: not what one file
 // weighs, but what one COMMAND carries into the main thread and what one

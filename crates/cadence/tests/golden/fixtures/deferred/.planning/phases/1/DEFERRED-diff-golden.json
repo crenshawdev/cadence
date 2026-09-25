@@ -1,0 +1,19 @@
+{
+  "phase": "1",
+  "trigger": "diff",
+  "discriminator": "golden",
+  "round": 1,
+  "base": "v3.7.12",
+  "head": "v3.7.12",
+  "base_id": "c39bbd8c0c6303121a18161cec5f536b6d31d1f5",
+  "head_id": "c39bbd8c0c6303121a18161cec5f536b6d31d1f5",
+  "findings": [
+    {
+      "file": "src/auth.mjs",
+      "line": 2,
+      "severity": "low",
+      "claim": "The policy is a literal.",
+      "failure_scenario": "A second policy would need a separate decision."
+    }
+  ]
+}

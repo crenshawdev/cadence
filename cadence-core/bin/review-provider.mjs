@@ -7,8 +7,6 @@
 //
 //   review        single-shot structured-output critique of an artifact ->
 //                 normalized findings JSON on stdout.
-//   consult       reactive dead-end help: a stuck situation in -> angles to
-//                 try out (hypotheses, never a decision). Decision-support only.
 //   detect-models enumerate the model IDs the resolved key can access ->
 //                 {models:[...]} on stdout (feeds cad-config assignment).
 //
@@ -25,7 +23,7 @@
 //   - Any failure (offline, bad key, http error, bad shape) degrades to a
 //     structured {ok:false, reason, detail} on stdout with a nonzero exit -
 //     the review subsystem never crashes the spine on a provider problem.
-//   - review and consult are the two PAID commands, so both are bounded by
+//   - review is the PAID command and is bounded by
 //     `review.max_prompt_tokens` (chars/4 estimated, default 120000). An
 //     over-cap payload is REFUSED - {ok:false, reason:"over-cap"} before any
 //     request is issued - never truncated and never merely warned about. A
@@ -60,10 +58,6 @@
 //       the provider trace event so the call JOINS to its fire through the
 //       correlation id both already derive (RVW-02). Optional: a call without
 //       it writes exactly the event shape it wrote before.
-//   review-provider.mjs consult --provider <openai|gemini|deepseek> --model <id>
-//                               [--effort <level>] [--payload <file>|-]
-//                               [--key-file <path>]
-//       payload (stdin/file): {situation} -> {ok, angles[]}  (dead-end help)
 //   review-provider.mjs detect-models --provider <openai|gemini|deepseek> [--key-file <path>]
 //
 // --key-file overrides the shared env-file path (config review.key_file); an
@@ -306,8 +300,8 @@ function resolveKey(provider, keyFile) {
 const DEFAULT_REQUEST_TIMEOUT_MS = 540000;
 const MAX_REQUEST_TIMEOUT_MS = 600000;
 
-// The prompt-token cap (#16, REV-03), bounding the two PAID commands - review
-// and consult - and nothing else. The free `claude-subagent` reviewer never
+// The prompt-token cap (#16, REV-03), bounding the PAID review command
+// and nothing else. The free `claude-subagent` reviewer never
 // runs this script, so it is exempt by construction rather than by omission;
 // that arm's own payload bound, if the host has one, is the host's.
 // 120000 estimated tokens because of the three shipped providers DeepSeek's
@@ -912,31 +906,6 @@ export const FINDING_SCHEMA = {
   },
 };
 
-// Consult is a different job from review: not "critique this artifact" but
-// "the primary engineer is stuck - what would you try?" It returns angles to
-// investigate, never a decision. Decision-support only; the main model grounds
-// each angle and the user decides (DESIGN §6).
-const CONSULT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['angles'],
-  properties: {
-    angles: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['hypothesis', 'rationale', 'how_to_check'],
-        properties: {
-          hypothesis: { type: 'string' },
-          rationale: { type: 'string' },
-          how_to_check: { type: 'string' },
-        },
-      },
-    },
-  },
-};
-
 // Deep-copy a JSON schema with every `additionalProperties` key removed.
 // OpenAI strict mode requires it; Gemini's OpenAPI-subset responseSchema
 // rejects it. One schema, two dialects.
@@ -1057,9 +1026,7 @@ export const ADAPTERS = {
     // OpenAI Responses API. reasoning.effort is a first-class per-call param.
     base: 'https://api.openai.com',
     authHeaders: (key) => ({ authorization: `Bearer ${key}` }),
-    // One structured-output call, shared by review and consult - only the
-    // schema and prompt differ. Wire output for review is byte-identical to
-    // before this was generalized.
+    // The structured-output review request retains its schema and prompt.
     structuredRequest({ model, effort, system, user, schema, schemaName }) {
       const body = {
         model,
@@ -1163,7 +1130,7 @@ export const ADAPTERS = {
     // openai adapter uses. Its only structured mode is
     // response_format:{type:'json_object'} (no server-side json_schema), so
     // the schema is injected into the system prompt and the shape is asserted
-    // on return by validateFindings/validateConsult - the guard every adapter
+    // on return by validateFindings - the guard every adapter
     // already passes through. json_object mode also requires the word "json"
     // in the prompt, which the injected schema instruction supplies. Effort
     // maps to the first-class `reasoning_effort` param (honored by thinking
@@ -1276,17 +1243,6 @@ export function validateFindings(obj) {
 }
 
 /** @param {any} obj @returns {string|null} null when valid, else the defect */
-export function validateConsult(obj) {
-  if (!obj || !Array.isArray(obj.angles)) return 'missing angles[]';
-  for (const a of obj.angles) {
-    if (!a || typeof a !== 'object') return 'angle not an object';
-    for (const k of ['hypothesis', 'rationale', 'how_to_check']) {
-      if (typeof a[k] !== 'string') return `angle.${k} must be a string`;
-    }
-  }
-  return null;
-}
-
 // ---------------------------------------------------------------------------
 // Commands.
 // ---------------------------------------------------------------------------
@@ -1317,7 +1273,7 @@ function resolveProvider(opts, cmdName) {
 
 // Run a structured-output request through the transport, extract, and parse.
 // Returns the parsed JSON object or degrades via fail(). Schema validation is
-// the caller's job (review and consult assert different shapes).
+// the caller's job.
 //
 // `meta` is the provider trace event's subject, stamped with `started` by the
 // caller so ONE event covers the whole call. Each degrading exit records itself
@@ -1404,40 +1360,6 @@ async function cmdReview(opts) {
   // artifact. references/review-triggers.md reads `{ok:false}` reasons; this is
   // an additive key on the `ok` side and no existing arm moves without it.
   ok({ provider, model: opts.model, findings: parsed.findings,
-    ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}) });
-}
-
-async function cmdConsult(opts) {
-  const meta = beginProviderCall('consult',
-    { provider: opts.provider, model: opts.model, effort: opts.effort });
-  const { provider, adapter, key } = resolveProvider(opts, 'consult');
-  const payload = await readPayload(opts);
-  if (!payload || typeof payload.situation !== 'string') {
-    fail('bad-payload', 'payload needs {situation}, a string',
-      'fix the file --payload names so it holds that key as a string, then re-run - a caller that hand-built this file is the usual cause');
-  }
-  const situation = fence(payload.situation);
-  meta.redactions = situation.redactions;
-  assertUnderCap(situation.text);
-  const system =
-    'You are a second-opinion consultant to an engineer stuck at a dead-end. ' +
-    'Return angles to investigate - concrete things to try or check, each with ' +
-    'why it might be the cause and how to test it. Do NOT make the decision or ' +
-    'pick the path: the engineer grounds each angle against the real code and ' +
-    'decides. Be specific to the situation, not generic advice.';
-  const parsed = await callStructured(adapter, key, adapter.structuredRequest({
-    model: opts.model, effort: opts.effort,
-    system, user: situation.text,
-    schema: CONSULT_SCHEMA, schemaName: 'cadence_consult',
-  }), meta);
-  const bad = validateConsult(parsed);
-  if (bad) {
-    traceProvider(meta, 'bad-shape', bad);
-    fail('bad-shape', bad,
-      'the provider parsed as JSON but not as an angles list - re-run once, and name a different model for this consult if it repeats');
-  }
-  traceProvider(meta, 'ok');
-  ok({ provider, model: opts.model, angles: parsed.angles,
     ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}) });
 }
 
@@ -1542,10 +1464,9 @@ async function main(argv) {
   if (badArg) fail('bad-args', badArg,
     'the detail names the flag and the form it takes - supply it and re-run the command');
   else if (cmd === 'review') await cmdReview(opts);
-  else if (cmd === 'consult') await cmdConsult(opts);
   else if (cmd === 'detect-models') await cmdDetect(opts);
-  else fail('bad-command', `use: review | consult | detect-models (got: ${cmd || 'none'})`,
-    'name one of those three as the FIRST argument, before any flag, and re-run');
+  else fail('bad-command', `use: review | detect-models (got: ${cmd || 'none'})`,
+    'name one of those two as the FIRST argument, before any flag, and re-run');
 }
 
 /**

@@ -614,39 +614,11 @@ needs. A raw file read sees at most one layer and therefore lies about the rest.
 
 ---
 
-## The tool checks its own prose
+## The tool checks its compiled instructions
 
-`cadence-core/bin/self-verify.mjs`
-
-CI lints the documentation against the code. Every config key, script
-invocation, and file path named in the workflows must actually exist or the build
-fails. Agent prose reaching for a tool its frontmatter never declared fails the
-build too. A block that claims a set of dispatches is concurrent has to issue
-that set in one message, and every sentence in it that ISSUES the set - an
-imperative, or the colon that introduces a list - fails the build when it
-serializes, hedges on what the host allows, or hands the set out concurrently
-without saying "in one message". A sentence that explains the rule, forbids the
-serial shape, or describes dispatch already arranged carries the same words in a
-different mood, and is left alone.
-
-It also weighs five surface sets against a byte budget in
-`cadence-core/bin/weight-budgets.json` - every agent file, every SKILL.md,
-every workflow, and every file under `cadence-core/references/` and
-`cadence-core/templates/` - and fails when one EXCEEDS its entry. That ratchet
-makes prose growth a conscious act rather than a drift: the budget is raised
-only when the growth is intentional and accepted, which is a deliberate step
-someone has to take rather than a number that quietly rises.
-
-The budget is a CEILING, not an equality. Exactness was tried, and it taxed a
-cut at the rate it taxed growth: every prose removal, however obviously good,
-turned CI red until its row was re-pinned in the same commit. Growth is the
-risk the budget exists to catch, and a surface sitting under its entry is a
-surface that got smaller.
-
-The honest limit is worth stating. These checks catch claims that are *wrong*.
-They cannot catch a claim that is true but incomplete, and they cannot catch a
-missing paragraph. `/cad-docs-verify` checks factual claims against the live
-codebase; omissions still need a human.
+Run `cargo nextest run -p cadence --bin cadence instruction_lint` for the native
+instruction lint. The existing workspace CI in `.github/workflows/test.yml`
+runs it with the workspace suite.
 
 ---
 
@@ -666,4 +638,3 @@ codebase; omissions still need a human.
 | Scientific-method debugging | `cadence-core/workflows/debug.md` |
 | Branch guard and publish seam | `cadence-core/references/git-guard.md` and `cadence-core/references/git-publish.md` |
 | State, config, reporting conventions | `cadence-core/references/conventions.md` |
-| Prose-against-code lint and byte budgets | `cadence-core/bin/self-verify.mjs` |

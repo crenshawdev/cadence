@@ -8,3 +8,11 @@ updates:
       github-actions:
         patterns:
           - "*"
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns:
+          - "*"

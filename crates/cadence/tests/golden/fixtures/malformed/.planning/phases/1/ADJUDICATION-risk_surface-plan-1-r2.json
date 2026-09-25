@@ -1,0 +1,63 @@
+{
+  "phase": "1",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 2,
+  "base": "b799b54d",
+  "head": "426163a0",
+  "base_id": "b799b54d5f3ad085f6e00ca9085d164de3138610",
+  "head_id": "426163a0b86aa036c7d6cca14650da7cf3e3f03c",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/subagent-trace.mjs",
+      "line": 274,
+      "severity": "blocker",
+      "claim": "BLOCKER 1 is not closed: any extra historical reader makes the peer count unequal and returns to the causal floor, which is the bracket-crossing heuristic this change is intended to replace.",
+      "failure_scenario": "Open same-role dispatches A at T0 and B at T1. A different worker C, whose dispatch was already paired, first read at T1.5; A first reads at T2 and B at T3. For A's stop, `peers` contains C, A, and B while `dated` contains only A and B, so the equality test fails. The floor is B (the latest dispatch at or before T2), and A's close is written onto B's open bracket.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "426163a0",
+      "base_id": "b799b54d5f3ad085f6e00ca9085d164de3138610",
+      "head_id": "426163a0b86aa036c7d6cca14650da7cf3e3f03c"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/subagent-trace.mjs",
+      "line": 274,
+      "severity": "blocker",
+      "claim": "BLOCKER 2 is not closed for the normal parallel-dispatch ordering: a late duplicate close still consumes the next same-role dispatch when the original worker first read after that next dispatch was opened.",
+      "failure_scenario": "Dispatch A at T0 and B at T1; A first reads at T2 and B at T3. A closes, leaving B as the sole open row. Later, A's delayed stop arrives without a transcript timestamp. `mine` is not before B's oldest dispatch, so the sentinel does not apply. The evidence has both A and B peers but only B is open, making the count unequal; the floor selects B because T1 <= T2. The delayed A close is appended against B, and the timestamp-based downstream discriminator remains unable to reject it.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "426163a0",
+      "base_id": "b799b54d5f3ad085f6e00ca9085d164de3138610",
+      "head_id": "426163a0b86aa036c7d6cca14650da7cf3e3f03c"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/subagent-trace.mjs",
+      "line": 237,
+      "severity": "high",
+      "claim": "The new `NO_OPEN_DISPATCH` conclusion is unsound when an older open dispatch has an unreadable timestamp, causing a legitimate close to be dropped.",
+      "failure_scenario": "An open same-role dispatch U was created at T0 but has an unreadable `ts`; another open dispatch D has timestamp T10. U's worker first reads at T5 and then stops. `dated` omits U, making D the apparent oldest row, so `mine < oldest` returns `NO_OPEN_DISPATCH` and `closeForStop` writes nothing. U was actually dispatched before its read and remains a valid open bracket that should receive the close.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "426163a0",
+      "base_id": "b799b54d5f3ad085f6e00ca9085d164de3138610",
+      "head_id": "426163a0b86aa036c7d6cca14650da7cf3e3f03c"
+    }
+  ]
+}

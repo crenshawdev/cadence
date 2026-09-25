@@ -1,0 +1,9 @@
+{
+  "range": {"target":{"kind":"committed-range","base":"base-ref","head":"head-ref"},"base":"b1","head":"h1","index":null,"paths":["a.rs"],"diff":"old\n","objects":{"b1:a.rs":"old\n","h1:a.rs":"new\n"}},
+  "staged": {"target":{"kind":"staged-tree","base":"base-ref","index":"authored-tree","head":null},"base":"b1","head":null,"index":"t1","paths":["a.rs"],"diff":"old\n","objects":{"b1:a.rs":"old\n","t1:a.rs":"new\n"}},
+  "file": {"path":"a.rs","bytes":"old\n","identity":"file1"},
+  "missing": {"path":"a.rs","bytes":null,"identity":"absent"},
+  "unavailable": {"path":"a.rs","error":"permission denied"},
+  "old": "old\n",
+  "new": "new\n"
+}

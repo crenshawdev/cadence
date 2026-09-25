@@ -1,0 +1,10 @@
+{
+  "manifest": {"manifest":"m1","fire":"f1","contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"},"target":{"kind":"named-file","path":"a.rs","head":null},"entries":[]},
+  "original": {"entry":"e3","bytes":"support\n","path":"outside/support.rs","acquisition":"support-file1","attempt":"a1","view":{"view":"v1","manifest":"m1","entries":["e1","e3"]}},
+  "later": {"entry":"e4","bytes":"counter\n","path":"outside/counter.rs","acquisition":"counter-file1","attempt":null,"view":null},
+  "earlier_view": {"view":"v1","manifest":"m1","entries":["e1"]},
+  "decision": {"selected":"D-1","text":"Decision","context":"Context"},
+  "diagnosis": {"entries":["e1"],"reported":"Reported","cause":"Cause"},
+  "inline_decision": {"entry":"e5","bytes":"{\"decision\":\"D-1\",\"text\":\"Decision\",\"context\":\"Context\"}","label":"selected-decision","acquisition":"decision-input1"},
+  "saved": {"material-manifest-m1":"original manifest","material-previous-append":"previous evidence"}
+}

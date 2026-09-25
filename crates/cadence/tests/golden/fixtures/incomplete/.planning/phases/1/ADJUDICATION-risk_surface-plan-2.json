@@ -1,0 +1,81 @@
+{
+  "phase": "1",
+  "trigger": "risk_surface",
+  "discriminator": "plan-2",
+  "round": 1,
+  "base": "426163a0",
+  "head": "4a1af326",
+  "base_id": "426163a0b86aa036c7d6cca14650da7cf3e3f03c",
+  "head_id": "4a1af3268bc5fa2179c64c0315f034e5a72bdca8",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/subagent-transcript.mjs",
+      "line": 157,
+      "severity": "high",
+      "claim": "`cacheOf` accepts negative and fractional cache-token values even though token counts must be non-negative integers.",
+      "failure_scenario": "A host-written assistant line such as `{\"type\":\"assistant\",\"message\":{\"usage\":{\"cache_read_input_tokens\":-100}}}` is accepted and emits `cache_read_input_tokens: -100`; combined with a real later `100` it records zero cache reads despite the transcript containing a billed 100-token read. Likewise `1.5` is recorded as a fractional token total. The finite-number check must also require a non-negative integer.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "4a1af326",
+      "base_id": "426163a0b86aa036c7d6cca14650da7cf3e3f03c",
+      "head_id": "4a1af3268bc5fa2179c64c0315f034e5a72bdca8"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/subagent-transcript.mjs",
+      "line": 158,
+      "severity": "high",
+      "claim": "The cache summation has no message-ID deduplication, so replayed assistant entries are billed repeatedly.",
+      "failure_scenario": "A transcript containing the same complete assistant JSONL entry twice, both with `message.id: \"msg_01\"` and `usage.cache_read_input_tokens: 1000`, produces a recorded total of 2000. A duplicated/replayed message is one request, not two billed cache reads, so the bracket records traffic that occurred only once.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "4a1af326",
+      "base_id": "426163a0b86aa036c7d6cca14650da7cf3e3f03c",
+      "head_id": "4a1af3268bc5fa2179c64c0315f034e5a72bdca8"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/subagent-transcript.mjs",
+      "line": 158,
+      "severity": "medium",
+      "claim": "Per-entry finite validation does not prevent aggregate overflow.",
+      "failure_scenario": "Two assistant lines each carrying `cache_read_input_tokens: 1.7976931348623157e308` pass `Number.isFinite`, but their sum becomes `Infinity`. `closeForStop` then emits that non-finite value; when the event is serialized to JSON it becomes `null`, recording a value absent from either transcript line and losing the actual figures. The addition needs an overflow check before retaining the aggregate.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "4a1af326",
+      "base_id": "426163a0b86aa036c7d6cca14650da7cf3e3f03c",
+      "head_id": "4a1af3268bc5fa2179c64c0315f034e5a72bdca8"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/trace-suggest.mjs",
+      "line": 696,
+      "severity": "medium",
+      "claim": "The worker-duration receipt treats any finite `duration_ms` as valid without checking it against the bracket's dispatch-to-close `ms`.",
+      "failure_scenario": "For a rendered bracket `{ms: 1000, duration_ms: 60000}`, R8 reports one worker-minute even though the same bracket says dispatch-to-close took one second. Since the documented `ms` interval includes orchestration time between dispatch and close, a worker run cannot exceed it; a corrupt or inconsistent host duration is presented as an authoritative receipt instead of being unrecorded/rejected.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/subagent-trace.mjs",
+        "line": 96,
+        "note": "The premise that a worker run cannot exceed the bracket's `ms` is false against this record's own construction. `ms` is dispatch-ts to close-ts and the two halves have different writers: this rule deliberately stamps a hook close with the WORKER's own stop instant off its transcript rather than the append time, so a bracket's end can precede the orchestrator's hand-written close that supplies `duration_ms`. Rejecting the host's own measured figure because it exceeds a derived interval would discard a real measurement in favour of a computed one, inverting the posture the record keeps everywhere: an unmeasured figure is omitted, never replaced by a derived stand-in."
+      },
+      "base_id": "426163a0b86aa036c7d6cca14650da7cf3e3f03c",
+      "head_id": "4a1af3268bc5fa2179c64c0315f034e5a72bdca8"
+    }
+  ]
+}

@@ -1,0 +1,158 @@
+ M crates/cadence/tests/golden/record.mjs
+ M crates/cadence/tests/golden/recordings/adjudication-ok.json
+ M crates/cadence/tests/golden/recordings/adjudication-refused.json
+ M crates/cadence/tests/golden/recordings/cite-count-ok.json
+ M crates/cadence/tests/golden/recordings/cursor-get-slice.json
+ M crates/cadence/tests/golden/recordings/cursor-set-ok.json
+ M crates/cadence/tests/golden/recordings/debt-harvest-ok.json
+ M crates/cadence/tests/golden/recordings/debt-harvest-refused.json
+ M crates/cadence/tests/golden/recordings/deferred-record-ok.json
+ M crates/cadence/tests/golden/recordings/deferred-record-refused.json
+ M crates/cadence/tests/golden/recordings/forge-detect-ok.json
+ M crates/cadence/tests/golden/recordings/forge-detect-refused.json
+ M crates/cadence/tests/golden/recordings/git-branch-decide-ok.json
+ M crates/cadence/tests/golden/recordings/git-branch-decide-refused.json
+ M crates/cadence/tests/golden/recordings/git-branch-tags-ok.json
+ M crates/cadence/tests/golden/recordings/git-branch-tags-refused.json
+ M crates/cadence/tests/golden/recordings/git-guard-ok.json
+ M crates/cadence/tests/golden/recordings/git-guard-refused.json
+ M crates/cadence/tests/golden/recordings/git-publish-authorized-ok.json
+ M crates/cadence/tests/golden/recordings/git-publish-authorized-refused.json
+ M crates/cadence/tests/golden/recordings/git-publish-publish-no-remote.json
+ M crates/cadence/tests/golden/recordings/git-publish-publish-not-authorized.json
+ M crates/cadence/tests/golden/recordings/git-publish-reap-ok.json
+ M crates/cadence/tests/golden/recordings/git-publish-reap-refused.json
+ M crates/cadence/tests/golden/recordings/issue-check-check-ok.json
+ M crates/cadence/tests/golden/recordings/issue-check-check-refused.json
+ M crates/cadence/tests/golden/recordings/issue-filing-file-bad-payload.json
+ M crates/cadence/tests/golden/recordings/issue-filing-file-missing-payload.json
+ M crates/cadence/tests/golden/recordings/issue-filing-unfixed-bad-payload.json
+ M crates/cadence/tests/golden/recordings/issue-filing-unfixed-missing-payload.json
+ M crates/cadence/tests/golden/recordings/land-cleanup-cleanup-ok.json
+ M crates/cadence/tests/golden/recordings/land-cleanup-cleanup-refused.json
+ M crates/cadence/tests/golden/recordings/land-cleanup-gate-halt.json
+ M crates/cadence/tests/golden/recordings/land-cleanup-gate-ok.json
+ M crates/cadence/tests/golden/recordings/land-cleanup-gate-refused.json
+ M crates/cadence/tests/golden/recordings/lease-check-ok.json
+ M crates/cadence/tests/golden/recordings/lease-check-refused.json
+ M crates/cadence/tests/golden/recordings/milestone-prune-ok.json
+ M crates/cadence/tests/golden/recordings/plan-overlap-missing-phase.json
+ M crates/cadence/tests/golden/recordings/plan-overlap-slice.json
+ M crates/cadence/tests/golden/recordings/read-trace-ok.json
+ M crates/cadence/tests/golden/recordings/renumber-insert-ok.json
+ M crates/cadence/tests/golden/recordings/renumber-insert-refused.json
+ M crates/cadence/tests/golden/recordings/renumber-remove-ok.json
+ M crates/cadence/tests/golden/recordings/renumber-remove-refused.json
+ M crates/cadence/tests/golden/recordings/replay-check-slice.json
+ M crates/cadence/tests/golden/recordings/review-provider-consult-no-gemini-key.json
+ M crates/cadence/tests/golden/recordings/review-provider-consult-no-openai-key.json
+ M crates/cadence/tests/golden/recordings/review-provider-detect-models-no-gemini-key.json
+ M crates/cadence/tests/golden/recordings/review-provider-detect-models-no-openai-key.json
+ M crates/cadence/tests/golden/recordings/review-provider-review-no-gemini-key.json
+ M crates/cadence/tests/golden/recordings/review-provider-review-no-openai-key.json
+ M crates/cadence/tests/golden/recordings/risk-check-run-ok.json
+ M crates/cadence/tests/golden/recordings/risk-check-run-refused.json
+ M crates/cadence/tests/golden/recordings/risk-check-status-ok.json
+ M crates/cadence/tests/golden/recordings/risk-check-status-refused.json
+ M crates/cadence/tests/golden/recordings/route-resolve-ok.json
+ M crates/cadence/tests/golden/recordings/route-resolve-refused.json
+ M crates/cadence/tests/golden/recordings/status-slice.json
+ M crates/cadence/tests/golden/recordings/task-record-ok.json
+ M crates/cadence/tests/golden/recordings/task-record-refused.json
+ M crates/cadence/tests/golden/recordings/trace-append-ok.json
+ M crates/cadence/tests/golden/recordings/trace-close-ok.json
+ M crates/cadence/tests/golden/recordings/trace-close-refused.json
+ M crates/cadence/tests/golden/recordings/uat-init-ok.json
+ M crates/cadence/tests/golden/recordings/uat-merge-ok.json
+ M crates/cadence/tests/golden/recordings/uat-record-ok.json
+ M crates/cadence/tests/golden/recordings/uat-refresh-ok.json
+ M crates/cadence/tests/golden/recordings/why-ok.json
+ M crates/cadence/tests/golden/recordings/why-refused.json
+?? .planning/phases/2/reports/
+?? crates/cadence/tests/golden/recordings/audit-multi.json
+?? crates/cadence/tests/golden/recordings/audit-ok.json
+?? crates/cadence/tests/golden/recordings/audit-refused.json
+?? crates/cadence/tests/golden/recordings/capture-check-ok.json
+?? crates/cadence/tests/golden/recordings/capture-check-refused.json
+?? crates/cadence/tests/golden/recordings/capture-ok.json
+?? crates/cadence/tests/golden/recordings/capture-refused.json
+?? crates/cadence/tests/golden/recordings/capture-sections-ok.json
+?? crates/cadence/tests/golden/recordings/capture-sections-refused.json
+?? crates/cadence/tests/golden/recordings/cite-count-refused.json
+?? crates/cadence/tests/golden/recordings/config-check-ok.json
+?? crates/cadence/tests/golden/recordings/config-check-refused.json
+?? crates/cadence/tests/golden/recordings/config-get-ok.json
+?? crates/cadence/tests/golden/recordings/config-get-refused.json
+?? crates/cadence/tests/golden/recordings/config-keys-ignored-argument.json
+?? crates/cadence/tests/golden/recordings/config-keys-ok.json
+?? crates/cadence/tests/golden/recordings/config-set-ok.json
+?? crates/cadence/tests/golden/recordings/config-set-refused.json
+?? crates/cadence/tests/golden/recordings/config-unset-ok.json
+?? crates/cadence/tests/golden/recordings/config-unset-refused.json
+?? crates/cadence/tests/golden/recordings/config-validate-ok.json
+?? crates/cadence/tests/golden/recordings/config-validate-refused.json
+?? crates/cadence/tests/golden/recordings/config-validate-unknown-key.json
+?? crates/cadence/tests/golden/recordings/criteria-coverage-ok.json
+?? crates/cadence/tests/golden/recordings/criteria-coverage-refused.json
+?? crates/cadence/tests/golden/recordings/criteria-size-ok.json
+?? crates/cadence/tests/golden/recordings/criteria-size-refused.json
+?? crates/cadence/tests/golden/recordings/cursor-get-refused.json
+?? crates/cadence/tests/golden/recordings/cursor-set-refused.json
+?? crates/cadence/tests/golden/recordings/deferred-carry-ok.json
+?? crates/cadence/tests/golden/recordings/deferred-carry-refused.json
+?? crates/cadence/tests/golden/recordings/deferred-list-ok.json
+?? crates/cadence/tests/golden/recordings/deferred-list-refused.json
+?? crates/cadence/tests/golden/recordings/detect-commands-ok.json
+?? crates/cadence/tests/golden/recordings/detect-commands-refused.json
+?? crates/cadence/tests/golden/recordings/detect-surfaces-ok.json
+?? crates/cadence/tests/golden/recordings/detect-surfaces-refused.json
+?? crates/cadence/tests/golden/recordings/forge-create-no-gh.json
+?? crates/cadence/tests/golden/recordings/forge-create-no-glab.json
+?? crates/cadence/tests/golden/recordings/milestone-prune-refused.json
+?? crates/cadence/tests/golden/recordings/phase-done-ok.json
+?? crates/cadence/tests/golden/recordings/phase-done-refused.json
+?? crates/cadence/tests/golden/recordings/plan-overlap-malformed.json
+?? crates/cadence/tests/golden/recordings/plan-overlap-multi.json
+?? crates/cadence/tests/golden/recordings/plan-size-ok.json
+?? crates/cadence/tests/golden/recordings/plan-size-refused.json
+?? crates/cadence/tests/golden/recordings/read-trace-ignored-tool.json
+?? crates/cadence/tests/golden/recordings/reads-ok.json
+?? crates/cadence/tests/golden/recordings/reads-refused.json
+?? crates/cadence/tests/golden/recordings/recall-ok.json
+?? crates/cadence/tests/golden/recordings/recall-refused.json
+?? crates/cadence/tests/golden/recordings/release-bump-bump-ok.json
+?? crates/cadence/tests/golden/recordings/release-bump-bump-refused.json
+?? crates/cadence/tests/golden/recordings/replay-check-incomplete.json
+?? crates/cadence/tests/golden/recordings/replay-check-multi.json
+?? crates/cadence/tests/golden/recordings/replay-check-refused.json
+?? crates/cadence/tests/golden/recordings/risk-carry-ok.json
+?? crates/cadence/tests/golden/recordings/risk-carry-refused.json
+?? crates/cadence/tests/golden/recordings/seed-reqs-ok.json
+?? crates/cadence/tests/golden/recordings/seed-reqs-refused.json
+?? crates/cadence/tests/golden/recordings/skim-ok.json
+?? crates/cadence/tests/golden/recordings/skim-refused.json
+?? crates/cadence/tests/golden/recordings/status-closed.json
+?? crates/cadence/tests/golden/recordings/status-refused.json
+?? crates/cadence/tests/golden/recordings/subagent-trace-ignored-agent.json
+?? crates/cadence/tests/golden/recordings/subagent-trace-ok.json
+?? crates/cadence/tests/golden/recordings/trace-append-refused.json
+?? crates/cadence/tests/golden/recordings/trace-ignore-ok.json
+?? crates/cadence/tests/golden/recordings/trace-ignore-refused.json
+?? crates/cadence/tests/golden/recordings/trace-render-ok.json
+?? crates/cadence/tests/golden/recordings/trace-render-refused.json
+?? crates/cadence/tests/golden/recordings/trace-suggest-ok.json
+?? crates/cadence/tests/golden/recordings/trace-suggest-refused.json
+?? crates/cadence/tests/golden/recordings/trace-window-ok.json
+?? crates/cadence/tests/golden/recordings/trace-window-refused.json
+?? crates/cadence/tests/golden/recordings/uat-init-refused.json
+?? crates/cadence/tests/golden/recordings/uat-merge-refused.json
+?? crates/cadence/tests/golden/recordings/uat-record-refused.json
+?? crates/cadence/tests/golden/recordings/uat-refresh-refused.json
+?? crates/cadence/tests/golden/recordings/uat-status-ok.json
+?? crates/cadence/tests/golden/recordings/uat-status-refused.json
+?? crates/cadence/tests/golden/recordings/weight-ok.json
+?? crates/cadence/tests/golden/recordings/weight-refused.json
+?? crates/cadence/tests/golden/recordings/weight-resident-ok.json
+?? crates/cadence/tests/golden/recordings/weight-resident-refused.json
+?? crates/cadence/tests/golden/recordings/worktree-base-resolve-ok.json
+?? crates/cadence/tests/golden/recordings/worktree-base-resolve-refused.json

@@ -1,297 +1,90 @@
 ---
 name: cad-land
-description: "Land finished work - report git state, then ask the mechanism (push / MR or PR / tag / leave local). Never decides how you publish"
-argument-hint: "[base branch | defaults to git.base_branch]"
+description: "Authorize landing steps, confirm the merge and follow ordered local cleanup."
+argument-hint: "<landing id>"
 allowed-tools:
-  - Read
-  - Bash
-  - Task
-  - AskUserQuestion
+  - mcp__cadence__cadence_query
+  - mcp__cadence__cadence_apply
 ---
 
-<objective>
-Land the current branch's work. cad-land encodes "the git mechanism is the
-user's call" by construction: it never has a preselected publish action and
-never auto-pushes. It reports the state, asks how to publish, and executes
-exactly that - nothing more.
-</objective>
-
-<execution_context>
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md
-</execution_context>
-
 <process>
-Read every config key this run needs in ONE `config.mjs get` up front
-(conventions.md Parallel work) - `git.base_branch git.protected_branches
-git.auto_close git.on_land_cleanup git.create_tag` - and reuse the values
-across the steps below rather than re-reading per step.
-
-1. **Report git state.** Current branch; the base = `$ARGUMENTS`, else
-   `git.base_branch`, else the first `git.protected_branches` entry that
-   exists here (references/git-guard.md's fallback); commits ahead of base; unpushed commits; uncommitted/untracked
-   changes; and the remote host detected from the origin URL (gitlab -> MR,
-   github -> PR, any other host where `tea` holds a login -> Forgejo/Gitea PR
-   via `tea`, else local only). Show this plainly before doing anything.
-
-   **Then the tracker, in the same report.** Run it here, before any publish
-   ask, on both step-3 arms:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root> --base <base>
-```
-
-   Branch on `action` alone. On `report`: say in ONE sentence which issues this
-   branch's commits reference and which of them are still open ("your branch
-   references #42 and #47; #42 is still open"), naming a `not-found` number as
-   not found and an `unresolved` one unresolved, never closed or not found.
-   Print the `open` list ONLY when
-   `referenced` is empty - it is the fallback, never the headline, because a
-   bare list is what a reader skims past. On `skip`: print `reason` verbatim as
-   ONE line and carry on - never block, never retry, never ask, and never list
-   an issue the seam did not read. On `off` - `git.issue_check: false`, decided
-   before any forge CLI runs - say NOTHING about the tracker: not the reason,
-   not that it was skipped. The off switch is off, so this paragraph produces
-   no output at all.
-
-   This report never writes: landing closes no issue, and closing one stays an
-   explicit ask you make at publish time.
-
-2. **Uncommitted changes.** If the tree is dirty, do NOT auto-commit. Ask
-   (ask-user seam): commit them first (then continue), leave them out of this
-   land, or stop. If HEAD is a protected branch, the protected-branch guard
-   (references/git-guard.md) applies to any commit here.
-
-3. **Publish - branch on `git.auto_close`.**
-
-   **First the deferred queue, on BOTH arms and ahead of the branch below.** A
-   gate resolved `deferred` ran its reviewer and let the run continue, so the
-   finding stops the LAND. Ask what is still queued:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
-```
-
-   On ANY entry in `members`, STOP the land here: no publish ask, no seam call,
-   no merge, no tag, neither arm. Print each member's `trigger`,
-   `discriminator` and finding count with the `path` its bodies are in, then
-   point the reader at
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`, whose
-   `deferred` arm says how to clear one - triage the member's findings and
-   record the rulings with `planning.mjs adjudication` for the same trigger,
-   discriminator and round, which supersedes it. A non-empty `unreadable`
-   arrives as `ok:false` and refuses exactly as a member does: the queue could
-   not be PROVEN empty, and this gate never reports "nothing deferred" about
-   input it could not read, the disposition `land-cleanup.mjs gate` already
-   takes for a findings payload it could not parse.
-
-   It is NOT `land-cleanup.mjs gate` and must not be folded into it: that gate
-   halts only when `git.auto_close` is true and reads only `risk_surface`
-   survivors, so a default-configured project would publish straight over a
-   deferred `plan`, `diff` or `phase_diff` finding.
-
-   **(a) `git.auto_close` false (default): ask the mechanism (ask-user seam, NO
-   preselected default):**
-   - **Direct push** - push the current branch to its remote.
-   - **Open MR / PR** - the detected host's mechanism (`glab mr create` on
-     GitLab, `gh pr create` on GitHub, `tea pr create --base <base> --head
-     <branch>` on a Forgejo/Gitea remote - `tea` does not push the source
-     branch itself, so push it first as part of this same chosen action). If
-     no remote, or `tea` holds no login at all, this option is absent.
-   - **Tag** - create an annotated tag (ask the name); ask separately
-     whether to push it.
-   - **Leave local** - do nothing further.
-
-   **Read the publish rails before a publishing answer.** When the answer is
-   direct push, open MR/PR, or a tag the user chose to push, Read
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
-   consult site - step 3a or 3b, never both) first: rail 3 and the
-   `git.auto_close` policy govern all three, and this skill no longer preloads
-   them.
-
-   Then **execute exactly that, raw.** Run only the chosen action. Never push
-   unless push (or push-tag) was chosen. No PR-body templating beyond a
-   title/summary the user confirms. Report precisely what was done (branch
-   pushed, MR/PR URL, tag created) and nothing implied.
-
-   **(b) `git.auto_close` true: land the integration branch on base via
-   `PR -> merge`, no prompts.** Skip the 3a ask entirely (this is the single
-   opt-in that lets the close run unattended; it never installs a default into
-   the 3a ask). The integration branch is local-only
-   (references/git-publish.md rail 3 never
-   auto-pushes).
-   - **Gate the unattended merge on the RULINGS, not the raw findings.** Nobody
-     is watching this arm, so a blocker/high finding still genuinely unfixed is
-     a HARD halt before any merge rather than an ask. This skill fires no review
-     of its own: what it reads is what this branch's `risk_surface` fires
-     already ADJUDICATED. Read every `ADJUDICATION-risk_surface*.json` under
-     BOTH record roots - `.planning/phases/*/` and `.planning/risk-carry/*/`,
-     the copies `/cad-milestone` leaves when it prunes the phase dirs before
-     chaining this command - and union every round's `entries[]`. Every round,
-     never the highest alone: a re-arm is a second fire on the same
-     discriminator and round 2 is not the record of round 1. Do NOT read the
-     `findings` arrays out of the `REVIEW-risk_surface*.md` files - those are
-     the reviewer's raw claims, before anything was fixed, refuted, downgraded
-     or overridden, and halting on them halts on work already done.
-     Then name on `unruled` every `REVIEW-risk_surface*.md` nothing ruled - from
-     those two roots plus a legacy `.planning/REVIEW-risk_surface-*.md` an
-     interrupted pre-`risk-carry` close may have left at the `.planning/` root.
-     A review and its record never share a basename, so do not look for one:
-     `REVIEW-<trigger>-<discriminator>[-rN].md` is ruled by
-     `ADJUDICATION-<trigger>-<discriminator>[-rN].json` in the same directory -
-     same trigger, same discriminator, same round, with `REVIEW-` swapped for
-     `ADJUDICATION-` and `.md` for `.json`. `-r2` pairs with `-r2`, and a round-1
-     record never rules a round-2 review. One asymmetry, and the corpus forces
-     it: a LATER round's record does rule an earlier review, because a re-arm's
-     adjudication settles the round it re-armed - v3.7.7's phase 2 shipped
-     `REVIEW-risk_surface-plan-1.md` with only
-     `ADJUDICATION-risk_surface-plan-1-r2.json` beside it. So a review is
-     `unruled` only when its `<trigger>-<discriminator>` has no record at its own
-     round and none at any later one. A fire nothing ruled says nothing about
-     what survived, so it halts by name rather than being read past.
-     That legacy root file is the one `unruled` entry no adjudication can ever
-     answer, so state its remedy in the halt instead of only its path: it is the
-     pre-`risk-carry` AGGREGATE carry - one union of RAW findings under no
-     discriminator - so no `ADJUDICATION-*.json` can ever sit beside it, and
-     every retry re-halts on it identically. It is answered ONCE and BY HAND:
-     read its findings, settle any still genuinely unfixed against this branch,
-     then delete the file. That delete is the answer, and nothing in this skill
-     does it for the user - step 4 clears the carry alone - because nothing here
-     can tell an aggregate somebody read from one nobody has, and clearing it
-     unread is the merge-over-a-blocker this gate exists to stop.
-     Pipe `{"findings": [...], "unruled": [...]}` on stdin to
-     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate`; on
-     `action:"halt"` stop the chain and surface the `findings` instead of
-     merging over them, and surface a non-empty `overridden` with them - those
-     are halting survivors a person already cleared, so they never move
-     `action`, but a close that showed neither is a close nobody can answer.
-     When neither root holds a record or a review, pipe an explicit
-     `{"findings":[]}` - that is the only spelling of "nothing survived", and
-     `action:"halt"` also fires when the payload could not be read at all
-     (empty stdin, malformed JSON, or a valid envelope carrying no findings
-     list), since the gate never reports "no surviving finding" about input it
-     never parsed.
-   - **Read the publish rails first.** Read
-     `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
-     consult site - step 3a or 3b, never both) before the
-     first bullet below that publishes anything - the GitHub seam call and
-     GitLab's `glab mr create`, which publishes the source branch itself, both
-     count, so this read is NOT scoped to the GitHub arm. Rail 3 and the
-     `git.auto_close` policy govern from here on and this skill no longer
-     preloads them.
-   - **Publish the branch (GitHub and Forgejo arms).** On GitHub, `gh pr
-     create --head <branch>` will NOT push a remoteless branch
-     non-interactively, and `tea pr create` never pushes at all, so on either
-     host publish the branch first through the git-publish seam. Run it on its
-     own physical line:
-     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" publish --dir <root>`
-     It does ONE sanctioned `git push` of the current non-protected branch as a
-     subprocess (execFileSync argv) that git-guard's Bash push hook never sees,
-     and refuses with `ok:false` unless repo `git.auto_close` is true and HEAD is
-     a non-protected branch. On `ok:true` proceed to open the PR; on `ok:false`
-     stop and surface the reason - do NOT fall back to a raw `git push`, which
-     would hit the guard's unconditional ask. Relay the envelope's `warnings[]`
-     to the user rather than dropping them: `reason:"config-parse-failed"` means
-     a config layer that could carry `protected_branches` did not parse, so the
-     branch was checked against the DEFAULT list - fix the file, never retry
-     past it.
-   - **Open (or reuse) the PR/MR.**
-     On GitLab EVERY arm of this bullet mutates the remote: `glab mr create`
-     pushes the source branch itself, and the reuse arm hands an already-open
-     MR straight to the merge below with no create at all. So the GitLab arm
-     asks BEFORE it probes, on its own physical line:
-     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <root>`
-     On `ok:false` do not touch the remote at all - no view, no create, no merge -
-     stop and surface the `detail`, which says which authorization was missing
-     (a `git.auto_close` the user set globally does not authorize a repository
-     that never set it in its own `.planning/config.json`). That is the same
-     stop the GitHub/Forgejo arm makes on the publish seam's `ok:false`. ONE
-     consult, ahead of the whole bullet and not beside the create: the reuse
-     arm is what would otherwise reach `glab mr merge` unasked, so placed here
-     no second check is needed there.
-     Then reuse an existing open one when
-     `gh pr view <branch>` / `glab mr view <branch>` / `tea pr list --state
-     open` (filtered by head branch) finds it, else create: GitHub
-     `gh pr create --base <base> --head <branch> --fill`,
-     GitLab
-     `glab mr create --source-branch <branch> --target-branch <base> --fill`,
-     Forgejo `tea pr create --base <base> --head <branch>` (record the index
-     it prints - tea addresses PRs by index, not branch).
-   - **Merge on the platform.** GitHub `gh pr merge <branch> --merge
-     --delete-branch` (an explicit merge strategy is required or gh
-     errors/prompts; `--delete-branch` removes the remote+local source). GitLab
-     `glab mr merge <branch> --yes --remove-source-branch --auto-merge=false`
-     (`--yes` skips the confirm prompt; `--auto-merge=false` merges immediately
-     rather than deferring behind a running pipeline). Forgejo
-     `tea pr merge --style merge <index>` (tea deletes no local branch; the
-     reap in step 4 owns that).
-   - **Confirm it landed before any cleanup.** `gh pr view <branch> --json
-     state,mergedAt` must show MERGED, `glab mr view <branch>` must show
-     merged, or `tea pr <index>` must show state merged. A non-zero exit
-     (protected-branch / not-mergeable) or a still-open
-     PR/MR (auto-merge only enabled, CI pending) means the merge did NOT land:
-     stop, surface the reason, and do NOT reap.
-
-4. **Terminal cleanup - return to base + pull + reap (`git.on_land_cleanup`,
-   default on).** Run this ONLY when a merge actually landed on this machine
-   (skip it after an open-PR-only or leave-local land; when that PR merges
-   later outside this session, this cleanup - pull, tag, reap - is the piece
-   to come back for). The auto_close merge
-   lands on the platform, so the LOCAL base is stale - pull FIRST:
-   `git checkout <base>` then `git pull`.
-
-   **Release tag on the pulled base (tag-after-merge), before the reap.** When
-   `git.create_tag` is true and the shipped version - the manifest's `version`
-   (`.claude-plugin/plugin.json` or the project's own manifest), else the
-   version PROJECT.md says just shipped - has no tag yet (`git tag`
-   membership), cut it HERE: write the milestone label to a scratch file and run
-   `git tag -a <version> -F <path>` on the now-current base - the label is a
-   PROJECT.md milestone name, so it reaches git as a PATH (caller-derived text
-   - references/conventions.md). Then ask separately whether to push it
-   (references/git-publish.md rails; never auto-push a tag). This is
-   deliberately NOT done at /cad-milestone: a tag cut at close names a
-   pre-merge commit on the integration branch, and a non-fast-forward merge
-   leaves that commit off base entirely. Skip silently when `git.create_tag`
-   is false or the tag already exists.
-
-   Then compute the reap decision against the now-current base:
-   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" cleanup`.
-   In the auto_close path append `--merged true` (step 3b confirmed the PR/MR
-   MERGED) so the reap never hinges on local-base freshness; a manual land
-   omits it and the seam falls back to `git branch --merged <base>`. Relay its
-   `warnings[]`: a layer that did not parse means `on_land_cleanup` and `base`
-   came from DEFAULTS, so `base` may name a branch this repo does not have. When the
-   seam returns `reap:true`, reap through the git-publish seam - never a Bash
-   git call, never a remote-tracking delete (that trips the push guard):
-   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" reap --dir <root> --branch <decision.branch>`.
-   It deletes by subprocess argv and refuses an unsafe, protected or
-   checked-out branch. Relay its `warnings[]` too, and treat
-   `reason:"config-parse-failed"` as a stop and not a retry: the seam refuses to
-   delete anything while the protected list is unprovable. When either seam returns `action:"skip"` - the branch
-   was already removed, or `git.on_land_cleanup` is off - leave HEAD and the
-   branch in place. Report the final state: HEAD on `<base>`, pulled, branch
-   reaped (or left).
-
-   **Then clear the carried rulings.** Delete `.planning/risk-carry/` - the
-   transient copies `/cad-milestone` made of this cycle's `risk_surface` reviews
-   and records before it pruned the phase dirs. This step is the ONLY actor that
-   clears them, and a confirmed merge is the only event proving the 3(b) halt
-   they exist for was answered: a close that HALTED leaves them in place on
-   purpose, so a retry still reads the blocker it stopped on. Do it whatever the
-   reap seam answered - an `action:"skip"` is about the branch, not about the
-   records. Untracked by construction, so this stages nothing.
+1. Require the identified landing id, then call cadence_query
+   `{"operation":"land-read","landing":"<landing id>"}`. Show its exact id,
+   generation, frozen source branch and commit, remote name and URL, and base
+   branch and commit. Present the actual branch, ahead, dirty and remote state,
+   the read-only tracker report, every deferred member and all retained step
+   intents, authorizations and receipts. Report unavailable observations as such.
+   Show `done`, including each receipt's observed remote ref/object or exact PR
+   identity/state and reconciliation provenance, and the single `next_step`.
+   If `resume` is present, send that typed land-resume payload unchanged to
+   cadence_apply. It reads the actual remote before any unfinished step, records
+   an existing effect once, and runs an absent effect only under the retained
+   exact authorization. It grants no new permission. Show its receipt or exact
+   discrepancy, then land-read again. A failed or ambiguous read stops without
+   a success receipt or a repeated mutation. Reuse the same request on transport
+   interruption; after resolving a retained discrepancy, read a fresh `resume`.
+   If answer field `landing.release` is present, display its release id/digest, named manifest,
+   version, exact tag and bump commit. Release confirmation grants no external
+   authorization and creates no tag; use the updated source commit from this read.
+2. For an external step, show the proposed exact step: push, open, merge or tag-push. Obtain its request
+   schema through cadence_query `{"operation":"schema","tool":"apply","for":"land-authorize"}`.
+   Show every input before asking: source and destination refs; for open, configured
+   forge provider, repository, host and the complete proposed title/body; for merge,
+   that same forge and the recorded PR identity; for tag-push, the exact tag and
+   object id. Missing inputs require an owner answer. Configuration grants no
+   permission. A different landing, version, step or changed head needs a fresh choice.
+3. Only after the owner's explicit choice, record land-authorize through
+   cadence_apply with a fresh request_id, the landing id and expected_generation,
+   exact source/base/remote copied from land-read, that one step's inputs, and
+   the actual owner's name and authorization time. Ask for missing attribution;
+   never invent it. Declining stops without writing an authorization or running a step.
+4. Send the returned `action` typed payload unchanged to cadence_apply. It invokes
+   land-publish, land-open, land-merge or land-tag-push. Print the exact refusal or
+   durable receipt, including landing, step and authorization identity, and read
+   land-read again. A refusal stops. An uncertain intent requires reconciliation;
+   return to step 1 for land-resume. Never invent success, replace a request_id
+   to retry an effect, or retry blind. Repeated resume keeps the same step receipt.
+   A reconciled MERGED state is not the owner's merge confirmation: show
+   `confirm-merge` as the next step and obtain that record before any cleanup.
+5. When `next_step` is `confirm-merge`, display the merged landing identity:
+   landing id and generation, exact source/base/remote, the merge receipt's forge
+   and PR number, and the observed merged commit at answer field `git.remote.base_head`.
+   If an observation is unavailable, stop and show it; never guess a commit.
+   Obtain the land-confirm-merge schema through cadence_query
+   `{"operation":"schema","tool":"apply","for":"land-confirm-merge"}`.
+   Ask the owner to explicitly confirm this merged PR/commit identity and the
+   local cleanup choices: an annotated tag's exact name/message or no tag, and
+   whether to reap the source branch. Show that checkout and pull precede those
+   choices. Record only the owner's actual name and confirmation time; obtain
+   missing attribution. A merge receipt or forge MERGED result grants no local
+   cleanup permission. Declining leaves the confirmation absent.
+   A bound release requires its exact release tag; show that name with the
+   owner's annotation message. Its version confirmation does not confirm this
+   merge or authorize cleanup. The binary refuses a changed or omitted release tag.
+6. After explicit owner confirmation, call land-confirm-merge with a fresh
+   request_id, landing id and expected_generation, copied source/base/remote,
+   the exact `merged` forge/PR/commit identity, `tag` (name/message or null),
+   `reap` (the owner's boolean choice), owner and at. Show the durable
+   `confirmation` id and binding, then land-read again. A refusal stops.
+7. With the confirmation recorded, send the returned `cleanup` typed payload
+   unchanged to cadence_apply, one operation at a time: land-checkout,
+   land-pull, land-tag, land-reap. Show each receipt's confirmation id,
+   predecessor receipts, intended and actual ref identities, and done or
+   explicit skipped state; then land-read and follow the returned next step.
+   A declined tag or reap still needs its explicit skipped receipt. On transport
+   interruption retry the identical local request; the binary inspects local
+   refs, index and branch before repeating an uncertain effect. Print an exact
+   refusal naming the uncontained source branch and base, including both tips;
+   stop without suggesting forced deletion. Local cleanup preserves risk and
+   deferred records and never files or changes tracker issues.
+   For a bound release, land-tag rechecks the named manifest bytes/version and
+   normalized version aliases on the pulled base before creating its tag.
+   Report a collision or changed release basis exactly and stop. Never invoke
+   release-bump.mjs or a raw tag command to bypass this refusal.
+8. Tag push remains a separate external step. Show the exact annotated tag object
+   from its receipt and obtain its own land-authorize grant through steps 2-4;
+   the deferred-member gate still applies. A local tag or merge confirmation is
+   not tag-push authorization. The binary owns every subprocess: do no raw push,
+   PR creation, merge, checkout, pull, tag, shell branching or branch reap, and
+   no tracker mutation or FILED write.
 </process>
-
-<guardrails>
-- No preselected publish default, ever. No auto-push. No auto-commit. The one
-  exception is `git.auto_close` (default off), the explicit opt-in that runs the
-  close unattended; its mechanic is stated once, at step 3(b), beside the
-  code that runs it.
-- With `git.auto_close` off, execute only the single chosen mechanism; do not
-  chain (e.g. push AND tag) unless the user chose both.
-- `/cad-land` fires no review of its own and commits no fix: it publishes what
-  was already reviewed and already triaged upstream. The unattended arm acts on
-  no survivor either - it reads them only to halt or proceed.
-- It publishes what was already reviewed and TRIAGED, so an unadjudicated
-  deferred finding is the one thing that stops it - on both arms, before either
-  publishes anything.
-</guardrails>

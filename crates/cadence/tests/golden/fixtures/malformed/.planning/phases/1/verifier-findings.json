@@ -1,0 +1,125 @@
+{
+  "status": "gaps",
+  "score": "6/9",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "A delayed repeat close never consumes the next dispatch of the same worker key: the replay renders two brackets carrying their own figures and roles.tokens sums those two, not all three terminals.",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/bin/lib/trace.mjs:812-814 - `delayedRepeat` requires both clocks parsed, terminal ts strictly earlier than the head pending dispatch, and `pairedRows.has(worker)`; `matched` is null on that arm so no pending dispatch is consumed. Named test `render: a delayed repeat close never steals the NEXT dispatch of its key` (cadence-core/bin/trace.test.mjs:1689) asserts brackets.length 2, ts/end/tokens per row, ms 300000 on both (the pre-fix tell was -240000), unpaired empty and roles.tokens = a.tokens + b.tokens. Ran green together with the three shipped dedup tests and the committed-fixture test, bodies unmodified: 8/8 pass."
+    },
+    {
+      "n": 2,
+      "truth": "With two open dispatches of one role, a SubagentStop payload closes the dispatch whose agent_id matches rather than the newest one.",
+      "status": "FAILED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/lib/subagent-trace.mjs:210 `if (mine.length !== 1) return null;` - the only use of the payload id is the NEGATIVE filter `alreadyClosed` at :164/:199, which asks whether some bracket already carries the id. No code path selects among two open dispatches by id. The shipped test is `stop: TWO open dispatches of the role produce NOTHING` (cadence-core/bin/subagent-trace.test.mjs:184). Probe: closeForStop({agent_type:'cadence:cad-executor-xhigh', agent_id:'AID-1'}, <render with two open cad-executor rows>, {transcript: <end_turn>}) returned null."
+    },
+    {
+      "n": 3,
+      "truth": "A SubagentStop payload whose transcript shows the worker has not reached a terminal entry writes no return event at all, while an absent or unreadable transcript still writes the close it wrote before.",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "GATE 0 at cadence-core/bin/lib/subagent-trace.mjs:187 refuses on NOT_TERMINAL only; `terminalOf` (cadence-core/bin/lib/subagent-transcript.mjs) answers not-terminal for stop_reason null and tool_use and unknown for every unreadable shape; the disk half injects the bytes (cadence-core/bin/subagent-trace.mjs readTranscript, 8 MiB ceiling). Disk-half probe on a scratch planning root: a payload pointing at a tool_use-terminated transcript left trace.jsonl at 1 line before and after; the same payload with no transcript_path appended the ordinary figureless return. 19/19 tests in subagent-trace.test.mjs and 15/15 in subagent-transcript.test.mjs pass."
+    },
+    {
+      "n": 4,
+      "truth": "The ordinary two-writer case is unchanged: one dispatch, a figureless hook close, then the hand-written close with figures renders one bracket with dispatches: 1.",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Shipped tests `render: a dispatch closed by BOTH writers is exactly one bracket`, `render: the two closes render identically in EITHER arrival order`, `render: two genuine dispatches on ONE worker key are still two brackets` and `fixture: the committed verbatim trace renders exactly as it did before this phase` all pass with bodies unmodified (git diff 2a385615..HEAD shows no hunk inside them). CLI probe on a scratch root - dispatch, figureless return, then `trace close --tokens 900 --turns 4 --duration-ms 60000` - rendered exactly one bracket and roles {cad-executor:{dispatches:1,tokens:900,turns:4}}."
+    },
+    {
+      "n": 5,
+      "truth": "/cad-report and /cad-suggest each print a figure sourced from a bracket's duration_ms, labelled apart from the bracket's ms, and say unrecorded rather than 0 when the close carried none.",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/workflows/report.md:85 - the fixed field-read tuple now ends `b.duration_ms`; :108 the Dispatches row is `step minutes | worker minutes`; :120-129 the rules name the two clocks apart and require `unrecorded`, never 0. Probe: extracted that exact `node -e` line and ran it against a synthetic render.json - it printed the duration column for a bracket carrying one and an empty column for a bracket without. cadence-core/bin/lib/trace-suggest.mjs:681-733 is R8; probe output for brackets [90000, 150000, none]: one info entry, subject `workers`, `worker wall clock reported by the host: 4 min across 2 dispatch(es), with 1 more whose close carried none - unrecorded, never counted as zero`, naming the WORKER's own run time against the dispatch-to-close `ms`; a scope with no duration_ms produced 0 entries (the settled per-close reading, PLAN-2 Notes)."
+    },
+    {
+      "n": 6,
+      "truth": "A bracket close records the two cache figures and trace render reports them; a close carrying none omits the keys, and roles.tokens is unchanged by their presence.",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "cadence-core/bin/lib/trace.mjs:122 CACHE_KEYS, :737-742 numeric-and-finite guard, :865 spread onto bracketRow, :910 fill-only-empty fold; roles block untouched. Tests `render: a bracket carries the cache figures its close reported, and roles does not` (roles deep-equal to the same fixture rendered without them), `...leaves NEITHER key on the bracket`, `...a non-numeric cache figure contributes NOTHING`, `...the cache fold fills an empty field and never overwrites one` all pass. End-to-end probe: piping a real SubagentStop payload into cadence-core/bin/subagent-trace.mjs against a scratch root wrote {\"cache_creation_input_tokens\":100,\"cache_read_input_tokens\":1000} on the return and `planning.mjs trace render` printed both on the bracket row. The two-line/one-message fixture billed 100/1000 rather than 200/2000, so the per-message fold of 4a1af326 is live."
+    },
+    {
+      "n": 7,
+      "truth": "The suite is green and self-verify reports no problems.",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node cadence-core/bin/test.mjs` exit 0: tests 3358, pass 3357, fail 0, skipped 1 (matches SUMMARY). `node cadence-core/bin/self-verify.mjs` -> {\"ok\":true, ... \"problems\":[]} across 29 checks including budgets, scratch-path and hook-events. No unreferenced TODO/FIXME/HACK/placeholder marker on any touched surface (the only XXX match is mktemp's template in report.md:31)."
+    },
+    {
+      "n": 8,
+      "truth": "The worker's host id reaches the bracket row whenever either writer carried it, which is what the hook's already-closed equality test reads.",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "cadence-core/bin/lib/trace.mjs:866-871 states the id is 'OMITTED when neither writer carried it, the same rule `turns` and `duration_ms` follow', but the repeat-close fold at :902-910 folds tokens, turns, duration_ms and both CACHE_KEYS and NOT agent_id. So the id lands only when the hand-written close OPENS the bracket. Probe on a scratch root, in the arrival order AC4 itself calls ordinary (figureless hook close first, then `trace close --agent-id WORKER-Z`): the rendered bracket is {tokens:900, turns:4, duration_ms:60000} with NO agent_id key. The TraceRender typedef at :340 also never declares agent_id, though cadence-core/bin/lib/subagent-trace.mjs:164 reads row.agent_id."
+    },
+    {
+      "n": 9,
+      "truth": "The identity join is exercised against this repository's own record - a real parallel dispatch passing --agent-id produces brackets carrying distinct agent ids.",
+      "status": "UNCERTAIN",
+      "uat_item": 8,
+      "evidence": "`grep -c agent_id .planning/trace.jsonl` = 0 over 2283 events (353 returns, 247 duration_ms), and `cache_read_input_tokens` = 0 occurrences, so neither the id nor the cache figures have ever landed on this repo's own record. The seam is proven end to end on a scratch root instead: `planning.mjs trace close --agent-id a1852a9b36a6c52b8` wrote agent_id onto the event, `trace render` carried it onto the bracket, and a stop payload carrying the same id against that record wrote nothing while a sibling id still closed its own dispatch."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Repeat close keeps its own bracket",
+      "evidence": "lib/trace.mjs:812-814 discriminator (both clocks parse, terminal earlier than head pending, pairedRows holds the key) plus the named regression test at trace.test.mjs:1689 asserting two brackets, own figures, ms 300000 on both, unpaired empty and roles.tokens = the two rows' sum. The three shipped dedup tests and the committed-fixture test are green with bodies unmodified."
+    },
+    {
+      "k": 3,
+      "name": "A worker that has not stopped writes nothing",
+      "evidence": "GATE 0 refuses on NOT_TERMINAL alone (lib/subagent-trace.mjs:187). Disk-half probe: a payload whose transcript_path ends on a tool_use assistant entry left the scratch trace.jsonl at 1 line before and after, while the same payload with no transcript_path still appended the ordinary close (the unknown arm)."
+    },
+    {
+      "k": 4,
+      "name": "The ordinary two-writer case is unchanged",
+      "evidence": "The three shipped dedup tests pass with unmodified bodies; a CLI probe (dispatch, figureless hook close, hand-written close with figures) rendered exactly ONE bracket and roles dispatches: 1 with tokens, turns and duration_ms all folded in."
+    },
+    {
+      "k": 5,
+      "name": "Two clocks side by side in report and suggest",
+      "evidence": "report.md:85 tuple ends b.duration_ms (executed against a synthetic render.json and it printed the column), :108 'step minutes | worker minutes', :120-129 the unrecorded-never-zero rule. trace-suggest.mjs R8 probe printed the summed worker clock, the count of dispatches that reported none as unrecorded, and the ms/duration_ms distinction; a scope with no duration_ms emitted nothing."
+    },
+    {
+      "k": 6,
+      "name": "Cache figures ride the bracket, not the roles bill",
+      "evidence": "Four named render tests (carried, neither-key, non-numeric, fold) pass, one asserting roles deep-equal to the same fixture without the figures. End-to-end: the real hook script wrote both keys onto a scratch record and `trace render` printed them on the bracket row, billed once per message id rather than once per line."
+    },
+    {
+      "k": 7,
+      "name": "Suite green and self-verify clean",
+      "evidence": "node cadence-core/bin/test.mjs: 3357 pass / 0 fail / 1 skipped, exit 0. node cadence-core/bin/self-verify.mjs: {\"ok\":true,\"problems\":[]}."
+    }
+  ],
+  "gaps": [
+    {
+      "k": 2,
+      "name": "Stop close picks the dispatch its agent id names",
+      "reason": "behavior wrong - the shipped rule never picks a dispatch by agent id. With two open dispatches of one role it closes NOTHING, whatever id the payload carries. The payload's id is used only as a negative filter (has some bracket already got this id?), so the positive half of AC2, of ROADMAP success criterion 2 and of TRC-06 ('lands on the worker that actually stopped') is not delivered; only the 'never the newest open dispatch' half is.",
+      "evidence": "cadence-core/bin/lib/subagent-trace.mjs:210 `if (mine.length !== 1) return null;` is the whole adoption rule; :164 `alreadyClosed` and :199 are the only readers of the payload id. cadence-core/bin/subagent-trace.test.mjs:184 pins the shipped behaviour by name: 'stop: TWO open dispatches of the role produce NOTHING', asserting null both with and without a terminal transcript. Probe: closeForStop with agent_id 'AID-1' against a render holding two open cad-executor rows returned null. The design change is recorded in SUMMARY Deviations (426163a0) and in the CONTEXT annotation to D-07, but no artifact re-states AC2, ROADMAP criterion 2 or TRC-06 to match what shipped.",
+      "severity": "major",
+      "missing": "A ruling on which one moves. Either (a) accept 'unambiguous or nothing' and re-word UAT item 2, ROADMAP Phase 1 success criterion 2 and REQUIREMENTS TRC-06 to say the hook refuses on ambiguity rather than picking by id - the honest statement of the shipped rule, since the dispatch half can never carry an id - or (b) fund the positive join, which needs an id on the dispatch half or another record that pairs an agent id to a dispatch, and which the plan-1 gate already refuted twice for the parallel path."
+    },
+    {
+      "name": "The worker's host id survives whichever writer closes first",
+      "reason": "unwired on the ordinary arrival order - the repeat-close fold in renderTrace does not fold agent_id, so an id supplied on the hand-written close is dropped whenever the hook's figureless close opened the bracket first. That ordering is the ordinary one (the host fires SubagentStop when the worker stops, before the orchestrator processes the return and writes its close) and is the ordering AC4 itself calls ordinary. The code comment claims the opposite of what the code does.",
+      "evidence": "cadence-core/bin/lib/trace.mjs:866-871 says agent_id is 'OMITTED when neither writer carried it, the same rule `turns` and `duration_ms` follow'; the fold at :902-910 handles tokens, turns, duration_ms and both CACHE_KEYS and never agent_id. Probe on a scratch planning root - dispatch, figureless return, then `planning.mjs trace close --agent-id WORKER-Z --tokens 900 --turns 4 --duration-ms 60000` - rendered {tokens:900,turns:4,duration_ms:60000} with no agent_id key at all. Consequence: the record's worker identity is present only on brackets the hand-written close opened, and cadence-core/bin/lib/subagent-trace.mjs:164's equality test reads a key that is absent on the common path. The TraceRender typedef at :340 also omits agent_id from the brackets shape.",
+      "severity": "major",
+      "missing": "Fold the id in the repeat-close arm the way turns and duration_ms are folded (`if (!('agent_id' in b) && e.agent_id) b.agent_id = e.agent_id;` beside trace.mjs:906), add agent_id to the TraceRender brackets typedef at :340, and add a render test for the hook-close-first ordering asserting the bracket carries the id the hand-written close supplied."
+    }
+  ],
+  "human_checks": [
+    {
+      "name": "Run a real parallel execute in this repository with the orchestrator passing `trace close --agent-id`, then read `.planning/trace.jsonl` for two brackets carrying two distinct agent ids - and note whether the host's subagent return actually surfaces an id to copy.",
+      "expected": "Two `return` events, each carrying its own `agent_id`, rendering as two brackets with distinct ids; and a late SubagentStop for either worker appends nothing. Today `grep -c agent_id .planning/trace.jsonl` is 0 over 2283 events.",
+      "why_human": "Out of reach for this pass and not merely unexercised. It needs the live host to dispatch two real subagents and to render a worker id in its return - cadence-core/references/seam-spawn-agent.md's STANDING EXPOSURE bullet lists only three figures on a return (tokens, tool uses, duration) and the SUMMARY's own open item records that the host labels the subagent id internal and instructs against surfacing it, which is why no dispatch in this phase passed one. Whether `--agent-id <the id on the subagent return>` (workflows/execute.md:230) is a flag anything can fill is decided by the host at run time, and the check also mutates this repository's real record and spends real dispatches, so I neither ran it nor simulated it. The seam itself is already proven on a scratch root; what is unproven is that the host will hand the id over."
+    }
+  ]
+}

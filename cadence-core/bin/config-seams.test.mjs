@@ -356,7 +356,7 @@ test('route: the rung it routes on is what config.mjs get reports (global layer)
   assert.equal(r2.effort, 'low');
 });
 
-// --- the three --dir git seams ----------------------------------------------
+// --- the remaining git seams ------------------------------------------------
 
 test('git-branch: the integration_branch mode it DECIDES on is what get reports', () => {
   // git-branch.mjs:43 reads the key off the merged config, feeds it to
@@ -395,63 +395,7 @@ test('git-branch: the integration_branch mode it DECIDES on is what get reports'
   assert.equal(m.branch, 'cadence/v9.9.9');
 });
 
-test('land-cleanup: the base branch it resolves is what get reports', () => {
-  // land-cleanup.mjs:71-76 reads git.base_branch off the merged config. The
-  // fixture needs no git repo: readMergedBranches degrades to [] when git
-  // cannot read the directory, which is the ordinary advisory path.
-  const fx = layers({
-    global: { git: { base_branch: 'release-2' } },
-    repo: { git: { on_land_cleanup: true } },
-  });
-  const d = seam('land-cleanup.mjs', ['cleanup', '--dir', fx.root], fx);
-  assert.equal(d.ok, true);
-  assert.equal(d.base, getValue('git.base_branch', fx));
-  // Not the fallback: with the key unset, base would be protected_branches[0],
-  // i.e. `main`.
-  assert.equal(d.base, 'release-2');
 
-  // The contrasting value, so a hardcoded base fails this arm: neither
-  // `release-2` nor the `main` fallback satisfies both halves.
-  const other = layers({
-    global: { git: { base_branch: 'stable' } },
-    repo: { git: { on_land_cleanup: true } },
-  });
-  const d2 = seam('land-cleanup.mjs', ['cleanup', '--dir', other.root], other);
-  assert.equal(d2.ok, true);
-  assert.equal(d2.base, getValue('git.base_branch', other));
-  assert.equal(d2.base, 'stable');
-});
-
-test('land-cleanup: with git.base_branch unset, get says null and the seam says main', () => {
-  // The THIRD expected divergence in this file, and the only one that is the
-  // default state of every unconfigured install rather than a deliberate
-  // narrowing: `git.base_branch` defaults to null in the schema, and
-  // land-cleanup.mjs:76 falls back to `protectedBranches[0]` rather than
-  // landing a null base. So `get` answers null and the seam acts on `main`.
-  //
-  // Recorded rather than asserted equal, for the same reason as the two layer
-  // narrowings: a future change that made the seam honour the null - or moved
-  // the fallback off the protected list - would then fail a test instead of
-  // passing silently. It is a fallback DEFAULT, not a layer disagreement, which
-  // is why it sits with its own seam rather than in the narrowings section.
-  const bare = layers({ repo: { git: { on_land_cleanup: true } } });
-  assert.equal(getValue('git.base_branch', bare), null, 'get: unset resolves to the schema default');
-  const d = seam('land-cleanup.mjs', ['cleanup', '--dir', bare.root], bare);
-  assert.equal(d.ok, true);
-  assert.equal(d.base, 'main');
-  assert.deepEqual(getValue('git.protected_branches', bare), ['main', 'master'],
-    'and `main` is protected_branches[0], not a constant of its own');
-
-  // Which is what the fallback follows, not the literal `main`: move the
-  // protected list and the base moves with it, still with `get` reporting null.
-  const listed = layers({
-    global: { git: { protected_branches: ['release-2', 'main'] } },
-    repo: { git: { on_land_cleanup: true } },
-  });
-  assert.equal(getValue('git.base_branch', listed), null);
-  const d2 = seam('land-cleanup.mjs', ['cleanup', '--dir', listed.root], listed);
-  assert.equal(d2.base, 'release-2');
-});
 
 test('git-guard: the on_protected value it acts on is what get reports', () => {
   // The silent/ask pair rather than `refuse`: whether a refuse hard-blocks
@@ -539,113 +483,9 @@ test('git-guard: the two inert hostile spellings, as regression pins only', () =
 //
 // These seams deliberately read NARROWER than the merged config, so their arms
 // assert the divergence rather than equality. Widening either narrowing later
-// fails a test instead of passing silently. (The file's third divergence is not
-// a narrowing at all - it is land-cleanup's `base_branch` fallback default, and
-// it is recorded with that seam's own arm above.)
+// fails a test instead of passing silently.
 
-/**
- * A `{findings}` stdin payload carrying one GENUINELY-UNFIXED blocker: an
- * ADJUDICATION record entry ruled `survived` at `blocker`, naming no fix commit
- * and no override, which is what land-cleanup's gate halts on since LND-02.
- * The `ruling` is load-bearing and must stay: a RAW review finding - a severity
- * with nothing ruled over it - is deliberately no longer a live blocker to that
- * gate, so without it these arms would stop being about the config LAYER and
- * start failing over the payload SHAPE instead.
- */
-const BLOCKER = JSON.stringify({ findings: [{ ruling: 'survived', severity: 'blocker' }] });
 
-test('git-publish + land-cleanup: one git.auto_close, two questions, two layer reads', () => {
-  // The EXPECTED divergence, and why it is not an inconsistency to eliminate.
-  // ONE key, TWO resolutions, and this fixture is the pair on which they
-  // DISAGREE - which is what makes them two resolutions rather than one value.
-  //
-  //   AUTHORIZED - lib/repo-auto-close.mjs, read by git-publish.mjs `publish`
-  //                and `authorized`. It asks "may I mutate somebody else's
-  //                project unattended HERE", which D-08 answers repo-layer-only
-  //                so a value in the user's home directory starts no close in a
-  //                repository that never opted in.
-  //   REQUESTED  - the MERGED value. land-cleanup.mjs's gate() asks "is anybody
-  //                WATCHING", and that must match what the prose branched on:
-  //                skills/cad-land/SKILL.md reads the MERGED value and skips the
-  //                publish ask under it, so the gate's halt is what replaces the
-  //                human it switched off.
-  //
-  // Collapsing the two onto the repo layer (0b1c322, reverted) aligned the
-  // values and disarmed the pairing: ask skipped, gate proceeding, and on
-  // the GitLab arm - where no publish seam gates the chain - a blocker merged.
-  // So a future reader finding these two answers different must NOT re-align
-  // them; the divergence is the design, and the fix for the GitLab hole was a
-  // second REPO-layer consult on that arm, never a merged one here.
-  const fx = gitLayers({
-    branch: 'cadence/v9.9.9', origin: true,
-    global: { git: { auto_close: true } },
-    repo: { git: { on_land_cleanup: true } },
-  });
-  assert.equal(getValue('git.auto_close', fx), true, 'get reports the MERGED value');
-  const d = seam('git-publish.mjs', ['publish', '--dir', fx.root, '--remote', 'origin'], fx);
-  assert.equal(d.ok, false);
-  assert.equal(d.reason, 'auto-close-off', 'publish narrows to the repo layer (D-08)');
-  assert.equal(refExists(fx.bare, 'refs/heads/cadence/v9.9.9'), false, 'nothing was pushed');
-  const g = seam('land-cleanup.mjs', ['gate', '--dir', fx.root], { ...fx, stdin: BLOCKER });
-  assert.equal(g.action, 'halt', 'the gate reads the merged value the prose suppressed triage on');
-  assert.match(g.reason, /auto_close on/);
-
-  // The authorization question asked by name, on the same pair. This is the
-  // arm the GitLab chain consults, where no publish seam sits in the path.
-  const a = seam('git-publish.mjs', ['authorized', '--dir', fx.root], fx);
-  assert.equal(a.ok, false, 'the repository never opted in, so nothing is authorized');
-  assert.equal(a.reason, 'auto-close-off');
-  assert.equal(a.requested, true, 'the seam saw the same merged value `get` reports');
-  // The two resolutions on ONE config pair: requested true, authorized false.
-  assert.notEqual(getValue('git.auto_close', fx), a.ok);
-  assert.match(a.detail, /user-global setting cannot authorize/,
-    'the refusal does not say WHICH authorization was missing');
-
-  // The contrast that makes both halves about the LAYER rather than about an
-  // absent key: the same value in the REPO layer turns both seams on, and a
-  // global `false` cannot turn either back off.
-  const repoFx = gitLayers({
-    branch: 'cadence/v9.9.9', origin: true,
-    global: { git: { auto_close: false } },
-    repo: { git: { auto_close: true } },
-  });
-  const d2 = seam('git-publish.mjs', ['publish', '--dir', repoFx.root, '--remote', 'origin'], repoFx);
-  assert.equal(d2.action, 'published');
-  assert.equal(refExists(repoFx.bare, 'refs/heads/cadence/v9.9.9'), true);
-  const g2 = seam('land-cleanup.mjs', ['gate', '--dir', repoFx.root], { ...repoFx, stdin: BLOCKER });
-  assert.equal(g2.action, 'halt');
-  const a2 = seam('git-publish.mjs', ['authorized', '--dir', repoFx.root], repoFx);
-  assert.equal(a2.ok, true, 'the repository\'s OWN opt-in authorizes, and a global false cannot withdraw it');
-  assert.equal(a2.action, 'repo-authorized');
-});
-
-test('git-publish: the protected list it refuses on IS the merged one get reports', () => {
-  // The same seam's other config read goes through the merge, so this half is
-  // an equality arm - the narrowing above is specific to git.auto_close.
-  const spec = {
-    global: { git: { protected_branches: ['release'] } },
-    repo: { git: { auto_close: true } },
-  };
-  const onList = gitLayers({ branch: 'release', origin: true, ...spec });
-  assert.deepEqual(getValue('git.protected_branches', onList), ['release']);
-  const refused = seam('git-publish.mjs',
-    ['publish', '--dir', onList.root, '--remote', 'origin'], onList);
-  assert.equal(refused.ok, false);
-  assert.equal(refused.reason, 'protected-branch');
-  assert.equal(refused.branch, 'release');
-  assert.equal(refExists(onList.bare, 'refs/heads/release'), false);
-
-  // The other direction is what proves the seam read the merged list rather
-  // than its ['main','master'] fallback: `main` is protected by the fallback
-  // and by nothing the merged config names, so it publishes.
-  const offList = gitLayers({ branch: 'main', origin: true, ...spec });
-  assert.equal(getValue('git.protected_branches', offList).includes('main'), false);
-  const published = seam('git-publish.mjs',
-    ['publish', '--dir', offList.root, '--remote', 'origin'], offList);
-  assert.equal(published.ok, true);
-  assert.equal(published.action, 'published');
-  assert.equal(refExists(offList.bare, 'refs/heads/main'), true);
-});
 
 test('route: a retired risk.override is named by both faces, and routes nothing', () => {
   // The eight `risk.override.*` keys were retired with the dispatch-time floor
@@ -744,13 +584,13 @@ test('planning recall: the memory.backend it gates on is what get reports', () =
  * @param {{root: string, repoFile: string, globalFile: string}} fx
  * @param {number} cap
  */
-function consultOverCap(fx, cap) {
+function reviewOverCap(fx, cap) {
   const keyFile = join(fx.root, 'providers.env');
   writeFileSync(keyFile, 'OPENAI_API_KEY="from-file"\n');
-  const situation = 'x'.repeat(4 * cap + 8);   // chars/4 proxy: est > cap
+  const artifact = 'x'.repeat(4 * cap + 8);   // chars/4 proxy: est > cap
   return seam('review-provider.mjs',
-    ['consult', '--provider', 'openai', '--model', 'gpt-test', '--key-file', keyFile],
-    { ...fx, cwd: fx.root, stdin: JSON.stringify({ situation }) });
+    ['review', '--provider', 'openai', '--model', 'gpt-test', '--key-file', keyFile],
+    { ...fx, cwd: fx.root, stdin: JSON.stringify({ instruction: 'review this artifact', artifact }) });
 }
 
 /** The cap named in an `over-cap` refusal's detail, or null. */
@@ -773,7 +613,7 @@ test('review-provider: a GLOBAL-layer prompt cap is the one it refuses on', () =
   });
   const cap = getValue('review.max_prompt_tokens', fx);
   assert.equal(cap, 48, 'the global layer alone carries it - not the 120000 default');
-  const r = consultOverCap(fx, cap);
+  const r = reviewOverCap(fx, cap);
   assert.equal(r.ok, false);
   // No network: the over-cap reason is itself the proof nothing was sent.
   assert.equal(r.reason, 'over-cap', JSON.stringify(r));
@@ -818,7 +658,7 @@ test('review-provider: the prompt cap it refuses on is what get reports (cwd-rel
   });
   const cap = getValue('review.max_prompt_tokens', fx);
   assert.equal(cap, 64, 'the repo layer wins the merge over the global one');
-  const r = consultOverCap(fx, cap);
+  const r = reviewOverCap(fx, cap);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'over-cap', JSON.stringify(r));
   assert.equal(capInDetail(r.detail), cap, r.detail);
@@ -880,36 +720,4 @@ test('global-only keys: the template shape at null overrides nothing and says no
   // PRESENCE would fire on three untouched keys at a new project's first
   // command, which trains exactly the click-through habit CFG-02 declined.
   assert.deepEqual(getWarnings(fx), []);
-});
-
-test('git-publish: a repo layer setting a global-only key cannot stop a land (AC4)', () => {
-  // D-05's whole reason, as a regression pin. `tornLayerDetail`
-  // (git-publish.mjs:116-118) returns warnings[0] on ANY non-empty array, with
-  // no layer or class discrimination, and both the publish and the reap refuse
-  // to mutate on it - so moving this diagnostic onto `mergeLayers`'s warnings[]
-  // turns this arm red with reason `config-parse-failed`. It would also have
-  // broken /cad-land in THIS repository on the first run after the phase lands,
-  // whose own .planning/config.json sets both command keys.
-  const fx = gitLayers({
-    branch: 'cadence/v9.9.9', origin: true,
-    repo: { git: { auto_close: true }, ...GLOBAL_ONLY_REPO },
-  });
-  git(['-C', fx.root, 'branch', 'stale-branch']);   // something for the reap to delete
-
-  const d = seam('git-publish.mjs', ['publish', '--dir', fx.root, '--remote', 'origin'], fx);
-  assert.equal(d.ok, true, JSON.stringify(d));
-  assert.equal(d.action, 'published');
-  assert.equal(refExists(fx.bare, 'refs/heads/cadence/v9.9.9'), true, 'the push really happened');
-
-  // The reap reaches its own mutation, not the idempotent `already-absent`
-  // skip: that arm returns BEFORE the torn-layer gate and so would pin nothing.
-  const r = seam('git-publish.mjs', ['reap', '--dir', fx.root, '--branch', 'stale-branch'], fx);
-  assert.equal(r.ok, true, JSON.stringify(r));
-  assert.equal(r.action, 'reaped');
-
-  // ABOUT the warning channel one last time: the diagnostic really DID fire on
-  // this fixture, so the two results above are a config that was ignored and
-  // announced - not a config that set nothing at all.
-  assert.ok(getWarnings(fx).some((w) => /workflow\.test_command/.test(w)),
-    JSON.stringify(getWarnings(fx)));
 });

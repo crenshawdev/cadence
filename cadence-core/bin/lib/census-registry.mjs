@@ -15,7 +15,7 @@
 // `assert.equal(..., <2+ digit literal>)` calls and 147 on a looser shape, the
 // large majority fixture-derived rather than tree-derived. So the register IS
 // the record, the same species of stated table as `lib/deferred-reads.mjs`'s
-// register, self-verify's CONTRACTS and `lib/rung-agent.mjs`'s RUNG_FILES.
+// register, arg-contract's CONTRACTS and `lib/rung-agent.mjs`'s RUNG_FILES.
 //
 // WHAT A ROW COSTS. A row is added in the commit that plants the marker at the
 // asserting site, and it is not deleted without deleting the census. Deleting
@@ -64,8 +64,8 @@
 // Pure in the sense `lib/lease-grammar.mjs` and `lib/debt-markers.mjs` are:
 // classify, never emit, no fs, no git, no envelope. The caller owns the tree
 // walk, the file reads and the verdict. It takes no CONTRACTS row and no CLI
-// entry point, for the reason self-verify.mjs check 14 states about
-// `lib/*.mjs`: they are modules prose never invokes.
+// entry point: `lib/*.mjs` files are modules, not CLI commands.
+// Native git deadlines use process.rs's registered launch gate, not a source census.
 'use strict';
 
 import { covers, intersects } from './lease-grammar.mjs';
@@ -96,40 +96,6 @@ function entry(e) {
  */
 export const CENSUSES = Object.freeze([
   entry({
-    id: 'self-verify-merge-layers',
-    holder: 'cadence-core/bin/self-verify.test.mjs',
-    // `mergeLayers` is written here WITHOUT its opening paren on purpose. The
-    // merge-warnings rule matches the name followed by `(` on any non-comment
-    // line, so spelling the callsite out in this row's prose made the registry
-    // itself the thirteenth file carrying a callsite - self-verify red, and
-    // check 12 red at seventeen over thirteen. The fix belongs at the MENTION,
-    // which is the discipline lib/merge-warnings.mjs states and the same one
-    // that keeps this file's own marker head built rather than written.
-    counts: 'eighteen `mergeLayers` callsites over fourteen files, each in one '
-      + 'of the two warning-surfacing arms',
-    asserted_by: 'the test named `check 12: the live tree is SEVENTEEN callsites '
-      + 'over THIRTEEN files, each in an arm`',
-    // The fourteen files that carry a callsite today. lib/config-merge.mjs is
-    // deliberately NOT a subject: that test's own `skip` excludes it, so
-    // editing it cannot move the count.
-    subjects: [
-      'cadence-core/bin/config.mjs',
-      'cadence-core/bin/forge.mjs',
-      'cadence-core/bin/git-branch.mjs',
-      'cadence-core/bin/git-guard.mjs',
-      'cadence-core/bin/git-publish.mjs',
-      'cadence-core/bin/issue-check.mjs',
-      'cadence-core/bin/issue-filing.mjs',
-      'cadence-core/bin/land-cleanup.mjs',
-      'cadence-core/bin/planning/capture-check.mjs',
-      'cadence-core/bin/planning/core.mjs',
-      'cadence-core/bin/planning/risk-check.mjs',
-      'cadence-core/bin/planning/trace.mjs',
-      'cadence-core/bin/review-provider.mjs',
-      'cadence-core/bin/route.mjs',
-    ],
-  }),
-  entry({
     id: 'arg-contract-flag-entries',
     holder: 'cadence-core/bin/arg-contract.test.mjs',
     counts: 'the flag entries the `CONTRACTS` table declares and its top-level row count',
@@ -150,48 +116,38 @@ export const CENSUSES = Object.freeze([
   }),
   entry({
     id: 'weight-budgets',
-    holder: 'cadence-core/bin/weight-budgets.json',
-    counts: 'a UTF-8 byte ceiling for each budgeted prose surface',
-    // Row (d) stretches criterion 1's "the test that asserts it" to a non-test
-    // asserting site on purpose (D-08). It is the one census every
-    // prose-editing plan in this repository invalidates.
-    asserted_by: "`cadence-core/bin/self-verify.mjs`'s budget check, the "
-      + '`budget-overrun` arm',
-    // Five directory leases, measured 2026-08-24 to cover all 111 budgeted
-    // keys. Copying the key list in would be a second copy of
-    // weight-budgets.json, and is refused for the reason lib/lease-grammar.mjs
-    // exists.
+    holder: 'crates/cadence/src/instruction_lint.rs',
+    counts: 'the literal UTF-8 ceilings for the 24 binary-rendered skill files',
+    asserted_by: 'instruction_lint::rendered_files_obey_named_byte_ceilings',
     subjects: [
-      'agents/',
-      'cadence-core/references/',
-      'cadence-core/templates/',
-      'cadence-core/workflows/',
-      'skills/',
+      'crates/cadence/src/execution/render.rs',
+      'crates/cadence/src/instruction_surfaces.rs',
+      'crates/cadence/src/help/table.rs',
+      'crates/cadence/src/capture/instructions.rs',
+      'crates/cadence/src/context/instructions.rs',
+      'crates/cadence/src/debug/instructions.rs',
+      'crates/cadence/src/execution/instructions.rs',
+      'crates/cadence/src/help/instructions.rs',
+      'crates/cadence/src/landing/instructions.rs',
+      'crates/cadence/src/milestone/instructions.rs',
+      'crates/cadence/src/plan/instructions.rs',
+      'crates/cadence/src/progress/instructions.rs',
+      'crates/cadence/src/read/instructions.rs',
+      'crates/cadence/src/review/instructions.rs',
+      'crates/cadence/src/spike/instructions.rs',
+      'crates/cadence/src/suggest/instructions.rs',
+      'crates/cadence/src/task/instructions.rs',
+      'crates/cadence/src/undo/instructions.rs',
+      'crates/cadence/src/verification/instructions.rs',
+      'crates/cadence/src/why/instructions.rs',
     ],
   }),
   entry({
-    id: 'text-transport-register',
-    holder: 'cadence-core/bin/text-transport.test.mjs',
-    counts: "the register's own row count and its derived-row count - 36 and 20",
-    asserted_by: 'the test named `the register pins its row count`',
-    subjects: ['cadence-core/bin/lib/text-transport.mjs'],
-  }),
-  entry({
-    id: 'capture-writers-register',
-    holder: 'cadence-core/bin/capture-writers.test.mjs',
-    counts: "the register's 4 rows, none of them durable - a durable row is a "
-      + 'reported problem on the live tree, so the second figure is the '
-      + "classification's own floor rather than a tally",
-    asserted_by: 'the test named `the register pins its row count`',
-    subjects: ['cadence-core/bin/lib/capture-writers.mjs'],
-  }),
-  entry({
-    id: 'bulk-output-register',
-    holder: 'cadence-core/bin/bulk-output.test.mjs',
-    counts: "the register's row count and its two transport splits - 18, 4 "
-      + 'redirect and 3 file',
-    asserted_by: 'the test named `the register pins its row count`',
-    subjects: ['cadence-core/bin/lib/bulk-output.mjs'],
+    id: 'rendered-skill-files',
+    holder: 'crates/cadence/src/guard/tests.rs',
+    counts: 'the existing 24 rendered project files protected by the guard',
+    asserted_by: 'rendered_skill_files_are_protected',
+    subjects: ['crates/cadence/src/execution/render.rs'],
   }),
   entry({
     id: 'rung-agent-files',
@@ -204,7 +160,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'deferred-reads-register',
     holder: 'cadence-core/bin/deferred-reads.test.mjs',
-    counts: "the register's 10 rows, pinned alongside a byte-identical slice of "
+    counts: "the register's 8 rows, pinned alongside a byte-identical slice of "
       + "the export's own source",
     asserted_by: 'the test named `register: the surviving cut rows are '
       + 'byte-identical, and the register is exactly the rows the cuts made`',
@@ -213,7 +169,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'planning-detail-sites',
     holder: 'cadence-core/bin/planning-lease-check.test.mjs',
-    counts: 'the 14 error-detail sites across the whole planning seam and the 6 '
+    counts: 'the 13 error-detail sites across the whole planning seam and the 5 '
       + 'of them wrapped in `redactUrl`',
     asserted_by: "the test named `source: planning.mjs's no-staged-set detail "
       + 'goes through redactUrl`',
@@ -239,21 +195,6 @@ export const CENSUSES = Object.freeze([
     // 2026-08-25 and moves this row from 4 of 46 plans refused to 18, against
     // the half-the-plans rail's bound of 23 - a cost paid for nothing (D-11).
     subjects: ['cadence-core/bin/planning/'],
-  }),
-  entry({
-    id: 'reference-router-branches',
-    holder: 'cadence-core/bin/reference-routers.test.mjs',
-    counts: "the register's row count and the number of ROUTERS those rows "
-      + 'span - 7 over 2',
-    asserted_by: 'the test named `the register pins its row count and its router count`',
-    // The MODULE, not `cadence-core/references/`. Both numbers are read off
-    // `ROUTERS` itself, so the only edit that can move either one is an edit to
-    // this file - the same subject every other register census in this table
-    // carries. The wide directory lease was measured on 2026-08-25 and refuses
-    // 21 of the 37 plans declaring under `cadence-core/bin/`, past the
-    // half-the-plans rail `planning-lease-check.test.mjs` asserts, because a
-    // reference cold-split without a new ROUTER row moves no count at all.
-    subjects: ['cadence-core/bin/lib/reference-routers.mjs'],
   }),
   entry({
     id: 'seam-call-counts',
@@ -332,7 +273,7 @@ export const CENSUS_TOKEN = 'CADENCE-CENSUS';
 // census-registry.test.mjs reads every `.mjs` under cadence-core/bin/, this one
 // included, so a spelled-out head here would be ingested as a real marked site
 // and would need an exclusion list to undo - the second-list failure
-// `lib/merge-warnings.mjs` and `helper-census.test.mjs` both refuse.
+// `helper-census.test.mjs` refuses.
 const MARKER_HEAD = `${CENSUS_TOKEN}:`;
 
 /** The one named field a marker carries after its id. */

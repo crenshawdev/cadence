@@ -99,23 +99,19 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
  * additions pass by construction.
  */
 const REASON_TOKENS = Object.freeze([
-  'archive-root-unusable', 'auto-close-off', 'bad-args', 'bad-command', 'bad-date',
-  'bad-json', 'bad-payload', 'bad-provider', 'bad-query', 'bad-result', 'bad-schema',
-  'bad-shape', 'bad-status', 'cannot-derive', 'carry-dest-unusable',
-  'carry-exists', 'census-at-risk', 'collision', 'config-parse-failed', 'create-failed',
-  'git-failed', 'http', 'invalid', 'line-count-drift', 'missing-file', 'no-cursor', 'no-diff',
-  'no-git', 'no-key', 'no-output', 'no-payload', 'no-phase-dir', 'no-plan', 'no-planning-dir',
-  'no-plans', 'no-range', 'no-record', 'no-requirements', 'no-roadmap', 'no-root',
-  'no-staged-set', 'no-traceability-table', 'no-uat', 'no-version-field', 'out-of-range',
-  'over-cap', 'partial-apply', 'partial-bump', 'partial-flip', 'partial-prune', 'push-failed',
-  'read', 'read-failed', 'reap-failed', 'record-exists', 'surfaces-unanswered',
+  'bad-args', 'bad-command', 'bad-json', 'bad-payload', 'bad-provider', 'bad-query',
+  'bad-result', 'bad-schema', 'bad-shape', 'bad-status', 'cannot-derive', 'census-at-risk',
+  'collision', 'create-failed', 'git-failed', 'http', 'invalid', 'line-count-drift',
+  'missing-file', 'no-cursor', 'no-diff', 'no-git', 'no-key', 'no-output', 'no-payload',
+  'no-phase-dir', 'no-plan', 'no-planning-dir', 'no-plans', 'no-requirements', 'no-roadmap',
+  'no-root', 'no-staged-set', 'no-traceability-table', 'no-uat', 'out-of-range', 'over-cap',
+  'partial-apply', 'partial-flip', 'read', 'record-exists', 'surfaces-unanswered',
   'the repository selector is not an owner/name a forge serves',
   'this create was not confirmed: no repository is created without the user answering the question first',
   'uat-exists', 'uncommitted-work', 'undeclared-census-files', 'undeclared-files',
   'unknown-item', 'unknown-key', 'unknown-phase', 'unknown-role', 'unparseable-cursor',
-  'unparseable-roadmap', 'unprovable-queue', 'unreadable-capture', 'unreadable-changelog',
-  'unreadable-git-state', 'unreadable-manifest', 'unreadable-requirements',
-  'unreadable-sibling-manifest', 'unrepresentable-paths', 'unresolved', 'unresolved-range',
+  'unparseable-roadmap', 'unprovable-queue', 'unreadable-capture', 'unreadable-git-state',
+  'unreadable-requirements', 'unrepresentable-paths', 'unresolved', 'unresolved-range',
   'unsupported-extension', 'would-overwrite', 'write-failed',
 ]);
 

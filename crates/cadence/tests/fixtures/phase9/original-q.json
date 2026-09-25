@@ -1,0 +1,1 @@
+{"findings":[{"file":"a.rs","line":1,"severity":"high","claim":"quote: \"\n雪","failure_scenario":"S"},{"file":"a.rs","line":1,"severity":"high","claim":"C","failure_scenario":"S"}]}

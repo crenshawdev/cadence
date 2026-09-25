@@ -1,0 +1,120 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling cadence v3.7.12 (/code/cadence/crates/cadence)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running tests/golden.rs (target/debug/deps/golden-0a626cbabeea6814)
+
+running 25 tests
+test empty_projection_fails_at_build_by_operation ... ok
+test nonexistent_bundle_names_the_bundle ... ok
+test empty_activated_projection_fails_walk_before_driver ... ok
+test absent_activated_projection_fails_walk_by_operation ... ok
+test files_only_control_names_changed_file_and_deleted_list ... ok
+test snapshot_worker ... ok
+recordings=156 invocations=156 rules=6
+test corrupt_recording_names_its_file ... ok
+test cursor_control_normalizes_real_day_in_stdout_and_file ... ok
+test loads_committed_recordings_manifest_and_rules ... ok
+compared=0 pending=156
+pending operations: adjudication, audit, capture, capture-check, capture-sections, cite-count, config check, config get, config keys, config set, config unset, config validate, criteria-coverage, criteria-size, cursor get, cursor set, debt-harvest, deferred carry, deferred list, deferred record, detect-commands, detect-surfaces, forge create, forge detect, git-branch decide, git-branch tags, git-guard, git-publish authorized, git-publish publish, git-publish reap, issue-check check, issue-filing file, issue-filing unfixed, land-cleanup cleanup, land-cleanup gate, lease-check, milestone-prune, phase-done, plan-overlap, plan-size, read-trace, reads, recall, release-bump bump, renumber insert, renumber remove, replay-check, review-provider consult, review-provider detect-models, review-provider review, risk-carry, risk-check run, risk-check status, route resolve, seed-reqs, skim, status, subagent-trace, task-record, trace append, trace close, trace ignore, trace render, trace suggest, trace window, uat init, uat merge, uat record, uat refresh, uat status, weight, weight resident, why, worktree-base resolve
+test every_recording_is_compared_or_pending ... ok
+test malformed_rule_names_file_and_rule ... ok
+test extra_recording_fails_walk_by_file ... ok
+test missing_recording_fails_walk_by_invocation ... ok
+bundles_materialized=17
+test hook_decision_control_rejects_allow ... ok
+test normalization_preserves_moved_seed_lines_tree_wide ... ok
+test every_manifest_bundle_materializes_intact ... ok
+test nested_insertion_order_does_not_create_a_diff ... ok
+test unrecorded_activation_fails_walk_by_operation ... ok
+test stdout_root_control_requires_substitution ... ok
+
+running 1 test
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Snapshot Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Snapshot file: /tmp/.tmpNz5rUQ/replay-check-slice.snap
+Snapshot: replay-check-slice
+Source: /code/cadence/crates/cadence:658
+────────────────────────────────────────────────────────────────────────────────
+Expression: actual
+────────────────────────────────────────────────────────────────────────────────
+-old snapshot
++new results
+────────────┬───────────────────────────────────────────────────────────────────
+    1     1 │ {
+    2     2 │   "status.present": true,
+    3     3 │   "status": "ok",
+    4     4 │   "replay.present": true,
+    5       │-  "replay": true,
+          5 │+  "replay": false,
+    6     6 │   "dispatch_set.present": true,
+    7     7 │   "dispatch_set": [],
+    8     8 │   "deleted.present": true,
+    9     9 │   "deleted": []
+────────────┴───────────────────────────────────────────────────────────────────
+Stopped on the first failure. Run `cargo insta test` to run all snapshots.
+test snapshot_worker ... FAILED
+
+failures:
+
+failures:
+    snapshot_worker
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.01s
+
+
+thread 'snapshot_worker' (261490) panicked at /code/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/insta-1.48.0/src/runtime.rs:719:13:
+snapshot assertion for 'replay-check-slice' failed in line 658
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'flipped_replay_renders_insta_diff' (261469) panicked at crates/cadence/tests/golden.rs:640:9:
+golden mismatch: replay (replay-check-slice)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test flipped_replay_renders_insta_diff - should panic ... ok
+test replay_control_accepts_own_answer_and_names_flipped_key ... ok
+
+running 1 test
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Snapshot Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Snapshot file: /tmp/.tmpUYHK8l/replay-check-slice.snap
+Snapshot: replay-check-slice
+Source: /code/cadence/crates/cadence:658
+────────────────────────────────────────────────────────────────────────────────
+Expression: actual
+────────────────────────────────────────────────────────────────────────────────
+-old snapshot
++new results
+────────────┬───────────────────────────────────────────────────────────────────
+    1     1 │ {
+    2     2 │   "status.present": true,
+    3     3 │   "status": "ok",
+    4     4 │   "replay.present": true,
+    5       │-  "replay": true,
+          5 │+  "replay": false,
+    6     6 │   "dispatch_set.present": true,
+    7     7 │   "dispatch_set": [],
+    8     8 │   "deleted.present": true,
+    9     9 │   "deleted": []
+────────────┴───────────────────────────────────────────────────────────────────
+Stopped on the first failure. Run `cargo insta test` to run all snapshots.
+test snapshot_worker ... FAILED
+
+failures:
+
+failures:
+    snapshot_worker
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.01s
+
+
+thread 'snapshot_worker' (261493) panicked at /code/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/insta-1.48.0/src/runtime.rs:719:13:
+snapshot assertion for 'replay-check-slice' failed in line 658
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'wrong_control_driver_fails_the_walk_through_insta' (261488) panicked at crates/cadence/tests/golden.rs:640:9:
+golden mismatch: replay (replay-check-slice)
+test wrong_control_driver_fails_the_walk_through_insta - should panic ... ok
+test trace_control_normalizes_only_new_fields_and_rejects_restamped_seed ... ok
+test refusal_control_compares_machine_code_for_each_non_ok_arm ... ok
+test control_driver_accounts_for_each_activated_invocation ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

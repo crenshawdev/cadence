@@ -58,15 +58,6 @@ function copyReal(root, rel, edit = (t) => t) {
 /** The register block as it must appear in the lib source, byte for byte. */
 const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
   Object.freeze({
-    // ONE consult site under seams.md's rule (step 3a or step 3b, never both),
-    // but TWO anchors here - each arm carries its own Read and deleting either
-    // silently loses that arm's rails.
-    skill: 'cad-land',
-    reference: 'references/git-publish.md',
-    anchors: Object.freeze(['3(a)', '3(b)']),
-    read_paragraphs: 2,
-  }),
-  Object.freeze({
     skill: 'cad-plan-review',
     reference: 'references/review-triggers.md',
     anchors: Object.freeze(['2']),
@@ -80,11 +71,7 @@ const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
     file: 'cadence-core/workflows/context.md',
   }),
   Object.freeze({
-    // TWO rows, one reference. seams.md's "consulted at more than one distinct
-    // STEP stays eager" rule is per COMMAND: \`/cad-context\` and \`/cad-debug\`
-    // each reach recall at exactly one step of their own, so these are two
-    // independent one-site deferrals rather than one two-site reference. A
-    // maintainer who merges them into a single row loses one command's anchor.
+    // Context consumes this reference at one step; debug now uses its compiled record role.
     skill: 'cad-context',
     reference: 'references/recall.md',
     // Anchored at \`spend_gate\`, not \`analyze\`: the recall substep moved ahead of
@@ -93,13 +80,6 @@ const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
     anchors: Object.freeze(['spend_gate']),
     read_paragraphs: 1,
     file: 'cadence-core/workflows/context.md',
-  }),
-  Object.freeze({
-    skill: 'cad-debug',
-    reference: 'references/recall.md',
-    anchors: Object.freeze(['The method loop/1']),
-    read_paragraphs: 1,
-    file: 'cadence-core/workflows/debug.md',
   }),
   Object.freeze({
     skill: 'cad-execute',
@@ -150,8 +130,8 @@ test('register: the surviving cut rows are byte-identical, and the register is e
   const end = src.indexOf(']);', start);
   assert.ok(end > start, 'the register export must close with `]);`');
   assert.equal(src.slice(start, end + 3), REGISTER_SOURCE);
-  // CADENCE-CENSUS: deferred-reads-register | asserts: the register is exactly 10 rows, byte-identical to the export's own source
-  assert.equal(DEFERRED_READS.length, 10);
+  // CADENCE-CENSUS: deferred-reads-register | asserts: the register is exactly 8 rows, byte-identical to the export's own source
+  assert.equal(DEFERRED_READS.length, 8);
 });
 
 // --- AC3: a contract skill's own step ------------------------------------------
@@ -589,13 +569,6 @@ test('AC4: cad-context / templates/CONTEXT.md is unread without its one sentence
 
 test('AC4: cad-context / references/recall.md is unread without its one sentence', () => {
   assertPromotedRow('cad-context', 'references/recall.md', 'spend_gate');
-});
-
-test('AC4: cad-debug / references/recall.md is unread without its one sentence', () => {
-  // The other half of the per-COMMAND site rule: one reference, two rows, and
-  // each command's anchor falsified on its own. If these were merged into one
-  // row, deleting either sentence would still leave the other satisfying it.
-  assertPromotedRow('cad-debug', 'references/recall.md', 'The method loop/1');
 });
 
 test('AC4: cad-execute / references/execute-parallel.md is unread without its one sentence', () => {

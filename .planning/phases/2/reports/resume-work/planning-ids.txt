@@ -1,0 +1,43 @@
+adjudication
+audit
+capture
+capture-check
+capture-sections
+cite-count
+criteria-coverage
+criteria-size
+cursor get
+cursor set
+debt-harvest
+deferred carry
+deferred list
+deferred record
+detect-commands
+detect-surfaces
+lease-check
+milestone-prune
+phase-done
+plan-overlap
+plan-size
+reads
+recall
+renumber insert
+renumber remove
+replay-check
+risk-carry
+risk-check run
+risk-check status
+seed-reqs
+status
+task-record
+trace append
+trace close
+trace ignore
+trace render
+trace suggest
+trace window
+uat init
+uat merge
+uat record
+uat refresh
+uat status

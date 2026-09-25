@@ -250,9 +250,8 @@ test('lease-check: --phase 08 refuses against a tree holding phases/8/', () => {
 
 // --- the queue and record faces -------------------------------------------
 //
-// Three more path-resolving callsites, each wired for a reason its own row
-// states. `deferred carry` RENAMES committed artifacts out of `phases/<raw>/`;
-// `deferred list` echoes nothing numeric but selects a directory under
+// Two more path-resolving callsites, each wired for a reason its own row
+// states. `deferred list` echoes nothing numeric but selects a directory under
 // `phases/` by exact name inside `readQueue`; `trace append` and `trace close`
 // share one body whose `.raw` reaches `recountReceipt` and then
 // `recordForFire`'s `join(dir, 'phases', ...)` - on the ONE spelling `0` it
@@ -278,34 +277,6 @@ function putMember(dir, phase) {
       }],
     })}\n`);
 }
-
-test('deferred carry: --phase 1.10 carries out of phases/1.10/ when no phases/1.1 exists', () => {
-  const dir = tree(['1', '1.10']);
-  putMember(dir, '1.10');
-  const r = seam(['deferred', 'carry', '--phase', '1.10'], dir);
-  assert.equal(r.ok, true, JSON.stringify(r));
-  assert.equal(r.carried, 1, JSON.stringify(r));
-  assert.equal(r.moved[0].from, 'phases/1.10/DEFERRED-diff-plan-1.json', JSON.stringify(r));
-  assert.equal(r.moved[0].to, 'deferred/1.10/DEFERRED-diff-plan-1.json', JSON.stringify(r));
-});
-
-test('deferred carry: --phase 1.10 refuses against a tree holding phases/1.1/, moving nothing', () => {
-  const dir = tree(['1', '1.1', '1.10']);
-  putMember(dir, '1.10');
-  const r = seam(['deferred', 'carry', '--phase', '1.10'], dir);
-  assertRefused(r, '1.10', '1.1');
-  assert.ok(r.detail.startsWith('deferred carry --phase'), r.detail);
-  // The refusal is ahead of every rename, which is the whole reason it sits
-  // where it does: this face MOVES committed artifacts.
-  assert.equal(existsSync(join(dir, 'phases', '1.10', 'DEFERRED-diff-plan-1.json')), true);
-  assert.equal(existsSync(join(dir, 'deferred')), false);
-});
-
-test('deferred carry: --phase 08 refuses against a tree holding phases/8/', () => {
-  const dir = tree(['8', '08']);
-  putMember(dir, '08');
-  assertRefused(seam(['deferred', 'carry', '--phase', '08'], dir), '08', '8');
-});
 
 test('deferred list: --phase 1.10 lists phases/1.10/ when no phases/1.1 exists', () => {
   const dir = tree(['1', '1.10']);
@@ -475,8 +446,6 @@ const CALLSITES = [
   { file: 'cursor-set.mjs', fn: 'cmdCursorSet', ordinal: 1, disposition: 'unconditional',
     why: 'a WRITE face: the cursor it sets is read back as a phase identity, so a lossy spelling is'
       + ' refused whatever is on disk (D-07)' },
-  { file: 'deferred-carry.mjs', fn: 'cmdDeferredCarry', ordinal: 1, disposition: 'tree-aware',
-    why: 'renames committed queue members out of the phase directory' },
   { file: 'deferred-list.mjs', fn: 'cmdDeferredList', ordinal: 1, disposition: 'tree-aware',
     why: 'wantPhase selects a directory under phases/ by exact name inside readQueue' },
   { file: 'lease-check.mjs', fn: 'cmdLeaseCheck', ordinal: 1, disposition: 'tree-aware',
@@ -489,9 +458,6 @@ const CALLSITES = [
     why: 'lists the phase directory plans and echoes phase: <value>' },
   { file: 'replay-check.mjs', fn: 'cmdReplayCheck', ordinal: 1, disposition: 'tree-aware',
     why: "reads each plan's reports/plan-<k>.md under the phase directory and echoes phase: <value>" },
-  { file: 'risk-carry.mjs', fn: 'cmdRiskCarry', ordinal: 1, disposition: 'tree-aware',
-    why: 'copies the phase directory\'s risk_surface review and adjudication records out to'
-      + ' risk-carry/<N>/ and echoes phase: <value> over them' },
   { file: 'risk-check.mjs', fn: 'cmdRiskCheckRun', ordinal: 1, disposition: 'exempt',
     why: 'the raw spelling scopes a .planning/trace.jsonl filter through renderTrace and reaches no path' },
   { file: 'risk-check.mjs', fn: 'cmdRiskCheckStatus', ordinal: 1, disposition: 'exempt',
@@ -533,10 +499,10 @@ test('census: every phase-argument callsite under planning/ carries a dispositio
     'CALLSITES names a callsite the walk no longer finds - delete the row if the callsite is gone,'
     + ' or re-key it if its enclosing function was renamed.');
 
-  // CADENCE-CENSUS: phase-spelling-callsites | asserts: 23 phase-argument callsites under cadence-core/bin/planning/, 14 of them resolving a phases/<N>/ path - 12 through the tree-aware check and 2 through the unconditional one
-  assert.equal(found.length, 23, `callsite count moved: ${found.length}`);
+  // CADENCE-CENSUS: phase-spelling-callsites | asserts: 21 phase-argument callsites under cadence-core/bin/planning/, 12 of them resolving a phases/<N>/ path - 10 through the tree-aware check and 2 through the unconditional one
+  assert.equal(found.length, 21, `callsite count moved: ${found.length}`);
   const by = (d) => CALLSITES.filter((c) => c.disposition === d).length;
-  assert.equal(by('tree-aware'), 12);
+  assert.equal(by('tree-aware'), 10);
   assert.equal(by('unconditional'), 2);
   assert.equal(by('exempt'), 9);
 });

@@ -1,0 +1,3 @@
+[build]
+# Half the machine, for the same reason as .config/nextest.toml.
+jobs = 8

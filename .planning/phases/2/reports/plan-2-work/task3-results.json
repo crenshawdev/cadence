@@ -1,0 +1,44 @@
+{
+  "subset": [
+    "cursor-set-ok",
+    "trace-append-ok",
+    "read-trace-ok",
+    "uat-init-ok",
+    "uat-refresh-ok",
+    "uat-record-ok",
+    "uat-merge-ok",
+    "milestone-prune-ok",
+    "review-provider-review-no-openai-key",
+    "review-provider-review-no-gemini-key",
+    "review-provider-consult-no-openai-key",
+    "review-provider-consult-no-gemini-key",
+    "review-provider-detect-models-no-openai-key",
+    "review-provider-detect-models-no-gemini-key"
+  ],
+  "rules": 6,
+  "provider_events": 0,
+  "provider_reason": "review-provider.mjs:602 returns on absent config bundle cursor, after beginProviderCall",
+  "moved_uat_dates_preserved": true,
+  "negative_clock_differences": [
+    "cursor-set-ok",
+    "trace-append-ok"
+  ],
+  "loader_failures": [
+    {
+      "case": "absent",
+      "exit": 1,
+      "output": "ENOENT: no such file or directory, open '/tmp/golden-rules-46g_mutq/golden/normalization.json'\n"
+    },
+    {
+      "case": "invalid-json",
+      "exit": 1,
+      "output": "Expected property name or '}' in JSON at position 1 (line 1 column 2)\n"
+    },
+    {
+      "case": "invalid-pattern",
+      "exit": 1,
+      "output": "Invalid regular expression: /[/g: Unterminated character class\n"
+    }
+  ],
+  "global_replace": "20<TODAY>-<TODAY>-06"
+}

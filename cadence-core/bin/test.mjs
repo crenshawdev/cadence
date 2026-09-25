@@ -43,12 +43,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const GROUPS = Object.freeze({
   // The resolver, the rung ladder it dispatches through, and the config layers
   // that feed it.
-  routing: ['route', 'route-relay', 'rung-agent', 'retired-keys',
-    'config', 'config-seams', 'dispatch-phrasing', 'phase-plans'],
+  routing: ['route', 'rung-agent', 'retired-keys',
+    'config', 'config-seams', 'phase-plans'],
   // Everything that touches a real repository.
-  git: ['git-guard', 'git-publish', 'git-branch', 'git-segments', 'worktree-base',
-    'branch-decision', 'publish-decision', 'close-decision', 'release-decision',
-    'release-bump', 'land-cleanup', 'redact-url', 'issue-check', 'issue-decision'],
+  git: ['git-guard', 'git-branch', 'git-segments', 'worktree-base',
+    'branch-decision', 'release-decision',
+    'redact-url', 'issue-check', 'issue-decision'],
   // The .planning grammar and the run record. The seam's own arms are one stem
   // per subcommand since phase 4 split planning.test.mjs; `planning` itself is
   // now just the shared fixture harness plus the arms that span several
@@ -63,15 +63,14 @@ const GROUPS = Object.freeze({
     'planning-capture-check', 'planning-capture-sections', 'planning-cite-count',
     'planning-criteria-coverage', 'planning-criteria-size', 'planning-cursor',
     'planning-debt-harvest', 'planning-deferred', 'planning-detect',
-    'planning-files', 'planning-lease-check', 'planning-milestone-prune',
+    'planning-files', 'planning-lease-check',
     'planning-phase-done', 'planning-plans', 'planning-recall', 'planning-recall-fold',
-    'planning-replay-check', 'planning-risk-carry',
+    'planning-replay-check',
     'planning-renumber', 'planning-seed-reqs', 'planning-status',
-    'planning-task-record', 'planning-trace-ignore', 'planning-uat',
+    'planning-trace-ignore', 'planning-uat',
     'trace', 'bm25', 'debt-markers'],
   // The prose<->code drift linters. Slow because they read the whole tree.
-  prose: ['self-verify', 'prose-agreement', 'weight', 'deferred-reads',
-    'include-consumers'],
+  prose: ['prose-agreement', 'weight', 'deferred-reads'],
   // The cross-model call seam.
   review: ['review-provider'],
 });

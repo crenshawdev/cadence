@@ -24,7 +24,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   parseArgs, parseEnvFile, stripAdditionalProperties,
-  validateFindings, validateConsult, classify, ADAPTERS,
+  validateFindings, classify, ADAPTERS,
   readModelHints, detectEnvelope, resolveTimeoutMs,
   resolveMaxPromptTokens, estimatePromptTokens,
   __setTransportForTests, __runCommandForTests,
@@ -328,12 +328,6 @@ test('validateFindings: every schema bound refuses by its own name (RVP-02)', ()
   assert.equal(one({ claim: '\u{1F600}'.repeat(MAX_TEXT_CHARS) }), null);
   assert.match(one({ claim: '\u{1F600}'.repeat(MAX_TEXT_CHARS + 1) }),
     new RegExp(`got ${MAX_TEXT_CHARS + 1}`));
-});
-
-test('validateConsult: angles need all three string fields', () => {
-  assert.equal(validateConsult({ angles: [{ hypothesis: 'h', rationale: 'r', how_to_check: 'c' }] }), null);
-  assert.match(validateConsult({ angles: [{ hypothesis: 'h', rationale: 'r' }] }), /how_to_check/);
-  assert.match(validateConsult({}), /missing angles/);
 });
 
 test('schema-eval: every implemented keyword, both directions (RVP-02)', () => {
@@ -641,7 +635,7 @@ test('ARG-06: a flag-shaped value is bad-args by NAME, never a domain refusal', 
   // - a refusal about a flag the caller DID pass, naming the wrong problem.
   /** @type {[string[], string][]} the call, and the flag its refusal must name */
   const cases = [
-    [['consult', '--payload', '--provider', 'openai'], '--payload'],
+    [['review', '--payload', '--provider', 'openai'], '--payload'],
     [['detect-models', '--provider'], '--provider'],
     [['review', '--provider', 'openai', '--model', ''], '--model'],
     [['review', '--provider', 'openai', '--model', 'm', '--key-file'], '--key-file'],
@@ -663,8 +657,8 @@ test('ARG-06: a flag-shaped value is bad-args by NAME, never a domain refusal', 
 
   // ...and `parseArgs` stays PURE: it names the refusal, it never emits one,
   // and the `{cmd, opts}` shape its callers destructure is untouched.
-  const { cmd, opts, badArg } = parseArgs(['consult', '--payload', '--provider', 'openai']);
-  assert.equal(cmd, 'consult');
+  const { cmd, opts, badArg } = parseArgs(['review', '--payload', '--provider', 'openai']);
+  assert.equal(cmd, 'review');
   assert.deepEqual(opts, { provider: 'openai' });
   assert.match(badArg, /--payload/);
 });
@@ -754,19 +748,6 @@ test('cli: an over-cap review payload is refused before any request', () => {
   assert.match(r.detail, /review\.max_prompt_tokens/);
 });
 
-test('cli: an over-cap consult payload is refused the same way', () => {
-  // consult is the same script hitting the same paid provider; bounding review
-  // alone would leave the identical defect one function away (#16, D-07).
-  const keyFile = join(dir, 'providers.env');
-  writeFileSync(keyFile, 'OPENAI_API_KEY="from-file"\n');
-  const situation = 'x'.repeat(4 * 120000 + 8);
-  const r = run(['consult', '--provider', 'openai', '--model', 'gpt-test', '--key-file', keyFile],
-    { stdin: JSON.stringify({ situation }) });
-  assert.equal(r.ok, false);
-  assert.equal(r.reason, 'over-cap');
-  assert.match(r.detail, /review\.max_prompt_tokens/);
-});
-
 test('cli: a non-string payload field is refused, so the cap cannot be walked past', () => {
   // The bypass this pins: a non-string field measures as ~0 estimated tokens,
   // so with a truthiness-only shape check a 480KB object cleared the cap and
@@ -780,31 +761,17 @@ test('cli: a non-string payload field is refused, so the cap cannot be walked pa
     { stdin: JSON.stringify({ instruction: 'refute this', artifact: blob }) });
   assert.equal(rev.ok, false);
   assert.equal(rev.reason, 'bad-payload');
-  const con = run(['consult', '--provider', 'openai', '--model', 'gpt-test', '--key-file', keyFile],
-    { stdin: JSON.stringify({ situation: blob }) });
-  assert.equal(con.ok, false);
-  assert.equal(con.reason, 'bad-payload');
   // A number is the same case: truthy, unmeasurable, and not a prompt.
   const num = run(['review', '--provider', 'openai', '--model', 'gpt-test', '--key-file', keyFile],
     { stdin: JSON.stringify({ instruction: 'refute this', artifact: 42 }) });
   assert.equal(num.reason, 'bad-payload');
 });
 
-test('cli: review and consult without --model degrade to bad-args before key lookup', () => {
+test('cli: review without --model degrades to bad-args before key lookup', () => {
   const rev = run(['review', '--provider', 'openai']);
   assert.equal(rev.ok, false);
   assert.equal(rev.reason, 'bad-args');
   assert.match(rev.detail, /--model/);
-  const con = run(['consult', '--provider', 'gemini']);
-  assert.equal(con.reason, 'bad-args');
-  assert.match(con.detail, /consult/);
-});
-
-test('cli: consult payload must carry {situation}', () => {
-  const r = run(['consult', '--provider', 'openai', '--model', 'gpt-test'],
-    { env: { OPENAI_API_KEY: 'test-not-a-real-key' }, stdin: '{"instruction":"wrong shape"}' });
-  assert.equal(r.reason, 'bad-payload');
-  assert.match(r.detail, /situation/);
 });
 
 test('cli: an env-set key wins - flow proceeds even when the key file is absent', () => {
@@ -999,8 +966,6 @@ writeFileSync(FAULT_PAYLOAD, JSON.stringify({
 }));
 // Always a --payload FILE, never stdin: in process, `readPayload`'s stdin arm
 // would read the test runner's own fd 0 and block.
-const FAULT_PAYLOAD_CONSULT = join(faultCwd, 'consult.json');
-writeFileSync(FAULT_PAYLOAD_CONSULT, JSON.stringify({ situation: 'stuck at a dead end' }));
 const REVIEW_ARGS = ['review', '--provider', 'openai', '--model', 'gpt-fault-fixture',
   '--payload', FAULT_PAYLOAD];
 
@@ -1308,28 +1273,6 @@ test('fence: a clean artifact crosses byte-identical and adds no field (#167)', 
   assert.equal('redactions' in ev[0], false);
 });
 
-test('fence: consult fences its situation too (#167)', async () => {
-  // consult is the second PAID command and carries repository text under a
-  // different key. It shares the header's design contract, so it shares the arm.
-  const SECRET = 'hunter2-not-a-real-password';
-  const file = join(faultCwd, 'fence-consult.json');
-  writeFileSync(file, JSON.stringify({
-    situation: 'the deploy fails and password=' + SECRET + ' is in the log',
-  }));
-  const body = JSON.stringify({
-    output_text: JSON.stringify({
-      angles: [{ hypothesis: 'a', rationale: 'b', how_to_check: 'c' }],
-    }),
-  });
-  const r = await runFaked(
-    ['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture', '--payload', file],
-    { status: 200, body });
-  assert.equal(r.seen[0].body.includes(SECRET), false, 'the password reached the wire');
-  assert.ok(r.seen[0].body.includes('the deploy fails'), 'the situation was eaten');
-  assert.equal(r.envelope.ok, true);
-  assert.equal(r.envelope.redactions, 1);
-});
-
 test('fence: an artifact that already holds the mark still reports a redaction (#167)', async () => {
   // Net marks added is not spans removed. Here a credential pair COLLAPSES onto
   // a mark the artifact already carried - one mark in, one mark out - so the
@@ -1489,13 +1432,9 @@ test('fault mode 6/6 - an EMPTY findings set is ok:true and is NOT a drop-out (D
   assert.equal('detail' in ev[0], false);
 });
 
-test('fault: consult and detect-models degrade through the same six-mode mapping', async () => {
+test('fault: detect-models degrades through the shared transport mapping', async () => {
   // The modes are properties of the shared transport path, not of `review`:
   // bounding one command would leave the identical defect one function away.
-  const consult = await runFaked(['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
-    '--payload', FAULT_PAYLOAD_CONSULT], { status: 500, body: '{}' });
-  assert.equal(consult.envelope.reason, 'http');
-  assert.equal(consult.envelope.detail.status, 500);
   const dead = await runFaked(['detect-models', '--provider', 'openai'], { timeout: true });
   assert.equal(dead.envelope.reason, 'transport');
   // detect-models carries no model, so its tier is null by construction.
@@ -1565,18 +1504,14 @@ test('bound: a response past the ceiling is over-response, and the stream is CUT
   assert.equal(ev[0].command, 'review');
 });
 
-test('bound: one read path, so consult and detect-models are bounded by the same change', async () => {
+test('bound: detect-models uses the shared response ceiling', async () => {
   const chunks = Array.from({ length: 8 }, () => 'A'.repeat(1048576));
-  const consult = await runFaked(['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
-    '--payload', FAULT_PAYLOAD_CONSULT], { status: 200, chunks });
-  assert.equal(consult.envelope.reason, 'over-response');
-  assert.equal(consult.seen[0].chunksEmitted, 5);
   const detect = await runFaked(['detect-models', '--provider', 'openai'], { status: 200, chunks });
   assert.equal(detect.envelope.reason, 'over-response');
   assert.equal(detect.seen[0].chunksEmitted, 5);
-  const ev = providerEvents().slice(-2);
-  assert.deepEqual(ev.map((e) => e.command), ['consult', 'detect-models']);
-  assert.deepEqual(ev.map((e) => e.outcome), ['over-response', 'over-response']);
+  const ev = providerEvents().slice(-1);
+  assert.deepEqual(ev.map((e) => e.command), ['detect-models']);
+  assert.deepEqual(ev.map((e) => e.outcome), ['over-response']);
 });
 
 test('bound: a body one byte under the ceiling still resolves exactly as before', async () => {
@@ -1687,19 +1622,6 @@ test('drop-out: every refusal before the wire writes ONE provider event naming i
     ['review/bad-payload',
       ['review', '--provider', 'openai', '--model', 'gpt-fault-fixture',
         '--payload', BAD_PAYLOAD_FILE], {}, 'bad-payload'],
-    ['consult/bad-provider',
-      ['consult', '--provider', 'skynet', '--model', 'm', '--payload', FAULT_PAYLOAD_CONSULT], {}, 'bad-provider'],
-    ['consult/bad-args',
-      ['consult', '--provider', 'openai', '--payload', FAULT_PAYLOAD_CONSULT], {}, 'bad-args'],
-    ['consult/no-key',
-      ['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
-        '--key-file', ABSENT_KEY_FILE, '--payload', FAULT_PAYLOAD_CONSULT], nokeyEnv, 'no-key'],
-    ['consult/bad-payload',
-      // A payload that parses but carries {instruction, artifact} instead of
-      // {situation} - the wrong-shape half, which the review rows cover with a
-      // file that does not parse at all.
-      ['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
-        '--payload', FAULT_PAYLOAD], {}, 'bad-payload'],
     ['detect-models/bad-provider',
       ['detect-models', '--provider', 'skynet'], {}, 'bad-provider'],
     ['detect-models/no-key',

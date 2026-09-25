@@ -1,0 +1,15 @@
+commit b0ab734fd08d974ce75b2090e6dd06febf7b2c13 (b0ab734f)
+date: 2026-01-07T00:00:00Z
+subject: feat(3-1): raise beta after the prune
+phase: NOT RESOLVED - no phase directory on disk and no summary recovered from git history names this commit, so the record does not say which phase produced it
+  no close has pruned this commit yet, so no milestone label covers the gap
+  commit-message scope: 3-1 - read off the subject line as corroboration and explicitly NOT a resolved phase, because those numbers reset every milestone (D-06)
+  git records 1 path(s) touched by this commit:
+    src/thing.py
+plan task: not yet joined
+decision: not yet joined
+deviation: not yet joined
+review: not yet joined
+declared by: not yet joined
+
+Showing 1 of 4 commit(s). Pass --top 4 to see the rest.

@@ -1,28 +1,30 @@
 ---
 name: cad-why
-description: "Why is this code like this - a git-log chain over one file[:line], joined to the phase, task, decision, deviation and review record on disk"
-argument-hint: "<path>[:<line>]"
+description: Explain file[:line] through its git and planning history, or list a phase's journal refusals with <phase> refusals.
+argument-hint: "<path>[:<line>] | <phase> refusals"
 allowed-tools:
-  - Bash
+  - mcp__cadence__cadence_query
 ---
 
-<objective>
-Answer "why is this code like this" from the record already on disk, at one
-file and line. Read-only: no write, no dispatch, no summarization - the seam
-does the whole join and this skill relays what it returns.
-</objective>
+For `<phase> refusals`, require a positive integer phase and call once with
+`{"operation":"why","phase":14,"part":"refusals"}`, replacing 14 with that
+integer. This reads recorded refusals in journal order. Do not combine this
+form with a path, line or entry cap.
 
-<process>
-1. Run the seam with the query as ONE single-quoted literal word:
-   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/why.mjs" '<path>[:<line>]' --dir .`
-   Single quotes, never double: `$ARGUMENTS` is caller-supplied, and a
-   double-quoted `$(...)` or backtick inside it runs before Node starts. A
-   query containing a single quote is refused here, never escaped. Parse the
-   one JSON line it prints.
-2. `ok:false` - state the `reason` and `detail` fields plainly and stop.
-3. `ok:true` - print the `text` field VERBATIM and nothing else: no summary
-   before it, no commentary after it, no reformatting. `text` is already the
-   whole answer, quoted from the record in its own words - reformatting it
-   here would make the byte-identity a reader can check against the seam's
-   own output false.
-</process>
+Otherwise read the argument as `<path>[:<line>]`. The text after the LAST colon is a
+line only when it is all digits; a colon followed by anything else stays part
+of the path. Refuse a blank path, a trailing colon, a zero line and a
+non-integer line, saying which, and never substitute a default.
+
+Call `mcp__cadence__cadence_query` once with `{"operation":"why","path":"<path>"}`,
+adding `"line":<n>` as a JSON integer when a line was given. Make no other
+call, run no command and open no file: the binary reads the repository and
+the record itself, including the phases a milestone close pruned.
+
+If the answer is refused, show its exact code and reason and stop.
+
+Print the returned `text` verbatim and nothing else: no summary before it, no
+commentary after it, no reformatting. `text` is already the whole answer,
+quoted from the record in its own words; a reader checks it byte for byte
+against the binary's own output, and any change here makes that identity
+false.

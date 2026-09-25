@@ -24,17 +24,13 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import {
   ARGV, DISPATCH_WINDOW_DEFAULTS, RECORD_TOKEN, argRefusal, fail, listPlanFiles, ok,
-  phaseSpellingCollision, read, readReadsRecords, routeLadder,
+  phaseSpellingCollision, read, routeLadder,
 } from './core.mjs';
 import { deriveCounts, recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS, evaluateFlag } from '../lib/arg-contract.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { unfixedFromEntries } from '../lib/filing-decision.mjs';
 import { atomicWrite, planTaskTitles } from '../lib/planning-files.mjs';
-import {
-  READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
-  ROTATED_READS_FILE, inDispatchReads, joinReads,
-} from '../lib/read-trace.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
@@ -81,49 +77,6 @@ const ROTATED_IGNORE_LINE = `.planning/${ROTATED_TRACE_FILE}`;
 const ROTATED_IGNORE_COMMENT = "# ...and the generation Cadence's run record"
   + ' leaves behind when it rotates at its size bound';
 
-/**
- * The reads record's six rules, in one block.
- *
- * Nothing Cadence ships wrote an ignore rule for THIS record until now (D-11),
- * so on a scaffolded project the live file is untracked and unignored and the
- * first rotation adds up to `MAX_READS_BYTES` more of local diagnostics beside
- * it - all of it there for the next `git add .planning` to sweep in, which is
- * exactly what the two rules above exist to prevent for the trace, one filename
- * over.
- *
- * SIX and not one glob, because each names a different thing a reader has to
- * be able to recognise: the live record, the one prior generation
- * `rotateReads` keeps, the shared claim sidecar a completed rotation leaves
- * behind INERT by design (`lib/read-trace.mjs`'s release is guarded by `held`
- * precisely so it survives), the private stamps a rotation killed between its
- * write and its rename strands beside that sidecar, and the two private temps
- * that same death strands - the fresh record awaiting its rename, and the
- * evicted generation, which is a whole `MAX_READS_BYTES` of local diagnostics
- * for the next `git add .planning` to sweep in. The last three are patterns,
- * because those are the three with names no caller can predict - each carries
- * the writer's pid and a random suffix.
- *
- * Every basename is DERIVED from the spelling `lib/read-trace.mjs` exports, for
- * the reason `ROTATED_IGNORE_LINE` derives its own: a rule spelled by hand here
- * and a path spelled there are two statements of one fact, and the day they
- * disagree the rule covers nothing.
- *
- * The TRACE's own `.rotate` and `.evict` temps get nothing here on purpose -
- * they are the trace's residue and this phase's CONTEXT defers them. The
- * reads-side pair of the same two spellings is covered above: it is THIS
- * record's residue, introduced by the rotation these rules exist to cover.
- */
-const READS_IGNORE_LINES = Object.freeze([
-  `.planning/${READS_FILE}`,
-  `.planning/${ROTATED_READS_FILE}`,
-  `.planning/${READS_CLAIM_FILE}`,
-  `.planning/${READS_CLAIM_FILE}.*`,
-  `.planning/${READS_ROTATE_TEMP_FILE}.*`,
-  `.planning/${READS_EVICT_TEMP_FILE}.*`,
-]);
-const READS_IGNORE_COMMENT = "# ...and Cadence's per-tool-call read record, the"
-  + ' generation ITS rotation leaves behind, and that rotation\'s claim files'
-  + ' and killed-mid-rotation temps';
 
 /**
  * Does a `check-ignore -v` match source TRAVEL with the repository?
@@ -253,16 +206,6 @@ function cmdTraceIgnore(root, opts) {
   const rotated = rotatedGit.method === 'git'
     ? rotatedGit.travels
     : gitignoreCarriesLine(root, ROTATED_IGNORE_LINE);
-  // The reads record's four rules go through the SAME two readers, one rule at
-  // a time: git's own answer first, the literal scan only where git could not
-  // answer at all. A `.planning/` wholesale rule covers all four at once, a
-  // line-per-file `.gitignore` covers whichever lines it carries, and a project
-  // covered for the trace and not for the reads record and its residue is the
-  // same half-covered state /cad-health has to report rather than pass over.
-  const missingReads = READS_IGNORE_LINES.filter((rule) => {
-    const g = gitIgnoreState(root, rule);
-    return !(g.method === 'git' ? g.travels : gitignoreCarriesLine(root, rule));
-  });
   const common = {
     root,
     file,
@@ -271,11 +214,7 @@ function cmdTraceIgnore(root, opts) {
     // sibling's rule is a field of its own beside it.
     line: TRACE_IGNORE_LINE,
     rotated_line: ROTATED_IGNORE_LINE,
-    // A field of its OWN beside those two, never folded into either: `line` is
-    // what /cad-health reports and what `traceTracked` passes to
-    // `ls-files --error-unmatch` as a pathspec, and both would change meaning.
-    reads_lines: [...READS_IGNORE_LINES],
-    ignored: live && rotated && missingReads.length === 0,
+    ignored: live && rotated,
     tracked: traceTracked(root),
     method: git.method,
     ...(git.source ? { source: git.source } : {}),
@@ -284,12 +223,6 @@ function cmdTraceIgnore(root, opts) {
   // Already covered by lines that travel: the no-op that makes a re-run safe.
   if (common.ignored) return ok({ ...common, written: false, reason: 'already-ignored' });
 
-  // Only what is MISSING is added, so a project scaffolded before the rotated
-  // generation - or before the reads record's rules - existed is upgraded on
-  // its next non-`--check` run without its existing rules being written a
-  // second time. Each record's rules ride a block of their own with a comment
-  // of their own, and a block whose rules are all present is not emitted at
-  // all, so the two records' coverage is reported and repaired independently.
   const missingTrace = [
     ...(live ? [] : [TRACE_IGNORE_LINE]),
     ...(rotated ? [] : [ROTATED_IGNORE_LINE]),
@@ -298,7 +231,6 @@ function cmdTraceIgnore(root, opts) {
     ...(missingTrace.length
       ? [`${live ? ROTATED_IGNORE_COMMENT : TRACE_IGNORE_COMMENT}\n${missingTrace.join('\n')}\n`]
       : []),
-    ...(missingReads.length ? [`${READS_IGNORE_COMMENT}\n${missingReads.join('\n')}\n`] : []),
   ];
   const block = blocks.join('\n');
   // Every existing byte survives. The newline is added only when the current
@@ -1142,26 +1074,7 @@ function cmdTrace(dir, sub, opts) {
     // `current` and a project that deliberately pinned one would be told to
     // move a value the read never saw.
     const { config: suggestConfig, warnings } = mergeLayers(join(dir, 'config.json'));
-    // The SECOND record this arm opens (RDX-01): `.planning/reads.jsonl`, folded
-    // to the per-role in-dispatch figures R7 reads. The brackets are the render
-    // ALREADY computed above - a second `renderTrace` call would re-read the
-    // trace for nothing - so a `--phase N` run scopes itself without a new flag:
-    // only reads landing inside that phase's dispatches join at all.
-    //
-    // An ABSENT file yields no rows and therefore no entry, never an error and
-    // never a zero, which is the posture `cmdReads`'s own ENOENT arm already
-    // states for a project that has not run since the hook was installed. An
-    // UNREADABLE one yields no entry AND names the file in `warnings[]`, the
-    // channel this envelope already carries for exactly this class of partial
-    // read (D-13).
-    const readRecord = readReadsRecords(dir);
-    const inDispatch = readRecord.status === 'ok'
-      ? inDispatchReads(joinReads(readRecord.records, r.brackets).rows)
-      : undefined;
-    const suggestWarnings = readRecord.status === 'unreadable'
-      ? [...warnings, `cannot read ${readRecord.file}; in-dispatch re-reading was not measured`]
-      : warnings;
-    const suggestions = suggestFromRender(r, suggestResolution(dir, r, suggestConfig), inDispatch);
+    const suggestions = suggestFromRender(r, suggestResolution(dir, r, suggestConfig));
     return ok({
       // The record these suggestions were argued off, which this arm did not
       // name at all until TRC-08: a retune argued off a record the reader
@@ -1178,20 +1091,8 @@ function cmdTrace(dir, sub, opts) {
       // rotated record is not capped.
       ...(r.rotated ? { rotated: r.rotated } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
-      // The SECOND record this arm read, named and - where it was cut - dated,
-      // on the SAME nested key `reads` returns so a reader has one shape to
-      // learn (D-04). Sourced from the `readReadsRecords` result this arm
-      // already holds, so the name here and the figures below can never come
-      // off different files. NOT the top-level `rotated` above: that one means
-      // the TRACE was cut, `workflows/suggest.md:29-30` ties it to that record
-      // specifically, and one key meaning two records is the thing this nesting
-      // exists to prevent.
-      reads: {
-        file: readRecord.file,
-        ...(readRecord.rotated ? { rotated: readRecord.rotated } : {}),
-      },
       suggestions,
-      ...(suggestWarnings.length ? { warnings: suggestWarnings } : {}),
+      ...(warnings.length ? { warnings } : {}),
     });
   }
   if (sub === 'render') {

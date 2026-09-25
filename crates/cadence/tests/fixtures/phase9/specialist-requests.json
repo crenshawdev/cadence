@@ -1,0 +1,14 @@
+{
+  "file": {
+    "retained":{"manifest":"m1","fire":"f1","contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"},"target":{"kind":"named-file","path":"a.rs","head":null},"entries":[{"entry":"e1","role":"primary","path":"a.rs","label":null,"side":"snapshot","availability":"available","unavailable_reason":null,"content":"01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee","retained":"material-blob-old","old_path":null,"new_path":null,"lines":[{"line":1,"start":0,"end":3}],"hunks":[],"acquisition":"file-retention","acquired_at":100,"provenance":"original-view","attempt":null,"view":null}]},
+    "routing":{"answer":"panel","evidence":"ordinary-panel"}
+  },
+  "directory": {
+    "retained":{"manifest":"m1","fire":"f1","contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"},"target":{"kind":"directory","path":"src","members":["src/a.rs"]},"entries":[{"entry":"e1","role":"primary","path":"src/a.rs","label":null,"side":"snapshot","availability":"available","unavailable_reason":null,"content":"01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee","retained":"material-blob-old","old_path":null,"new_path":null,"lines":[{"line":1,"start":0,"end":3}],"hunks":[],"acquisition":"directory-retention","acquired_at":100,"provenance":"original-view","attempt":null,"view":null}]},
+    "routing":{"answer":"panel","evidence":"ordinary-panel"}
+  },
+  "phase-range": {
+    "retained":{"manifest":"m1","fire":"f1","contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"},"target":{"kind":"phase-range","phase":"9","base":"b1","head":"h1"},"entries":[{"entry":"e1","role":"primary","path":"a.rs","label":null,"side":"base","availability":"available","unavailable_reason":null,"content":"01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee","retained":"material-base-old","old_path":null,"new_path":null,"lines":[{"line":1,"start":0,"end":3}],"hunks":[],"acquisition":"resolved-range","acquired_at":100,"provenance":"original-view","attempt":null,"view":null},{"entry":"e2","role":"primary","path":"a.rs","label":null,"side":"head","availability":"available","unavailable_reason":null,"content":"7aa7a5359173d05b63cfd682e3c38487f3cb4f7f1d60659fe59fab1505977d4c","retained":"material-head-new","old_path":null,"new_path":null,"lines":[{"line":1,"start":0,"end":3}],"hunks":[],"acquisition":"resolved-range","acquired_at":100,"provenance":"original-view","attempt":null,"view":null}]},
+    "routing":{"answer":"panel","evidence":"ordinary-panel"}
+  }
+}

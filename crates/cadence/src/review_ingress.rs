@@ -1,0 +1,1171 @@
+//! Bounded JSON-line ingestion before transport deserialization.
+use rmcp::{
+    RoleServer,
+    service::{RxJsonRpcMessage, TxJsonRpcMessage},
+    transport::Transport,
+};
+use std::{
+    collections::BTreeSet,
+    io,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
+};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+
+const RAW_LIMIT: usize = 4_194_304;
+// Envelope metadata carries a whole plan-submit: every plan body, its typed
+// map and the exact approval copy, in one frame. Six plans crossed 200 KiB
+// (phase 14), so the bound matches the raw bound rather than 64 KiB.
+const METADATA_LIMIT: usize = 4_194_304;
+const CHUNK: usize = 1024;
+const DEPTH: usize = 128;
+
+#[derive(Clone, Copy)]
+struct Limits {
+    raw: usize,
+    metadata: usize,
+    frame: usize,
+}
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            raw: RAW_LIMIT,
+            metadata: METADATA_LIMIT,
+            frame: 6 * RAW_LIMIT + METADATA_LIMIT,
+        }
+    }
+}
+fn invalid(code: &'static str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, code)
+}
+
+#[derive(Default)]
+enum Escape {
+    #[default]
+    Plain,
+    Slash,
+    Hex {
+        value: u16,
+        digits: u8,
+        high: Option<u16>,
+    },
+    LowSlash(u16),
+    LowU(u16),
+}
+#[derive(Default)]
+struct StringDecoder {
+    escape: Escape,
+    utf8: [u8; 4],
+    used: usize,
+    needed: usize,
+}
+enum Decoded {
+    Pending,
+    Bytes([u8; 4], usize),
+    End,
+}
+impl StringDecoder {
+    fn closes(&self, byte: u8) -> bool {
+        byte == b'"' && self.used == 0 && matches!(self.escape, Escape::Plain)
+    }
+    fn scalar(value: u32) -> io::Result<Decoded> {
+        let scalar = char::from_u32(value).ok_or_else(|| invalid("invalid-unicode-scalar"))?;
+        let mut bytes = [0; 4];
+        let size = scalar.encode_utf8(&mut bytes).len();
+        Ok(Decoded::Bytes(bytes, size))
+    }
+    fn push(&mut self, byte: u8) -> io::Result<Decoded> {
+        if self.used != 0 {
+            if !(0x80..=0xbf).contains(&byte) {
+                return Err(invalid("invalid-utf8"));
+            }
+            self.utf8[self.used] = byte;
+            self.used += 1;
+            if self.used != self.needed {
+                return Ok(Decoded::Pending);
+            }
+            std::str::from_utf8(&self.utf8[..self.used]).map_err(|_| invalid("invalid-utf8"))?;
+            let size = self.used;
+            self.used = 0;
+            return Ok(Decoded::Bytes(self.utf8, size));
+        }
+        match std::mem::take(&mut self.escape) {
+            Escape::Plain => match byte {
+                b'"' => Ok(Decoded::End),
+                b'\\' => {
+                    self.escape = Escape::Slash;
+                    Ok(Decoded::Pending)
+                }
+                0..=31 => Err(invalid("unescaped-string-control")),
+                32..=127 => Ok(Decoded::Bytes([byte, 0, 0, 0], 1)),
+                _ => {
+                    self.needed = match byte {
+                        0xc2..=0xdf => 2,
+                        0xe0..=0xef => 3,
+                        0xf0..=0xf4 => 4,
+                        _ => return Err(invalid("invalid-utf8")),
+                    };
+                    self.utf8[0] = byte;
+                    self.used = 1;
+                    Ok(Decoded::Pending)
+                }
+            },
+            Escape::Slash => match byte {
+                b'"' | b'\\' | b'/' => Ok(Decoded::Bytes([byte, 0, 0, 0], 1)),
+                b'b' => Self::scalar(8),
+                b'f' => Self::scalar(12),
+                b'n' => Self::scalar(10),
+                b'r' => Self::scalar(13),
+                b't' => Self::scalar(9),
+                b'u' => {
+                    self.escape = Escape::Hex {
+                        value: 0,
+                        digits: 0,
+                        high: None,
+                    };
+                    Ok(Decoded::Pending)
+                }
+                _ => Err(invalid("invalid-string-escape")),
+            },
+            Escape::Hex {
+                mut value,
+                mut digits,
+                high,
+            } => {
+                let digit = (byte as char)
+                    .to_digit(16)
+                    .ok_or_else(|| invalid("invalid-unicode-escape"))?;
+                value = (value << 4) | digit as u16;
+                digits += 1;
+                if digits < 4 {
+                    self.escape = Escape::Hex {
+                        value,
+                        digits,
+                        high,
+                    };
+                    return Ok(Decoded::Pending);
+                }
+                if let Some(high) = high {
+                    if !(0xdc00..=0xdfff).contains(&value) {
+                        return Err(invalid("invalid-unicode-scalar"));
+                    }
+                    Self::scalar(
+                        0x10000 + ((u32::from(high) - 0xd800) << 10) + (u32::from(value) - 0xdc00),
+                    )
+                } else if (0xd800..=0xdbff).contains(&value) {
+                    self.escape = Escape::LowSlash(value);
+                    Ok(Decoded::Pending)
+                } else {
+                    Self::scalar(u32::from(value))
+                }
+            }
+            Escape::LowSlash(high) if byte == b'\\' => {
+                self.escape = Escape::LowU(high);
+                Ok(Decoded::Pending)
+            }
+            Escape::LowU(high) if byte == b'u' => {
+                self.escape = Escape::Hex {
+                    value: 0,
+                    digits: 0,
+                    high: Some(high),
+                };
+                Ok(Decoded::Pending)
+            }
+            _ => Err(invalid("invalid-unicode-scalar")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Location {
+    Root,
+    Params,
+    Arguments,
+    Other,
+}
+#[derive(Clone, Copy, PartialEq)]
+enum Position {
+    FirstKey,
+    Key,
+    Colon,
+    Value,
+    FirstElement,
+    Element,
+    Comma,
+}
+struct Container {
+    object: bool,
+    location: Location,
+    position: Position,
+    key: String,
+    keys: BTreeSet<String>,
+}
+#[derive(Clone, Copy)]
+enum Purpose {
+    Key,
+    Raw,
+    Method,
+    Tool,
+    Operation,
+    Ignore,
+}
+enum Token {
+    String {
+        decoder: StringDecoder,
+        purpose: Purpose,
+        text: Vec<u8>,
+    },
+    Atom(Vec<u8>),
+}
+struct Decoder {
+    stack: Vec<Container>,
+    token: Option<Token>,
+    started: bool,
+    complete: bool,
+    method: Option<String>,
+    tool: Option<String>,
+    operation: Option<String>,
+    raw_bytes: usize,
+    metadata_bytes: usize,
+    limits: Limits,
+}
+impl Decoder {
+    fn new(limits: Limits) -> Self {
+        Self {
+            stack: vec![],
+            token: None,
+            started: false,
+            complete: false,
+            method: None,
+            tool: None,
+            operation: None,
+            raw_bytes: 0,
+            metadata_bytes: 0,
+            limits,
+        }
+    }
+    fn review(&self) -> Option<bool> {
+        let fields = [
+            (&self.method, "tools/call"),
+            (&self.tool, "cadence_apply"),
+            (&self.operation, "review-return"),
+        ];
+        if fields
+            .iter()
+            .any(|(value, wanted)| value.as_ref().is_some_and(|v| v != wanted))
+        {
+            return Some(false);
+        }
+        fields
+            .iter()
+            .all(|(value, _)| value.is_some())
+            .then_some(true)
+    }
+    fn value_done(&mut self) -> io::Result<()> {
+        if let Some(parent) = self.stack.last_mut() {
+            if !matches!(
+                parent.position,
+                Position::Value | Position::FirstElement | Position::Element
+            ) {
+                return Err(invalid("malformed-envelope"));
+            }
+            parent.position = Position::Comma;
+        } else {
+            self.complete = true;
+        }
+        Ok(())
+    }
+    fn value_location(&self) -> Location {
+        match self.stack.last() {
+            None => Location::Root,
+            Some(parent) if parent.object => match (parent.location, parent.key.as_str()) {
+                (Location::Root, "params") => Location::Params,
+                (Location::Params, "arguments") => Location::Arguments,
+                _ => Location::Other,
+            },
+            _ => Location::Other,
+        }
+    }
+    fn purpose(&self) -> Purpose {
+        match self.stack.last().filter(|c| c.object) {
+            Some(parent) => match (parent.location, parent.key.as_str()) {
+                (Location::Root, "method") => Purpose::Method,
+                (Location::Params, "name") => Purpose::Tool,
+                (Location::Arguments, "operation") => Purpose::Operation,
+                (Location::Arguments, "raw") => Purpose::Raw,
+                _ => Purpose::Ignore,
+            },
+            _ => Purpose::Ignore,
+        }
+    }
+    fn start_value(&mut self, byte: u8) -> io::Result<()> {
+        match byte {
+            b'{' | b'[' => {
+                if self.stack.len() >= DEPTH {
+                    return Err(invalid("envelope-too-deep"));
+                }
+                self.stack.push(Container {
+                    object: byte == b'{',
+                    location: if byte == b'{' {
+                        self.value_location()
+                    } else {
+                        Location::Other
+                    },
+                    position: if byte == b'{' {
+                        Position::FirstKey
+                    } else {
+                        Position::FirstElement
+                    },
+                    key: String::new(),
+                    keys: BTreeSet::new(),
+                });
+            }
+            b'"' => {
+                self.token = Some(Token::String {
+                    decoder: StringDecoder::default(),
+                    purpose: self.purpose(),
+                    text: vec![],
+                });
+            }
+            b'-' | b'0'..=b'9' | b't' | b'f' | b'n' => {
+                self.token = Some(Token::Atom(vec![byte]));
+            }
+            _ => return Err(invalid("malformed-envelope")),
+        }
+        Ok(())
+    }
+    fn push(&mut self, byte: u8) -> io::Result<()> {
+        let raw_wire = matches!(&self.token,Some(Token::String {decoder,purpose:Purpose::Raw,..}) if !decoder.closes(byte));
+        if !raw_wire {
+            self.metadata_bytes += 1;
+            if self.metadata_bytes > self.limits.metadata {
+                return Err(invalid("envelope-metadata-too-large"));
+            }
+        }
+        self.consume(byte)?;
+        if self.review() == Some(true) && self.raw_bytes > self.limits.raw {
+            return Err(invalid("return-too-large"));
+        }
+        Ok(())
+    }
+    fn consume(&mut self, byte: u8) -> io::Result<()> {
+        if let Some(token) = self.token.take() {
+            match token {
+                Token::String {
+                    mut decoder,
+                    purpose,
+                    mut text,
+                } => {
+                    match decoder.push(byte)? {
+                        Decoded::Bytes(bytes, size) => {
+                            if matches!(purpose, Purpose::Raw) {
+                                self.raw_bytes = self
+                                    .raw_bytes
+                                    .saturating_add(size)
+                                    .min(self.limits.raw.saturating_add(1));
+                            } else if !matches!(purpose, Purpose::Ignore) {
+                                text.extend_from_slice(&bytes[..size]);
+                            }
+                        }
+                        Decoded::End => {
+                            let text =
+                                String::from_utf8(text).map_err(|_| invalid("invalid-utf8"))?;
+                            match purpose {
+                                Purpose::Key => {
+                                    let parent = self
+                                        .stack
+                                        .last_mut()
+                                        .ok_or_else(|| invalid("malformed-envelope"))?;
+                                    if !parent.keys.insert(text.clone()) {
+                                        return Err(invalid("duplicate-envelope-key"));
+                                    }
+                                    parent.key = text;
+                                    parent.position = Position::Colon;
+                                    return Ok(());
+                                }
+                                Purpose::Method => self.method = Some(text),
+                                Purpose::Tool => self.tool = Some(text),
+                                Purpose::Operation => self.operation = Some(text),
+                                _ => {}
+                            }
+                            return self.value_done();
+                        }
+                        Decoded::Pending => {}
+                    }
+                    self.token = Some(Token::String {
+                        decoder,
+                        purpose,
+                        text,
+                    });
+                    return Ok(());
+                }
+                Token::Atom(mut text) => {
+                    if !matches!(byte, b' ' | b'\t' | b'\r' | b'\n' | b',' | b']' | b'}') {
+                        text.push(byte);
+                        self.token = Some(Token::Atom(text));
+                        return Ok(());
+                    }
+                    let value: serde_json::Value =
+                        serde_json::from_slice(&text).map_err(|_| invalid("malformed-envelope"))?;
+                    if !matches!(
+                        value,
+                        serde_json::Value::Null
+                            | serde_json::Value::Bool(_)
+                            | serde_json::Value::Number(_)
+                    ) {
+                        return Err(invalid("malformed-envelope"));
+                    }
+                    self.value_done()?;
+                }
+            }
+        }
+        if matches!(byte, b' ' | b'\t' | b'\r' | b'\n') {
+            return Ok(());
+        }
+        if self.complete {
+            return Err(invalid("trailing-envelope-data"));
+        }
+        let Some(parent) = self.stack.last() else {
+            if self.started || byte != b'{' {
+                return Err(invalid("malformed-envelope"));
+            }
+            self.started = true;
+            return self.start_value(byte);
+        };
+        let object = parent.object;
+        match parent.position {
+            Position::FirstKey | Position::Key => {
+                if byte == b'}' && parent.position == Position::FirstKey {
+                    self.stack.pop();
+                    self.value_done()?;
+                } else if byte == b'"' {
+                    self.token = Some(Token::String {
+                        decoder: StringDecoder::default(),
+                        purpose: Purpose::Key,
+                        text: vec![],
+                    });
+                } else {
+                    return Err(invalid("malformed-envelope"));
+                }
+            }
+            Position::Colon => {
+                if byte != b':' {
+                    return Err(invalid("malformed-envelope"));
+                }
+                self.stack.last_mut().unwrap().position = Position::Value;
+            }
+            Position::Value | Position::Element => self.start_value(byte)?,
+            Position::FirstElement if byte == b']' => {
+                self.stack.pop();
+                self.value_done()?;
+            }
+            Position::FirstElement => self.start_value(byte)?,
+            Position::Comma => {
+                if byte == b',' {
+                    self.stack.last_mut().unwrap().position = if object {
+                        Position::Key
+                    } else {
+                        Position::Element
+                    };
+                } else if (object && byte == b'}') || (!object && byte == b']') {
+                    self.stack.pop();
+                    self.value_done()?;
+                } else {
+                    return Err(invalid("malformed-envelope"));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+struct BoundedInput<R> {
+    source: R,
+    decoder: Decoder,
+    frame: Vec<u8>,
+    closed: bool,
+    buffer: [u8; CHUNK],
+    used: usize,
+    at: usize,
+}
+impl<R: AsyncRead + Unpin> BoundedInput<R> {
+    fn new(source: R, limits: Limits) -> Self {
+        Self {
+            source,
+            decoder: Decoder::new(limits),
+            frame: vec![],
+            closed: false,
+            buffer: [0; CHUNK],
+            used: 0,
+            at: 0,
+        }
+    }
+    async fn next_frame(&mut self) -> io::Result<Option<Vec<u8>>> {
+        if self.closed {
+            return Ok(None);
+        }
+        let result = self.read_frame().await;
+        if result.is_err() || matches!(result, Ok(None)) {
+            self.closed = true;
+        }
+        result
+    }
+    async fn read_frame(&mut self) -> io::Result<Option<Vec<u8>>> {
+        loop {
+            let limits = self.decoder.limits;
+            if self.at == self.used {
+                let raw = matches!(
+                    self.decoder.token,
+                    Some(Token::String {
+                        purpose: Purpose::Raw,
+                        ..
+                    })
+                );
+                let mut budget = if raw { CHUNK } else { 1 };
+                budget = budget.min(
+                    limits
+                        .frame
+                        .saturating_sub(self.frame.len())
+                        .saturating_add(1),
+                );
+                budget = budget.min(
+                    limits
+                        .metadata
+                        .saturating_sub(self.decoder.metadata_bytes)
+                        .saturating_add(1),
+                );
+                if self.decoder.review() != Some(false) {
+                    budget = budget.min(
+                        limits
+                            .raw
+                            .saturating_sub(self.decoder.raw_bytes)
+                            .saturating_add(1),
+                    );
+                }
+                self.used = self.source.read(&mut self.buffer[..budget.max(1)]).await?;
+                self.at = 0;
+                if self.used == 0 {
+                    return Ok(None);
+                }
+            }
+            let byte = self.buffer[self.at];
+            self.at += 1;
+            if self.frame.len() == limits.frame {
+                return Err(invalid("envelope-too-large"));
+            }
+            if self.frame.len() == self.frame.capacity() {
+                let capacity = self
+                    .frame
+                    .capacity()
+                    .saturating_mul(2)
+                    .max(CHUNK)
+                    .min(limits.frame);
+                self.frame.reserve_exact(capacity - self.frame.len());
+            }
+            self.frame.push(byte);
+            self.decoder.push(byte)?;
+            if byte == b'\n' {
+                if !self.decoder.started {
+                    self.frame.clear();
+                    self.decoder = Decoder::new(limits);
+                    continue;
+                }
+                if !self.decoder.complete || self.decoder.token.is_some() {
+                    return Err(invalid("incomplete-envelope"));
+                }
+                let frame = std::mem::take(&mut self.frame);
+                self.decoder = Decoder::new(limits);
+                return Ok(Some(frame));
+            }
+        }
+    }
+}
+
+type ToolAnswer = Result<rmcp::model::CallToolResponse, rmcp::ErrorData>;
+type ToolReceiver = tokio::sync::oneshot::Receiver<ToolAnswer>;
+
+/// The protocol handler waits for a reply; it does not own admitted work.
+#[derive(Clone)]
+pub struct AdmittedReply(Arc<tokio::sync::Mutex<Option<ToolReceiver>>>);
+
+impl AdmittedReply {
+    pub async fn receive(&self) -> ToolAnswer {
+        let receiver = self.0.lock().await.take().ok_or_else(||
+            rmcp::ErrorData::internal_error("admitted reply already taken", None))?;
+        receiver.await.map_err(|_| rmcp::ErrorData::internal_error("admitted worker stopped", None))?
+    }
+}
+
+struct AdmittedCall {
+    admission: cadence::store::writer::Admission,
+    request: rmcp::model::CallToolRequestParams,
+    reply: tokio::sync::oneshot::Sender<ToolAnswer>,
+    capacity: tokio::sync::OwnedSemaphorePermit,
+}
+
+#[derive(Default)]
+struct AdmissionState {
+    cutoff: Option<std::time::Instant>,
+    sequence: u64,
+    completed_prefix: u64,
+    open: Option<cadence::store::writer::Admission>,
+    pending: std::collections::VecDeque<AdmittedCall>,
+}
+
+impl AdmissionState {
+    fn step(&self, now: std::time::Instant, incoming: Option<&str>) -> cadence::store::writer::DrainAction {
+        let admissions: Vec<_> = self.open.iter().cloned()
+            .chain(self.pending.iter().map(|call| call.admission.clone())).collect();
+        cadence::store::writer::Drain {
+            admission_closed: self.cutoff.is_some(),
+            admissions: &admissions,
+            completed_prefix: self.completed_prefix,
+            open_write: self.open.as_ref().map(|admission| admission.id.as_str()),
+            elapsed: self.cutoff.map_or(std::time::Duration::ZERO, |cutoff| now.duration_since(cutoff)),
+        }.step(incoming)
+    }
+}
+
+struct AdmissionInner {
+    state: std::sync::Mutex<AdmissionState>,
+    changed: tokio::sync::Notify,
+    capacity: Arc<tokio::sync::Semaphore>,
+    closed: tokio::sync::watch::Sender<Option<std::time::Instant>>,
+}
+
+type AdmissionWorker = tokio::task::JoinHandle<Result<(), cadence::store::writer::DrainLimit>>;
+
+#[derive(Clone)]
+pub struct AdmissionQueue {
+    inner: Arc<AdmissionInner>,
+    worker: Arc<tokio::sync::Mutex<Option<AdmissionWorker>>>,
+}
+
+impl AdmissionQueue {
+    pub fn new(handler: crate::server::PublicServer) -> Self {
+        let (closed, _) = tokio::sync::watch::channel(None);
+        let inner = Arc::new(AdmissionInner {
+            state: std::sync::Mutex::new(AdmissionState::default()),
+            changed: tokio::sync::Notify::new(),
+            capacity: Arc::new(tokio::sync::Semaphore::new(32)),
+            closed,
+        });
+        let worker_inner = inner.clone();
+        let worker = tokio::spawn(async move {
+            use cadence::store::writer::DrainAction;
+            loop {
+                let changed = worker_inner.changed.notified();
+                let call = {
+                    let mut state = worker_inner.state.lock().expect("admission state");
+                    match state.step(std::time::Instant::now(), None) {
+                        DrainAction::Next(id) => {
+                            let at = state.pending.iter().position(|call| call.admission.id == id)
+                                .expect("selected admitted call");
+                            let call = state.pending.remove(at).expect("pending call");
+                            state.open = Some(call.admission.clone());
+                            Some(call)
+                        }
+                        DrainAction::Join => return Ok(()),
+                        DrainAction::DrainLimit(limit) => return Err(limit),
+                        DrainAction::Wait => None,
+                        DrainAction::Admit | DrainAction::Refuse => unreachable!("no incoming request"),
+                    }
+                };
+                if let Some(call) = call {
+                    drop(call.capacity);
+                    let answer = handler.call(call.request.name.as_ref(),
+                        call.request.arguments.map(serde_json::Value::Object)).await;
+                    let _ = call.reply.send(answer);
+                    let mut state = worker_inner.state.lock().expect("admission state");
+                    state.completed_prefix = call.admission.sequence;
+                    state.open = None;
+                } else {
+                    changed.await;
+                }
+            }
+        });
+        Self { inner, worker: Arc::new(tokio::sync::Mutex::new(Some(worker))) }
+    }
+
+    fn admit(&self, id: &str, request: rmcp::model::CallToolRequestParams,
+        capacity: tokio::sync::OwnedSemaphorePermit) -> Option<AdmittedReply> {
+        let (reply, receiver) = tokio::sync::oneshot::channel();
+        let mut state = self.inner.state.lock().expect("admission state");
+        if state.step(std::time::Instant::now(), Some(id)) == cadence::store::writer::DrainAction::Refuse {
+            return None;
+        }
+        state.sequence += 1;
+        let admission = cadence::store::writer::Admission {
+            sequence: state.sequence, id: format!("{}:{id}", state.sequence),
+        };
+        state.pending.push_back(AdmittedCall { admission, request, reply, capacity });
+        self.inner.changed.notify_one();
+        Some(AdmittedReply(Arc::new(tokio::sync::Mutex::new(Some(receiver)))))
+    }
+
+    pub fn close(&self) {
+        let mut state = self.inner.state.lock().expect("admission state");
+        let cutoff = *state.cutoff.get_or_insert_with(std::time::Instant::now);
+        self.inner.capacity.close();
+        self.inner.closed.send_replace(Some(cutoff));
+        self.inner.changed.notify_one();
+    }
+
+    pub async fn closed(&self) -> std::time::Instant {
+        let mut closed = self.inner.closed.subscribe();
+        let cutoff = *closed.wait_for(Option::is_some).await.expect("admission sender retained");
+        cutoff.expect("closed admission")
+    }
+
+    pub async fn drain(&self, handler: &crate::server::PublicServer) -> Result<(), ShutdownError> {
+        use cadence::store::writer::{DrainAction, DrainLimit, SERVER_DRAIN_BOUND};
+        let cutoff = self.closed().await;
+        let deadline = tokio::time::Instant::from_std(cutoff + SERVER_DRAIN_BOUND);
+        let finish = async {
+            if let Some(worker) = self.worker.lock().await.take() {
+                worker.await.map_err(|_| ShutdownError::Worker)?.map_err(ShutdownError::Limit)?;
+            }
+            handler.shutdown().await.map_err(|_| ShutdownError::Worker)
+        };
+        match tokio::time::timeout_at(deadline, finish).await {
+            Ok(result) => result,
+            Err(_) => {
+                let state = self.inner.state.lock().expect("admission state");
+                let limit = match state.step(std::time::Instant::now(), None) {
+                    DrainAction::DrainLimit(limit) => limit,
+                    // Handlers finished, but a resident/writer join did not.
+                    _ => DrainLimit { open_write: None, bound: SERVER_DRAIN_BOUND },
+                };
+                Err(ShutdownError::Limit(limit))
+            }
+        }
+    }
+}
+
+pub enum ShutdownError {
+    Limit(cadence::store::writer::DrainLimit),
+    Worker,
+}
+
+pub struct InputTransport<R, W> {
+    read: BoundedInput<R>,
+    write: Arc<tokio::sync::Mutex<W>>,
+    failed: Arc<AtomicBool>,
+    admission: AdmissionQueue,
+}
+impl<R: AsyncRead + Unpin, W> InputTransport<R, W> {
+    pub fn new(read: R, write: W, admission: AdmissionQueue) -> (Self, Arc<AtomicBool>) {
+        let failed = Arc::new(AtomicBool::new(false));
+        (
+            Self {
+                read: BoundedInput::new(read, Limits::default()),
+                write: Arc::new(tokio::sync::Mutex::new(write)),
+                failed: failed.clone(),
+                admission,
+            },
+            failed,
+        )
+    }
+}
+/// Requests whose answer has not been written yet. One process serves one
+/// session, so a process-wide count is the whole truth.
+static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+/// Counts one request for as long as its handler runs. The counter is a
+/// parameter so a test can observe one it owns rather than the live session's.
+pub struct InFlight(&'static AtomicUsize);
+impl InFlight {
+    pub fn enter() -> Self {
+        Self::on(&IN_FLIGHT)
+    }
+    fn on(counter: &'static AtomicUsize) -> Self {
+        counter.fetch_add(1, Ordering::AcqRel);
+        Self(counter)
+    }
+}
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// What to say when stdin closes. Silence is correct only when nothing was
+/// still running; otherwise an answer was owed and will never be written.
+fn eof_notice(pending: usize) -> Option<String> {
+    (pending > 0).then(|| format!(
+        "cadence: stdin closed with {pending} request(s) still running; their answers were never sent. A client keeps stdin open until it has read every response."
+    ))
+}
+
+impl<R, W> Transport<RoleServer> for InputTransport<R, W>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    type Error = io::Error;
+    fn send(
+        &mut self,
+        item: TxJsonRpcMessage<RoleServer>,
+    ) -> impl std::future::Future<Output = io::Result<()>> + Send + 'static {
+        let write = self.write.clone();
+        let bytes = serde_json::to_vec(&item).map_err(io::Error::other);
+        async move {
+            let mut bytes = bytes?;
+            bytes.push(b'\n');
+            write.lock().await.write_all(&bytes).await
+        }
+    }
+    async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleServer>> {
+        // Reserve before decoding: cancellation while waiting for capacity must
+        // not drop a complete frame that has already left BoundedInput.
+        let capacity = self.admission.inner.capacity.clone().acquire_owned().await.ok()?;
+        let frame = tokio::select! {
+            biased;
+            _ = self.admission.closed() => return None,
+            frame = self.read.next_frame() => frame,
+        };
+        let received = match frame {
+            Ok(Some(frame)) => serde_json::from_slice(&frame)
+                .map(Some)
+                .map_err(io::Error::other),
+            Ok(None) => {
+                self.admission.close();
+                if let Some(notice) = eof_notice(IN_FLIGHT.load(Ordering::Acquire)) {
+                    eprintln!("{notice}");
+                }
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        };
+        match received {
+            Ok(mut message) => {
+                if let Some(rmcp::model::JsonRpcMessage::Request(envelope)) = &mut message
+                    && let rmcp::model::ClientRequest::CallToolRequest(request) = &mut envelope.request
+                {
+                    let reply = self.admission.admit(&envelope.id.to_string(), request.params.clone(), capacity)?;
+                    request.extensions.insert(reply);
+                }
+                message
+            }
+            Err(error) => {
+                self.read.closed = true;
+                self.failed.store(true, Ordering::Release);
+                self.admission.close();
+                eprintln!("cadence: input refused: {error}");
+                None
+            }
+        }
+    }
+    async fn close(&mut self) -> io::Result<()> {
+        self.admission.close();
+        self.write.lock().await.shutdown().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+    use std::{
+        future::Future,
+        pin::Pin,
+        task::{Context, Poll, Waker},
+    };
+    use tokio::io::ReadBuf;
+
+    static TEST_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn a_closed_stdin_with_nothing_running_says_nothing() {
+        assert_eq!(eof_notice(0), None);
+    }
+
+    #[test]
+    fn a_closed_stdin_names_the_answers_it_dropped() {
+        let notice = eof_notice(2).expect("a notice when work was still running");
+        assert!(notice.contains("2 request(s) still running"), "{notice}");
+        assert!(notice.contains("keeps stdin open"), "{notice}");
+    }
+
+    #[test]
+    fn a_request_is_counted_for_the_life_of_its_guard() {
+        assert_eq!(TEST_IN_FLIGHT.load(Ordering::Acquire), 0);
+        {
+            let _outer = InFlight::on(&TEST_IN_FLIGHT);
+            let _inner = InFlight::on(&TEST_IN_FLIGHT);
+            assert_eq!(TEST_IN_FLIGHT.load(Ordering::Acquire), 2);
+        }
+        assert_eq!(TEST_IN_FLIGHT.load(Ordering::Acquire), 0);
+    }
+
+
+    const PREFIX: &[u8] = br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"cadence_apply","arguments":{"operation":"review-return","raw":""#;
+    const SUFFIX: &[u8] = b"\"}}}\n";
+    struct Chunked {
+        bytes: Vec<u8>,
+        position: usize,
+        chunk: usize,
+        max_request: usize,
+        pause: Option<usize>,
+    }
+    impl Chunked {
+        fn new(bytes: Vec<u8>) -> Self {
+            Self {
+                bytes,
+                position: 0,
+                chunk: CHUNK,
+                max_request: 0,
+                pause: None,
+            }
+        }
+    }
+    impl AsyncRead for Chunked {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            out: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            self.max_request = self.max_request.max(out.remaining());
+            if self.pause == Some(self.position) {
+                self.pause = None;
+                return Poll::Pending;
+            }
+            let count = out
+                .remaining()
+                .min(self.chunk)
+                .min(self.bytes.len() - self.position)
+                .min(self.pause.map_or(usize::MAX, |at| at - self.position));
+            out.put_slice(&self.bytes[self.position..self.position + count]);
+            self.position += count;
+            Poll::Ready(Ok(()))
+        }
+    }
+    fn padded(size: usize, escaped: bool) -> (Vec<u8>, Vec<u8>) {
+        let mut expected = b"{\"findings\":[]}".to_vec();
+        expected.resize(size, b' ');
+        let mut wire = PREFIX.to_vec();
+        wire.extend_from_slice(br#"{\"findings\":[]}"#);
+        for _ in b"{\"findings\":[]}".len()..size {
+            wire.extend_from_slice(if escaped { b"\\u0020" } else { b" " });
+        }
+        wire.extend_from_slice(SUFFIX);
+        (wire, expected)
+    }
+    #[tokio::test]
+    async fn gap157_exact_cap_accepts_literal_and_escaped_padding() {
+        for escaped in [false, true] {
+            let (wire, expected) = padded(RAW_LIMIT, escaped);
+            let mut input = BoundedInput::new(Chunked::new(wire.clone()), Limits::default());
+            let frame = input.next_frame().await.unwrap().unwrap();
+            assert_eq!(frame, wire);
+            assert!(frame.capacity() <= Limits::default().frame);
+            let value: Value = serde_json::from_slice(&frame).unwrap();
+            assert_eq!(
+                value["params"]["arguments"]["raw"]
+                    .as_str()
+                    .unwrap()
+                    .as_bytes(),
+                expected
+            );
+            assert!(input.source.max_request <= CHUNK);
+            assert_eq!(input.buffer.len(), CHUNK);
+        }
+    }
+    #[tokio::test]
+    async fn gap157_excess_refuses_before_complete_frame() {
+        for escaped in [false, true] {
+            let (wire, _) = padded(RAW_LIMIT + 1, escaped);
+            let length = wire.len();
+            let mut input = BoundedInput::new(Chunked::new(wire), Limits::default());
+            assert_eq!(
+                input.next_frame().await.unwrap_err().to_string(),
+                "return-too-large"
+            );
+            assert_eq!(input.decoder.raw_bytes, RAW_LIMIT + 1);
+            assert!(input.frame.capacity() <= Limits::default().frame);
+            assert!(input.source.position < length);
+            assert!(input.source.max_request <= CHUNK);
+            let stopped = input.source.position;
+            assert!(input.next_frame().await.unwrap().is_none());
+            assert_eq!(input.source.position, stopped);
+        }
+    }
+    #[test]
+    fn gap157_split_outer_string_escapes_preserve_raw_document() {
+        // Literal transport spellings are independent of the decoder.
+        let wire = br#" {\"claim\":\"quote: \\\"\\n\u96ea\",\"literal\":\"\\u0020\"} "#;
+        let expected = r#" {"claim":"quote: \"\n雪","literal":"\u0020"} "#.as_bytes();
+        for chunk in [1, 2, 3, 7] {
+            let mut decoder = StringDecoder::default();
+            let mut output = Vec::new();
+            for part in wire.chunks(chunk) {
+                for byte in part {
+                    match decoder.push(*byte).unwrap() {
+                        Decoded::Bytes(bytes, n) => output.extend_from_slice(&bytes[..n]),
+                        Decoded::Pending => {}
+                        Decoded::End => panic!("early string end"),
+                    }
+                }
+            }
+            assert!(matches!(decoder.push(b'"').unwrap(), Decoded::End));
+            assert_eq!(output, expected);
+        }
+        for wire in ["雪😀".as_bytes(), br#"\u96ea\uD83D\uDE00"#] {
+            let mut decoder = StringDecoder::default();
+            let mut output = Vec::new();
+            for byte in wire {
+                if let Decoded::Bytes(bytes, n) = decoder.push(*byte).unwrap() {
+                    output.extend_from_slice(&bytes[..n]);
+                }
+            }
+            assert_eq!(output, "雪😀".as_bytes());
+        }
+    }
+    fn decode(wire: &[u8]) -> io::Result<Decoder> {
+        let mut decoder = Decoder::new(Limits::default());
+        for byte in wire {
+            decoder.push(*byte)?;
+        }
+        if !decoder.complete || decoder.token.is_some() {
+            return Err(invalid("incomplete-envelope"));
+        }
+        Ok(decoder)
+    }
+    #[test]
+    fn gap157_reordered_escaped_keys_identify_actual_raw_path() {
+        let wire=br#"{"params":{"arguments":{"r\u0061w":"{\"findings\":[]}","oper\u0061tion":"review-return"},"n\u0061me":"cadence_apply"},"method":"tools/call","jsonrpc":"2.0","id":1}"#;
+        let decoder = decode(wire).unwrap();
+        assert_eq!(decoder.review(), Some(true));
+        assert_eq!(decoder.raw_bytes, 15);
+    }
+    #[test]
+    fn gap157_a_repeated_envelope_key_is_refused_even_when_escaped() {
+        for wire in [
+            br#"{"params":{"arguments":{"raw":"a","r\u0061w":"b"}}}"#.as_slice(),
+            br#"{"params":{"arguments":{"operation":"review-return","operation":"other"}}}"#,
+            br#"{"params":{"arguments":{"identity":{},"identity":{}}}}"#,
+            br#"{"params":{"arguments":{"identity":{"attempt":"a1","attempt":"a2"}}}}"#,
+        ] {
+            assert_eq!(
+                decode(wire).err().unwrap().to_string(),
+                "duplicate-envelope-key"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_envelope_syntax_is_refused() {
+        for wire in [
+            br#"{"a":"\x"}"#.as_slice(),
+            br#"{"a":"\uD800"}"#,
+            br#"{"a":true,}"#,
+            br#"{"a":[1,]}"#,
+            br#"{"a":01}"#,
+            br#"{}{}"#,
+        ] {
+            assert!(decode(wire).is_err());
+        }
+    }
+    #[tokio::test]
+    async fn gap157_metadata_excess_stops_before_frame_end() {
+        let mut wire=br#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"cadence_apply","arguments":{"operation":"review-return","note":""#.to_vec();
+        wire.extend(std::iter::repeat_n(b'x', METADATA_LIMIT + 1));
+        wire.extend_from_slice(SUFFIX);
+        let length = wire.len();
+        let mut input = BoundedInput::new(Chunked::new(wire), Limits::default());
+        assert_eq!(
+            input.next_frame().await.unwrap_err().to_string(),
+            "envelope-metadata-too-large"
+        );
+        assert_eq!(input.decoder.metadata_bytes, METADATA_LIMIT + 1);
+        assert!(input.source.position < length);
+    }
+    #[tokio::test]
+    async fn gap157_overall_frame_limit_bounds_unrelated_input() {
+        let limits = Limits {
+            raw: 1000,
+            metadata: 1000,
+            frame: 32,
+        };
+        let mut wire = br#"{"note":""#.to_vec();
+        wire.extend(std::iter::repeat_n(b'x', 100));
+        wire.extend_from_slice(b"\"}\n");
+        let mut input = BoundedInput::new(Chunked::new(wire), limits);
+        assert_eq!(
+            input.next_frame().await.unwrap_err().to_string(),
+            "envelope-too-large"
+        );
+        assert_eq!(input.frame.len(), 32);
+        assert_eq!(input.source.position, 33);
+    }
+    #[tokio::test]
+    async fn gap157_unrelated_operation_has_no_raw_return_cap() {
+        let wire=b"{\"method\":\"tools/call\",\"params\":{\"name\":\"cadence_apply\",\"arguments\":{\"operation\":\"other\",\"raw\":\"1234567890\"}}}\n";
+        let mut input = BoundedInput::new(
+            Chunked::new(wire.to_vec()),
+            Limits {
+                raw: 4,
+                metadata: 1000,
+                frame: 2000,
+            },
+        );
+        assert_eq!(input.next_frame().await.unwrap().unwrap(), wire);
+    }
+    #[tokio::test]
+    async fn gap157_cancelled_poll_keeps_partial_budget() {
+        let mut wire = PREFIX.to_vec();
+        wire.extend_from_slice(b"1234567890123456");
+        wire.extend_from_slice(SUFFIX);
+        let mut source = Chunked::new(wire);
+        source.pause = Some(PREFIX.len() + 6);
+        let mut input = BoundedInput::new(
+            source,
+            Limits {
+                raw: 8,
+                metadata: 1000,
+                frame: 2000,
+            },
+        );
+        let mut future = Box::pin(input.next_frame());
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(future.as_mut().poll(&mut context).is_pending());
+        drop(future);
+        assert_eq!(input.decoder.raw_bytes, 6);
+        assert_eq!(
+            input.next_frame().await.unwrap_err().to_string(),
+            "return-too-large"
+        );
+        assert_eq!(input.decoder.raw_bytes, 9);
+        assert_eq!(input.source.position, PREFIX.len() + 9);
+    }
+    const PING: &[u8] = b"{\"method\":\"ping\",\"id\":1,\"jsonrpc\":\"2.0\"}\r\n";
+
+    #[tokio::test]
+    async fn gap157_a_crlf_frame_is_returned_whole_and_eof_then_yields_none() {
+        let mut input = BoundedInput::new(Chunked::new(PING.to_vec()), Limits::default());
+        assert_eq!(input.next_frame().await.unwrap().unwrap(), PING);
+        assert!(input.next_frame().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_partial_frame_at_eof_yields_none() {
+        let mut partial = BoundedInput::new(
+            Chunked::new(b"{\"method\":\"ping\"".to_vec()),
+            Limits::default(),
+        );
+        assert!(partial.next_frame().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_second_frame_already_buffered_is_returned_intact() {
+        let mut frames = PREFIX.to_vec();
+        frames.extend_from_slice(b"abc");
+        frames.extend_from_slice(SUFFIX);
+        frames.extend_from_slice(PING);
+        let mut input = BoundedInput::new(Chunked::new(frames), Limits::default());
+        assert!(input.next_frame().await.unwrap().is_some());
+        assert_eq!(input.next_frame().await.unwrap().unwrap(), PING);
+    }
+}

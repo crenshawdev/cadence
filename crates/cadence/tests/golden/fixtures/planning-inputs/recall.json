@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "source": "phases/1/CONTEXT.md",
+      "score": 1,
+      "snippet": "Trace coverage"
+    }
+  ]
+}

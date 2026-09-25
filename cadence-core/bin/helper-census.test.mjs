@@ -21,7 +21,7 @@
 // copy of the body.
 //
 // The rules are LEXICAL, which means a rule can match its own source - the
-// discipline lib/merge-warnings.mjs states, where the fix belongs at the
+// discipline of fixing a self-match at the
 // mention or in the pattern and never in a second exclusion list. Every pattern
 // below is therefore built from an escaped string: the text a rule matches does
 // not appear verbatim anywhere in this file, so this file is censused by the
@@ -89,10 +89,8 @@ const HELPERS = [
     // The try/catch pair, not the readFileSync call alone: the '' is the
     // contract, and the null-returning readers elsewhere are different ones.
     re: new RegExp("return readFileSync\\(file, 'utf8'\\);[\\s\\S]{0,20}?catch \\{ return ''; \\}", 'g'),
-    note: 'Import { readText } from ./lib/seam-input.mjs. Two OTHER file '
-      + 'readers in this tree are deliberately not it and are not exemptions: '
-      + 'lib/include-consumers.mjs returns null behind an isFile() guard and '
-      + "planning/core.mjs's read() returns null, because both callers act on the "
+    note: 'Import { readText } from ./lib/seam-input.mjs. '
+      + "planning/core.mjs's read() returns null because its caller acts on the "
       + "difference between absent and empty that '' collapses (D-04).",
   },
   {
@@ -189,7 +187,7 @@ const HELPERS = [
     // The two halves of the loop's contract, in the order a copy would carry
     // them: record the failure under the CALLER's own key, then honour the
     // caller's discipline. Never an export name and never a call site -
-    // cmdRenumber and cmdMilestonePrune both legitimately CALL this module, so
+    // cmdRenumber legitimately CALLS this module, so
     // a call-site census would redden on every correct use, while a paste-back
     // under a new name is still a copy of this body. The bounded gap between
     // the anchors is the readText row's device, and it is what keeps the
@@ -205,9 +203,8 @@ const HELPERS = [
       + 'this row a fifth hand-written approximation lands in a sixth file and '
       + 'no test can see it. The discipline arm is part of the body on '
       + 'purpose: renumber stops at the first throw because the tree no longer '
-      + 'matches the plan its later steps were computed from, prune continues '
-      + 'so the phases that cleared still get pruned, and a copy that picked '
-      + 'one arm for both callers would change what completed and failed mean.',
+      + 'matches the plan its later steps were computed from; a copy that '
+      + 'changes that discipline changes what completed and failed mean.',
   },
   {
     name: 'the genuinely-unfixed test (unfixedFromEntries)',

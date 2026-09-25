@@ -1,0 +1,388 @@
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LifecycleStatus {
+    Unplanned,
+    Planned,
+    Executed,
+    Complete,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Cycle {
+    Live,
+    Closed,
+}
+
+/// Numeric identity uses the frozen reader's binary64 Number semantics.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct PhaseId(pub(crate) f64);
+
+impl PhaseId {
+    pub fn number(self) -> f64 {
+        self.0
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct UatCounts {
+    pub pass: usize,
+    pub fail: usize,
+    pub pending: usize,
+    pub skipped: usize,
+    pub blocked: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UatItem {
+    pub status: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParsedUat {
+    pub items: Vec<UatItem>,
+    pub counts: UatCounts,
+}
+
+/// A row the legacy table decided carries no marker; a row the acceptance
+/// overlay decided says so, because a completion declared at import or at
+/// adoption and a native completion all reach Complete with counts the
+/// legacy SUMMARY/UAT rule can never produce.
+fn legacy(accepted: &bool) -> bool {
+    !*accepted
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PhaseRecord {
+    pub id: PhaseId,
+    pub name: String,
+    pub plans: Vec<String>,
+    pub status: LifecycleStatus,
+    pub uat: Option<UatCounts>,
+    #[serde(default, skip_serializing_if = "legacy")]
+    pub accepted: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Lifecycle {
+    pub cycle: Cycle,
+    pub current: Option<PhaseId>,
+    pub total: usize,
+    pub phases: Vec<PhaseRecord>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RoadmapConflict {
+    pub phase: PhaseId,
+    pub status: LifecycleStatus,
+    pub source: String,
+    pub field: String,
+    pub declared: String,
+    pub derived: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InputFailureCategory {
+    PermissionDenied,
+    NotDirectory,
+    InvalidPath,
+    SymlinkLoop,
+    OtherIo,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InputFailure {
+    pub path: PathBuf,
+    pub category: InputFailureCategory,
+    pub diagnostic: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Observation<T> {
+    Present(T),
+    Absent,
+    Failed(InputFailure),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RoadmapPhase {
+    pub id: PhaseId,
+    pub name: String,
+    pub description: String,
+    pub checked: bool,
+    /// One-based line in the normalized document.
+    pub source_line: usize,
+    /// Zero-based textual order; the list order is the run order.
+    pub ordinal: usize,
+    /// Shared observation address, relative to the planning root.
+    pub relative_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ParsedRoadmap {
+    pub cycle: Cycle,
+    pub phases: Vec<RoadmapPhase>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PhaseObservation {
+    pub relative_path: PathBuf,
+    /// Listing outcome with only admitted basenames, in lexical order.
+    pub plans: Observation<Vec<String>>,
+    pub summary: Observation<()>,
+    pub uat: Observation<Vec<u8>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CapturedInputs {
+    pub root: PathBuf,
+    pub root_probe: Observation<()>,
+    pub roadmap: Observation<Vec<u8>>,
+    pub declarations: Option<Result<ParsedRoadmap, DerivationError>>,
+    /// One entry per distinct address, in first declaration order.
+    pub phases: Vec<PhaseObservation>,
+}
+
+/// One roadmap line that disagreed, kept whole so a refusal can be joined to
+/// it: the document and line, the zero-based entry, the phase id itself and
+/// the status the derivation reached.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConflictEntry {
+    pub source: String,
+    pub line: u64,
+    pub entry: u64,
+    pub phase: String,
+    pub status: String,
+}
+
+/// Further consistency and memo refusals extend this shared error vocabulary.
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DerivationError {
+    DerivationConflict {
+        requested_hash: String,
+        stored_hash: Option<String>,
+        fields: Vec<String>,
+    },
+    Store {
+        kind: String,
+        detail: String,
+    },
+    InvalidIntake {
+        source: String,
+        detail: String,
+    },
+    StateConflict {
+        source: String,
+        field: String,
+        declared: String,
+        derived: String,
+        /// The roadmap entry behind a declaration conflict (D-140). The
+        /// flattened pair says a tick disagrees; it cannot say which phase or
+        /// what the derivation made of it, and the log needs both.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entry: Option<Box<ConflictEntry>>,
+    },
+    InvalidStatus {
+        source: String,
+        original_status: String,
+    },
+    MissingPlanningRoot {
+        path: PathBuf,
+    },
+    MissingRoadmap {
+        path: PathBuf,
+    },
+    InvalidRoadmap {
+        detail: String,
+    },
+    InputFailure(InputFailure),
+    InputsChanged,
+}
+
+impl DerivationError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::DerivationConflict { .. } => "derivation-conflict",
+            Self::Store { .. } => "store-error",
+            Self::InvalidIntake { .. } => "invalid-intake",
+            Self::StateConflict { .. } => "state-conflict",
+            Self::InvalidStatus { .. } => "invalid-status",
+            Self::MissingPlanningRoot { .. } => "missing-planning-root",
+            Self::MissingRoadmap { .. } => "missing-roadmap",
+            Self::InvalidRoadmap { .. } => "invalid-roadmap",
+            Self::InputFailure(_) => "input-error",
+            Self::InputsChanged => "inputs-changed",
+        }
+    }
+}
+
+impl std::fmt::Display for DerivationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {self:?}", self.code())
+    }
+}
+impl std::error::Error for DerivationError {}
+
+/// Untouched compatibility evidence, including fields from unavailable input.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CursorProvenance {
+    pub source: String,
+    pub original_cursor: serde_json::Value,
+    pub source_bytes: Option<Vec<u8>>,
+    pub phase: Option<PhaseId>,
+    pub total: Option<u64>,
+    pub name: Option<String>,
+    pub original_status: Option<String>,
+    pub next: Option<String>,
+    pub updated: Option<String>,
+    pub original_fields: Option<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CompatibilityCursor {
+    Unavailable(CursorProvenance),
+    Assertion {
+        status: LifecycleStatus,
+        provenance: CursorProvenance,
+    },
+    Held(CursorProvenance),
+}
+
+impl CompatibilityCursor {
+    pub fn provenance(&self) -> &CursorProvenance {
+        match self {
+            Self::Unavailable(p) | Self::Held(p) | Self::Assertion { provenance: p, .. } => p,
+        }
+    }
+}
+
+/// Exact compatibility observations, outside CapturedInputs and the lifecycle key.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IntakeObservation {
+    pub cursor: Option<serde_json::Value>,
+    pub retirement: Option<serde_json::Value>,
+}
+
+impl IntakeObservation {
+    pub fn from_data(data: &serde_json::Value) -> Self {
+        Self {
+            cursor: data.get("cursor").cloned(),
+            retirement: data
+                .get("derivation")
+                .and_then(|d| {
+                    if d.is_object() {
+                        d.get("intake")
+                    } else {
+                        Some(d)
+                    }
+                })
+                .cloned(),
+        }
+    }
+}
+
+/// Produced only after consistency validation and final reobservation.
+#[derive(Clone, Debug)]
+pub struct ValidatedIntake {
+    pub(crate) cursor: CompatibilityCursor,
+    pub(crate) observation: IntakeObservation,
+}
+
+impl ValidatedIntake {
+    pub fn cursor(&self) -> &CompatibilityCursor {
+        &self.cursor
+    }
+    pub fn observation(&self) -> &IntakeObservation {
+        &self.observation
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IntakeRecord {
+    pub version: u32,
+    pub source: String,
+    pub original_cursor: serde_json::Value,
+    pub normalized: CompatibilityCursor,
+    pub retired: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SelectedIntake {
+    pub cursor: CompatibilityCursor,
+    pub observation: IntakeObservation,
+}
+
+/// One native phase's acceptance authority, observed from the store snapshot
+/// alone (D-131): whether its plans are published and admitted, whether the
+/// required execution is complete, and whether an applicable completion
+/// record certifies acceptance. For such a phase this overlay, never
+/// SUMMARY.md or UAT.md, decides Planned, Executed and Complete.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AcceptancePhase {
+    pub published: bool,
+    pub executed: bool,
+    /// The applicable completion record id, when one applies.
+    pub completion: Option<String>,
+    pub label: Option<String>,
+    pub met: usize,
+    pub waived: usize,
+    /// Why a recorded completion no longer applies, when it does not.
+    pub disagreement: Option<String>,
+}
+
+/// Native acceptance authority by phase address; empty for a legacy tree.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AcceptanceOverlay {
+    pub phases: std::collections::BTreeMap<String, AcceptancePhase>,
+    /// Phases holding a native approved context: native authority the
+    /// imported compatibility cursor yields to.
+    #[serde(default)]
+    pub contexted: std::collections::BTreeSet<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LifecycleMemo {
+    pub encoding_version: u64,
+    pub semantics_version: u64,
+    pub input_hash: String,
+    pub answer: Lifecycle,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MemoDisposition {
+    Hit,
+    Miss,
+}
+
+pub use super::memo::{check_memo, memo_from_data};
+
+// Binary64 overflow is admitted by the frozen numeric grammar. JSON has no
+// infinity number; preserve that identity explicitly instead of emitting null.
+impl Serialize for PhaseId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.0 == f64::INFINITY {
+            serializer.serialize_str("Infinity")
+        } else {
+            serializer.serialize_f64(self.0)
+        }
+    }
+}
+impl<'de> Deserialize<'de> for PhaseId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if value.as_str() == Some("Infinity") {
+            return Ok(Self(f64::INFINITY));
+        }
+        value
+            .as_f64()
+            .filter(|n| n.is_finite() && *n >= 0.0)
+            .map(Self)
+            .ok_or_else(|| serde::de::Error::custom("invalid numeric phase id"))
+    }
+}

@@ -20,8 +20,8 @@
 // JSON line that is `ok:false` and that NAMES the flag.
 //
 // There is deliberately NO live `fallback` or `warn` arm. Proving either means
-// the command RUNS, and `git-publish publish` and `milestone-prune` are
-// mutations; both dispositions are pinned in-process in arg-contract.test.mjs
+// the command RUNS, and `git-publish publish` is a mutation;
+// both dispositions are pinned in-process in arg-contract.test.mjs
 // instead, and each lives at a named flag by UAT item 4. The bound that leaves
 // is stated rather than implied: a row added later declaring only `fallback`
 // or `warn` has no refusal arm to exercise, so this census cannot catch one
@@ -212,8 +212,8 @@ test('the census reports what it exercised and what it skipped, and why', () => 
   const notRefusing = axes.length - refusing;
   console.log(`adoption census: ${refusing} declared refusals exercised against the `
     + `shipped CLI across ${rows.length} table entries; ${notRefusing} axes skipped as `
-    + `fallback or warn (proving either means the command RUNS, and two of the owning `
-    + `scripts mutate); ${boolean.length} boolean entries skipped on both axes `
+    + `fallback or warn (proving either means the command RUNS, and owning `
+    + `scripts can mutate); ${boolean.length} boolean entries skipped on both axes `
     + `(presence is their whole grammar).`);
   assert.ok(refusing > 200 && boolean.length > 0 && notRefusing > 0,
     'the three populations are all non-empty, so no count above is a vacuous zero');

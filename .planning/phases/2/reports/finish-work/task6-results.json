@@ -1,0 +1,61 @@
+{
+  "deterministic": true,
+  "bundles": 17,
+  "missing": 0,
+  "unused": 0,
+  "malformed": {
+    "ok": true,
+    "phase": 1,
+    "plans": [
+      {
+        "plan": "PLAN-1.md",
+        "files": 8
+      },
+      {
+        "plan": "PLAN-2.md",
+        "files": 12
+      }
+    ],
+    "overlaps": [
+      {
+        "plans": [
+          "PLAN-1.md",
+          "PLAN-2.md"
+        ],
+        "files": [
+          "cadence-core/bin/trace.test.mjs",
+          "cadence-core/bin/lib/subagent-transcript.mjs",
+          "cadence-core/bin/subagent-transcript.test.mjs",
+          "cadence-core/bin/lib/subagent-trace.mjs",
+          "cadence-core/bin/subagent-trace.mjs",
+          "cadence-core/bin/subagent-trace.test.mjs",
+          "cadence-core/bin/lib/trace.mjs"
+        ]
+      }
+    ],
+    "frontmatter_issues": [
+      {
+        "plan": "PLAN-1.md",
+        "issues": [
+          {
+            "line": 8,
+            "code": "backtick-wrapped-value",
+            "text": "- `cadence-core/bin/lib/trace.mjs`"
+          }
+        ]
+      }
+    ]
+  },
+  "unknown": {
+    "ok": false,
+    "file": "crates/cadence/tests/golden/fixtures/config-unknown/.planning/config.json",
+    "checked": 4,
+    "errors": [
+      {
+        "key": "unknown.golden",
+        "error": "unknown key"
+      }
+    ]
+  },
+  "files": 252
+}

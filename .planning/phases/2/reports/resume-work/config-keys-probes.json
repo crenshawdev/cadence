@@ -1,0 +1,38 @@
+[
+  {
+    "argv": [
+      "keys"
+    ],
+    "exit": 0,
+    "ok": true,
+    "keys": 94,
+    "reason": null,
+    "detail": null,
+    "byte_identical": true
+  },
+  {
+    "argv": [
+      "keys",
+      "--file"
+    ],
+    "exit": 0,
+    "ok": true,
+    "keys": 94,
+    "reason": null,
+    "detail": null,
+    "byte_identical": true
+  },
+  {
+    "argv": [
+      "keys",
+      "--file",
+      ""
+    ],
+    "exit": 0,
+    "ok": true,
+    "keys": 94,
+    "reason": null,
+    "detail": null,
+    "byte_identical": true
+  }
+]
