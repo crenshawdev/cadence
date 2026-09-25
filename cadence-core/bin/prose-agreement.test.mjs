@@ -22,7 +22,6 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { activeVersion } from './lib/branch-decision.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { DEFERRED_READS, regionLabels } from './lib/deferred-reads.mjs';
 import { CATEGORIES, scanTree, interviewOptions } from './lib/surface-scan.mjs';
@@ -969,84 +968,6 @@ test('README\'s "Today it is N skills and M agent roles across K rung files" mat
 
   assert.deepEqual(wrong, [],
     `README's count sentence disagrees with the tree - ${wrong.join('; ')}`);
-});
-
-// --- DOC-02: PROJECT.md declares its milestone before it mentions another ----
-
-test('PROJECT.md\'s `### Active` declares its milestone as the section\'s first version token', () => {
-  // The defect this pins, measured at 81bdb5d: the section's first version
-  // token was `v3.2.0` on its opening line - correct - and activeVersion()
-  // returned `v3.0.0`, a token forty lines below it that landed at the start of
-  // a line only because markdown wrapped a sentence there. Nothing compares
-  // those two readings, so the docs were right and every consumer of
-  // activeVersion() was wrong: version_drift compares its answer against the
-  // tag list, and the branch-naming seam refuses an integration branch on it.
-  //
-  // The property is that the two scans AGREE, not that either equals a value:
-  // an assertion phrased as "the first version token" would have PASSED on the
-  // broken file, and one naming a version would need re-baselining every cycle
-  // open.
-  //
-  // THE READER NOW CARRIES THAT PROPERTY (phase 2 D-03, reversing this pin's
-  // own D-07 policy). DRF-01 moved it into activeVersion(): the two scans both
-  // run over the whole `### Active` body, and a line-anchored token is admitted
-  // as the declaration only when it AGREES with the body's first token or its
-  // line OPENS a sentence rather than continuing a wrapped one - a rejected
-  // anchor contributing nothing, so the earlier correct mention answers. The
-  // 81bdb5d file above now reads `v3.2.0` unchanged, which is why the sentence
-  // this comment used to end on - the file is what moves when this goes red -
-  // no longer describes the code and was deleted rather than left standing.
-  //
-  // So a red run here means something NARROWER than it did, and it is the only
-  // shape left: activeVersion() admitted an anchored token through the
-  // sentence-opening arm while this repository's own `### Active` names a
-  // different version earlier in its prose. The wrapped-continuation defect
-  // cannot reach this assertion any more - the reader ignores it and answers
-  // the first token, which is agreement. What that leaves is a question about
-  // the READER's admission rule (`lib/branch-decision.mjs`, with the four
-  // fixtures at branch-decision.test.mjs:237-266 pinning what it may not cost),
-  // not a hand-edit of the section: read which of the two versions is the
-  // milestone, and if it is the one activeVersion() returned, this pin is the
-  // stale reading and is re-derived from the reader's rule.
-  const text = doc('.planning', 'PROJECT.md');
-  const lines = text.split('\n');
-  const start = lines.findIndex((l) => /^###\s+Active\b/.test(l));
-  assert.ok(start >= 0, '.planning/PROJECT.md has no `### Active` section');
-
-  // The body exactly as activeVersion's own doc comment bounds it: the heading
-  // to the next level-1..3 heading.
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    if (/^#{1,3}\s/.test(lines[i])) { end = i; break; }
-  }
-
-  // The loose scan. This token shape is spelled here rather than imported
-  // because branch-decision.mjs exports neither regex and this task does not
-  // modify it; it is a GRAMMAR and not a version, so it never re-baselines.
-  const token = /v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/;
-  let first = null;
-  for (let i = start + 1; i < end; i++) {
-    const m = lines[i].match(token);
-    if (m) { first = { version: m[0], line: i + 1 }; break; }
-  }
-  assert.ok(first, '.planning/PROJECT.md\'s `### Active` body names no version at all');
-
-  const declared = activeVersion(text);
-  assert.ok(declared, 'activeVersion() reads no version from a body that names one');
-  // The line it was read on: the first body line naming that token, which is
-  // its anchored line whenever the section names it once.
-  const at = lines.findIndex((l, i) => i > start && i < end && l.includes(declared)) + 1;
-
-  assert.equal(declared, first.version,
-    `activeVersion() reads ${declared} (line ${at}) as the milestone while the \`### Active\` `
-    + `body's FIRST version token is ${first.version} (line ${first.line}). Since phase 2 `
-    + 'D-03 the agreement property lives in activeVersion() itself, which admits a '
-    + 'line-anchored token only on agreement or on a line that opens a sentence - so the one '
-    + 'reading that still reaches here is the sentence-opening admission, and version_drift '
-    + `is comparing ${declared} against the tag list. Settle which version is the milestone: `
-    + 'the remedy is the READER\'s admission rule in lib/branch-decision.mjs and this pin '
-    + 'derived from it, not a hand-edit of the section, which no longer has to route around '
-    + 'where markdown wrapped a line.');
 });
 
 // --- AC6: the executor is told the surfaces it will be judged on -------------
@@ -3463,12 +3384,19 @@ test('PHS-02 (2): the arm resolves the phase number rather than printing a place
   // The other half: the rule the prose states is one the resolver can actually
   // answer. A prose rule reading a field the envelope does not carry would
   // print nothing at all, and no amount of grepping the prose would show it.
+  // Asked of a two-phase roadmap in the test's own directory, so `total` is 2.
+  const cwd = mkdtempSync(join(tmpdir(), 'cad-phs02-'));
+  mkdirSync(join(cwd, '.planning'));
+  writeFileSync(join(cwd, '.planning', 'ROADMAP.md'), [
+    '# Roadmap: Fixture', '', '## Phases', '',
+    '- [ ] **Phase 1: First** - desc', '- [ ] **Phase 2: Second** - desc', '',
+  ].join('\n'));
   const out = JSON.parse(execFileSync('node', [join(HERE, 'planning.mjs'), 'status'],
-    { cwd: REPO, encoding: 'utf8' }));
-  assert.equal(out.ok, true, 'planning.mjs status does not answer ok:true on this repo');
-  assert.ok(Number.isInteger(out.total),
-    'planning.mjs status returns no integer `total`, so the arm\'s `total + 1` rule '
-    + 'resolves to nothing and the printed sequence carries no phase number');
+    { cwd, encoding: 'utf8' }));
+  assert.equal(out.ok, true, 'planning.mjs status does not answer ok:true on a two-phase roadmap');
+  assert.equal(out.total, 2,
+    'planning.mjs status returns no `total` counting the roadmap\'s phases, so the arm\'s '
+    + '`total + 1` rule resolves to the wrong phase number or to nothing');
 });
 
 test('PHS-02 (3): the first stop carries the task\'s own description, and /cad-phase advertises it', () => {

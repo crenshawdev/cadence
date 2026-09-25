@@ -11,9 +11,6 @@ import { pruneRoadmap, archiveRequirements, completedPhases } from './lib/milest
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PLANNING = join(HERE, 'planning.mjs');
-// This repository's own root, computed the way prose-agreement.test.mjs
-// computes its REPO - the corpus test below reads the live planning documents.
-const REPO = join(HERE, '..', '..');
 
 const ROADMAP = `# Roadmap: Fixture
 
@@ -542,74 +539,6 @@ test('a fenced `## ` inside ## Shipped does not cut the append scan short', () =
     'the new row follows the LAST row of the table, not the last one before the fence');
   assert.ok(r.text.includes('```markdown\n## Traceability\n```'),
     'the fenced example survives byte-identical');
-});
-
-// --- the corpus: this repository's own planning documents -------------------
-
-// This arm reads the LIVE planning documents, so its subject exists only while
-// the cycle holds a completed phase. Between a close and the next verified
-// phase the roadmap is legitimately empty - `milestone.md` step 3 prunes it -
-// and there is nothing to transform. That is a state of the repository, not a
-// result, so it SKIPS with the reason said out loud rather than asserting a
-// precondition the milestone cycle owns. Asserting it made the suite red at
-// every close and kept it red until the next phase was verified, which is
-// exactly when someone installs the release and runs the tests.
-test('corpus: pruning this repository\'s own REQUIREMENTS.md needs no hand repair', (t) => {
-  const roadmap = readFileSync(join(REPO, '.planning', 'ROADMAP.md'), 'utf8');
-  const reqs = readFileSync(join(REPO, '.planning', 'REQUIREMENTS.md'), 'utf8');
-  const completed = completedPhases(roadmap);
-  if (completed.length === 0) {
-    t.skip('no completed phase in the live roadmap: between milestones, nothing to archive');
-    return;
-  }
-  const r = archiveRequirements(reqs, completed, 'v9.9.9');
-  assert.ok(r.moved.length > 0,
-    'the roadmap names a completed phase, so its requirements must move');
-
-  const before = new Set(shippedRows(reqs));
-  const out = r.text.split('\n');
-  const after = shippedRows(r.text);
-
-  let wrapped = 0;
-  for (const { id, phase } of r.moved) {
-    const span = activeSpan(reqs, id);
-    if (span.length > 1) wrapped += 1;
-    // No line of a moved bullet's original span survives anywhere in the text.
-    for (const line of span) {
-      assert.ok(!out.includes(line), `${id} left an orphan: ${line}`);
-    }
-    // ...and its new parenthetical is that whole span. Scoped to the rows this
-    // run ADDED, for the same reason the pipe count below is: ids are reused
-    // across milestones - the live Shipped table already holds a `REL-02` from
-    // `v1.1.0-rc.2` - so a bare `startsWith` finds an older row and compares
-    // this run's work against a milestone that closed three versions ago.
-    assert.equal(
-      after.find((l) => !before.has(l) && l.startsWith(`| ${id} `)),
-      `| ${id} (${parenthetical(span)}) | ${phase} | Complete | v9.9.9 |`);
-  }
-
-  // The multi-line span is what makes this corpus bite, but whether the live
-  // file happens to hold a wrapped bullet is the milestone cycle's business and
-  // not this suite's - the same reason the empty roadmap above skips instead of
-  // asserting. Asserting it here made the suite red the moment someone typed a
-  // requirement on one line, which is a state of the repository and not a
-  // result. Say it out loud and let the rest of the corpus keep its bite.
-  if (wrapped === 0) {
-    t.diagnostic(
-      'no moved bullet wraps in the live REQUIREMENTS.md: '
-      + 'the multi-line span is unexercised by this corpus');
-  }
-
-  // Every row this run ADDED is five-piped. The rows it did not add are
-  // byte-preserved - including `CFG-01` and `RVW-01`, the two scars this phase
-  // deliberately leaves unrepaired, which is why the count is scoped to new rows.
-  for (const row of after) {
-    if (before.has(row)) continue;
-    assert.equal(unescapedPipes(row), 5, `a shifted Shipped column: ${row}`);
-  }
-  for (const row of before) {
-    assert.ok(after.includes(row), `a pre-existing Shipped row was rewritten: ${row}`);
-  }
 });
 
 // --- the seam ---------------------------------------------------------------

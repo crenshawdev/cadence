@@ -2,12 +2,10 @@
 // `/cad-why`'s commit-to-phase index (WHY-01, phase 1 plan 2). See that
 // module's header for the design.
 //
-// Two kinds of fixture, deliberately: this repository's OWN `.planning` for the
-// facts the index exists to get right on a real corpus (28 phase directories
-// across both tiers, one of them the live phase 1 of a DIFFERENT milestone from
-// the archived phase 1 the commit belongs to), and built temp roots for the
-// states this corpus does not currently hold - an unreadable summary and a
-// genuine prefix ambiguity.
+// Two kinds of fixture: this repository's own git history for the recovered
+// tier, whose closes are real commits, and built temp roots for everything the
+// on-disk tiers hold. The planning records themselves are not in this
+// repository, so no test reads them off its working tree.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -27,12 +25,6 @@ import {
 } from './lib/why-record.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-/** This repository's own planning root: bin -> cadence-core -> root. */
-const REAL = join(HERE, '..', '..', '.planning');
-
-/** The full sha of the commit `_archive-v3.4.0/1/SUMMARY.md` records as 0053735. */
-const ISSUE_CORE = '00537356bf14084f3676eeeca1c4747146979bc3';
-
 /**
  * A planning root holding the phase directories `spec` names. Each value is
  * the SUMMARY.md body (or `null` for a directory with plans and no summary);
@@ -62,35 +54,6 @@ const commitsTable = (rows) => [
 ].join('\n');
 
 // --- The real corpus, both tiers ------------------------------------------
-
-test('the index over this repository resolves 00537356 to _archive-v3.4.0/1, plan 1, task 2', () => {
-  const index = buildCommitIndex(REAL);
-  assert.deepEqual(index.warnings, [], 'this repository has no unreadable summary');
-  assert.ok(index.rows.length > 0, 'the archived summaries contribute rows');
-
-  const { state, row } = resolveCommit(index, ISSUE_CORE);
-  assert.equal(state, 'resolved');
-  assert.equal(row.dir.label, '_archive-v3.4.0/1');
-  assert.equal(row.dir.milestone, 'v3.4.0');
-  assert.equal(row.dir.phase, '1');
-  assert.equal(row.plan, '1');
-  assert.equal(row.task, '2');
-  assert.equal(row.commit, '0053735', 'the abbreviation the record wrote, carried verbatim');
-});
-
-test('the same index does NOT resolve it to a live phase, which is another milestone entirely', () => {
-  const index = buildCommitIndex(REAL);
-  const { row, matches } = resolveCommit(index, ISSUE_CORE);
-  assert.equal(row.dir.group, '_archive-v3.4.0');
-  assert.ok(matches.every((m) => m.dir.group !== 'phases'),
-    'a live phase belongs to whatever cycle is open now - a scope-keyed read would land there');
-  // The "and it IS in the walk" half of this case USED to assert a live
-  // `phases/1` directory on this repository, and a milestone close deleted it:
-  // between milestones this corpus has no live phase directory at all, so the
-  // walk proof moved onto the built root in the case below, where both tiers
-  // exist by construction. What is left here is the discrimination this case
-  // exists for, which the real corpus is the only place to prove.
-});
 
 test('the live tier and the archive tier are both walked, each labelled by its own group', () => {
   // A BUILT root, not this repository's: `phases/<N>` exists only while a
@@ -497,13 +460,11 @@ test('a merge-shaped prune record is REPORTED, never answered out of an arbitrar
 /** The full sha `72940906^:.planning/phases/1/SUMMARY.md` records as 73aa7bba. */
 const FENCE_AWARE = '73aa7bba503efb228c1b423c3d93cce87494036d';
 
-/** The merged index over this repository: both phase tiers, the off-roadmap
- * tasks tier, then git history - the four `why.mjs` itself builds. */
+/** The merged index over this repository's git history. Its on-disk tiers are
+ * empty: the planning records are not in this repository, and a local
+ * `.planning` a clone may still hold is state these tests do not read. */
 function mergedHere() {
-  const planning = join(REPO_ROOT, '.planning');
-  return mergeCommitIndexes(
-    buildCommitIndex(planning), buildTaskIndex(planning), buildRecoveredIndex(REPO_ROOT),
-  );
+  return mergeCommitIndexes(noTier(), noTier(), buildRecoveredIndex(REPO_ROOT));
 }
 
 test('a commit behind a deleted phase directory resolves out of git history alone', () => {
@@ -535,17 +496,26 @@ test('the recovered phase 1 is v3.5.9\'s, never the live phases/1 that holds v3.
 });
 
 test('the disk tier still wins for a commit BOTH tiers can claim', () => {
-  // A `--mode archive` close deleted `phases/<N>/SUMMARY.md` and added
-  // `_archive-v<ver>/<N>/SUMMARY.md` in one commit, so 00537356 is in both
-  // tiers. Flat-merged that would read as ambiguous; tiered it reads as the
-  // record a person can open.
-  const merged = mergedHere();
-  const recovered = buildRecoveredIndex(REPO_ROOT);
-  assert.ok(recovered.rows.some((r) => r.commit === '0053735'),
+  // A `--mode archive` close deletes `phases/<N>/SUMMARY.md` and adds
+  // `_archive-v<ver>/<N>/SUMMARY.md` in one commit, so a commit either names is
+  // in both tiers. Flat-merged that would read as ambiguous; tiered it reads as
+  // the record a person can open. The close is built here: the phase summary is
+  // committed and pruned, and the archived copy sits on disk.
+  const table = commitsTable([['1', '2', 'abcdef1', 'the task both tiers name']]);
+  const dir = repoWithCloses(['v9.0.0'], () => table);
+  const archived = join(dir, '.planning', '_archive-v9.0.0', '1');
+  mkdirSync(archived, { recursive: true });
+  writeFileSync(join(archived, 'PLAN.md'), '---\nphase: 1\nplan: 1\n---\n\n# a plan\n');
+  writeFileSync(join(archived, 'SUMMARY.md'), table);
+
+  const planning = join(dir, '.planning');
+  const recovered = buildRecoveredIndex(dir);
+  assert.ok(recovered.rows.some((r) => r.commit === 'abcdef1'),
     'the recovered tier does carry it, so the tier order is what decides');
-  const { state, row } = resolveCommit(merged, ISSUE_CORE);
+  const merged = mergeCommitIndexes(buildCommitIndex(planning), buildTaskIndex(planning), recovered);
+  const { state, row } = resolveCommit(merged, `abcdef1${'0'.repeat(33)}`);
   assert.equal(state, 'resolved');
-  assert.equal(row.dir.label, '_archive-v3.4.0/1');
+  assert.equal(row.dir.label, '_archive-v9.0.0/1');
 });
 
 test('an 8-character abbreviation matches its own sha and no neighbour of it', () => {
@@ -803,16 +773,6 @@ test('building the tasks tier twice over an unchanged root returns deep-equal re
     ['tasks/first-slug', 'tasks/second-slug'], 'slug order, never directory order');
 });
 
-test("this repository's own tasks tier holds the bound-plan-size record and its three commits", () => {
-  const index = buildTaskIndex(REAL);
-  assert.deepEqual(index.warnings, []);
-  assert.ok(index.dirs.some((d) => d.label === 'tasks/bound-plan-size'));
-  assert.ok(index.dirs.every((d) => d.phase === null && d.milestone === null && d.group === 'tasks'));
-  const row = index.rows.find((r) => r.commit.startsWith('093408c9'));
-  assert.ok(row, 'the record names the commit `/cad-why` has to resolve');
-  assert.equal(row.dir.slug, 'bound-plan-size');
-});
-
 // --- The tier is merged, ordered, and asked (phase 3 plan 2, task 2) -------
 
 /** An empty tier, for a merge whose git-recovered half is not under test. */
@@ -863,19 +823,6 @@ test('the tasks tier is asked AHEAD of the git-recovered one, and prunes still c
   assert.deepEqual(merged.warnings, ['a recovered warning']);
   assert.deepEqual(merged.dirs.map((d) => d.label),
     ['tasks/ahead-of-recovery', 'deadbeef:.planning/phases/9']);
-});
-
-test("this repository's merged index resolves 093408c9 to the bound-plan-size task, and 00537356 still to its phase", () => {
-  const merged = mergedHere();
-  const task = resolveCommit(merged, '093408c97560521e1e295ce949ac8beda2f29e50');
-  assert.equal(task.state, 'resolved');
-  assert.equal(task.row.dir.slug, 'bound-plan-size');
-  assert.equal(task.row.dir.label, 'tasks/bound-plan-size');
-  assert.equal(task.row.dir.phase, null);
-
-  const phase = resolveCommit(merged, ISSUE_CORE);
-  assert.equal(phase.state, 'resolved');
-  assert.equal(phase.row.dir.label, '_archive-v3.4.0/1', 'the phase tiers are untouched by the new one');
 });
 
 // --- The record's own declaration reaches the join (phase 3 plan 2, task 4) -
