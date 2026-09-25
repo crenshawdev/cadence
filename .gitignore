@@ -54,3 +54,6 @@ scratch/
 # ignoring these copies at exactly the moment they get staged. The same reason
 # covers tasks/<name>/ and spikes/<name>/, which are tracked trees too.
 /.planning/**/triage-work/
+
+# Planning records stay local, never in the repository
+/.planning/
