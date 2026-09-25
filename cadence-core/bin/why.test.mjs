@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -174,12 +174,11 @@ test('every child-process call in why.mjs names git as its command', () => {
 
 // --- Plan 2: the phase and plan-task edge ----------------------------------
 //
-// These run against THIS repository rather than a built fixture, deliberately.
 // The index's whole claim is that a phase number is READ off a resolved
-// directory rather than guessed from a commit's `(N-M)` scope, and the only
-// place that distinction is real is a corpus where both a live `phases/1` and
-// an archived `_archive-v3.4.0/1` exist and hold different milestones' work.
-// A fixture cannot falsify a guess that would also be right in the fixture.
+// directory rather than guessed from a commit's `(N-M)` scope. The built close
+// below makes a guess wrong on purpose: the commit's scope names phase 2 and
+// the archive that records it is phase 1, so a scope-reading join prints the
+// wrong phase instead of passing by accident.
 
 /** This repository's root: bin -> cadence-core -> root. */
 const REPO = join(HERE, '..', '..');
@@ -189,48 +188,70 @@ function entryFor(text, sha) {
   return blocks.find((b) => b.startsWith(`commit ${sha} `));
 }
 
+/**
+ * A repository after an archive-mode close: one commit on `f.txt` whose scope
+ * names phase 2, a phase 1 summary recording it as plan 1 task 2, then a close
+ * that deletes `phases/1` and adds `_archive-v9.0.0/1` holding the same
+ * summary. Both the archived directory on disk and the pruned tree in history
+ * name the commit.
+ * @returns {{dir: string, sha: string}}
+ */
+function repoWithArchivedPhase() {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-why-archive-'));
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore', env: GIT_ENV });
+  const at = (msg, iso) => execFileSync('git', ['-C', dir, 'commit', '-q', '-m', msg],
+    { stdio: 'ignore', env: { ...GIT_ENV, GIT_AUTHOR_DATE: iso, GIT_COMMITTER_DATE: iso } });
+  git('init', '-q', '-b', 'main');
+  writeFileSync(join(dir, 'f.txt'), 'one\n');
+  git('add', '.');
+  at('feat(2-1): the archived task', '2026-01-01T00:00:00-05:00');
+  const sha = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', env: GIT_ENV }).trim();
+
+  const summary = [
+    '# Phase 1 - Summary', '', '## Commits', '',
+    '| Plan | Task | Commit | Description |', '|---|---|---|---|',
+    `| 1 | 2 | ${sha.slice(0, 7)} | The task as its summary records it |`, '',
+  ].join('\n');
+  const phase = (group) => {
+    const p = join(dir, '.planning', group, '1');
+    mkdirSync(p, { recursive: true });
+    writeFileSync(join(p, 'SUMMARY.md'), summary);
+    writeFileSync(join(p, 'PLAN.md'), '---\nphase: 1\nplan: 1\n---\n\n# a plan\n');
+  };
+  phase('phases');
+  git('add', '-A');
+  at('docs: phase 1 summary', '2026-01-02T00:00:00-05:00');
+
+  git('rm', '-q', '-r', join('.planning', 'phases', '1'));
+  phase('_archive-v9.0.0');
+  writeFileSync(join(dir, '.planning', 'ARCHIVE.md'),
+    ['# Archive', '', '## v9.0.0', '', '- `phases/1/SUMMARY.md`: archived', ''].join('\n'));
+  git('add', '-A');
+  at('chore: prune v9.0.0 completed phases', '2026-01-03T00:00:00-05:00');
+  return { dir, sha };
+}
+
 test('a commit an archived summary names joins to that milestone, phase, plan and task', () => {
-  // 12 commits touch this path; the one under test is the oldest, so the cap
-  // is lifted rather than the assertion narrowed to the newest ten.
-  const { stdout } = run(['cadence-core/bin/lib/issue-decision.mjs', '--dir', REPO, '--top', '20']);
-  const env = oneJsonLine(stdout);
+  const { dir, sha } = repoWithArchivedPhase();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
   assert.equal(env.ok, true);
   assert.equal(env.result, 'chain');
-  assert.deepEqual(env.warnings, [], 'no summary in this repository is unreadable');
+  assert.deepEqual(env.warnings, []);
 
-  const sha = '00537356bf14084f3676eeeca1c4747146979bc3';
   const entry = entryFor(env.text, sha);
   assert.ok(entry, `expected a rendered entry for ${sha} in a chain of ${env.shown}`);
-  assert.ok(entry.includes('phase: v3.4.0 phase 1 (_archive-v3.4.0/1)'),
+  assert.ok(entry.includes('phase: v9.0.0 phase 1 (_archive-v9.0.0/1)'),
     `expected the archived milestone and the phase read off its directory, got:\n${entry}`);
   assert.ok(entry.includes('plan task: plan 1, task 2 - '), `expected plan 1 task 2, got:\n${entry}`);
-  assert.ok(entry.includes('The pure issue-decision core + 15 tests'),
+  assert.ok(entry.includes('The task as its summary records it'),
     `expected the commits table's own description verbatim, got:\n${entry}`);
 
   const data = env.entries.find((e) => e.sha === sha);
   assert.equal(data.join.state, 'resolved');
-  assert.equal(data.join.label, '_archive-v3.4.0/1');
+  assert.equal(data.join.label, '_archive-v9.0.0/1');
   assert.equal(data.join.phase, '1');
   assert.equal(data.join.plan, '1');
   assert.equal(data.join.task, '2');
-});
-
-test('the phase printed is the archived one, never the live phases/1 that reuses the number', () => {
-  // SCOPED TO THE ARCHIVED COMMIT'S OWN ENTRY, never a global absence across the
-  // window. This path keeps taking commits from the OPEN milestone, whose phase 1
-  // legitimately renders `(phases/1)`, so a window-wide assertion reddens on work
-  // that is behaving exactly as designed - it did, on the two commits phase 1 of
-  // v3.7.1 put here. What the case is for is the COLLISION: sha 00537356 belongs
-  // to an archived phase 1 and must not be read off the live directory reusing
-  // that number, and that is a property of one entry rather than of the window.
-  const sha = '00537356bf14084f3676eeeca1c4747146979bc3';
-  const { stdout } = run(['cadence-core/bin/lib/issue-decision.mjs', '--dir', REPO, '--top', '20']);
-  const env = oneJsonLine(stdout);
-  const entry = entryFor(env.text, sha);
-  assert.ok(entry, `expected a rendered entry for ${sha} in a chain of ${env.shown}`);
-  assert.ok(!entry.includes('(phases/1)'),
-    'the live phase 1 is a different milestone; a scope-keyed read would print it');
-  assert.equal(env.entries.find((e) => e.sha === sha).join.label, '_archive-v3.4.0/1');
 });
 
 test('a commit no summary names keeps its phase and plan-task fields stated absent rather than dropped', () => {
@@ -477,12 +498,17 @@ test('a commit whose phase directory exists in NO on-disk tier still names its p
 });
 
 test('the recovered tier never overrides an on-disk record a reader could open', () => {
-  const env = oneJsonLine(run(['cadence-core/bin/lib/issue-decision.mjs', '--dir', REPO, '--top', '20']).stdout);
-  assert.equal(env.ok, true);
-  const entry = entryFor(env.text, '00537356bf14084f3676eeeca1c4747146979bc3');
-  assert.match(entry, /^phase: v3\.4\.0 phase 1 \(_archive-v3\.4\.0\/1\)$/m,
+  const { dir, sha } = repoWithArchivedPhase();
+  const entry = entryFor(oneJsonLine(run(['f.txt', '--dir', dir]).stdout).text, sha);
+  assert.match(entry, /^phase: v9\.0\.0 phase 1 \(_archive-v9\.0\.0\/1\)$/m,
     'the archived directory answers, not the copy recoverable from the same prune commit');
   assert.ok(!/recovered from/.test(entry));
+
+  // The recovered tier does carry the commit: with the directory gone from
+  // disk, history answers. So the tier order is what decided above.
+  rmSync(join(dir, '.planning', '_archive-v9.0.0'), { recursive: true });
+  const fromHistory = entryFor(oneJsonLine(run(['f.txt', '--dir', dir]).stdout).text, sha);
+  assert.match(fromHistory, /^phase: v9\.0\.0 phase 1 \(recovered from [0-9a-f]{8}:\.planning\/phases\/1\)$/m);
 });
 
 test('two runs over this repository stay byte-identical with the recovered tier in place', () => {
@@ -690,23 +716,6 @@ test('a commit only a task record names resolves at the seam, to the task and to
 // Against the record `.planning/tasks/bound-plan-size/RECORD.md` on disk rather
 // than a fixture, because the fact under test is that the corpus's own writer
 // and its own reader agree - which a fixture built by this file cannot falsify.
-
-test('the record on disk answers /cad-why for a file that task touched, end to end', () => {
-  // The cap is lifted for the same reason the sibling test at :195 lifts it:
-  // the commit under test is older than the default six-commit window.
-  const env = oneJsonLine(run(['cadence-core/templates/config.json', '--dir', REPO, '--top', '20']).stdout);
-  assert.equal(env.ok, true);
-  assert.deepEqual(env.warnings, []);
-
-  const entry = entryFor(env.text, '093408c97560521e1e295ce949ac8beda2f29e50');
-  assert.match(entry,
-    /^phase: off-roadmap task bound-plan-size - a \/cad-task run, not a roadmap phase \(tasks\/bound-plan-size\)$/m);
-  assert.ok(!entry.includes('NOT RESOLVED'),
-    `the same command on the pre-change tree printed the gap block here:\n${entry}`);
-  assert.match(entry, /^plan task: task 1 - /m, 'no plan prefix: a record has no Plan column');
-  assert.match(entry, /^declared by: declared in RECORD\.md$/m);
-  assert.match(entry, /^ {2}task 1: bound-plan-size \(declares cadence-core\/templates\/config\.json\)$/m);
-});
 
 test('two runs over the tasks tier of this repository write byte-identical stdout', () => {
   const a = run(['cadence-core/templates/config.json', '--dir', REPO]).stdout;

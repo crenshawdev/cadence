@@ -1120,20 +1120,6 @@ test('a grammar marker the registry does not hold is an ERROR, never a silent pa
   assert.deepEqual(JSON.parse(runWithSchema(['check', 'workflow.research=anything-at-all'], fixture).stdout), { ok: true });
 });
 
-test('validate: this repository own config layer passes the new grammars', () => {
-  // AC2's live fixture, and the reason this row asserts a SET of errors rather
-  // than none: this repository has not run the roles migration yet, so its own
-  // .planning/config.json still carries `stakes` and `validate` names it. Every
-  // OTHER key in that file must still pass, which is what the grammar half of
-  // this row was always for - a second entry here is a real regression.
-  const repoRoot = join(dirname(CONFIG), '..', '..');
-  const r = run(['validate', '--file', join(repoRoot, '.planning', 'config.json')]);
-  const own = JSON.parse(readFileSync(join(repoRoot, '.planning', 'config.json'), 'utf8'));
-  const carriesStakes = Object.hasOwn(own, 'stakes');
-  assert.deepEqual(r.errors.map((e) => e.key), carriesStakes ? ['stakes'] : []);
-  assert.equal(r.ok, !carriesStakes);
-});
-
 // --- workflow.lint_command (QW-01) -------------------------------------------
 
 test('workflow.lint_command: get returns the schema default null', () => {

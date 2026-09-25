@@ -6,6 +6,24 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.13] - 2026-09-25
+
+The planning records are out of the repository. Nothing a user installs ever
+read them, and the only things that did were tests.
+
+### Removed
+
+- **`.planning/` from the repository.** The 269 tracked planning files are gone
+  and `/.planning/` is ignored, so a working planning directory stays local.
+
+### Changed
+
+- **Tests that read those records now build their own.** The `/cad-why` tier
+  and join tests make their close in a temp repository, the record parsers take
+  verbatim excerpts inline, and the PHS-02 status check runs against a roadmap
+  in its own directory. Thirteen tests that checked only this repository's
+  records, or repeated a case a built fixture already covers, are deleted.
+
 ## [3.7.12] - 2026-09-05
 
 One word used to decide what all six roles ran at. It is gone, and thirteen
@@ -4702,6 +4720,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.13]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.13
 [3.7.12]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.12
 [3.7.11]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.11
 [3.7.10]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.10
