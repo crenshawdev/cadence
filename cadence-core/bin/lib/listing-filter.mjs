@@ -31,7 +31,8 @@
 // Its one limit: a description holding an empty line, or a line beginning
 // `- `, can't be told from the listing's own structure by text, so whatever
 // follows that line stays in the prompt. All 36 Cadence target descriptions
-// are one line today.
+// are one line today, and self-verify check 26 keeps them, and any
+// `when_to_use`, that way.
 'use strict';
 
 /** The agent listing's attachment type, as 2.1.289 names it. */

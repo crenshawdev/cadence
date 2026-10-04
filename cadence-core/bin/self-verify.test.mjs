@@ -2490,3 +2490,27 @@ test('check 25: the LIVE tree registers only event names the register declares',
   assert.deepEqual(p.filter((x) => x.kind === 'unregistered-hook-event'), []);
   assert.deepEqual(p.filter((x) => x.file === 'hooks/hooks.json'), []);
 });
+
+// --- check 26: Cadence's listed descriptions stay on one line -------------------
+//
+// lib/listing-filter.mjs takes a target entry out of the host's listing line by
+// line, and a description holding an empty line or a `- ` line would leave its
+// tail behind. These rows drive the check through the CLI, which proves it is
+// wired into `run(root)`; the rule's own cases live in listing-descriptions.test.mjs.
+
+test('check 26: an agent whose description is a two-line block is ONE problem naming the file', () => {
+  const text = rungAgentText('cad-reviewer-low', 'low')
+    .replace('---\nname: cad-reviewer-low\n',
+      '---\nname: cad-reviewer-low\ndescription: |\n  line one\n  line two\n');
+  const j = run(['--root', fixtureWith({ agents: { 'cad-reviewer-low.md': text } })]);
+  assert.equal(j.ok, false);
+  assert.match(j.checked, /listing-descriptions/);
+  const hits = j.problems.filter((p) => p.kind === 'multiline-listing-text');
+  assert.equal(hits.length, 1, JSON.stringify(j.problems));
+  assert.equal(hits[0].file, 'agents/cad-reviewer-low.md');
+});
+
+test('check 26: the LIVE tree carries no multi-line listed description', () => {
+  const p = run(['--root', REPO]).problems;
+  assert.deepEqual(p.filter((x) => x.kind === 'multiline-listing-text'), []);
+});

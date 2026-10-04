@@ -253,6 +253,21 @@
 //                    nothing on a mods host and says nothing, the same silence
 //                    the event register exists for, and check 3 cannot see it
 //                    because the entry carries no `${CLAUDE_PLUGIN_ROOT}`.
+//  26. listing       no `agents/*.md` and no `skills/*-contract/SKILL.md`
+//      descriptions  carries a frontmatter `description` or `when_to_use` that
+//                    spans more than one line. On a host with mods,
+//                    lib/listing-filter.mjs takes those entries out of the
+//                    agent and skill listings line by line, and the host prints
+//                    a value's newlines raw, so an empty line or a `- ` line
+//                    inside one reads as the end of its entry and the rest of
+//                    it stays in the prompt. A one-line value can hold neither.
+//                    Nothing else here sees it: the filter's own tests run on
+//                    captured listings, not on the tree. The rule, the four
+//                    shapes that count as spanning and what it leaves alone
+//                    live in lib/listing-descriptions.mjs; this side only
+//                    decides that it applies to the whole root. It takes no
+//                    CONTRACTS row, for the reason check 14 states about
+//                    `lib/*.mjs`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -283,6 +298,7 @@ import { bulkOutputIssues } from './lib/bulk-output.mjs';
 import { scratchPathIssues } from './lib/scratch-path.mjs';
 import { captureWriterIssues } from './lib/capture-writers.mjs';
 import { hookEventIssues, moduleEntryIssues } from './lib/hook-events.mjs';
+import { listingDescriptionIssues } from './lib/listing-descriptions.mjs';
 // The subcommand/flag contract table, the accessor the prose lint reads its
 // flag NAMES through, and the evaluator that applies one row's value grammar.
 // All three are DEFINED in lib/arg-contract.mjs and imported here: one table,
@@ -1361,6 +1377,13 @@ function run(root) {
   // Its modules arm: every `modules` entry names a file under hooks/.
   for (const issue of moduleEntryIssues(root)) problems.push(issue);
 
+  // 26. listing descriptions: no Cadence agent or contract skill carries a
+  // multi-line `description` or `when_to_use`, which lib/listing-filter.mjs
+  // could not take out of the listing whole. The rule and its file walk live in
+  // lib/listing-descriptions.mjs; this side only decides that it applies to the
+  // whole root.
+  for (const issue of listingDescriptionIssues(root)) problems.push(issue);
+
   return problems;
 }
 
@@ -1387,7 +1410,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, listing-descriptions', problems });
 } catch (e) {
   // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
