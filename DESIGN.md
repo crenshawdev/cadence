@@ -16,19 +16,19 @@ codex-risk-gate), Artifact + cosmic-design for UI. Claude-Code-only runtime.
 These are worth more than any per-skill cut. Each removes weight from *many* skills at once.
 
 1. **Standalone repo - the repo is the only source.** Cadence is a plain git repo; the installed
-   tree under `~/.claude` is disposable output, NEVER edited in place. Install = idempotent
-   copy script, re-run after any repo edit or `git pull` (+ occasional manual `git merge`/
-   cherry-pick from upstream that you adjudicate). An `install.sh --dev` flag may symlink
-   instead for fast local iteration, but no skill/agent/workflow may depend on the install
-   mechanism — distributable (copy-based, Windows-safe) from day one.
+   plugin copy is disposable output, NEVER edited in place. Install = the Claude Code plugin
+   install: the plugin runtime carries the tree, and `/plugin` updates it after a repo change.
+   Dev flow = clone the repo (+ occasional manual `git merge`/cherry-pick from upstream that
+   you adjudicate). No skill/agent/workflow may depend on the install mechanism —
+   distributable from day one.
    → Evaporates the entire `update` / `sync-skills` / `reapply-patches` / `gsd-pristine` /
    three-way-merge / `installer-migrations` subsystem. GSD's own patch machinery proves the
    tolerable-divergence ceiling is too low to track upstream as patches; Cadence diverges
    *structurally*, so it must own its source.
 
 2. **Delete the 16–18-host CLI locator shim everywhere.** It is pasted (~40 lines) into nearly
-   every workflow to probe `.cursor/.gemini/.hermes/…`. You run only Claude Code. Hardcode one
-   `~/.claude` path. → Removes dead weight from ~50 files.
+   every workflow to probe `.cursor/.gemini/.hermes/…`. You run only Claude Code. Resolve one
+   engine root, `${CLAUDE_PLUGIN_ROOT}/cadence-core/`. → Removes dead weight from ~50 files.
 
 3. **Delete `.planning/STATE.md` audit logs.** Roadmap-evolution logs, decision logs, session
    narratives, "Quick Tasks Completed" tables, "Last Activity" bumps — all triplicate git
@@ -54,26 +54,26 @@ prompt-cache reuse high and the orchestrator context lean — not a guarantee.
 
 ---
 
-## 2. Cadence skill set (~22 skills replacing 69)
+## 2. Cadence skill set (28 user commands plus 6 internal contract skills, replacing 69)
 
 ### Build spine (the core loop)
 | Cadence skill | Derived from | Change |
 |---|---|---|
-| `cad-new-project` | new-project (1629L) | Keep questioning spine; research off-by-default → optional Codex pass. ~55% smaller |
+| `cad-new-project` | new-project (1629L) | Keep questioning spine; research off-by-default → one optional fresh-context agent pass writing `.planning/research/RESEARCH.md`. ~55% smaller |
 | `cad-context` | **discuss + spec + mvp** | Collapse 3 pre-plan gates into 1. Keep assumptions-analyzer + falsifiable acceptance + one "too big?" question. Cut ambiguity scoring, edge-probe engine, SPIDR, interview modes |
-| `cad-plan` | plan-phase (1770L) | Planner-only (+ optional checker); ~4 flags not ~20; plan-review → Codex. ~250L |
-| `cad-execute` | execute-phase (1707L) | **Sequential inline**, no worktree waves. Keep atomic commits + deviation rules + SUMMARY + light goal check. ~200L |
-| `cad-verify` | verify-work (877L) | Keep conversational persistent UAT; fixes → Codex; `--sweep` folds audit-uat. ~1/4 size |
-| `cad-progress` | progress (1250L) | Count-based truth + auto-resume incomplete phase. Fold `stats` as `--stats`. Cut `--do`/`--forensic`/`--converge`. ~100L |
+| `cad-plan` | plan-phase (1770L) | Planner-only (+ optional checker); ~4 flags not ~20; plan-review → the `plan` review trigger (default `claude-subagent`). ~250L |
+| `cad-execute` | execute-phase (1707L) | Sequential inline, plus a worktree-parallel path that is on by default. Keep atomic commits + deviation rules + SUMMARY + light goal check. ~200L |
+| `cad-verify` | verify-work (877L) | Keep conversational persistent UAT; fixes go through the review-trigger interface; `--sweep` folds audit-uat. ~1/4 size |
+| `cad-progress` | progress (1250L) | Count-based truth + an offer to resume an incomplete phase, run only if you accept. Fold `stats` as `--stats`. Cut `--do`/`--forensic`/`--converge`. ~100L |
 | `cad-task` | **fast + quick** | Merge. Inline-first (fast's clean body); `--plan` opt-in; worktree off. Replaces ~1100L with a few hundred |
 
-### Quality gates (all defer to Codex)
+### Quality gates (through the review subsystem: a Claude subagent by default, cross-model optional)
 | Cadence skill | Derived from | Change |
 |---|---|---|
-| `cad-plan-review` | **gsd-review** (the one cross-AI keeper) | Codex-only, ~50L. Reviews the PLAN *before* code — a real gap /panel-review doesn't fill (it reviews diffs). Cut convergence loop + all non-Codex hosts |
-| `cad-debug` | debug | Persistent hypothesis-state across `/clear` + scientific method, single-pass. Deep cases → codex-rescue. Cut session-manager layer + specialist dispatch |
+| `cad-plan-review` | **gsd-review** (the one cross-AI keeper) | Fires the `plan` trigger with `claude-subagent` and/or the configured cross-model providers, ~50L. Reviews the PLAN *before* code — a real gap /panel-review doesn't fill (it reviews diffs). Cut convergence loop + all CLI review hosts |
+| `cad-debug` | debug | Persistent hypothesis-state across `/clear` + scientific method, single-pass. Deep cases → a user-gated consult through the configured provider. Cut session-manager layer + specialist dispatch |
 | `cad-coverage` | **validate-phase + add-tests** | Merge. "Which requirements have zero failing-test coverage → generate tests." Model-agnostic, un-duplicated. Drop Nyquist branding, Playwright default |
-| `cad-docs-verify` | docs-update verifier (~220L of 1168) | Keep the verify-claims-against-live-code engine (real value for OSS distribution). Collapse the writer |
+| `cad-docs-verify` | docs-update verifier (about 220L of 1168) | Keep the verify-claims-against-live-code engine (real value for OSS distribution). Collapse the writer |
 | `cad-audit` | audit-milestone | Pre-ship requirement-traceability cross-ref + orphan detection + FAIL gate. Catches silently-dropped requirements |
 
 ### Lifecycle & git
@@ -87,15 +87,16 @@ prompt-cache reuse high and the orchestrator context lean — not a guarantee.
 ### Support
 | Cadence skill | Derived from | Change |
 |---|---|---|
-| `cad-capture` | capture | todos (the one thing mem-* lacks: actionable phase-linked queue) + optional seed. Notes → route to `/mem-note` |
-| `cad-config` | **config + settings** | One skill managing the ~22-key config in §7 |
+| `cad-capture` | capture | todos (the one thing mem-* lacks: actionable phase-linked queue) + optional seed. Notes land in `.planning/CAPTURE.md` too |
+| `cad-config` | **config + settings** | One skill managing the 94-key config in §7 |
 | `cad-help` | help + 6 ns-routers | Static COMMANDS.md; fold the 6 namespace tables in as headings |
 | `cad-spike` | spike | Keep falsifiable Given/When/Then + verdict + risk-first ordering (counters declare-success-on-assumption). Slim the 5-artifact wrap-up |
 | `cad-pause` | pause + resume | Tiny skill (§5.3): WIP commit + STATE.md cursor + one-line "where I was". Resume folded into `cad-progress`. No Stop hook |
 | `cad-health` | health | Keep stripped: ~20-line "is ROADMAP/STATE cursor parseable" (§5.1; the cursor IS retained) |
 
-### UI: no skills — one hook
-Phase tagged UI + COSMIC → auto-load `cosmic-design`. Web mockups → Artifact + artifact-design.
+### UI: no skills, no hook
+The planned UI + COSMIC → auto-load `cosmic-design` hook was never built: `hooks/hooks.json` carries
+only the git guard and the read and subagent trace hooks. Web mockups → Artifact + artifact-design.
 
 ---
 
@@ -126,20 +127,20 @@ Phase tagged UI + COSMIC → auto-load `cosmic-design`. Web mockups → Artifact
   `review-backlog` (+ the 999.x mechanism), `audit-uat` (→ cad-verify --sweep), `stats` (→
   cad-progress --stats), `add-tests`/`validate-phase` (→ cad-coverage).
 
-**Agents:** 34 → ~8–10 keep (executor, planner, plan-checker[opt], assumptions-analyzer,
-verifier, debugger, doc-verifier, nyquist/coverage). Cut all ai-*, ui-*, doc-classifier/
+**Agents:** 34 → 6 roles kept (executor, planner, plan-checker[opt], assumptions-analyzer,
+verifier, reviewer). Cut all ai-*, ui-*, doc-classifier/
 synthesizer, mempalace-curator, user-profiler, codebase-mapper, intel-updater,
 framework-selector, domain-researcher, eval-*, advisor-researcher, research-synthesizer,
 pattern-mapper (→ mem-*), project-researcher (→ Codex), security-auditor (→ Codex),
 integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
-(`cad-planner-xhigh` etc., §6) add ~4–8 files but are rungs of kept roles, not new agents.
+(`cad-planner-xhigh` etc., §6) add 24 suffixed files, 30 agent files in all, but are rungs of kept roles, not new agents.
 
 ---
 
 ## 4. Rough magnitude
-- Skills: 69 → ~22 (−68%)
-- Agents: 34 → ~9 roles (−74%), plus ~4–8 rung files of the same roles (§6)
-- The spine alone: ~5,100 workflow lines → ~900, with no loss of solo-dev value.
+- Skills: 69 → 28 user commands (−59%), 34 counting the 6 contract skills
+- Agents: 34 → 6 roles (−82%), across 30 rung files of the same roles (§6)
+- The spine alone: ~5,100 workflow lines → 3,257 at 3.7.13, with no loss of solo-dev value.
 - Whole subsystems deleted: update/patch/pristine, CLI shim, STATE audit logs, MemPalace,
   graphify, AI track, doc-ingest, UI track, workstreams/workspace.
 
@@ -152,18 +153,21 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
    Nothing else — cut all derived/analytics files. (PROJECT.md + REQUIREMENTS.md stay because
    `cad-new-project` writes them and `cad-milestone`/`cad-audit` consume them.)
    **The shipped set has grown past this, each addition its own decision, none of them an
-   analytics file:** `trace.jsonl` (the run record), `CAPTURE.md` (gitignored),
+   analytics file:** `trace.jsonl` (the run record), `reads.jsonl` (the read trace),
+   `CAPTURE.md` (committed in projects; only Cadence's own repo ignores it),
    `phases/<N>/{REVIEW-*.md,ADJUDICATION-*.json,FINDINGS.json,verifier-findings.json}`
    and `phases/<N>/reports/` (the review and verify record), and — v3.6.0, phase 3 —
-   `tasks/<slug>/RECORD.md`, an off-roadmap `/cad-task` run's own record.
+   `tasks/<slug>/RECORD.md`, an off-roadmap `/cad-task` run's own record. Also
+   `debug/<slug>.md`, `spikes/<slug>/`, `research/RESEARCH.md` and `risk-carry/`.
    `health` → ~20-line "is ROADMAP/cursor parseable".
    `forensics` → cut (self-obsoletes once worktree-waves are opt-in), handle ad hoc via git + review.
 3. pause/resume → **SETTLED:** `/cad-pause` = tiny skill (WIP commit + write cursor + one-line
    "where I was"). Resume is **folded into `/cad-progress`** (already reads the cursor). One skill,
    no Stop hook to install. Optional auto-pause Stop hook can come later.
 4. Name → **SETTLED: Cadence, `/cad-*`.** Install to a distinct dir so it coexists with GSD during
-   migration. **SETTLED at scaffold (2026-07-10):** engine dir `~/.claude/cadence-core/`; skills/agents
-   install as `cad-*` into the shared flat `~/.claude/skills/` and `~/.claude/agents/` (all verified free).
+   migration. **SETTLED at scaffold (2026-07-10), as shipped in the plugin:** engine dir
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/`; skills/agents ship as `cad-*` in the plugin's own
+   `skills/` and `agents/` (all names verified free).
 5. Distribution → **SUPERSEDED:** repo is already public; shipped as a Claude Code plugin
    (`/plugin marketplace add`, clone = dev flow — see §6).
 
@@ -181,7 +185,7 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
   The plugin runtime carries the tree, so the npm copy-installer described below was never
   built. Dev/contributor flow = clone the repo. *(Original 2026-07-10 decision, kept for
   the record: user install = npm `npx @crenshawdev/cadence install` running an idempotent
-  copy into `~/.claude`; dev flow = clone + `./install.sh`. The disposable-installed-tree
+  copy into `~/.claude`; dev flow = clone + a local install script. The disposable-installed-tree
   rule that decision leaned on still holds — the plugin copy is likewise never edited in
   place, so there is zero reapply-patches machinery.)*
 - **Runtime:** **Claude Code only**, one clean path resolver, no multi-host shim. But the three
@@ -191,11 +195,12 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
 - **Generic-user reframe:** cuts that were "John already has mem-*/claude-mem/Codex" become
   **built-in minimal + optional hook**, NOT deletions — a generic installer has none of that.
   Cadence ships self-contained; power users plug in richer backends.
-- **Agent fan-out: KEPT** as a first-class configurable capability (not amputated). Sequential is
-  the low-ceremony default; parallel waves are opt-in. The ~60% of execute-phase we cut was the
+- **Agent fan-out: KEPT** as a first-class configurable capability (not amputated). Parallel worktree
+  waves are on by default (`parallelization.enabled`) and sequential is the opt-out; a run
+  that cannot prove parallel safe falls back to sequential. The ~60% of execute-phase we cut was the
   always-on worktree *safety scaffolding*, not the fan-out — safety applies only when parallel is on.
-- **Memory/continuity:** built-in tiny file-based continuity (cursor + SUMMARY + optional
-  LEARNINGS→git) with an optional `memory.backend` hook (none | mcp) for mem-*/vault.
+- **Memory/continuity:** built-in tiny file-based continuity (cursor + SUMMARY) with a
+  `memory.backend` switch (none | builtin, default builtin: BM25 recall over `.planning/`).
 - **Milestone layer:** thin version-cut ritual (tag + prune roadmap + refresh requirements). Kept.
 
 ### Adversarial review = first-class configurable subsystem (absorbs gsd-review, code-review,
@@ -204,13 +209,15 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
   Code installed and no API keys. **Cross-model reviewers are a configured upgrade**, not a
   requirement. Reviewer plug-ability is about *reviewer models*, not host runtimes.
 - **Cross-model reviewers are direct provider API calls, NOT CLI subprocesses (DECIDED 2026-07-10).**
-  Supported providers: **OpenAI (Codex/GPT) and Google Gemini.** Rationale: in Cadence, review is a
+  Supported providers: **OpenAI (Codex/GPT), Google Gemini and DeepSeek.** Rationale: in Cadence, review is a
   pure function (artifact in → structured findings out); the API is built for exactly that, while a
   CLI is an agent harness whose self-directed investigation is dead weight here because the
   *adjudicator is the main model* and already owns repo grounding. The API wins on the axes that
   make review seamless:
-  - **Enforced structured output** — OpenAI `response_format` JSON-schema / Gemini `responseSchema`
-    return the exact finding shape (file, line, severity, claim, failure-scenario). No telemetry
+  - **Enforced structured output** — OpenAI `text.format` JSON-schema / Gemini `responseSchema`
+    return the exact finding shape (file, line, severity, claim, failure-scenario). DeepSeek has
+    only `json_object`, so its schema rides in the prompt unenforced and the shape is asserted
+    on return. No telemetry
     stripping, no sentinel scraping, no `jq` fallbacks — the whole class of "hacked" parsing that
     plagued GSD's `code_review_command` and the CLI path is gone.
   - **Deterministic control** (model, temperature, system prompt, token budget per trigger tier) →
@@ -223,16 +230,17 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
   - Trade-off on record: API means the subsystem carries provider clients + key management as a
     real dependency, pushing on "zero-dep/distributable." The `claude-subagent` default is the
     no-key fallback; the API path is the cross-model *upgrade* a user opts into.
-- **Division of labor:** API reviewers (Codex/GPT + Gemini) = structured single-shot independent
+- **Division of labor:** API reviewers (Codex/GPT, Gemini, DeepSeek) = structured single-shot independent
   critique. Main model = agentic grounding, false-positive kill, dedupe of convergent findings,
   final verdict. Same as `/panel-review`, which is the proven pattern.
-- Config drives: `backend`, `mode` (single|panel|adjudicated), `reviewers[]`, provider config
-  (`providers.<name>`: model id, endpoint, key reference — key storage TBD), and per-trigger gating
-  (`plan`, `diff`, `risk_surface` auto-detected, `phase_diff`) at off|advisory|blocking|adjudicated.
+- Config drives: `mode` (single|panel|adjudicated), `reviewers[]`, provider config
+  (`providers.<name>.tiers` only: tier → detected model id; keys come from env or `providers.env`,
+  endpoints are fixed in the adapters), and per-trigger gating (`plan`, `diff`, `risk_surface`
+  auto-detected, `phase_diff`) at off|advisory|deferred|blocking|adjudicated.
   No global master switch - per-trigger `off` disables any gate, and consult is always-ask, so a
   separate on/off is redundant.
 - **Trigger wiring (which skill fires what):** `plan` → `cad-plan`, after PLAN.md is written;
-  `diff` → `cad-execute`, at plan completion (advisory by default — low-ceremony solo flow);
+  `diff` → `cad-execute`, at plan completion (`off` by default);
   `risk_surface` → `cad-execute`, once per plan on the committed range when it matches a risk surface;
   `phase_diff` → `cad-execute`, once the parallel path's worktree batches merge. `cad-verify` routes
   fix requests through the subsystem rather than spawning its own fixer loop. `/cad-land` fires
@@ -247,8 +255,8 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
 - The auto-replan *convergence loop* is cut (auto-decides; against verify-before-done discipline).
 
 ### Cross-model consult = on-demand second-model help at dead-ends (DECIDED 2026-07-10)
-A capability distinct from adversarial review, reusing the same provider connections (OpenAI/Codex
-+ Gemini) but for a different job. Review is *scheduled critique* of an artifact; consult is
+A capability distinct from adversarial review, reusing the same provider connections (OpenAI/Codex,
+Gemini, DeepSeek) but for a different job. Review is *scheduled critique* of an artifact; consult is
 *reactive help* when the primary model is stuck. Codifies John's manual "Codex reflex" (Lane R /
 codex-rescue) as a first-class feature — GSD rails you through steps but has no "phone a friend" at
 the dead-ends between them.
@@ -266,8 +274,8 @@ the dead-ends between them.
   would otherwise cause it).
 - **Bounded** — one consult per dead-end unless genuinely new information appears. **Advisory
   only.** **Home:** cad-debug plus the existing decision-point checkpoints, not an always-on
-  behavior. **Opportunistic:** available only if providers are wired; claude-subagent is the
-  zero-dep fallback.
+  behavior. **Opportunistic:** available only if providers are wired; there is no
+  claude-subagent fallback, the offer is simply not made.
 - Config gates it like review (a switch, plus which providers). Open: exact trigger thresholds,
   how the offer is presented, output-handling specifics.
 
@@ -275,8 +283,8 @@ the dead-ends between them.
 Keys are user credentials (billing), never project data - user-global, set once per machine, shared
 across all Cadence projects. Never in the repo, `config.json` (it is committed), or `.planning/`.
 - **Resolution order:** environment variable first (`OPENAI_API_KEY`, `GEMINI_API_KEY` - both
-  providers' SDK convention; an env-set key always wins), then a single shared env file at
-  `${XDG_CONFIG_HOME:-~/.config}/cadence/providers.env` (holds both keys). Config stores only the
+  providers' SDK convention - and `DEEPSEEK_API_KEY`; an env-set key always wins), then a single
+  shared env file at `${XDG_CONFIG_HOME:-~/.config}/cadence/providers.env` (holds all three keys). Config stores only the
   *path*, never the value. Matches the prompter pattern (env file + env-takes-precedence).
 - **Graceful degradation:** a missing key never blocks the spine. The `call-review-provider` seam
   reports where to set it and marks that provider unavailable - review falls back to
@@ -291,9 +299,10 @@ across all Cadence projects. Never in the repo, `config.json` (it is committed),
 Best-fit per situation: model AND reasoning effort are configurable per trigger, per provider - not
 one fixed model per provider. Review/consult want a *strong independent* reviewer, so the cost
 lever is trigger frequency (gating), never a weak reviewer.
-- **Per-trigger cognitive fit.** `plan` = abstract forward-reasoning (rare) -> flagship reasoner,
-  high effort. `diff` = concrete detail-scan (frequent) -> cost-balanced tier, medium effort.
-  `risk_surface` = security-critical (rare, blocking) -> flagship, high/xhigh. `consult` =
+- **Per-trigger cognitive fit.** `plan` = abstract forward-reasoning (rare). `diff` = concrete
+  detail-scan (frequent). `risk_surface` = security-critical (rare, blocking). As shipped, all
+  three default to the `cheap` tier, at `low` effort for `plan` and `risk_surface` and `minimal`
+  for `diff`, and the review effort enum tops out at `high`. `consult` =
   generative "what would you try" (rare) -> flagship, high.
 - **Within a family the lever is the reasoning-effort dial + a cost tier, NOT a code-specialized
   model** - neither OpenAI nor Gemini ships a distinct code model (verified 2026-07: Codex is a
@@ -311,7 +320,8 @@ lever is trigger frequency (gating), never a weak reviewer.
   drops it. Re-verified against the host docs 2026-07-28: on the Agent/Task dispatch path Cadence
   uses, `effort` is subagent-definition-only - no tool parameter, env var, or setting varies it per
   dispatch - so this is not wirable, it is scopable. It is a **cross-model key**: `claude-subagent`
-  runs `cad-reviewer` at the `high` its frontmatter pins, and `fire()` now names the mismatch in one
+  runs `cad-reviewer` at the rung its agent file's frontmatter pins - as shipped, the rung
+  `roles.cad-reviewer.effort` names, default `medium` (`cad-reviewer-medium`) - and `fire()` now names the mismatch in one
   line rather than discarding the value silently (references/review-triggers.md steps 1 and 4;
   config.schema.json purposes say so at the point of setting). Turning it into a real per-trigger
   dial needs per-rung reviewer agent files, which is #63's proposal to land or reject - deliberately
@@ -348,10 +358,11 @@ lever is trigger frequency (gating), never a weak reviewer.
   3. Assignment via the ask-user seam (the "TUI decision tree"): per position, present detected +
      classified candidates with a recommended default. Two modes: "you decide" (auto-map via the
      best-fit logic, then accept-all or drill in - the low-friction default) and full manual.
-- **Runs** at provider setup (`cad-config`), re-runnable on demand, and trouble-triggered (a
-  model-not-found/deprecated review failure offers re-detect-and-reassign). Degrades: if detection
-  fails (offline/bad key/rate limit), fall back to shipped default IDs or manual entry - never
-  block setup on a network call.
+- **Runs** at provider setup (`cad-config`) and re-runnable on demand (`/cad-config --review
+  redetect`). No re-detect offer is wired into a review: a failed provider call drops that
+  reviewer with one visible line. Degrades: no default IDs ship; a missing key marks the provider
+  unconfigured and setup moves on, and a network or provider failure offers retry, manual entry
+  or skip - never block setup on a network call.
 - Snapshot of current lineups (2026-07, superseded by detection at runtime): OpenAI GPT-5.6 family
   (Sol flagship / Terra balanced / Luna cheap) + GPT-5.5; Gemini 3.1 Pro / 3.1 Flash / 3.5 Flash.
   Exact API id strings are never hardcoded - detection provides them.
@@ -378,10 +389,11 @@ lever is trigger frequency (gating), never a weak reviewer.
   *escalation* uses a small set of **variant agent files** for the heavy reasoners only — not
   every agent. Auto escalates model freely + swaps the rung file when needed, bounded by
   guardrails. *(As shipped, the illustrative `planner-high`/`planner-low` names here were never
-  the real ones: `cad-planner`'s ladder is high/xhigh/max over `cad-planner.md`,
-  `cad-planner-xhigh.md` and `cad-planner-max.md`, and six roles carry rung files rather than
-  four — see `RUNG_FILES` in `cadence-core/bin/lib/rung-agent.mjs`, which is the frozen statement
-  of what is on disk. Only `cad-plan-checker` has a `low` rung, as the next bullet says.)*
+  the real ones: `cad-planner`'s ladder is low/medium/high/xhigh/max over
+  `cad-planner-low.md`, `cad-planner-medium.md`, `cad-planner.md`, `cad-planner-xhigh.md` and
+  `cad-planner-max.md`, and all six roles carry a file at every rung — see `RUNG_FILES` in
+  `cadence-core/bin/lib/rung-agent.mjs`, which is the frozen statement of what is on disk. Every
+  role has a `low` rung; `cad-plan-checker`'s is its unsuffixed file.)*
 - ✅ **IMPLEMENTED (2026-07-10):** resolver `bin/route.mjs` + editable data `route-table.json`
   (role→tier, profile→model matrix over Claude aliases, auto signals). The spawn-agent seam
   (`references/seam-spawn-agent.md`) resolves every dispatch through it; re-dispatch sites pass `--attempt N`
@@ -508,13 +520,14 @@ lever is trigger frequency (gating), never a weak reviewer.
   thirteen-question interview (`/cad-config --roles`, run in full by `/cad-new-project` and
   `/cad-adopt`) whose questions each carry what that role does in the phase loop and what the
   answer buys there - the documentation IS the prompt, which is what the one-word level was
-  standing in for. The grids the level answered for that were not cells - `review`, `verify`,
-  `tiers`/`efforts` - become real defaults on their own keys in `config.schema.json`, and that
+  standing in for. The grids the level answered for that were not cells - `review` and
+  `tiers`/`efforts` - become real defaults on their own keys in `config.schema.json`, `verify`
+  is derived from the risk floor with no key of its own, and that
   leaves `route-table.json` holding nothing but `rung_order`, now stated beside `RUNG_FILES` in
   `lib/rung-agent.mjs`. `model_aliases` and the six `model.overrides.*` enums go because
   `roles.<role>.model` is a free string: an unset key sends NO model parameter, so the session's
   own model runs, and a name this host rejects is named in `warnings[]` with the parameter dropped
-  - the last hand-copied list of model names leaves the repository, and a typo can never redirect
+  - the hand-copied lists of model names shrink to one, `HOST_MODELS` in `route.mjs`, and a typo can never redirect
   spend. `model_source` replaces the `cell` token and joins the `routing.resolve` trace event,
   because with the cell gone nothing on the record said what decided a dispatch. The plan-time risk
   floor survives with its reach re-pointed: it makes the `plan` review blocking and turns the
@@ -523,12 +536,12 @@ lever is trigger frequency (gating), never a weak reviewer.
   rather than merely dropped from the schema, `config.mjs` grows `unset` so the migration can take
   the key off disk, and `review.triggers.risk_surface.waive_routing_floor` keeps its name with its
   meaning re-pointed at exactly those two effects. Breaking, no alias: a config still carrying
-  `stakes` meets the migration on its next command. Ships in v3.7.12, the last release on the 3.x
-  line.
+  `stakes` meets the migration on its next command. Ships in v3.7.12; v3.7.13 is the latest release
+  on the 3.x line.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage
-  notice, README lead line crediting GSD, NOTICE/CREDITS + lineage note.
+  notice, a README section crediting GSD, NOTICE/CREDITS + lineage note.
 - **SETTLED:** display/brand name = **Cadence**; skill prefix `/cad-*` (collision-free). npm `cadence`
   is taken → the scoped name is **`@crenshawdev/cadence`** if/when an npm package ships. Uber Cadence /
   Cadence Design Systems overlap is an accepted brand footnote for a personal-brand OSS tool.
@@ -539,15 +552,17 @@ lever is trigger frequency (gating), never a weak reviewer.
 ### Git model — "commit on your branch, guard protected, never decide how you publish"
 GSD's git handling is the part that most fights John's rules; Cadence rebuilds it:
 - KEEP atomic conventional commits during execution (GSD's one good git part).
-- CUT: auto-branching, `branching_strategy` presets, phase/milestone/quick branch templates, the
-  ship→PR funnel, the complete-milestone branch-merge matrix.
+- CUT: `branching_strategy` presets, phase/quick branch templates, the ship→PR funnel, the
+  complete-milestone branch-merge matrix. Kept as shipped: one per-milestone integration branch,
+  auto-created or offered (`git.integration_branch`, `git.auto_branch`).
 - **Protected-branch guard:** if HEAD ∈ protected branches, STOP before committing and ask
   (branch first? / proceed here?). Encodes "never auto-commit on main" as a rail, not a mandate.
 - **`/cad-land`** (replaces ship): report git state, ask the publish mechanism with NO preselected
-  default (direct push / open MR/PR [detect GitLab vs GitHub] / tag / leave local), execute exactly that.
+  default (direct push / open MR/PR [detect GitLab, GitHub, or Forgejo/Gitea via `tea`] / tag / leave local), execute exactly that.
 - Risk-surface commits trip the review subsystem `risk_surface` trigger before landing.
 - Config: `git { protected_branches, on_protected: ask|refuse|allow, integration_branch,
-  auto_branch, base_branch, create_tag, on_land_cleanup, auto_close }`. No templates, no
+  auto_branch, base_branch, create_tag, on_land_cleanup, issue_check, forge_provider, forge_repo,
+  forge_host, auto_close }`. No templates, no
   strategy presets, no PR body sections. (An `auto_push` switch was cut 2026-07-16 for
   contradicting the then-absolute no-push rail; a *sanctioned* push later returned as the
   opt-in `auto_close` + git-publish seam — see the reversal subsection below and §7.)
@@ -621,7 +636,7 @@ contradicting the then-absolute "never push" rail; `auto_close` then reintroduce
 *sanctioned* push, gated behind an explicit opt-in and routed through the guarded
 git-publish seam, not a free-standing config flag.
 
-## 7. Final Cadence config.json (~110 GSD keys → 78 leaves)
+## 7. Final Cadence config.json (~110 GSD keys → 94 schema keys)
 
 The shipped default IS the spec: `cadence-core/templates/config.json`,
 validated against `cadence-core/config.schema.json` (the source of truth for
@@ -631,14 +646,14 @@ keys, types, enums, defaults). A second copy here only ever drifted - the
 `search.*`, `git.auto_push`); they were pruned rather than wired.
 
 
-**Config decisions:** model routing → minimal (3 profiles + auto); search APIs → kept optional
-(off by default); granularity → kept; response_language/i18n → **cut (English v1)**. Everything in
+**Config decisions:** model routing → per-role `roles.<role>.{model,effort}` keys; search APIs →
+removed; granularity → kept; response_language/i18n → **cut (English v1)**. Everything in
 §3's DELETE buckets (model-ID routing, multi-runtime, multi-team, cut-feature toggles, state/guard
 cruft, local-server review hosts) is gone.
 
-**Canonical shape + validation:** the block above is illustrative; the source of truth for keys,
+**Canonical shape + validation:** the source of truth for keys,
 types, enums, and defaults is `cadence-core/config.schema.json`, enforced by the `bin/config.mjs`
-seam (`validate | check | set | get | keys`). `cad-config` writes only through it.
+seam (`validate | check | set | unset | get | keys`). `cad-config` writes only through it.
 `review.reviewers[]` is the live
 reviewer selector (`review.backend` was removed as dead); `review.mode` is `single|panel|adjudicated`.
 
