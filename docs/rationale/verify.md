@@ -49,7 +49,7 @@ an environmental cause the bar did not predict.
 ## walk - why UAT.md is read once at the top of pass 1
 
 `uat status` returns `status`, `counts`, `result` and `first_pending` alone - no
-item list, no `expected` string - and on a resumed session nothing has put the
+item list, and only the first pending item's `expected` - and on a resumed session nothing has put the
 item bodies in context at all. So the read has no substitute, and placing it
 once, before the chain starts, is what leaves the "no UAT.md re-reads between
 items" rule governing pass 2 unchanged.

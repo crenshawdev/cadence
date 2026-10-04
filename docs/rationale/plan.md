@@ -30,8 +30,8 @@ the number would only be choosing to be told later.
 which is what makes the schema's own default - and the plan-time risk floor that
 raises the `plan` gate over it - reach a fire site rather than only the
 seam. A `config.mjs get` of a gate is not a source for one either way: unset, it
-answers `null` and names `route.mjs resolve` as where the gate is
-resolved. Adding the gate to the batch would create a second, staler answer to a
+answers the schema default (`advisory` for `plan`) with no warning, and knows
+nothing about the floor. Adding the gate to the batch would create a second, staler answer to a
 question the bundle already answers.
 
 ## parse - why memory.backend rides this batch
@@ -41,9 +41,9 @@ present here, with no extra Bash round-trip.
 
 ## spawn_planner - why the resolve command is spelled out at the site
 
-It is four lines, and finding them in `references/seam-spawn-agent.md` costs a
+It is three lines, and finding them in `references/seam-spawn-agent.md` costs a
 grep with a window wide enough to be the tell that the caller is guessing -
-measured at ~9 KB read to recover a 4-line command.
+measured at ~9 KB read to recover a 3-line command.
 
 `seam-spawn-agent.md` stays the source for what the resolve RETURNS (the retry
 rungs, the per-role pin, the `{ok:false}` arm). The workflow carries only the
@@ -93,8 +93,8 @@ to do about a size. A soft report HERE reproduces exactly the failure this check
 exists against: the planner is told, continues, and the count goes red inside an
 executor's commit with no plan naming the file that would re-pin it.
 
-Not hypothetical. This project's own record (`.planning/_archive-v3.7.1`)
-carries two `undeclared-files` refusals that were committed rather than obeyed.
+Not hypothetical. This project's own v3.7.1 planning record, no longer on disk,
+carried two `undeclared-files` refusals that were committed rather than obeyed.
 
 ## count_planned / count_committed - why the pair, and why advisory (D-05)
 

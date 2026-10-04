@@ -29,20 +29,21 @@ and the blue line is the loop closing.
 
 ## 2. Every decision point, and where each branch lands
 
-Fig. 1 shows four gates because four is what fits. There are fifteen. Some are
-yours to answer, some the system answers from evidence; none of them silently
+Fig. 1 shows four gates because four is what fits. The table lists fifteen, and
+there are more, such as the ask before `/cad-context` buys an analyzer pass. Some
+are yours to answer, some the system answers from evidence; none of them silently
 pick the convenient branch.
 
 | Where | The decision | What each branch does |
 |---|---|---|
 | `/cad-context` | How big is this phase? | Asked once, as one structured question. **Right-sized**, one plan. **Big**, `/cad-plan` splits it into PLAN-1, PLAN-2 in the same phase. **Too big**, the split is captured in the same exchange and the deferred slice is recorded under `Deferred`, for you to add later with `/cad-phase`. |
 | `/cad-context` | Did the analyzer come back? | A failed or timed-out assumptions analyzer falls back to a plain conversational pass, and says so out loud. There is no silent degradation. |
-| `/cad-plan` | What did the planner return? | `PLANNING COMPLETE`, on to the check. `PHASE TOO BIG`, a consult is offered, then you pick: restructure the roadmap with `/cad-phase` and re-plan, or plan the full scope anyway with one more dispatch. Nothing returned, plans on disk win, otherwise it stops. |
+| `/cad-plan` | What did the planner return? | `PLANNING COMPLETE`, on to the check. `PHASE TOO BIG`, a consult is offered when one is configured, then you pick: split into PLAN-1, PLAN-2 inside this phase (recommended), split into phases with `/cad-phase add`, or plan the full scope anyway with one more dispatch. Nothing returned, plans on disk win, otherwise it stops. |
 | `/cad-plan` | Does the plan survive `plan_check`? | Opt-in (`workflow.plan_check`, off by default - the `plan` review trigger is the standing second opinion; `--skip-check` bypasses). **Passed**, continue. **Warnings only**, fold the worthwhile ones in and continue; warnings never buy a re-check. **Any blocker**, exactly one revision: a *fresh* planner at `--attempt 2`, then one re-check. Still blocked, and it goes to you. There is no third round. |
 | `/cad-plan` | The `plan` review trigger | Fires once the plan is written. **advisory**, report and carry on. **blocking**, a FAIL halts. **adjudicated**, a numbered survivor list where **NONE is the default**. It never re-enters the checker loop; this is the second opinion, not another iteration. |
 | `/cad-execute` | Parallel or sequential? | Parallel only when *all* of these hold: parallelization enabled, enough plans, no plan consuming another's output, declared `files:` lists that provably do not overlap, worktrees on, and a worktree base that reports itself parallel-safe. Any overlap, any undeclared file, any seam returning not-ok: sequential. Unproven never parallelizes. |
 | `/cad-execute` | What did the executor return? | `PLAN COMPLETE`, collect the report. **Checkpoint**, route it, then dispatch a fresh continuation. `PLAN PARTIAL`, hashes confirmed against the git log, then you choose: continue from task *k*, or stop and let the rest become open items. **Silence**, inspect the log and ask. A plan is never re-run on top of its own partial commits. |
-| `/cad-execute` | What kind of checkpoint? | **Structural**, a consult is offered, then you approve, adjust, or stop the phase - it fires when a task's Verify cannot be met, a locked decision is contradicted, or a fix needs a file outside the plan's lease. **Human-verify, decision, blocked**: relayed to you verbatim. Every continuation is a new executor. A risky diff is not a checkpoint: `risk_surface` fires once per plan on the committed range. |
+| `/cad-execute` | What kind of checkpoint? | **Structural**, a consult is offered when one is configured, then you approve, adjust, or stop the phase - it fires when a task's Verify cannot be met, a locked decision is contradicted, or a fix needs a file outside the plan's lease. **Human-verify, decision, blocked**: relayed to you verbatim. Every continuation is a new executor. A risky diff is not a checkpoint: `risk_surface` fires once per plan on the committed range. |
 | `/cad-execute` | The goal check | Deliberately *not* a gate. It runs inline, every claim carrying a `file:line` or command output, and any gap it finds becomes an open item in the phase SUMMARY rather than a fix loop. |
 | `/cad-verify` | Run the deep pass? | Yes on `--deep`, or on the first UAT session for the phase when routing says `verify: on`. `workflow.verifier: false` is the off switch, and an off state is stated in one line rather than skipped quietly. A failed deep pass never blocks the human walk; it is an accelerator, not a gate. |
 | `/cad-verify` | Did this item pass? | Inferred from your own words: pass, skipped, blocked or fail, with severity inferred too (crash reads as blocker, "wrong" as major, "a bit slow" as minor). You are never shown pass/fail buttons and never asked to rate severity. |
@@ -67,7 +68,7 @@ Publishing is not part of the per-phase loop. When the last phase in a milestone
 passes its walk, the traceability audit runs before anything is tagged, and the
 publish mechanism is always asked rather than assumed.
 
-![The milestone exit: cad-milestone runs cad-audit, which stops everything on FAIL; cad-land then forks publishing into four options with no default preselected.](figures/milestone-land.svg)
+![The milestone exit: cad-milestone runs cad-audit, which stops everything on FAIL; cad-land halts while a deferred finding is still queued, then forks publishing into four options with no preselected default.](figures/milestone-land.svg)
 
 *One gate stands between finished phases and a published branch, and what comes
 after it asks how you want to publish rather than choosing for you.*
@@ -83,13 +84,13 @@ dispatching a role harder means dispatching a different file.
 
 | Rung | Where it sits |
 |---|---|
-| `low` | plan checks on a solo project |
+| `low` | where `cad-plan-checker` starts by default |
 | `medium` | the cheap end of review and verify |
 | `high` | where most spine work sits |
-| `xhigh` | critical work, and most retries |
-| `max` | a failed attempt on critical work |
+| `xhigh` | set by `roles.<role>.effort`, or reached by an escalated retry |
+| `max` | the top rung, where an escalated retry holds |
 
-![Escalation: a plan check starts at the medium rung, which dispatches the cad-plan-checker-medium file; on failure attempt two climbs to the high rung, which is a different file, cad-plan-checker-high.](figures/effort-ladder.svg)
+![Escalation: a plan check starts at the low rung, which dispatches the cad-plan-checker file; with model.escalate_on_failure turned on, attempt two after a failure climbs to the medium rung, which is a different file, cad-plan-checker-medium.](figures/effort-ladder.svg)
 
 *Escalation is opt-in: `model.escalate_on_failure` is `false` by default,
 because a retry is usually a narrower job than the pass that failed it. Turned
@@ -141,9 +142,9 @@ defined in one place, and every review in the system is a call to it.
 ![The fire(trigger) pipeline: resolve the gate, build the payload, resolve the reviewer set, run every reviewer in one message, combine the findings, then apply the gate's consequence.](figures/review-pipeline.svg)
 
 *Every reviewer, the local fresh-context subagent and each cross-model
-provider, returns the same finding shape. The adjudicator merges them without knowing
-which voice produced which finding; that identical schema is the bias control,
-not a convenience.*
+provider, returns the same finding shape. The adjudicator rules on every finding
+per raising voice before it merges them, and the record keeps which voice raised
+which, so each reviewer's hit rate stays countable.*
 
 ### Which trigger fires where, and what it can do to you
 
@@ -151,7 +152,7 @@ not a convenience.*
 |---|---|---|---|
 | `plan` | `/cad-plan`, and `/cad-plan-review` on demand | the phase plan, before any code | advisory |
 | `diff` | `/cad-execute` | the diff for one completed plan | off |
-| `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the matching diff - once per plan on the committed range in `/cad-execute`, once per run elsewhere | blocking |
+| `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the matching diff - once per plan on the committed range in `/cad-execute`, once per task in `/cad-task`, once per staged fix in `/cad-debug` and `/cad-verify` | blocking |
 | `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off |
 
 > **Two risk detectors, reading different things**
@@ -161,9 +162,10 @@ not a convenience.*
 > same anchored constructs the commit-time gate below fires on - and does
 > exactly two things on a match: an advisory `plan` review becomes blocking,
 > and the deep-verify pass turns on. It moves no role's model and no role's
-> rung. **At plan completion**, the model reads
-> the plan's whole committed range and fires `risk_surface` on what it sees -
-> once, never per commit mid-plan - deciding whether the blocking review runs.
+> rung. **At plan completion**, `planning.mjs risk-check run` scans
+> the plan's whole committed range, and a match or an `inconclusive` answer fires
+> `risk_surface` - once, never per commit mid-plan - deciding whether the
+> blocking review runs.
 > One decides how hard a plan is reviewed, the other decides whether a review
 > runs at all, and neither substitutes for the other. A dispatch-time path
 > match that judged a file by its NAME - one token put a whole phase on its top
@@ -184,8 +186,10 @@ not a convenience.*
 ## 7. Consult is not review
 
 One more agent-shaped thing, deliberately kept outside the loop. A consult is
-decision support at a dead end, never delegation. It is always gated on your
-approval, triggered by an observable counter rather than by a model deciding it
+decision support at a dead end, never delegation. It is offered only when
+`review.consult.enabled` is true and a provider has a model at
+`review.consult.tier`, so the default config makes no offer. It is always gated
+on your approval, triggered by an observable counter rather than by a model deciding it
 feels stuck: three failed attempts in `/cad-debug`, a structural stop in
 `/cad-execute`, a plan that came back too big. One consult per dead end.
 
@@ -194,5 +198,5 @@ There is no local-subagent consult. A second Claude is not a second opinion.
 ---
 
 Drawn from Cadence's own `METHOD.md`, `INTERNALS.md`, `cadence-core/config.schema.json`
-and the workflow definitions. Gates and rungs shown as configured by default;
-every one of them is a config key.
+and the workflow definitions. Some figures draw a gate or rung that is off by
+default, and several gates have no config key of their own.

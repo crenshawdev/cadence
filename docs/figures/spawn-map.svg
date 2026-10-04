@@ -55,7 +55,6 @@
     </marker>
   </defs>
   <rect class="bg" x="0" y="0" width="1000" height="510" />
-ers.">
 
         <rect class="box-cmd" x="40" y="40" width="210" height="44" rx="6" />
         <text class="lbl-sm" x="56" y="67" text-anchor="start">/cad-context</text>
@@ -85,7 +84,7 @@ ers.">
         <text class="lbl-mut" x="412" y="54" text-anchor="middle">one per phase</text>
 
         <line class="edge" x1="250" y1="140" x2="574" y2="130" marker-end="url(#ah)" />
-        <text class="lbl-mut" x="412" y="127" text-anchor="middle">one, plus at most one fresh revision</text>
+        <text class="lbl-mut" x="412" y="127" text-anchor="middle">one, re-dispatched once per size stop or revision</text>
 
         <line class="edge" x1="250" y1="140" x2="574" y2="190" marker-end="url(#ah)" />
         <text class="lbl-mut" x="470" y="207" text-anchor="middle">one, plus at most one re-check</text>
@@ -94,12 +93,13 @@ ers.">
         <text class="lbl-mut" x="412" y="252" text-anchor="middle">one per PLAN, batched in worktrees when safe</text>
 
         <line class="edge" x1="250" y1="360" x2="574" y2="360" marker-end="url(#ah)" />
-        <text class="lbl-mut" x="412" y="352" text-anchor="middle">one, first UAT session only</text>
+        <text class="lbl-mut" x="412" y="338" text-anchor="middle">one; --deep runs it on any UAT session,</text>
+        <text class="lbl-mut" x="412" y="352" text-anchor="middle">automatic only on the first, at verify: on</text>
 
         <line class="edge" x1="250" y1="436" x2="574" y2="436" marker-end="url(#ah)" />
         <text class="lbl-mut" x="412" y="412" text-anchor="middle">one subagent plus every cross-model</text>
         <text class="lbl-mut" x="412" y="426" text-anchor="middle">voice, all in one message</text>
 
-        <text class="lbl-mut" x="40" y="482" text-anchor="start">fire(trigger) is called by /cad-plan, /cad-execute, /cad-verify, /cad-land and /cad-task. It is a seam, not a command</text>
+        <text class="lbl-mut" x="40" y="482" text-anchor="start">fire(trigger) is called by /cad-plan, /cad-plan-review, /cad-execute, /cad-debug, /cad-task and /cad-verify. It is a seam, not a command</text>
         <text class="lbl-mut" x="40" y="500" text-anchor="start">No agent spawns another agent. An executor never calls its own reviewer; second opinions arrive only through a trigger.</text>
 </svg>

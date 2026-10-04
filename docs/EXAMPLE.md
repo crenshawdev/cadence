@@ -34,7 +34,7 @@ nothing was silently dropped, bumps the version, prunes the completed phases
 from the live roadmap, and evolves the docs for the next cycle. It also reads
 the run record back at you: `/cad-suggest` turns the milestone's own trace into
 evidence-backed retune suggestions, a gate whose fires kept coming back empty, a
-role that never needed its escalation, each named with its config key, the value
+role whose retries kept climbing the ladder, each named with its config key, the value
 in force, the direction to move it and the target value where the record can
 price one, and it ends by offering to route the tweaks you accept to
 `/cad-config` rather than writing any of them itself. To publish, `/cad-land`

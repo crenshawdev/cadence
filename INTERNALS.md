@@ -18,7 +18,7 @@ Read the code: `cadence-core/bin/route.mjs` (the resolver), `cadence-core/config
 
 ## The push guard: the parser I deleted, and the tokenizer I wrote
 
-Cadence guards git with a PreToolUse hook. Every `git push` the model tries to run through Bash stops and asks you first. No exceptions, which is the entire point of it.
+Cadence guards git with a PreToolUse hook. Every `git push` the model runs through Bash with `git` as the command word stops and asks you first. That is the entire point of it, and the wrapped shapes it cannot see are written down further on.
 
 Then I wanted an opt-in autonomous close, `auto_close`, that could open a PR and merge it without me sitting there, and on GitHub that needs exactly one push to publish the branch. The obvious move is to teach the guard to recognize a safe push and let that one through. I built it. A predicate called `isPlainPush` that parsed the git command and waved a plain push past the gate.
 
@@ -44,7 +44,7 @@ Cross-model review can call OpenAI or Gemini for a second opinion. The naive way
 
 Cadence does it the other way around. After you set a key, it asks the provider what that key can actually reach, OpenAI's models endpoint, Gemini's ListModels. That list is the truth. It intersects the list with a small shipped hint table that tags known ids with a tier and whether they support high effort. Known models get classified for you, unknown ones fall through to "you place this one," and nothing errors. A model the provider shipped yesterday, that Cadence has never heard of, still shows up in the list and you can pick it.
 
-Assignment runs through the same ask-user seam as everything else: let it auto-map by best fit and accept, or drill in and place each one by hand. It re-runs on demand, and a model-not-found failure during a review offers to re-detect and reassign right there. If the network is down or the key is bad, it falls back to shipped defaults or manual entry, it never blocks setup on a call that might fail. The hint table is the one artifact that can age, and its aging is soft, an unknown id is a manual placement, never a crash.
+Assignment runs through the same ask-user seam as everything else: let it auto-map by best fit and accept, or drill in and place each one by hand. It re-runs on demand with `/cad-config --review redetect`, and a provider call that fails during a review drops that reviewer with one visible line, falling back to `claude-subagent` if the set empties. No model ids ship as defaults. A missing key marks that provider unconfigured and setup moves on, a network or provider failure offers retry, manual entry or skip, and it never blocks setup on a call that might fail. The hint table is the one artifact that can age, and its aging is soft, an unknown id is a manual placement, never a crash.
 
 Read the code: `cadence-core/bin/review-provider.mjs`, `cadence-core/references/model-hints.json` (the soft hint table), `cadence-core/references/provider-api.md` (the wire shapes). Design record: `DESIGN.md`, "Provider model selection + live detection."
 

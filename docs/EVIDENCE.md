@@ -26,7 +26,7 @@ worth writing down.
 - **eager (turn one)** — `skills/<name>/SKILL.md` plus every path on an
   `@${CLAUDE_PLUGIN_ROOT}/...` line at the start of a line in that SKILL.md.
   These are the bytes the host injects **before the command's first turn**, so
-  they ride every remaining turn of the run. This is what `README.md` means by
+  they ride every remaining turn of the run. This is what `docs/COST.md` means by
   "load in turn one".
 - **reachable** — the eager set plus every `cadence-core/{references,templates,workflows}/<file>`
   the text of the eager files names and that exists on disk. **One hop**, never

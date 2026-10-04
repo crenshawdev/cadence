@@ -4,8 +4,8 @@ Cadence's methodology descends from [GSD ("Get Shit Done")](https://github.com/o
 
 **Provenance.** Figures below are counted from GSD at commit `d010ea1` (2026-07-10)
 and Cadence at the same date, except the Agents and Skills rows, whose
-Cadence cells were re-counted on 2026-08-19 so they agree with the counts
-`README.md` publishes. They are reproducible: clone both trees and re-run the
+Cadence cells were re-counted (Skills on 2026-08-19, Agents on 2026-10-04) so
+they agree with the counts `README.md` publishes. They are reproducible: clone both trees and re-run the
 counts (`find`/`wc` over `agents/`, `skills/`, `gsd-core/workflows/`, `*.md`).
 
 ## The distance
@@ -13,7 +13,7 @@ counts (`find`/`wc` over `agents/`, `skills/`, `gsd-core/workflows/`, `*.md`).
 | Surface | GSD (d010ea1) | Cadence (2026-07-10) | Retained |
 |---|---|---|---|
 | **Documentary mass (words)** | **1,113,812** | **33,621** | **~3%** |
-| Agents | 34 | 19 rung files (6 roles) | 56% |
+| Agents | 34 | 30 rung files (6 roles) | 88% |
 | Skills | 71 | 34 (28 user-invocable, 6 contract) | 48% |
 | Workflows | 114 | 16 | 14% |
 | References | 86 | 7 | 8% |
@@ -34,7 +34,7 @@ The shared skeleton, and the reason Cadence is recognizably GSD's descendant:
 
 ## What carried over, slimmed to the bone
 
-Cadence's 6 agent roles, materialized as 19 rung files, descend from ~6 GSD
+Cadence's 6 agent roles, materialized as 30 rung files, descend from ~6 GSD
 ancestors, but every one was slimmed ~80-90% and reconceived, not copied. The GSD
 originals were enormous:
 
@@ -43,7 +43,7 @@ originals were enormous:
 | `gsd-planner` | 47K | `cad-planner` (a fraction of the size) |
 | `gsd-verifier` | 48K | `cad-verifier` |
 | `gsd-executor` | 43K | `cad-executor` |
-| `gsd-plan-checker` | 44K | `cad-plan-checker` (+ its `-high` rung file) |
+| `gsd-plan-checker` | 44K | `cad-plan-checker` (+ its four other rung files) |
 | `gsd-assumptions-analyzer` | 4.5K | `cad-assumptions-analyzer` |
 | `gsd-code-reviewer` | 16.5K | `cad-reviewer` (now one voice in a configurable review subsystem) |
 

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 215" width="1160" height="215" role="img" aria-label="The milestone exit: cad-milestone runs cad-audit, which stops everything on FAIL; cad-land then forks publishing into four options with no default preselected.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 215" width="1160" height="215" role="img" aria-label="The milestone exit: cad-milestone runs cad-audit, which stops everything on FAIL; cad-land halts while a deferred finding is still queued, then forks publishing into four options with no preselected default.">
 
   <style>
     svg        { color: #15181E; background: #FFFFFF;
@@ -55,11 +55,10 @@
     </marker>
   </defs>
   <rect class="bg" x="0" y="0" width="1160" height="215" />
-ted.">
 
         <rect class="box-cmd" x="40" y="40" width="180" height="56" rx="6" />
         <text class="lbl" x="130" y="66" text-anchor="middle">/cad-milestone</text>
-        <text class="lbl-mut" x="130" y="83" text-anchor="middle">tag · prune · evolve</text>
+        <text class="lbl-mut" x="130" y="83" text-anchor="middle">bump · prune · evolve</text>
 
         <line class="edge" x1="220" y1="68" x2="244" y2="68" marker-end="url(#ah)" />
 
@@ -100,7 +99,7 @@ ted.">
         <text class="lbl-mut" x="330" y="193" text-anchor="middle">the milestone. No override by default.</text>
 
         <line class="edge-alt" x1="750" y1="110" x2="750" y2="144" marker-end="url(#ah-alt)" />
-        <text class="lbl-alt" x="750" y="164" text-anchor="middle">FAIL or survivors</text>
-        <text class="lbl-mut" x="750" y="179" text-anchor="middle">blocking halts the land;</text>
-        <text class="lbl-mut" x="750" y="193" text-anchor="middle">adjudicated hands you the list</text>
+        <text class="lbl-alt" x="750" y="164" text-anchor="middle">HALT</text>
+        <text class="lbl-mut" x="750" y="179" text-anchor="middle">a deferred finding still queued;</text>
+        <text class="lbl-mut" x="750" y="193" text-anchor="middle">auto_close: an unfixed blocker/high</text>
 </svg>

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 300" width="1060" height="300" role="img" aria-label="Escalation: a plan check on a shipped project starts at the medium rung, which dispatches the cad-plan-checker-medium file; on failure attempt two climbs to the high rung, which is a different file, cad-plan-checker-high.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 300" width="1060" height="300" role="img" aria-label="Escalation: a plan check starts at the low rung, which dispatches the cad-plan-checker file; with model.escalate_on_failure turned on, attempt two after a failure climbs to the medium rung, which is a different file, cad-plan-checker-medium.">
 
   <style>
     svg        { color: #15181E; background: #FFFFFF;
@@ -55,7 +55,6 @@
     </marker>
   </defs>
   <rect class="bg" x="0" y="0" width="1060" height="300" />
-igh.">
 
         <text class="lbl-mut" x="110" y="18" text-anchor="start">rung_order, the effort ladder</text>
 
@@ -63,30 +62,30 @@ igh.">
         <text class="lbl-sm" x="195" y="52" text-anchor="middle">max</text>
         <rect class="box-soft" x="110" y="76"  width="170" height="34" rx="4" />
         <text class="lbl-sm" x="195" y="98" text-anchor="middle">xhigh</text>
-        <rect class="box" x="110" y="122" width="170" height="34" rx="4" />
+        <rect class="box-soft" x="110" y="122" width="170" height="34" rx="4" />
         <text class="lbl-sm" x="195" y="144" text-anchor="middle">high</text>
         <rect class="box" x="110" y="168" width="170" height="34" rx="4" />
         <text class="lbl-sm" x="195" y="190" text-anchor="middle">medium</text>
-        <rect class="box-soft" x="110" y="214" width="170" height="34" rx="4" />
+        <rect class="box" x="110" y="214" width="170" height="34" rx="4" />
         <text class="lbl-sm" x="195" y="236" text-anchor="middle">low</text>
 
-        <text class="lbl-mut" x="40" y="174" text-anchor="start">attempt 1</text>
-        <line class="edge" x1="40" y1="185" x2="104" y2="185" marker-end="url(#ah)" />
+        <text class="lbl-mut" x="40" y="220" text-anchor="start">attempt 1</text>
+        <line class="edge" x1="40" y1="231" x2="104" y2="231" marker-end="url(#ah)" />
 
+        <line class="edge-thin" x1="280" y1="231" x2="464" y2="231" />
         <line class="edge-thin" x1="280" y1="185" x2="464" y2="185" />
-        <line class="edge-thin" x1="280" y1="139" x2="464" y2="139" />
 
-        <text class="lbl-mut" x="470" y="90" text-anchor="start">example: cad-plan-checker on a shipped project</text>
-        <text class="lbl-mut" x="470" y="112" text-anchor="start">a different rung is a different agent file</text>
+        <text class="lbl-mut" x="470" y="136" text-anchor="start">example: cad-plan-checker at its default start, low</text>
+        <text class="lbl-mut" x="470" y="158" text-anchor="start">a different rung is a different agent file</text>
 
-        <rect class="box" x="470" y="122" width="300" height="34" rx="4" />
-        <text class="lbl-sm" x="486" y="144" text-anchor="start">cad-plan-checker-high</text>
         <rect class="box" x="470" y="168" width="300" height="34" rx="4" />
         <text class="lbl-sm" x="486" y="190" text-anchor="start">cad-plan-checker-medium</text>
+        <rect class="box" x="470" y="214" width="300" height="34" rx="4" />
+        <text class="lbl-sm" x="486" y="236" text-anchor="start">cad-plan-checker</text>
 
-        <polyline class="edge-loop" points="770,185 810,185 810,139 776,139" marker-end="url(#ah-loop)" />
-        <text class="lbl-acc" x="820" y="156" text-anchor="start">FAIL, so --attempt 2</text>
-        <text class="lbl-mut" x="820" y="172" text-anchor="start">resolves the retry rung</text>
+        <polyline class="edge-loop" points="770,231 810,231 810,185 776,185" marker-end="url(#ah-loop)" />
+        <text class="lbl-acc" x="820" y="202" text-anchor="start">FAIL, so --attempt 2</text>
+        <text class="lbl-mut" x="820" y="218" text-anchor="start">climbs one rung, escalation on</text>
 
-        <text class="lbl-mut" x="40" y="272" text-anchor="start">target = max(cell.retry, the rung this attempt actually ran at). A retry never thinks less than the attempt that just failed</text>
+        <text class="lbl-mut" x="40" y="272" text-anchor="start">A retry climbs one rung up rung_order only when model.escalate_on_failure is true, and holds at the top rung. Off by default, it holds its rung</text>
 </svg>
