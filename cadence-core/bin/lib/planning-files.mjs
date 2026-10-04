@@ -1,13 +1,18 @@
 // @ts-check
 // planning-files.mjs - format-pinned parsers/writers for the .planning file
-// set. This is the ONLY place a .planning grammar lives (cursor, ROADMAP
-// phases, REQUIREMENTS traceability, UAT items). A format change is one
-// function here + its tests; workflow prose never describes file mechanics.
+// set. This is where the .planning grammars live (cursor, ROADMAP phases,
+// REQUIREMENTS traceability, UAT items), with one exception: the cursor's
+// PARSER is in lib/state-cursor.mjs, because the Cadence module parses STATE.md
+// in-process and a file that imports `node:fs` cannot load there (phase 3,
+// D-05). This file re-exports it and is still where everything imports it from.
+// A format change is one function here (or there) + its tests; workflow prose
+// never describes file mechanics.
 // Zero-dep: node: builtins only. Consumed by bin/planning.mjs and its tests.
 'use strict';
 
 import { writeFileSync, renameSync, lstatSync } from 'node:fs';
 import { isRefusedSpelling } from './lease-grammar.mjs';
+import { parseCursor } from './state-cursor.mjs';
 
 // The cursor's only permitted Status values (references/conventions.md).
 export const CURSOR_STATUSES = [
@@ -19,23 +24,9 @@ export const CURSOR_STATUSES = [
 // STATE.md - the 4-line cursor.
 // ---------------------------------------------------------------------------
 
-/**
- * Parse the canonical 4-line cursor. Returns null when any line is missing
- * or malformed - callers degrade, never guess.
- * @param {string} text
- */
-export function parseCursor(text) {
-  const m = (re) => { const r = text.match(re); return r ? r : null; };
-  const phase = m(/^Phase:\s*(\d+(?:\.\d+)?)\s+of\s+(\d+)\s+\((.+)\)\s*$/m);
-  const status = m(/^Status:\s*(.+?)\s*$/m);
-  const next = m(/^Next:\s*(.+?)\s*$/m);
-  const updated = m(/^Updated:\s*(\d{4}-\d{2}-\d{2})\s*$/m);
-  if (!phase || !status || !next || !updated) return null;
-  return {
-    phase: Number(phase[1]), total: Number(phase[2]), name: phase[3],
-    status: status[1], next: next[1], updated: updated[1],
-  };
-}
+// `parseCursor` lives in lib/state-cursor.mjs (see the header) and is
+// re-exported here, so every caller keeps importing it from this file.
+export { parseCursor };
 
 /**
  * Render the canonical cursor - exactly four lines under `# State`.
@@ -192,6 +183,11 @@ export function classifyPhaseList(text) {
 // REQUIREMENTS.md - the Traceability table.
 // ---------------------------------------------------------------------------
 
+// The first three cells of a Traceability row. Shared with
+// `shiftPendingReqRows` so the renumber pass and this reader agree on what a
+// row is.
+const REQ_ROW = /^\|([^|]*)\|([^|]*)\|([^|]*)\|/;
+
 /**
  * Parse traceability rows: [{id, phase, status}]. `phase` is null when the
  * cell names no phase (a dropped requirement - audit's concern, not an
@@ -236,7 +232,7 @@ export function parseRequirements(text) {
   if (start < 0) return [];
   const rows = [];
   for (let i = start + 1; i < end; i++) {
-    const cells = lines[i].match(/^\|([^|]*)\|([^|]*)\|([^|]*)\|/);
+    const cells = lines[i].match(REQ_ROW);
     if (!cells) continue;
     const id = cells[1].replace(/\*/g, '').trim();
     if (!id || id === 'Requirement' || /^[-:\s]+$/.test(id)) continue;
@@ -2689,6 +2685,73 @@ export function shiftPhaseTokens(text, from, delta) {
     .replace(/\bPhase (\d+)\b(?!\.\d)/g, (m, k) => Number(k) >= from ? `Phase ${shift(Number(k))}` : m)
     .replace(/\bphases\/(\d+)\//g, (m, k) => Number(k) >= from ? `phases/${shift(Number(k))}/` : m);
   return { text: out, count };
+}
+
+/**
+ * `renumber insert`'s REQUIREMENTS.md edit. Shifts phase tokens up by one, but
+ * only on `## Traceability` rows whose Status is exactly `Pending`. Every other
+ * line is history and comes back byte for byte (GH-259).
+ *
+ * Section first, then status. Going by status alone would still rewrite
+ * `## Deferred` bullets, which have no status cell, and `## Shipped` rows whose
+ * third cell isn't a status word or whose summary has pipes in it.
+ *
+ * Splits on `\n` and nothing else, so a CRLF line keeps its `\r`.
+ *
+ * `changes` is every line that differs, built in the same walk so what the
+ * confirmation gate shows is what gets written. `line` is 1-indexed like
+ * `findProsePhaseRefs`; `before`/`after` drop one trailing `\r` so CRLF and LF
+ * files report the same text.
+ *
+ * `movedComplete` holds the IDs of Complete rows that cite a phase this insert
+ * moves (a token `shiftPhaseTokens` would shift, so decimals and phases below
+ * `at` don't count). Those rows stay as written, same as every other frozen
+ * line: rewriting them would rewrite where the work shipped, and leaving them
+ * means they may now point at a different phase. Neither answer is safe to
+ * pick for the user, so the caller names them and the user decides (D-02).
+ *
+ * `refs` is insert's `in_text_refs` for this file, `[{line, text}]` like
+ * `findProsePhaseRefs`. Frozen lines are left out: `|` lines in `## Shipped`,
+ * and `|` lines in `## Traceability` that aren't Pending rows. Pointing the
+ * model at those would have it hand-edit the history this pass protects
+ * (D-09). Any other line is reported if it has lowercase prose or a capital
+ * token the old whole-file shift would have moved, since nothing moves those
+ * now and `findProsePhaseRefs` only sees lowercase. Pending rows already
+ * shifted, so only their prose counts.
+ * @param {string} text @param {number} at
+ * @returns {{text: string, changes: Array<{line: number, before: string, after: string}>, movedComplete: string[], refs: Array<{line: number, text: string}>}}
+ */
+export function shiftPendingReqRows(text, at) {
+  const lines = text.split('\n');
+  const changes = [];
+  /** @type {string[]} */
+  const movedComplete = [];
+  const refs = [];
+  const trace = sectionSpan(lines, '## Traceability');
+  const shipped = sectionSpan(lines, '## Shipped');
+  // A missing section spans (-1, -1), so nothing is inside it.
+  const inside = (/** @type {{start: number, end: number}} */ s, /** @type {number} */ i) => i > s.start && i < s.end;
+  const prose = new Set(findProsePhaseRefs(text, at).map((r) => r.line));
+  const bare = (/** @type {string} */ l) => l.replace(/\r$/, '');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const cells = inside(trace, i) ? line.match(REQ_ROW) : null;
+    const status = cells ? cells[3].trim() : null;
+    const moves = shiftPhaseTokens(line, at, 1);
+    if (status === 'Pending') {
+      if (prose.has(i + 1)) refs.push({ line: i + 1, text: line.trim() });
+      if (moves.text === line) continue;
+      changes.push({ line: i + 1, before: bare(line), after: bare(moves.text) });
+      lines[i] = moves.text;
+      continue;
+    }
+    if (status === 'Complete' && moves.count > 0) {
+      movedComplete.push(cells[1].replace(/\*/g, '').trim());
+    }
+    const frozen = line.startsWith('|') && (inside(trace, i) || inside(shipped, i));
+    if (!frozen && (prose.has(i + 1) || moves.count > 0)) refs.push({ line: i + 1, text: line.trim() });
+  }
+  return { text: lines.join('\n'), changes, movedComplete, refs };
 }
 
 /**

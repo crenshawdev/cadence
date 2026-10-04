@@ -285,7 +285,7 @@ rather than scattered across twenty workflows.
 |---|---|---|---|
 | `plan` | `/cad-plan` | after PLAN.md is written | advisory |
 | `diff` | `/cad-execute` | at plan completion | off |
-| `risk_surface` | execute, debug, task, verify | on detection match, once per plan on the committed range | blocking |
+| `risk_surface` | execute, debug, task, verify | on detection match, once per plan or task on the committed range (execute, task), once per staged fix (debug, verify) | blocking |
 | `phase_diff` | `/cad-execute` parallel path | after worktree batches merge | off |
 
 Two of the four run out of the box: the plan review, on every plan, and
@@ -457,8 +457,11 @@ with its reason so a mis-filter is visible rather than silent.
 
 ### Nothing reviews itself
 
-The executor detects the risk surface, stops, and hands it up: "never review
-yourself, never skip the gate." Fresh context is the point, because a reviewer
+The executor never stops for a risk surface and never runs its own review: it
+writes to the surfaces the project answered, and once it returns the
+orchestrator runs `planning.mjs risk-check run` over the plan's committed range
+and fires `risk_surface` once on a match or an inconclusive answer. Fresh
+context is the point, because a reviewer
 that helped write the code has already accepted its assumptions.
 
 ### Consult is not review

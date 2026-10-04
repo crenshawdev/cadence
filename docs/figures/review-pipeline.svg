@@ -55,7 +55,6 @@
     </marker>
   </defs>
   <rect class="bg" x="0" y="0" width="1160" height="215" />
-nce.">
 
         <rect class="box" x="20" y="70" width="160" height="56" rx="6" />
         <text class="lbl-sm" x="100" y="94" text-anchor="middle">1 · the gate</text>
@@ -97,7 +96,8 @@ nce.">
         <text class="lbl-mut" x="844" y="54" text-anchor="middle">(an adjudicated gate outranks the mode)</text>
 
         <line class="edge" x1="1030" y1="126" x2="1030" y2="140" marker-end="url(#ah)" />
-        <text class="lbl-mut" x="1150" y="160" text-anchor="end">advisory · report and continue</text>
-        <text class="lbl-mut" x="1150" y="176" text-anchor="end">blocking · a surviving blocker or high FAILs</text>
-        <text class="lbl-mut" x="1150" y="192" text-anchor="end">adjudicated · you pick, default NONE</text>
+        <text class="lbl-mut" x="1150" y="154" text-anchor="end">advisory · report and continue</text>
+        <text class="lbl-mut" x="1150" y="168" text-anchor="end">deferred · findings stop the land, not the run</text>
+        <text class="lbl-mut" x="1150" y="182" text-anchor="end">blocking · a surviving blocker or high FAILs</text>
+        <text class="lbl-mut" x="1150" y="196" text-anchor="end">adjudicated · you pick, default NONE</text>
 </svg>

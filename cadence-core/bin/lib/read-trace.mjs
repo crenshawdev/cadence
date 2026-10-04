@@ -34,15 +34,10 @@ import {
   statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
-// The ONE statement of which agent FILE carries which rung of which role. The
-// join below needs the reverse direction - a recorded `agent_type` stem back to
-// the role a dispatch event names - and deriving it from a `-<rung>` suffix
-// regex would be a SECOND statement of the mapping: `cad-assumptions-analyzer`
-// is that role's `xhigh` rung while `cad-assumptions-analyzer-high` is its
-// lower one, so no suffix convention is true of all 30 files, and a rung added
-// to the table but not to the regex would leave those reads silently unjoined.
-// Pure and fs-free, so the hook path this file also serves stays a plain parse.
-import { RUNG_FILES } from './rung-agent.mjs';
+// The join below needs a recorded `agent_type` stem back to the role a dispatch
+// event names. Those reverse lookups live beside RUNG_FILES in lib/rung-agent.mjs,
+// which is fs-free, so the Cadence module can load them too.
+import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
 
 export const READS_FILE = 'reads.jsonl';
 
@@ -139,9 +134,9 @@ export function readsClaimPath(planningRoot) {
  * The rotation marker's `event` value, the one line a fresh record starts with.
  *
  * The same spelling as `lib/trace.mjs`'s `ROTATION` and a SECOND statement of
- * it, deliberately. `bin/read-trace.mjs` loads this module on every Read, Grep,
- * Glob, Bash and NotebookRead call under the 5-second timeout at
- * `hooks/hooks.json:15-25`, and importing 104 KB of trace source to parse for
+ * it, deliberately. `bin/read-trace.mjs` loads this module on every tool call
+ * the PostToolUse block in `hooks/hooks.json` matches, under that block's
+ * 5-second timeout, and importing 104 KB of trace source to parse for
  * one string is a real per-tool-call cost - the same reason this module's header
  * already gives for being a sidecar rather than a family of `trace.jsonl`.
  */
@@ -464,7 +459,8 @@ export function recordFromHook(input, now, opts) {
  * two milliseconds a rotation actually takes - 1.72, 1.76, 1.76, 2.36 and
  * 3.90 ms measured 2026-08-28 on this repository's real 7,852,530-byte record
  * (D-06) - the ceiling is only ever paid where the winner died holding its
- * claim, and it is 5% of the 5,000 ms this hook gets at `hooks/hooks.json:15-25`.
+ * claim, and it is 5% of the 5,000 ms this hook gets from the PostToolUse block
+ * in `hooks/hooks.json`.
  */
 const READS_ROTATE_WAIT_MS = 250;
 
@@ -654,9 +650,10 @@ function sealOf(record) {
  * `lib/trace.mjs:626-631` refuses it and for a stronger one this record has:
  * `bin/read-trace.mjs` may emit nothing on any stream and exits 0
  * unconditionally, so a lock refusal would have no path to be reported on. The
- * concurrency is cross-PROCESS and ordinary rather than theoretical -
- * `hooks/hooks.json:17` matches five tools and one OS process runs per tool
- * call, so parallel subagents are concurrent `appendRead` processes (D-07).
+ * concurrency is cross-PROCESS and ordinary rather than theoretical - the
+ * PostToolUse matcher in `hooks/hooks.json` names several tools and one OS
+ * process runs per tool call, so parallel subagents are concurrent
+ * `appendRead` processes (D-07).
  *
  * THE CLAIM IS `linkSync`, NOT `renameSync`. A rename REPLACES its destination
  * silently, so a writer still holding a stale stat would destroy a generation
@@ -1209,90 +1206,9 @@ export function summarizeReads(records) {
  */
 export const HOST_AGENT_TYPES = ['fork', 'general-purpose'];
 
-/** Every rung file's stem, mapped back to the role whose rung it is. */
-const ROLE_OF_STEM = new Map(
-  Object.keys(RUNG_FILES).flatMap(
-    (role) => Object.values(RUNG_FILES[role]).map((stem) => [stem, role]),
-  ),
-);
-
-/**
- * The same 30 stems, mapped back to the RUNG each one is filed under. Built off
- * the SAME import in the same shape as `ROLE_OF_STEM`, because the two answers
- * are two columns of one table: a rung added to `RUNG_FILES` reaches both maps
- * or neither, and neither can go stale while the other does not.
- */
-const RUNG_OF_STEM = new Map(
-  Object.keys(RUNG_FILES).flatMap(
-    (role) => Object.entries(RUNG_FILES[role]).map(([rung, stem]) => [stem, rung]),
-  ),
-);
-
-/**
- * The agent-file stem inside a recorded `agent` value - the host writes
- * `<plugin>:<agent-file-stem>` and a bare stem is accepted as itself.
- *
- * ONE copy of the split, called by both readers below. A second copy is how the
- * role answer and the rung answer start disagreeing about which file a spelling
- * names, and `helper-census.test.mjs` matches shared-contract BODY idioms
- * precisely so a paste-back under another name is caught rather than noticed.
- * @param {any} agent
- * @returns {string|null} null for anything that is not a non-empty string.
- */
-function stemOfAgent(agent) {
-  if (typeof agent !== 'string' || !agent) return null;
-  return agent.includes(':') ? agent.slice(agent.indexOf(':') + 1) : agent;
-}
-
-/**
- * The role a recorded `agent` value names, or null when it names none.
- *
- * The corpus carries `cadence:cad-executor`, `cadence:cad-planner`,
- * `cadence:cad-verifier-medium` and `cadence:cad-assumptions-analyzer-high` -
- * the host's `<plugin>:<agent-file-stem>` spelling - while a dispatch event
- * carries the bare ROLE. Null for anything else, including the host types and
- * `coordinator`, so the caller decides what each absence means rather than
- * having one of them silently become a role.
- *
- * EXPORTED for `lib/subagent-trace.mjs`, whose `SubagentStop` self-filter asks
- * the same question of the same spelling. It imports this rather than holding a
- * copy: two readers of one record deriving the role independently is how they
- * start disagreeing about which bracket closed.
- * @param {any} agent
- * @returns {string|null}
- */
-export function roleOfAgent(agent) {
-  const stem = stemOfAgent(agent);
-  if (stem === null) return null;
-  return ROLE_OF_STEM.get(stem) || null;
-}
-
-/**
- * The RUNG a recorded `agent` value names, or null when it names none.
- *
- * The sibling of `roleOfAgent` over the same spelling and the same table:
- * `cadence:cad-verifier-medium` is the `cad-verifier` role at its `medium`
- * rung, so the two functions answer the two halves of one lookup. Null for
- * anything `RUNG_FILES` does not file - the host's own types, `coordinator`, a
- * non-string - so the caller decides what the absence means.
- *
- * NEVER derived from a `-<rung>` filename suffix, for the reason this file's
- * `RUNG_FILES` import already states: `cad-assumptions-analyzer` is that role's
- * `xhigh` rung while `cad-assumptions-analyzer-high` is its lower one, so no
- * suffix convention is true of all 30 files and a suffix rule would report the
- * wrong rung for the unsuffixed file of every role.
- *
- * EXPORTED for `lib/subagent-trace.mjs`, whose `SubagentStop` close records the
- * rung a worker was DISPATCHED under beside the effort its own transcript says
- * it RAN at - the pair the run record exists to let a reader compare.
- * @param {any} agent
- * @returns {string|null}
- */
-export function rungOfAgent(agent) {
-  const stem = stemOfAgent(agent);
-  if (stem === null) return null;
-  return RUNG_OF_STEM.get(stem) || null;
-}
+// Re-exported so lib/subagent-trace.mjs and the tests keep importing them from
+// here.
+export { roleOfAgent, rungOfAgent };
 
 /**
  * Join `reads.jsonl` records to the `trace.jsonl` dispatch brackets that caused

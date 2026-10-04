@@ -18,7 +18,7 @@ import { fail, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   atomicWrite, cutPhaseDetail, findProsePhaseRefs, parseCursor, parseRequirements,
-  parseRoadmapPhases, renderCursor, shiftPhaseTokens,
+  parseRoadmapPhases, renderCursor, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
 import { requireInt } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
@@ -28,6 +28,9 @@ import { emit } from '../lib/seam-io.mjs';
 // phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
 // reported for the model to repair with judgment. --dry-run computes the full
 // operation plan and touches nothing - it is what the confirmation gate shows.
+// On insert, REQUIREMENTS.md tokens shift only on Pending `## Traceability`
+// rows; every other REQUIREMENTS line is copied through byte-identical. Its
+// REQUIREMENTS refs skip frozen rows and add capital tokens left unshifted.
 // ---------------------------------------------------------------------------
 function gitMv(from, to) {
   try { execFileSync('git', ['mv', from, to], { stdio: 'pipe' }); return 'git'; }
@@ -296,6 +299,12 @@ function cmdRenumber(dir, sub, opts) {
   const reqFile = join(dir, 'REQUIREMENTS.md');
   const reqText = read(reqFile);
   const orphanedReqs = [];
+  /** @type {Array<{line: number, before: string, after: string}>} */
+  let reqRowChanges = [];
+  /** @type {string[]} */
+  let movedComplete = [];
+  /** @type {Array<{line: number, text: string}> | null} */
+  let reqRefs = null;
   let newReqText = null;
   if (reqText !== null) {
     let t = reqText;
@@ -309,7 +318,13 @@ function cmdRenumber(dir, sub, opts) {
         return line;
       }).join('\n');
     }
-    newReqText = shiftPhaseTokens(t, shiftFrom, delta).text;
+    // Insert leaves shipped history alone (GH-259): only Pending Traceability
+    // rows move. Remove keeps its whole-file shift for now.
+    if (sub === 'insert') {
+      ({ text: newReqText, changes: reqRowChanges, movedComplete, refs: reqRefs } = shiftPendingReqRows(t, at));
+    } else {
+      newReqText = shiftPhaseTokens(t, shiftFrom, delta).text;
+    }
   }
 
   const stateFile = join(dir, 'STATE.md');
@@ -338,13 +353,27 @@ function cmdRenumber(dir, sub, opts) {
       warn = `cursor points at removed phase ${at}; number left as-is - re-point it (cursor set)`;
     }
   }
+  // Complete rows citing a moved phase were left as written (D-02). Say so by
+  // ID, after any cursor warning and without touching its text: `warn` stays
+  // one string, since callers match it as one. No promise that status or audit
+  // will flag these later - neither does when the old number now lands on
+  // another completed phase.
+  if (movedComplete.length) {
+    const completeWarn = `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this ` +
+      'insert moves and were left unchanged, so each may now name a different phase than the one ' +
+      'it shipped in - re-point a row by hand only if it belongs to the open milestone';
+    warn = warn ? `${warn}; ${completeWarn}` : completeWarn;
+  }
 
   // Prose refs the shift leaves alone - the model repairs these with judgment.
+  // Insert's REQUIREMENTS refs come from the pass above, which leaves out the
+  // frozen rows (D-09).
   const inTextRefs = [];
   for (const f of ['ROADMAP.md', 'REQUIREMENTS.md', 'STATE.md', 'PROJECT.md']) {
     const t = read(join(dir, f));
     if (t === null) continue;
-    for (const ref of findProsePhaseRefs(t, shiftFrom)) inTextRefs.push({ file: f, ...ref });
+    const refs = f === 'REQUIREMENTS.md' && reqRefs ? reqRefs : findProsePhaseRefs(t, shiftFrom);
+    for (const ref of refs) inTextRefs.push({ file: f, ...ref });
   }
 
   // Decimal phases are never shifted (see shiftPhaseTokens) - report them so
@@ -355,12 +384,19 @@ function cmdRenumber(dir, sub, opts) {
     ...dirMoves.map(([f, t]) => ({ git_mv: [`phases/${f}`, `phases/${t}`] })),
     ...(sub === 'remove' && existingDir(at) ? [{ rm: `phases/${at}` }] : []),
     { edit: 'ROADMAP.md', changes: roadmapShift.count + (sub === 'remove' ? 1 : 0) },
-    ...(newReqText !== null ? [{ edit: 'REQUIREMENTS.md', changes: orphanedReqs.length ? orphanedReqs.length : undefined }] : []),
+    // Insert counts changed lines (req_row_changes below), remove its orphans.
+    ...(newReqText !== null ? [{
+      edit: 'REQUIREMENTS.md',
+      changes: sub === 'insert' ? reqRowChanges.length : (orphanedReqs.length ? orphanedReqs.length : undefined),
+    }] : []),
     ...(newCursor ? [{ edit: 'STATE.md', changes: 1 }] : []),
   ];
 
+  // One list for the dry-run and the apply, so the apply can be checked
+  // against what the gate showed.
   const result = {
     ops,
+    ...(reqRowChanges.length ? { req_row_changes: reqRowChanges } : {}),
     ...(inTextRefs.length ? { in_text_refs: inTextRefs } : {}),
     ...(orphanedReqs.length ? { orphaned_reqs: orphanedReqs } : {}),
     ...(decimalPhases.length ? { decimal_phases: decimalPhases } : {}),

@@ -22,6 +22,21 @@
 // shapes that consequently go silent are written down in references/git-publish.md
 // rail 3 and in the CHANGELOG entry that removed the parser, as the accepted
 // cost rather than as an oversight.
+//
+// IT ALSO HOLDS THE SCOPE RULE: the `.planning/` walk that decides whether a
+// directory sits inside a Cadence project. git-guard applies it, read-trace and
+// subagent-trace share it, and the Cadence module (hooks/cadence-mod.mjs)
+// imports it. It lives here because git-guard.test.mjs pins git-guard's import
+// set, and this is the one dependency-free file in that set.
+//
+// The module runs with no Node globals and may import no `node:` module, so
+// nothing in this file may either. That shapes the walk two ways:
+// - The existence probe is injected. The walk is one generator that yields
+//   `[dir, name]` and takes back a boolean; `planningRoot` drives it with a
+//   sync probe (the hooks' `existsSync`), `planningRootAsync` with an async one
+//   (the module's `$.fs.exists`). One loop, two drivers.
+// - The parent step is `parentDir`, a port of node's own `dirname`, so the
+//   hooks and the module step through the same directories.
 'use strict';
 
 /** The git global options that take a SEPARATE argument. A fixed list, not a
@@ -82,4 +97,95 @@ export function gitVerbs(text) {
     }
   }
   return verbs;
+}
+
+/**
+ * The parent of an absolute directory, as node's `path.dirname` answers it. A
+ * `/`-leading path steps the way `path.posix.dirname` does; anything else (a
+ * drive path, a UNC path) steps the way `path.win32.dirname` does, with both
+ * separators. A root answers itself, which is what ends the walk.
+ *
+ * @param {string} dir
+ * @returns {string}
+ */
+export function parentDir(dir) {
+  const posix = dir.startsWith('/');
+  const isSep = posix ? (c) => c === '/' : (c) => c === '/' || c === '\\';
+  let root = 0; // how much of the front is root, which a step never cuts into
+  if (posix) {
+    root = 1;
+  } else if (/^[A-Za-z]:/.test(dir)) {
+    root = isSep(dir[2]) ? 3 : 2;
+  } else if (isSep(dir[0])) {
+    // UNC: `\\server\share\` is the root, and a bare `\\server\share` is too.
+    const unc = /^[\\/]{2}[^\\/]+[\\/]+[^\\/]+/.exec(dir);
+    if (unc && unc[0].length === dir.length) return dir;
+    root = unc ? unc[0].length + 1 : 1;
+  }
+
+  // Skip the trailing separators and the last name, then cut at the separator
+  // before it. Only that one separator goes: `/a//b` answers `/a/`, as node does.
+  let end = -1;
+  let named = false;
+  for (let i = dir.length - 1; i >= root; i--) {
+    if (!isSep(dir[i])) named = true;
+    else if (named) { end = i; break; }
+  }
+  if (end === -1) return root ? dir.slice(0, root) : '.';
+  if (posix && end === 1) return '//'; // posix.dirname's own quirk for `//a`
+  return dir.slice(0, end);
+}
+
+/**
+ * The walk itself. From `start` upward: a directory holding `.planning` is the
+ * project root; a directory holding `.git` first is a repo that is not Cadence's;
+ * reaching the filesystem root is nothing. Yields each `[dir, name]` it needs
+ * probed and expects the answer back through `next(boolean)`.
+ *
+ * @param {string} start
+ * @returns {Generator<[string, string], string | null, boolean>}
+ */
+function* planningWalk(start) {
+  let dir = start;
+  for (;;) {
+    if (yield [dir, '.planning']) return dir;
+    if (yield [dir, '.git']) return null; // repo root, not Cadence
+    const parent = parentDir(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * The Cadence project root above `start`, or null. Sync driver for the hooks.
+ *
+ * @param {string} start
+ * @param {(dir: string, name: string) => boolean} has does `dir/name` exist
+ * @returns {string | null}
+ */
+export function planningRoot(start, has) {
+  const walk = planningWalk(start);
+  let step = walk.next();
+  while (!step.done) {
+    const [dir, name] = step.value;
+    step = walk.next(has(dir, name));
+  }
+  return step.value;
+}
+
+/**
+ * The same answer through an async probe. Driver for the module.
+ *
+ * @param {string} start
+ * @param {(dir: string, name: string) => Promise<boolean> | boolean} has
+ * @returns {Promise<string | null>}
+ */
+export async function planningRootAsync(start, has) {
+  const walk = planningWalk(start);
+  let step = walk.next();
+  while (!step.done) {
+    const [dir, name] = step.value;
+    step = walk.next(await has(dir, name));
+  }
+  return step.value;
 }

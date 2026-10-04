@@ -71,6 +71,19 @@ const CARRIED = Object.freeze([
 const isCarried = (name) =>
   CARRIED.some(([prefix, ext]) => name.startsWith(prefix) && name.endsWith(ext));
 
+/**
+ * The `unlistable-phase` detail for a source path whose stat failed. It names
+ * the planning-relative `label` and never says the path exists, because a
+ * failed stat cannot know that.
+ */
+const unprovable = (label, n) =>
+  `${label} could not be inspected (a directory on that path may not be searchable), so this`
+  + ` carry cannot prove what phase ${n} has ruled`;
+
+/** The remedy for a source path that could not be stat'ed. Search (x) is the bit that's missing. */
+const UNSEARCHABLE_HINT = 'make every directory on that path readable and searchable (chmod u+rx),'
+  + ' then re-run BEFORE milestone-prune, which deletes the phase directory - nothing was copied';
+
 function cmdRiskCarry(dir, opts) {
   const parsed = requirePhaseArg(opts.phase);
   if (!parsed.ok) {
@@ -116,8 +129,19 @@ function cmdRiskCarry(dir, opts) {
   // it finds there in under THIS phase's name - and `existsSync` cannot tell
   // the difference because it follows too.
   const src = join(dir, 'phases', n);
+  let phaseStat;
   for (const [path, label] of [[join(dir, 'phases'), 'phases/'], [src, `phases/${n}`]]) {
-    const stat = lstatSync(path, { throwIfNoEntry: false });
+    let stat;
+    try { stat = lstatSync(path, { throwIfNoEntry: false }); }
+    catch {
+      // `throwIfNoEntry: false` already turns ENOENT into `undefined`, so a
+      // throw here is something else, most often a `phases/` without its search
+      // bit (GH-202). That is never absence. A `phases/` that cannot be searched
+      // cannot prove `phases/<N>` is missing, and a false "nothing to carry"
+      // lets `milestone-prune` delete rulings this carry never saw. Same rule
+      // `readQueue` in core.mjs applies to its homes.
+      return fail('unlistable-phase', unprovable(label, n), UNSEARCHABLE_HINT);
+    }
     if (stat && !stat.isDirectory()) {
       return fail('carry-src-unusable',
         `${label} exists and is not a real directory`
@@ -126,13 +150,16 @@ function cmdRiskCarry(dir, opts) {
         'clear that path and re-run BEFORE milestone-prune - nothing was copied, and this carry'
         + ' reads rulings from the phase directory itself or from nowhere');
     }
+    phaseStat = stat; // the last pass is `src`
   }
   // An absent phase directory is an ANSWER, not a refusal - `milestone-prune`
   // already tolerates one as `dirs.missing`, and a close that ran this carry
   // twice would otherwise fail the second time on a phase it already handled.
+  // ONLY ENOENT is absence: any other stat failure refused in the loop above,
+  // and this reuses that stat rather than asking again.
   // `lstatSync` and not `existsSync`, so a DANGLING link at `phases/<N>` is the
   // refusal above rather than a quiet "nothing to carry".
-  if (!lstatSync(src, { throwIfNoEntry: false })) {
+  if (!phaseStat) {
     return ok({ phase: n, carried: [], copied: 0, skipped: 0 });
   }
   let names;
@@ -172,7 +199,14 @@ function cmdRiskCarry(dir, opts) {
     // before the prune deletes the directory, so passing over what could not
     // be proved a ruling destroys exactly the rulings it passed over.
     const from = join(src, name);
-    const srcStat = lstatSync(from, { throwIfNoEntry: false });
+    let srcStat;
+    try { srcStat = lstatSync(from, { throwIfNoEntry: false }); }
+    catch {
+      // A `phases/<N>` that lists but can't be searched (0o444, GH-202). This
+      // refuses the whole carry too, never skips the entry, for the reason
+      // above: the prune runs next and deletes whatever could not be read.
+      return fail('unlistable-phase', unprovable(`phases/${n}/${name}`, n), UNSEARCHABLE_HINT);
+    }
     if (!srcStat || !srcStat.isFile()) {
       return fail('carry-src-unusable',
         `phases/${n}/${name} is not a regular file`

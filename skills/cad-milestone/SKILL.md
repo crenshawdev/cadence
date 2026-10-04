@@ -1,6 +1,6 @@
 ---
 name: cad-milestone
-description: "Cut a milestone - audit that nothing was dropped, tag when the project tags, prune completed phases from the roadmap, evolve PROJECT and refresh REQUIREMENTS"
+description: "Cut a milestone - audit that nothing was dropped, bump a release's version, prune completed phases from the roadmap, evolve PROJECT and refresh REQUIREMENTS"
 argument-hint: "[version | next-milestone name]"
 allowed-tools:
   - Read

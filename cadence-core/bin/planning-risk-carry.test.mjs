@@ -16,7 +16,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync,
+  chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync,
   symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -296,6 +296,112 @@ test('risk-carry: a symlinked phases/<N> is refused before it is listed', () => 
   assert.equal(r.reason, 'carry-src-unusable');
   assert.match(r.detail, /would follow out of the planning root/);
   assert.deepEqual(carried(dir, 3), []);
+});
+
+// --- a phase directory the carry cannot read ---------------------------------
+
+/** Root reads through mode bits, so no mode-bit case below can fail for it. */
+const asRoot = typeof process.getuid === 'function' && process.getuid() === 0
+  ? 'root bypasses mode bits'
+  : false;
+
+test('risk-carry: an unlistable phases/<N> prints exactly the refusal it always has', {
+  skip: asRoot,
+}, () => {
+  // A PIN taken against the code before GH-202's fix, compared as raw stdout so
+  // key order is held too. The fix adds a refusal beside this one; this one is
+  // what `/cad-milestone` already relays, and it may not move.
+  for (const mode of [0o000, 0o311]) {
+    const dir = carryTree(3, { [review('plan-1')]: '{"findings":[]}\n' });
+    chmodSync(join(dir, 'phases', '3'), mode);
+    try {
+      let stdout;
+      let code = 0;
+      try {
+        stdout = execFileSync('node', [PLANNING, '--dir', dir, 'risk-carry', '--phase', '3'],
+          { encoding: 'utf8' });
+      } catch (e) { stdout = e.stdout; code = e.status; }
+      assert.equal(stdout,
+        '{"ok":false,"reason":"unlistable-phase","detail":"phases/3/ exists under ' + dir
+        + ' and could not be listed, so this carry cannot prove what phase 3 has ruled",'
+        + '"hint":"make that directory readable and re-run BEFORE milestone-prune, which deletes'
+        + ' it - nothing was copied"}\n', `mode ${mode.toString(8)}`);
+      assert.equal(code, 1);
+      assert.equal(existsSync(join(dir, 'risk-carry')), false);
+    } finally {
+      chmodSync(join(dir, 'phases', '3'), 0o755);
+    }
+  }
+});
+
+test('risk-carry: a phases/<N> that is not there is still an answer', () => {
+  // ENOENT, and ONLY ENOENT, is absence (D-01) - the boundary the refusals
+  // around it must not swallow. `milestone-prune` takes a missing phase as
+  // `dirs.missing`, and a second carry over a handled phase must not fail.
+  const dir = carryTree(4, { [review('plan-1')]: '{"findings":[]}\n' });
+  const r = riskCarry(dir, ['--phase', '3']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.carried, []);
+  assert.equal(r.copied, 0);
+  assert.equal(existsSync(join(dir, 'risk-carry')), false);
+});
+
+test('risk-carry: a phases/ that cannot be searched refuses, never reads as absence', {
+  skip: asRoot,
+}, () => {
+  // GH-202. Without the search bit on `phases/`, the stat of `phases/<N>` fails
+  // with EACCES, and that proves nothing about whether the phase is there. It
+  // used to reach the dispatcher as `internal`; read as absence, it would be a
+  // false "nothing to carry" ahead of a prune that deletes the rulings.
+  // 0o644 isolates the missing search bit; 0o000 is the other mode measured.
+  for (const mode of [0o644, 0o000]) {
+    const dir = carryTree(3, { [review('plan-1')]: '{"findings":[]}\n' });
+    chmodSync(join(dir, 'phases'), mode);
+    try {
+      const spellings = mode === 0o644 ? ['3', '03'] : ['3'];
+      for (const phase of spellings) {
+        const r = riskCarry(dir, ['--phase', phase]);
+        const at = `mode ${mode.toString(8)}, --phase ${phase}`;
+        assert.equal(r.ok, false, `${at}: ${JSON.stringify(r)}`);
+        assert.equal(r.reason, 'unlistable-phase', at);
+        assert.match(r.hint, /searchable/, at);
+        assert.equal(r._exit, 1, at);
+        assert.ok(r.detail.includes(`phases/${phase}`), `${at}: ${r.detail}`);
+        assert.doesNotMatch(r.detail, /exists/, at);
+        assert.doesNotMatch(JSON.stringify(r), /EACCES/, at);
+        assert.equal(existsSync(join(dir, 'risk-carry')), false, at);
+      }
+    } finally {
+      chmodSync(join(dir, 'phases'), 0o755);
+    }
+  }
+});
+
+test('risk-carry: a carried entry that cannot be stat\'ed refuses the whole carry', {
+  skip: asRoot,
+}, () => {
+  // A `phases/<N>` at 0o444 lists, so the carry knows the rulings are there,
+  // and then cannot stat a single one of them. Same refusal as the arm above,
+  // and before any write, so nothing half-carried is left behind.
+  const dir = carryTree(3, {
+    [review('plan-1')]: '{"findings":[]}\n',
+    [record('plan-1')]: recordBody('plan-1', 1, [entry()]),
+  });
+  chmodSync(join(dir, 'phases', '3'), 0o444);
+  try {
+    const r = riskCarry(dir, ['--phase', '3']);
+    assert.equal(r.ok, false, JSON.stringify(r));
+    assert.equal(r.reason, 'unlistable-phase');
+    assert.match(r.hint, /searchable/);
+    assert.equal(r._exit, 1);
+    assert.match(r.detail,
+      /phases\/3\/(ADJUDICATION|REVIEW)-risk_surface-plan-1\.(json|md)/);
+    assert.doesNotMatch(JSON.stringify(r), /EACCES/);
+    assert.equal(existsSync(join(dir, 'risk-carry')), false,
+      'a refused carry minted its destination anyway');
+  } finally {
+    chmodSync(join(dir, 'phases', '3'), 0o755);
+  }
 });
 
 test('risk-carry: a symlinked phases/ is refused too', () => {

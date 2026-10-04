@@ -32,6 +32,8 @@ Cadence is a Claude Code plugin. Add the marketplace, then install:
 
 Update with `/plugin update cadence@cadence`, remove with `/plugin uninstall cadence@cadence`. Requires Claude Code with plugin support, plus `node`, `git` and one forge CLI - `tea`, `gh` or `glab` - on your PATH, because Cadence resolves a forge and an issue tracker when it sets a project up. Those are host prerequisites: the scripts inside are zero-dependency, and there is no npm install, ever.
 
+On Claude Code 2.1.284 and later, when managed settings set `allowManagedPermissionRulesOnly`, a plugin from a marketplace no longer pre-approves its own tools through `allowed-tools` unless managed settings vouch for its source, so Cadence's commands ask before using their tools on those machines. Nothing changes anywhere else.
+
 ## The loop
 
 Cadence runs as slash commands namespaced `/cadence:cad-*` (for example `/cadence:cad-new-project`). They are written below without the `cadence:` prefix for brevity. A project moves through five steps, each its own command:
@@ -51,6 +53,16 @@ Step 1 also takes a shortcut when the questioning already happened somewhere els
 [![The Cadence phase loop: new-project feeds context, plan, execute and verify in sequence; a decision gate sits under each command, and verify loops back to context for the next phase or exits to milestone.](./docs/figures/phase-loop.svg)](./docs/WORKFLOW.md)
 
 That is five commands out of twenty-eight. `/cad-help` prints the full reference inside a session, and [`cadence-core/references/COMMANDS.md`](./cadence-core/references/COMMANDS.md) is that same reference in the repo, readable before you install anything.
+
+## The panel
+
+On a Claude Code version with mods support (2.1.287 or later), Cadence also loads a small module that shows where the loop stands without you running a command. On an older version the module never loads and everything else works exactly as before.
+
+A one-line band sits above the prompt in any repo with a `.planning/` directory: the phase you are on, its status, any Cadence agent running right now with its rung, and the next command. It redraws when an agent starts or returns and after every tool call, so a `cursor set` shows up as soon as it lands. In a repo without `.planning/` there is no band.
+
+`/cad-panel`, or `p` on the band, opens the full view: the current phase's plans and which are done, each running agent with its role, rung and model, the UAT counts, the open captures, the phase's token spend (the same figure `/cad-report` prints, with its exclusions named), and the next command. When the cursor and the files disagree about which phase is open, the panel says so instead of picking one.
+
+The module only reads. It never runs a Cadence command, never writes `STATE.md`, and never takes over the git rail: git-guard stays the command hook it has always been. It does two quiet jobs besides drawing. It keeps Cadence's 30 agent descriptions and 6 internal contract skills out of every session's prompt, about 8,000 characters Claude would otherwise reread on every request in every project, while Cadence's commands still dispatch those agents by name. And it prices the subagent dispatches whose return carried no token count, from the host's own usage for that agent, so `/cad-report` has fewer gaps.
 
 ## The controls
 
@@ -77,9 +89,9 @@ Two of those rows, at work:
 
 *With verification resolved, the audit traces Verbatim's active requirement to its phase, its plan and a checked verification box, and reports the criteria coverage behind it.*
 
-`/cad-report` renders one phase's record as a narrative, and `/cad-suggest` reads the same record back the other way: it turns what the dispatches actually cost and what the gates actually caught into retune suggestions, each carrying its config key, the value in force, a direction and a target, and it offers to route the ones you accept to `/cad-config`. The controls generate the evidence, and that is what the evidence is for.
+`/cad-report` renders one phase's record as a narrative, and `/cad-suggest` reads the same record back the other way: it turns what the dispatches actually cost and what the gates actually caught into retune suggestions, each carrying its config key, the value in force and a direction, plus a target where the record can price one, and it offers to route the ones you accept to `/cad-config`. The controls generate the evidence, and that is what the evidence is for.
 
-The reviewers are adversarial by construction, because you cannot personally re-derive everything the model wrote and neither can I. The default reviewer is a fresh-context Claude subagent and needs no API key. An OpenAI, Gemini, or DeepSeek key runs the identical job as a direct API call, which lets you put up to four independent voices on one plan and have your main session adjudicate against the cited code. Every backend returns the same shape on purpose, because an adjudicator that could tell which finding came from the free reviewer and which from the paid one would start discounting findings for being cheap. The one signal treated as strong is convergence, two reviewers landing on the same defect independently. What survives comes back as a multi-select prompt whose default is none of it, never a queue the model starts working through.
+The reviewers are adversarial by construction, because you cannot personally re-derive everything the model wrote and neither can I. The default reviewer is a fresh-context Claude subagent and needs no API key. An OpenAI, Gemini, or DeepSeek key runs the identical job as a direct API call, which lets you put up to four independent voices on one plan and have your main session adjudicate against the cited code. Every backend returns the same shape on purpose, so each finding is ruled on against the code it cites and never on which reviewer raised it. Each ruling still records its voice, which is what lets you count every reviewer's hit rate. The one signal treated as strong is convergence, two reviewers landing on the same defect independently. What survives comes back as a multi-select prompt whose default is none of it, never a queue the model starts working through.
 
 `/cad-minimalism-review` points the same posture at code that works and should not exist, an abstraction with one implementation, flexibility nothing exercises, config nobody sets, and hands back a ranked delete-list. It applies none of it.
 
@@ -130,14 +142,18 @@ Cadence checks that list against the diff itself, once per plan, on the complete
 
 It used to check the file NAMES a plan declared, at dispatch time, and raise the whole phase on a match. A test file called `ingest_concurrency.rs` was enough to put six roles on their top rung for the rest of the phase, and that detector is gone as of v2.7.0. What the code does decides, what the file is called does not.
 
-A phase whose declared files touch one of those surfaces, read at plan time before any code exists, does exactly two things: the plan review becomes blocking, and the deep verify pass turns on. No role's model moves and no role's rung moves, so what you set is what dispatches. Deep verification has no key of its own - that floor is what turns it on, and `/cad-verify --deep` is the manual switch. [`INTERNALS.md`](./INTERNALS.md) has the mechanism.
+A phase whose declared files touch one of those surfaces, read at plan time before any code exists, does exactly two things: the plan review becomes blocking, and the deep verify pass turns on. No role's model moves and no role's rung moves, so what you set is what dispatches. No key turns deep verification on - that floor does, `/cad-verify --deep` is the manual switch, and `workflow.verifier: false` is the off switch. [`INTERNALS.md`](./INTERNALS.md) has the mechanism.
 
 ## Where it came from
 
 Cadence descends from [GSD](https://github.com/open-gsd/gsd-core), the discuss/plan/execute/verify loop, which is where I first ran into it. GSD gets the hard thing right and then buries it. Seventy-one skills, thirty-four agents, forty-six capabilities underneath those, and one-point-one million words of documentation wrapped around a four-step idea, which is an elephant being a mouse built to government standards. I kept the loop and threw out the standards. Cadence carries about 3% of GSD's documentary mass, measured 2026-07-10 against GSD commit d010ea1. Today it is 28 skills and 6 agent roles across 30 rung files.
 
-Every one of those cuts was made by hand and written down. [`DESIGN.md`](./DESIGN.md) numbers the locked decisions and the reversals, [`INTERNALS.md`](./INTERNALS.md) walks the handful that took more than one try to get right, [`LINEAGE.md`](./LINEAGE.md) publishes the counts and tells you how to reproduce them, and [`MANIFESTO.md`](./MANIFESTO.md) is the why. CI fails the build when the prose drifts from the code, because every config key, script flag, and file path named in these docs has to actually exist.
+Every one of those cuts was made by hand and written down. [`DESIGN.md`](./DESIGN.md) numbers the locked decisions and the reversals, [`INTERNALS.md`](./INTERNALS.md) walks the handful that took more than one try to get right, [`LINEAGE.md`](./LINEAGE.md) publishes the counts and tells you how to reproduce them, and [`MANIFESTO.md`](./MANIFESTO.md) is the why. CI fails the build when the live prose drifts from the code. Of those four only `INTERNALS.md` is linted, and in the docs that are, every config key and script flag named has to actually exist, and so does every plugin-root path and every repo path `INTERNALS.md` cites.
 
 Cadence is a derivative work of GSD by Open GSD, used under the MIT License. The original copyright is retained in [`LICENSE`](./LICENSE) and the lineage is spelled out in [`NOTICE`](./NOTICE.md). Cadence is maintained by John Crenshaw and distributed under the MIT License.
+
+## Baley
+
+[Baley](https://github.com/crenshawdev/baley) is Cadence's successor, a tool for keeping AI coding agents accountable to the person who answers for their work. Its README says it is designed and being built, not ready to use, and nothing has been released. Cadence is still the tool to use today.
 
 <a href='https://ko-fi.com/R5Y823KUXE' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi5.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>

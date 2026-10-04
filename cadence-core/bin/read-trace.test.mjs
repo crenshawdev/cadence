@@ -403,9 +403,9 @@ const READS_LIB = new URL('./lib/read-trace.mjs', import.meta.url).href;
 /**
  * One child PROCESS appending one uniquely named record through the real
  * `appendRead`. A process rather than a promise because that is the concurrency
- * this record actually has: `hooks/hooks.json:17` matches five tools and the
- * host runs one OS process per tool call, so parallel subagents ARE concurrent
- * `appendRead` processes.
+ * this record actually has: the PostToolUse matcher in `hooks/hooks.json`
+ * names several tools and the host runs one OS process per tool call, so
+ * parallel subagents ARE concurrent `appendRead` processes.
  * @param {string} dir @param {string} name
  */
 function readsWriter(dir, name) {

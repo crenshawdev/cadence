@@ -42,7 +42,8 @@ there.
 
 ## locate - why the report FILE decides, over every plan
 
-The spike (`.planning/spikes/execute-replay-blast-radius/SPIKE.md`) dispatched
+The spike (`.planning/spikes/execute-replay-blast-radius/SPIKE.md`, now only in
+git history at bd052ac3) dispatched
 two real executors at already-committed work and measured zero commits and zero
 byte changes. The cost is money and a false run record, not a corrupted tree -
 which is why this is a guard and not a resume path. Both probes had
@@ -78,8 +79,8 @@ are only as attributable as the worktree was clean.
 ## choose_path - why the baseRef fix is offered here rather than in /cad-config
 
 This is the only moment the user is demonstrably affected, and the `/cad-config`
-step that would otherwise set it is gated on `parallelization.enabled` already
-being true. A user who turned parallelization on by editing the config directly
+step that would otherwise set it runs only inside `/cad-config`, when
+`parallelization.use_worktrees` is true. A user who turned parallelization on by editing the config directly
 never reaches that step, and their runs degrade to sequential forever with one
 line of explanation per run.
 
@@ -130,7 +131,7 @@ new risk surface, and the next halt. The range is committed and complete when
 this reads it, so the reviewer judges what the plan actually built instead of a
 half-finished staged index.
 
-## execute_sequential - why the diff trigger defaults off at solo and shipped
+## execute_sequential - why the diff trigger defaults off
 
 An advisory review gates nothing, and the LAST plan of a phase has no next
 dispatch to overlap it with, so it buys a wait for findings that stop nothing.

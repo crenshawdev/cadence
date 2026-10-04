@@ -6,6 +6,60 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-10-04
+
+Cadence can now show you where the loop stands without a command. On a Claude
+Code version with mods support it loads a small module that draws a band above
+the prompt and a pane on demand, and keeps its own agent listing out of every
+session's prompt. On an older version the module never loads and nothing else
+changes.
+
+### Added
+
+- **The band.** One line above the prompt in any repo with `.planning/`: the
+  phase, its status, any Cadence agent running right now with its rung, and the
+  next command. It redraws when an agent starts or returns and after every tool
+  call, and it composes with other mods that pass their neighbour's drawing
+  through.
+- **`/cad-panel`, and `p` on the band.** A pane with the current phase's plans
+  and which are done, each running agent with the role, rung and model it was
+  routed, the UAT counts with bars, the open captures, the phase's token spend
+  as `/cad-report` totals it, and the next command. Cursor drift is named, not
+  hidden.
+- **Host-priced token figures.** A subagent dispatch whose return carried no
+  token count is priced from the host's own usage for that agent, filed under
+  the phase of the close that names it, and a return's own figure always wins.
+- **A `plugin-validate` CI job.** `claude plugin validate --strict` runs on both
+  manifests and fails if the validator stops reporting the module.
+- **Self-verify checks.** Check 25 resolves every `modules` entry the way the
+  host does, and check 26 keeps every Cadence agent and contract-skill
+  description on one line, so the listing filter can always find the entry's
+  end.
+
+### Changed
+
+- **Cadence's agent listing leaves the prompt on hosts with mods.** The 30 rung
+  agents' entries and the six contract skills' entries are filtered out of the
+  listings the model reads, in every session and every repo, about 8,000
+  characters. The agents still dispatch: the module restores the plugin prefix
+  on the bare name `route.mjs` returns.
+- **The `.planning/` walk is defined once** and the three command hooks share
+  it. git-guard otherwise behaves exactly as before; it stays a command hook.
+
+### Fixed
+
+- **`/cad-phase insert` rewrote shipped history.** It now shifts phase
+  references only on Pending `## Traceability` rows, leaves Complete and
+  Deferred rows byte-identical, lists every REQUIREMENTS line it will change at
+  the confirmation gate, and names a Complete row left citing a moved phase.
+- **Risk carry crashed on an unreadable phase directory.** A non-searchable
+  `phases/`, or a phase directory that is readable but not searchable, now
+  refuses as `unlistable-phase` with a hint to make the path readable and
+  searchable, instead of `internal` with a raw `EACCES`.
+- **Stale docs.** Every claim the docs-verify pass found stale in the README,
+  the docs, INTERNALS, METHOD, MANIFESTO, LINEAGE, DESIGN and the figures now
+  says what the code does.
+
 ## [3.7.13] - 2026-09-25
 
 The planning records are out of the repository. Nothing a user installs ever
@@ -4720,6 +4774,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.8.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.0
 [3.7.13]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.13
 [3.7.12]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.12
 [3.7.11]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.11

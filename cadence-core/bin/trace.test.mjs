@@ -22,6 +22,8 @@ import {
   MAX_TRACE_BYTES, ROTATED_TRACE_FILE, ROTATION_CLAIM_FILE, FAMILIES,
   ANCHOR, DISPATCH, TERMINAL, COORDINATOR, WORKER_CACHE, ROTATION,
 } from './lib/trace.mjs';
+import { STEP_WINDOW } from './lib/trace.mjs';
+import { STEP_WINDOW as STEP_WINDOW_DEFINED } from './lib/token-capture.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PLANNING = join(HERE, 'planning.mjs');
@@ -4563,4 +4565,122 @@ test('render: a fact with no bracket to name adds no effort, no rung and no row'
     assert.equal('rung' in r.brackets[0], false, why);
     assert.deepEqual(r.unpaired, [], why);
   }
+});
+
+// --- the step-window fact prices a figureless bracket (phase 3, D-10) -------
+//
+// On a host with mods the Cadence module writes a `STEP_WINDOW` fact when a
+// Cadence subagent stops: the host's own usage for its last `turn.step`. The
+// post-pass gives it to a bracket naming the same `corr` and `agent_id` whose
+// return carried no figure, and to nothing else.
+
+/** The dispatch every step-window fixture opens with. */
+const sDispatch = (extra) => ({
+  phase: 1, family: 'lifecycle', event: DISPATCH, plan: 'cad-reviewer',
+  role: 'cad-reviewer', ts: '2026-10-04T10:00:00.000Z', ...extra,
+});
+/** A close carrying no figure, the advisory reviewer's own shape. */
+const sClose = (extra) => ({
+  phase: 1, family: 'lifecycle', event: 'return', plan: 'cad-reviewer',
+  role: 'cad-reviewer', ts: '2026-10-04T10:02:00.000Z', agent_id: 'a1', ...extra,
+});
+/** A step-window fact, in the shape the module's `trace append` writes. */
+const sFact = (extra) => ({
+  phase: 1, family: 'lifecycle', event: STEP_WINDOW, agent_id: 'a1',
+  ts: '2026-10-04T10:01:59.000Z', tokens: 123, ...extra,
+});
+
+/**
+ * Render one fixture twice, as written and with every step-window line
+ * deleted, and refuse to return unless `roles` is the same across the two
+ * (D-13: a figureless return stays out of the spend, `unrecorded` included).
+ */
+function windowed(rows) {
+  const dir = root();
+  for (const r of rows) appendEvent(dir, r);
+  const r = renderTrace(dir, 1);
+  const bare = root();
+  for (const row of rows) if (row.event !== STEP_WINDOW) appendEvent(bare, row);
+  const without = renderTrace(bare, 1);
+  assert.deepEqual(r.roles, without.roles, 'a step-window fact moved the per-role bill');
+  assert.equal(JSON.stringify(r.roles), JSON.stringify(without.roles));
+  return r;
+}
+
+test('STEP_WINDOW: one definition, a lifecycle name outside TERMINAL', () => {
+  assert.equal(STEP_WINDOW, STEP_WINDOW_DEFINED);
+  assert.equal(TERMINAL.includes(STEP_WINDOW), false);
+  assert.equal(FAMILIES.includes(STEP_WINDOW), false);
+});
+
+test('render: a figureless bracket takes the step-window fact for its corr and id', () => {
+  const r = windowed([sDispatch(), sFact(), sClose()]);
+  assert.equal(r.brackets.length, 1, 'the fact opened a bracket of its own');
+  assert.equal(r.brackets[0].tokens, 123);
+  assert.equal(r.roles['cad-reviewer'].unrecorded, 1, 'the fact funded the dispatch');
+  assert.equal('tokens' in r.roles['cad-reviewer'], false);
+  assert.deepEqual(r.unpaired, []);
+});
+
+test('render: a return carrying its own figure keeps it, whichever line came first', () => {
+  for (const [why, rows] of Object.entries({
+    'the fact before the close': [sDispatch(), sFact(), sClose({ tokens: 999 })],
+    'the fact after the close': [sDispatch(), sClose({ tokens: 999 }), sFact()],
+    'a figureless close, then a close with the figure, fact last': [
+      sDispatch(), sClose(), sClose({ ts: '2026-10-04T10:03:00.000Z', tokens: 999 }), sFact(),
+    ],
+  })) {
+    const r = windowed(rows);
+    assert.equal(r.brackets.length, 1, why);
+    assert.equal(r.brackets[0].tokens, 999, why);
+  }
+});
+
+test('render: a fact under another corr or another id changes nothing', () => {
+  for (const [why, extra] of Object.entries({
+    'another run': { corr: 'ANOTHER-RUN' },
+    'another agent': { agent_id: 'a2' },
+  })) {
+    const r = windowed([sDispatch(), sFact(extra), sClose()]);
+    assert.equal(r.brackets.length, 1, why);
+    assert.equal(r.brackets[0].tokens, null, why);
+  }
+});
+
+test('render: of two facts for one pair, the later line wins', () => {
+  const r = windowed([
+    sDispatch(), sFact({ tokens: 500 }), sFact({ ts: '2026-10-04T10:01:59.500Z', tokens: 77 }), sClose(),
+  ]);
+  assert.equal(r.brackets[0].tokens, 77);
+});
+
+test('render: a fact with no id or a non-integer figure changes nothing', () => {
+  for (const [why, extra] of Object.entries({
+    'no agent_id': { agent_id: undefined },
+    'an empty agent_id': { agent_id: '' },
+    'a fractional figure': { tokens: 12.5 },
+    'a string figure': { tokens: '123' },
+    'a negative figure': { tokens: -1 },
+  })) {
+    const r = windowed([sDispatch(), sFact(extra), sClose()]);
+    assert.equal(r.brackets.length, 1, why);
+    assert.equal(r.brackets[0].tokens, null, why);
+  }
+});
+
+test('trace seam: a step-window fact prices a figureless close end to end', () => {
+  const dir = root();
+  const fact = run(dir, ['trace', 'append', '--phase', '1', '--family', 'lifecycle',
+    '--event', STEP_WINDOW, '--agent-id', 'a1', '--tokens', '123']);
+  assert.equal(fact.written, true);
+  run(dir, ['trace', 'append', '--phase', '1', '--family', 'lifecycle', '--event', 'dispatch',
+    '--plan', 'cad-reviewer', '--role', 'cad-reviewer', '--reviewer', 'claude-subagent']);
+  run(dir, ['trace', 'close', '--phase', '1', '--plan', 'cad-reviewer', '--role', 'cad-reviewer',
+    '--reviewer', 'claude-subagent', '--agent-id', 'a1']);
+  const r = run(dir, ['trace', 'render', '--phase', '1']);
+  assert.equal(r.ok, true);
+  assert.equal(r.brackets.length, 1);
+  assert.equal(r.brackets[0].agent_id, 'a1');
+  assert.equal(r.brackets[0].tokens, 123);
+  assert.equal(r.roles['cad-reviewer'].unrecorded, 1);
 });

@@ -679,3 +679,214 @@ test('renumber: decimal phase tokens are never shifted, and are reported', () =>
   assert.match(after, /phases\/2\.1\//);                   // ...and path untouched
   assert.match(after, /\*\*Phase 4: Three\*\*/);           // integers shifted
 });
+
+// --- insert leaves shipped requirement history alone (GH-259) ----------------
+// Every REQUIREMENTS shape an insert at 3 has to leave alone, in one tree:
+// Complete, Deferred and lowercase-`pending` Traceability rows, a `## Shipped`
+// row and a `## Deferred` bullet, each citing phase 3 or 4. Only the Pending
+// rows at 3 and 4 may change. Expected text is hardcoded, never re-derived
+// with shiftPhaseTokens (the classifyAcceptanceCriteria precedent above).
+
+const HISTORY_TAIL = '\n## Shipped\n\n'
+  + '| Requirement | Phase | Status | Milestone |\n|---|---|---|---|\n'
+  + '| SHP-01 | Phase 3 | Complete | v1.0 (built in phases/3/, see phase 3) |\n'
+  + '\n## Deferred\n\n'
+  + '- **DFR-01**: waits on Phase 4 (phases/4/), revisit after phase 4\n';
+
+// 0-based indices into the REQUIREMENTS.md lines makeTree writes.
+const PND_03 = 6;
+const PND_04 = 7;
+const CMP_03 = 10;
+const SHP_01 = 18;
+const DFR_01 = 22;
+
+/** A fresh tree per call; later tests reuse it as it is. */
+function historyRenumberTree() {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 3, name: 'Three' }, { n: 4, name: 'Four' }],
+    phases: { 1: { plan: true }, 2: { plan: true }, 3: { plan: true }, 4: { plan: true } },
+    reqs: [
+      ['PND-03', '3 (phases/3/)', 'Pending'],
+      ['PND-04', '4 (phases/4/)', 'Pending'],
+      ['PND-02', 2, 'Pending'],
+      ['PND-31', '3.1', 'Pending'],
+      ['CMP-03', '3 (phases/3/, phase 3)', 'Complete'],
+      ['DEF-04', 4, 'Deferred'],
+      ['LOW-03', 3, 'pending'],
+    ],
+  });
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  writeFileSync(reqFile, readFileSync(reqFile, 'utf8') + HISTORY_TAIL);
+  return dir;
+}
+
+/** The same tree with REQUIREMENTS.md rewritten CRLF. */
+function crlfHistoryRenumberTree() {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  writeFileSync(reqFile, readFileSync(reqFile, 'utf8').replace(/\n/g, '\r\n'));
+  return dir;
+}
+
+test('renumber insert: only Pending Traceability rows move, every other line is byte-identical (GH-259)', () => {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const before = readFileSync(reqFile, 'utf8').split('\n');
+  // Pin the fixture, so an index drift fails here and not as a vacuous pass.
+  assert.equal(before[PND_03], '| PND-03 | Phase 3 (phases/3/) | Pending |');
+  assert.equal(before[PND_04], '| PND-04 | Phase 4 (phases/4/) | Pending |');
+  assert.equal(before[CMP_03], '| CMP-03 | Phase 3 (phases/3/, phase 3) | Complete |');
+  assert.equal(before[SHP_01], '| SHP-01 | Phase 3 | Complete | v1.0 (built in phases/3/, see phase 3) |');
+  assert.equal(before[DFR_01], '- **DFR-01**: waits on Phase 4 (phases/4/), revisit after phase 4');
+
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, true);
+  const after = readFileSync(reqFile, 'utf8').split('\n');
+  assert.equal(after.length, before.length);
+  assert.equal(after[PND_03], '| PND-03 | Phase 4 (phases/4/) | Pending |');
+  assert.equal(after[PND_04], '| PND-04 | Phase 5 (phases/5/) | Pending |');
+  for (let i = 0; i < before.length; i++) {
+    if (i === PND_03 || i === PND_04) continue;
+    assert.equal(after[i], before[i], `line ${i + 1} changed: ${before[i]}`);
+  }
+});
+
+test('renumber insert: a CRLF REQUIREMENTS.md stays CRLF and only its Pending rows move', () => {
+  const dir = crlfHistoryRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const before = readFileSync(reqFile, 'utf8').split('\n');
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, true);
+  const text = readFileSync(reqFile, 'utf8');
+  assert.doesNotMatch(text, /(^|[^\r])\n/, 'an LF lost its CR');
+  const after = text.split('\n');
+  assert.equal(after.length, before.length);
+  assert.equal(after[PND_03], '| PND-03 | Phase 4 (phases/4/) | Pending |\r');
+  assert.equal(after[PND_04], '| PND-04 | Phase 5 (phases/5/) | Pending |\r');
+  for (let i = 0; i < before.length; i++) {
+    if (i === PND_03 || i === PND_04) continue;
+    assert.equal(after[i], before[i], `line ${i + 1} changed: ${before[i]}`);
+  }
+});
+
+// The rows the gate shows, 1-indexed like in_text_refs, terminator dropped.
+const HISTORY_ROW_CHANGES = [
+  { line: 7, before: '| PND-03 | Phase 3 (phases/3/) | Pending |', after: '| PND-03 | Phase 4 (phases/4/) | Pending |' },
+  { line: 8, before: '| PND-04 | Phase 4 (phases/4/) | Pending |', after: '| PND-04 | Phase 5 (phases/5/) | Pending |' },
+];
+
+test('renumber insert --dry-run: req_row_changes lists each REQUIREMENTS line the insert changes', () => {
+  const dir = historyRenumberTree();
+  const r = run(['renumber', 'insert', '--at', '3', '--dry-run'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.req_row_changes, HISTORY_ROW_CHANGES);
+  const keys = Object.keys(r);
+  assert.equal(keys[keys.indexOf('ops') + 1], 'req_row_changes');
+  const op = r.ops.find((o) => o.edit === 'REQUIREMENTS.md');
+  assert.equal(op.changes, r.req_row_changes.length);
+});
+
+test('renumber insert: the applied diff is exactly the req_row_changes the dry-run showed', () => {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const shown = run(['renumber', 'insert', '--at', '3', '--dry-run'], dir);
+  const before = readFileSync(reqFile, 'utf8').split('\n');
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, true);
+  const after = readFileSync(reqFile, 'utf8').split('\n');
+  const diff = [];
+  for (let i = 0; i < before.length; i++) {
+    if (after[i] !== before[i]) diff.push({ line: i + 1, before: before[i], after: after[i] });
+  }
+  assert.deepEqual(diff, shown.req_row_changes);
+  assert.deepEqual(r.req_row_changes, shown.req_row_changes);
+});
+
+test('renumber insert: a CRLF file reports req_row_changes without the \\r', () => {
+  const r = run(['renumber', 'insert', '--at', '3', '--dry-run'], crlfHistoryRenumberTree());
+  assert.deepEqual(r.req_row_changes, HISTORY_ROW_CHANGES);
+  for (const c of r.req_row_changes) {
+    assert.doesNotMatch(c.before, /\r/);
+    assert.doesNotMatch(c.after, /\r/);
+  }
+});
+
+test('renumber: req_row_changes is absent when nothing changes, and on remove', () => {
+  const ins = run(['renumber', 'insert', '--at', '4', '--dry-run'], renumberTree());
+  assert.equal('req_row_changes' in ins, false);
+  assert.equal(ins.ops.find((o) => o.edit === 'REQUIREMENTS.md').changes, 0);
+
+  const rem = run(['renumber', 'remove', '--n', '2', '--dry-run'], renumberTree());
+  assert.equal('req_row_changes' in rem, false);
+  assert.equal(rem.ops.find((o) => o.edit === 'REQUIREMENTS.md').changes, 1);
+});
+
+// A Complete row citing a moved phase is left as written and named in `warn`
+// (D-02). Deferred, lowercase-`pending` and `## Shipped` rows cite moved
+// phases too and must not be named: only Complete Traceability rows are.
+test('renumber insert: a Complete row citing a moved phase stays put and is named in warn', () => {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const shown = run(['renumber', 'insert', '--at', '3', '--dry-run'], dir);
+  const before = readFileSync(reqFile, 'utf8').split('\n');
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(readFileSync(reqFile, 'utf8').split('\n')[CMP_03], before[CMP_03]);
+  assert.match(r.warn, /CMP-03/);
+  assert.doesNotMatch(r.warn, /DEF-04/);
+  assert.doesNotMatch(r.warn, /LOW-03/);
+  assert.doesNotMatch(r.warn, /SHP-01/);
+  assert.equal(shown.warn, r.warn);
+});
+
+test('renumber insert: a decimal-cursor warning keeps its text and comes before the Complete-row warning', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 3, name: 'Three' }],
+    phases: { 1: { plan: true }, 2: { plan: true }, 3: { plan: true } },
+    reqs: [['CMP-03', 3, 'Complete']],
+    cursor: { phase: 2.1, total: 4, name: 'Patch', status: 'planned', next: '/cad-execute 2.1', updated: '2026-01-01' },
+  });
+  const r = run(['renumber', 'insert', '--at', '2'], dir);
+  assert.equal(r.ok, true);
+  assert.match(r.warn, /^cursor sits on decimal phase 2\.1, .* re-point it \(cursor set\); /);
+  assert.match(r.warn, /CMP-03/);
+});
+
+// in_text_refs on insert never sends the model to a frozen line: a `## Shipped`
+// row or a non-Pending Traceability row (D-09). Lowercase prose elsewhere, like
+// the Deferred bullet, is still reported.
+test('renumber insert: in_text_refs skips Shipped and Complete rows, keeps the Deferred bullet', () => {
+  const r = run(['renumber', 'insert', '--at', '3', '--dry-run'], historyRenumberTree());
+  const lines = r.in_text_refs.filter((x) => x.file === 'REQUIREMENTS.md').map((x) => x.line);
+  assert.ok(lines.includes(DFR_01 + 1), `Deferred bullet missing: ${JSON.stringify(lines)}`);
+  assert.ok(!lines.includes(SHP_01 + 1), 'Shipped row reported');
+  assert.ok(!lines.includes(CMP_03 + 1), 'Complete row reported');
+});
+
+// Remove keeps reporting every lowercase ref (D-10). `--n 2`, not 3: remove
+// scans from the phase after the one removed, so at 3 it never looks at the
+// Shipped row's `phase 3` and there'd be no ref there to keep.
+test('renumber remove: in_text_refs still reports the Shipped row (insert-only rule)', () => {
+  const r = run(['renumber', 'remove', '--n', '2', '--dry-run'], historyRenumberTree());
+  const lines = r.in_text_refs.filter((x) => x.file === 'REQUIREMENTS.md').map((x) => x.line);
+  assert.ok(lines.includes(SHP_01 + 1), `Shipped row missing: ${JSON.stringify(lines)}`);
+});
+
+// A capital `Phase 3` outside Traceability used to shift with the whole file.
+// Insert now leaves it as written, so it has to be reported or it goes stale
+// with nobody told (findProsePhaseRefs only sees lowercase).
+test('renumber insert: a v2 bullet citing Phase 3 is left as written and reported', () => {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const bullet = '- **V2-01**: maybe Phase 3';
+  writeFileSync(reqFile, readFileSync(reqFile, 'utf8') + `\n## v2 Requirements\n\n${bullet}\n`);
+  const idx = readFileSync(reqFile, 'utf8').split('\n').indexOf(bullet);
+  assert.ok(idx > DFR_01);
+
+  const shown = run(['renumber', 'insert', '--at', '3', '--dry-run'], dir);
+  assert.ok(shown.in_text_refs.some((x) => x.file === 'REQUIREMENTS.md' && x.line === idx + 1 && x.text === bullet),
+    JSON.stringify(shown.in_text_refs));
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(readFileSync(reqFile, 'utf8').split('\n')[idx], bullet);
+});

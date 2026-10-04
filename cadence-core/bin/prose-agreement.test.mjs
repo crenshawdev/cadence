@@ -2706,11 +2706,15 @@ test('triage-gate.md: the re-arm read-back, RUN, answers per PLAN and not per co
   // Only the placeholders a coordinator substitutes are substituted.
   // `${CLAUDE_PLUGIN_ROOT}` stays a shell expansion, answered from the
   // environment, so the block runs as the bytes the file actually carries.
+  // The caller's color settings stay out: FORCE_COLOR paints the printed count.
+  const env = { ...process.env, CLAUDE_PLUGIN_ROOT: REPO };
+  delete env.FORCE_COLOR;
+  delete env.NO_COLOR;
   const ask = (plan) => execFileSync('sh', ['-c', block
     .replace('--phase <N>', '--phase 1')
     .replace('"<trigger>"', '"risk_surface"')
     .replace('"<k>"', `"${plan}"`)],
-  { encoding: 'utf8', cwd, env: { ...process.env, CLAUDE_PLUGIN_ROOT: REPO } }).trim();
+  { encoding: 'utf8', cwd, env }).trim();
 
   assert.equal(ask('1'), '1',
     "the read-back no longer sees plan 1's own rearm, so the one round never reads as SPENT "

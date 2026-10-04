@@ -47,9 +47,18 @@
 //     provenance and the evidence behind it live here.
 //
 //     A closing event's `--tokens` figure is read off the HOST's subagent return
-//     metadata at the moment the worker returns. Cadence adds no hook, no seam
-//     and no capture mechanism to obtain it - if the host does not surface a
-//     number on that return, there is nowhere else to get one.
+//     metadata at the moment the worker returns. On a host without mods there
+//     is nowhere else to get one: if the return surfaces no number, the record
+//     holds none.
+//
+//     On a host WITH mods, the Cadence module (hooks/cadence-mod.mjs) adds one
+//     capture, for the bracket ROW alone: a `STEP_WINDOW` fact, the host's own
+//     usage for a Cadence subagent's last step, never estimated, written at the
+//     subagent's stop or at the coordinator's close that names its agent id.
+//     `renderTrace` folds it only into a bracket whose return carried nothing.
+//     It never reaches `roles`, so `unrecorded` still counts every figureless
+//     return. The rules below are for the prose and stand unchanged: the module
+//     writes its own line, and no prose site copies a figure from it.
 //
 //     So the flag is OMITTED when the return carries no figure. An absent total
 //     means "no dispatch of this role reported one", and `--tokens 0` would
@@ -82,6 +91,7 @@ import {
   readSync, renameSync, statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { STEP_WINDOW } from './token-capture.mjs';
 
 /** The trace file's name inside a planning root. */
 export const TRACE_FILE = 'trace.jsonl';
@@ -254,6 +264,14 @@ export const COORDINATOR = 'coordinator';
  * `renderTrace`'s post-pass is what joins it to the bracket it names.
  */
 export const WORKER_CACHE = 'worker_cache';
+
+// The lifecycle event the Cadence module writes with a subagent's last
+// `turn.step` window. Defined in lib/token-capture.mjs, which the module can
+// load and this file cannot be, and re-exported here beside `WORKER_CACHE` so
+// the census in trace.test.mjs and every reader take it from one place. Its doc
+// comment there states why it is a name and not a family, why it never joins
+// `TERMINAL`, and what its figure is denominated in.
+export { STEP_WINDOW };
 
 /**
  * The lifecycle event a ROTATION writes as the last line of the record it
@@ -1309,6 +1327,14 @@ export function appendEvent(planningRoot, event) {
  *   figures state above: an enum has nothing to sum, and the roles bill is
  *   denominated in tokens.
  *
+ *   `tokens` is what the RETURN reported, off the close or the dispatch half.
+ *   Where neither carried one, the post-pass may fill it from a `STEP_WINDOW`
+ *   fact matching `corr` AND `agent_id`: the host's own usage for that
+ *   subagent's last step, written by the Cadence module on a host with mods.
+ *   It fills a null and never replaces a number, and it never reaches `roles`,
+ *   so `unrecorded` there still counts the return as figureless (D-13). Still
+ *   null where neither source had a figure.
+ *
  *   `turns`, `duration_ms`, the two cache keys and these two strings are the
  *   OPTIONAL keys: `ms`
  *   and `tokens` are on every row (null where they could not be computed),
@@ -1684,6 +1710,12 @@ export function renderTrace(planningRoot, phase) {
   // transcript.
   /** @type {Map<string, Record<string, any>>} */
   const cacheFacts = new Map();
+  // THE STEP-WINDOW FACTS, keyed `corr\0agent_id` on the same argument as the
+  // cache facts above. Two for one pair: the LATER line wins, because it is a
+  // later stop's last window, and a window does not grow the way a cache sum
+  // does, so larger-wins would answer nothing true.
+  /** @type {Map<string, number>} */
+  const stepFacts = new Map();
   for (const e of out.events) {
     // Every family feeds the RUN's end-of-record mark, not the lifecycle one
     // alone: the coordinator's last step is still running while the routing and
@@ -1793,6 +1825,18 @@ export function renderTrace(planningRoot, phase) {
           if (!('effort' in prior) && effort !== null) prior.effort = effort;
           if (!('rung' in prior) && rung !== null) prior.rung = rung;
         }
+      }
+      continue;
+    }
+
+    // The step-window fact (D-10), collected here and folded after the loop for
+    // the reason the cache fact is: the module writes it at `SubagentStop`,
+    // before the orchestrator's close names the id it joins on. It needs an id
+    // and a non-negative INTEGER figure; anything less has nothing to give.
+    if (e.event === STEP_WINDOW) {
+      if (typeof e.agent_id === 'string' && e.agent_id
+        && Number.isInteger(e.tokens) && e.tokens >= 0) {
+        stepFacts.set(`${key(e.corr)}\0${e.agent_id}`, e.tokens);
       }
       continue;
     }
@@ -2100,6 +2144,19 @@ export function renderTrace(planningRoot, phase) {
       if (!('rung' in b) && 'rung' in fact) b.rung = fact.rung;
       break;
     }
+  }
+
+  // THE STEP-WINDOW FOLD (D-10). The figure goes to the first bracket under
+  // that `corr` and `agent_id` whose `tokens` is still null, and nowhere else. A
+  // bracket holding a number keeps it whichever line arrived first: a return's
+  // own figure always wins. Like the cache fold it touches the ROW only - not
+  // `roles`, not `unrecorded`, not `funded`, not `pairedRows` - because D-13
+  // keeps a figureless return out of the spend, so `roles` reads the same with
+  // and without every fact in the file.
+  for (const [pair, tokens] of stepFacts) {
+    const b = out.brackets.find((r) => r.agent_id && r.tokens === null
+      && `${key(r.corr)}\0${r.agent_id}` === pair);
+    if (b) b.tokens = tokens;
   }
 
   for (const pending of open.values()) {

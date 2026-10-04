@@ -2,8 +2,8 @@
 
 The single adversarial-review procedure the spine calls. A workflow that reaches
 a trigger point runs `fire(<trigger>)` as defined here - it never inlines its own
-reviewer loop. Two backends, one finding schema, so the adjudicator merges them
-blind:
+reviewer loop. Two backends, one finding schema, so the adjudicator rules on every
+voice alike:
 - `claude-subagent` (default, zero-dep): spawn the `cad-reviewer` agent via the
   spawn-agent seam, prompted to REFUTE the artifact. Bounded by that seam's turn
   cap, `maxTurns: 200`.

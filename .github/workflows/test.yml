@@ -61,3 +61,29 @@ jobs:
           node-version: '22'
       - run: npm install --no-save --no-package-lock typescript @types/node
       - run: npx tsc -p tsconfig.ci.json
+
+  plugin-validate:
+    # The host's own validator over both manifests, strict, so a check Claude
+    # Code tightens fails here before it fails someone's install. The CLI is
+    # unpinned on purpose: the job exists to meet the next validator first.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: claude plugin validate --strict .
+      - run: claude plugin validate --strict .claude-plugin/plugin.json
+      # A mods host only loads the Cadence module if the validator reads it from
+      # hooks.json. If the validator ever stops seeing ./cadence-mod.mjs, the
+      # module would ship without anyone noticing, so this fails unless the
+      # report's hooks section names it.
+      - name: Validator reports the Cadence module
+        run: |
+          claude plugin validate --strict --json .claude-plugin/plugin.json | node -e '
+            const r = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            const seen = (r.contents || []).some((c) => c.type === "hooks"
+              && (c.notes || []).some((n) => n.startsWith("./cadence-mod.mjs hooks:")));
+            if (!seen) { console.error("validate report lists no ./cadence-mod.mjs hooks note"); process.exit(1); }
+          '

@@ -41,9 +41,10 @@
 'use strict';
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { renderTrace, appendEvent } from './lib/trace.mjs';
 import { closeForStop } from './lib/subagent-trace.mjs';
+import { planningRoot } from './lib/git-segments.mjs';
 
 // The ceiling on the ONE unbounded read this hook does. The stopped worker's
 // transcript is a file the host grows for as long as the worker runs, so it has
@@ -59,22 +60,6 @@ import { closeForStop } from './lib/subagent-trace.mjs';
 // partially parsed - and the rule's unknown arm writes the close it writes
 // today rather than suppressing it.
 const MAX_TRANSCRIPT_BYTES = 8388608;
-
-// Walk up from the hook's cwd, stopping at the repo root: a session opened in a
-// subdirectory still bills the project. The same rule and the same reason as
-// read-trace.mjs and git-guard.mjs, which each carry their own copy - a hook
-// script's whole disk half is this walk plus one call, and the three copies are
-// the shape this tree already chose for it.
-function planningRoot(start) {
-  let dir = start;
-  for (;;) {
-    if (existsSync(join(dir, '.planning'))) return join(dir, '.planning');
-    if (existsSync(join(dir, '.git'))) return null; // repo root, not Cadence
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-}
 
 // The stopped worker's own transcript, or null for "nothing to read". The path
 // is the payload's `agent_transcript_path` - the field the `SubagentStop` event
@@ -129,7 +114,12 @@ function readTranscript(p) {
 try {
   const input = JSON.parse(readFileSync(0, 'utf8'));
   const cwd = String(input?.cwd || process.cwd());
-  const root = planningRoot(cwd);
+  // Walk up from cwd, stopping at the repo root: a session opened in a
+  // subdirectory still bills the project. lib/git-segments.mjs defines the walk
+  // once for git-guard, read-trace and the Cadence module, so they all agree on
+  // which directory is a Cadence project.
+  const project = planningRoot(cwd, (dir, name) => existsSync(join(dir, name)));
+  const root = project === null ? null : join(project, '.planning');
   if (root) {
     const evidence = { transcript: readTranscript(input?.agent_transcript_path) };
     // A LIST, appended in the order the rule gave it (D-08). One stop can owe

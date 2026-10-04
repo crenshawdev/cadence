@@ -18,20 +18,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { recordFromHook, appendRead } from './lib/read-trace.mjs';
-
-// Walk up from the hook's cwd, stopping at the repo root: a session opened in a
-// subdirectory still bills the project. Same rule as git-guard.mjs, and the
-// same reason - checking only cwd would miss most calls.
-function planningRoot(start) {
-  let dir = start;
-  for (;;) {
-    if (existsSync(join(dir, '.planning'))) return join(dir, '.planning');
-    if (existsSync(join(dir, '.git'))) return null; // repo root, not Cadence
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-}
+import { planningRoot } from './lib/git-segments.mjs';
 
 // The existence predicate `filesOf` runs its candidates through - the whole
 // safety argument for reading a Bash command's arguments at all. A regular
@@ -43,7 +30,11 @@ function isFile(p) {
 try {
   const input = JSON.parse(readFileSync(0, 'utf8'));
   const cwd = String(input?.cwd || process.cwd());
-  const root = planningRoot(cwd);
+  // Walk up from cwd, stopping at the repo root: a session opened in a
+  // subdirectory still bills the project. lib/git-segments.mjs holds the walk,
+  // the one git-guard and subagent-trace use too.
+  const project = planningRoot(cwd, (dir, name) => existsSync(join(dir, name)));
+  const root = project === null ? null : join(project, '.planning');
   if (root) {
     // `root` is `<project>/.planning`; the tree paths are billed against is its
     // parent, and confinement to it is what keeps a path elsewhere on the
