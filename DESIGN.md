@@ -79,7 +79,7 @@ prompt-cache reuse high and the orchestrator context lean — not a guarantee.
 ### Lifecycle & git
 | Cadence skill | Derived from | Change |
 |---|---|---|
-| `cad-milestone` | **new + complete-milestone** | Collapse to a thin version-cut: `git tag`, prune completed phases from live roadmap (git is the archive), evolve PROJECT.md, refresh REQUIREMENTS. Fold `cleanup` in |
+| `cad-milestone` | **new + complete-milestone** | Collapse to a thin version-cut: version bump, prune completed phases from live roadmap (git is the archive), evolve PROJECT.md, refresh REQUIREMENTS. Fold `cleanup` in. `/cad-land` cuts the tag after the merge |
 | `cad-phase` | phase CRUD | Keep the `remove` renumbering + dependency-ref repair (the op humans botch). add/insert/edit ≈ direct markdown edits |
 | `cad-undo` | undo | Keep manifest→hashes discovery + dirty guard + `--no-commit` squash. Drop heuristic dependency-check |
 | `cad-land` | **replaces ship** | ⚠️ ~30L, reports git state, asks the mechanism with NO pre-selected default, executes it raw. Honors your "git mechanism is my call" rule by construction |
@@ -201,7 +201,7 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
   always-on worktree *safety scaffolding*, not the fan-out — safety applies only when parallel is on.
 - **Memory/continuity:** built-in tiny file-based continuity (cursor + SUMMARY) with a
   `memory.backend` switch (none | builtin, default builtin: BM25 recall over `.planning/`).
-- **Milestone layer:** thin version-cut ritual (tag + prune roadmap + refresh requirements). Kept.
+- **Milestone layer:** thin version-cut ritual (bump + prune roadmap + refresh requirements; `/cad-land` cuts the tag after the merge). Kept.
 
 ### Adversarial review = first-class configurable subsystem (absorbs gsd-review, code-review,
 ### plan-review-convergence, secure-phase)
@@ -576,7 +576,7 @@ rewritten.
 **R1 — "workflows never push" → opt-in `git.auto_close` + one sanctioned publish seam.**
 - *What changed:* the absolute "no workflow ever pushes" founding principle was reversed.
   An opt-in `git.auto_close` (default off) now runs the whole close unattended (audit →
-  tag → PR → merge → reset), and publishing flows through a single sanctioned git-publish
+  PR → merge → tag on the merged base → reset), and publishing flows through a single sanctioned git-publish
   subprocess seam — the one code-guarded push path Cadence uses.
 - *When:* decided 2026-07-16, built through the rc.2 cycle, UAT 2026-07-17.
 - *Why:* UAT item 9 falsified the "a platform merge is never a push" assumption — `gh pr
