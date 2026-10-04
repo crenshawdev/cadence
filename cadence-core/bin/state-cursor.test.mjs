@@ -71,3 +71,12 @@ test('a Status line with a long run of inner spaces parses in linear time', () =
   assert.equal(cursor.status, `Status: ${status}  `.slice('Status:'.length).trim());
   assert.equal(cursor.next, '/cad-execute 2.1');
 });
+
+test('a Next value led by a line separator parses as it did before the linear rewrite', () => {
+  for (const sep of ['\u2028', '\u2029']) {
+    const cursor = parseCursor(STATE.replace('Next: /cad-execute 2.1', `Next: ${sep}/cad-execute 1`));
+    assert.ok(cursor);
+    assert.equal(cursor.next, '/cad-execute 1');
+    assert.equal(parseCursor(STATE.replace('Status: planned', `Status: ${sep}planned`))?.status, 'planned');
+  }
+});

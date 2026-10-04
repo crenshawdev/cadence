@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { closePhase, withAgentId } from './lib/token-capture.mjs';
 import { register } from '../../hooks/cadence-mod.mjs';
 import { STEP_WINDOW, stepWindow, stepWindowArgv } from './lib/token-capture.mjs';
+import { closeArgs } from './lib/token-capture.mjs';
 
 const BIN = dirname(fileURLToPath(import.meta.url));
 const PLANNING = join(BIN, 'planning.mjs');
@@ -242,13 +243,12 @@ test('a Cadence subagent\'s stop writes its LAST step window under the phase its
   assert.equal($.runs.length, 1);
 });
 
-test('with no close seen, the fact files under the cursor\'s phase', async () => {
+test('with no close seen, the stop writes nothing under the cursor\'s phase', async () => {
   const by = module();
   const $ = host();
   await twoSteps(by, $);
   await by.get('classic.SubagentStop')($, stop(), async () => ({}));
-  assert.equal($.runs.length, 1);
-  assert.equal($.runs[0].argv[5], '1');
+  assert.equal($.runs.length, 0);
 });
 
 test('a stop writes nothing without a Cadence type, a window, a project or a phase', async () => {
@@ -277,4 +277,127 @@ test('a failed write is silent: the stop still answers next\'s result, with next
   assert.equal(calls, 1);
   const hostile = { get agent_id() { throw new Error('unreadable'); } };
   assert.equal(await by.get('classic.SubagentStop')($, hostile, async () => answer), answer);
+});
+
+// --- the phase is adopted from the close, never derived -----------------------
+
+/** A coordinator's figureless close, as the main loop writes it after the return. */
+const close = (/** @type {string} */ args) =>
+  `node "/plug/cadence-core/bin/planning.mjs" trace close ${args} --plan cad-assumptions-analyzer --role cad-assumptions-analyzer`;
+const CURSOR_3 = { '/proj/.planning': '', '/proj/.planning/STATE.md': STATE.replace('Phase: 1 of 2', 'Phase: 3 of 5') };
+
+test('closeArgs reads the phase, agent id, anchor and figure a close names', () => {
+  assert.deepEqual(closeArgs(close('--phase 4 --agent-id a1')),
+    { phase: '4', agentId: 'a1', anchor: null, priced: false });
+  assert.deepEqual(closeArgs(close('--phase 0 --agent-id=a1')),
+    { phase: '0', agentId: 'a1', anchor: null, priced: false });
+  assert.deepEqual(closeArgs(close('--phase "2.1" --agent-id a1 --anchor abc1234 --tokens 999')),
+    { phase: '2.1', agentId: 'a1', anchor: 'abc1234', priced: true });
+  assert.equal(closeArgs(withAgentId(TAIL, ID))?.agentId, ID);
+  for (const [why, command] of [
+    ['no agent id', close('--phase 4')],
+    ['no phase', close('--agent-id a1')],
+    ['two phases', close('--phase 3 --phase 4 --agent-id a1')],
+    ['two agent ids', close('--phase 4 --agent-id a1 --agent-id a2')],
+    ['an unreadable anchor', close('--phase 4 --agent-id a1 --anchor')],
+    ['an id holding a shell character', close('--phase 4 --agent-id "a1;x"')],
+    ['a compound line', `${close('--phase 4 --agent-id a1')} && echo ok`],
+    ['trace append', close('--phase 4 --agent-id a1').replace('trace close', 'trace append')],
+    ['not a string', 42],
+  ]) {
+    assert.equal(closeArgs(command), null, why);
+  }
+});
+
+/** A main-loop Bash call through the module, recording when `next` ran against the writes. */
+async function mainLoop(/** @type {Map<string, Function>} */ by, /** @type {any} */ $, /** @type {string} */ command) {
+  const e = { tool: 'Bash', tool_use_id: 'm', command };
+  /** @type {any[]} */
+  const seen = [];
+  const writesBefore = [];
+  await by.get('tool.call')($, e, async (/** @type {any} */ sent) => {
+    seen.push(sent);
+    writesBefore.push($.runs.length);
+    return {};
+  });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0], e);
+  return writesBefore[0];
+}
+
+/** A Cadence subagent that stepped twice and stopped without closing itself, in a project whose cursor reads 3. */
+async function stoppedUnclosed() {
+  const by = module();
+  const $ = host({ files: CURSOR_3 });
+  $.session.cwd = async () => '/proj';
+  await twoSteps(by, $);
+  await by.get('classic.SubagentStop')($, stop({ agent_type: 'cadence:cad-assumptions-analyzer-medium' }), async () => ({}));
+  assert.equal($.runs.length, 0, 'the stop alone files nothing');
+  return { by, $ };
+}
+
+test('a coordinator close with --phase 4 --agent-id a1 files under 4 while the cursor reads 3', async () => {
+  const { by, $ } = await stoppedUnclosed();
+  assert.equal(await mainLoop(by, $, close('--phase 4 --agent-id a1')), 1, 'written before the close is passed on');
+  assert.deepEqual($.runs[0].argv, stepWindowArgv('/plug', '4', 'a1', 21944));
+  assert.equal($.runs[0].init.cwd, '/proj');
+
+  // The window is spent: the same close again writes nothing.
+  await mainLoop(by, $, close('--phase 4 --agent-id a1'));
+  assert.equal($.runs.length, 1);
+});
+
+test('a /cad-task close files under --phase 0, and an anchored close passes its anchor on', async () => {
+  let { by, $ } = await stoppedUnclosed();
+  await mainLoop(by, $, close('--phase 0 --agent-id a1'));
+  assert.deepEqual($.runs.map((r) => r.argv), [stepWindowArgv('/plug', '0', 'a1', 21944)]);
+
+  ({ by, $ } = await stoppedUnclosed());
+  await mainLoop(by, $, close('--phase 4 --agent-id a1 --anchor abc1234'));
+  assert.deepEqual($.runs.map((r) => r.argv), [stepWindowArgv('/plug', '4', 'a1', 21944, 'abc1234')]);
+});
+
+test('a close with --tokens writes nothing, and spends the window', async () => {
+  const { by, $ } = await stoppedUnclosed();
+  await mainLoop(by, $, close('--phase 4 --agent-id a1 --tokens 999'));
+  await mainLoop(by, $, close('--phase 4 --agent-id a1'));
+  assert.equal($.runs.length, 0);
+});
+
+test('a close for an unknown id writes nothing', async () => {
+  const { by, $ } = await stoppedUnclosed();
+  await mainLoop(by, $, close('--phase 4 --agent-id a2'));
+  await mainLoop(by, $, close('--phase 4'));
+  assert.equal($.runs.length, 0);
+});
+
+test('a subagent\'s own close before its last step files that LAST step at its stop', async () => {
+  const by = module();
+  const $ = host({ files: CURSOR_3 });
+  const step = async (/** @type {any} */ usage) => drain(by.get('turn.step')($,
+    Object.freeze({ turnId: 't', index: 0, model: 'm', messageCount: 3, agentId: 'a1' }), stepNext(usage)));
+  await step(STEP_1);
+  const own = TAIL.replace('/abs/', '/plug/');
+  await by.get('tool.call')($, { tool: 'Bash', tool_use_id: 'c', agentId: 'a1', command: own }, async () => ({}));
+  assert.equal($.runs.length, 0, 'nothing written at the subagent\'s own close');
+  await step(STEP_2);
+  await by.get('classic.SubagentStop')($, stop(), async () => ({}));
+  assert.deepEqual($.runs.map((r) => r.argv), [stepWindowArgv('/plug', '3', 'a1', 21944)]);
+});
+
+test('a failed write at a close still passes the close on once', async () => {
+  const by = module();
+  const $ = host({ files: CURSOR_3, run: async () => { throw new Error('spawn failed'); } });
+  $.session.cwd = async () => '/proj';
+  await twoSteps(by, $);
+  await by.get('classic.SubagentStop')($, stop(), async () => ({}));
+  const e = { tool: 'Bash', tool_use_id: 'm', command: close('--phase 4 --agent-id a1') };
+  let calls = 0;
+  const answer = {};
+  assert.equal(await by.get('tool.call')($, e, async (/** @type {any} */ sent) => {
+    calls++;
+    assert.equal(sent, e);
+    return answer;
+  }), answer);
+  assert.equal(calls, 1);
 });

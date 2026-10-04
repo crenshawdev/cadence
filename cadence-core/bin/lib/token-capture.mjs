@@ -12,10 +12,10 @@
 'use strict';
 
 /**
- * The lifecycle event the Cadence module writes when a Cadence subagent stops:
- * the host's own usage for that subagent's LAST `turn.step`, keyed by `corr`
- * and `agent_id`. `renderTrace`'s post-pass folds it into the bracket that
- * names the same pair, and only into one whose return carried no figure. A
+ * The lifecycle event the Cadence module writes for a Cadence subagent's
+ * figureless close: the host's own usage for that subagent's LAST `turn.step`,
+ * keyed by `corr` and `agent_id`. `renderTrace`'s post-pass folds it into the
+ * bracket that names the same pair, and only into one whose return carried no figure. A
  * return's own `tokens` always wins, whichever line landed first.
  *
  * It is a lifecycle NAME and not a fifth family, for the reason `COORDINATOR`
@@ -56,7 +56,6 @@ const COMPOUND = /[;&|\r\n`#]|\$\(|\\\s*$/;
 /** `node <…/planning.mjs> trace close`, the path quoted or bare. */
 const TRACE_CLOSE = /^\s*node\s+(?:"[^"]*planning\.mjs"|'[^']*planning\.mjs'|\S*planning\.mjs)\s+trace\s+close(?=\s|$)/;
 const HAS_AGENT_ID = /(?:^|\s)--agent-id(?=[=\s]|$)/;
-const PHASE = /(?:^|\s)--phase(?:=|\s+)(["']?)(\d+(?:\.\d+)?)\1(?=\s|$)/;
 
 /** @param {unknown} command */
 function isTraceClose(command) {
@@ -78,16 +77,56 @@ export function withAgentId(command, agentId) {
 }
 
 /**
+ * How many times `--<name>` appears, and its value when it appears exactly once
+ * and reads as one plain token (`--name v`, `--name=v`, quoted or bare), never
+ * the next flag. A flag written twice reads as nothing: the module cannot know
+ * which one the seam kept, and a fact filed under the other would never join.
+ * @param {string} command
+ * @param {string} name
+ */
+function flag(command, name) {
+  const count = command.match(new RegExp(`(?:^|\\s)--${name}(?=[=\\s]|$)`, 'g'))?.length ?? 0;
+  const m = count === 1
+    ? command.match(new RegExp(`(?:^|\\s)--${name}(?:=|\\s+)(["']?)([A-Za-z0-9._][A-Za-z0-9._-]*)\\1(?=\\s|$)`))
+    : null;
+  return { count, value: m ? m[2] : null };
+}
+
+/**
  * The `--phase` of a simple `planning.mjs trace close` command, as written
- * (`3`, `2.1`), or null. The module keeps it per agent so the step-window fact
- * files under the phase the close named.
+ * (`3`, `2.1`), or null.
  * @param {unknown} command
  * @returns {string | null}
  */
 export function closePhase(command) {
   if (!isTraceClose(command)) return null;
-  const m = /** @type {string} */ (command).match(PHASE);
-  return m ? m[2] : null;
+  const { value } = flag(/** @type {string} */ (command), 'phase');
+  return value !== null && /^\d+(?:\.\d+)?$/.test(value) ? value : null;
+}
+
+/**
+ * What a step-window fact adopts from the `trace close` it prices: the phase
+ * and agent id the close names, its `--anchor` when it carries one, and whether
+ * it carries its own `--tokens`. Null for anything but one simple close naming
+ * a readable phase and agent id, and for a close whose anchor cannot be read.
+ *
+ * The phase is ADOPTED, never derived. The STATE.md cursor often names another
+ * phase than the dispatch's (a `/cad-context N+1` dispatch while the cursor
+ * still reads N, every `/cad-task` dispatch under phase 0), and a fact filed
+ * there joins nothing and lands as a stray line in another phase's record. The
+ * same rule as lib/subagent-trace.mjs's ADOPT, NEVER DERIVE.
+ * @param {unknown} command the Bash call's `command`, after any D-11 rewrite
+ * @returns {{phase: string, agentId: string, anchor: string | null, priced: boolean} | null}
+ */
+export function closeArgs(command) {
+  const phase = closePhase(command);
+  if (phase === null) return null;
+  const text = /** @type {string} */ (command);
+  const id = flag(text, 'agent-id').value;
+  if (id === null || !AGENT_ID.test(id)) return null;
+  const anchor = flag(text, 'anchor');
+  if (anchor.count > 0 && anchor.value === null) return null;
+  return { phase, agentId: id, anchor: anchor.value, priced: flag(text, 'tokens').count > 0 };
 }
 
 // --- the step window and the fact that carries it (D-10) --------------------
@@ -114,17 +153,21 @@ export function stepWindow(usage) {
 }
 
 /**
- * The argv that writes one step-window fact through the plugin's own seam.
+ * The argv that writes one step-window fact through the plugin's own seam,
+ * with `--anchor` when the close it prices carried one, so the fact takes that
+ * close's `corr`.
  * @param {string} pluginRoot the plugin's directory, `$.plugin.root`
  * @param {string} phase
  * @param {string} agentId
  * @param {number} tokens
+ * @param {string | null} [anchor]
  * @returns {string[]}
  */
-export function stepWindowArgv(pluginRoot, phase, agentId, tokens) {
+export function stepWindowArgv(pluginRoot, phase, agentId, tokens, anchor = null) {
   const planning = /[\\/]$/.test(pluginRoot)
     ? `${pluginRoot}cadence-core/bin/planning.mjs`
     : `${pluginRoot}/cadence-core/bin/planning.mjs`;
   return ['node', planning, 'trace', 'append', '--phase', phase, '--family', 'lifecycle',
-    '--event', STEP_WINDOW, '--agent-id', agentId, '--tokens', String(tokens)];
+    '--event', STEP_WINDOW, '--agent-id', agentId, '--tokens', String(tokens),
+    ...(anchor === null ? [] : ['--anchor', anchor])];
 }

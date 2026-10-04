@@ -22,8 +22,8 @@
 export function parseCursor(text) {
   const m = (re) => { const r = text.match(re); return r ? r : null; };
   const phase = m(/^Phase:\s*(\d+(?:\.\d+)?)\s+of\s+(\d+)\s+\((.+)\)\s*$/m);
-  const status = rest(text, /^Status:(.*)$/m);
-  const next = rest(text, /^Next:(.*)$/m);
+  const status = rest(text, /^Status:([^\r\n]*)/m);
+  const next = rest(text, /^Next:([^\r\n]*)/m);
   const updated = m(/^Updated:\s*(\d{4}-\d{2}-\d{2})\s*$/m);
   if (!phase || !status || !next || !updated) return null;
   return {
@@ -38,6 +38,11 @@ export function parseCursor(text) {
  * capture before `\s*$`: that one backtracks in quadratic time on a long run of
  * inner spaces, and the band parses STATE.md inside the host's hooks worker on
  * every draw.
+ *
+ * The capture stops at `\r` or `\n` only, never at `.`'s edge: `.` and a
+ * multiline `$` also stop at U+2028 and U+2029, which `cursor set` accepts in a
+ * value, so a value led by one would trim to nothing. `trim()` drops them from
+ * either end, as the `\s*` of the parser before this one did.
  * @param {string} text
  * @param {RegExp} re one capture: everything after the colon
  */
