@@ -917,6 +917,52 @@ test('a start seen while the pane was closed shows its routed rung and model; it
   assert.ok(reads >= 1);
 });
 
+test('a start the band\'s reconcile saw first still shows its routed model, drawn before or after', async () => {
+  for (const paneFirst of [false, true]) {
+    const h = handlers();
+    const trace = JSON.stringify(resolve({ ts: iso(Date.now() - 60000), model: 'sonnet', effort: 'low' })) + '\n';
+    const $ = standIn({ files: { '/proj/.planning': '', '/proj/.planning/STATE.md': STATE,
+      '/proj/.planning/trace.jsonl': trace } });
+    $.agent.list = async () => [{ id: 'a1', type: 'cadence:cad-reviewer-low', status: 'running' }];
+    const drawn = $.drawn();
+    await h.hook('command.run')($, run(), counting({}));
+    await drawn;
+    await h.hook('ui.render', 'AbovePrompt')($, bandEvent(), counting(null));
+    const render = h.hook('ui.render', 'Pane');
+    if (paneFirst) await render($, paneEvent({ bodyColumns: 200 }), counting(null));
+    await h.hook('classic.SubagentStart')($, { hook_event_name: 'SubagentStart', session_id: 'session-1',
+      agent_id: 'a1', agent_type: 'cadence:cad-reviewer-low' }, counting({}));
+    const lines = linesOf(await render($, paneEvent({ bodyColumns: 200 }), counting(null)));
+    assert.ok(lines.includes('cad-reviewer · rung low · sonnet'), `paneFirst ${paneFirst}\n${lines.join('\n')}`);
+  }
+});
+
+test('a resolve whose role or effort is not text costs that field, not the pane', async () => {
+  const h = handlers();
+  const trace = '{"family":"routing","event":"resolve","agent":"cad-reviewer-low","model":"sonnet",'
+    + `"role":{"toString":null},"effort":{"toString":null},"ts":"${iso(Date.now() - 60000)}"}\n`;
+  const $ = standIn({ files: { '/proj/.planning': '', '/proj/.planning/STATE.md': STATE,
+    '/proj/.planning/trace.jsonl': trace } });
+  await h.hook('classic.SubagentStart')($, { hook_event_name: 'SubagentStart', session_id: 'session-1',
+    agent_id: 'a1', agent_type: 'cadence:cad-reviewer-low' }, counting({}));
+  const drawn = $.drawn();
+  await h.hook('command.run')($, run(), counting({}));
+  await drawn;
+  const tree = await h.hook('ui.render', 'Pane')($, paneEvent({ bodyColumns: 200 }), counting('next drew this'));
+  const lines = linesOf(tree);
+  assert.ok(lines.includes('cad-reviewer · rung low · sonnet'), lines.join('\n'));
+  assert.ok(lines.some((l) => l.startsWith('next ')), lines.join('\n'));
+  assert.ok(lines.some((l) => l.startsWith('Open captures')), lines.join('\n'));
+});
+
+test('a start upgrades a typeless record once, and never retypes a typed one', () => {
+  const drawn = sightDraw([], [REVIEWER], T0);
+  const started = sightStart(drawn, 'a1', 'cadence:cad-reviewer-low', T0 + 5);
+  assert.deepEqual(started, [{ id: 'a1', type: 'cadence:cad-reviewer-low', seen: T0 + 5 }]);
+  assert.equal(sightStart(started, 'a1', 'cadence:cad-reviewer-high', T0 + 9), started);
+  assert.equal(sightStart(drawn, 'a1', undefined, T0 + 5), drawn);
+});
+
 // --- the band's button ------------------------------------------------------
 
 /** A `ui.resolve` that offers a Button, as the host's does. */

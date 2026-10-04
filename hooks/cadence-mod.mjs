@@ -346,9 +346,10 @@ export function register(on) {
     const answer = await next(e);
     try {
       const session = await $.session.id();
-      const before = roster;
       roster = rosterStart(roster, e, session);
-      if (roster !== before) sights = sightStart(sights, e.agent_id, e.agent_type, Date.now());
+      // The band's reconcile may have added this agent already; its type and
+      // start still count.
+      if (roster.some((a) => a.id === e.agent_id)) sights = sightStart(sights, e.agent_id, e.agent_type, Date.now());
     } catch {
       // the next draw's reconcile adds what this missed
     }

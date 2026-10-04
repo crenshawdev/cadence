@@ -188,7 +188,9 @@ export function parseResolves(text) {
 }
 
 /**
- * A Cadence agent the roster just took in, first seen now.
+ * A Cadence agent the roster holds has started, seen now. A typeless record a
+ * draw made first (the band's reconcile can add the agent before its start
+ * lands) takes the start's type and time.
  * @param {readonly Sight[]} sights
  * @param {unknown} id
  * @param {unknown} type its host `agent_type`
@@ -196,8 +198,12 @@ export function parseResolves(text) {
  * @returns {readonly Sight[]}
  */
 export function sightStart(sights, id, type, now) {
-  if (typeof id !== 'string' || sights.some((s) => s.id === id)) return sights;
-  return [...sights, { id, type: typeof type === 'string' ? type : null, seen: now }];
+  if (typeof id !== 'string') return sights;
+  const typed = typeof type === 'string' ? type : null;
+  const had = sights.find((s) => s.id === id);
+  if (!had) return [...sights, { id, type: typed, seen: now }];
+  if (had.type !== null || typed === null) return sights;
+  return sights.map((s) => (s === had ? { id, type: typed, seen: now } : s));
 }
 
 /**
@@ -244,7 +250,11 @@ export function agentRows(roster, sights, resolves, sessionModel) {
     }
     const model = r.model === null ? `${sessionModel ?? 'the session model'} (session)`
       : typeof r.model === 'string' && r.model ? r.model : 'unrecorded';
-    return `${String(r.role ?? a.role)} · rung ${String(r.effort ?? a.rung)} · ${model}`;
+    // trace.jsonl is any JSON: a field that is not text counts as absent, so
+    // one odd line costs its own row's field, never the whole pane.
+    const role = typeof r.role === 'string' ? r.role : roleOfAgent(type) ?? a.role;
+    const rung = typeof r.effort === 'string' || Number.isFinite(r.effort) ? r.effort : rungOfAgent(type) ?? a.rung;
+    return `${role} · rung ${rung} · ${model}`;
   });
 }
 
