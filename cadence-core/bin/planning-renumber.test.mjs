@@ -865,7 +865,7 @@ test('renumber insert: in_text_refs skips Shipped and Complete rows, keeps the D
 
 // Remove keeps reporting every lowercase ref (D-10). `--n 2`, not 3: remove
 // scans from the phase after the one removed, so at 3 it never looks at the
-// Shipped row's `phase 3` and the check would pass for the wrong reason.
+// Shipped row's `phase 3` and there'd be no ref there to keep.
 test('renumber remove: in_text_refs still reports the Shipped row (insert-only rule)', () => {
   const r = run(['renumber', 'remove', '--n', '2', '--dry-run'], historyRenumberTree());
   const lines = r.in_text_refs.filter((x) => x.file === 'REQUIREMENTS.md').map((x) => x.line);
