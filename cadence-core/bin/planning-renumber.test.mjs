@@ -768,3 +768,55 @@ test('renumber insert: a CRLF REQUIREMENTS.md stays CRLF and only its Pending ro
     assert.equal(after[i], before[i], `line ${i + 1} changed: ${before[i]}`);
   }
 });
+
+// The rows the gate shows, 1-indexed like in_text_refs, terminator dropped.
+const HISTORY_ROW_CHANGES = [
+  { line: 7, before: '| PND-03 | Phase 3 (phases/3/) | Pending |', after: '| PND-03 | Phase 4 (phases/4/) | Pending |' },
+  { line: 8, before: '| PND-04 | Phase 4 (phases/4/) | Pending |', after: '| PND-04 | Phase 5 (phases/5/) | Pending |' },
+];
+
+test('renumber insert --dry-run: req_row_changes lists each REQUIREMENTS line the insert changes', () => {
+  const dir = historyRenumberTree();
+  const r = run(['renumber', 'insert', '--at', '3', '--dry-run'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.req_row_changes, HISTORY_ROW_CHANGES);
+  const keys = Object.keys(r);
+  assert.equal(keys[keys.indexOf('ops') + 1], 'req_row_changes');
+  const op = r.ops.find((o) => o.edit === 'REQUIREMENTS.md');
+  assert.equal(op.changes, r.req_row_changes.length);
+});
+
+test('renumber insert: the applied diff is exactly the req_row_changes the dry-run showed', () => {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const shown = run(['renumber', 'insert', '--at', '3', '--dry-run'], dir);
+  const before = readFileSync(reqFile, 'utf8').split('\n');
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, true);
+  const after = readFileSync(reqFile, 'utf8').split('\n');
+  const diff = [];
+  for (let i = 0; i < before.length; i++) {
+    if (after[i] !== before[i]) diff.push({ line: i + 1, before: before[i], after: after[i] });
+  }
+  assert.deepEqual(diff, shown.req_row_changes);
+  assert.deepEqual(r.req_row_changes, shown.req_row_changes);
+});
+
+test('renumber insert: a CRLF file reports req_row_changes without the \\r', () => {
+  const r = run(['renumber', 'insert', '--at', '3', '--dry-run'], crlfHistoryRenumberTree());
+  assert.deepEqual(r.req_row_changes, HISTORY_ROW_CHANGES);
+  for (const c of r.req_row_changes) {
+    assert.doesNotMatch(c.before, /\r/);
+    assert.doesNotMatch(c.after, /\r/);
+  }
+});
+
+test('renumber: req_row_changes is absent when nothing changes, and on remove', () => {
+  const ins = run(['renumber', 'insert', '--at', '4', '--dry-run'], renumberTree());
+  assert.equal('req_row_changes' in ins, false);
+  assert.equal(ins.ops.find((o) => o.edit === 'REQUIREMENTS.md').changes, 0);
+
+  const rem = run(['renumber', 'remove', '--n', '2', '--dry-run'], renumberTree());
+  assert.equal('req_row_changes' in rem, false);
+  assert.equal(rem.ops.find((o) => o.edit === 'REQUIREMENTS.md').changes, 1);
+});

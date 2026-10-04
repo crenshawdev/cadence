@@ -2706,17 +2706,29 @@ export function shiftPhaseTokens(text, from, delta) {
  * third cell isn't a status word or whose summary has pipes in it.
  *
  * Splits on `\n` and nothing else, so a CRLF line keeps its `\r`.
+ *
+ * `changes` is every line that differs, built in the same walk so what the
+ * confirmation gate shows is what gets written. `line` is 1-indexed like
+ * `findProsePhaseRefs`; `before`/`after` drop one trailing `\r` so CRLF and LF
+ * files report the same text.
  * @param {string} text @param {number} at
+ * @returns {{text: string, changes: Array<{line: number, before: string, after: string}>}}
  */
 export function shiftPendingReqRows(text, at) {
   const lines = text.split('\n');
+  const changes = [];
   const { start, end } = sectionSpan(lines, '## Traceability');
-  if (start < 0) return { text };
+  if (start < 0) return { text, changes };
+  const bare = (/** @type {string} */ l) => l.replace(/\r$/, '');
   for (let i = start + 1; i < end; i++) {
     const cells = lines[i].match(REQ_ROW);
-    if (cells && cells[3].trim() === 'Pending') lines[i] = shiftPhaseTokens(lines[i], at, 1).text;
+    if (!cells || cells[3].trim() !== 'Pending') continue;
+    const shifted = shiftPhaseTokens(lines[i], at, 1).text;
+    if (shifted === lines[i]) continue;
+    changes.push({ line: i + 1, before: bare(lines[i]), after: bare(shifted) });
+    lines[i] = shifted;
   }
-  return { text: lines.join('\n') };
+  return { text: lines.join('\n'), changes };
 }
 
 /**

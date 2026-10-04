@@ -298,6 +298,8 @@ function cmdRenumber(dir, sub, opts) {
   const reqFile = join(dir, 'REQUIREMENTS.md');
   const reqText = read(reqFile);
   const orphanedReqs = [];
+  /** @type {Array<{line: number, before: string, after: string}>} */
+  let reqRowChanges = [];
   let newReqText = null;
   if (reqText !== null) {
     let t = reqText;
@@ -313,9 +315,11 @@ function cmdRenumber(dir, sub, opts) {
     }
     // Insert leaves shipped history alone (GH-259): only Pending Traceability
     // rows move. Remove keeps its whole-file shift for now.
-    newReqText = sub === 'insert'
-      ? shiftPendingReqRows(t, at).text
-      : shiftPhaseTokens(t, shiftFrom, delta).text;
+    if (sub === 'insert') {
+      ({ text: newReqText, changes: reqRowChanges } = shiftPendingReqRows(t, at));
+    } else {
+      newReqText = shiftPhaseTokens(t, shiftFrom, delta).text;
+    }
   }
 
   const stateFile = join(dir, 'STATE.md');
@@ -361,12 +365,19 @@ function cmdRenumber(dir, sub, opts) {
     ...dirMoves.map(([f, t]) => ({ git_mv: [`phases/${f}`, `phases/${t}`] })),
     ...(sub === 'remove' && existingDir(at) ? [{ rm: `phases/${at}` }] : []),
     { edit: 'ROADMAP.md', changes: roadmapShift.count + (sub === 'remove' ? 1 : 0) },
-    ...(newReqText !== null ? [{ edit: 'REQUIREMENTS.md', changes: orphanedReqs.length ? orphanedReqs.length : undefined }] : []),
+    // Insert counts changed lines (req_row_changes below), remove its orphans.
+    ...(newReqText !== null ? [{
+      edit: 'REQUIREMENTS.md',
+      changes: sub === 'insert' ? reqRowChanges.length : (orphanedReqs.length ? orphanedReqs.length : undefined),
+    }] : []),
     ...(newCursor ? [{ edit: 'STATE.md', changes: 1 }] : []),
   ];
 
+  // One list for the dry-run and the apply, so the apply can be checked
+  // against what the gate showed.
   const result = {
     ops,
+    ...(reqRowChanges.length ? { req_row_changes: reqRowChanges } : {}),
     ...(inTextRefs.length ? { in_text_refs: inTextRefs } : {}),
     ...(orphanedReqs.length ? { orphaned_reqs: orphanedReqs } : {}),
     ...(decimalPhases.length ? { decimal_phases: decimalPhases } : {}),
