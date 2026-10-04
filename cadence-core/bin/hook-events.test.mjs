@@ -11,7 +11,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hookEventIssues, HOOK_EVENTS, CODES, HOOKS_FILE } from './lib/hook-events.mjs';
+import { hookEventIssues, moduleEntryIssues, HOOK_EVENTS, CODES, HOOKS_FILE } from './lib/hook-events.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -106,4 +106,46 @@ test('an unreadable or shapeless file is ONE issue, never a throw', () => {
     assert.equal(issues[0].kind, CODES.unreadable);
     assert.equal(issues[0].file, HOOKS_FILE, text);
   }
+});
+
+// --- The modules arm: every `modules` entry resolves to a file under hooks/. ---
+
+/** A root whose hooks.json carries `modules`, with `files` written under hooks/. */
+function modRoot(modules, ...files) {
+  const dir = root(JSON.stringify({ modules, hooks: {} }));
+  for (const f of files) writeFileSync(join(dir, 'hooks', f), 'export function register() {}\n');
+  return dir;
+}
+
+test('modules: an entry naming a file that exists is no problem', () => {
+  assert.deepEqual(moduleEntryIssues(modRoot(['./cadence-mod.mjs'], 'cadence-mod.mjs')), []);
+});
+
+test('modules: a missing entry is ONE problem, naming the entry exactly as written', () => {
+  const issues = moduleEntryIssues(modRoot(['./cadence-mod.mjs', './absent.mjs'], 'cadence-mod.mjs'));
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].kind, CODES.badModule);
+  assert.equal(issues[0].file, HOOKS_FILE);
+  assert.match(issues[0].detail, /`\.\/absent\.mjs`/);
+});
+
+test('modules: a non-string entry is ONE problem', () => {
+  const issues = moduleEntryIssues(modRoot([42], 'cadence-mod.mjs'));
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].kind, CODES.badModule);
+  assert.match(issues[0].detail, /42/);
+});
+
+test('modules: a hooks.json without a modules key reports nothing', () => {
+  assert.deepEqual(moduleEntryIssues(root(hooks('PreToolUse'))), []);
+});
+
+test('modules: an absent or unparseable file reports nothing - hookEventIssues already did', () => {
+  assert.deepEqual(moduleEntryIssues(root(null)), []);
+  assert.deepEqual(moduleEntryIssues(root(null, { full: true })), []);
+  assert.deepEqual(moduleEntryIssues(root('{ "hooks": ')), []);
+});
+
+test('modules: the shipped hooks.json names only modules that exist', () => {
+  assert.deepEqual(moduleEntryIssues(REPO), []);
 });

@@ -248,6 +248,11 @@
 //                    lib/hook-events.mjs; this side only decides that it
 //                    applies to the whole root. It takes no CONTRACTS row, for
 //                    the reason check 14 states about `lib/*.mjs`.
+//                    Its second arm resolves every `modules` entry to a file
+//                    under hooks/. A module path that does not resolve loads
+//                    nothing on a mods host and says nothing, the same silence
+//                    the event register exists for, and check 3 cannot see it
+//                    because the entry carries no `${CLAUDE_PLUGIN_ROOT}`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -277,7 +282,7 @@ import { textTransportIssues } from './lib/text-transport.mjs';
 import { bulkOutputIssues } from './lib/bulk-output.mjs';
 import { scratchPathIssues } from './lib/scratch-path.mjs';
 import { captureWriterIssues } from './lib/capture-writers.mjs';
-import { hookEventIssues } from './lib/hook-events.mjs';
+import { hookEventIssues, moduleEntryIssues } from './lib/hook-events.mjs';
 // The subcommand/flag contract table, the accessor the prose lint reads its
 // flag NAMES through, and the evaluator that applies one row's value grammar.
 // All three are DEFINED in lib/arg-contract.mjs and imported here: one table,
@@ -1353,6 +1358,8 @@ function run(root) {
   // handling of an unreadable or malformed file live in lib/hook-events.mjs,
   // and this side only decides that it applies to the whole root.
   for (const issue of hookEventIssues(root)) problems.push(issue);
+  // Its modules arm: every `modules` entry names a file under hooks/.
+  for (const issue of moduleEntryIssues(root)) problems.push(issue);
 
   return problems;
 }
