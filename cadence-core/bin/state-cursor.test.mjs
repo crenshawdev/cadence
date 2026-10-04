@@ -59,3 +59,15 @@ test('agrees with planning.mjs cursor get on a fixture STATE.md', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a Status line with a long run of inner spaces parses in linear time', () => {
+  const status = `a${' '.repeat(200000)}b`;
+  const text = STATE.replace('Status: planned', `Status: ${status}`);
+  const t0 = performance.now();
+  const cursor = parseCursor(text);
+  const ms = performance.now() - t0;
+  assert.ok(ms < 250, `parseCursor took ${ms.toFixed(1)} ms`);
+  assert.ok(cursor);
+  assert.equal(cursor.status, `Status: ${status}  `.slice('Status:'.length).trim());
+  assert.equal(cursor.next, '/cad-execute 2.1');
+});

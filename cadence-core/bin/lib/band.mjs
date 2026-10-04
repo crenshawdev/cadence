@@ -31,14 +31,25 @@ export const NO_CURSOR_LINE = 'Cadence · no readable cursor · run /cad-progres
  */
 export function bandLine(cursor, running, width) {
   if (!cursor) return fit(NO_CURSOR_LINE, width);
-  const head = `Cadence · Phase ${cursor.phase} of ${cursor.total} · ${cursor.status}`;
-  const tail = ` · next ${cursor.next}`;
+  const head = `Cadence · Phase ${cursor.phase} of ${cursor.total} · ${visible(cursor.status)}`;
+  const tail = ` · next ${visible(cursor.next)}`;
   const names = running.map((a) => `${a.role} (${a.rung})`);
   let line = head + (names.length ? ` · running ${names.join(', ')}` : '') + tail;
   if (names.length > 1 && cells(line) > width) {
     line = `${head} · running ${names[0]} +${names.length - 1}${tail}`;
   }
   return fit(line, width);
+}
+
+/**
+ * STATE.md text with every control character shown as `?`. The host refuses a
+ * whole AbovePrompt tree when any text child holds one (C0, DEL, C1, and so
+ * tab, CR and LF too), which would wipe out every other mod's drawing beside
+ * the band. `cursor get` still answers the text as written.
+ * @param {string} s
+ */
+function visible(s) {
+  return String(s).replace(/[\x00-\x1f\x7f-\x9f]/g, '?');
 }
 
 /** @param {string} s */

@@ -22,12 +22,27 @@
 export function parseCursor(text) {
   const m = (re) => { const r = text.match(re); return r ? r : null; };
   const phase = m(/^Phase:\s*(\d+(?:\.\d+)?)\s+of\s+(\d+)\s+\((.+)\)\s*$/m);
-  const status = m(/^Status:\s*(.+?)\s*$/m);
-  const next = m(/^Next:\s*(.+?)\s*$/m);
+  const status = rest(text, /^Status:(.*)$/m);
+  const next = rest(text, /^Next:(.*)$/m);
   const updated = m(/^Updated:\s*(\d{4}-\d{2}-\d{2})\s*$/m);
   if (!phase || !status || !next || !updated) return null;
   return {
     phase: Number(phase[1]), total: Number(phase[2]), name: phase[3],
-    status: status[1], next: next[1], updated: updated[1],
+    status, next, updated: updated[1],
   };
+}
+
+/**
+ * The rest of a `Key:` line, trimmed, or null when the line is missing or
+ * holds nothing. Greedy to the end of the line and then `trim()`, never a lazy
+ * capture before `\s*$`: that one backtracks in quadratic time on a long run of
+ * inner spaces, and the band parses STATE.md inside the host's hooks worker on
+ * every draw.
+ * @param {string} text
+ * @param {RegExp} re one capture: everything after the colon
+ */
+function rest(text, re) {
+  const r = text.match(re);
+  const value = r ? r[1].trim() : '';
+  return value === '' ? null : value;
 }

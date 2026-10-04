@@ -295,3 +295,15 @@ test('subagent events and tool calls ask for a redraw after next, and a failing 
     assert.equal(failing.calls, 1);
   }
 });
+
+test('control characters in STATE.md never reach the band, and the other drawing survives', async () => {
+  const hostile = STATE.replace('Status: planned', 'Status: plan\x07ned')
+    .replace('Next: /cad-execute 1', 'Next: /cad-execute 1\x1b[2J');
+  const next = counting(OTHER);
+  const got = parts(await aboveprompt()(standIn({ files: { '/proj/.planning': '', '/proj/.planning/STATE.md': hostile } }),
+    event(), next));
+  assert.equal(next.calls, 1);
+  assert.doesNotMatch(got.line, /[\x00-\x1f\x7f-\x9f]/);
+  assert.equal(got.line, 'Cadence · Phase 1 of 2 · plan?ned · next /cad-execute 1?[2J');
+  assert.deepEqual(got.rest, [OTHER]);
+});
