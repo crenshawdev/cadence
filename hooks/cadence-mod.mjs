@@ -42,6 +42,14 @@
 // It draws no border: the host frames a Pane already. It does draw a title row,
 // because the host shows the title only as a tab once two panes are open.
 //
+// And the prefix restore (phase 5, D-07). Cadence commands dispatch the bare
+// agent stem route.mjs returns, and the host knows the agent only by its
+// plugin-prefixed name. The model used to read that prefix off the agent
+// listing, which lib/listing-filter.mjs takes out, so an Agent call
+// naming exactly one of Cadence's stems gets `<plugin name>:` added here, the
+// name read from `$.plugin.name`. The rule is lib/agent-prefix.mjs; every
+// other call goes through as sent.
+//
 // Every handler calls `next` exactly once and swallows its own errors (D-12).
 //
 // git-guard, read-trace and subagent-trace stay command hooks on every host, so
@@ -51,6 +59,7 @@ import { planningRootAsync } from '../cadence-core/bin/lib/git-segments.mjs';
 import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
 import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
 import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
+import { prefixedAgent } from '../cadence-core/bin/lib/agent-prefix.mjs';
 import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
 import { NO_PROJECT_TEXT, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv,
   sightDraw, sightStart, sightStop, singleFlight } from '../cadence-core/bin/lib/pane.mjs';
@@ -391,14 +400,18 @@ export function register(on) {
   //
   // A subagent's own `planning.mjs trace close` gains `--agent-id` here (D-11),
   // and any figureless close that names an agent id prices it from its window.
-  // Anything that goes wrong before `next` sends the event exactly as the
-  // subagent wrote it.
+  // An Agent call naming a bare Cadence stem gains the plugin's prefix (phase 5,
+  // D-07). Anything that goes wrong before `next` sends the event exactly as the
+  // model wrote it.
   on('tool.call', async ($, e, next) => {
     let sent = e;
     try {
       if (e.tool === 'Bash' && typeof e.agentId === 'string') {
         const rewritten = withAgentId(e.command, e.agentId);
         if (rewritten !== null) sent = { ...e, command: rewritten };
+      } else if (e.tool === 'Agent') {
+        const type = prefixedAgent(e.subagent_type, $.plugin.name);
+        if (type !== null) sent = { ...e, subagent_type: type };
       }
     } catch {
       sent = e;
