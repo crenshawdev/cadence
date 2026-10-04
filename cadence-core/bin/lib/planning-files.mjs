@@ -192,6 +192,11 @@ export function classifyPhaseList(text) {
 // REQUIREMENTS.md - the Traceability table.
 // ---------------------------------------------------------------------------
 
+// The first three cells of a Traceability row. Shared with
+// `shiftPendingReqRows` so the renumber pass and this reader agree on what a
+// row is.
+const REQ_ROW = /^\|([^|]*)\|([^|]*)\|([^|]*)\|/;
+
 /**
  * Parse traceability rows: [{id, phase, status}]. `phase` is null when the
  * cell names no phase (a dropped requirement - audit's concern, not an
@@ -236,7 +241,7 @@ export function parseRequirements(text) {
   if (start < 0) return [];
   const rows = [];
   for (let i = start + 1; i < end; i++) {
-    const cells = lines[i].match(/^\|([^|]*)\|([^|]*)\|([^|]*)\|/);
+    const cells = lines[i].match(REQ_ROW);
     if (!cells) continue;
     const id = cells[1].replace(/\*/g, '').trim();
     if (!id || id === 'Requirement' || /^[-:\s]+$/.test(id)) continue;
@@ -2689,6 +2694,29 @@ export function shiftPhaseTokens(text, from, delta) {
     .replace(/\bPhase (\d+)\b(?!\.\d)/g, (m, k) => Number(k) >= from ? `Phase ${shift(Number(k))}` : m)
     .replace(/\bphases\/(\d+)\//g, (m, k) => Number(k) >= from ? `phases/${shift(Number(k))}/` : m);
   return { text: out, count };
+}
+
+/**
+ * `renumber insert`'s REQUIREMENTS.md edit. Shifts phase tokens up by one, but
+ * only on `## Traceability` rows whose Status is exactly `Pending`. Every other
+ * line is history and comes back byte for byte (GH-259).
+ *
+ * Section first, then status. Going by status alone would still rewrite
+ * `## Deferred` bullets, which have no status cell, and `## Shipped` rows whose
+ * third cell isn't a status word or whose summary has pipes in it.
+ *
+ * Splits on `\n` and nothing else, so a CRLF line keeps its `\r`.
+ * @param {string} text @param {number} at
+ */
+export function shiftPendingReqRows(text, at) {
+  const lines = text.split('\n');
+  const { start, end } = sectionSpan(lines, '## Traceability');
+  if (start < 0) return { text };
+  for (let i = start + 1; i < end; i++) {
+    const cells = lines[i].match(REQ_ROW);
+    if (cells && cells[3].trim() === 'Pending') lines[i] = shiftPhaseTokens(lines[i], at, 1).text;
+  }
+  return { text: lines.join('\n') };
 }
 
 /**

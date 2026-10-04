@@ -18,7 +18,7 @@ import { fail, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   atomicWrite, cutPhaseDetail, findProsePhaseRefs, parseCursor, parseRequirements,
-  parseRoadmapPhases, renderCursor, shiftPhaseTokens,
+  parseRoadmapPhases, renderCursor, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
 import { requireInt } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
@@ -28,6 +28,8 @@ import { emit } from '../lib/seam-io.mjs';
 // phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
 // reported for the model to repair with judgment. --dry-run computes the full
 // operation plan and touches nothing - it is what the confirmation gate shows.
+// On insert, REQUIREMENTS.md tokens shift only on Pending `## Traceability`
+// rows; every other REQUIREMENTS line is copied through byte-identical.
 // ---------------------------------------------------------------------------
 function gitMv(from, to) {
   try { execFileSync('git', ['mv', from, to], { stdio: 'pipe' }); return 'git'; }
@@ -309,7 +311,11 @@ function cmdRenumber(dir, sub, opts) {
         return line;
       }).join('\n');
     }
-    newReqText = shiftPhaseTokens(t, shiftFrom, delta).text;
+    // Insert leaves shipped history alone (GH-259): only Pending Traceability
+    // rows move. Remove keeps its whole-file shift for now.
+    newReqText = sub === 'insert'
+      ? shiftPendingReqRows(t, at).text
+      : shiftPhaseTokens(t, shiftFrom, delta).text;
   }
 
   const stateFile = join(dir, 'STATE.md');
