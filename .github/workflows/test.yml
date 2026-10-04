@@ -75,3 +75,15 @@ jobs:
       - run: npm install -g @anthropic-ai/claude-code
       - run: claude plugin validate --strict .
       - run: claude plugin validate --strict .claude-plugin/plugin.json
+      # A mods host only loads the Cadence module if the validator reads it from
+      # hooks.json. If the validator ever stops seeing ./cadence-mod.mjs, the
+      # module would ship without anyone noticing, so this fails unless the
+      # report's hooks section names it.
+      - name: Validator reports the Cadence module
+        run: |
+          claude plugin validate --strict --json .claude-plugin/plugin.json | node -e '
+            const r = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            const seen = (r.contents || []).some((c) => c.type === "hooks"
+              && (c.notes || []).some((n) => n.startsWith("./cadence-mod.mjs hooks:")));
+            if (!seen) { console.error("validate report lists no ./cadence-mod.mjs hooks note"); process.exit(1); }
+          '
