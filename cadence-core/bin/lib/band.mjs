@@ -8,7 +8,17 @@
 // The line never wraps and never runs past the width it is given. Too long,
 // the running list shrinks to its first agent plus a count, then the end of
 // the line is cut with an ellipsis.
+//
+// The running list is a roster: a plain array of `{id, role, rung}`, oldest
+// first, moved only by the three pure transitions below (D-07). The module
+// holds the current value and swaps in what each transition returns. A start
+// or stop event can be missed (a subagent spawned before the module loaded, a
+// stop the host never delivered), so the module reconciles against
+// `$.agent.list()` before each draw. Role and rung come from RUNG_FILES through
+// `roleOfAgent` and `rungOfAgent`, never from a `-<rung>` suffix.
 'use strict';
+
+import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
 
 /** The line when STATE.md is missing or does not parse (phase 3, D-06). */
 export const NO_CURSOR_LINE = 'Cadence · no readable cursor · run /cad-progress';
@@ -47,4 +57,71 @@ function fit(line, width) {
   if (chars.length <= width) return line;
   if (!(width >= 1)) return '';
   return chars.slice(0, width - 1).join('') + '…';
+}
+
+/**
+ * @typedef {{id: string, role: string, rung: string}} RosterEntry
+ * @typedef {readonly RosterEntry[]} Roster
+ */
+
+/**
+ * The entry a Cadence agent type gets, or null for any type RUNG_FILES does not
+ * file (the host's own `general-purpose`, `Explore`, a fork).
+ * @param {unknown} id
+ * @param {unknown} type
+ * @returns {RosterEntry | null}
+ */
+function entry(id, type) {
+  const role = roleOfAgent(type);
+  const rung = rungOfAgent(type);
+  if (typeof id !== 'string' || id === '' || role === null || rung === null) return null;
+  return { id, role, rung };
+}
+
+/**
+ * A `classic.SubagentStart` input joins the roster when it is a Cadence agent
+ * of THIS session. Anything else answers the roster unchanged.
+ * @param {Roster} roster
+ * @param {{session_id?: unknown, agent_id?: unknown, agent_type?: unknown}} start
+ * @param {string} sessionId this session's id, `$.session.id()`
+ * @returns {Roster}
+ */
+export function rosterStart(roster, start, sessionId) {
+  if (!start || start.session_id !== sessionId) return roster;
+  const added = entry(start.agent_id, start.agent_type);
+  if (added === null || roster.some((a) => a.id === added.id)) return roster;
+  return [...roster, added];
+}
+
+/**
+ * A `classic.SubagentStop` drops the agent with that id, if the roster holds it.
+ * @param {Roster} roster
+ * @param {unknown} agentId
+ * @returns {Roster}
+ */
+export function rosterStop(roster, agentId) {
+  return roster.some((a) => a.id === agentId) ? roster.filter((a) => a.id !== agentId) : roster;
+}
+
+/**
+ * The roster `$.agent.list()` says is true: exactly the Cadence agents it shows
+ * `running`. Ones the roster already held keep their place; ones it missed join
+ * at the end, in the list's order. The list holds this session's agents only,
+ * so no session check is needed here.
+ * @param {Roster} roster
+ * @param {unknown} list `$.agent.list()`'s answer: `{id, type, status}` entries
+ * @returns {Roster}
+ */
+export function rosterReconcile(roster, list) {
+  if (!Array.isArray(list)) return roster;
+  /** @type {Map<string, RosterEntry>} */
+  const running = new Map();
+  for (const a of list) {
+    if (!a || a.status !== 'running') continue;
+    const found = entry(a.id, a.type);
+    if (found !== null) running.set(found.id, found);
+  }
+  const kept = roster.filter((a) => running.has(a.id));
+  const held = new Set(kept.map((a) => a.id));
+  return [...kept, ...[...running.values()].filter((a) => !held.has(a.id))];
 }

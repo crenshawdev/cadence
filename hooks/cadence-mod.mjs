@@ -10,7 +10,8 @@
 // `.planning/` walk in lib/git-segments.mjs is the first). This file only wires
 // those rules to host events and does its I/O through `$`.
 //
-// What it does: the band above the prompt (Plan 2 of phase 3). The token
+// What it does: the band above the prompt, naming the running Cadence agents
+// it tracks from subagent start and stop (Plan 2 of phase 3). The token
 // capture for figureless returns (Plan 3) lands here next.
 //
 // Every handler calls `next` exactly once and swallows its own errors (D-12).
@@ -20,7 +21,7 @@
 
 import { planningRootAsync } from '../cadence-core/bin/lib/git-segments.mjs';
 import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
-import { bandLine } from '../cadence-core/bin/lib/band.mjs';
+import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
 
 /** `dir/name`, without doubling the separator at a filesystem root. */
 const at = (/** @type {string} */ dir, /** @type {string} */ name) =>
@@ -28,6 +29,33 @@ const at = (/** @type {string} */ dir, /** @type {string} */ name) =>
 
 /** @param {any} on the host's hook registrar */
 export function register(on) {
+  // The Cadence agents running in this session (D-07). Every write is
+  // `roster = transition(roster, ...)` with its await done first, so two
+  // handlers interleaving never write back a stale roster.
+  /** @type {readonly {id: string, role: string, rung: string}[]} */
+  let roster = [];
+
+  on('classic.SubagentStart', async ($, e, next) => {
+    const answer = await next(e);
+    try {
+      const session = await $.session.id();
+      roster = rosterStart(roster, e, session);
+    } catch {
+      // the next draw's reconcile adds what this missed
+    }
+    return answer;
+  });
+
+  on('classic.SubagentStop', async ($, e, next) => {
+    const answer = await next(e);
+    try {
+      roster = rosterStop(roster, e.agent_id);
+    } catch {
+      // the next draw's reconcile drops what this missed
+    }
+    return answer;
+  });
+
   // The band. AbovePrompt holds one tree, so the band goes in a column above
   // whatever the mods beneath drew, never in place of it. No band while a
   // survey holds the row, or outside a Cadence project (D-06).
@@ -43,8 +71,14 @@ export function register(on) {
       } catch {
         // unreadable is the same as absent: the /cad-progress line
       }
+      try {
+        const list = await $.agent.list();
+        roster = rosterReconcile(roster, list);
+      } catch {
+        // no list: draw the roster the start and stop events built
+      }
       const { Box, Text } = $.ui.resolve(e);
-      const band = Text({ wrap: 'truncate-end', children: bandLine(cursor, [], e.props.bodyColumns) });
+      const band = Text({ wrap: 'truncate-end', children: bandLine(cursor, roster, e.props.bodyColumns) });
       return Box({ flexDirection: 'column', children: [band, drawn] });
     } catch {
       return drawn;

@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bandLine, NO_CURSOR_LINE } from './lib/band.mjs';
+import { bandLine, NO_CURSOR_LINE, rosterReconcile, rosterStart, rosterStop } from './lib/band.mjs';
 import { parseCursor } from './lib/state-cursor.mjs';
 import { register } from '../../hooks/cadence-mod.mjs';
 
@@ -19,6 +19,7 @@ const STATE = '# State\n\nPhase: 1 of 2 (Fixture)\nStatus: planned\nNext: /cad-e
 const CURSOR = { phase: 1, total: 2, status: 'planned', next: '/cad-execute 1' };
 const REVIEWER = { role: 'cad-reviewer', rung: 'low' };
 const EXECUTOR = { role: 'cad-executor', rung: 'high' };
+const SESSION = 'session-1';
 
 // --- the line ---------------------------------------------------------------
 
@@ -93,9 +94,10 @@ const OTHER = Object.freeze({ type: 'Text', props: {}, children: ['another mod']
 
 /** A stand-in `$` over a fixture tree of path -> text (a directory maps to ''). */
 function standIn({ cwd = '/proj/sub', files = { '/proj/.planning': '', '/proj/.planning/STATE.md': STATE },
-  read, resolve } = /** @type {any} */ ({})) {
+  read, resolve, agent } = /** @type {any} */ ({})) {
   return {
-    session: { cwd: async () => cwd },
+    session: { cwd: async () => cwd, id: async () => SESSION },
+    agent: agent || { list: async () => [] },
     fs: {
       exists: async (/** @type {string} */ p) => Object.hasOwn(files, p),
       read: read || (async (/** @type {string} */ p) => {
@@ -182,4 +184,95 @@ test('the band is cut to bodyColumns', async () => {
   const { line } = parts(await aboveprompt()(standIn(), event({ bodyColumns: 20 }), counting(OTHER)));
   assert.equal(Array.from(line).length, 20);
   assert.ok(line.endsWith('…'));
+});
+
+// --- the running roster -----------------------------------------------------
+
+const start = (id, type, session_id = SESSION) =>
+  ({ hook_event_name: 'SubagentStart', session_id, agent_id: id, agent_type: type });
+
+test('a start then its stop leaves the roster empty', () => {
+  const one = rosterStart([], start('a1', 'cadence:cad-reviewer-low'), SESSION);
+  assert.deepEqual(one, [{ id: 'a1', role: 'cad-reviewer', rung: 'low' }]);
+  assert.deepEqual(rosterStop(one, 'a1'), []);
+  assert.deepEqual(rosterStop(one, 'other'), one);
+});
+
+test('host agent types and other sessions never join the roster', () => {
+  for (const type of ['general-purpose', 'Explore']) {
+    assert.deepEqual(rosterStart([], start('a1', type), SESSION), []);
+  }
+  assert.deepEqual(rosterStart([], start('a1', 'cadence:cad-reviewer-low', 'session-2'), SESSION), []);
+});
+
+test('role and rung come from RUNG_FILES, not a suffix', () => {
+  let roster = rosterStart([], start('a1', 'cadence:cad-reviewer-low'), SESSION);
+  roster = rosterStart(roster, start('a2', 'cadence:cad-assumptions-analyzer'), SESSION);
+  assert.deepEqual(roster.map(({ role, rung }) => ({ role, rung })),
+    [{ role: 'cad-reviewer', rung: 'low' }, { role: 'cad-assumptions-analyzer', rung: 'xhigh' }]);
+  assert.equal(bandLine(CURSOR, roster, 200),
+    'Cadence · Phase 1 of 2 · planned · running cad-reviewer (low), cad-assumptions-analyzer (xhigh) · next /cad-execute 1');
+});
+
+test('a reconcile keeps exactly the running Cadence agents the list shows', () => {
+  const held = rosterStart(rosterStart([], start('a1', 'cadence:cad-reviewer-low'), SESSION),
+    start('a2', 'cadence:cad-executor'), SESSION);
+  const list = [
+    { id: 'a1', type: 'cadence:cad-reviewer-low', status: 'completed', description: '' },
+    { id: 'a2', type: 'cadence:cad-executor', status: 'running', description: '' },
+    { id: 'a3', type: 'cadence:cad-verifier-medium', status: 'running', description: '' },
+    { id: 'a4', type: 'general-purpose', status: 'running', description: '' },
+  ];
+  assert.deepEqual(rosterReconcile(held, list), [
+    { id: 'a2', role: 'cad-executor', rung: 'high' },
+    { id: 'a3', role: 'cad-verifier', rung: 'medium' },
+  ]);
+});
+
+/** The module's handler for one classic event. */
+function classic(name) {
+  const found = handlers().filter((h) => h.pattern === name);
+  assert.equal(found.length, 1);
+  return found[0].hook;
+}
+
+test('subagent start and stop each run next once and answer its result', async () => {
+  for (const [name, e] of [['classic.SubagentStart', start('a1', 'cadence:cad-reviewer-low')],
+    ['classic.SubagentStop', { hook_event_name: 'SubagentStop', session_id: SESSION, agent_id: 'a1' }]]) {
+    const answer = { block: undefined };
+    const next = counting(answer);
+    assert.equal(await classic(name)(standIn(), e, next), answer);
+    assert.equal(next.calls, 1);
+    const failing = counting(answer);
+    assert.equal(await classic(name)({ session: { id: async () => { throw new Error('gone'); } } }, e, failing), answer);
+    assert.equal(failing.calls, 1);
+  }
+});
+
+test('the band names an agent the list shows running, and draws when the list throws', async () => {
+  const running = standIn({ agent: { list: async () =>
+    [{ id: 'a1', type: 'cadence:cad-reviewer-low', status: 'running', description: '' }] } });
+  let next = counting(OTHER);
+  let got = parts(await aboveprompt()(running, event(), next));
+  assert.match(got.line, /running cad-reviewer \(low\)/);
+  assert.deepEqual(got.rest, [OTHER]);
+  assert.equal(next.calls, 1);
+
+  const broken = standIn({ agent: { list: async () => { throw new Error('no list'); } } });
+  next = counting(OTHER);
+  got = parts(await aboveprompt()(broken, event(), next));
+  assert.equal(got.line, 'Cadence · Phase 1 of 2 · planned · next /cad-execute 1');
+  assert.deepEqual(got.rest, [OTHER]);
+  assert.equal(next.calls, 1);
+});
+
+test('a start the module saw shows in the band when the list throws, and its stop drops it', async () => {
+  const seen = handlers();
+  const hook = (/** @type {string} */ name) => seen.find((h) => h.pattern === name).hook;
+  const render = seen.find((h) => h.pattern === 'ui.render').hook;
+  const $ = standIn({ agent: { list: async () => { throw new Error('no list'); } } });
+  await hook('classic.SubagentStart')($, start('a1', 'cadence:cad-reviewer-low'), counting(undefined));
+  assert.match(parts(await render($, event(), counting(OTHER))).line, /running cad-reviewer \(low\)/);
+  await hook('classic.SubagentStop')($, { hook_event_name: 'SubagentStop', agent_id: 'a1' }, counting(undefined));
+  assert.doesNotMatch(parts(await render($, event(), counting(OTHER))).line, /running/);
 });
