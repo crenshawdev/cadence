@@ -2711,24 +2711,38 @@ export function shiftPhaseTokens(text, from, delta) {
  * confirmation gate shows is what gets written. `line` is 1-indexed like
  * `findProsePhaseRefs`; `before`/`after` drop one trailing `\r` so CRLF and LF
  * files report the same text.
+ *
+ * `movedComplete` holds the IDs of Complete rows that cite a phase this insert
+ * moves (a token `shiftPhaseTokens` would shift, so decimals and phases below
+ * `at` don't count). Those rows stay as written, same as every other frozen
+ * line: rewriting them would rewrite where the work shipped, and leaving them
+ * means they may now point at a different phase. Neither answer is safe to
+ * pick for the user, so the caller names them and the user decides (D-02).
  * @param {string} text @param {number} at
- * @returns {{text: string, changes: Array<{line: number, before: string, after: string}>}}
+ * @returns {{text: string, changes: Array<{line: number, before: string, after: string}>, movedComplete: string[]}}
  */
 export function shiftPendingReqRows(text, at) {
   const lines = text.split('\n');
   const changes = [];
+  /** @type {string[]} */
+  const movedComplete = [];
   const { start, end } = sectionSpan(lines, '## Traceability');
-  if (start < 0) return { text, changes };
+  if (start < 0) return { text, changes, movedComplete };
   const bare = (/** @type {string} */ l) => l.replace(/\r$/, '');
   for (let i = start + 1; i < end; i++) {
     const cells = lines[i].match(REQ_ROW);
-    if (!cells || cells[3].trim() !== 'Pending') continue;
+    if (!cells) continue;
+    const status = cells[3].trim();
+    if (status === 'Complete' && shiftPhaseTokens(lines[i], at, 1).count > 0) {
+      movedComplete.push(cells[1].replace(/\*/g, '').trim());
+    }
+    if (status !== 'Pending') continue;
     const shifted = shiftPhaseTokens(lines[i], at, 1).text;
     if (shifted === lines[i]) continue;
     changes.push({ line: i + 1, before: bare(lines[i]), after: bare(shifted) });
     lines[i] = shifted;
   }
-  return { text: lines.join('\n'), changes };
+  return { text: lines.join('\n'), changes, movedComplete };
 }
 
 /**

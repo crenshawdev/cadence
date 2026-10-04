@@ -300,6 +300,8 @@ function cmdRenumber(dir, sub, opts) {
   const orphanedReqs = [];
   /** @type {Array<{line: number, before: string, after: string}>} */
   let reqRowChanges = [];
+  /** @type {string[]} */
+  let movedComplete = [];
   let newReqText = null;
   if (reqText !== null) {
     let t = reqText;
@@ -316,7 +318,7 @@ function cmdRenumber(dir, sub, opts) {
     // Insert leaves shipped history alone (GH-259): only Pending Traceability
     // rows move. Remove keeps its whole-file shift for now.
     if (sub === 'insert') {
-      ({ text: newReqText, changes: reqRowChanges } = shiftPendingReqRows(t, at));
+      ({ text: newReqText, changes: reqRowChanges, movedComplete } = shiftPendingReqRows(t, at));
     } else {
       newReqText = shiftPhaseTokens(t, shiftFrom, delta).text;
     }
@@ -347,6 +349,17 @@ function cmdRenumber(dir, sub, opts) {
     if (sub === 'remove' && cursor.phase === at) {
       warn = `cursor points at removed phase ${at}; number left as-is - re-point it (cursor set)`;
     }
+  }
+  // Complete rows citing a moved phase were left as written (D-02). Say so by
+  // ID, after any cursor warning and without touching its text: `warn` stays
+  // one string, since callers match it as one. No promise that status or audit
+  // will flag these later - neither does when the old number now lands on
+  // another completed phase.
+  if (movedComplete.length) {
+    const completeWarn = `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this ` +
+      'insert moves and were left unchanged, so each may now name a different phase than the one ' +
+      'it shipped in - re-point a row by hand only if it belongs to the open milestone';
+    warn = warn ? `${warn}; ${completeWarn}` : completeWarn;
   }
 
   // Prose refs the shift leaves alone - the model repairs these with judgment.

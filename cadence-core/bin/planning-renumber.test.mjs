@@ -820,3 +820,34 @@ test('renumber: req_row_changes is absent when nothing changes, and on remove', 
   assert.equal('req_row_changes' in rem, false);
   assert.equal(rem.ops.find((o) => o.edit === 'REQUIREMENTS.md').changes, 1);
 });
+
+// A Complete row citing a moved phase is left as written and named in `warn`
+// (D-02). Deferred, lowercase-`pending` and `## Shipped` rows cite moved
+// phases too and must not be named: only Complete Traceability rows are.
+test('renumber insert: a Complete row citing a moved phase stays put and is named in warn', () => {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const shown = run(['renumber', 'insert', '--at', '3', '--dry-run'], dir);
+  const before = readFileSync(reqFile, 'utf8').split('\n');
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(readFileSync(reqFile, 'utf8').split('\n')[CMP_03], before[CMP_03]);
+  assert.match(r.warn, /CMP-03/);
+  assert.doesNotMatch(r.warn, /DEF-04/);
+  assert.doesNotMatch(r.warn, /LOW-03/);
+  assert.doesNotMatch(r.warn, /SHP-01/);
+  assert.equal(shown.warn, r.warn);
+});
+
+test('renumber insert: a decimal-cursor warning keeps its text and comes before the Complete-row warning', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 3, name: 'Three' }],
+    phases: { 1: { plan: true }, 2: { plan: true }, 3: { plan: true } },
+    reqs: [['CMP-03', 3, 'Complete']],
+    cursor: { phase: 2.1, total: 4, name: 'Patch', status: 'planned', next: '/cad-execute 2.1', updated: '2026-01-01' },
+  });
+  const r = run(['renumber', 'insert', '--at', '2'], dir);
+  assert.equal(r.ok, true);
+  assert.match(r.warn, /^cursor sits on decimal phase 2\.1, .* re-point it \(cursor set\); /);
+  assert.match(r.warn, /CMP-03/);
+});
