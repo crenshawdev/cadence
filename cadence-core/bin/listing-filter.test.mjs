@@ -1,7 +1,8 @@
 // @ts-check
 // Tests for lib/listing-filter.mjs, run on listings captured from 2.1.289
 // (fixtures/listing.*.json). Each expected answer is the fixture's lines with
-// named line indexes taken out, never a second copy of the rule.
+// named line indexes taken out, never a second copy of the rule. The last cases
+// drive the Cadence module's `prompt.attachment` handler that applies it.
 'use strict';
 
 import { test } from 'node:test';
@@ -10,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { filterListing, LISTING_TYPES, AGENT_LISTING, SKILL_LISTING } from './lib/listing-filter.mjs';
+import { register } from '../../hooks/cadence-mod.mjs';
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
@@ -126,4 +128,66 @@ test('it exports exactly the two type names, and the same input answers the same
   for (const f of [AGENTS, SKILLS, AGENTS_MULTI, SKILLS_MULTI]) {
     assert.equal(filterListing(f.type, f.text), filterListing(f.type, f.text));
   }
+});
+
+// The module's `prompt.attachment` handler, driven through `register`.
+
+/** The module's one `prompt.attachment` handler and its matcher. */
+function attachment() {
+  /** @type {{matcher: any, handler: Function}[]} */
+  const found = [];
+  register((/** @type {string} */ pattern, /** @type {any} */ a, /** @type {any} */ b) => {
+    if (pattern === 'prompt.attachment') found.push(b === undefined ? { matcher: undefined, handler: a } : { matcher: a, handler: b });
+  });
+  assert.equal(found.length, 1);
+  return found[0];
+}
+
+/** Run the handler once on `e` with a `next` resolving `result`; `next` must run once. */
+async function answer(/** @type {any} */ $, /** @type {any} */ e, /** @type {any} */ result) {
+  let calls = 0;
+  const next = async (/** @type {any} */ got) => { calls += 1; assert.equal(got, e); return result; };
+  const out = await attachment().handler($, e, next);
+  assert.equal(calls, 1);
+  return out;
+}
+
+/** A `$` that finds no `.planning/` anywhere (D-02). */
+const nowhere = {
+  session: { cwd: async () => '/somewhere/not/a/project' },
+  fs: { exists: async () => false, read: async () => { throw new Error('no such file'); } },
+};
+
+for (const [where, $] of /** @type {[string, any][]} */ ([['in a project', {}], ['outside any project', nowhere]])) {
+  for (const f of [AGENTS, SKILLS]) {
+    test(`handler, ${where}: ${f.type} answers the filtered text`, async () => {
+      const e = { type: f.type, text: f.text, origin: { kind: 'engine' } };
+      const out = await answer($, e, { text: f.text });
+      assert.deepEqual(out, { text: filterListing(f.type, f.text) });
+      assert.notEqual(out.text, f.text);
+    });
+  }
+}
+
+test('handler: another type answers the very object next resolved', async () => {
+  const text = '- cadence:cad-reviewer-low: x\n- cadence:cad-reviewer-contract: y';
+  const result = { text };
+  assert.equal(await answer({}, { type: 'hook_additional_context', text }, result), result);
+});
+
+test('handler: a null text passes through as resolved', async () => {
+  const result = { text: null };
+  assert.equal(await answer({}, { type: AGENT_LISTING, text: AGENTS.text }, result), result);
+});
+
+test('handler: a type or a text that throws when read answers what next resolved', async () => {
+  const e = { get type() { throw new Error('boom'); }, text: AGENTS.text };
+  const result = { text: AGENTS.text };
+  assert.equal(await answer({}, e, result), result);
+  const bad = { get text() { throw new Error('boom'); } };
+  assert.equal(await answer({}, { type: AGENT_LISTING, text: AGENTS.text }, bad), bad);
+});
+
+test('handler: the matcher names exactly the two listing types', () => {
+  assert.deepEqual(attachment().matcher, { type: [AGENT_LISTING, SKILL_LISTING] });
 });

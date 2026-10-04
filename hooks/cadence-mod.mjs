@@ -42,13 +42,22 @@
 // It draws no border: the host frames a Pane already. It does draw a title row,
 // because the host shows the title only as a tab once two panes are open.
 //
+// And the listing filter (phase 5, D-01). The 30 rung agents' and the six
+// contract skills' entries come out of the agent and skill listings the model
+// reads, in every session and every repo (D-02): route.mjs picks each agent
+// and the skill dispatching it names it, so the descriptions bought nothing.
+// It edits the `prompt.attachment` text by lib/listing-filter.mjs's line rule.
+// Withholding the type through `agent.offer` would take it out of dispatch
+// too (`Agent type 'cadence:cad-reviewer-low' not found`), and `command.describe`
+// `isHidden` only hides the command menu entry.
+//
 // And the prefix restore (phase 5, D-07). Cadence commands dispatch the bare
 // agent stem route.mjs returns, and the host knows the agent only by its
 // plugin-prefixed name. The model used to read that prefix off the agent
-// listing, which lib/listing-filter.mjs takes out, so an Agent call
-// naming exactly one of Cadence's stems gets `<plugin name>:` added here, the
-// name read from `$.plugin.name`. The rule is lib/agent-prefix.mjs; every
-// other call goes through as sent.
+// listing the filter takes out, so an Agent call naming exactly one of
+// Cadence's stems gets `<plugin name>:` added here, the name read from
+// `$.plugin.name`. The rule is lib/agent-prefix.mjs; every other call goes
+// through as sent.
 //
 // Every handler calls `next` exactly once and swallows its own errors (D-12).
 //
@@ -60,6 +69,7 @@ import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
 import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
 import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
 import { prefixedAgent } from '../cadence-core/bin/lib/agent-prefix.mjs';
+import { filterListing, LISTING_TYPES } from '../cadence-core/bin/lib/listing-filter.mjs';
 import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
 import { NO_PROJECT_TEXT, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv,
   sightDraw, sightStart, sightStop, singleFlight } from '../cadence-core/bin/lib/pane.mjs';
@@ -421,6 +431,21 @@ export function register(on) {
     redraw($);
     refresh($, pane);
     return result;
+  });
+
+  // The two listings, without Cadence's agents and contract skills (phase 5,
+  // D-01). It filters what `next` resolved, so a text another hook dropped
+  // stays dropped, and anything that throws sends the listing unfiltered.
+  on('prompt.attachment', { type: LISTING_TYPES }, async ($, e, next) => {
+    const result = await next(e);
+    try {
+      const text = result.text;
+      if (typeof text !== 'string') return result;
+      const kept = filterListing(e.type, text);
+      return kept === text ? result : { text: kept };
+    } catch {
+      return result;
+    }
   });
 
   // The band. AbovePrompt holds one tree, so the band goes in a column above
