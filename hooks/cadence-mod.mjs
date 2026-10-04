@@ -49,7 +49,8 @@ import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
 import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
 import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
 import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
-import { NO_PROJECT_TEXT, paneLines, singleFlight } from '../cadence-core/bin/lib/pane.mjs';
+import { NO_PROJECT_TEXT, paneLines, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv, singleFlight }
+  from '../cadence-core/bin/lib/pane.mjs';
 
 /**
  * The pane's id and title, held once: `/cad-panel` and anything else that
@@ -199,21 +200,51 @@ async function fetchPane($, p) {
     // no list: fetch anyway
   }
   /** @type {import('../cadence-core/bin/lib/pane.mjs').Snapshot} */
-  const read = { cursor: null };
+  const read = { cursor: null, status: { ok: false, reason: 'not-read' } };
   try {
     const root = await planningRootAsync(await $.session.cwd(), (dir, name) => $.fs.exists(at(dir, name)));
-    if (root !== null) {
-      try {
-        read.cursor = parseCursor(await $.fs.read(at(root, '.planning/STATE.md')));
-      } catch {
-        // unreadable is the same as absent: the /cad-progress hint
-      }
+    if (root === null) {
+      read.status = { ok: false, reason: 'no-planning-dir' };
+    } else {
+      [read.cursor, read.status] = await Promise.all([readCursor($, root), runSeam($, root, ['status'])]);
     }
   } catch {
     // no walk: nothing read
   }
   p.snapshot = read;
   redraw($);
+}
+
+/**
+ * The project's STATE.md cursor, or null when it is missing or unreadable:
+ * the band's feed (D-03).
+ * @param {any} $
+ * @param {string} root
+ */
+async function readCursor($, root) {
+  try {
+    return parseCursor(await $.fs.read(at(root, '.planning/STATE.md')));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One `planning.mjs` subcommand against the project, its answer parsed. The
+ * pane re-derives nothing in-process: planning-files imports `node:fs`, and a
+ * second derivation would be a second answer (D-04).
+ * @param {any} $
+ * @param {string} root
+ * @param {readonly string[]} args
+ * @returns {Promise<import('../cadence-core/bin/lib/pane.mjs').Seam>}
+ */
+async function runSeam($, root, args) {
+  try {
+    const ran = await $.process.run(seamArgv($.plugin.root, root, args), { cwd: root, timeoutMs: SEAM_TIMEOUT_MS });
+    return seamAnswer(ran && ran.stdout);
+  } catch {
+    return RUN_FAILED;
+  }
 }
 
 /**

@@ -14,6 +14,11 @@
 // What each section reads:
 // - `next`: the STATE.md cursor's `next`, parsed by lib/state-cursor.mjs, the
 //   value the band shows (D-03).
+// - the heading, the disagreement line and the plan rows: one `planning.mjs
+//   status` run. The phase is its derived `current` (D-05); the rows are that
+//   entry's `plans`, or one `PLAN.md` once it is planned, each marked by
+//   `outstanding[]` (D-06). A cursor `status` says disagrees (`cursor.agrees`
+//   false) gets a line of its own: the pane names both phases, picks neither.
 //
 // The layout, one row per line, top to bottom:
 //   1. the phase heading
@@ -39,10 +44,49 @@ export const NO_CURSOR_NEXT = 'next · no readable cursor · run /cad-progress';
 export const NO_PROJECT_TEXT =
   'No .planning/ here, so there is no Cadence pane to open. /cad-new-project or /cad-adopt starts one.';
 
+/** How long one seam run may take before the host kills it. */
+export const SEAM_TIMEOUT_MS = 10000;
+
 /**
  * @typedef {{next: string} | null} Cursor
- * @typedef {{cursor: Cursor}} Snapshot one fetch's answers
+ * @typedef {{ok: boolean, value?: any, reason?: string, hint?: string}} Seam
+ *   a seam's answer: `ok` with its envelope in `value`, or not `ok` with the
+ *   refusal's `reason` and `hint`
+ * @typedef {{cursor: Cursor, status: Seam}} Snapshot one fetch's answers
  */
+
+/**
+ * The argv that runs one `planning.mjs` subcommand against a project.
+ * @param {string} pluginRoot `$.plugin.root`
+ * @param {string} projectRoot the directory holding `.planning/`
+ * @param {readonly string[]} args the subcommand and its flags
+ * @returns {string[]}
+ */
+export function seamArgv(pluginRoot, projectRoot, args) {
+  return ['node', join(pluginRoot, 'cadence-core/bin/planning.mjs'), '--dir', join(projectRoot, '.planning'), ...args];
+}
+
+/** The answer for a run that rejected: a timeout, a spawn the host refused. */
+export const RUN_FAILED = Object.freeze({ ok: false, reason: 'run-failed' });
+
+/**
+ * A seam's stdout as a Seam: the envelope when it says `ok: true`, else the
+ * refusal's `reason` and `hint`, else `unparseable-output`.
+ * @param {unknown} stdout
+ * @returns {Seam}
+ */
+export function seamAnswer(stdout) {
+  let v;
+  try {
+    v = JSON.parse(String(stdout));
+  } catch {
+    v = null;
+  }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return { ok: false, reason: 'unparseable-output' };
+  if (v.ok === true) return { ok: true, value: v };
+  const reason = typeof v.reason === 'string' && v.reason ? v.reason : 'refused';
+  return typeof v.hint === 'string' && v.hint ? { ok: false, reason, hint: v.hint } : { ok: false, reason };
+}
 
 /**
  * The pane's lines for a snapshot, each at most `width` cells.
@@ -52,10 +96,63 @@ export const NO_PROJECT_TEXT =
  */
 export function paneLines(snapshot, width) {
   if (!snapshot) return [fit(READING_LINE, width)];
-  /** @type {string[]} */
-  const lines = [];
-  lines.push(snapshot.cursor ? `next ${snapshot.cursor.next}` : NO_CURSOR_NEXT);
+  const phase = phaseView(snapshot.status);
+  const lines = [
+    ...phase.heading,
+    snapshot.cursor ? `next ${snapshot.cursor.next}` : NO_CURSOR_NEXT,
+    ...phase.rows,
+  ];
   return lines.map((line) => fit(visible(line), width));
+}
+
+/** The statuses a phase has a `PLAN.md` in, when `status` lists no `plans`. */
+const PLANNED = new Set(['planned', 'executed', 'complete']);
+
+/**
+ * The heading, the disagreement line and the plan rows, from `status`.
+ * @param {Seam} status
+ * @returns {{heading: string[], rows: string[], entry: any}} `entry`: the
+ *   current phase's `phases[]` entry, or null with no current phase
+ */
+export function phaseView(status) {
+  if (!status || !status.ok) return { heading: [unavailable('Phase', status)], rows: [], entry: null };
+  const s = status.value;
+  /** @type {string[]} */
+  const heading = [];
+  let entry = null;
+  if (s.current === null || s.current === undefined) {
+    heading.push(s.cycle === 'none' ? 'No active phase · the milestone is closed' : 'No active phase · every phase is complete');
+  } else {
+    entry = (Array.isArray(s.phases) ? s.phases : []).find((p) => p && String(p.n) === String(s.current)) || null;
+    heading.push(`Phase ${s.current} of ${s.total}${entry ? ` · ${entry.name} · ${entry.status}` : ''}`);
+  }
+  if (s.cursor && s.cursor.agrees === false) heading.push(`Cursor says phase ${s.cursor.phase} · ${s.cursor.status}`);
+  if (entry === null) return { heading, rows: [], entry };
+  const plans = Array.isArray(entry.plans) ? entry.plans : PLANNED.has(entry.status) ? ['PLAN.md'] : [];
+  if (plans.length === 0) return { heading, rows: ['No plan yet'], entry };
+  const due = (Array.isArray(s.outstanding) ? s.outstanding : [])
+    .find((o) => o && String(o.phase) === String(s.current));
+  const open = new Set(due && Array.isArray(due.plans) ? due.plans : []);
+  return { heading, rows: plans.map((f) => `${f} · ${open.has(f) ? 'outstanding' : 'complete'}`), entry };
+}
+
+/**
+ * A section whose source failed: never an empty list or a zero in its place.
+ * @param {string} label
+ * @param {Seam | null | undefined} seam
+ */
+function unavailable(label, seam) {
+  if (!seam || seam.ok) return `${label} unavailable · not-read`;
+  return `${label} unavailable · ${seam.reason}${seam.hint ? ` · ${seam.hint}` : ''}`;
+}
+
+/**
+ * `dir/name`, without doubling the separator at a filesystem root.
+ * @param {string} dir
+ * @param {string} name
+ */
+function join(dir, name) {
+  return /[\\/]$/.test(dir) ? dir + name : `${dir}/${name}`;
 }
 
 /**

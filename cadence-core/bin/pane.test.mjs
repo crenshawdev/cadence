@@ -5,20 +5,27 @@
 // band.test.mjs does: the host draws nothing headless.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, READING_LINE, singleFlight } from './lib/pane.mjs';
+import { NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, READING_LINE, seamAnswer, singleFlight } from './lib/pane.mjs';
+import { makeTree } from './planning.test.mjs';
 import { parseCursor } from './lib/state-cursor.mjs';
 import { register } from '../../hooks/cadence-mod.mjs';
 
 const BIN = dirname(fileURLToPath(import.meta.url));
+const REPO = join(BIN, '..', '..');
 const STATE = '# State\n\nPhase: 1 of 2 (Fixture)\nStatus: planned\nNext: /cad-execute 1\nUpdated: 2026-10-04\n';
 
+/** A `status` envelope: phase 1 of 2, planned, one outstanding PLAN.md. */
+const STATUS = Object.freeze({ ok: true, current: 1, total: 2, outstanding: [{ phase: 1, plans: ['PLAN.md'] }],
+  phases: [{ n: 1, name: 'Fixture', status: 'planned' }, { n: 2, name: 'Next', status: 'unplanned' }] });
+
 /** One snapshot, every section filled the way a good fetch leaves it. */
-const snap = (/** @type {any} */ extra = {}) => ({ cursor: parseCursor(STATE), ...extra });
+const snap = (/** @type {any} */ extra = {}) => ({ cursor: parseCursor(STATE),
+  status: { ok: true, value: STATUS }, ...extra });
 
 // --- the lines --------------------------------------------------------------
 
@@ -106,6 +113,7 @@ function standIn({ cwd = '/proj/sub', files = { '/proj/.planning': '', '/proj/.p
     plugin: { name: 'cadence', root: '/plug' },
     session: { cwd: async () => cwd, id: async () => 'session-1' },
     agent: { list: async () => [] },
+    process: { run: async () => { throw new Error('no process in this stand-in'); } },
     command: { register: async (/** @type {any} */ spec) => { registered.push(spec); return { command: spec.name }; } },
     fs: {
       exists: async (/** @type {string} */ p) => Object.hasOwn(files, p),
@@ -433,4 +441,170 @@ test('a Pane render with no snapshot starts exactly one fetch', async () => {
   assert.ok(linesOf(await hook('ui.render', 'Pane')($, paneEvent(), counting(null))).includes('next /cad-execute 1'));
   await settle();
   assert.equal(reads.total, 1, 'a render with a snapshot fetches nothing');
+});
+
+// --- the phase and its plans ------------------------------------------------
+
+/** A seam's raw stdout against a fixture `.planning/`, refusals included. */
+function stdoutOf(/** @type {string[]} */ args, /** @type {string} */ dir) {
+  const r = spawnSync(process.execPath, [join(BIN, 'planning.mjs'), '--dir', dir, ...args], { encoding: 'utf8' });
+  return r.stdout;
+}
+
+/** The plan rows' file names among a pane's lines. */
+const rowFiles = (/** @type {string[]} */ lines) =>
+  lines.map((l) => /^(\S+\.md) · (?:outstanding|complete)$/.exec(l)).filter(Boolean).map((m) => m[1]);
+
+/** The pane's lines for the real `status` output of a fixture. */
+function statusLines(/** @type {string} */ dir) {
+  const out = stdoutOf(['status'], dir);
+  return { lines: paneLines(snap({ status: seamAnswer(out) }), 200), status: JSON.parse(out) };
+}
+
+/** `phases[current].plans`, or `["PLAN.md"]` once planned, or none. */
+function expectedRows(/** @type {any} */ status) {
+  const entry = status.phases.find((p) => p.n === status.current);
+  if (!entry) return [];
+  if (entry.plans) return entry.plans;
+  return ['planned', 'executed', 'complete'].includes(entry.status) ? ['PLAN.md'] : [];
+}
+
+const TWO = [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }];
+
+test('one PLAN.md and no report: one row, outstanding', () => {
+  const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: true } } });
+  const { lines, status } = statusLines(dir);
+  assert.ok(lines.includes('Phase 1 of 2 · One · planned'));
+  assert.ok(lines.includes('PLAN.md · outstanding'));
+  assert.deepEqual(rowFiles(lines), expectedRows(status));
+  assert.deepEqual(rowFiles(lines), ['PLAN.md']);
+});
+
+test('two plans, the first reported complete: rows in status\'s order, marked by outstanding', () => {
+  const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } } });
+  mkdirSync(join(dir, 'phases', '1', 'reports'));
+  writeFileSync(join(dir, 'phases', '1', 'reports', 'plan-1.md'), 'PLAN COMPLETE\nPlan: PLAN-1.md\n');
+  const { lines, status } = statusLines(dir);
+  const rows = lines.filter((l) => rowFiles([l]).length);
+  assert.deepEqual(rows, ['PLAN-1.md · complete', 'PLAN-2.md · outstanding']);
+  assert.deepEqual(rowFiles(lines), expectedRows(status));
+});
+
+test('an unplanned current phase: no rows, and a line saying so', () => {
+  const dir = makeTree({ roadmap: TWO });
+  const { lines, status } = statusLines(dir);
+  assert.deepEqual(rowFiles(lines), []);
+  assert.deepEqual(rowFiles(lines), expectedRows(status));
+  assert.ok(lines.includes('No plan yet'));
+});
+
+test('a cursor on another phase: both phase numbers and the cursor\'s status show', () => {
+  const dir = makeTree({ roadmap: TWO,
+    phases: { 1: { plan: true, summary: true, uat: [{ status: 'pass' }] }, 2: { plan: true } },
+    cursor: { phase: 1, total: 2, name: 'One', status: 'executed', next: '/cad-verify 1', updated: '2026-10-04' } });
+  const { lines, status } = statusLines(dir);
+  assert.equal(status.current, 2);
+  assert.equal(status.cursor.agrees, false);
+  assert.ok(lines.includes('Phase 2 of 2 · Two · planned'), lines.join('\n'));
+  assert.ok(lines.includes('Cursor says phase 1 · executed'), lines.join('\n'));
+  assert.deepEqual(rowFiles(lines), expectedRows(status));
+});
+
+test('a cursor that agrees adds no disagreement line', () => {
+  const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: true } },
+    cursor: { phase: 1, total: 2, name: 'One', status: 'planned', next: '/cad-execute 1', updated: '2026-10-04' } });
+  const { lines, status } = statusLines(dir);
+  assert.equal(status.cursor.agrees, true);
+  assert.ok(!lines.some((l) => l.startsWith('Cursor says')));
+});
+
+test('an empty ## Phases section: no active phase and no rows', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'), '# Roadmap\n\n## Phases\n\n(nothing)\n');
+  const { lines, status } = statusLines(dir);
+  assert.equal(status.cycle, 'none');
+  assert.ok(lines.includes('No active phase · the milestone is closed'));
+  assert.deepEqual(rowFiles(lines), []);
+});
+
+test('every phase complete: no active phase and no rows', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One', checked: true }],
+    phases: { 1: { plan: true, summary: true, uat: [{ status: 'pass' }] } } });
+  const { lines, status } = statusLines(dir);
+  assert.equal(status.current, null);
+  assert.equal(status.cycle, undefined);
+  assert.ok(lines.includes('No active phase · every phase is complete'));
+  assert.deepEqual(rowFiles(lines), []);
+});
+
+test('no ROADMAP.md: the phase section is unavailable and names no-roadmap', () => {
+  const dir = makeTree({});
+  const { lines } = statusLines(dir);
+  assert.ok(lines.includes('Phase unavailable · no-roadmap · /cad-new-project'), lines.join('\n'));
+  assert.deepEqual(rowFiles(lines), []);
+});
+
+test('a run that rejects or stdout that does not parse reads as unavailable', () => {
+  assert.deepEqual(seamAnswer('not json'), { ok: false, reason: 'unparseable-output' });
+  assert.deepEqual(seamAnswer(''), { ok: false, reason: 'unparseable-output' });
+  assert.deepEqual(seamAnswer('[1]'), { ok: false, reason: 'unparseable-output' });
+  assert.ok(paneLines(snap({ status: seamAnswer('nope') }), 200).includes('Phase unavailable · unparseable-output'));
+});
+
+/**
+ * A `$` over the real disk, whose `process.run` executes its argv with
+ * spawnSync and records it.
+ */
+function realHost(/** @type {string} */ cwd) {
+  const $ = standIn({ cwd });
+  /** @type {{argv: string[], init: any}[]} */
+  const runs = [];
+  return Object.assign($, {
+    runs,
+    plugin: { name: 'cadence', root: REPO },
+    fs: {
+      exists: async (/** @type {string} */ p) => existsSync(p),
+      read: async (/** @type {string} */ p) => readFileSync(p, 'utf8'),
+    },
+    process: { run: async (/** @type {string[]} */ argv, /** @type {any} */ init) => {
+      runs.push({ argv, init });
+      const r = spawnSync(argv[0], argv.slice(1), { cwd: init.cwd, encoding: 'utf8', timeout: init.timeoutMs });
+      return { exitCode: r.status ?? 1, stdout: r.stdout, stderr: r.stderr, isStdoutTruncated: false, isStderrTruncated: false };
+    } },
+  });
+}
+
+/** Open the pane through `/cad-panel` on a real host and wait for its draw. */
+async function openOn(/** @type {any} */ h, /** @type {any} */ $) {
+  const drawn = $.drawn();
+  await h.hook('command.run')($, run(), counting({}));
+  await drawn;
+  return linesOf(await h.hook('ui.render', 'Pane')($, paneEvent({ bodyColumns: 200 }), counting(null)));
+}
+
+test('/cad-panel runs status once, against the walked root, and the pane shows its rows', async () => {
+  const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } } });
+  const root = dirname(dir);
+  mkdirSync(join(root, 'sub'));
+  const h = handlers();
+  const $ = realHost(join(root, 'sub'));
+  const lines = await openOn(h, $);
+  const status = $.runs.filter((r) => r.argv.at(-1) === 'status');
+  assert.equal(status.length, 1);
+  assert.deepEqual(status[0].argv, ['node', join(REPO, 'cadence-core/bin/planning.mjs'), '--dir', `${root}/.planning`, 'status']);
+  assert.equal(status[0].init.cwd, root);
+  assert.equal(typeof status[0].init.timeoutMs, 'number');
+  assert.ok(lines.includes('PLAN-1.md · outstanding'));
+  assert.ok(lines.includes('PLAN-2.md · outstanding'));
+});
+
+test('ten band draws run no process', async () => {
+  const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: true } } });
+  const h = handlers();
+  const $ = realHost(dirname(dir));
+  const band = h.hook('ui.render', 'AbovePrompt');
+  const ev = { surface: 'terminal', component: 'AbovePrompt', requestId: 'r',
+    props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120 } };
+  for (let i = 0; i < 10; i++) await band($, ev, counting(null));
+  assert.equal($.runs.length, 0);
 });
