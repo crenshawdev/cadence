@@ -12,8 +12,16 @@
 //
 // What it does: the band above the prompt, naming the running Cadence agents
 // it tracks from subagent start and stop, and redrawn on those and on every
-// tool call (Plan 2 of phase 3). The token
-// capture for figureless returns (Plan 3) lands here next.
+// tool call (Plan 2 of phase 3).
+//
+// And token capture (Plan 3, D-10/D-11). It keeps each subagent's last
+// `turn.step` window, never `turn.complete`'s sum. When a Cadence subagent
+// stops it writes that window as one `step_window` fact through `planning.mjs
+// trace append`. A subagent's own `trace close` gains the `--agent-id` the host
+// sees, so an advisory reviewer's bracket and its fact join. The trace reader
+// folds the fact only into a bracket whose return carried no figure, so a
+// return's own figure always wins. A write that fails is silent: a record may
+// not change a decision.
 //
 // Every handler calls `next` exactly once and swallows its own errors (D-12).
 //
@@ -23,7 +31,8 @@
 import { planningRootAsync } from '../cadence-core/bin/lib/git-segments.mjs';
 import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
 import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
-import { closePhase, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
+import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
+import { closePhase, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
 
 /** `dir/name`, without doubling the separator at a filesystem root. */
 const at = (/** @type {string} */ dir, /** @type {string} */ name) =>
@@ -42,6 +51,41 @@ function redraw($) {
   }
 }
 
+/**
+ * Write a stopped Cadence subagent's last step window (D-10), then forget
+ * the agent. The phase is the one its close named, else the cursor's. The
+ * project is the walk from the stop's own `cwd`, the field subagent-trace
+ * walks from, so the fact lands in the trace.jsonl the close lands in.
+ * @param {any} $
+ * @param {any} e the `classic.SubagentStop` input
+ * @param {Map<string, number>} windows each subagent's latest step window
+ * @param {Map<string, string>} phases the phase each subagent's close named
+ */
+async function capture($, e, windows, phases) {
+  let id;
+  try {
+    id = e.agent_id;
+    if (typeof id !== 'string') return;
+    const tokens = windows.get(id);
+    if (tokens === undefined || roleOfAgent(e.agent_type) === null) return;
+    const start = typeof e.cwd === 'string' && e.cwd ? e.cwd : await $.session.cwd();
+    const root = await planningRootAsync(start, (dir, name) => $.fs.exists(at(dir, name)));
+    if (root === null) return;
+    let phase = phases.get(id) ?? null;
+    if (phase === null) {
+      const cursor = parseCursor(await $.fs.read(at(root, '.planning/STATE.md')));
+      if (cursor) phase = String(cursor.phase);
+    }
+    if (phase === null) return;
+    await $.process.run(stepWindowArgv($.plugin.root, phase, id, tokens), { cwd: root, timeoutMs: 10000 });
+  } catch {
+    // no record this time; the bracket stays figureless
+  } finally {
+    windows.delete(id);
+    phases.delete(id);
+  }
+}
+
 /** @param {any} on the host's hook registrar */
 export function register(on) {
   // The Cadence agents running in this session (D-07). Every write is
@@ -52,6 +96,23 @@ export function register(on) {
   // The phase each subagent's own `trace close` named, by agent id.
   /** @type {Map<string, string>} */
   const phases = new Map();
+  // Each subagent's latest step window, by agent id.
+  /** @type {Map<string, number>} */
+  const windows = new Map();
+
+  // Pass-through: `e` goes down unchanged (D-12 leaves Phase 6 its effort
+  // override here). A subagent's step that reports usage replaces its window,
+  // so the last step wins.
+  on('turn.step', async function* ($, e, next) {
+    const result = yield* next(e);
+    try {
+      const w = typeof e.agentId === 'string' ? stepWindow(result && result.usage) : null;
+      if (w !== null) windows.set(e.agentId, w);
+    } catch {
+      // a step we could not read prices nothing
+    }
+    return result;
+  });
 
   on('classic.SubagentStart', async ($, e, next) => {
     const answer = await next(e);
@@ -73,6 +134,7 @@ export function register(on) {
       // the next draw's reconcile drops what this missed
     }
     redraw($);
+    await capture($, e, windows, phases);
     return answer;
   });
 

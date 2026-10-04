@@ -89,3 +89,42 @@ export function closePhase(command) {
   const m = /** @type {string} */ (command).match(PHASE);
   return m ? m[2] : null;
 }
+
+// --- the step window and the fact that carries it (D-10) --------------------
+
+const USAGE_KEYS = ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'output_tokens'];
+
+/**
+ * One step's window: `input + cache_read + cache_creation + output`, off a
+ * `turn.step` result's `usage`. Null when the usage is null or any of the four
+ * is not a finite non-negative number. Never fed `turn.complete`'s usage, which
+ * sums the steps (see `STEP_WINDOW`).
+ * @param {unknown} usage
+ * @returns {number | null}
+ */
+export function stepWindow(usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  let sum = 0;
+  for (const k of USAGE_KEYS) {
+    const n = /** @type {Record<string, unknown>} */ (usage)[k];
+    if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return null;
+    sum += n;
+  }
+  return sum;
+}
+
+/**
+ * The argv that writes one step-window fact through the plugin's own seam.
+ * @param {string} pluginRoot the plugin's directory, `$.plugin.root`
+ * @param {string} phase
+ * @param {string} agentId
+ * @param {number} tokens
+ * @returns {string[]}
+ */
+export function stepWindowArgv(pluginRoot, phase, agentId, tokens) {
+  const planning = /[\\/]$/.test(pluginRoot)
+    ? `${pluginRoot}cadence-core/bin/planning.mjs`
+    : `${pluginRoot}/cadence-core/bin/planning.mjs`;
+  return ['node', planning, 'trace', 'append', '--phase', phase, '--family', 'lifecycle',
+    '--event', STEP_WINDOW, '--agent-id', agentId, '--tokens', String(tokens)];
+}
