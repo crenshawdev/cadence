@@ -11,7 +11,8 @@
 // those rules to host events and does its I/O through `$`.
 //
 // What it does: the band above the prompt, naming the running Cadence agents
-// it tracks from subagent start and stop (Plan 2 of phase 3). The token
+// it tracks from subagent start and stop, and redrawn on those and on every
+// tool call (Plan 2 of phase 3). The token
 // capture for figureless returns (Plan 3) lands here next.
 //
 // Every handler calls `next` exactly once and swallows its own errors (D-12).
@@ -26,6 +27,19 @@ import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-c
 /** `dir/name`, without doubling the separator at a filesystem root. */
 const at = (/** @type {string} */ dir, /** @type {string} */ name) =>
   (/[\\/]$/.test(dir) ? dir + name : `${dir}/${name}`);
+
+/**
+ * Ask the host to draw the band again (D-08). The draw re-reads STATE.md, so
+ * this is all a refresh needs. A throw here never reaches the event's answer.
+ * @param {any} $
+ */
+function redraw($) {
+  try {
+    $.ui.invalidate('ui.render');
+  } catch {
+    // the next event tries again
+  }
+}
 
 /** @param {any} on the host's hook registrar */
 export function register(on) {
@@ -43,6 +57,7 @@ export function register(on) {
     } catch {
       // the next draw's reconcile adds what this missed
     }
+    redraw($);
     return answer;
   });
 
@@ -53,7 +68,17 @@ export function register(on) {
     } catch {
       // the next draw's reconcile drops what this missed
     }
+    redraw($);
     return answer;
+  });
+
+  // A `cursor set` or `renumber` is a Bash call, and they are the only STATE
+  // writers, so redrawing after each tool call shows a cursor change as soon as
+  // it lands. A write from outside the session shows at the next event. No timer.
+  on('tool.call', async ($, e, next) => {
+    const result = await next(e);
+    redraw($);
+    return result;
   });
 
   // The band. AbovePrompt holds one tree, so the band goes in a column above

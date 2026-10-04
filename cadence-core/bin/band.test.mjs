@@ -276,3 +276,22 @@ test('a start the module saw shows in the band when the list throws, and its sto
   await hook('classic.SubagentStop')($, { hook_event_name: 'SubagentStop', agent_id: 'a1' }, counting(undefined));
   assert.doesNotMatch(parts(await render($, event(), counting(OTHER))).line, /running/);
 });
+
+test('subagent events and tool calls ask for a redraw after next, and a failing one changes nothing', async () => {
+  const result = { output: 'ok' };
+  for (const [name, e] of [['tool.call', { tool: 'Bash' }],
+    ['classic.SubagentStart', start('a1', 'cadence:cad-reviewer-low')],
+    ['classic.SubagentStop', { hook_event_name: 'SubagentStop', agent_id: 'a1' }]]) {
+    /** @type {string[]} */
+    const order = [];
+    const next = async () => { order.push('next'); return result; };
+    const $ = { ...standIn(), ui: { invalidate: (/** @type {string} */ ev) => order.push(`invalidate ${ev}`) } };
+    assert.equal(await classic(name)($, e, next), result);
+    assert.deepEqual(order, ['next', 'invalidate ui.render']);
+
+    const failing = counting(result);
+    const broken = { ...standIn(), ui: { invalidate: () => { throw new Error('gone'); } } };
+    assert.equal(await classic(name)(broken, e, failing), result);
+    assert.equal(failing.calls, 1);
+  }
+});
