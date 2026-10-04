@@ -54,6 +54,16 @@ Step 1 also takes a shortcut when the questioning already happened somewhere els
 
 That is five commands out of twenty-eight. `/cad-help` prints the full reference inside a session, and [`cadence-core/references/COMMANDS.md`](./cadence-core/references/COMMANDS.md) is that same reference in the repo, readable before you install anything.
 
+## The panel
+
+On a Claude Code version with mods support (2.1.287 or later), Cadence also loads a small module that shows where the loop stands without you running a command. On an older version the module never loads and everything else works exactly as before.
+
+A one-line band sits above the prompt in any repo with a `.planning/` directory: the phase you are on, its status, any Cadence agent running right now with its rung, and the next command. It redraws when an agent starts or returns and after every tool call, so a `cursor set` shows up as soon as it lands. In a repo without `.planning/` there is no band.
+
+`/cad-panel`, or `p` on the band, opens the full view: the current phase's plans and which are done, each running agent with its role, rung and model, the UAT counts, the open captures, the phase's token spend (the same figure `/cad-report` prints, with its exclusions named), and the next command. When the cursor and the files disagree about which phase is open, the panel says so instead of picking one.
+
+The module only reads. It never runs a Cadence command, never writes `STATE.md`, and never takes over the git rail: git-guard stays the command hook it has always been. It does two quiet jobs besides drawing. It keeps Cadence's 30 agent descriptions and 6 internal contract skills out of every session's prompt, about 8,000 characters Claude would otherwise reread on every request in every project, while Cadence's commands still dispatch those agents by name. And it prices the subagent dispatches whose return carried no token count, from the host's own usage for that agent, so `/cad-report` has fewer gaps.
+
 ## The controls
 
 Eight of them, and every one hands its decision to you rather than deciding for you.
