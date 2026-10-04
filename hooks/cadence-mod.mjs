@@ -37,7 +37,8 @@
 // last fetch left and does no I/O while drawing. `/cad-panel` calls `next`
 // and then answers its own result in that one's place: a registered command
 // has no core for `next` to run, and its own text, an empty one included,
-// replaces the line the host prints for a command nobody answered.
+// replaces the line the host prints for a command nobody answered. The band's
+// `[ pane ]` button, `p` while the band holds the focus, opens the same pane.
 //
 // Every handler calls `next` exactly once and swallows its own errors (D-12).
 //
@@ -61,6 +62,11 @@ const PANE = Object.freeze({ id: PANE_ID, title: 'Cadence' });
 
 /** The command that opens the pane. User-facing, so the name is locked (D-01). */
 const PANEL_COMMAND = 'cad-panel';
+
+/** The band's button that opens the pane: drawn `[ pane ]`, pressed by `p`. */
+const PANE_BUTTON_LABEL = 'pane';
+const PANE_BUTTON_KEY = 'p';
+const PANE_BUTTON_CELLS = PANE_BUTTON_LABEL.length + 4;
 
 /** `dir/name`, without doubling the separator at a filesystem root. */
 const at = (/** @type {string} */ dir, /** @type {string} */ name) =>
@@ -316,6 +322,8 @@ export function register(on) {
   // pane's, kept beside the roster so the roster's shape stays phase 3's.
   /** @type {readonly import('../cadence-core/bin/lib/pane.mjs').Sight[]} */
   let sights = [];
+  /** @type {Pane} */
+  const pane = { snapshot: null, open: false, kick: singleFlight() };
   /** @type {Capture} */
   const capture = { windows: new Map(), adopted: new Map(), held: new Map() };
   const { windows } = capture;
@@ -409,8 +417,17 @@ export function register(on) {
       } catch {
         // no list: draw the roster the start and stop events built
       }
-      const { Box, Text } = $.ui.resolve(e);
-      const band = Text({ wrap: 'truncate-end', children: bandLine(cursor, roster, e.props.bodyColumns) });
+      const { Box, Text, Button } = $.ui.resolve(e);
+      if (typeof Button !== 'function') {
+        const band = Text({ wrap: 'truncate-end', children: bandLine(cursor, roster, e.props.bodyColumns) });
+        return Box({ flexDirection: 'column', children: [band, drawn] });
+      }
+      // The pane's button beside the line, which takes what is left. A letter,
+      // never a digit: a bare digit in an empty composer presses a band Button.
+      const line = bandLine(cursor, roster, Math.max(0, e.props.bodyColumns - PANE_BUTTON_CELLS - 1));
+      const button = Button({ label: PANE_BUTTON_LABEL, hotkey: PANE_BUTTON_KEY,
+        onPress: () => { openPane($, pane).catch(() => {}); } });
+      const band = Box({ flexDirection: 'row', gap: 1, children: [Text({ wrap: 'truncate-end', children: line }), button] });
       return Box({ flexDirection: 'column', children: [band, drawn] });
     } catch {
       return drawn;
@@ -418,9 +435,6 @@ export function register(on) {
   });
 
   // --- the pane --------------------------------------------------------------
-
-  /** @type {Pane} */
-  const pane = { snapshot: null, open: false, kick: singleFlight() };
 
   on('session.start', async ($, e, next) => {
     try {

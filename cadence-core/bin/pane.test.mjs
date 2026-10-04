@@ -916,3 +916,101 @@ test('a start seen while the pane was closed shows its routed rung and model; it
   assert.equal(invalidated, 1, 'only the stop\'s own redraw: no fetch settled in between');
   assert.ok(reads >= 1);
 });
+
+// --- the band's button ------------------------------------------------------
+
+/** A `ui.resolve` that offers a Button, as the host's does. */
+const withButton = () => ({
+  Box: (/** @type {any} */ props) => ({ type: 'Box', props }),
+  Text: (/** @type {any} */ props) => ({ type: 'Text', props }),
+  Button: (/** @type {any} */ props) => ({ type: 'Button', props }),
+});
+
+/** Every element of a type in a tree. */
+function find(/** @type {any} */ tree, /** @type {string} */ type) {
+  /** @type {any[]} */
+  const out = [];
+  const walk = (/** @type {any} */ n) => {
+    if (!n || typeof n !== 'object') return;
+    if (n.type === type) out.push(n);
+    const kids = n.props && n.props.children;
+    if (Array.isArray(kids)) kids.forEach(walk);
+    else walk(kids);
+  };
+  walk(tree);
+  return out;
+}
+
+const bandEvent = (/** @type {any} */ props = {}) => ({ surface: 'terminal', component: 'AbovePrompt', requestId: 'r',
+  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, ...props } });
+
+/** Drawn cells of `[ label ]`, as the terminal draws a Button. */
+const buttonCells = (/** @type {any} */ b) => Array.from(`[ ${b.props.label} ]`).length;
+
+test('in a project, the band carries a Button with hotkey p', async () => {
+  const h = handlers();
+  const tree = await h.hook('ui.render', 'AbovePrompt')(standIn({ resolve: withButton }), bandEvent(), counting(null));
+  const buttons = find(tree, 'Button');
+  assert.equal(buttons.length, 1);
+  assert.equal(buttons[0].props.hotkey, 'p');
+  assert.match(buttons[0].props.hotkey, /^[a-z]$/);
+  assert.equal(buttons[0].props.label, 'pane');
+  assert.ok(find(tree, 'Text').some((t) => /^Cadence · Phase 1 of 2/.test(t.props.children)));
+});
+
+test('pressing it opens the pane /cad-panel opens, and starts a fetch', async () => {
+  const viaCommand = standIn();
+  await handlers().hook('command.run')(viaCommand, run(), counting({}));
+
+  const h = handlers();
+  const $ = standIn({ resolve: withButton });
+  const tree = await h.hook('ui.render', 'AbovePrompt')($, bandEvent(), counting(null));
+  let reads = 0;
+  const read = $.fs.read;
+  $.fs.read = async (/** @type {string} */ p) => { reads++; return read(p); };
+  const drawn = $.drawn();
+  find(tree, 'Button')[0].props.onPress({});
+  await drawn;
+  assert.equal($.opens.length, 1);
+  assert.deepEqual($.opens, viaCommand.opens);
+  assert.ok(reads >= 1, 'a fetch ran');
+  assert.ok(linesOf(await h.hook('ui.render', 'Pane')($, paneEvent(), counting(null))).includes('next /cad-execute 1'));
+});
+
+test('a press whose open throws is swallowed', async () => {
+  const h = handlers();
+  const $ = standIn({ resolve: withButton, open: async () => { throw new Error('refused'); } });
+  const tree = await h.hook('ui.render', 'AbovePrompt')($, bandEvent(), counting(null));
+  assert.doesNotThrow(() => find(tree, 'Button')[0].props.onPress({}));
+  await settle();
+});
+
+test('no Button under a survey, or with no .planning/ up the walk', async () => {
+  const h = handlers();
+  const band = h.hook('ui.render', 'AbovePrompt');
+  const theirs = { type: 'Text', props: { children: 'another mod' } };
+  for (const [$, ev] of [[standIn({ resolve: withButton }), bandEvent({ hasSurvey: true })],
+    [standIn({ resolve: withButton, files: { '/proj/.git': '' } }), bandEvent()],
+    [standIn({ resolve: withButton, files: {} }), bandEvent()]]) {
+    const tree = await band($, ev, counting(theirs));
+    assert.equal(tree, theirs);
+    assert.equal(find(tree, 'Button').length, 0);
+  }
+});
+
+test('the band\'s text, the gap and the button never exceed bodyColumns', async () => {
+  const h = handlers();
+  const band = h.hook('ui.render', 'AbovePrompt');
+  const long = STATE.replace('Next: /cad-execute 1', `Next: /cad-execute 1 ${'x'.repeat(200)}`);
+  for (const files of [{ '/proj/.planning': '', '/proj/.planning/STATE.md': STATE },
+    { '/proj/.planning': '', '/proj/.planning/STATE.md': long }, { '/proj/.planning': '' }]) {
+    for (const width of [20, 40, 120]) {
+      const tree = await band(standIn({ resolve: withButton, files }), bandEvent({ bodyColumns: width }), counting(null));
+      const [row] = tree.props.children;
+      assert.equal(row.props.flexDirection, 'row');
+      const [text, button] = row.props.children;
+      const used = Array.from(text.props.children).length + (row.props.gap ?? 0) + buttonCells(button);
+      assert.ok(used <= width, `${width}: ${used} cells: ${text.props.children}`);
+    }
+  }
+});
