@@ -23,6 +23,7 @@
 import { planningRootAsync } from '../cadence-core/bin/lib/git-segments.mjs';
 import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
 import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
+import { closePhase, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
 
 /** `dir/name`, without doubling the separator at a filesystem root. */
 const at = (/** @type {string} */ dir, /** @type {string} */ name) =>
@@ -48,6 +49,9 @@ export function register(on) {
   // handlers interleaving never write back a stale roster.
   /** @type {readonly {id: string, role: string, rung: string}[]} */
   let roster = [];
+  // The phase each subagent's own `trace close` named, by agent id.
+  /** @type {Map<string, string>} */
+  const phases = new Map();
 
   on('classic.SubagentStart', async ($, e, next) => {
     const answer = await next(e);
@@ -75,8 +79,24 @@ export function register(on) {
   // A `cursor set` or `renumber` is a Bash call, and they are the only STATE
   // writers, so redrawing after each tool call shows a cursor change as soon as
   // it lands. A write from outside the session shows at the next event. No timer.
+  //
+  // A subagent's own `planning.mjs trace close` gains `--agent-id` here (D-11),
+  // and its `--phase` is kept for that agent's step-window fact. Anything that
+  // goes wrong before `next` sends the event exactly as the subagent wrote it.
   on('tool.call', async ($, e, next) => {
-    const result = await next(e);
+    let sent = e;
+    try {
+      if (e.tool === 'Bash' && typeof e.agentId === 'string') {
+        const command = e.command;
+        const rewritten = withAgentId(command, e.agentId);
+        const phase = closePhase(command);
+        if (phase !== null) phases.set(e.agentId, phase);
+        if (rewritten !== null) sent = { ...e, command: rewritten };
+      }
+    } catch {
+      sent = e;
+    }
+    const result = await next(sent);
     redraw($);
     return result;
   });

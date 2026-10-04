@@ -35,3 +35,57 @@
  * denominated in nothing a bracket holds.
  */
 export const STEP_WINDOW = 'step_window';
+
+// --- the advisory reviewer's own close gains its id (D-11) ------------------
+//
+// An advisory reviewer closes its own bracket from a persistence tail, and a
+// subagent never sees its own id, so that close carries no `--agent-id` and the
+// step-window fact had nothing to join. The host does see the id, on the
+// subagent's `tool.call`, so the module appends it there.
+//
+// The rewrite answers for ONE simple `planning.mjs trace close` command and
+// nothing else. In a compound line an appended flag could land on another
+// command, so any `;`, `&`, `|`, newline, backtick, `$(`, `#` or trailing `\`
+// answers nothing. A command git-guard acts on has a `git` segment and is never
+// a bare `planning.mjs` call, so the rewrite cannot touch one.
+
+/** A host agent id, as `tool.call` carries it. */
+const AGENT_ID = /^[A-Za-z0-9_-]+$/;
+/** Anything that makes a command line more than one simple command. */
+const COMPOUND = /[;&|\r\n`#]|\$\(|\\\s*$/;
+/** `node <…/planning.mjs> trace close`, the path quoted or bare. */
+const TRACE_CLOSE = /^\s*node\s+(?:"[^"]*planning\.mjs"|'[^']*planning\.mjs'|\S*planning\.mjs)\s+trace\s+close(?=\s|$)/;
+const HAS_AGENT_ID = /(?:^|\s)--agent-id(?=[=\s]|$)/;
+const PHASE = /(?:^|\s)--phase(?:=|\s+)(["']?)(\d+(?:\.\d+)?)\1(?=\s|$)/;
+
+/** @param {unknown} command */
+function isTraceClose(command) {
+  return typeof command === 'string' && !COMPOUND.test(command) && TRACE_CLOSE.test(command);
+}
+
+/**
+ * The command with ` --agent-id <agentId>` appended, or null when the rewrite
+ * does not apply: a bad id, a compound line, anything but `trace close`, or a
+ * close that already names an id.
+ * @param {unknown} command the Bash call's `command`
+ * @param {unknown} agentId the call's `agentId`
+ * @returns {string | null}
+ */
+export function withAgentId(command, agentId) {
+  if (typeof agentId !== 'string' || !AGENT_ID.test(agentId)) return null;
+  if (!isTraceClose(command) || HAS_AGENT_ID.test(/** @type {string} */ (command))) return null;
+  return `${command} --agent-id ${agentId}`;
+}
+
+/**
+ * The `--phase` of a simple `planning.mjs trace close` command, as written
+ * (`3`, `2.1`), or null. The module keeps it per agent so the step-window fact
+ * files under the phase the close named.
+ * @param {unknown} command
+ * @returns {string | null}
+ */
+export function closePhase(command) {
+  if (!isTraceClose(command)) return null;
+  const m = /** @type {string} */ (command).match(PHASE);
+  return m ? m[2] : null;
+}
