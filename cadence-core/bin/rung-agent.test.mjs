@@ -11,8 +11,9 @@ import assert from 'node:assert/strict';
 import {
   rungBody, rungBodyIssue, rungEffortIssue, rungPrefixIssues, RUNG_FILES, rungFile,
   rungFiles, effortEnumIssues, EFFORT_PREFIX, ROLES_PREFIX, ROLES_EFFORT_SUFFIX,
-  RUNG_ORDER, rungOrderIssues,
+  RUNG_ORDER, rungOrderIssues, roleOfAgent, rungOfAgent,
 } from './lib/rung-agent.mjs';
+import * as readTrace from './lib/read-trace.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -531,4 +532,23 @@ test('roles.<role>.model is not held to the effort rules - it has no enum', () =
   assert.deepEqual(effortEnumIssues(
     { ...SHIPPED, 'roles.cad-nobody.model': { type: 'string_or_null', default: null } },
     SHIPPED_ORDER), []);
+});
+
+// --- the reverse lookups: an agent type back to its role and rung -------------
+
+test('roleOfAgent and rungOfAgent live here, read-trace re-exports them, and they answer every stem', () => {
+  assert.equal(readTrace.roleOfAgent, roleOfAgent);
+  assert.equal(readTrace.rungOfAgent, rungOfAgent);
+  for (const role of Object.keys(RUNG_FILES)) {
+    for (const [rung, stem] of Object.entries(RUNG_FILES[role])) {
+      for (const spelling of [stem, `cadence:${stem}`]) {
+        assert.equal(roleOfAgent(spelling), role, spelling);
+        assert.equal(rungOfAgent(spelling), rung, spelling);
+      }
+    }
+  }
+  for (const other of ['fork', 'general-purpose', 'coordinator', '', 42]) {
+    assert.equal(roleOfAgent(other), null, String(other));
+    assert.equal(rungOfAgent(other), null, String(other));
+  }
 });
