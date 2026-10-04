@@ -10,11 +10,44 @@
 // `.planning/` walk in lib/git-segments.mjs is the first). This file only wires
 // those rules to host events and does its I/O through `$`.
 //
-// The band above the prompt (Plan 2 of phase 3) and the token capture for
-// figureless returns (Plan 3) land here. Until then it registers nothing.
+// What it does: the band above the prompt (Plan 2 of phase 3). The token
+// capture for figureless returns (Plan 3) lands here next.
+//
+// Every handler calls `next` exactly once and swallows its own errors (D-12).
 //
 // git-guard, read-trace and subagent-trace stay command hooks on every host, so
 // this module makes no git decision and stands no hook down.
 
-/** @param {unknown} _on the host's hook registrar */
-export function register(_on) {}
+import { planningRootAsync } from '../cadence-core/bin/lib/git-segments.mjs';
+import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
+import { bandLine } from '../cadence-core/bin/lib/band.mjs';
+
+/** `dir/name`, without doubling the separator at a filesystem root. */
+const at = (/** @type {string} */ dir, /** @type {string} */ name) =>
+  (/[\\/]$/.test(dir) ? dir + name : `${dir}/${name}`);
+
+/** @param {any} on the host's hook registrar */
+export function register(on) {
+  // The band. AbovePrompt holds one tree, so the band goes in a column above
+  // whatever the mods beneath drew, never in place of it. No band while a
+  // survey holds the row, or outside a Cadence project (D-06).
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const drawn = await next(e);
+    try {
+      if (e.props.hasSurvey) return drawn;
+      const root = await planningRootAsync(await $.session.cwd(), (dir, name) => $.fs.exists(at(dir, name)));
+      if (root === null) return drawn;
+      let cursor = null;
+      try {
+        cursor = parseCursor(await $.fs.read(at(root, '.planning/STATE.md')));
+      } catch {
+        // unreadable is the same as absent: the /cad-progress line
+      }
+      const { Box, Text } = $.ui.resolve(e);
+      const band = Text({ wrap: 'truncate-end', children: bandLine(cursor, [], e.props.bodyColumns) });
+      return Box({ flexDirection: 'column', children: [band, drawn] });
+    } catch {
+      return drawn;
+    }
+  });
+}
