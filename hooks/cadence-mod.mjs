@@ -200,13 +200,14 @@ async function fetchPane($, p) {
     // no list: fetch anyway
   }
   /** @type {import('../cadence-core/bin/lib/pane.mjs').Snapshot} */
-  const read = { cursor: null, status: { ok: false, reason: 'not-read' } };
+  const read = { cursor: null, status: { ok: false, reason: 'not-read' }, captures: { ok: false, reason: 'not-read' } };
   try {
     const root = await planningRootAsync(await $.session.cwd(), (dir, name) => $.fs.exists(at(dir, name)));
     if (root === null) {
-      read.status = { ok: false, reason: 'no-planning-dir' };
+      read.status = read.captures = { ok: false, reason: 'no-planning-dir' };
     } else {
-      [read.cursor, read.status] = await Promise.all([readCursor($, root), runSeam($, root, ['status'])]);
+      [read.cursor, read.status, read.captures] = await Promise.all([readCursor($, root),
+        runSeam($, root, ['status']), runSeam($, root, ['capture-check'])]);
     }
   } catch {
     // no walk: nothing read

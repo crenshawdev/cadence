@@ -25,7 +25,7 @@ const STATUS = Object.freeze({ ok: true, current: 1, total: 2, outstanding: [{ p
 
 /** One snapshot, every section filled the way a good fetch leaves it. */
 const snap = (/** @type {any} */ extra = {}) => ({ cursor: parseCursor(STATE),
-  status: { ok: true, value: STATUS }, ...extra });
+  status: { ok: true, value: STATUS }, captures: { ok: true, value: { ok: true, exists: true, substantive: 2 } }, ...extra });
 
 // --- the lines --------------------------------------------------------------
 
@@ -641,4 +641,62 @@ test('the UAT line adds no run to a fetch', async () => {
   assert.ok(lines.some((l) => l.startsWith('UAT pass 0 · fail 0 · pending 1')));
   assert.equal($.runs.filter((r) => r.argv.at(-1) === 'status').length, 1);
   assert.equal($.runs.filter((r) => r.argv.some((a) => /uat/i.test(a))).length, 0);
+});
+
+// --- open captures ----------------------------------------------------------
+
+/** The pane's open-captures line for a fixture's real `capture-check` output. */
+function capturesOf(/** @type {string} */ dir) {
+  const out = stdoutOf(['capture-check'], dir);
+  const line = paneLines(snap({ captures: seamAnswer(out) }), 200).find((l) => l.startsWith('Open captures'));
+  return { line, check: JSON.parse(out) };
+}
+
+const placeholders = (/** @type {Record<string, string[]>} */ by) => ['Todos', 'Seeds', 'Notes']
+  .map((h) => `## ${h}\n\n${(by[h] || ['- None.']).join('\n')}\n`).join('\n');
+
+test('three substantive bullets beside None. placeholders: capture-check\'s substantive, 3', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'CAPTURE.md'), `# Capture\n\n${placeholders({ Todos: ['- [ ] one', '- [ ] two'], Notes: ['- three'] })}`);
+  const { line, check } = capturesOf(dir);
+  assert.equal(check.substantive, 3);
+  assert.equal(line, `Open captures ${check.substantive}`);
+});
+
+test('only placeholders gives 0, as capture-check counts them', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'CAPTURE.md'), `# Capture\n\n${placeholders({})}`);
+  const { line, check } = capturesOf(dir);
+  assert.equal(check.substantive, 0);
+  assert.equal(line, 'Open captures 0');
+});
+
+test('no CAPTURE.md gives 0, from capture-check\'s exists: false', () => {
+  const { line, check } = capturesOf(makeTree({}));
+  assert.equal(check.exists, false);
+  assert.equal(check.substantive, 0);
+  assert.equal(line, 'Open captures 0');
+});
+
+test('a refusal, a rejected run or unparseable stdout reads as unavailable, naming the reason', () => {
+  const at = (/** @type {any} */ captures) => paneLines(snap({ captures }), 200).find((l) => l.startsWith('Open captures'));
+  assert.equal(at(seamAnswer('{"ok":false,"reason":"unreadable-capture","detail":"x"}')),
+    'Open captures unavailable · unreadable-capture');
+  assert.equal(at({ ok: false, reason: 'run-failed' }), 'Open captures unavailable · run-failed');
+  assert.equal(at(seamAnswer('garbage')), 'Open captures unavailable · unparseable-output');
+});
+
+test('one fetch runs capture-check once, against the walked root, and the pane shows its count', async () => {
+  const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: true } } });
+  writeFileSync(join(dir, 'CAPTURE.md'), `# Capture\n\n${placeholders({ Notes: ['- one', '- two'] })}`);
+  const root = dirname(dir);
+  const h = handlers();
+  const $ = realHost(root);
+  const lines = await openOn(h, $);
+  const checks = $.runs.filter((r) => r.argv.at(-1) === 'capture-check');
+  assert.equal(checks.length, 1);
+  assert.deepEqual(checks[0].argv.slice(-3), ['--dir', `${root}/.planning`, 'capture-check']);
+  assert.equal(checks[0].init.cwd, root);
+  assert.equal(typeof checks[0].init.timeoutMs, 'number');
+  assert.ok(lines.includes('Open captures 2'), lines.join('\n'));
 });

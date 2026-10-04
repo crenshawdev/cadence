@@ -21,6 +21,10 @@
 //   false) gets a line of its own: the pane names both phases, picks neither.
 // - UAT: the same run's `phases[current].uat`, the five counts in its order.
 //   No `uat` key, no line: never a row of zeros (D-06).
+// - open captures: `capture-check`'s `substantive`, from a run of its own
+//   beside `status` (D-08). Its count is not `capture-sections`' bullets: a
+//   `None.` placeholder counts zero there. An absent CAPTURE.md is its own
+//   `exists: false`, `substantive: 0`, an empty queue, and shows as 0.
 //
 // The layout, one row per line, top to bottom:
 //   1. the phase heading
@@ -54,7 +58,7 @@ export const SEAM_TIMEOUT_MS = 10000;
  * @typedef {{ok: boolean, value?: any, reason?: string, hint?: string}} Seam
  *   a seam's answer: `ok` with its envelope in `value`, or not `ok` with the
  *   refusal's `reason` and `hint`
- * @typedef {{cursor: Cursor, status: Seam}} Snapshot one fetch's answers
+ * @typedef {{cursor: Cursor, status: Seam, captures: Seam}} Snapshot one fetch's answers
  */
 
 /**
@@ -104,6 +108,7 @@ export function paneLines(snapshot, width) {
     snapshot.cursor ? `next ${snapshot.cursor.next}` : NO_CURSOR_NEXT,
     ...phase.rows,
     ...uatLines(phase.entry),
+    capturesLine(snapshot.captures),
   ];
   return lines.map((line) => fit(visible(line), width));
 }
@@ -120,6 +125,16 @@ function uatLines(entry) {
   const uat = entry && entry.uat;
   if (!uat || typeof uat !== 'object') return [];
   return [`UAT ${UAT_COUNTS.map((k) => `${k} ${uat[k]}`).join(' · ')}`];
+}
+
+/**
+ * The open-captures line: `capture-check`'s `substantive`, or why it is missing.
+ * @param {Seam} captures
+ */
+function capturesLine(captures) {
+  if (!captures || !captures.ok) return unavailable('Open captures', captures);
+  const n = captures.value.substantive;
+  return Number.isInteger(n) ? `Open captures ${n}` : unavailable('Open captures', { ok: false, reason: 'unparseable-output' });
 }
 
 /** The statuses a phase has a `PLAN.md` in, when `status` lists no `plans`. */
