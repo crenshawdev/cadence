@@ -9,7 +9,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { gitVerbs } from './lib/git-segments.mjs';
+import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path, { join } from 'node:path';
+
+import { gitVerbs, parentDir, planningRoot, planningRootAsync } from './lib/git-segments.mjs';
 
 // --- The anchor: a segment counts only when its command word is `git`. -------
 
@@ -136,4 +140,85 @@ test('a separator run does not manufacture a verb', () => {
   assert.deepEqual(gitVerbs(';;;&&&|||'), []);
   assert.deepEqual(gitVerbs('git'), []);       // a git word with no verb
   assert.deepEqual(gitVerbs('git --no-pager'), []); // flags only
+});
+
+// --- The scope rule: the `.planning/` walk the hooks and the module share. ---
+
+// Four trees, one per answer the walk can give. The probe answers only inside
+// the fixture, so a stray `.planning` or `.git` above the temp dir on some
+// machine cannot change an answer, and the last case still walks to the root.
+function walkFixture() {
+  const base = mkdtempSync(join(tmpdir(), 'cad-walk-'));
+  const make = (...parts) => {
+    const d = join(base, ...parts);
+    mkdirSync(d, { recursive: true });
+    return d;
+  };
+  const here = make('here');
+  make('here', '.planning');
+  const above = make('above');
+  make('above', '.planning');
+  make('outer', '.planning'); // above the repo: only the .git stop keeps it out
+  make('outer', 'repo', '.git');
+  const probed = [];
+  const has = (dir, name) => {
+    probed.push(dir);
+    return (dir === base || dir.startsWith(base + path.sep)) && existsSync(join(dir, name));
+  };
+  const cases = [
+    ['.planning in the start directory', here, here],
+    ['.planning in an ancestor', make('above', 'src', 'deep'), above],
+    ['a .git before any .planning', make('outer', 'repo', 'src'), null],
+    ['neither marker up to the root', make('bare', 'a', 'b'), null],
+  ];
+  return { has, probed, cases };
+}
+
+test('planningRoot answers the four shapes through a sync probe', () => {
+  const { has, probed, cases } = walkFixture();
+  for (const [name, start, want] of cases) {
+    probed.length = 0;
+    assert.equal(planningRoot(start, has), want, name);
+  }
+  // The last case ran last: its walk ended at the filesystem root.
+  assert.equal(probed.at(-1), path.parse(cases[3][1]).root);
+});
+
+test('planningRootAsync gives the same four answers through an async probe', async () => {
+  const { has, cases } = walkFixture();
+  for (const [name, start, want] of cases) {
+    assert.equal(await planningRootAsync(start, async (dir, n) => has(dir, n)), want, name);
+  }
+});
+
+test('the walk checks .planning before .git in the same directory', () => {
+  const base = mkdtempSync(join(tmpdir(), 'cad-walk-'));
+  mkdirSync(join(base, '.planning'));
+  mkdirSync(join(base, '.git'));
+  assert.equal(planningRoot(base, (d, n) => existsSync(join(d, n))), base);
+});
+
+// The module cannot import node:path, so parentDir is a port of it. Every step
+// from each shape down to its root must match node's own dirname for that kind
+// of path: posix for a `/`-leading path, win32 for a drive or UNC path.
+const POSIX_SHAPES = ['/', '//', '/a', '/a/b', '/a/b/', '/a//b', '/a/b//', '//a', '/home/me/proj/src'];
+const WIN32_SHAPES = [
+  'C:\\', 'C:/', 'C:', 'C:\\a', 'C:\\a\\b', 'C:\\a\\b\\', 'C:/a/b/', 'c:\\a\\\\b',
+  '\\\\srv\\share', '\\\\srv\\share\\', '\\\\srv\\share\\d\\e', '\\\\?\\C:\\a\\b',
+];
+
+test('parentDir steps exactly as path.posix.dirname and path.win32.dirname do', () => {
+  const chase = (shapes, dirname) => {
+    for (const shape of shapes) {
+      let dir = shape;
+      for (let i = 0; i < 20; i++) {
+        const want = dirname(dir);
+        assert.equal(parentDir(dir), want, `parentDir(${JSON.stringify(dir)})`);
+        if (want === dir) break;
+        dir = want;
+      }
+    }
+  };
+  chase(POSIX_SHAPES, path.posix.dirname);
+  chase(WIN32_SHAPES, path.win32.dirname);
 });

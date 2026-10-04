@@ -26,9 +26,9 @@
 
 import { existsSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { mergeLayers, GLOBAL_CONFIG } from './lib/config-merge.mjs';
-import { gitVerbs } from './lib/git-segments.mjs';
+import { gitVerbs, planningRoot } from './lib/git-segments.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 // The current-branch reader lives in lib/ because three seams ask this same
 // question. It degrades to '' rather than throwing, which matters most HERE:
@@ -44,23 +44,6 @@ function decide(decision, reason) {
       permissionDecisionReason: reason,
     },
   }) + '\n');
-}
-
-// Find the Cadence project root: walk up from `start` until a directory
-// holding .planning/ (a Cadence project), stopping at a repo root without
-// one (.git present, .planning absent -> not ours to police) or the
-// filesystem root. The walk exists because the hook's cwd can sit BELOW the
-// project root (a session opened in src/, say) - checking only cwd would
-// let every commit from a subdirectory slip under the rails.
-function planningRoot(start) {
-  let dir = start;
-  for (;;) {
-    if (existsSync(join(dir, '.planning'))) return dir;
-    if (existsSync(join(dir, '.git'))) return null; // repo root, not Cadence
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
 }
 
 // What a command IS, is read by lib/git-segments.mjs: a segment counts only
@@ -187,8 +170,11 @@ function main() {
   const command = String(input?.tool_input?.command || '');
   const cwd = input?.cwd || process.cwd();
 
-  // Only police Cadence projects (walk-up, see planningRoot).
-  const root = planningRoot(cwd);
+  // Only police Cadence projects. The walk goes up from cwd because the hook's
+  // cwd can sit BELOW the project root (a session opened in src/, say), and
+  // checking only cwd would let every commit from a subdirectory slip under the
+  // rails. lib/git-segments.mjs holds the walk, shared with the recorders.
+  const root = planningRoot(cwd, (dir, name) => existsSync(join(dir, name)));
   if (!root) return;
   const verbs = gitVerbs(command);
 
