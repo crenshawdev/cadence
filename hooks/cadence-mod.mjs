@@ -49,8 +49,8 @@ import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
 import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
 import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
 import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
-import { NO_PROJECT_TEXT, paneLines, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv, singleFlight }
-  from '../cadence-core/bin/lib/pane.mjs';
+import { NO_PROJECT_TEXT, paneLines, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv,
+  sightDraw, sightStart, sightStop, singleFlight } from '../cadence-core/bin/lib/pane.mjs';
 
 /**
  * The pane's id and title, held once: `/cad-panel` and anything else that
@@ -201,14 +201,15 @@ async function fetchPane($, p) {
   }
   /** @type {import('../cadence-core/bin/lib/pane.mjs').Snapshot} */
   const read = { cursor: null, status: { ok: false, reason: 'not-read' }, captures: { ok: false, reason: 'not-read' },
-    spend: null };
+    spend: null, resolves: [], sessionModel: null };
   try {
     const root = await planningRootAsync(await $.session.cwd(), (dir, name) => $.fs.exists(at(dir, name)));
     if (root === null) {
       read.status = read.captures = { ok: false, reason: 'no-planning-dir' };
     } else {
-      [read.cursor, read.status, read.captures] = await Promise.all([readCursor($, root),
-        runSeam($, root, ['status']), runSeam($, root, ['capture-check'])]);
+      [read.cursor, read.status, read.captures, read.resolves, read.sessionModel] = await Promise.all([
+        readCursor($, root), runSeam($, root, ['status']), runSeam($, root, ['capture-check']),
+        readResolves($, root), sessionModel($)]);
       // The spend describes status's derived phase (D-05); none, no run.
       const current = read.status.ok ? read.status.value.current : null;
       if (current !== null && current !== undefined) {
@@ -231,6 +232,34 @@ async function fetchPane($, p) {
 async function readCursor($, root) {
   try {
     return parseCursor(await $.fs.read(at(root, '.planning/STATE.md')));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The resolve events in the project's trace.jsonl. A read that rejects (no
+ * file, or one over the host's 4 MiB cap) yields none.
+ * @param {any} $
+ * @param {string} root
+ */
+async function readResolves($, root) {
+  try {
+    return parseResolves(await $.fs.read(at(root, '.planning/trace.jsonl')));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The session's model, for a resolve that routed none, or null unread.
+ * @param {any} $
+ * @returns {Promise<string | null>}
+ */
+async function sessionModel($) {
+  try {
+    const m = await $.session.model();
+    return typeof m === 'string' && m ? m : null;
   } catch {
     return null;
   }
@@ -283,6 +312,10 @@ export function register(on) {
   // handlers interleaving never write back a stale roster.
   /** @type {readonly {id: string, role: string, rung: string}[]} */
   let roster = [];
+  // When the module first saw each roster agent, and its host type: the
+  // pane's, kept beside the roster so the roster's shape stays phase 3's.
+  /** @type {readonly import('../cadence-core/bin/lib/pane.mjs').Sight[]} */
+  let sights = [];
   /** @type {Capture} */
   const capture = { windows: new Map(), adopted: new Map(), held: new Map() };
   const { windows } = capture;
@@ -305,7 +338,9 @@ export function register(on) {
     const answer = await next(e);
     try {
       const session = await $.session.id();
+      const before = roster;
       roster = rosterStart(roster, e, session);
+      if (roster !== before) sights = sightStart(sights, e.agent_id, e.agent_type, Date.now());
     } catch {
       // the next draw's reconcile adds what this missed
     }
@@ -318,6 +353,7 @@ export function register(on) {
     const answer = await next(e);
     try {
       roster = rosterStop(roster, e.agent_id);
+      sights = sightStop(sights, e.agent_id);
     } catch {
       // the next draw's reconcile drops what this missed
     }
@@ -419,7 +455,9 @@ export function register(on) {
         refresh($, pane);
       }
       const { Box, Text } = $.ui.resolve(e);
-      const rows = paneLines(pane.snapshot, e.props.bodyColumns).map((line) => Text({ wrap: 'truncate-end', children: line }));
+      sights = sightDraw(sights, roster, Date.now());
+      const rows = paneLines(pane.snapshot, e.props.bodyColumns, roster, sights)
+        .map((line) => Text({ wrap: 'truncate-end', children: line }));
       return Box({ flexDirection: 'column', children: rows });
     } catch {
       return drawn;

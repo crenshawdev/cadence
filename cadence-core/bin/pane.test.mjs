@@ -10,7 +10,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, READING_LINE, seamAnswer, singleFlight, spendOf } from './lib/pane.mjs';
+import { agentRows, NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, parseResolves, READING_LINE, seamAnswer, sightDraw,
+  sightStart, sightStop, singleFlight, spendOf } from './lib/pane.mjs';
 import { appendEvent, DISPATCH, STEP_WINDOW } from './lib/trace.mjs';
 import { SPEND_EXCLUDES } from './lib/trace-suggest.mjs';
 import { makeTree } from './planning.test.mjs';
@@ -113,7 +114,7 @@ function standIn({ cwd = '/proj/sub', files = { '/proj/.planning': '', '/proj/.p
     /** Settles at the next `ui.invalidate`. */
     drawn: () => new Promise((resolve) => { waiting.push(() => resolve(undefined)); }),
     plugin: { name: 'cadence', root: '/plug' },
-    session: { cwd: async () => cwd, id: async () => 'session-1' },
+    session: { cwd: async () => cwd, id: async () => 'session-1', model: async () => 'claude-session-model' },
     agent: { list: async () => [] },
     process: { run: async () => { throw new Error('no process in this stand-in'); } },
     command: { register: async (/** @type {any} */ spec) => { registered.push(spec); return { command: spec.name }; } },
@@ -803,4 +804,115 @@ test('a status answer with current null runs no render', async () => {
   const lines = await openOn(h, $);
   assert.equal($.runs.filter((r) => r.argv.includes('render')).length, 0);
   assert.ok(!lines.some((l) => l.startsWith('Tokens')));
+});
+
+// --- running agents ---------------------------------------------------------
+
+const T0 = Date.parse('2026-10-04T12:00:00.000Z');
+const iso = (/** @type {number} */ ms) => new Date(ms).toISOString();
+const resolve = (/** @type {any} */ extra) => ({ corr: '1-abc1234', phase: '1', ts: iso(T0 - 60000),
+  family: 'routing', event: 'resolve', role: 'cad-reviewer', agent: 'cad-reviewer-low', model: 'sonnet',
+  effort: 'low', ...extra });
+const REVIEWER = { id: 'a1', role: 'cad-reviewer', rung: 'low' };
+const seenAt = (/** @type {string|null} */ type, id = 'a1') => sightStart([], id, type, T0);
+
+test('parsing keeps resolves and skips malformed lines and other events', () => {
+  const text = [JSON.stringify(resolve({})), '{not json', '',
+    JSON.stringify({ family: 'lifecycle', event: 'dispatch', role: 'cad-reviewer' }),
+    JSON.stringify({ family: 'routing', event: 'escalate', agent: 'cad-reviewer-low' }),
+    JSON.stringify(resolve({ model: 'opus' }))].join('\n');
+  const got = parseResolves(text);
+  assert.equal(got.length, 2);
+  assert.deepEqual(got.map((r) => r.model), ['sonnet', 'opus']);
+});
+
+test('of two resolves before the start, the newer one\'s effort and model show', () => {
+  const rows = agentRows([REVIEWER], seenAt('cadence:cad-reviewer-low'), [
+    resolve({ ts: iso(T0 - 120000), model: 'haiku', effort: 'medium' }),
+    resolve({ ts: iso(T0 - 1000), model: 'sonnet', effort: 'low' }),
+  ], 'm');
+  assert.deepEqual(rows, ['cad-reviewer · rung low · sonnet']);
+});
+
+test('a resolve written after the start is ignored; one at the start counts', () => {
+  const sights = seenAt('cadence:cad-reviewer-low');
+  assert.deepEqual(agentRows([REVIEWER], sights, [resolve({}), resolve({ ts: iso(T0 + 1), model: 'opus' })], 'm'),
+    ['cad-reviewer · rung low · sonnet']);
+  assert.deepEqual(agentRows([REVIEWER], sights, [resolve({}), resolve({ ts: iso(T0), model: 'opus' })], 'm'),
+    ['cad-reviewer · rung low · opus']);
+});
+
+test('a resolve for another agent is ignored', () => {
+  assert.deepEqual(agentRows([REVIEWER], seenAt('cadence:cad-reviewer-low'),
+    [resolve({ agent: 'cad-reviewer-high', effort: 'high', model: 'opus' })], 'm'),
+  ['cad-reviewer · rung low · unrecorded']);
+});
+
+test('a differing phase or corr changes nothing', () => {
+  const sights = seenAt('cadence:cad-reviewer-low');
+  const base = agentRows([REVIEWER], sights, [resolve({})], 'm');
+  assert.deepEqual(agentRows([REVIEWER], sights, [resolve({ phase: '9', corr: '9-fffffff', plan: 'x' })], 'm'), base);
+});
+
+test('model null shows the session model, marked as the session\'s', () => {
+  assert.deepEqual(agentRows([REVIEWER], seenAt('cadence:cad-reviewer-low'), [resolve({ model: null })], 'claude-x'),
+    ['cad-reviewer · rung low · claude-x (session)']);
+});
+
+test('no matching resolve: role and rung from the host type, model unrecorded', () => {
+  assert.deepEqual(agentRows([REVIEWER], seenAt('cadence:cad-reviewer-low'), [], 'm'),
+    ['cad-reviewer · rung low · unrecorded']);
+  const analyzer = { id: 'a2', role: 'cad-assumptions-analyzer', rung: 'xhigh' };
+  assert.deepEqual(agentRows([analyzer], seenAt('cadence:cad-assumptions-analyzer', 'a2'), [], 'm'),
+    ['cad-assumptions-analyzer · rung xhigh · unrecorded']);
+});
+
+test('an agent the reconcile added is recorded at its first draw, typeless, and its stop drops it', () => {
+  const drawn = sightDraw([], [REVIEWER], T0);
+  assert.deepEqual(drawn, [{ id: 'a1', type: null, seen: T0 }]);
+  assert.equal(sightDraw(drawn, [REVIEWER], T0 + 5), drawn, 'a second draw changes nothing');
+  assert.deepEqual(agentRows([REVIEWER], drawn, [resolve({})], 'm'), ['cad-reviewer · rung low · unrecorded']);
+  assert.deepEqual(sightStop(drawn, 'a1'), []);
+  assert.deepEqual(sightDraw(drawn, [], T0), []);
+});
+
+test('no running agents: one line saying so', () => {
+  assert.deepEqual(agentRows([], [], [resolve({})], 'm'), ['No Cadence agents running']);
+});
+
+test('a start seen while the pane was closed shows its routed rung and model; its stop drops the row', async () => {
+  const h = handlers();
+  const now = Date.now();
+  const trace = [
+    resolve({ ts: iso(now - 60000), model: 'sonnet', effort: 'low' }),
+    resolve({ ts: iso(now + 600000), model: 'opus', effort: 'low' }),
+  ].map((r) => JSON.stringify(r)).join('\n') + '\n';
+  const $ = standIn({ files: { '/proj/.planning': '', '/proj/.planning/STATE.md': STATE,
+    '/proj/.planning/trace.jsonl': trace } });
+  const start = { hook_event_name: 'SubagentStart', session_id: 'session-1', agent_id: 'a1',
+    agent_type: 'cadence:cad-reviewer-low' };
+  await h.hook('classic.SubagentStart')($, start, counting({}));
+  let reads = 0;
+  const read = $.fs.read;
+  $.fs.read = async (/** @type {string} */ p) => { reads++; return read(p); };
+  const drawn = $.drawn();
+  await h.hook('command.run')($, run(), counting({}));
+  await drawn;
+  const render = h.hook('ui.render', 'Pane');
+  let lines = linesOf(await render($, paneEvent({ bodyColumns: 200 }), counting(null)));
+  assert.ok(lines.includes('cad-reviewer · rung low · sonnet'), lines.join('\n'));
+  assert.ok(!lines.some((l) => l.includes('opus')));
+
+  // Hold every read from here: the stop's own refresh starts a fetch that
+  // never settles, so the draw below has only the snapshot it had before.
+  $.fs.read = () => new Promise(() => {});
+  let invalidated = $.invalidations;
+  await h.hook('classic.SubagentStop')($, { ...start, hook_event_name: 'SubagentStop' }, counting({}));
+  await settle();
+  invalidated = $.invalidations - invalidated;
+  lines = linesOf(await render($, paneEvent({ bodyColumns: 200 }), counting(null)));
+  assert.ok(!lines.some((l) => l.startsWith('cad-reviewer')), lines.join('\n'));
+  assert.ok(lines.includes('No Cadence agents running'));
+  assert.equal(invalidated, 1, 'only the stop\'s own redraw: no fetch settled in between');
+  assert.ok(reads >= 1);
 });

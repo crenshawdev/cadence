@@ -21,6 +21,14 @@
 //   false) gets a line of its own: the pane names both phases, picks neither.
 // - UAT: the same run's `phases[current].uat`, the five counts in its order.
 //   No `uat` key, no line: never a row of zeros (D-06).
+// - running agents: the band's roster, as phase 3's start, stop and
+//   reconcile leave it, is who runs (D-07). Each row's role, rung and model
+//   come from the newest `routing`/`resolve` in trace.jsonl whose `agent` is
+//   the host type without `cadence:`, written at or before the module saw the
+//   agent start; phase, plan and corr are ignored. A null model is the
+//   session's, marked so. No match: role and rung from the host type through
+//   lib/rung-agent.mjs, and the model `unrecorded`. The file is read, not
+//   `trace render --events`: the default render carries no routing event.
 // - open captures: `capture-check`'s `substantive`, from a run of its own
 //   beside `status` (D-08). Its count is not `capture-sections`' bullets: a
 //   `None.` placeholder counts zero there. An absent CAPTURE.md is its own
@@ -47,6 +55,7 @@
 // the refusal's reason, never an empty list or a zero in place of the data.
 'use strict';
 
+import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
 import { SPEND_EXCLUDES } from './trace-suggest.mjs';
 
 /** What the pane draws until its first fetch has left a snapshot. */
@@ -67,8 +76,13 @@ export const SEAM_TIMEOUT_MS = 10000;
  * @typedef {{ok: boolean, value?: any, reason?: string, hint?: string}} Seam
  *   a seam's answer: `ok` with its envelope in `value`, or not `ok` with the
  *   refusal's `reason` and `hint`
- * @typedef {{cursor: Cursor, status: Seam, captures: Seam, spend: Seam | null}} Snapshot one
- *   fetch's answers; `spend` is null when there was no current phase to price
+ * @typedef {{agent: unknown, role: unknown, effort: unknown, model: unknown, ts: unknown}} Resolve
+ * @typedef {{cursor: Cursor, status: Seam, captures: Seam, spend: Seam | null,
+ *   resolves: readonly Resolve[], sessionModel: string | null}} Snapshot one fetch's answers;
+ *   `spend` is null when there was no current phase to price
+ * @typedef {{id: string, role: string, rung: string}} RosterEntry the band's (lib/band.mjs)
+ * @typedef {{id: string, type: string | null, seen: number}} Sight when the module first
+ *   saw a running agent, and its host type when the start carried one
  */
 
 /**
@@ -108,9 +122,11 @@ export function seamAnswer(stdout) {
  * The pane's lines for a snapshot, each at most `width` cells.
  * @param {Snapshot | null} snapshot null until the first fetch settles
  * @param {number} width the pane's `bodyColumns`
+ * @param {readonly RosterEntry[]} [roster] the running agents at draw time
+ * @param {readonly Sight[]} [sights] what the module saw of them
  * @returns {string[]}
  */
-export function paneLines(snapshot, width) {
+export function paneLines(snapshot, width, roster = [], sights = []) {
   if (!snapshot) return [fit(READING_LINE, width)];
   const phase = phaseView(snapshot.status);
   const lines = [
@@ -118,6 +134,7 @@ export function paneLines(snapshot, width) {
     snapshot.cursor ? `next ${snapshot.cursor.next}` : NO_CURSOR_NEXT,
     ...phase.rows,
     ...uatLines(phase.entry),
+    ...agentRows(roster, sights, snapshot.resolves || [], snapshot.sessionModel ?? null),
     capturesLine(snapshot.captures),
     ...spendLines(snapshot.spend),
   ];
@@ -146,6 +163,109 @@ function capturesLine(captures) {
   if (!captures || !captures.ok) return unavailable('Open captures', captures);
   const n = captures.value.substantive;
   return Number.isInteger(n) ? `Open captures ${n}` : unavailable('Open captures', { ok: false, reason: 'unparseable-output' });
+}
+
+/**
+ * The `routing`/`resolve` events in trace.jsonl's text. A line that does not
+ * parse is skipped, as is every other event.
+ * @param {string} text
+ * @returns {Resolve[]}
+ */
+export function parseResolves(text) {
+  /** @type {Resolve[]} */
+  const out = [];
+  for (const line of String(text).split('\n')) {
+    if (!line.trim()) continue;
+    let e;
+    try {
+      e = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (e && e.family === 'routing' && e.event === 'resolve') out.push(e);
+  }
+  return out;
+}
+
+/**
+ * A Cadence agent the roster just took in, first seen now.
+ * @param {readonly Sight[]} sights
+ * @param {unknown} id
+ * @param {unknown} type its host `agent_type`
+ * @param {number} now ms
+ * @returns {readonly Sight[]}
+ */
+export function sightStart(sights, id, type, now) {
+  if (typeof id !== 'string' || sights.some((s) => s.id === id)) return sights;
+  return [...sights, { id, type: typeof type === 'string' ? type : null, seen: now }];
+}
+
+/**
+ * An agent stopped: its record goes.
+ * @param {readonly Sight[]} sights
+ * @param {unknown} id
+ * @returns {readonly Sight[]}
+ */
+export function sightStop(sights, id) {
+  return sights.some((s) => s.id === id) ? sights.filter((s) => s.id !== id) : sights;
+}
+
+/**
+ * Every roster agent gets a record the first time the pane draws it (a start
+ * the reconcile made up for carries no type), and records of agents the
+ * roster no longer holds go.
+ * @param {readonly Sight[]} sights
+ * @param {readonly RosterEntry[]} roster
+ * @param {number} now ms
+ * @returns {readonly Sight[]}
+ */
+export function sightDraw(sights, roster, now) {
+  const kept = sights.filter((s) => roster.some((a) => a.id === s.id));
+  const added = roster.filter((a) => !kept.some((s) => s.id === a.id)).map((a) => ({ id: a.id, type: null, seen: now }));
+  return kept.length === sights.length && added.length === 0 ? sights : [...kept, ...added];
+}
+
+/**
+ * One row per running agent: `<role> · rung <rung> · <model>`.
+ * @param {readonly RosterEntry[]} roster
+ * @param {readonly Sight[]} sights
+ * @param {readonly Resolve[]} resolves
+ * @param {string | null} sessionModel `$.session.model()`, or null unread
+ * @returns {string[]}
+ */
+export function agentRows(roster, sights, resolves, sessionModel) {
+  if (roster.length === 0) return ['No Cadence agents running'];
+  return roster.map((a) => {
+    const sight = sights.find((s) => s.id === a.id);
+    const type = sight ? sight.type : null;
+    const r = type === null ? null : newestResolve(resolves, type.replace(/^cadence:/, ''), sight.seen);
+    if (r === null) {
+      return `${roleOfAgent(type) ?? a.role} · rung ${rungOfAgent(type) ?? a.rung} · unrecorded`;
+    }
+    const model = r.model === null ? `${sessionModel ?? 'the session model'} (session)`
+      : typeof r.model === 'string' && r.model ? r.model : 'unrecorded';
+    return `${String(r.role ?? a.role)} · rung ${String(r.effort ?? a.rung)} · ${model}`;
+  });
+}
+
+/**
+ * The newest resolve for `agent` written at or before `seen`; the later line
+ * wins a tie.
+ * @param {readonly Resolve[]} resolves
+ * @param {string} agent
+ * @param {number} seen ms
+ * @returns {Resolve | null}
+ */
+function newestResolve(resolves, agent, seen) {
+  let best = null;
+  let bestAt = -Infinity;
+  for (const r of resolves) {
+    const at = typeof r.ts === 'string' ? Date.parse(r.ts) : NaN;
+    if (r.agent !== agent || !(at <= seen) || at < bestAt) continue;
+    best = r;
+    bestAt = at;
+  }
+  return best;
 }
 
 /**
