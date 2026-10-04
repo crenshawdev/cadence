@@ -25,6 +25,13 @@
 //   beside `status` (D-08). Its count is not `capture-sections`' bullets: a
 //   `None.` placeholder counts zero there. An absent CAPTURE.md is its own
 //   `exists: false`, `substantive: 0`, an empty queue, and shows as 0.
+// - token spend: `trace render --phase <current>`, run once `status` names a
+//   current phase. The total is the sum of `roles[*].tokens`, the figure
+//   `/cad-report` prints as tokens on subagent returns (D-02), and the
+//   unrecorded count the sum of `roles[*].unrecorded`. No role with a figure
+//   is no figure, never 0. The caveat names every `SPEND_EXCLUDES` entry,
+//   imported, never copied. Whatever the render folds into brackets and
+//   keeps out of `roles` (phase 3's step-window facts) stays out of this.
 //
 // The layout, one row per line, top to bottom:
 //   1. the phase heading
@@ -39,6 +46,8 @@
 // ends in `…`. A section whose source failed reads as unavailable and names
 // the refusal's reason, never an empty list or a zero in place of the data.
 'use strict';
+
+import { SPEND_EXCLUDES } from './trace-suggest.mjs';
 
 /** What the pane draws until its first fetch has left a snapshot. */
 export const READING_LINE = 'Cadence · reading…';
@@ -58,7 +67,8 @@ export const SEAM_TIMEOUT_MS = 10000;
  * @typedef {{ok: boolean, value?: any, reason?: string, hint?: string}} Seam
  *   a seam's answer: `ok` with its envelope in `value`, or not `ok` with the
  *   refusal's `reason` and `hint`
- * @typedef {{cursor: Cursor, status: Seam, captures: Seam}} Snapshot one fetch's answers
+ * @typedef {{cursor: Cursor, status: Seam, captures: Seam, spend: Seam | null}} Snapshot one
+ *   fetch's answers; `spend` is null when there was no current phase to price
  */
 
 /**
@@ -109,6 +119,7 @@ export function paneLines(snapshot, width) {
     ...phase.rows,
     ...uatLines(phase.entry),
     capturesLine(snapshot.captures),
+    ...spendLines(snapshot.spend),
   ];
   return lines.map((line) => fit(visible(line), width));
 }
@@ -135,6 +146,37 @@ function capturesLine(captures) {
   if (!captures || !captures.ok) return unavailable('Open captures', captures);
   const n = captures.value.substantive;
   return Number.isInteger(n) ? `Open captures ${n}` : unavailable('Open captures', { ok: false, reason: 'unparseable-output' });
+}
+
+/**
+ * The phase's spend as `/cad-report` reads it from the render's `roles`.
+ * @param {any} render `trace render --phase N`'s envelope
+ * @returns {{total: number | null, unrecorded: number}} `total` is null when
+ *   no role carries a figure
+ */
+export function spendOf(render) {
+  const roles = render && render.roles && typeof render.roles === 'object' ? Object.values(render.roles) : [];
+  let total = null;
+  let unrecorded = 0;
+  for (const r of roles) {
+    if (r && typeof r.tokens === 'number') total = (total ?? 0) + r.tokens;
+    if (r && typeof r.unrecorded === 'number') unrecorded += r.unrecorded;
+  }
+  return { total, unrecorded };
+}
+
+/**
+ * The spend line and its caveat, or none when there was no phase to price.
+ * @param {Seam | null} spend
+ * @returns {string[]}
+ */
+function spendLines(spend) {
+  if (spend === null || spend === undefined) return [];
+  const label = 'Tokens on subagent returns';
+  if (!spend.ok) return [unavailable(label, spend)];
+  const { total, unrecorded } = spendOf(spend.value);
+  const figure = total === null ? `${label}: none recorded` : `${label} ${total}`;
+  return [`${figure}${unrecorded ? ` · ${unrecorded} unrecorded` : ''}`, `Excludes ${SPEND_EXCLUDES.join(', ')}`];
 }
 
 /** The statuses a phase has a `PLAN.md` in, when `status` lists no `plans`. */

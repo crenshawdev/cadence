@@ -10,7 +10,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, READING_LINE, seamAnswer, singleFlight } from './lib/pane.mjs';
+import { NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, READING_LINE, seamAnswer, singleFlight, spendOf } from './lib/pane.mjs';
+import { appendEvent, DISPATCH, STEP_WINDOW } from './lib/trace.mjs';
+import { SPEND_EXCLUDES } from './lib/trace-suggest.mjs';
 import { makeTree } from './planning.test.mjs';
 import { parseCursor } from './lib/state-cursor.mjs';
 import { register } from '../../hooks/cadence-mod.mjs';
@@ -25,7 +27,7 @@ const STATUS = Object.freeze({ ok: true, current: 1, total: 2, outstanding: [{ p
 
 /** One snapshot, every section filled the way a good fetch leaves it. */
 const snap = (/** @type {any} */ extra = {}) => ({ cursor: parseCursor(STATE),
-  status: { ok: true, value: STATUS }, captures: { ok: true, value: { ok: true, exists: true, substantive: 2 } }, ...extra });
+  status: { ok: true, value: STATUS }, captures: { ok: true, value: { ok: true, exists: true, substantive: 2 } }, spend: null, ...extra });
 
 // --- the lines --------------------------------------------------------------
 
@@ -699,4 +701,106 @@ test('one fetch runs capture-check once, against the walked root, and the pane s
   assert.equal(checks[0].init.cwd, root);
   assert.equal(typeof checks[0].init.timeoutMs, 'number');
   assert.ok(lines.includes('Open captures 2'), lines.join('\n'));
+});
+
+// --- token spend ------------------------------------------------------------
+
+/**
+ * The AC3 record: phase 1 holds a return with 100, a checkpoint with 50 and a
+ * figureless return; phase 2 a return with 7. With `windowed`, the figureless
+ * return's agent also has a step-window fact, as the module writes it.
+ */
+function spendTree(/** @type {{windowed?: boolean, figurelessOnly?: boolean}} */ { windowed = false, figurelessOnly = false } = {}) {
+  const dir = makeTree({});
+  const ev = (/** @type {number} */ phase, /** @type {string} */ event, /** @type {string} */ plan, /** @type {any} */ extra = {}) =>
+    appendEvent(dir, { phase, family: 'lifecycle', event, plan, role: 'cad-reviewer', ...extra });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  if (!figurelessOnly) {
+    ev(1, DISPATCH, 'r1', { ts: '2026-10-04T10:00:00.000Z' });
+    ev(1, 'return', 'r1', { tokens: 100, ts: '2026-10-04T10:01:00.000Z' });
+    ev(1, DISPATCH, 'c1', { role: 'cad-executor', ts: '2026-10-04T10:02:00.000Z' });
+    ev(1, 'checkpoint', 'c1', { role: 'cad-executor', tokens: 50, ts: '2026-10-04T10:03:00.000Z' });
+  }
+  ev(1, DISPATCH, 'f1', { ts: '2026-10-04T10:04:00.000Z' });
+  if (windowed) {
+    appendEvent(dir, { phase: 1, family: 'lifecycle', event: STEP_WINDOW, agent_id: 'a9', tokens: 4321,
+      ts: '2026-10-04T10:04:59.000Z' });
+  }
+  ev(1, 'return', 'f1', { agent_id: 'a9', ts: '2026-10-04T10:05:00.000Z' });
+  appendEvent(dir, { phase: 2, family: 'lifecycle', event: 'phase_start', sha: 'def5678' });
+  ev(2, DISPATCH, 'r2', { ts: '2026-10-04T11:00:00.000Z' });
+  ev(2, 'return', 'r2', { tokens: 7, ts: '2026-10-04T11:01:00.000Z' });
+  return dir;
+}
+
+/** The real `trace render --phase 1` of a fixture, raw and as the pane reads it. */
+function renderOf(/** @type {string} */ dir) {
+  const out = stdoutOf(['trace', 'render', '--phase', '1'], dir);
+  const render = JSON.parse(out);
+  const rolesSum = Object.values(render.roles).reduce((n, r) => n + (r.tokens ?? 0), 0);
+  const lines = paneLines(snap({ spend: seamAnswer(out) }), 300);
+  return { render, rolesSum, lines, spend: spendOf(render) };
+}
+
+const spendLine = (/** @type {string[]} */ lines) => lines.find((l) => l.startsWith('Tokens on subagent returns'));
+
+test('the spend is the render\'s roles total, returns and checkpoints, with the unrecorded count', () => {
+  const { rolesSum, lines, spend } = renderOf(spendTree());
+  assert.equal(spend.total, 150);
+  assert.equal(spend.total, rolesSum);
+  assert.equal(spend.unrecorded, 1);
+  const line = spendLine(lines);
+  assert.equal(line, 'Tokens on subagent returns 150 · 1 unrecorded');
+  const caveat = lines[lines.indexOf(line) + 1];
+  for (const entry of SPEND_EXCLUDES) assert.ok(caveat.includes(entry), `${entry} missing from: ${caveat}`);
+});
+
+test('a step-window fact for the figureless bracket leaves the total at the render\'s roles sum', () => {
+  const { render, rolesSum, spend, lines } = renderOf(spendTree({ windowed: true }));
+  assert.ok(render.brackets.some((/** @type {any} */ b) => b.tokens === 4321), 'the fact reached its bracket');
+  assert.equal(spend.total, rolesSum);
+  assert.equal(spend.total, 150);
+  assert.equal(spend.unrecorded, 1);
+  assert.equal(spendLine(lines), 'Tokens on subagent returns 150 · 1 unrecorded');
+});
+
+test('a phase whose only dispatch returned no figure shows no 0, and one unrecorded', () => {
+  const { spend, lines } = renderOf(spendTree({ figurelessOnly: true }));
+  assert.equal(spend.total, null);
+  assert.equal(spend.unrecorded, 1);
+  const line = spendLine(lines);
+  assert.equal(line, 'Tokens on subagent returns: none recorded · 1 unrecorded');
+  assert.doesNotMatch(line, /\b0\b/);
+});
+
+test('no roles, or a failed render: no figure, or unavailable naming the reason', () => {
+  assert.deepEqual(spendOf({ ok: true }), { total: null, unrecorded: 0 });
+  const failed = paneLines(snap({ spend: { ok: false, reason: 'run-failed' } }), 200);
+  assert.ok(failed.includes('Tokens on subagent returns unavailable · run-failed'));
+  assert.ok(!paneLines(snap(), 200).some((l) => l.startsWith('Tokens')), 'no spend run, no spend line');
+});
+
+test('one fetch renders the spend for status\'s current, after the status run', async () => {
+  const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: true, summary: true }, 2: { plan: true } } });
+  const root = dirname(dir);
+  const h = handlers();
+  const $ = realHost(root);
+  await openOn(h, $);
+  const names = $.runs.map((r) => r.argv.slice(4).join(' '));
+  const renders = $.runs.filter((r) => r.argv.includes('render'));
+  assert.equal(renders.length, 1);
+  assert.deepEqual(renders[0].argv.slice(-4), ['trace', 'render', '--phase', '1']);
+  assert.equal(renders[0].init.cwd, root);
+  assert.equal(typeof renders[0].init.timeoutMs, 'number');
+  assert.ok(names.indexOf('status') < names.indexOf('trace render --phase 1'), names.join(' | '));
+});
+
+test('a status answer with current null runs no render', async () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'), '# Roadmap\n\n## Phases\n\n(nothing)\n');
+  const h = handlers();
+  const $ = realHost(dirname(dir));
+  const lines = await openOn(h, $);
+  assert.equal($.runs.filter((r) => r.argv.includes('render')).length, 0);
+  assert.ok(!lines.some((l) => l.startsWith('Tokens')));
 });

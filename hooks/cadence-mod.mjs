@@ -200,7 +200,8 @@ async function fetchPane($, p) {
     // no list: fetch anyway
   }
   /** @type {import('../cadence-core/bin/lib/pane.mjs').Snapshot} */
-  const read = { cursor: null, status: { ok: false, reason: 'not-read' }, captures: { ok: false, reason: 'not-read' } };
+  const read = { cursor: null, status: { ok: false, reason: 'not-read' }, captures: { ok: false, reason: 'not-read' },
+    spend: null };
   try {
     const root = await planningRootAsync(await $.session.cwd(), (dir, name) => $.fs.exists(at(dir, name)));
     if (root === null) {
@@ -208,6 +209,11 @@ async function fetchPane($, p) {
     } else {
       [read.cursor, read.status, read.captures] = await Promise.all([readCursor($, root),
         runSeam($, root, ['status']), runSeam($, root, ['capture-check'])]);
+      // The spend describes status's derived phase (D-05); none, no run.
+      const current = read.status.ok ? read.status.value.current : null;
+      if (current !== null && current !== undefined) {
+        read.spend = await runSeam($, root, ['trace', 'render', '--phase', String(current)]);
+      }
     }
   } catch {
     // no walk: nothing read
