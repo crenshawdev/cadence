@@ -29,6 +29,16 @@
 // always wins. A write that fails is silent: a record may not change a
 // decision.
 //
+// And the Cadence pane (phase 4), beside the band and the token capture: the
+// full picture of the current phase, its lines built by lib/pane.mjs. The
+// `/cad-panel` command this module registers opens it. Like everything here
+// it exists only on hosts with mods, so it adds no skill, no resident
+// description and no byte budget (D-01). The pane draws from the snapshot its
+// last fetch left and does no I/O while drawing. `/cad-panel` calls `next`
+// and then answers its own result in that one's place: a registered command
+// has no core for `next` to run, and its own text, an empty one included,
+// replaces the line the host prints for a command nobody answered.
+//
 // Every handler calls `next` exactly once and swallows its own errors (D-12).
 //
 // git-guard, read-trace and subagent-trace stay command hooks on every host, so
@@ -39,6 +49,17 @@ import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
 import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
 import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
 import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
+import { NO_PROJECT_TEXT, paneLines } from '../cadence-core/bin/lib/pane.mjs';
+
+/**
+ * The pane's id and title, held once: `/cad-panel` and anything else that
+ * opens the pane open this one.
+ */
+const PANE_ID = 'cadence';
+const PANE = Object.freeze({ id: PANE_ID, title: 'Cadence' });
+
+/** The command that opens the pane. User-facing, so the name is locked (D-01). */
+const PANEL_COMMAND = 'cad-panel';
 
 /** `dir/name`, without doubling the separator at a filesystem root. */
 const at = (/** @type {string} */ dir, /** @type {string} */ name) =>
@@ -139,6 +160,58 @@ async function closing($, e, c) {
   }
 }
 
+/**
+ * @typedef {{snapshot: import('../cadence-core/bin/lib/pane.mjs').Snapshot | null}} Pane
+ * `snapshot`: what the pane's last fetch read, or null before the first one
+ * settles.
+ */
+
+/**
+ * Read what the pane shows, keep it, and ask for a draw. Never throws, and
+ * always leaves a snapshot, failed or not.
+ * @param {any} $
+ * @param {Pane} p
+ */
+async function fetchPane($, p) {
+  /** @type {import('../cadence-core/bin/lib/pane.mjs').Snapshot} */
+  const read = { cursor: null };
+  try {
+    const root = await planningRootAsync(await $.session.cwd(), (dir, name) => $.fs.exists(at(dir, name)));
+    if (root !== null) {
+      try {
+        read.cursor = parseCursor(await $.fs.read(at(root, '.planning/STATE.md')));
+      } catch {
+        // unreadable is the same as absent: the /cad-progress hint
+      }
+    }
+  } catch {
+    // no walk: nothing read
+  }
+  p.snapshot = read;
+  redraw($);
+}
+
+/**
+ * Open the pane in the project a walk from the session's directory finds, and
+ * start its fetch without waiting on it. The answer is the command's text: the
+ * no-project line, the reason an open waits undrawn, or none once it is drawn.
+ * @param {any} $
+ * @param {Pane} p
+ */
+async function openPane($, p) {
+  try {
+    const root = await planningRootAsync(await $.session.cwd(), (dir, name) => $.fs.exists(at(dir, name)));
+    if (root === null) return { text: NO_PROJECT_TEXT };
+    const opened = await $.ui.open({ id: PANE.id, title: PANE.title });
+    void fetchPane($, p);
+    // An empty text, never a missing one: only a text replaces the host's own
+    // "no command.run hook answered it" line (measured on 2.1.289).
+    return opened && opened.isPlaced === false ? { text: String(opened.reason) } : { text: '' };
+  } catch {
+    return { text: 'The Cadence pane did not open.' };
+  }
+}
+
 /** @param {any} on the host's hook registrar */
 export function register(on) {
   // The Cadence agents running in this session (D-07). Every write is
@@ -236,6 +309,38 @@ export function register(on) {
       const { Box, Text } = $.ui.resolve(e);
       const band = Text({ wrap: 'truncate-end', children: bandLine(cursor, roster, e.props.bodyColumns) });
       return Box({ flexDirection: 'column', children: [band, drawn] });
+    } catch {
+      return drawn;
+    }
+  });
+
+  // --- the pane --------------------------------------------------------------
+
+  /** @type {Pane} */
+  const pane = { snapshot: null };
+
+  on('session.start', async ($, e, next) => {
+    try {
+      await $.command.register({ name: PANEL_COMMAND, immediate: true,
+        description: 'Open the Cadence pane: plans, running agents, UAT, captures, spend and next command' });
+    } catch {
+      // no command this session; the band still draws
+    }
+    return next(e);
+  });
+
+  on('command.run', { command: PANEL_COMMAND }, async ($, e, next) => {
+    await next(e);
+    return openPane($, pane);
+  });
+
+  // The pane draws the last snapshot and awaits nothing but `next`.
+  on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
+    const drawn = await next(e);
+    try {
+      const { Box, Text } = $.ui.resolve(e);
+      const rows = paneLines(pane.snapshot, e.props.bodyColumns).map((line) => Text({ wrap: 'truncate-end', children: line }));
+      return Box({ flexDirection: 'column', children: rows });
     } catch {
       return drawn;
     }
