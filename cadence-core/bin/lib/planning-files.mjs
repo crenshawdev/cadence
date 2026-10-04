@@ -1,13 +1,18 @@
 // @ts-check
 // planning-files.mjs - format-pinned parsers/writers for the .planning file
-// set. This is the ONLY place a .planning grammar lives (cursor, ROADMAP
-// phases, REQUIREMENTS traceability, UAT items). A format change is one
-// function here + its tests; workflow prose never describes file mechanics.
+// set. This is where the .planning grammars live (cursor, ROADMAP phases,
+// REQUIREMENTS traceability, UAT items), with one exception: the cursor's
+// PARSER is in lib/state-cursor.mjs, because the Cadence module parses STATE.md
+// in-process and a file that imports `node:fs` cannot load there (phase 3,
+// D-05). This file re-exports it and is still where everything imports it from.
+// A format change is one function here (or there) + its tests; workflow prose
+// never describes file mechanics.
 // Zero-dep: node: builtins only. Consumed by bin/planning.mjs and its tests.
 'use strict';
 
 import { writeFileSync, renameSync, lstatSync } from 'node:fs';
 import { isRefusedSpelling } from './lease-grammar.mjs';
+import { parseCursor } from './state-cursor.mjs';
 
 // The cursor's only permitted Status values (references/conventions.md).
 export const CURSOR_STATUSES = [
@@ -19,23 +24,9 @@ export const CURSOR_STATUSES = [
 // STATE.md - the 4-line cursor.
 // ---------------------------------------------------------------------------
 
-/**
- * Parse the canonical 4-line cursor. Returns null when any line is missing
- * or malformed - callers degrade, never guess.
- * @param {string} text
- */
-export function parseCursor(text) {
-  const m = (re) => { const r = text.match(re); return r ? r : null; };
-  const phase = m(/^Phase:\s*(\d+(?:\.\d+)?)\s+of\s+(\d+)\s+\((.+)\)\s*$/m);
-  const status = m(/^Status:\s*(.+?)\s*$/m);
-  const next = m(/^Next:\s*(.+?)\s*$/m);
-  const updated = m(/^Updated:\s*(\d{4}-\d{2}-\d{2})\s*$/m);
-  if (!phase || !status || !next || !updated) return null;
-  return {
-    phase: Number(phase[1]), total: Number(phase[2]), name: phase[3],
-    status: status[1], next: next[1], updated: updated[1],
-  };
-}
+// `parseCursor` lives in lib/state-cursor.mjs (see the header) and is
+// re-exported here, so every caller keeps importing it from this file.
+export { parseCursor };
 
 /**
  * Render the canonical cursor - exactly four lines under `# State`.
