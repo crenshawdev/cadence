@@ -29,7 +29,8 @@ import { emit } from '../lib/seam-io.mjs';
 // reported for the model to repair with judgment. --dry-run computes the full
 // operation plan and touches nothing - it is what the confirmation gate shows.
 // On insert, REQUIREMENTS.md tokens shift only on Pending `## Traceability`
-// rows; every other REQUIREMENTS line is copied through byte-identical.
+// rows; every other REQUIREMENTS line is copied through byte-identical. Its
+// REQUIREMENTS refs skip frozen rows and add capital tokens left unshifted.
 // ---------------------------------------------------------------------------
 function gitMv(from, to) {
   try { execFileSync('git', ['mv', from, to], { stdio: 'pipe' }); return 'git'; }
@@ -302,6 +303,8 @@ function cmdRenumber(dir, sub, opts) {
   let reqRowChanges = [];
   /** @type {string[]} */
   let movedComplete = [];
+  /** @type {Array<{line: number, text: string}> | null} */
+  let reqRefs = null;
   let newReqText = null;
   if (reqText !== null) {
     let t = reqText;
@@ -318,7 +321,7 @@ function cmdRenumber(dir, sub, opts) {
     // Insert leaves shipped history alone (GH-259): only Pending Traceability
     // rows move. Remove keeps its whole-file shift for now.
     if (sub === 'insert') {
-      ({ text: newReqText, changes: reqRowChanges, movedComplete } = shiftPendingReqRows(t, at));
+      ({ text: newReqText, changes: reqRowChanges, movedComplete, refs: reqRefs } = shiftPendingReqRows(t, at));
     } else {
       newReqText = shiftPhaseTokens(t, shiftFrom, delta).text;
     }
@@ -363,11 +366,14 @@ function cmdRenumber(dir, sub, opts) {
   }
 
   // Prose refs the shift leaves alone - the model repairs these with judgment.
+  // Insert's REQUIREMENTS refs come from the pass above, which leaves out the
+  // frozen rows (D-09).
   const inTextRefs = [];
   for (const f of ['ROADMAP.md', 'REQUIREMENTS.md', 'STATE.md', 'PROJECT.md']) {
     const t = read(join(dir, f));
     if (t === null) continue;
-    for (const ref of findProsePhaseRefs(t, shiftFrom)) inTextRefs.push({ file: f, ...ref });
+    const refs = f === 'REQUIREMENTS.md' && reqRefs ? reqRefs : findProsePhaseRefs(t, shiftFrom);
+    for (const ref of refs) inTextRefs.push({ file: f, ...ref });
   }
 
   // Decimal phases are never shifted (see shiftPhaseTokens) - report them so

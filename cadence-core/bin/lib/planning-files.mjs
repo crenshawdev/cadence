@@ -2718,31 +2718,49 @@ export function shiftPhaseTokens(text, from, delta) {
  * line: rewriting them would rewrite where the work shipped, and leaving them
  * means they may now point at a different phase. Neither answer is safe to
  * pick for the user, so the caller names them and the user decides (D-02).
+ *
+ * `refs` is insert's `in_text_refs` for this file, `[{line, text}]` like
+ * `findProsePhaseRefs`. Frozen lines are left out: `|` lines in `## Shipped`,
+ * and `|` lines in `## Traceability` that aren't Pending rows. Pointing the
+ * model at those would have it hand-edit the history this pass protects
+ * (D-09). Any other line is reported if it has lowercase prose or a capital
+ * token the old whole-file shift would have moved, since nothing moves those
+ * now and `findProsePhaseRefs` only sees lowercase. Pending rows already
+ * shifted, so only their prose counts.
  * @param {string} text @param {number} at
- * @returns {{text: string, changes: Array<{line: number, before: string, after: string}>, movedComplete: string[]}}
+ * @returns {{text: string, changes: Array<{line: number, before: string, after: string}>, movedComplete: string[], refs: Array<{line: number, text: string}>}}
  */
 export function shiftPendingReqRows(text, at) {
   const lines = text.split('\n');
   const changes = [];
   /** @type {string[]} */
   const movedComplete = [];
-  const { start, end } = sectionSpan(lines, '## Traceability');
-  if (start < 0) return { text, changes, movedComplete };
+  const refs = [];
+  const trace = sectionSpan(lines, '## Traceability');
+  const shipped = sectionSpan(lines, '## Shipped');
+  // A missing section spans (-1, -1), so nothing is inside it.
+  const inside = (/** @type {{start: number, end: number}} */ s, /** @type {number} */ i) => i > s.start && i < s.end;
+  const prose = new Set(findProsePhaseRefs(text, at).map((r) => r.line));
   const bare = (/** @type {string} */ l) => l.replace(/\r$/, '');
-  for (let i = start + 1; i < end; i++) {
-    const cells = lines[i].match(REQ_ROW);
-    if (!cells) continue;
-    const status = cells[3].trim();
-    if (status === 'Complete' && shiftPhaseTokens(lines[i], at, 1).count > 0) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const cells = inside(trace, i) ? line.match(REQ_ROW) : null;
+    const status = cells ? cells[3].trim() : null;
+    const moves = shiftPhaseTokens(line, at, 1);
+    if (status === 'Pending') {
+      if (prose.has(i + 1)) refs.push({ line: i + 1, text: line.trim() });
+      if (moves.text === line) continue;
+      changes.push({ line: i + 1, before: bare(line), after: bare(moves.text) });
+      lines[i] = moves.text;
+      continue;
+    }
+    if (status === 'Complete' && moves.count > 0) {
       movedComplete.push(cells[1].replace(/\*/g, '').trim());
     }
-    if (status !== 'Pending') continue;
-    const shifted = shiftPhaseTokens(lines[i], at, 1).text;
-    if (shifted === lines[i]) continue;
-    changes.push({ line: i + 1, before: bare(lines[i]), after: bare(shifted) });
-    lines[i] = shifted;
+    const frozen = line.startsWith('|') && (inside(trace, i) || inside(shipped, i));
+    if (!frozen && (prose.has(i + 1) || moves.count > 0)) refs.push({ line: i + 1, text: line.trim() });
   }
-  return { text: lines.join('\n'), changes, movedComplete };
+  return { text: lines.join('\n'), changes, movedComplete, refs };
 }
 
 /**

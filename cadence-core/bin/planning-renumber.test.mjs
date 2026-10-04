@@ -851,3 +851,42 @@ test('renumber insert: a decimal-cursor warning keeps its text and comes before 
   assert.match(r.warn, /^cursor sits on decimal phase 2\.1, .* re-point it \(cursor set\); /);
   assert.match(r.warn, /CMP-03/);
 });
+
+// in_text_refs on insert never sends the model to a frozen line: a `## Shipped`
+// row or a non-Pending Traceability row (D-09). Lowercase prose elsewhere, like
+// the Deferred bullet, is still reported.
+test('renumber insert: in_text_refs skips Shipped and Complete rows, keeps the Deferred bullet', () => {
+  const r = run(['renumber', 'insert', '--at', '3', '--dry-run'], historyRenumberTree());
+  const lines = r.in_text_refs.filter((x) => x.file === 'REQUIREMENTS.md').map((x) => x.line);
+  assert.ok(lines.includes(DFR_01 + 1), `Deferred bullet missing: ${JSON.stringify(lines)}`);
+  assert.ok(!lines.includes(SHP_01 + 1), 'Shipped row reported');
+  assert.ok(!lines.includes(CMP_03 + 1), 'Complete row reported');
+});
+
+// Remove keeps reporting every lowercase ref (D-10). `--n 2`, not 3: remove
+// scans from the phase after the one removed, so at 3 it never looks at the
+// Shipped row's `phase 3` and the check would pass for the wrong reason.
+test('renumber remove: in_text_refs still reports the Shipped row (insert-only rule)', () => {
+  const r = run(['renumber', 'remove', '--n', '2', '--dry-run'], historyRenumberTree());
+  const lines = r.in_text_refs.filter((x) => x.file === 'REQUIREMENTS.md').map((x) => x.line);
+  assert.ok(lines.includes(SHP_01 + 1), `Shipped row missing: ${JSON.stringify(lines)}`);
+});
+
+// A capital `Phase 3` outside Traceability used to shift with the whole file.
+// Insert now leaves it as written, so it has to be reported or it goes stale
+// with nobody told (findProsePhaseRefs only sees lowercase).
+test('renumber insert: a v2 bullet citing Phase 3 is left as written and reported', () => {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const bullet = '- **V2-01**: maybe Phase 3';
+  writeFileSync(reqFile, readFileSync(reqFile, 'utf8') + `\n## v2 Requirements\n\n${bullet}\n`);
+  const idx = readFileSync(reqFile, 'utf8').split('\n').indexOf(bullet);
+  assert.ok(idx > DFR_01);
+
+  const shown = run(['renumber', 'insert', '--at', '3', '--dry-run'], dir);
+  assert.ok(shown.in_text_refs.some((x) => x.file === 'REQUIREMENTS.md' && x.line === idx + 1 && x.text === bullet),
+    JSON.stringify(shown.in_text_refs));
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(readFileSync(reqFile, 'utf8').split('\n')[idx], bullet);
+});
