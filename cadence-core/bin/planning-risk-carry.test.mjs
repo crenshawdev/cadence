@@ -377,6 +377,33 @@ test('risk-carry: a phases/ that cannot be searched refuses, never reads as abse
   }
 });
 
+test('risk-carry: a carried entry that cannot be stat\'ed refuses the whole carry', {
+  skip: asRoot,
+}, () => {
+  // A `phases/<N>` at 0o444 lists, so the carry knows the rulings are there,
+  // and then cannot stat a single one of them. Same refusal as the arm above,
+  // and before any write, so nothing half-carried is left behind.
+  const dir = carryTree(3, {
+    [review('plan-1')]: '{"findings":[]}\n',
+    [record('plan-1')]: recordBody('plan-1', 1, [entry()]),
+  });
+  chmodSync(join(dir, 'phases', '3'), 0o444);
+  try {
+    const r = riskCarry(dir, ['--phase', '3']);
+    assert.equal(r.ok, false, JSON.stringify(r));
+    assert.equal(r.reason, 'unlistable-phase');
+    assert.match(r.hint, /searchable/);
+    assert.equal(r._exit, 1);
+    assert.match(r.detail,
+      /phases\/3\/(ADJUDICATION|REVIEW)-risk_surface-plan-1\.(json|md)/);
+    assert.doesNotMatch(JSON.stringify(r), /EACCES/);
+    assert.equal(existsSync(join(dir, 'risk-carry')), false,
+      'a refused carry minted its destination anyway');
+  } finally {
+    chmodSync(join(dir, 'phases', '3'), 0o755);
+  }
+});
+
 test('risk-carry: a symlinked phases/ is refused too', () => {
   // `lstatSync` does not follow the FINAL component and follows every one
   // before it, so a check aimed at `phases/<N>` alone reports a real directory

@@ -129,7 +129,7 @@ function cmdRiskCarry(dir, opts) {
   // it finds there in under THIS phase's name - and `existsSync` cannot tell
   // the difference because it follows too.
   const src = join(dir, 'phases', n);
-  let srcStat;
+  let phaseStat;
   for (const [path, label] of [[join(dir, 'phases'), 'phases/'], [src, `phases/${n}`]]) {
     let stat;
     try { stat = lstatSync(path, { throwIfNoEntry: false }); }
@@ -150,7 +150,7 @@ function cmdRiskCarry(dir, opts) {
         'clear that path and re-run BEFORE milestone-prune - nothing was copied, and this carry'
         + ' reads rulings from the phase directory itself or from nowhere');
     }
-    srcStat = stat; // the last pass is `src`
+    phaseStat = stat; // the last pass is `src`
   }
   // An absent phase directory is an ANSWER, not a refusal - `milestone-prune`
   // already tolerates one as `dirs.missing`, and a close that ran this carry
@@ -159,7 +159,7 @@ function cmdRiskCarry(dir, opts) {
   // and this reuses that stat rather than asking again.
   // `lstatSync` and not `existsSync`, so a DANGLING link at `phases/<N>` is the
   // refusal above rather than a quiet "nothing to carry".
-  if (!srcStat) {
+  if (!phaseStat) {
     return ok({ phase: n, carried: [], copied: 0, skipped: 0 });
   }
   let names;
@@ -199,7 +199,14 @@ function cmdRiskCarry(dir, opts) {
     // before the prune deletes the directory, so passing over what could not
     // be proved a ruling destroys exactly the rulings it passed over.
     const from = join(src, name);
-    const srcStat = lstatSync(from, { throwIfNoEntry: false });
+    let srcStat;
+    try { srcStat = lstatSync(from, { throwIfNoEntry: false }); }
+    catch {
+      // A `phases/<N>` that lists but can't be searched (0o444, GH-202). This
+      // refuses the whole carry too, never skips the entry, for the reason
+      // above: the prune runs next and deletes whatever could not be read.
+      return fail('unlistable-phase', unprovable(`phases/${n}/${name}`, n), UNSEARCHABLE_HINT);
+    }
     if (!srcStat || !srcStat.isFile()) {
       return fail('carry-src-unusable',
         `phases/${n}/${name} is not a regular file`
