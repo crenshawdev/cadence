@@ -19,6 +19,8 @@
 //   entry's `plans`, or one `PLAN.md` once it is planned, each marked by
 //   `outstanding[]` (D-06). A cursor `status` says disagrees (`cursor.agrees`
 //   false) gets a line of its own: the pane names both phases, picks neither.
+// - UAT: the same run's `phases[current].uat`, the five counts in its order.
+//   No `uat` key, no line: never a row of zeros (D-06).
 //
 // The layout, one row per line, top to bottom:
 //   1. the phase heading
@@ -101,8 +103,23 @@ export function paneLines(snapshot, width) {
     ...phase.heading,
     snapshot.cursor ? `next ${snapshot.cursor.next}` : NO_CURSOR_NEXT,
     ...phase.rows,
+    ...uatLines(phase.entry),
   ];
   return lines.map((line) => fit(visible(line), width));
+}
+
+/** The UAT counts, in `status`'s spelling and order. */
+const UAT_COUNTS = Object.freeze(['pass', 'fail', 'pending', 'skipped', 'blocked']);
+
+/**
+ * The UAT line, or none when the current phase's entry carries no `uat`.
+ * @param {any} entry `phaseView`'s entry
+ * @returns {string[]}
+ */
+function uatLines(entry) {
+  const uat = entry && entry.uat;
+  if (!uat || typeof uat !== 'object') return [];
+  return [`UAT ${UAT_COUNTS.map((k) => `${k} ${uat[k]}`).join(' · ')}`];
 }
 
 /** The statuses a phase has a `PLAN.md` in, when `status` lists no `plans`. */

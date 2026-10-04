@@ -608,3 +608,37 @@ test('ten band draws run no process', async () => {
   for (let i = 0; i < 10; i++) await band($, ev, counting(null));
   assert.equal($.runs.length, 0);
 });
+
+// --- UAT --------------------------------------------------------------------
+
+test('the UAT line carries status\'s five counts exactly, in its order', () => {
+  const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: true, summary: true,
+    uat: [{ status: 'pass' }, { status: 'pending' }, { status: 'pending' }, { status: 'fail' }] } } });
+  const { lines, status } = statusLines(dir);
+  const uat = status.phases.find((/** @type {any} */ p) => p.n === status.current).uat;
+  const line = lines.find((l) => l.startsWith('UAT '));
+  assert.equal(line, `UAT pass ${uat.pass} · fail ${uat.fail} · pending ${uat.pending} · skipped ${uat.skipped} · blocked ${uat.blocked}`);
+  assert.deepEqual(line.match(/\d+/g).map(Number), [uat.pass, uat.fail, uat.pending, uat.skipped, uat.blocked]);
+  assert.equal(uat.pending, 2);
+});
+
+test('no UAT.md, no current phase, or no status: no UAT line and no zero standing in', () => {
+  const none = statusLines(makeTree({ roadmap: TWO, phases: { 1: { plan: true, summary: true } } }));
+  assert.equal(none.status.phases[0].uat, undefined);
+  const closed = makeTree({});
+  writeFileSync(join(closed, 'ROADMAP.md'), '# Roadmap\n\n## Phases\n\n(nothing)\n');
+  for (const lines of [none.lines, statusLines(closed).lines, statusLines(makeTree({})).lines]) {
+    assert.ok(!lines.some((l) => l.startsWith('UAT')), lines.join('\n'));
+    assert.ok(!lines.some((l) => /\b(?:pass|fail|pending|skipped|blocked) 0\b/.test(l)), lines.join('\n'));
+  }
+});
+
+test('the UAT line adds no run to a fetch', async () => {
+  const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: true, summary: true, uat: [{ status: 'pending' }] } } });
+  const h = handlers();
+  const $ = realHost(dirname(dir));
+  const lines = await openOn(h, $);
+  assert.ok(lines.some((l) => l.startsWith('UAT pass 0 · fail 0 · pending 1')));
+  assert.equal($.runs.filter((r) => r.argv.at(-1) === 'status').length, 1);
+  assert.equal($.runs.filter((r) => r.argv.some((a) => /uat/i.test(a))).length, 0);
+});
