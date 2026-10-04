@@ -49,7 +49,7 @@ import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
 import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
 import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
 import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
-import { NO_PROJECT_TEXT, paneLines } from '../cadence-core/bin/lib/pane.mjs';
+import { NO_PROJECT_TEXT, paneLines, singleFlight } from '../cadence-core/bin/lib/pane.mjs';
 
 /**
  * The pane's id and title, held once: `/cad-panel` and anything else that
@@ -161,10 +161,23 @@ async function closing($, e, c) {
 }
 
 /**
- * @typedef {{snapshot: import('../cadence-core/bin/lib/pane.mjs').Snapshot | null}} Pane
+ * @typedef {{snapshot: import('../cadence-core/bin/lib/pane.mjs').Snapshot | null, open: boolean,
+ *   kick: (task: () => unknown) => Promise<void>}} Pane
  * `snapshot`: what the pane's last fetch read, or null before the first one
- * settles.
+ * settles. `open`: whether the pane is up, so a fetch is worth running.
+ * `kick`: the pane's single-flight runner.
  */
+
+/**
+ * Hand the pane a fetch when it is open, without waiting on it, so no event's
+ * answer ever waits on a fetch.
+ * @param {any} $
+ * @param {Pane} p
+ */
+function refresh($, p) {
+  if (!p.open) return;
+  void p.kick(() => fetchPane($, p));
+}
 
 /**
  * Read what the pane shows, keep it, and ask for a draw. Never throws, and
@@ -173,6 +186,18 @@ async function closing($, e, c) {
  * @param {Pane} p
  */
 async function fetchPane($, p) {
+  if (!p.open) return;
+  try {
+    // A pane whose drawing threw is dropped without a `ui.close` reaching
+    // the hooks, so ask the engine whether it is still up.
+    const panes = await $.ui.panes();
+    if (Array.isArray(panes) && !panes.some((x) => x && x.id === PANE_ID)) {
+      p.open = false;
+      return;
+    }
+  } catch {
+    // no list: fetch anyway
+  }
   /** @type {import('../cadence-core/bin/lib/pane.mjs').Snapshot} */
   const read = { cursor: null };
   try {
@@ -203,7 +228,8 @@ async function openPane($, p) {
     const root = await planningRootAsync(await $.session.cwd(), (dir, name) => $.fs.exists(at(dir, name)));
     if (root === null) return { text: NO_PROJECT_TEXT };
     const opened = await $.ui.open({ id: PANE.id, title: PANE.title });
-    void fetchPane($, p);
+    p.open = true;
+    refresh($, p);
     // An empty text, never a missing one: only a text replaces the host's own
     // "no command.run hook answered it" line (measured on 2.1.289).
     return opened && opened.isPlaced === false ? { text: String(opened.reason) } : { text: '' };
@@ -246,6 +272,7 @@ export function register(on) {
       // the next draw's reconcile adds what this missed
     }
     redraw($);
+    refresh($, pane);
     return answer;
   });
 
@@ -257,6 +284,7 @@ export function register(on) {
       // the next draw's reconcile drops what this missed
     }
     redraw($);
+    refresh($, pane);
     await stopped($, e, capture);
     return answer;
   });
@@ -282,6 +310,7 @@ export function register(on) {
     await closing($, sent, capture);
     const result = await next(sent);
     redraw($);
+    refresh($, pane);
     return result;
   });
 
@@ -317,7 +346,7 @@ export function register(on) {
   // --- the pane --------------------------------------------------------------
 
   /** @type {Pane} */
-  const pane = { snapshot: null };
+  const pane = { snapshot: null, open: false, kick: singleFlight() };
 
   on('session.start', async ($, e, next) => {
     try {
@@ -334,10 +363,23 @@ export function register(on) {
     return openPane($, pane);
   });
 
-  // The pane draws the last snapshot and awaits nothing but `next`.
+  // A close marks the pane down, so no event fetches for it.
+  on('ui.close', { id: PANE_ID }, async ($, e, next) => {
+    const answer = await next(e);
+    pane.open = false;
+    return answer;
+  });
+
+  // The pane draws the last snapshot and awaits nothing but `next`. With no
+  // snapshot (a module reloaded while its pane stayed up) the pane is up, so
+  // it counts as open and starts the one fetch that leaves a snapshot.
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
     const drawn = await next(e);
     try {
+      if (pane.snapshot === null) {
+        pane.open = true;
+        refresh($, pane);
+      }
       const { Box, Text } = $.ui.resolve(e);
       const rows = paneLines(pane.snapshot, e.props.bodyColumns).map((line) => Text({ wrap: 'truncate-end', children: line }));
       return Box({ flexDirection: 'column', children: rows });

@@ -59,6 +59,47 @@ export function paneLines(snapshot, width) {
 }
 
 /**
+ * A kick runs its task when nothing is running (D-04). A kick during a run
+ * queues exactly one more run, of the latest kick's task, started when this
+ * one settles: the last change is never missed, and a burst of events costs
+ * two runs, not one each. A task that throws leaves the runner usable.
+ *
+ * The task comes with each kick rather than once here because the module may
+ * not hold `$` between events; each kick's task closes over its own.
+ * @returns {(task: () => unknown) => Promise<void>} the kick; its promise
+ *   settles once the run it started or joined, and any queued behind it, have
+ */
+export function singleFlight() {
+  /** @type {Promise<void> | null} */
+  let running = null;
+  /** @type {(() => unknown) | null} */
+  let queued = null;
+  return function kick(task) {
+    if (running) {
+      queued = task;
+      return running;
+    }
+    running = (async () => {
+      try {
+        for (let run = task; run; run = queued) {
+          queued = null;
+          try {
+            // through `then`, so even a task that throws at once yields first
+            // and `running` is set before this loop can end
+            await Promise.resolve().then(run);
+          } catch {
+            // the next kick runs it again
+          }
+        }
+      } finally {
+        running = null;
+      }
+    })();
+    return running;
+  };
+}
+
+/**
  * Every control character shown as `?`. The text comes from files and seam
  * output a person or a tool wrote, and the host refuses a whole tree when a
  * text child holds one (C0, DEL, C1: tab, CR and LF too).

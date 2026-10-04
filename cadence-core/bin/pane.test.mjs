@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, READING_LINE } from './lib/pane.mjs';
+import { NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, READING_LINE, singleFlight } from './lib/pane.mjs';
 import { parseCursor } from './lib/state-cursor.mjs';
 import { register } from '../../hooks/cadence-mod.mjs';
 
@@ -116,6 +116,8 @@ function standIn({ cwd = '/proj/sub', files = { '/proj/.planning': '', '/proj/.p
     },
     ui: {
       open: open || (async (/** @type {any} */ args) => { opens.push(args); return { isPlaced: true }; }),
+      /** The engine's list: every pane opened here, unless a test empties it. */
+      panes: async () => opens.map((o) => ({ id: o.id, title: o.title, isShown: true, isFocused: false, isPlaced: true })),
       invalidate: () => {
         $.invalidations++;
         const w = waiting;
@@ -240,4 +242,195 @@ test('a ui.open that throws answers a text, and next ran once', async () => {
   assert.equal(next.calls, 1);
   assert.equal(typeof answer.text, 'string');
   assert.notEqual(answer.text, '');
+});
+
+// --- one fetch at a time ----------------------------------------------------
+
+/** A task that waits until released, counting runs and how many overlap. */
+function heldTask() {
+  const t = {
+    runs: 0, active: 0, most: 0,
+    /** @type {(() => void)[]} */
+    gates: [],
+    release() { const g = t.gates; t.gates = []; for (const f of g) f(); },
+    task: async () => {
+      t.runs++;
+      t.active++;
+      t.most = Math.max(t.most, t.active);
+      await new Promise((resolve) => { t.gates.push(() => resolve(undefined)); });
+      t.active--;
+    },
+  };
+  return t;
+}
+
+/** Let every pending microtask and timer-free promise chain settle. */
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test('the runner: three kicks during one run make exactly one follow-up, never two at once', async () => {
+  const kick = singleFlight();
+  const t = heldTask();
+  const done = kick(t.task);
+  await settle();
+  for (let i = 0; i < 3; i++) kick(t.task);
+  assert.equal(t.runs, 1);
+  t.release();
+  await settle();
+  assert.equal(t.runs, 2, 'one follow-up for the three kicks');
+  t.release();
+  await done;
+  assert.equal(t.runs, 2);
+  assert.equal(t.most, 1);
+});
+
+test('the runner: a kick after both runs settle starts a new one', async () => {
+  const kick = singleFlight();
+  const t = heldTask();
+  const first = kick(t.task);
+  kick(t.task);
+  await settle();
+  t.release();
+  await settle();
+  t.release();
+  await first;
+  assert.equal(t.runs, 2);
+  const third = kick(t.task);
+  await settle();
+  assert.equal(t.runs, 3);
+  t.release();
+  await third;
+  assert.equal(t.most, 1);
+});
+
+test('the runner: the queued run is the latest kick\'s task', async () => {
+  const kick = singleFlight();
+  const t = heldTask();
+  /** @type {string[]} */
+  const ran = [];
+  const done = kick(t.task);
+  kick(async () => { ran.push('older'); });
+  kick(async () => { ran.push('newest'); });
+  await settle();
+  t.release();
+  await done;
+  assert.deepEqual(ran, ['newest']);
+});
+
+test('the runner: a task that throws, at once or later, leaves it usable', async () => {
+  const kick = singleFlight();
+  await kick(() => { throw new Error('at once'); });
+  await kick(async () => { throw new Error('later'); });
+  let ran = 0;
+  await kick(async () => { ran++; });
+  assert.equal(ran, 1);
+});
+
+/** STATE.md reads through a gate: count them, how many are open, release them. */
+function heldReads(/** @type {any} */ $) {
+  const r = { total: 0, open: 0, most: 0,
+    /** @type {(() => void)[]} */
+    gates: [],
+    release() { const g = r.gates; r.gates = []; for (const f of g) f(); } };
+  $.fs.read = async (/** @type {string} */ p) => {
+    if (!p.endsWith('/STATE.md')) throw new Error(`ENOENT ${p}`);
+    r.total++;
+    r.open++;
+    r.most = Math.max(r.most, r.open);
+    await new Promise((resolve) => { r.gates.push(() => resolve(undefined)); });
+    r.open--;
+    return STATE;
+  };
+  return r;
+}
+
+/** Module handlers with the pane opened and its first fetch settled. */
+async function opened() {
+  const h = handlers();
+  const $ = standIn();
+  const drawn = $.drawn();
+  await h.hook('command.run')($, run(), counting({}));
+  await drawn;
+  return { ...h, $ };
+}
+
+const bash = () => ({ tool: 'Bash', tool_use_id: 't1', command: 'ls' });
+const startEvent = () => ({ hook_event_name: 'SubagentStart', session_id: 'session-1', agent_id: 'a1',
+  agent_type: 'cadence:cad-reviewer-low' });
+const stopEvent = () => ({ hook_event_name: 'SubagentStop', session_id: 'session-1', agent_id: 'a1',
+  agent_type: 'cadence:cad-reviewer-low' });
+
+test('tool calls during a held fetch: one read at a time, two in all, each answer next\'s own', async () => {
+  const { hook, $ } = await opened();
+  const reads = heldReads($);
+  for (let i = 0; i < 3; i++) {
+    const result = { ref: i, text: 'ok' };
+    assert.equal(await hook('tool.call')($, bash(), async () => result), result);
+  }
+  await settle();
+  assert.equal(reads.most, 1);
+  reads.release();
+  await settle();
+  reads.release();
+  await settle();
+  assert.equal(reads.total, 2);
+  assert.equal(reads.most, 1);
+  assert.equal(reads.open, 0);
+});
+
+test('a fetch that never settles holds up no handler\'s answer', async () => {
+  const { hook, $ } = await opened();
+  $.fs.read = () => new Promise(() => {});
+  for (const [name, e] of [['tool.call', bash()], ['classic.SubagentStart', startEvent()],
+    ['classic.SubagentStop', stopEvent()]]) {
+    const answer = { name };
+    const next = counting(answer);
+    assert.equal(await hook(name)($, e, next), answer, name);
+    assert.equal(next.calls, 1);
+  }
+});
+
+test('once the pane is closed, no event reads STATE.md for it', async () => {
+  const { hook, $ } = await opened();
+  const next = counting(undefined);
+  await hook('ui.close')($, { id: 'cadence', origin: { kind: 'person' } }, next);
+  assert.equal(next.calls, 1);
+  const reads = heldReads($);
+  await hook('tool.call')($, bash(), async () => ({}));
+  await hook('classic.SubagentStart')($, startEvent(), counting({}));
+  await hook('classic.SubagentStop')($, stopEvent(), counting({}));
+  await settle();
+  assert.equal(reads.total, 0);
+});
+
+test('a pane the engine no longer lists is marked closed before its fetch reads', async () => {
+  const { hook, $ } = await opened();
+  let listed = 0;
+  $.ui.panes = async () => { listed++; return []; };
+  const reads = heldReads($);
+  await hook('tool.call')($, bash(), async () => ({}));
+  await settle();
+  assert.equal(listed, 1);
+  assert.equal(reads.total, 0);
+  await hook('tool.call')($, bash(), async () => ({}));
+  await settle();
+  assert.equal(listed, 1, 'a closed pane asks nothing more');
+  assert.equal(reads.total, 0);
+});
+
+test('a Pane render with no snapshot starts exactly one fetch', async () => {
+  const { hook } = handlers();
+  const $ = standIn();
+  $.ui.panes = async () => [{ id: 'cadence', title: 'Cadence', isShown: true, isFocused: false, isPlaced: true }];
+  const reads = heldReads($);
+  const next = counting(null);
+  assert.deepEqual(linesOf(await hook('ui.render', 'Pane')($, paneEvent(), next)), [READING_LINE]);
+  assert.equal(next.calls, 1);
+  await settle();
+  assert.equal(reads.total, 1);
+  const drawn = $.drawn();
+  reads.release();
+  await drawn;
+  assert.ok(linesOf(await hook('ui.render', 'Pane')($, paneEvent(), counting(null))).includes('next /cad-execute 1'));
+  await settle();
+  assert.equal(reads.total, 1, 'a render with a snapshot fetches nothing');
 });
