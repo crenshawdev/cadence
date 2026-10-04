@@ -146,6 +146,11 @@ provider, returns the same finding shape. The adjudicator rules on every finding
 per raising voice before it merges them, and the record keeps which voice raised
 which, so each reviewer's hit rate stays countable.*
 
+![The review panel: one plan or diff goes to every reviewer in one message, a fresh-context Claude subagent plus any of OpenAI, Gemini and DeepSeek that review.reviewers names and that has a model and a key, each returning the same finding shape. Under review.mode adjudicated, the default, the main session rules on each finding against the cited code and merges the survivors with convergence ranked first; an adjudicated gate then hands you a numbered multi-select whose default is none.](figures/review-panel.svg)
+
+*Under the default `review.mode`, every voice is ruled on before anything merges.
+Only an adjudicated gate asks you to pick, and nothing you did not name is applied.*
+
 ### Which trigger fires where, and what it can do to you
 
 | Trigger | Fired by | What gets reviewed | Default gate |

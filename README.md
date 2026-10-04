@@ -32,6 +32,8 @@ Cadence is a Claude Code plugin. Add the marketplace, then install:
 
 Update with `/plugin update cadence@cadence`, remove with `/plugin uninstall cadence@cadence`. Requires Claude Code with plugin support, plus `node`, `git` and one forge CLI - `tea`, `gh` or `glab` - on your PATH, because Cadence resolves a forge and an issue tracker when it sets a project up. Those are host prerequisites: the scripts inside are zero-dependency, and there is no npm install, ever.
 
+On Claude Code 2.1.284 and later, when managed settings set `allowManagedPermissionRulesOnly`, a plugin from a marketplace no longer pre-approves its own tools through `allowed-tools` unless managed settings vouch for its source, so Cadence's commands ask before using their tools on those machines. Nothing changes anywhere else.
+
 ## The loop
 
 Cadence runs as slash commands namespaced `/cadence:cad-*` (for example `/cadence:cad-new-project`). They are written below without the `cadence:` prefix for brevity. A project moves through five steps, each its own command:
@@ -139,5 +141,9 @@ Cadence descends from [GSD](https://github.com/open-gsd/gsd-core), the discuss/p
 Every one of those cuts was made by hand and written down. [`DESIGN.md`](./DESIGN.md) numbers the locked decisions and the reversals, [`INTERNALS.md`](./INTERNALS.md) walks the handful that took more than one try to get right, [`LINEAGE.md`](./LINEAGE.md) publishes the counts and tells you how to reproduce them, and [`MANIFESTO.md`](./MANIFESTO.md) is the why. CI fails the build when the live prose drifts from the code. Of those four only `INTERNALS.md` is linted, and in the docs that are, every config key and script flag named has to actually exist, and so does every plugin-root path and every repo path `INTERNALS.md` cites.
 
 Cadence is a derivative work of GSD by Open GSD, used under the MIT License. The original copyright is retained in [`LICENSE`](./LICENSE) and the lineage is spelled out in [`NOTICE`](./NOTICE.md). Cadence is maintained by John Crenshaw and distributed under the MIT License.
+
+## Baley
+
+[Baley](https://github.com/crenshawdev/baley) is Cadence's successor, a tool for keeping AI coding agents accountable to the person who answers for their work. Its README says it is designed and being built, not ready to use, and nothing has been released. Cadence is still the tool to use today.
 
 <a href='https://ko-fi.com/R5Y823KUXE' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi5.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>

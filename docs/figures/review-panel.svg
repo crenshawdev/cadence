@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 310" width="1160" height="310" role="img" aria-label="The review panel: one plan or diff goes to every reviewer in one message, a fresh-context Claude subagent plus any of OpenAI, Gemini and DeepSeek that review.reviewers names and that has a model and a key, each returning the same finding shape. Under review.mode adjudicated, the default, the main session rules on each finding against the cited code and merges the survivors with convergence ranked first; an adjudicated gate then hands you a numbered multi-select whose default is none.">
+
+  <style>
+    svg        { color: #15181E; background: #FFFFFF;
+                 font-family: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+    .bg        { fill: #FFFFFF; }
+    .box       { fill: #FFFFFF; stroke: currentColor; stroke-width: 1.4; }
+    .box-opt   { fill: #FFFFFF; stroke: currentColor; stroke-width: 1.4; stroke-dasharray: 5 3; }
+    .box-cmd   { fill: #FFFFFF; stroke: #2B43B2; stroke-width: 1.6; }
+    .gate      { fill: none; stroke: #8B5A03; stroke-width: 1.6; }
+    .edge      { fill: none; stroke: currentColor; stroke-width: 1.5; }
+    .edge-alt  { fill: none; stroke: #A3331F; stroke-width: 1.5; stroke-dasharray: 6 4; }
+    .lbl-sm    { font-size: 11px; fill: currentColor; }
+    .lbl-mut   { font-size: 10.5px; fill: #5A6170; }
+    .lbl-alt   { font-size: 10.5px; fill: #A3331F; }
+    .lbl-gate  { font-size: 11.5px; fill: #8B5A03; }
+    .head      { fill: currentColor; }
+    .head-alt  { fill: #A3331F; }
+    @media (prefers-color-scheme: dark) {
+      svg        { color: #E2E6EC; background: #151920; }
+      .bg        { fill: #151920; }
+      .box       { fill: #151920; }
+      .box-opt   { fill: #151920; }
+      .box-cmd   { fill: #151920; stroke: #8698F6; }
+      .gate      { stroke: #e2a64d; }
+      .edge-alt  { stroke: #e2705c; }
+      .lbl-mut   { fill: #929BAA; }
+      .lbl-alt   { fill: #e2705c; }
+      .lbl-gate  { fill: #e2a64d; }
+      .head-alt  { fill: #e2705c; }
+    }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head" points="0,0 10,4 0,8" />
+    </marker>
+    <marker id="ah-alt" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head-alt" points="0,0 10,4 0,8" />
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1160" height="310" />
+
+  <rect class="box-cmd" x="20" y="114" width="150" height="72" rx="6" />
+  <text class="lbl-sm" x="95" y="138" text-anchor="middle">the artifact</text>
+  <text class="lbl-mut" x="95" y="156" text-anchor="middle">a plan or a diff</text>
+  <text class="lbl-mut" x="95" y="172" text-anchor="middle">one payload</text>
+
+  <text class="lbl-mut" x="330" y="26" text-anchor="middle">run in one message, same finding shape</text>
+
+  <rect class="box" x="230" y="40" width="200" height="48" rx="6" />
+  <text class="lbl-sm" x="330" y="60" text-anchor="middle">claude-subagent</text>
+  <text class="lbl-mut" x="330" y="77" text-anchor="middle">fresh context, no API key</text>
+
+  <rect class="box-opt" x="230" y="100" width="200" height="48" rx="6" />
+  <text class="lbl-sm" x="330" y="120" text-anchor="middle">openai</text>
+  <text class="lbl-mut" x="330" y="137" text-anchor="middle">direct API call, your key</text>
+
+  <rect class="box-opt" x="230" y="160" width="200" height="48" rx="6" />
+  <text class="lbl-sm" x="330" y="180" text-anchor="middle">gemini</text>
+  <text class="lbl-mut" x="330" y="197" text-anchor="middle">direct API call, your key</text>
+
+  <rect class="box-opt" x="230" y="220" width="200" height="48" rx="6" />
+  <text class="lbl-sm" x="330" y="240" text-anchor="middle">deepseek</text>
+  <text class="lbl-mut" x="330" y="257" text-anchor="middle">direct API call, your key</text>
+
+  <text class="lbl-mut" x="330" y="292" text-anchor="middle">a voice that cannot run says why, it never drops out quietly</text>
+
+  <line class="edge" x1="170" y1="150" x2="226" y2="64" marker-end="url(#ah)" />
+  <line class="edge" x1="170" y1="150" x2="226" y2="124" marker-end="url(#ah)" />
+  <line class="edge" x1="170" y1="150" x2="226" y2="184" marker-end="url(#ah)" />
+  <line class="edge" x1="170" y1="150" x2="226" y2="244" marker-end="url(#ah)" />
+
+  <line class="edge" x1="430" y1="64" x2="476" y2="146" marker-end="url(#ah)" />
+  <line class="edge" x1="430" y1="124" x2="476" y2="148" marker-end="url(#ah)" />
+  <line class="edge" x1="430" y1="184" x2="476" y2="152" marker-end="url(#ah)" />
+  <line class="edge" x1="430" y1="244" x2="476" y2="154" marker-end="url(#ah)" />
+
+  <text class="lbl-mut" x="693" y="88" text-anchor="middle">review.mode adjudicated, the default</text>
+  <text class="lbl-mut" x="693" y="102" text-anchor="middle">panel merges without ruling, single runs one voice</text>
+
+  <rect class="box" x="480" y="114" width="210" height="72" rx="6" />
+  <text class="lbl-sm" x="585" y="138" text-anchor="middle">rule each finding</text>
+  <text class="lbl-mut" x="585" y="156" text-anchor="middle">main session opens the code</text>
+  <text class="lbl-mut" x="585" y="172" text-anchor="middle">confirms or kills, per voice</text>
+
+  <rect class="box" x="716" y="114" width="190" height="72" rx="6" />
+  <text class="lbl-sm" x="811" y="138" text-anchor="middle">merge</text>
+  <text class="lbl-mut" x="811" y="156" text-anchor="middle">dedupe after ruling</text>
+  <text class="lbl-mut" x="811" y="172" text-anchor="middle">convergence ranks first</text>
+
+  <rect class="gate" x="932" y="114" width="208" height="72" rx="6" />
+  <text class="lbl-gate" x="1036" y="138" text-anchor="middle">adjudicated gate</text>
+  <text class="lbl-mut" x="1036" y="156" text-anchor="middle">numbered multi-select</text>
+  <text class="lbl-mut" x="1036" y="172" text-anchor="middle">default NONE</text>
+
+  <line class="edge" x1="690" y1="150" x2="712" y2="150" marker-end="url(#ah)" />
+  <line class="edge" x1="906" y1="150" x2="928" y2="150" marker-end="url(#ah)" />
+
+  <text class="lbl-mut" x="811" y="210" text-anchor="middle">two voices on one defect</text>
+  <text class="lbl-mut" x="811" y="224" text-anchor="middle">is the strong signal</text>
+
+  <line class="edge-alt" x1="1036" y1="186" x2="1036" y2="204" marker-end="url(#ah-alt)" />
+  <text class="lbl-alt" x="1036" y="222" text-anchor="middle">only what you name is applied</text>
+  <text class="lbl-mut" x="1036" y="246" text-anchor="middle">an advisory gate reports instead,</text>
+  <text class="lbl-mut" x="1036" y="260" text-anchor="middle">a blocking gate FAILs on blocker/high</text>
+</svg>
+
