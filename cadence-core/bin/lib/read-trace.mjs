@@ -134,9 +134,9 @@ export function readsClaimPath(planningRoot) {
  * The rotation marker's `event` value, the one line a fresh record starts with.
  *
  * The same spelling as `lib/trace.mjs`'s `ROTATION` and a SECOND statement of
- * it, deliberately. `bin/read-trace.mjs` loads this module on every Read, Grep,
- * Glob, Bash and NotebookRead call under the 5-second timeout at
- * `hooks/hooks.json:15-25`, and importing 104 KB of trace source to parse for
+ * it, deliberately. `bin/read-trace.mjs` loads this module on every tool call
+ * the PostToolUse block in `hooks/hooks.json` matches, under that block's
+ * 5-second timeout, and importing 104 KB of trace source to parse for
  * one string is a real per-tool-call cost - the same reason this module's header
  * already gives for being a sidecar rather than a family of `trace.jsonl`.
  */
@@ -459,7 +459,8 @@ export function recordFromHook(input, now, opts) {
  * two milliseconds a rotation actually takes - 1.72, 1.76, 1.76, 2.36 and
  * 3.90 ms measured 2026-08-28 on this repository's real 7,852,530-byte record
  * (D-06) - the ceiling is only ever paid where the winner died holding its
- * claim, and it is 5% of the 5,000 ms this hook gets at `hooks/hooks.json:15-25`.
+ * claim, and it is 5% of the 5,000 ms this hook gets from the PostToolUse block
+ * in `hooks/hooks.json`.
  */
 const READS_ROTATE_WAIT_MS = 250;
 
@@ -649,9 +650,10 @@ function sealOf(record) {
  * `lib/trace.mjs:626-631` refuses it and for a stronger one this record has:
  * `bin/read-trace.mjs` may emit nothing on any stream and exits 0
  * unconditionally, so a lock refusal would have no path to be reported on. The
- * concurrency is cross-PROCESS and ordinary rather than theoretical -
- * `hooks/hooks.json:17` matches five tools and one OS process runs per tool
- * call, so parallel subagents are concurrent `appendRead` processes (D-07).
+ * concurrency is cross-PROCESS and ordinary rather than theoretical - the
+ * PostToolUse matcher in `hooks/hooks.json` names several tools and one OS
+ * process runs per tool call, so parallel subagents are concurrent
+ * `appendRead` processes (D-07).
  *
  * THE CLAIM IS `linkSync`, NOT `renameSync`. A rename REPLACES its destination
  * silently, so a writer still holding a stale stat would destroy a generation

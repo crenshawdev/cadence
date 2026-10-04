@@ -34,7 +34,10 @@
 // bare relative path with no `${CLAUDE_PLUGIN_ROOT}`. `moduleEntryIssues` is a
 // separate export so `hookEventIssues` stays as it was, and it reports nothing
 // when the file is absent or unreadable, because `hookEventIssues` already
-// reported that once.
+// reported that once. It refuses what the host's validator refuses (2.1.289):
+// a path that leaves the plugin directory (a leading `/` is absolute, not
+// relative to hooks/), a symlink whose target does, and a second entry, since
+// the host loads one module per plugin.
 //
 // Pure rule: no emit, no exit, no Date, no randomness, node builtins only, and
 // every read guarded so an unreadable or malformed file is ONE reported issue
@@ -43,8 +46,8 @@
 // modules prose never invokes.
 'use strict';
 
-import { readFileSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync, realpathSync, statSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 /** The file, root-relative, in the one spelling every issue reports it under. */
 export const HOOKS_FILE = 'hooks/hooks.json';
@@ -57,7 +60,7 @@ export const CODES = Object.freeze({
   unreadable: 'unreadable-surface',
   /** A full install with no `hooks/hooks.json` at all. */
   missing: 'missing-input',
-  /** A `modules` entry that is not a string naming a file under `hooks/`. */
+  /** A `modules` entry the host would not load: not a file in the plugin, or a second one. */
   badModule: 'unresolved-hooks-module',
 });
 
@@ -146,10 +149,17 @@ export function hookEventIssues(root, rows = HOOK_EVENTS) {
   return issues;
 }
 
+/** Is `path` inside `dir`, both absolute? */
+function within(dir, path) {
+  const rel = relative(dir, path);
+  return rel !== '' && !isAbsolute(rel) && rel.split(sep)[0] !== '..';
+}
+
 /**
- * Every `modules` entry in `hooks/hooks.json` that is not a string resolving,
- * relative to `hooks/`, to a file on disk. No `modules` key is no problem: a
- * tree without mods is fine.
+ * Every `modules` entry in `hooks/hooks.json` the host would refuse: not a
+ * string, resolving (from `hooks/`) outside the plugin or to no file, or a
+ * symlink out of the plugin. More than one entry is one more issue. No
+ * `modules` key is no problem: a tree without mods is fine.
  *
  * @param {string} root repository root
  * @returns {{kind: string, file: string, detail: string}[]}
@@ -169,15 +179,34 @@ export function moduleEntryIssues(root) {
   }
 
   const issues = [];
+  if (modules.length > 1) {
+    issues.push(issue(`\`modules\` names ${modules.length} entries - the host loads one module per plugin and refuses a second`));
+  }
+  const base = resolve(root);
   for (const entry of modules) {
     if (typeof entry !== 'string') {
       issues.push(issue(`module entry ${JSON.stringify(entry)} is not a path - a mods host loads nothing from it`));
       continue;
     }
+    const path = resolve(dir, entry);
+    if (!within(base, path)) {
+      issues.push(issue(`module \`${entry}\` leaves the plugin directory - the host refuses it`));
+      continue;
+    }
     let isFile = false;
-    try { isFile = statSync(join(dir, entry)).isFile(); } catch { /* absent */ }
+    try { isFile = statSync(path).isFile(); } catch { /* absent */ }
     if (!isFile) {
-      issues.push(issue(`module \`${entry}\` names no file under hooks/ - a mods host silently loads nothing`));
+      issues.push(issue(`module \`${entry}\` names no file in the plugin - a mods host silently loads nothing`));
+      continue;
+    }
+    let real = null;
+    let realBase = null;
+    try {
+      real = realpathSync(path);
+      realBase = realpathSync(base);
+    } catch { /* stat already followed it; nothing more to read */ }
+    if (real !== null && realBase !== null && !within(realBase, real)) {
+      issues.push(issue(`module \`${entry}\` is a link to a file outside the plugin - the host refuses it`));
     }
   }
   return issues;

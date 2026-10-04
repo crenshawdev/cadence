@@ -52,9 +52,9 @@
 //     holds none.
 //
 //     On a host WITH mods, the Cadence module (hooks/cadence-mod.mjs) adds one
-//     capture, for the bracket ROW alone. When a Cadence subagent stops it
-//     writes a `STEP_WINDOW` fact holding the host's own usage for that
-//     subagent's last step - read off the host's event, never estimated - and
+//     capture, for the bracket ROW alone: a `STEP_WINDOW` fact, the host's own
+//     usage for a Cadence subagent's last step, never estimated, written at the
+//     subagent's stop or at the coordinator's close that names its agent id.
 //     `renderTrace` folds it only into a bracket whose return carried nothing.
 //     It never reaches `roles`, so `unrecorded` still counts every figureless
 //     return. The rules below are for the prose and stand unchanged: the module

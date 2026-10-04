@@ -7,9 +7,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hookEventIssues, moduleEntryIssues, HOOK_EVENTS, CODES, HOOKS_FILE } from './lib/hook-events.mjs';
 
@@ -108,7 +108,7 @@ test('an unreadable or shapeless file is ONE issue, never a throw', () => {
   }
 });
 
-// --- The modules arm: every `modules` entry resolves to a file under hooks/. ---
+// --- The modules arm: one `modules` entry, resolving to a file inside the plugin. ---
 
 /** A root whose hooks.json carries `modules`, with `files` written under hooks/. */
 function modRoot(modules, ...files) {
@@ -122,7 +122,7 @@ test('modules: an entry naming a file that exists is no problem', () => {
 });
 
 test('modules: a missing entry is ONE problem, naming the entry exactly as written', () => {
-  const issues = moduleEntryIssues(modRoot(['./cadence-mod.mjs', './absent.mjs'], 'cadence-mod.mjs'));
+  const issues = moduleEntryIssues(modRoot(['./absent.mjs'], 'cadence-mod.mjs'));
   assert.equal(issues.length, 1, JSON.stringify(issues));
   assert.equal(issues[0].kind, CODES.badModule);
   assert.equal(issues[0].file, HOOKS_FILE);
@@ -134,6 +134,48 @@ test('modules: a non-string entry is ONE problem', () => {
   assert.equal(issues.length, 1, JSON.stringify(issues));
   assert.equal(issues[0].kind, CODES.badModule);
   assert.match(issues[0].detail, /42/);
+});
+
+/** One issue, of the modules kind, whose detail matches `pattern`. */
+function oneModuleIssue(issues, pattern) {
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].kind, CODES.badModule);
+  assert.match(issues[0].detail, pattern);
+}
+
+test('modules: a leading / is absolute, so /cadence-mod.mjs leaves the plugin even with hooks/cadence-mod.mjs there', () => {
+  oneModuleIssue(moduleEntryIssues(modRoot(['/cadence-mod.mjs'], 'cadence-mod.mjs')), /leaves the plugin directory/);
+});
+
+test('modules: an absolute path to the plugin\'s own module is no problem', () => {
+  const dir = modRoot([], 'cadence-mod.mjs');
+  writeFileSync(join(dir, 'hooks', 'hooks.json'), JSON.stringify({ modules: [join(dir, 'hooks', 'cadence-mod.mjs')], hooks: {} }));
+  assert.deepEqual(moduleEntryIssues(dir), []);
+});
+
+test('modules: a ../ entry that escapes the plugin is refused, though the file exists', () => {
+  const outside = mkdtempSync(join(tmpdir(), 'cad-hookevents-out-'));
+  writeFileSync(join(outside, 'outside.mjs'), 'export function register() {}\n');
+  const entry = `../../${basename(outside)}/outside.mjs`;
+  oneModuleIssue(moduleEntryIssues(modRoot([entry])), /leaves the plugin directory/);
+});
+
+test('modules: a symlink whose target is outside the plugin is refused; one inside is not', () => {
+  const outside = mkdtempSync(join(tmpdir(), 'cad-hookevents-out-'));
+  writeFileSync(join(outside, 'outside.mjs'), 'export function register() {}\n');
+  const dir = modRoot(['./link.mjs'], 'cadence-mod.mjs');
+  symlinkSync(join(outside, 'outside.mjs'), join(dir, 'hooks', 'link.mjs'));
+  oneModuleIssue(moduleEntryIssues(dir), /link to a file outside the plugin/);
+
+  const inside = modRoot(['./link.mjs'], 'cadence-mod.mjs');
+  symlinkSync('./cadence-mod.mjs', join(inside, 'hooks', 'link.mjs'));
+  assert.deepEqual(moduleEntryIssues(inside), []);
+});
+
+test('modules: a second entry is ONE problem, whether a second file or the same one again', () => {
+  const pattern = /one module per plugin/;
+  oneModuleIssue(moduleEntryIssues(modRoot(['./cadence-mod.mjs', './second.mjs'], 'cadence-mod.mjs', 'second.mjs')), pattern);
+  oneModuleIssue(moduleEntryIssues(modRoot(['./cadence-mod.mjs', './cadence-mod.mjs'], 'cadence-mod.mjs')), pattern);
 });
 
 test('modules: a hooks.json without a modules key reports nothing', () => {
