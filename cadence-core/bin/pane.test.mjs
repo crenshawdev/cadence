@@ -156,13 +156,30 @@ const paneEvent = (/** @type {any} */ props = {}) => ({ surface: 'terminal', com
 
 const run = (args = '') => ({ command: 'cad-panel', args, origin: { kind: 'composer' }, presentation: {} });
 
-/** The lines of a Pane render's tree. */
+/**
+ * The rows of a Pane render's tree, after its bold ` Cadence ` title row: each
+ * a row Box of Text segments, read as one line of their joined text.
+ */
 function linesOf(/** @type {any} */ tree) {
+  return rowsOf(tree).map((row) => row.map((/** @type {any} */ t) => t.props.children).join(''));
+}
+
+/** The Text segments of each row of a Pane render's tree, after its title. */
+function rowsOf(/** @type {any} */ tree) {
   assert.equal(tree.type, 'Box');
   assert.equal(tree.props.flexDirection, 'column');
-  return tree.props.children.map((/** @type {any} */ t) => {
-    assert.equal(t.type, 'Text');
-    return t.props.children;
+  const [title, ...rows] = tree.props.children;
+  assert.equal(title.type, 'Text');
+  assert.equal(title.props.bold, true);
+  assert.equal(title.props.children, ' Cadence ');
+  return rows.map((/** @type {any} */ row) => {
+    assert.equal(row.type, 'Box');
+    assert.equal(row.props.flexDirection, 'row');
+    for (const t of row.props.children) {
+      assert.equal(t.type, 'Text');
+      assert.equal(typeof t.props.children, 'string');
+    }
+    return row.props.children;
   });
 }
 
@@ -597,8 +614,8 @@ test('/cad-panel runs status once, against the walked root, and the pane shows i
   assert.deepEqual(status[0].argv, ['node', join(REPO, 'cadence-core/bin/planning.mjs'), '--dir', `${root}/.planning`, 'status']);
   assert.equal(status[0].init.cwd, root);
   assert.equal(typeof status[0].init.timeoutMs, 'number');
-  assert.ok(lines.includes('PLAN-1.md · outstanding'));
-  assert.ok(lines.includes('PLAN-2.md · outstanding'));
+  assert.ok(lines.includes('  ○ PLAN-1.md'), lines.join('\n'));
+  assert.ok(lines.includes('  ○ PLAN-2.md'), lines.join('\n'));
 });
 
 test('ten band draws run no process', async () => {
@@ -641,7 +658,7 @@ test('the UAT line adds no run to a fetch', async () => {
   const h = handlers();
   const $ = realHost(dirname(dir));
   const lines = await openOn(h, $);
-  assert.ok(lines.some((l) => l.startsWith('UAT pass 0 · fail 0 · pending 1')));
+  assert.ok(lines.some((l) => l.startsWith('UAT ') && l.endsWith('  1 pending')), lines.join('\n'));
   assert.equal($.runs.filter((r) => r.argv.at(-1) === 'status').length, 1);
   assert.equal($.runs.filter((r) => r.argv.some((a) => /uat/i.test(a))).length, 0);
 });
@@ -701,7 +718,7 @@ test('one fetch runs capture-check once, against the walked root, and the pane s
   assert.deepEqual(checks[0].argv.slice(-3), ['--dir', `${root}/.planning`, 'capture-check']);
   assert.equal(checks[0].init.cwd, root);
   assert.equal(typeof checks[0].init.timeoutMs, 'number');
-  assert.ok(lines.includes('Open captures 2'), lines.join('\n'));
+  assert.ok(lines.includes('CAPTURES   2 open'), lines.join('\n'));
 });
 
 // --- token spend ------------------------------------------------------------
@@ -803,7 +820,7 @@ test('a status answer with current null runs no render', async () => {
   const $ = realHost(dirname(dir));
   const lines = await openOn(h, $);
   assert.equal($.runs.filter((r) => r.argv.includes('render')).length, 0);
-  assert.ok(!lines.some((l) => l.startsWith('Tokens')));
+  assert.ok(!lines.some((l) => l.startsWith('SPEND')));
 });
 
 // --- running agents ---------------------------------------------------------
@@ -900,7 +917,7 @@ test('a start seen while the pane was closed shows its routed rung and model; it
   await drawn;
   const render = h.hook('ui.render', 'Pane');
   let lines = linesOf(await render($, paneEvent({ bodyColumns: 200 }), counting(null)));
-  assert.ok(lines.includes('cad-reviewer · rung low · sonnet'), lines.join('\n'));
+  assert.ok(lines.some((l) => l.endsWith('● cad-reviewer · rung low · sonnet')), lines.join('\n'));
   assert.ok(!lines.some((l) => l.includes('opus')));
 
   // Hold every read from here: the stop's own refresh starts a fetch that
@@ -911,8 +928,8 @@ test('a start seen while the pane was closed shows its routed rung and model; it
   await settle();
   invalidated = $.invalidations - invalidated;
   lines = linesOf(await render($, paneEvent({ bodyColumns: 200 }), counting(null)));
-  assert.ok(!lines.some((l) => l.startsWith('cad-reviewer')), lines.join('\n'));
-  assert.ok(lines.includes('No Cadence agents running'));
+  assert.ok(!lines.some((l) => l.includes('cad-reviewer')), lines.join('\n'));
+  assert.ok(lines.some((l) => l.endsWith(' No Cadence agents running')));
   assert.equal(invalidated, 1, 'only the stop\'s own redraw: no fetch settled in between');
   assert.ok(reads >= 1);
 });
@@ -933,7 +950,7 @@ test('a start the band\'s reconcile saw first still shows its routed model, draw
     await h.hook('classic.SubagentStart')($, { hook_event_name: 'SubagentStart', session_id: 'session-1',
       agent_id: 'a1', agent_type: 'cadence:cad-reviewer-low' }, counting({}));
     const lines = linesOf(await render($, paneEvent({ bodyColumns: 200 }), counting(null)));
-    assert.ok(lines.includes('cad-reviewer · rung low · sonnet'), `paneFirst ${paneFirst}\n${lines.join('\n')}`);
+    assert.ok(lines.some((l) => l.endsWith('● cad-reviewer · rung low · sonnet')), `paneFirst ${paneFirst}\n${lines.join('\n')}`);
   }
 });
 
@@ -950,9 +967,9 @@ test('a resolve whose role or effort is not text costs that field, not the pane'
   await drawn;
   const tree = await h.hook('ui.render', 'Pane')($, paneEvent({ bodyColumns: 200 }), counting('next drew this'));
   const lines = linesOf(tree);
-  assert.ok(lines.includes('cad-reviewer · rung low · sonnet'), lines.join('\n'));
+  assert.ok(lines.some((l) => l.endsWith('● cad-reviewer · rung low · sonnet')), lines.join('\n'));
   assert.ok(lines.some((l) => l.startsWith('next ')), lines.join('\n'));
-  assert.ok(lines.some((l) => l.startsWith('Open captures')), lines.join('\n'));
+  assert.ok(lines.some((l) => l.startsWith('CAPTURES ')), lines.join('\n'));
 });
 
 test('a start upgrades a typeless record once, and never retypes a typed one', () => {
@@ -1059,4 +1076,73 @@ test('the band\'s text, the gap and the button never exceed bodyColumns', async 
       assert.ok(used <= width, `${width}: ${used} cells: ${text.props.children}`);
     }
   }
+});
+
+// --- the dashboard ----------------------------------------------------------
+
+/** The Text segment whose text is `text`, in the row that holds `marker`. */
+const segment = (/** @type {any[][]} */ rows, /** @type {string} */ marker, /** @type {string} */ text) =>
+  rows.find((row) => row.some((t) => t.props.children.includes(marker)))?.find((t) => t.props.children === text);
+
+test('the pane draws a bold Cadence title row, no border of its own, and its plan glyphs in color', async () => {
+  const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'],
+    uat: [{ status: 'pass' }, { status: 'fail' }] } } });
+  mkdirSync(join(dir, 'phases', '1', 'reports'));
+  writeFileSync(join(dir, 'phases', '1', 'reports', 'plan-1.md'), 'PLAN COMPLETE\nPlan: PLAN-1.md\n');
+  const h = handlers();
+  const $ = realHost(dirname(dir));
+  const drawn = $.drawn();
+  await h.hook('command.run')($, run(), counting({}));
+  await drawn;
+  const tree = await h.hook('ui.render', 'Pane')($, paneEvent({ bodyColumns: 120 }), counting(null));
+  const rows = rowsOf(tree);
+  for (const el of [...find(tree, 'Box'), ...find(tree, 'Text')]) {
+    assert.ok(!Object.keys(el.props).some((k) => /^border/.test(k)), `no border: ${JSON.stringify(el.props)}`);
+  }
+  for (const label of ['PLANS', 'AGENTS', 'UAT', 'CAPTURES']) {
+    const head = rows.map((row) => row[0]).find((t) => t.props.children.trimEnd() === label);
+    assert.ok(head, `${label} row`);
+    assert.equal(head.props.bold, true, label);
+  }
+  assert.equal(segment(rows, 'PLAN-1.md', '✓')?.props.color, 'green');
+  assert.equal(segment(rows, 'PLAN-2.md', '○')?.props.color, 'yellow');
+  assert.equal(segment(rows, '1 fail', '1 fail')?.props.color, 'red');
+  assert.equal(segment(rows, '1 pass', '1 pass')?.props.color, 'green');
+  const plans = rows.find((row) => row[0].props.children.trimEnd() === 'PLANS');
+  assert.ok(plans.some((t) => /^█+$/.test(t.props.children) && t.props.color === 'green'));
+  assert.ok(plans.some((t) => /^░+$/.test(t.props.children) && t.props.dimColor === true));
+});
+
+test('a running agent draws behind a cyan dot', async () => {
+  const h = handlers();
+  const trace = JSON.stringify(resolve({ ts: iso(Date.now() - 60000), model: 'sonnet', effort: 'low' })) + '\n';
+  const $ = standIn({ files: { '/proj/.planning': '', '/proj/.planning/STATE.md': STATE,
+    '/proj/.planning/trace.jsonl': trace } });
+  await h.hook('classic.SubagentStart')($, { hook_event_name: 'SubagentStart', session_id: 'session-1',
+    agent_id: 'a1', agent_type: 'cadence:cad-reviewer-low' }, counting({}));
+  const drawn = $.drawn();
+  await h.hook('command.run')($, run(), counting({}));
+  await drawn;
+  const rows = rowsOf(await h.hook('ui.render', 'Pane')($, paneEvent({ bodyColumns: 200 }), counting(null)));
+  const agent = rows.find((row) => row.some((t) => t.props.children.includes('cad-reviewer')));
+  assert.equal(agent[0].props.children.trimEnd(), 'AGENTS');
+  assert.equal(agent[0].props.bold, true);
+  assert.equal(agent.find((t) => t.props.children === '●')?.props.color, 'cyan');
+});
+
+test('no Text child of the pane holds a control character', async () => {
+  const h = handlers();
+  const trace = JSON.stringify(resolve({ ts: iso(Date.now() - 60000), model: 'son\x1b[2Jnet', effort: 'low\x07' })) + '\n';
+  const $ = standIn({ files: { '/proj/.planning': '', '/proj/.planning/trace.jsonl': trace,
+    '/proj/.planning/STATE.md': STATE.replace('Next: /cad-execute 1', 'Next: /cad-execute 1\x1b[2J\x07') } });
+  await h.hook('classic.SubagentStart')($, { hook_event_name: 'SubagentStart', session_id: 'session-1',
+    agent_id: 'a1', agent_type: 'cadence:cad-reviewer-low' }, counting({}));
+  const drawn = $.drawn();
+  await h.hook('command.run')($, run(), counting({}));
+  await drawn;
+  const tree = await h.hook('ui.render', 'Pane')($, paneEvent({ bodyColumns: 200 }), counting(null));
+  const lines = linesOf(tree);
+  assert.ok(lines.includes('next /cad-execute 1?[2J?'), lines.join('\n'));
+  assert.ok(lines.some((l) => l.includes('son?[2Jnet')), lines.join('\n'));
+  for (const t of find(tree, 'Text')) assert.doesNotMatch(String(t.props.children), /[\x00-\x1f\x7f-\x9f]/);
 });

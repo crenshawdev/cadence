@@ -30,7 +30,7 @@
 // decision.
 //
 // And the Cadence pane (phase 4), beside the band and the token capture: the
-// full picture of the current phase, its lines built by lib/pane.mjs. The
+// full picture of the current phase, its rows built by lib/pane-view.mjs. The
 // `/cad-panel` command this module registers opens it. Like everything here
 // it exists only on hosts with mods, so it adds no skill, no resident
 // description and no byte budget (D-01). The pane draws from the snapshot its
@@ -39,6 +39,8 @@
 // has no core for `next` to run, and its own text, an empty one included,
 // replaces the line the host prints for a command nobody answered. The band's
 // `[ pane ]` button, `p` while the band holds the focus, opens the same pane.
+// It draws no border: the host frames a Pane already. It does draw a title row,
+// because the host shows the title only as a tab once two panes are open.
 //
 // Every handler calls `next` exactly once and swallows its own errors (D-12).
 //
@@ -50,8 +52,9 @@ import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
 import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
 import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
 import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
-import { NO_PROJECT_TEXT, paneLines, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv,
+import { NO_PROJECT_TEXT, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv,
   sightDraw, sightStart, sightStop, singleFlight } from '../cadence-core/bin/lib/pane.mjs';
+import { paneView } from '../cadence-core/bin/lib/pane-view.mjs';
 
 /**
  * The pane's id and title, held once: `/cad-panel` and anything else that
@@ -59,6 +62,16 @@ import { NO_PROJECT_TEXT, paneLines, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS,
  */
 const PANE_ID = 'cadence';
 const PANE = Object.freeze({ id: PANE_ID, title: 'Cadence' });
+
+/**
+ * One view segment as a host Text. A style the segment leaves unset is left
+ * off the props, never passed as undefined. Box and Text take the same props
+ * on every surface, so there is nothing to drop on a desktop.
+ * @param {any} Text
+ * @param {import('../cadence-core/bin/lib/pane-view.mjs').Segment} s
+ */
+const segmentText = (Text, s) => Text({ children: s.text,
+  ...(s.color ? { color: s.color } : {}), ...(s.bold ? { bold: true } : {}), ...(s.dim ? { dimColor: true } : {}) });
 
 /** The command that opens the pane. User-facing, so the name is locked (D-01). */
 const PANEL_COMMAND = 'cad-panel';
@@ -471,9 +484,10 @@ export function register(on) {
       }
       const { Box, Text } = $.ui.resolve(e);
       sights = sightDraw(sights, roster, Date.now());
-      const rows = paneLines(pane.snapshot, e.props.bodyColumns, roster, sights)
-        .map((line) => Text({ wrap: 'truncate-end', children: line }));
-      return Box({ flexDirection: 'column', children: rows });
+      const title = Text({ bold: true, wrap: 'truncate-end', children: ` ${PANE.title} ` });
+      const rows = paneView(pane.snapshot, e.props.bodyColumns, roster, sights)
+        .map((row) => Box({ flexDirection: 'row', children: row.map((s) => segmentText(Text, s)) }));
+      return Box({ flexDirection: 'column', children: [title, ...rows] });
     } catch {
       return drawn;
     }
