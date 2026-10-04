@@ -346,6 +346,37 @@ test('risk-carry: a phases/<N> that is not there is still an answer', () => {
   assert.equal(existsSync(join(dir, 'risk-carry')), false);
 });
 
+test('risk-carry: a phases/ that cannot be searched refuses, never reads as absence', {
+  skip: asRoot,
+}, () => {
+  // GH-202. Without the search bit on `phases/`, the stat of `phases/<N>` fails
+  // with EACCES, and that proves nothing about whether the phase is there. It
+  // used to reach the dispatcher as `internal`; read as absence, it would be a
+  // false "nothing to carry" ahead of a prune that deletes the rulings.
+  // 0o644 isolates the missing search bit; 0o000 is the other mode measured.
+  for (const mode of [0o644, 0o000]) {
+    const dir = carryTree(3, { [review('plan-1')]: '{"findings":[]}\n' });
+    chmodSync(join(dir, 'phases'), mode);
+    try {
+      const spellings = mode === 0o644 ? ['3', '03'] : ['3'];
+      for (const phase of spellings) {
+        const r = riskCarry(dir, ['--phase', phase]);
+        const at = `mode ${mode.toString(8)}, --phase ${phase}`;
+        assert.equal(r.ok, false, `${at}: ${JSON.stringify(r)}`);
+        assert.equal(r.reason, 'unlistable-phase', at);
+        assert.match(r.hint, /searchable/, at);
+        assert.equal(r._exit, 1, at);
+        assert.ok(r.detail.includes(`phases/${phase}`), `${at}: ${r.detail}`);
+        assert.doesNotMatch(r.detail, /exists/, at);
+        assert.doesNotMatch(JSON.stringify(r), /EACCES/, at);
+        assert.equal(existsSync(join(dir, 'risk-carry')), false, at);
+      }
+    } finally {
+      chmodSync(join(dir, 'phases'), 0o755);
+    }
+  }
+});
+
 test('risk-carry: a symlinked phases/ is refused too', () => {
   // `lstatSync` does not follow the FINAL component and follows every one
   // before it, so a check aimed at `phases/<N>` alone reports a real directory
