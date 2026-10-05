@@ -811,14 +811,25 @@ test('renumber insert: a CRLF file reports req_row_changes without the \\r', () 
   }
 });
 
-test('renumber: req_row_changes is absent when nothing changes, and on remove', () => {
+test('renumber: req_row_changes is absent when nothing changes', () => {
   const ins = run(['renumber', 'insert', '--at', '4', '--dry-run'], renumberTree());
   assert.equal('req_row_changes' in ins, false);
   assert.equal(ins.ops.find((o) => o.edit === 'REQUIREMENTS.md').changes, 0);
 
   const rem = run(['renumber', 'remove', '--n', '2', '--dry-run'], renumberTree());
-  assert.equal('req_row_changes' in rem, false);
-  assert.equal(rem.ops.find((o) => o.edit === 'REQUIREMENTS.md').changes, 1);
+  assert.deepEqual(rem.req_row_changes, [
+    { line: 8, before: '| REQ-2 | Phase 2 | Pending |', after: '| REQ-2 |  | Pending |' },
+    { line: 9, before: '| REQ-3 | Phase 3 | Pending |', after: '| REQ-3 | Phase 2 | Pending |' },
+  ]);
+  assert.equal(rem.ops.find((o) => o.edit === 'REQUIREMENTS.md').changes, 2);
+
+  const none = run(['renumber', 'remove', '--n', '2', '--dry-run'], makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }],
+    phases: { 1: { plan: true }, 2: { plan: true } },
+    reqs: [['REQ-1', 1, 'Pending']],
+  }));
+  assert.equal('req_row_changes' in none, false);
+  assert.equal(none.ops.find((o) => o.edit === 'REQUIREMENTS.md').changes, 0);
 });
 
 // A Complete row citing a moved phase is left as written and named in `warn`
@@ -988,4 +999,46 @@ test('renumber insert: Next: shifts command arguments and Phase K, nothing else'
 test('renumber insert: a Next: decimal is never read as its integer prefix', () => {
   assert.equal(nextAfter('/cad-execute 2.1', ['insert', '--at', '2']).next, '/cad-execute 2.1');
   assert.equal(nextAfter('/cad-execute 12.1', ['insert', '--at', '1']).next, '/cad-execute 12.1');
+});
+
+// --- remove shows each REQUIREMENTS line it changes (D-04) -------------------
+// The orphan's entry carries its pre-blank `before`: one walk, not a blanking
+// pass followed by a shift.
+const REMOVE_ROW_CHANGES = [
+  { line: 7, before: '| PND-03 | Phase 3 (phases/3/) | Pending |', after: REMOVED_PND_03 },
+  { line: 8, before: '| PND-04 | Phase 4 (phases/4/) | Pending |', after: REMOVED_PND_04 },
+];
+
+test('renumber remove --dry-run: req_row_changes lists each REQUIREMENTS line the remove changes', () => {
+  const r = run(['renumber', 'remove', '--n', '3', '--dry-run'], historyRenumberTree());
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.req_row_changes, REMOVE_ROW_CHANGES);
+  const keys = Object.keys(r);
+  assert.equal(keys[keys.indexOf('ops') + 1], 'req_row_changes');
+  assert.equal(r.ops.find((o) => o.edit === 'REQUIREMENTS.md').changes, r.req_row_changes.length);
+});
+
+test('renumber remove: the applied diff is exactly the req_row_changes the dry-run showed', () => {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const shown = run(['renumber', 'remove', '--n', '3', '--dry-run'], dir);
+  const before = readFileSync(reqFile, 'utf8').split('\n');
+  const r = run(['renumber', 'remove', '--n', '3'], dir);
+  assert.equal(r.ok, true);
+  const after = readFileSync(reqFile, 'utf8').split('\n');
+  const diff = [];
+  for (let i = 0; i < before.length; i++) {
+    if (after[i] !== before[i]) diff.push({ line: i + 1, before: before[i], after: after[i] });
+  }
+  assert.deepEqual(diff, shown.req_row_changes);
+  assert.deepEqual(r.req_row_changes, shown.req_row_changes);
+});
+
+test('renumber remove: a CRLF file reports req_row_changes without the \\r', () => {
+  const r = run(['renumber', 'remove', '--n', '3', '--dry-run'], crlfHistoryRenumberTree());
+  assert.deepEqual(r.req_row_changes, REMOVE_ROW_CHANGES);
+  for (const c of r.req_row_changes) {
+    assert.doesNotMatch(c.before, /\r/);
+    assert.doesNotMatch(c.after, /\r/);
+  }
 });

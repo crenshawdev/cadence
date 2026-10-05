@@ -315,8 +315,9 @@ function cmdRenumber(dir, sub, opts) {
     // audit rather than silently pointing at the shifted neighbour.
     const pass = shiftPendingReqRows(reqText, at, delta);
     newReqText = pass.text;
+    reqRowChanges = pass.changes;
     if (sub === 'insert') {
-      ({ changes: reqRowChanges, movedComplete, refs: reqRefs } = pass);
+      ({ movedComplete, refs: reqRefs } = pass);
     } else {
       orphanedReqs = pass.orphans;
     }
@@ -384,11 +385,8 @@ function cmdRenumber(dir, sub, opts) {
     ...dirMoves.map(([f, t]) => ({ git_mv: [`phases/${f}`, `phases/${t}`] })),
     ...(sub === 'remove' && existingDir(at) ? [{ rm: `phases/${at}` }] : []),
     { edit: 'ROADMAP.md', changes: roadmapShift.count + (sub === 'remove' ? 1 : 0) },
-    // Insert counts changed lines (req_row_changes below), remove its orphans.
-    ...(newReqText !== null ? [{
-      edit: 'REQUIREMENTS.md',
-      changes: sub === 'insert' ? reqRowChanges.length : (orphanedReqs.length ? orphanedReqs.length : undefined),
-    }] : []),
+    // Both ops count changed lines, the req_row_changes below.
+    ...(newReqText !== null ? [{ edit: 'REQUIREMENTS.md', changes: reqRowChanges.length }] : []),
     ...(newCursor ? [{ edit: 'STATE.md', changes: 1 }] : []),
   ];
 
