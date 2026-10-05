@@ -4,8 +4,9 @@ An on-demand refute-then-adjudicate pass over ONE load-bearing decision - a
 section, or a row in PROJECT.md's Key Decisions table. It reuses the review
 subsystem (references/review-triggers.md): `cad-reviewer` (and, when
 configured, a cross-model provider) refutes the decision; the main model
-grounds each objection against Context7 and the real codebase, then rules it
-`survives | partial | refuted` and lists concrete amendments.
+grounds each objection against the real codebase, and against Context7 when
+its tools are available, then rules it `survives | partial | refuted` and
+lists concrete amendments.
 
 This workflow never auto-fires (no entry in references/review-triggers.md's
 wiring table). It runs only when a human invokes `/cad-decision-review
@@ -105,19 +106,23 @@ For EACH finding returned by step `refute` (an "objection" to the decision),
 the main model grounds it before ruling:
 
 - **Library/API claims** - when an objection cites how a library, framework,
-  SDK, or API actually behaves, verify it live via Context7
-  (`mcp__context7__resolve-library-id` then `mcp__context7__query-docs`)
-  rather than trusting the objection's or your own training-data assumption.
-  Context7 is declared on THIS skill's main-model surface (D-08) - the
-  read-only `cad-reviewer` subagent has no MCP tools, so this verification
-  step only happens here, in adjudication.
+  SDK, or API actually behaves, check it against documentation rather than
+  the objection's or your own training-data assumption. When the Context7
+  tools are available (`mcp__context7__resolve-library-id` then
+  `mcp__context7__query-docs`), verify it live through them. When they are
+  not, ground it against what the repo carries: the installed package
+  source, the lockfile's resolved version, or vendored docs. A claim no
+  documentation could check is named in the report as unchecked, never ruled
+  from training data. Context7, when available, is declared on THIS skill's
+  main-model surface (D-08) - the read-only `cad-reviewer` subagent has no
+  MCP tools, so this verification step only happens here, in adjudication.
 - **Factual/codebase claims** - when an objection cites what the code
   currently does or does not do, verify it with Read/Grep/Bash against the
   real repo, not the objection's paraphrase.
-- Every run must ground at least one library/API claim against Context7 and
-  at least one factual claim against the codebase; if the claim set has
-  none of one kind, say so explicitly rather than skipping the requirement
-  silently.
+- Every run grounds at least one library/API claim by whichever of those
+  routes is available, and at least one factual claim against the codebase;
+  if the claim set has none of one kind, say so explicitly rather than
+  skipping the requirement silently.
 
 **Zero objections (a clean pass).** With no findings there is nothing to
 ground, so the requirement above would lapse exactly when the result is most
@@ -158,8 +163,10 @@ figures, so never fabricate one):
 
 <step name="present">
 Present, per objection: the ruling (`survives | partial | refuted`), the
-grounding that produced it (the Context7 doc or codebase citation), and the
-amendment (when ruled `survives`/`partial`).
+grounding that produced it (the Context7 doc when its tools were available,
+else the installed source, lockfile or vendored doc, or the codebase
+citation), and the amendment (when ruled `survives`/`partial`). List every
+library/API claim no documentation could check as unchecked.
 
 On a clean pass, present the grounded load-bearing claims instead, each
 `confirmed`/`contradicted` with its citation, and say no reviewer objected.
@@ -195,9 +202,13 @@ amend and does it themselves (or via a follow-up `/cad-context` correction,
       amendment
 - [ ] On zero objections, the decision's own load-bearing claims were
       grounded instead - never a bare "no findings"
-- [ ] At least one library/API claim was checked against Context7 and at
-      least one factual claim against the codebase, on whichever claim set
-      applied - or that set was noted to contain none of that kind
+- [ ] At least one library/API claim was checked against documentation -
+      Context7 when its tools were available, else the installed source,
+      lockfile or vendored docs - and at least one factual claim against the
+      codebase, on whichever claim set applied, or that set was noted to
+      contain none of that kind
+- [ ] Every library/API claim no documentation could check is listed as
+      unchecked, never ruled from training data
 - [ ] The report names which reviewers ran and the tier/effort that reached
       the cross-model arm, qualitatively, never presented as applying to
       `cad-reviewer` - no fabricated token/dollar figures

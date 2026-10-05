@@ -18,8 +18,10 @@ Stress-test ONE decision the user names, rather than take it on faith. The
 review capability lives entirely in cadence-core/workflows/decision-review.md:
 `cad-reviewer` (and, when configured, a cross-model provider) refutes the
 decision through the review subsystem's reviewer resolution; the main model
-then grounds each objection against Context7 (library/API claims) and the
-real codebase (factual claims) and rules it `survives | partial | refuted`
+then grounds each objection against documentation (library/API claims:
+Context7 when its tools are available, else the installed source, lockfile
+or vendored docs, with any claim none could check listed as unchecked) and
+the real codebase (factual claims) and rules it `survives | partial | refuted`
 with a concrete amendment where the decision needs one. When refutation
 returns nothing, the grounding retargets onto the decision's own load-bearing
 claims rather than lapsing, so a clean pass still rests on checked facts.
@@ -41,8 +43,9 @@ invoking this skill is the user's call, not a mechanical handoff.
    path and the specific decision.
 
 2. **Run the workflow** end-to-end: refute (the review subsystem's reviewer
-   resolution), then adjudicate (Context7 + codebase grounding, per-objection
-   ruling and amendments), then the qualitative cost report.
+   resolution), then adjudicate (docs grounding through Context7 when its
+   tools are available, else installed source, lockfile or vendored docs,
+   plus codebase grounding, per-objection ruling and amendments), then the qualitative cost report.
 
 3. **Present** the per-objection rulings, groundings, and amendments - or, on
    a clean pass, the grounded load-bearing claims, never a bare "no findings"

@@ -394,10 +394,12 @@ A `refuted` ruling must state the grounding that killed it, so the ruling itself
 is falsifiable rather than asserted.
 
 Grounding is mandatory and typed: library and API claims are verified against
-live documentation via Context7 rather than trusting training data, factual
-claims are verified against the real repo rather than the objection's paraphrase,
-and every run must ground at least one of each kind or say explicitly that the
-claim set contained none.
+documentation rather than training data, live through Context7 when its tools
+are available and otherwise against the installed package source, the lockfile
+or vendored docs, with every claim no documentation could check named as
+unchecked, factual claims are verified against the real repo rather than the
+objection's paraphrase, and every run must ground at least one of each kind or
+say explicitly that the claim set contained none.
 
 When refutation returns nothing, that requirement does not lapse — it retargets
 onto the decision's own load-bearing claims, so a clean pass still rests on
