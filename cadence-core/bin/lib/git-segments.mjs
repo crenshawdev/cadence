@@ -20,7 +20,7 @@
 // ONLY when its command word is `git`. Everything else is silent BY
 // CONSTRUCTION rather than by a rule somebody has to keep correct - and the
 // shapes that consequently go silent are written down in references/git-publish.md
-// rail 3 and in the CHANGELOG entry that removed the parser, as the accepted
+// rail 3 and in the CHANGELOG-v1-v2.md entry that removed the parser, as the accepted
 // cost rather than as an oversight.
 //
 // IT ALSO HOLDS THE SCOPE RULE: the `.planning/` walk that decides whether a
