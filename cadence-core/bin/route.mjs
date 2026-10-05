@@ -159,6 +159,35 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 let SCHEMA;
 const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
   || join(HERE, '..', 'config.schema.json');
+
+// The plugin's agent-type prefix is plugin.json's `name` - the host namespaces a
+// plugin's agents by it, and `provider.plugin` (`cadence@cadence`) is NOT it.
+// Read relative to the SCRIPT, never the cwd or the directory's name, so a
+// `cadence-dev` install reaches its own agents. This mirrors planning/core.mjs's
+// MANIFEST_PATH the way SCHEMA_PATH mirrors config.mjs's: the same file, the
+// same CADENCE_PLUGIN_MANIFEST override, the same gate.
+const MANIFEST_PATH = (testSeamOpen() && process.env.CADENCE_PLUGIN_MANIFEST)
+  || join(HERE, '..', '..', '.claude-plugin', 'plugin.json');
+
+/**
+ * The ONE answer to "prefix or failure", for `resolve` and `agent-type` alike,
+ * so the two can never disagree about the prefix or about the fallback. Never
+ * throws. A manifest that cannot answer leaves `agentType` the bare stem - a
+ * dispatch of it meets the module's safety net, as v3.8.0's did - and hands
+ * back the one `reason` sentence naming the path. That sentence names no stem,
+ * so both reads produce it byte-for-byte.
+ * @param {string} stem
+ * @returns {{agentType: string, reason: string|null}}
+ */
+function prefixedAgentType(stem) {
+  try {
+    const name = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')).name;
+    if (typeof name === 'string' && name !== '') return { agentType: `${name}:${stem}`, reason: null };
+  } catch { /* falls through to the bare answer below */ }
+  return { agentType: stem,
+    reason: `agent_type is the bare agent: no plugin name could be read from ${MANIFEST_PATH}` };
+}
+
 // `hint` is the third argument and rides as a conditional key: an absent hint
 // adds no key, so no shipped assertion moves (phase-1 D-09/D-10).
 const fail = (reason, detail, hint) => {
@@ -1406,7 +1435,18 @@ function resolve(opts) {
   // missing entry and an unresolved one must not be one shape. It is what makes
   // `model: null` readable, since null is both the unset answer and the
   // rejected-value answer, and only this field tells them apart.
-  out({ ok: true, role: opts.role, agent, model, model_source: modelSource, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
+  //
+  // `agent_type` is the name a Cadence dispatch SENDS: plugin.json's name, `:`,
+  // the final `agent` (after any escalation, so the two never name different
+  // rungs). Cadence's own dispatches name their agents explicitly because a
+  // bare stem belongs to whoever owns that bare name - a user's own
+  // `cad-reviewer` in their agents folder - and a user agent's name cannot
+  // contain `:`, so a prefixed name is never theirs. `agent` stays the bare
+  // stem: it is the trace name and the mismatch name, and the routing event
+  // above carries it and not this field.
+  const prefixed = prefixedAgentType(agent);
+  if (prefixed.reason) reason.push(prefixed.reason);
+  out({ ok: true, role: opts.role, agent, agent_type: prefixed.agentType, model, model_source: modelSource, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------

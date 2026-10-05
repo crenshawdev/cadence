@@ -2281,3 +2281,90 @@ test('replay: the subcommand is refused as usage, and the synopsis names it no m
   assert.equal(r.reason, 'usage');
   assert.equal(/replay/.test(r.detail), false, r.detail);
 });
+
+// --- agent_type: the name a Cadence dispatch sends (MOD-04) -------------------
+
+/** The shipped plugin.json's `name`, read by the test - never a literal. */
+const SHIPPED_NAME = JSON.parse(readFileSync(
+  join(dirname(ROUTE), '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')).name;
+
+/**
+ * A runner that can move the manifest. `resolve()` above passes only the schema
+ * override, so this one takes raw args plus extra env: `manifest` sets
+ * CADENCE_PLUGIN_MANIFEST, and `seam` (default true) sets the sentinel beside it.
+ */
+function routeWith(args, { manifest, seam = true, cwd } = {}) {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  delete env.CADENCE_PLUGIN_MANIFEST; delete env.CADENCE_TEST_SEAM;
+  if (manifest) env.CADENCE_PLUGIN_MANIFEST = manifest;
+  if (manifest && seam) env.CADENCE_TEST_SEAM = '1';
+  try {
+    return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env, cwd }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+/** A manifest of its own, under its own temp dir. */
+function manifestAt(body) {
+  const p = join(mkdtempSync(join(tmpdir(), 'cad-route-manifest-')), 'plugin.json');
+  if (body !== undefined) writeFileSync(p, JSON.stringify(body));
+  return p;
+}
+
+const PLANNER = (extra = []) => ['resolve', '--role', 'cad-planner', '--file', cfg({}), ...extra];
+
+test('agent_type: the shipped manifest name + ":" + the bare agent, right after agent', () => {
+  const r = routeWith(PLANNER());
+  assert.equal(r.ok, true);
+  assert.equal(r.agent, 'cad-planner');
+  assert.equal(r.agent_type, `${SHIPPED_NAME}:cad-planner`);
+  const keys = Object.keys(r);
+  assert.equal(keys[keys.indexOf('agent') + 1], 'agent_type');
+});
+
+test('agent_type: a seam-open manifest named cadence-dev gives cadence-dev:cad-planner', () => {
+  const r = routeWith(PLANNER(), { manifest: manifestAt({ name: 'cadence-dev' }) });
+  assert.equal(r.agent_type, 'cadence-dev:cad-planner');
+});
+
+test('agent_type: CADENCE_PLUGIN_MANIFEST without the sentinel is ignored', () => {
+  const r = routeWith(PLANNER(), { manifest: manifestAt({ name: 'cadence-dev' }), seam: false });
+  assert.equal(r.agent_type, `${SHIPPED_NAME}:cad-planner`);
+});
+
+test('agent_type: a missing or name-less manifest stays ok:true, bare, with a reason naming it', () => {
+  for (const manifest of [manifestAt(undefined), manifestAt({ version: '1.0.0' })]) {
+    const r = routeWith(PLANNER(), { manifest });
+    assert.equal(r.ok, true);
+    assert.equal(r.agent_type, r.agent);
+    assert.equal(r.reason.filter((x) => x.includes(manifest)).length, 1, r.reason.join(' | '));
+    assert.equal('warnings' in r, false);
+  }
+});
+
+test('agent_type: an escalated attempt prefixes the escalated agent', () => {
+  const file = cfg({ escalate_on_failure: true }, 'agent-type-esc.json');
+  const r = routeWith(['resolve', '--role', 'cad-planner', '--file', file, '--attempt', '2']);
+  assert.equal(r.escalated, true);
+  assert.notEqual(r.agent, 'cad-planner');
+  assert.equal(r.agent_type, `${SHIPPED_NAME}:${r.agent}`);
+});
+
+test('agent_type: roles.cad-reviewer.effort high names the bare base reviewer, prefixed', () => {
+  const file = rawCfg({ roles: { 'cad-reviewer': { effort: 'high' } } });
+  const r = routeWith(['resolve', '--role', 'cad-reviewer', '--file', file]);
+  assert.equal(r.agent, 'cad-reviewer');
+  assert.equal(r.agent_type, `${SHIPPED_NAME}:cad-reviewer`);
+});
+
+test('agent_type: the routing event keeps the bare agent and carries no agent_type', () => {
+  const planning = traceRoot('agent-type', false);
+  const r = routeWith(['resolve', '--role', 'cad-executor', '--file',
+    join(planning, 'config.json'), '--phase', '4']);
+  assert.equal(r.ok, true);
+  const events = traceLines(planning);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].agent, r.agent);
+  assert.equal('agent_type' in events[0], false);
+});
