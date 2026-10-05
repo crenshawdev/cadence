@@ -69,7 +69,7 @@ pair is one selectable option and its `description`.
 | **Memory** |||||
 | `memory.backend` `[repo]` | enum | How past planning notes are searched and resurfaced | `builtin`→built-in search over your `.planning/` docs, no setup and no dependencies · `none`→turn that search off | builtin |
 | **Review** (providers handled separately) |||||
-| `review.reviewers` `[repo]` | list(enum) | Which reviewers should run? (pick any number) | `claude-subagent`→runs locally, needs no API key · `openai`→a second model, needs a key · `gemini`→a second model, needs a key · `deepseek`→a second model, needs a key | claude-subagent |
+| `review.reviewers` `[repo]` | list(enum) | Which reviewers should run? (pick any number) | `claude-subagent`→runs locally, needs no API key · `openai`→a second model, needs a key, and runs only when your user-global config names it too · `gemini`→a second model, needs a key, and runs only when your user-global config names it too · `deepseek`→a second model, needs a key, and runs only when your user-global config names it too | claude-subagent |
 | `review.mode` `[repo]` | enum | When several reviewers are on, how are their findings combined? | `single`→use only the first reviewer that is available · `panel`→report every finding from all of them · `adjudicated`→run all, then have the main model check each finding against the code and drop the ones that do not hold | adjudicated |
 | `review.key_file` `[global]` | str\|null | Path override for the provider key env file - set it in the user-global layer, a repo layer's value is ignored | path, or empty→`null` (default location) | null |
 | `review.request_timeout_ms` | int | ms before a provider request is aborted | e.g. `540000` (9 min); clamped to the 600000 host ceiling | 540000 |

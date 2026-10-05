@@ -72,7 +72,11 @@ does, from `review.reviewers[]`:
   says - and `review.decision_review.tier` and `.effort` reach the cross-model
   arm below only (D-04).
 - **cross-model** (any provider in `review.reviewers` - `openai`, `gemini`,
-  `deepseek`, ...), only when `review.reviewers` names it
+  `deepseek`, ...), only when `review.reviewers` names it AND the user-global
+  config names it too - the `reviewers_global` list
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-reviewer`
+  returns (relay its `warnings[]`, seam-spawn-agent.md), never a raw read of
+  the global file, so this arm and step 3 agree -
   AND `review.providers.<name>.tiers[review.decision_review.tier]` is a
   non-null model id: run the call-review-provider seam
   ```
@@ -148,7 +152,8 @@ figures, so never fabricate one):
   when a bare tier/effort line reads as if the run had honoured one
 - the call count (one `cad-reviewer` dispatch, plus one
   `review-provider.mjs` call per surviving cross-model reviewer)
-- any reviewer that was offered but dropped (no-key, no tier assigned), and why
+- any reviewer that was offered but dropped (no-key, no tier assigned, not
+  named by the user-global config), and why
 </step>
 
 <step name="present">
