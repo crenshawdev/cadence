@@ -2368,3 +2368,48 @@ test('agent_type: the routing event keeps the bare agent and carries no agent_ty
   assert.equal(events[0].agent, r.agent);
   assert.equal('agent_type' in events[0], false);
 });
+
+// --- agent-type: the prefixed name with no routing behind it (MOD-04) ---------
+
+test('agent-type: the shipped manifest prefixes the stem, with an empty reason', () => {
+  const r = routeWith(['agent-type', '--stem', 'cad-reviewer']);
+  assert.equal(r.ok, true);
+  assert.equal(r.agent, 'cad-reviewer');
+  assert.equal(r.agent_type, `${SHIPPED_NAME}:cad-reviewer`);
+  assert.deepEqual(r.reason, []);
+});
+
+test('agent-type: a seam-open manifest moves the prefix, an unsealed one does not', () => {
+  const manifest = manifestAt({ name: 'cadence-dev' });
+  assert.equal(routeWith(['agent-type', '--stem', 'cad-reviewer'], { manifest }).agent_type,
+    'cadence-dev:cad-reviewer');
+  assert.equal(routeWith(['agent-type', '--stem', 'cad-reviewer'], { manifest, seam: false }).agent_type,
+    `${SHIPPED_NAME}:cad-reviewer`);
+});
+
+test('agent-type: a missing manifest falls back exactly as resolve does, one read and one sentence', () => {
+  const manifest = manifestAt(undefined);
+  const r = routeWith(['agent-type', '--stem', 'cad-reviewer'], { manifest });
+  assert.equal(r.ok, true);
+  assert.equal(r.agent_type, 'cad-reviewer');
+  const planner = routeWith(PLANNER(), { manifest });
+  assert.deepEqual(r.reason, planner.reason.filter((x) => x.includes(manifest)));
+  assert.equal(r.reason.length, 1);
+  assert.equal('warnings' in r, false);
+});
+
+test('agent-type: a missing, misspelled or already-prefixed stem is usage naming --stem', () => {
+  for (const extra of [[], ['--stem', 'cad-reviwer'], ['--stem', 'cadence:cad-reviewer']]) {
+    const r = routeWith(['agent-type', ...extra]);
+    assert.equal(r.ok, false, extra.join(' '));
+    assert.equal(r.reason, 'usage');
+    assert.match(r.detail, /--stem/);
+  }
+});
+
+test('agent-type: writes no routing record, even run beside a planning root', () => {
+  const planning = traceRoot('agent-type-cmd', false);
+  const r = routeWith(['agent-type', '--stem', 'cad-reviewer'], { cwd: dirname(planning) });
+  assert.equal(r.ok, true);
+  assert.equal(existsSync(join(planning, 'trace.jsonl')), false);
+});

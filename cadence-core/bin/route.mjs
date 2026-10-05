@@ -1533,6 +1533,36 @@ function parseArgs(a) {
   return o;
 }
 
+// Every agent file stem Cadence ships, the only names `agent-type` will prefix.
+// A typo or an already-prefixed `cadence:cad-reviewer` is refused here rather
+// than handed back as an unknown type or a doubled prefix.
+const AGENT_STEMS = new Set(Object.values(RUNG_FILES).flatMap((rungs) => Object.values(rungs)));
+
+/**
+ * `agent-type --stem <name>`: the prefixed name for a dispatch that resolves
+ * no routing - `/cad-minimalism-review` and `/cad-decision-review` send the
+ * base `cad-reviewer` at the session default. It reads no config layer, picks
+ * no rung and appends no trace event, so those workflows' "resolves no routing
+ * at all" stays true. The prefix and its fallback come from the same
+ * `prefixedAgentType` `resolve` calls. Every refusal is `usage` and names
+ * `--stem`.
+ * @param {string[]} a
+ */
+function agentType(a) {
+  const parsed = evaluateFlag(a, '--stem', CONTRACTS['route.mjs']['agent-type']['--stem']);
+  if (!parsed.ok) {
+    out({ ok: false, reason: 'usage', detail: 'agent-type --stem needs an agent file stem after it: --stem <name>' });
+    return;
+  }
+  if (!AGENT_STEMS.has(parsed.value)) {
+    out({ ok: false, reason: 'usage',
+      detail: `agent-type --stem ${JSON.stringify(parsed.value)} names no Cadence agent file; pass a bare stem such as cad-reviewer` });
+    return;
+  }
+  const { agentType: prefixed, reason } = prefixedAgentType(parsed.value);
+  out({ ok: true, agent: parsed.value, agent_type: prefixed, reason: reason ? [reason] : [] });
+}
+
 try {
   // FATAL: every review gate, tier and effort this resolve answers is a schema
   // default now, and so is every role's start rung, so a schema it cannot read
@@ -1555,8 +1585,10 @@ try {
     const o = parseArgs(argv.slice(1));
     if (o.usage) out({ ok: false, reason: 'usage', detail: o.usage });
     else resolve(o);
+  } else if (cmd === 'agent-type') {
+    agentType(argv.slice(1));
   } else {
-    out({ ok: false, reason: 'usage', detail: 'subcommand: resolve' });
+    out({ ok: false, reason: 'usage', detail: 'subcommand: resolve | agent-type' });
   }
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
