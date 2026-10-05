@@ -369,6 +369,20 @@ test('D-14 (f): CADENCE_GLOBAL_CONFIG naming the repo file is ONE layer - not pl
   assert.deepEqual(r.reviewers_global, []);
 });
 
+test('D-14 (f) warning: the collapsed layer is named as one file, not as a list to edit', () => {
+  // The file already names openai, so "not named by the user-global config's
+  // review.reviewers" would send the user to add it where it already is.
+  const c = rawCfg({ review: { reviewers: ['openai'], providers: OPENAI_AT_CHEAP } }, 'd14-collapsed-warn.json');
+  const r = resolve('cad-reviewer', c, [], { global: c });
+  const plan = r.warnings.find((w) => w.startsWith('plan:'));
+  assert.ok(plan.includes(c), plan);
+  assert.match(plan, /openai cannot be enabled: .* resolves to the repository's own config file/);
+  assert.match(plan, /two layers are one file/);
+  assert.match(plan, /point the user-global config at a separate file \(CADENCE_GLOBAL_CONFIG/);
+  assert.doesNotMatch(plan, /is not named by the user-global config/);
+  for (const t of TRIGGERS) assert.deepEqual(r.reviewers[t], ['claude-subagent'], t);
+});
+
 test('the reviewer set is its own field - `review` gains, loses and reorders nothing', () => {
   // D-05: folding reviewers into `review` turns each gate STRING into an
   // object and breaks every reader of the wiring table at once.

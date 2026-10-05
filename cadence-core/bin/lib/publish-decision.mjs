@@ -45,14 +45,20 @@ const SET_IT = '"git": {"auto_close": true}';
  * read. That last one comes first and never calls the file the missing half:
  * it may already carry the key, and only a repair can prove it.
  *
+ * One more cause sits under those states: `shared`, the user-global path
+ * resolving to this repository's own config file. That is one layer, so the
+ * global half reads `unset`, and the repo-only sentence would tell the user to
+ * set a key the file already sets - advice that can never authorize anything.
+ * The sentence names the collapse instead. The verdict does not move.
+ *
  * No sentence names a `config.mjs set` command: the sentence states the file
  * and the key, which stays true whichever write face the user reaches for.
  *
- * @param {{ repo?: unknown, global?: unknown, globalFile?: unknown }} [layers]
+ * @param {{ repo?: unknown, global?: unknown, shared?: unknown, globalFile?: unknown }} [layers]
  * @returns {string|null}
  */
 export function authorizationDetail(layers) {
-  const { repo, global, globalFile } = layers && typeof layers === 'object' ? layers : {};
+  const { repo, global, shared, globalFile } = layers && typeof layers === 'object' ? layers : {};
   if (repo === 'set' && global === 'set') return null;
   const torn = [];
   if (repo === 'unreadable') torn.push("this repository's .planning/config.json");
@@ -64,6 +70,13 @@ export function authorizationDetail(layers) {
     return `No unattended publish or merge is authorized: ${torn.join(' and ')} could not be read `
       + 'as a JSON config object, so the git.auto_close opt-in it may carry cannot be proven. '
       + 'Repair that file and re-run.';
+  }
+  if (shared === true) {
+    const named = typeof globalFile === 'string' && globalFile ? `the user-global config ${globalFile}` : 'the user-global config';
+    return `No unattended publish or merge is authorized: ${named} resolves to this repository's own `
+      + '.planning/config.json, so the two layers are one file, and one file cannot authorize it on its own. '
+      + 'Point the user-global config at a separate file (CADENCE_GLOBAL_CONFIG, or ~/.claude/cadence/config.json '
+      + `when that is unset) and set ${SET_IT} there.`;
   }
   if (repo === 'set') {
     return "This repository's .planning/config.json sets git.auto_close, but " + GLOBAL_NAME

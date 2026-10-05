@@ -116,6 +116,24 @@ test('detail: an unreadable half is named as unreadable, never as the missing ha
   assert.match(r, /this repository's \.planning\/config\.json could not be read/);
 });
 
+test('detail: one file wearing both layer names says so, and still refuses', () => {
+  // CADENCE_GLOBAL_CONFIG at the repo's own config: the repo half is set, the
+  // global half reads unset because it is the same file. Telling the user to
+  // set the key in "the user-global config" sends them to edit a file that
+  // already has it, and the re-run refuses again.
+  const file = '/work/repo/.planning/config.json';
+  const shared = { repo: 'set', global: 'unset', shared: true, globalFile: file };
+  const d = authorizationDetail(shared) || '';
+  assert.ok(d.includes(file), d);
+  assert.match(d, /resolves to this repository's own \.planning\/config\.json/);
+  assert.match(d, /two layers are one file/);
+  assert.match(d, /Point the user-global config at a separate file \(CADENCE_GLOBAL_CONFIG/);
+  assert.doesNotMatch(d, /does not:|committed repository setting/);
+  assert.equal(decidePublish({ ...OK, autoClose: shared }).reason, 'auto-close-off');
+  // A repo file that is unset reads the same way: the cause is the collapse.
+  assert.equal(authorizationDetail({ ...shared, repo: 'unset' }), d);
+});
+
 test('detail: an authorized call publishes and carries no detail at all', () => {
   const d = decidePublish(OK);
   assert.equal(d.action, 'publish');

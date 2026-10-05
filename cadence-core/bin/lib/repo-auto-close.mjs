@@ -34,7 +34,9 @@
 // config file (by `layerIdentity`, which sees through symlinks and relative
 // spellings), there is ONE layer, so at most one opt-in and no authorization.
 // That mirrors `mergeLayers`' own rule, and a cloned repository cannot set the
-// environment variable that would make its own file count twice.
+// environment variable that would make its own file count twice. `shared` says
+// so in the answer, so the refusal names the one file as the cause instead of
+// telling the user to set a key that file already sets.
 'use strict';
 
 import { readFileSync } from 'node:fs';
@@ -65,9 +67,10 @@ function layerOptIn(file) {
  *
  * TOTAL: never throws, whatever `dir` is or is not. `authorized` is true ONLY
  * when `repo` and `global` are both `set` and the two are different files.
+ * `shared` is true when they are one file, and then `global` reads `unset`.
  *
  * @param {string} dir repo/planning root
- * @returns {{authorized: boolean, repo: LayerOptIn, global: LayerOptIn, repoFile: string, globalFile: string}}
+ * @returns {{authorized: boolean, repo: LayerOptIn, global: LayerOptIn, shared: boolean, repoFile: string, globalFile: string}}
  */
 export function autoCloseLayers(dir) {
   let repoFile = '';
@@ -76,5 +79,5 @@ export function autoCloseLayers(dir) {
   const rid = layerIdentity(repoFile);
   const shared = rid !== null && rid === layerIdentity(GLOBAL_CONFIG);
   const global = shared ? 'unset' : layerOptIn(GLOBAL_CONFIG);
-  return { authorized: repo === 'set' && global === 'set', repo, global, repoFile, globalFile: GLOBAL_CONFIG };
+  return { authorized: repo === 'set' && global === 'set', repo, global, shared, repoFile, globalFile: GLOBAL_CONFIG };
 }

@@ -129,7 +129,7 @@
 import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, isAbsolute, sep } from 'node:path';
-import { mergeLayers } from './lib/config-merge.mjs';
+import { GLOBAL_CONFIG, layerIdentity, mergeLayers } from './lib/config-merge.mjs';
 import { rungFile, RUNG_FILES, RUNG_ORDER } from './lib/rung-agent.mjs';
 import { gateTriggers } from './lib/gate-agreement.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
@@ -356,6 +356,10 @@ function readConfig(file) {
     // collapsed one is ONE layer that cannot count as both, failing closed the
     // way lib/repo-auto-close.mjs does for git.auto_close.
     reviewersGlobal: (reviewersIn(layers.global) || []).filter((n) => n !== 'claude-subagent'),
+    // Which of those null causes it was, when it was the collapse: the drop
+    // below then names the one file, not a key that file may already carry.
+    // The same identity test mergeLayers runs, on the same two paths.
+    layersShared: layerIdentity(file) !== null && layerIdentity(file) === layerIdentity(GLOBAL_CONFIG),
     // `review.providers.<name>.tiers.<tier>` - the model id a provider is
     // configured with per tier, which is what "available" means for a
     // cross-model reviewer.
@@ -1276,8 +1280,13 @@ function resolve(opts) {
         continue;
       }
       if (!cfg.reviewersGlobal.includes(name)) {
-        dropped.push(`${name} is not named by the user-global config's review.reviewers, `
-          + 'and a repository\'s review.reviewers alone cannot enable a cross-model provider');
+        dropped.push(cfg.layersShared
+          ? `${name} cannot be enabled: the user-global config ${GLOBAL_CONFIG} resolves to the repository's `
+            + 'own config file, so the two layers are one file, and one file cannot enable a cross-model '
+            + 'provider on its own - point the user-global config at a separate file (CADENCE_GLOBAL_CONFIG, '
+            + `or ~/.claude/cadence/config.json when that is unset) and name ${name} in its review.reviewers`
+          : `${name} is not named by the user-global config's review.reviewers, `
+            + 'and a repository\'s review.reviewers alone cannot enable a cross-model provider');
         continue;
       }
       kept.push(name);

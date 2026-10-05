@@ -88,7 +88,9 @@ test('autoCloseLayers: CADENCE_GLOBAL_CONFIG naming the repo file is ONE layer',
   // environment variable that would make its own file count twice.
   const dir = repo(ON);
   const a = layers(dir, join(dir, '.planning', 'config.json'));
-  assert.deepEqual([a.authorized, a.repo, a.global], [false, 'set', 'unset']);
+  assert.deepEqual([a.authorized, a.repo, a.global, a.shared], [false, 'set', 'unset', true]);
+  // Two separate files are never reported as one.
+  assert.equal(layers(repo(ON), globalText(ON)).shared, false);
 });
 
 test('autoCloseLayers: a non-object layer reads unreadable and never throws on a bad dir', () => {
