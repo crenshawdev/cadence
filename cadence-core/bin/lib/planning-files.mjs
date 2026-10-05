@@ -711,8 +711,9 @@ export function parseActiveIds(text) {
  * itself), so a trailing prose paragraph under the table survives byte
  * identical. Each row renders as `| ${id} | Phase ${phase} | Pending |` -
  * the `Phase N` spelling is mandatory: `shiftPhaseTokens` shifts only
- * `Phase K` tokens and `phases/K/` paths, and `renumber remove`'s
- * orphan-blanking regex tests `\bPhase ${at}\b`, so a bare-number phase cell
+ * `Phase K` tokens and `phases/K/` paths, and `renumber remove` orphans a
+ * Pending row only when its Phase cell holds an integer `Phase ${at}` token
+ * (`shiftPendingReqRows`), so a bare-number phase cell
  * would silently desync the whole table on the next phase insert or removal.
  * The anchor line's line ending is preserved - a CRLF anchor gets a CRLF row -
  * since this is a write path and normalize() stays off write paths (D-05).
@@ -2688,9 +2689,11 @@ export function shiftPhaseTokens(text, from, delta) {
 }
 
 /**
- * `renumber insert`'s REQUIREMENTS.md edit. Shifts phase tokens up by one, but
- * only on `## Traceability` rows whose Status is exactly `Pending`. Every other
- * line is history and comes back byte for byte (GH-259).
+ * `renumber`'s REQUIREMENTS.md edit, for both ops. `delta` 1 is an insert at
+ * `at`: tokens with K >= at move up one. `delta` -1 is a remove of phase `at`:
+ * tokens with K >= at+1 move down one. Either way only `## Traceability` rows
+ * whose Status is exactly `Pending` change. Every other line is history and
+ * comes back byte for byte (GH-259, GH-301).
  *
  * Section first, then status. Going by status alone would still rewrite
  * `## Deferred` bullets, which have no status cell, and `## Shipped` rows whose
@@ -2698,10 +2701,21 @@ export function shiftPhaseTokens(text, from, delta) {
  *
  * Splits on `\n` and nothing else, so a CRLF line keeps its `\r`.
  *
+ * On a remove, a Pending row whose Phase cell cites integer `Phase <at>` is an
+ * orphan: its Phase cell is blanked to the `|  |` shape so audit sees it as
+ * no-phase rather than pointing at the shifted neighbour, its ID goes in
+ * `orphans`, and the rest of the line then shifts like any Pending row. One
+ * test decides both, so the blanked set and `orphans` cannot disagree. A
+ * decimal `Phase 3.1` is never phase 3 (`shiftPhaseTokens`'s guard). The blank
+ * is rebuilt from the `REQ_ROW` cells and keeps everything after them, `\r`
+ * included: the old `.*$` regex it replaces never matched a CRLF line, so CRLF
+ * orphans were silently left unblanked.
+ *
  * `changes` is every line that differs, built in the same walk so what the
- * confirmation gate shows is what gets written. `line` is 1-indexed like
- * `findProsePhaseRefs`; `before`/`after` drop one trailing `\r` so CRLF and LF
- * files report the same text.
+ * confirmation gate shows is what gets written - a blanked orphan carries its
+ * pre-blank `before`. `line` is 1-indexed like `findProsePhaseRefs`;
+ * `before`/`after` drop one trailing `\r` so CRLF and LF files report the same
+ * text.
  *
  * `movedComplete` holds the IDs of Complete rows that cite a phase this insert
  * moves (a token `shiftPhaseTokens` would shift, so decimals and phases below
@@ -2718,40 +2732,48 @@ export function shiftPhaseTokens(text, from, delta) {
  * token the old whole-file shift would have moved, since nothing moves those
  * now and `findProsePhaseRefs` only sees lowercase. Pending rows already
  * shifted, so only their prose counts.
- * @param {string} text @param {number} at
- * @returns {{text: string, changes: Array<{line: number, before: string, after: string}>, movedComplete: string[], refs: Array<{line: number, text: string}>}}
+ * @param {string} text @param {number} at @param {1 | -1} [delta]
+ * @returns {{text: string, changes: Array<{line: number, before: string, after: string}>, movedComplete: string[], refs: Array<{line: number, text: string}>, orphans: string[]}}
  */
-export function shiftPendingReqRows(text, at) {
+export function shiftPendingReqRows(text, at, delta = 1) {
   const lines = text.split('\n');
   const changes = [];
   /** @type {string[]} */
   const movedComplete = [];
   const refs = [];
+  /** @type {string[]} */
+  const orphans = [];
+  const from = delta > 0 ? at : at + 1;
+  const orphanToken = delta > 0 ? null : new RegExp(`\\bPhase ${at}\\b(?!\\.\\d)`);
   const trace = sectionSpan(lines, '## Traceability');
   const shipped = sectionSpan(lines, '## Shipped');
   // A missing section spans (-1, -1), so nothing is inside it.
   const inside = (/** @type {{start: number, end: number}} */ s, /** @type {number} */ i) => i > s.start && i < s.end;
-  const prose = new Set(findProsePhaseRefs(text, at).map((r) => r.line));
+  const prose = new Set(findProsePhaseRefs(text, from).map((r) => r.line));
   const bare = (/** @type {string} */ l) => l.replace(/\r$/, '');
+  const rowId = (/** @type {RegExpMatchArray} */ c) => c[1].replace(/\*/g, '').trim();
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const cells = inside(trace, i) ? line.match(REQ_ROW) : null;
     const status = cells ? cells[3].trim() : null;
-    const moves = shiftPhaseTokens(line, at, 1);
+    const moves = shiftPhaseTokens(line, from, delta);
     if (status === 'Pending') {
       if (prose.has(i + 1)) refs.push({ line: i + 1, text: line.trim() });
-      if (moves.text === line) continue;
-      changes.push({ line: i + 1, before: bare(line), after: bare(moves.text) });
-      lines[i] = moves.text;
+      let after = moves.text;
+      if (orphanToken && orphanToken.test(cells[2])) {
+        orphans.push(rowId(cells));
+        after = shiftPhaseTokens(`|${cells[1]}|  |${line.slice(cells[1].length + cells[2].length + 3)}`, from, delta).text;
+      }
+      if (after === line) continue;
+      changes.push({ line: i + 1, before: bare(line), after: bare(after) });
+      lines[i] = after;
       continue;
     }
-    if (status === 'Complete' && moves.count > 0) {
-      movedComplete.push(cells[1].replace(/\*/g, '').trim());
-    }
+    if (status === 'Complete' && moves.count > 0) movedComplete.push(rowId(cells));
     const frozen = line.startsWith('|') && (inside(trace, i) || inside(shipped, i));
     if (!frozen && (prose.has(i + 1) || moves.count > 0)) refs.push({ line: i + 1, text: line.trim() });
   }
-  return { text: lines.join('\n'), changes, movedComplete, refs };
+  return { text: lines.join('\n'), changes, movedComplete, refs, orphans };
 }
 
 /**

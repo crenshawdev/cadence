@@ -17,7 +17,7 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 import { fail, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
-  atomicWrite, cutPhaseDetail, findProsePhaseRefs, parseCursor, parseRequirements,
+  atomicWrite, cutPhaseDetail, findProsePhaseRefs, parseCursor,
   parseRoadmapPhases, renderCursor, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
 import { requireInt } from '../lib/require-int.mjs';
@@ -28,9 +28,10 @@ import { emit } from '../lib/seam-io.mjs';
 // phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
 // reported for the model to repair with judgment. --dry-run computes the full
 // operation plan and touches nothing - it is what the confirmation gate shows.
-// On insert, REQUIREMENTS.md tokens shift only on Pending `## Traceability`
-// rows; every other REQUIREMENTS line is copied through byte-identical. Its
-// REQUIREMENTS refs skip frozen rows and add capital tokens left unshifted.
+// On both ops, REQUIREMENTS.md tokens shift only on Pending `## Traceability`
+// rows, and remove blanks only Pending orphans; every other REQUIREMENTS line
+// is copied through byte-identical. Insert's REQUIREMENTS refs skip frozen rows
+// and add capital tokens left unshifted.
 // ---------------------------------------------------------------------------
 function gitMv(from, to) {
   try { execFileSync('git', ['mv', from, to], { stdio: 'pipe' }); return 'git'; }
@@ -298,7 +299,8 @@ function cmdRenumber(dir, sub, opts) {
 
   const reqFile = join(dir, 'REQUIREMENTS.md');
   const reqText = read(reqFile);
-  const orphanedReqs = [];
+  /** @type {string[]} */
+  let orphanedReqs = [];
   /** @type {Array<{line: number, before: string, after: string}>} */
   let reqRowChanges = [];
   /** @type {string[]} */
@@ -307,23 +309,16 @@ function cmdRenumber(dir, sub, opts) {
   let reqRefs = null;
   let newReqText = null;
   if (reqText !== null) {
-    let t = reqText;
-    if (sub === 'remove') {
-      for (const r of parseRequirements(t)) if (r.phase === at) orphanedReqs.push(r.id);
-      // Blank the orphaned rows' Phase cell so they surface as no-phase in
-      // audit rather than silently pointing at the shifted neighbor.
-      t = t.split('\n').map((line) => {
-        const cells = line.match(/^(\|[^|]*\|)([^|]*)(\|[^|]*\|.*)$/);
-        if (cells && new RegExp(`\\bPhase ${at}\\b`).test(cells[2])) return `${cells[1]}  ${cells[3]}`;
-        return line;
-      }).join('\n');
-    }
-    // Insert leaves shipped history alone (GH-259): only Pending Traceability
-    // rows move. Remove keeps its whole-file shift for now.
+    // Both ops leave shipped history alone (GH-259, GH-301): only Pending
+    // Traceability rows move, and on remove only a Pending row citing the
+    // removed phase is blanked and orphaned, so it surfaces as no-phase in
+    // audit rather than silently pointing at the shifted neighbour.
+    const pass = shiftPendingReqRows(reqText, at, delta);
+    newReqText = pass.text;
     if (sub === 'insert') {
-      ({ text: newReqText, changes: reqRowChanges, movedComplete, refs: reqRefs } = shiftPendingReqRows(t, at));
+      ({ changes: reqRowChanges, movedComplete, refs: reqRefs } = pass);
     } else {
-      newReqText = shiftPhaseTokens(t, shiftFrom, delta).text;
+      orphanedReqs = pass.orphans;
     }
   }
 

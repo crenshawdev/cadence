@@ -890,3 +890,61 @@ test('renumber insert: a v2 bullet citing Phase 3 is left as written and reporte
   assert.equal(r.ok, true);
   assert.equal(readFileSync(reqFile, 'utf8').split('\n')[idx], bullet);
 });
+
+// --- remove leaves shipped requirement history alone too (GH-301) ------------
+// The same tree, `remove --n 3`. Only Pending Traceability rows may change: the
+// one citing integer Phase 3 is blanked and orphaned, the one citing 4 moves to
+// 3. `Phase 3.1` is never phase 3. Complete, Deferred and lowercase-`pending`
+// rows citing 3 keep their cell and stay out of orphaned_reqs (D-01, D-02).
+// The v2 bullet cites 4, which the old whole-file shift would have moved.
+
+const V2_BULLET = '- **V2-01**: maybe Phase 4 (phases/4/)';
+
+/** historyRenumberTree plus a `## v2 Requirements` bullet citing phase 4. */
+function v2HistoryRenumberTree() {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  writeFileSync(reqFile, readFileSync(reqFile, 'utf8') + `\n## v2 Requirements\n\n${V2_BULLET}\n`);
+  return dir;
+}
+
+const REMOVED_PND_03 = '| PND-03 |  | Pending |';
+const REMOVED_PND_04 = '| PND-04 | Phase 3 (phases/3/) | Pending |';
+
+test('renumber remove: only Pending Traceability rows change, every other line is byte-identical (GH-301)', () => {
+  const dir = v2HistoryRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const before = readFileSync(reqFile, 'utf8').split('\n');
+  assert.ok(before.includes(V2_BULLET));
+  const r = run(['renumber', 'remove', '--n', '3'], dir);
+  assert.equal(r.ok, true);
+  const after = readFileSync(reqFile, 'utf8').split('\n');
+  assert.equal(after.length, before.length);
+  assert.equal(after[PND_03], REMOVED_PND_03);
+  assert.equal(after[PND_04], REMOVED_PND_04);
+  for (let i = 0; i < before.length; i++) {
+    if (i === PND_03 || i === PND_04) continue;
+    assert.equal(after[i], before[i], `line ${i + 1} changed: ${before[i]}`);
+  }
+  assert.deepEqual(r.orphaned_reqs, ['PND-03']);
+});
+
+test('renumber remove: a CRLF REQUIREMENTS.md stays CRLF, and its Pending orphan is blanked', () => {
+  const dir = v2HistoryRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  writeFileSync(reqFile, readFileSync(reqFile, 'utf8').replace(/\n/g, '\r\n'));
+  const before = readFileSync(reqFile, 'utf8').split('\n');
+  const r = run(['renumber', 'remove', '--n', '3'], dir);
+  assert.equal(r.ok, true);
+  const text = readFileSync(reqFile, 'utf8');
+  assert.doesNotMatch(text, /(^|[^\r])\n/, 'an LF lost its CR');
+  const after = text.split('\n');
+  assert.equal(after.length, before.length);
+  assert.equal(after[PND_03], `${REMOVED_PND_03}\r`);
+  assert.equal(after[PND_04], `${REMOVED_PND_04}\r`);
+  for (let i = 0; i < before.length; i++) {
+    if (i === PND_03 || i === PND_04) continue;
+    assert.equal(after[i], before[i], `line ${i + 1} changed: ${before[i]}`);
+  }
+  assert.deepEqual(r.orphaned_reqs, ['PND-03']);
+});
