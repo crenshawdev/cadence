@@ -34,7 +34,7 @@ is a statement about the BRACKET and never about this line.
 
 Take the gate from the resolved bundle's review map, keyed by this trigger's
 name; take the reviewer SET from its `reviewers` map, keyed the same way (step
-3); take the reviewer's `agent` and `model` from the same line, and the
+3); take the reviewer's `agent`, `agent_type` and `model` from the same line, and the
 cross-model half's model tier and reasoning effort from that line's
 `reviewer_tiers` and `reviewer_efforts` maps, keyed the same way again (step
 4). If
@@ -145,7 +145,7 @@ reviewer set never does. Per backend:
   `<N>` is the phase in hand, or the STATE cursor's phase for a
   milestone-scoped trigger.
 
-  Then dispatch the `agent` and `model` the step-1 resolve
+  Then dispatch the `agent_type` and `model` the step-1 resolve
   returned, through the spawn-agent seam, with the payload as its prompt. It
   gets the refs, the scope, or the path and PRODUCES the artifact itself - it
   holds Read, Bash, Grep and Glob, and its cwd is this one. Parse
@@ -187,14 +187,14 @@ reviewer set never does. Per backend:
   That agent is the reviewer rung `roles.cad-reviewer.effort` names -
   `cad-reviewer-medium` on the schema default, whichever of the five rungs a
   config layer wrote instead, and one rung higher on an `--attempt 2` fire when
-  `model.escalate_on_failure` is on. The resolve's own `agent` field,
-  never a list here, is what dispatches and what any mismatch line names. The per-trigger
+  `model.escalate_on_failure` is on. The resolve's own `agent_type`,
+  never a list here, is what dispatches; its bare `agent` is what any mismatch line names. The per-trigger
   `effort` is NOT
   passed and cannot be - the seam's surface is `(agent_name, prompt, model?)` -
   so the reviewer runs at the `effort:` its own rung file pins.
   **When the RESOLVED per-trigger effort differs from the rung actually
   dispatched, say so in one line before dispatching**, e.g. "`diff` resolves at
-  effort `low`; `roles.cad-reviewer.effort` dispatches `cad-reviewer`, pinned at
+  effort `low`; `roles.cad-reviewer.effort` picks `cad-reviewer`, pinned at
   `high`, so it runs `high` - per-trigger effort reaches cross-model reviewers
   only". One line
   per fire, not per reviewer, and nothing when the two agree. A resolved value
