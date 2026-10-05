@@ -316,8 +316,9 @@ function cmdRenumber(dir, sub, opts) {
     const pass = shiftPendingReqRows(reqText, at, delta);
     newReqText = pass.text;
     reqRowChanges = pass.changes;
+    movedComplete = pass.movedComplete;
     if (sub === 'insert') {
-      ({ movedComplete, refs: reqRefs } = pass);
+      reqRefs = pass.refs;
     } else {
       orphanedReqs = pass.orphans;
     }
@@ -354,15 +355,19 @@ function cmdRenumber(dir, sub, opts) {
       warn = `cursor points at removed phase ${at}; number left as-is - re-point it (cursor set)`;
     }
   }
-  // Complete rows citing a moved phase were left as written (D-02). Say so by
-  // ID, after any cursor warning and without touching its text: `warn` stays
-  // one string, since callers match it as one. No promise that status or audit
-  // will flag these later - neither does when the old number now lands on
-  // another completed phase.
+  // Complete rows citing a moved phase, or on remove the removed one, were left
+  // as written (D-02, D-03). Say so by ID, after any cursor warning and without
+  // touching its text: `warn` stays one string, since callers match it as one.
+  // No promise that status or audit will flag these later - neither does when
+  // the old number now lands on another completed phase.
   if (movedComplete.length) {
-    const completeWarn = `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this ` +
-      'insert moves and were left unchanged, so each may now name a different phase than the one ' +
-      'it shipped in - re-point a row by hand only if it belongs to the open milestone';
+    const completeWarn = sub === 'insert'
+      ? `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this ` +
+        'insert moves and were left unchanged, so each may now name a different phase than the one ' +
+        'it shipped in - re-point a row by hand only if it belongs to the open milestone'
+      : `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this remove deletes ` +
+        'or renumbers and were left unchanged, so each may now name a missing or different phase - ' +
+        're-point a row by hand only if it belongs to the open milestone';
     warn = warn ? `${warn}; ${completeWarn}` : completeWarn;
   }
 

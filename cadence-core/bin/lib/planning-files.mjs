@@ -2734,11 +2734,12 @@ export function shiftNextPhases(next, from, delta) {
  * text.
  *
  * `movedComplete` holds the IDs of Complete rows that cite a phase this insert
- * moves (a token `shiftPhaseTokens` would shift, so decimals and phases below
- * `at` don't count). Those rows stay as written, same as every other frozen
- * line: rewriting them would rewrite where the work shipped, and leaving them
- * means they may now point at a different phase. Neither answer is safe to
- * pick for the user, so the caller names them and the user decides (D-02).
+ * moves, or that this remove deletes or moves: a `shiftPhaseTokens` token with
+ * K >= `at`, so decimals and phases below `at` don't count. Those rows stay as
+ * written, same as every other frozen line: rewriting them would rewrite where
+ * the work shipped, and leaving them means they may now point at a different
+ * phase. Neither answer is safe to pick for the user, so the caller names them
+ * and the user decides (D-02, D-03).
  *
  * `refs` is insert's `in_text_refs` for this file, `[{line, text}]` like
  * `findProsePhaseRefs`. Frozen lines are left out: `|` lines in `## Shipped`,
@@ -2785,7 +2786,9 @@ export function shiftPendingReqRows(text, at, delta = 1) {
       lines[i] = after;
       continue;
     }
-    if (status === 'Complete' && moves.count > 0) movedComplete.push(rowId(cells));
+    // From `at` on both ops: on a remove that is the removed phase and every
+    // phase it moves.
+    if (status === 'Complete' && shiftPhaseTokens(line, at, delta).count > 0) movedComplete.push(rowId(cells));
     const frozen = line.startsWith('|') && (inside(trace, i) || inside(shipped, i));
     if (!frozen && (prose.has(i + 1) || moves.count > 0)) refs.push({ line: i + 1, text: line.trim() });
   }

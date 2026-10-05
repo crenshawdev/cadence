@@ -1042,3 +1042,47 @@ test('renumber remove: a CRLF file reports req_row_changes without the \\r', () 
     assert.doesNotMatch(c.after, /\r/);
   }
 });
+
+// --- remove names Complete rows citing a removed or moved phase (D-03) -------
+
+test('renumber remove: a Complete row citing the removed phase stays put and is named in warn', () => {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const shown = run(['renumber', 'remove', '--n', '3', '--dry-run'], dir);
+  const before = readFileSync(reqFile, 'utf8').split('\n');
+  const r = run(['renumber', 'remove', '--n', '3'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(readFileSync(reqFile, 'utf8').split('\n')[CMP_03], before[CMP_03]);
+  assert.match(r.warn, /CMP-03/);
+  assert.doesNotMatch(r.warn, /DEF-04/);
+  assert.doesNotMatch(r.warn, /LOW-03/);
+  assert.doesNotMatch(r.warn, /SHP-01/);
+  assert.equal(shown.warn, r.warn);
+});
+
+/** Four phases, one Complete row citing phase 4, optional cursor. */
+function completeFourTree(cursor) {
+  return makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 3, name: 'Three' }, { n: 4, name: 'Four' }],
+    phases: { 1: { plan: true }, 2: { plan: true }, 3: { plan: true }, 4: { plan: true } },
+    reqs: [['CMP-04', 4, 'Complete']],
+    ...(cursor ? { cursor } : {}),
+  });
+}
+
+test('renumber remove: a Complete row citing a moved phase stays put and is named in warn', () => {
+  const dir = completeFourTree();
+  const r = run(['renumber', 'remove', '--n', '3'], dir);
+  assert.equal(r.ok, true);
+  assert.match(r.warn, /CMP-04/);
+  assert.ok(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8').split('\n').includes('| CMP-04 | Phase 4 | Complete |'));
+});
+
+test('renumber remove: the cursor-on-removed warning keeps its text and comes before the Complete-row warning', () => {
+  const dir = completeFourTree({ phase: 3, total: 4, name: 'Three', status: 'planned', next: '/cad-progress', updated: '2026-01-01' });
+  const r = run(['renumber', 'remove', '--n', '3'], dir);
+  assert.equal(r.ok, true);
+  const lead = 'cursor points at removed phase 3; number left as-is - re-point it (cursor set); ';
+  assert.ok(r.warn.startsWith(lead), r.warn);
+  assert.match(r.warn.slice(lead.length), /CMP-04/);
+});
