@@ -76,11 +76,12 @@ resolved, so write that reference to a scratch file and pass the path
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read-file <path>
 ```
 
-Then dispatch `cad-reviewer` through the spawn-agent seam with the payload above
-as its prompt. This arm resolves no routing at all - it is the base
-`cad-reviewer` at the session default, whatever `roles.cad-reviewer.model` says
-- and this pass reads no config key of its own, so there is no tier/effort pair
-to look for and none to report. There is no cross-model arm either: a provider call needs a
+Then dispatch the `agent_type` that
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" agent-type --stem cad-reviewer`
+prints (on `{ok:false}`, the bare `cad-reviewer`) through the spawn-agent seam
+with the payload above as its prompt. This arm resolves no routing at all - it
+is the base `cad-reviewer` at the session default, whatever
+`roles.cad-reviewer.model` says. There is no cross-model arm either: a provider call needs a
 resolved tier and this pass owns no tier key.
 
 Parse the returned `{findings:[...]}` and close the bracket the moment you have
@@ -121,8 +122,7 @@ user picks what to delete and deletes it, or parks it (`/cad-capture`).
   no source file, no planning file, no config key - so `git status --short` is
   byte-identical before and after a run. The delete-list is input to the user's
   decision exactly as references/triage-gate.md treats review findings, and this
-  pass carries no fix arm at all: there is not even an apply-the-survivors step
-  to decline.
+  pass carries no fix arm at all.
 - Never auto-fires: no wiring-table entry, no `review.triggers` key, no gate. It
   has no verdict, because a delete-list cannot PASS or FAIL anything.
 - The return shape is the subsystem's, unchanged -

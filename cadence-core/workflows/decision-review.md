@@ -43,8 +43,7 @@ Assemble `{ instruction, artifact }`:
 Resolve the reviewer set exactly as references/review-triggers.md step 3
 does, from `review.reviewers[]`:
 - **claude-subagent** (always available): bracket this worker in the joined
-  run record first - it was the one paid dispatch in the spine that never
-  reached the record. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
+  run record first. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
   a PROJECT.md row it is the STATE cursor's phase (the rule review-triggers.md
   step 4 already states for a milestone-scoped trigger). The read-set is the
   decision doc the USER named, so write that reference to a scratch file and
@@ -54,7 +53,9 @@ does, from `review.reviewers[]`:
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read-file <path>
   ```
 
-  Then dispatch `cad-reviewer` through the
+  Then dispatch the `agent_type` that
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" agent-type --stem cad-reviewer`
+  prints (on `{ok:false}`, the bare `cad-reviewer`) through the
   spawn-agent seam with the payload above as its prompt. Parse the returned
   `{findings:[...]}` and close the bracket the moment you have it. OMIT
   `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
@@ -73,9 +74,7 @@ does, from `review.reviewers[]`:
 - **cross-model** (any provider in `review.reviewers` - `openai`, `gemini`,
   `deepseek`, ...), only when `review.reviewers` names it
   AND `review.providers.<name>.tiers[review.decision_review.tier]` is a
-  non-null model id (rests on the Phase-1 REV-01 seam repair - a symlinked
-  install must run this seam for real, not no-op): run the call-review-
-  provider seam
+  non-null model id: run the call-review-provider seam
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" review \
     --provider <name> --model <resolved id> --effort <review.decision_review.effort> \
