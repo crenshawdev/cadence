@@ -614,8 +614,8 @@ test('/cad-panel runs status once, against the walked root, and the pane shows i
   assert.deepEqual(status[0].argv, ['node', join(REPO, 'cadence-core/bin/planning.mjs'), '--dir', `${root}/.planning`, 'status']);
   assert.equal(status[0].init.cwd, root);
   assert.equal(typeof status[0].init.timeoutMs, 'number');
-  assert.ok(lines.includes('  ○ PLAN-1.md'), lines.join('\n'));
-  assert.ok(lines.includes('  ○ PLAN-2.md'), lines.join('\n'));
+  assert.ok(lines.includes('  ☐ PLAN-1.md'), lines.join('\n'));
+  assert.ok(lines.includes('  ☐ PLAN-2.md'), lines.join('\n'));
 });
 
 test('ten band draws run no process', async () => {
@@ -1104,8 +1104,8 @@ test('the pane draws a bold Cadence title row, no border of its own, and its pla
     assert.ok(head, `${label} row`);
     assert.equal(head.props.bold, true, label);
   }
-  assert.equal(segment(rows, 'PLAN-1.md', '✓')?.props.color, 'green');
-  assert.equal(segment(rows, 'PLAN-2.md', '○')?.props.color, 'yellow');
+  assert.equal(segment(rows, 'PLAN-1.md', '☑')?.props.color, 'green');
+  assert.equal(segment(rows, 'PLAN-2.md', '☐')?.props.color, 'yellow');
   assert.equal(segment(rows, '1 fail', '1 fail')?.props.color, 'red');
   assert.equal(segment(rows, '1 pass', '1 pass')?.props.color, 'green');
   const plans = rows.find((row) => row[0].props.children.trimEnd() === 'PLANS');
