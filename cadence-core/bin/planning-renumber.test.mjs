@@ -874,13 +874,15 @@ test('renumber insert: in_text_refs skips Shipped and Complete rows, keeps the D
   assert.ok(!lines.includes(CMP_03 + 1), 'Complete row reported');
 });
 
-// Remove keeps reporting every lowercase ref (D-10). `--n 2`, not 3: remove
-// scans from the phase after the one removed, so at 3 it never looks at the
-// Shipped row's `phase 3` and there'd be no ref there to keep.
-test('renumber remove: in_text_refs still reports the Shipped row (insert-only rule)', () => {
+// Remove skips the frozen rows too (D-08). `--n 2`, not 3: remove scans
+// lowercase prose from the phase after the one removed, so at 3 the Shipped and
+// Complete rows' `phase 3` would never be looked at and this would pass
+// whether or not they are skipped.
+test('renumber remove: in_text_refs skips the Shipped and Complete rows', () => {
   const r = run(['renumber', 'remove', '--n', '2', '--dry-run'], historyRenumberTree());
-  const lines = r.in_text_refs.filter((x) => x.file === 'REQUIREMENTS.md').map((x) => x.line);
-  assert.ok(lines.includes(SHP_01 + 1), `Shipped row missing: ${JSON.stringify(lines)}`);
+  const lines = (r.in_text_refs || []).filter((x) => x.file === 'REQUIREMENTS.md').map((x) => x.line);
+  assert.ok(!lines.includes(SHP_01 + 1), 'Shipped row reported');
+  assert.ok(!lines.includes(CMP_03 + 1), 'Complete row reported');
 });
 
 // A capital `Phase 3` outside Traceability used to shift with the whole file.
@@ -1085,4 +1087,28 @@ test('renumber remove: the cursor-on-removed warning keeps its text and comes be
   const lead = 'cursor points at removed phase 3; number left as-is - re-point it (cursor set); ';
   assert.ok(r.warn.startsWith(lead), r.warn);
   assert.match(r.warn.slice(lead.length), /CMP-04/);
+});
+
+// A capital `Phase 3` left in a v2 bullet after `remove --n 3` names a phase
+// that no longer exists, and nothing rewrites it, so it is reported (D-08).
+// Frozen rows citing phase 3 or 4 are not.
+test('renumber remove: in_text_refs reports a v2 bullet citing the removed phase, never a frozen row', () => {
+  const dir = historyRenumberTree();
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const bullet = '- **V2-01**: maybe Phase 3';
+  writeFileSync(reqFile, readFileSync(reqFile, 'utf8') + `\n## v2 Requirements\n\n${bullet}\n`);
+  const all = readFileSync(reqFile, 'utf8').split('\n');
+  const idx = all.indexOf(bullet);
+  const def04 = all.findIndex((l) => l.startsWith('| DEF-04 |'));
+  const low03 = all.findIndex((l) => l.startsWith('| LOW-03 |'));
+  assert.ok(idx > DFR_01 && def04 > 0 && low03 > 0);
+
+  const r = run(['renumber', 'remove', '--n', '3', '--dry-run'], dir);
+  const refs = r.in_text_refs.filter((x) => x.file === 'REQUIREMENTS.md');
+  assert.ok(refs.some((x) => x.line === idx + 1 && x.text === bullet), JSON.stringify(refs));
+  const lines = refs.map((x) => x.line);
+  assert.ok(lines.includes(DFR_01 + 1), `Deferred bullet missing: ${JSON.stringify(lines)}`);
+  for (const i of [SHP_01, CMP_03, def04, low03]) {
+    assert.ok(!lines.includes(i + 1), `frozen line ${i + 1} reported: ${all[i]}`);
+  }
 });

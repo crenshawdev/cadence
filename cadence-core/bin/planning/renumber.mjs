@@ -313,15 +313,8 @@ function cmdRenumber(dir, sub, opts) {
     // Traceability rows move, and on remove only a Pending row citing the
     // removed phase is blanked and orphaned, so it surfaces as no-phase in
     // audit rather than silently pointing at the shifted neighbour.
-    const pass = shiftPendingReqRows(reqText, at, delta);
-    newReqText = pass.text;
-    reqRowChanges = pass.changes;
-    movedComplete = pass.movedComplete;
-    if (sub === 'insert') {
-      reqRefs = pass.refs;
-    } else {
-      orphanedReqs = pass.orphans;
-    }
+    ({ text: newReqText, changes: reqRowChanges, movedComplete, refs: reqRefs, orphans: orphanedReqs } =
+      shiftPendingReqRows(reqText, at, delta));
   }
 
   const stateFile = join(dir, 'STATE.md');
@@ -372,8 +365,8 @@ function cmdRenumber(dir, sub, opts) {
   }
 
   // Prose refs the shift leaves alone - the model repairs these with judgment.
-  // Insert's REQUIREMENTS refs come from the pass above, which leaves out the
-  // frozen rows (D-09).
+  // REQUIREMENTS refs come from the pass above on both ops, which leaves out
+  // the frozen rows (D-09, D-08).
   const inTextRefs = [];
   for (const f of ['ROADMAP.md', 'REQUIREMENTS.md', 'STATE.md', 'PROJECT.md']) {
     const t = read(join(dir, f));

@@ -2741,14 +2741,16 @@ export function shiftNextPhases(next, from, delta) {
  * phase. Neither answer is safe to pick for the user, so the caller names them
  * and the user decides (D-02, D-03).
  *
- * `refs` is insert's `in_text_refs` for this file, `[{line, text}]` like
- * `findProsePhaseRefs`. Frozen lines are left out: `|` lines in `## Shipped`,
- * and `|` lines in `## Traceability` that aren't Pending rows. Pointing the
- * model at those would have it hand-edit the history this pass protects
- * (D-09). Any other line is reported if it has lowercase prose or a capital
- * token the old whole-file shift would have moved, since nothing moves those
- * now and `findProsePhaseRefs` only sees lowercase. Pending rows already
- * shifted, so only their prose counts.
+ * `refs` is the `in_text_refs` for this file on both ops, `[{line, text}]`
+ * like `findProsePhaseRefs`. Frozen lines are left out: `|` lines in
+ * `## Shipped`, and `|` lines in `## Traceability` that aren't Pending rows.
+ * Pointing the model at those would have it hand-edit the history this pass
+ * protects (D-09, D-08). Any other line is reported if it has lowercase prose
+ * or a token with K >= `at` - one the old whole-file shift would have moved,
+ * or on a remove the removed phase itself - since nothing moves those now and
+ * `findProsePhaseRefs` only sees lowercase. Lowercase prose counts from the
+ * first phase that moves. Pending rows already shifted, so only their prose
+ * counts.
  * @param {string} text @param {number} at @param {1 | -1} [delta]
  * @returns {{text: string, changes: Array<{line: number, before: string, after: string}>, movedComplete: string[], refs: Array<{line: number, text: string}>, orphans: string[]}}
  */
@@ -2788,9 +2790,10 @@ export function shiftPendingReqRows(text, at, delta = 1) {
     }
     // From `at` on both ops: on a remove that is the removed phase and every
     // phase it moves.
-    if (status === 'Complete' && shiftPhaseTokens(line, at, delta).count > 0) movedComplete.push(rowId(cells));
+    const cites = shiftPhaseTokens(line, at, delta).count > 0;
+    if (status === 'Complete' && cites) movedComplete.push(rowId(cells));
     const frozen = line.startsWith('|') && (inside(trace, i) || inside(shipped, i));
-    if (!frozen && (prose.has(i + 1) || moves.count > 0)) refs.push({ line: i + 1, text: line.trim() });
+    if (!frozen && (prose.has(i + 1) || cites)) refs.push({ line: i + 1, text: line.trim() });
   }
   return { text: lines.join('\n'), changes, movedComplete, refs, orphans };
 }
