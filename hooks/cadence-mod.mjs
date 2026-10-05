@@ -39,8 +39,11 @@
 // has no core for `next` to run, and its own text, an empty one included,
 // replaces the line the host prints for a command nobody answered. The band's
 // `[ pane ]` button, `p` while the band holds the focus, opens the same pane.
-// It draws no border: the host frames a Pane already. It does draw a title row,
-// because the host shows the title only as a tab once two panes are open.
+// Docked beside the transcript it draws its own round frame, since the host
+// draws only a separator there; inline the host borders it, so it draws none.
+// It draws a title row, because the host shows the title only as a tab once
+// two panes are open. The next command is a button: `n` while the pane holds
+// the focus puts it in the prompt.
 //
 // And the listing filter (phase 5, D-01). The 30 rung agents' and the six
 // contract skills' entries come out of the agent and skill listings the model
@@ -89,8 +92,13 @@ const PANE = Object.freeze({ id: PANE_ID, title: 'Cadence' });
  * @param {any} Text
  * @param {import('../cadence-core/bin/lib/pane-view.mjs').Segment} s
  */
-const segmentText = (Text, s) => Text({ children: s.text,
-  ...(s.color ? { color: s.color } : {}), ...(s.bold ? { bold: true } : {}), ...(s.dim ? { dimColor: true } : {}) });
+const segmentText = (Text, s) => Text({ children: s.text, ...(s.color ? { color: s.color } : {}),
+  ...(s.bg ? { backgroundColor: s.bg } : {}), ...(s.bold ? { bold: true } : {}), ...(s.dim ? { dimColor: true } : {}) });
+
+/** The pane's button that puts the next command in the prompt: `n` while the pane has the keys. */
+const NEXT_KEY = 'n';
+/** Cells a frame takes from the body: the border and one cell of padding, each side. */
+const FRAME_CELLS = 4;
 
 /** The command that opens the pane. User-facing, so the name is locked (D-01). */
 const PANEL_COMMAND = 'cad-panel';
@@ -503,6 +511,21 @@ export function register(on) {
     return openPane($, pane);
   });
 
+  // `/cad-panel`'s empty answer draws as a bare `cadence:`; draw one dim
+  // line in its place. A reason (no project, the open waited) draws as written.
+  on('ui.render', { component: 'CommandOutput', props: { command: PANEL_COMMAND } }, async ($, e, next) => {
+    const drawn = await next(e);
+    try {
+      // The host prints a plugin's answer after its name (`cadence: `).
+      const said = String(e.props.text).replace(`${$.plugin.name}:`, '').trim();
+      if (said) return drawn;
+      const { Box, Text } = $.ui.resolve(e);
+      return Box({ paddingLeft: 2, children: [Text({ dimColor: true, children: '⎿  Cadence pane open' })] });
+    } catch {
+      return drawn;
+    }
+  });
+
   // A close marks the pane down, so no event fetches for it.
   on('ui.close', { id: PANE_ID }, async ($, e, next) => {
     const answer = await next(e);
@@ -520,12 +543,25 @@ export function register(on) {
         pane.open = true;
         refresh($, pane);
       }
-      const { Box, Text } = $.ui.resolve(e);
+      const { Box, Text, Button } = $.ui.resolve(e);
       sights = sightDraw(sights, roster, Date.now());
-      const title = Text({ bold: true, wrap: 'truncate-end', children: ` ${PANE.title} ` });
-      const rows = paneView(pane.snapshot, e.props.bodyColumns, roster, sights)
-        .map((row) => Box({ flexDirection: 'row', children: row.map((s) => segmentText(Text, s)) }));
-      return Box({ flexDirection: 'column', children: [title, ...rows] });
+      // Docked beside the transcript the pane has a separator only, so it gets
+      // a frame; inline above the prompt the host draws a border already.
+      const framed = e.props.placement === 'dock';
+      const width = Math.max(1, e.props.bodyColumns - (framed ? FRAME_CELLS : 0));
+      const title = Box({ flexDirection: 'row', justifyContent: 'space-between', children: [
+        Text({ bold: true, color: 'cyan', children: '◆ Cadence' }),
+        Text({ dimColor: true, wrap: 'truncate-end', children: typeof Button === 'function' ? `${NEXT_KEY} next` : '' })] });
+      const cell = (/** @type {any} */ s) => s.action === 'next' && typeof Button === 'function'
+        ? Button({ key: 'next', label: s.text, hotkey: NEXT_KEY, variant: 'primary',
+          onPress: () => { $.prompt.fill({ text: s.text, mode: 'replace' }).catch(() => {}); } })
+        : segmentText(Text, s);
+      const rows = paneView(pane.snapshot, width, roster, sights)
+        .map((row) => Box({ flexDirection: 'row', children: row.map(cell) }));
+      const body = [title, Text({ children: ' ' }), ...rows];
+      return framed
+        ? Box({ flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', paddingX: 1, children: body })
+        : Box({ flexDirection: 'column', children: body });
     } catch {
       return drawn;
     }
