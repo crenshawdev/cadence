@@ -1,6 +1,6 @@
 ---
 name: cad-plan-checker-contract
-description: "Internal role contract, preloaded into every cad-plan-checker rung agent. Not a user command."
+description: "Role contract preloaded at spawn by the cad-plan-checker, cad-plan-checker-medium, cad-plan-checker-high, cad-plan-checker-xhigh and cad-plan-checker-max agents. Not for direct use: do not invoke it from a conversation."
 user-invocable: false
 ---
 

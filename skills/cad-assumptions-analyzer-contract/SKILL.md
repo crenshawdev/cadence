@@ -1,6 +1,6 @@
 ---
 name: cad-assumptions-analyzer-contract
-description: "Internal role contract, preloaded into every cad-assumptions-analyzer rung agent. Not a user command."
+description: "Role contract preloaded at spawn by the cad-assumptions-analyzer, cad-assumptions-analyzer-low, cad-assumptions-analyzer-medium, cad-assumptions-analyzer-high and cad-assumptions-analyzer-max agents. Not for direct use: do not invoke it from a conversation."
 user-invocable: false
 ---
 
