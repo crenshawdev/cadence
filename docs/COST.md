@@ -50,10 +50,12 @@ to one routing line each. On a Claude Code host with mods support most of those
 lines are gone: the Cadence module takes the 30 rung agents' entries and the six
 contract skills' entries out of the listings the model reads, in every session
 and every repo, and the `/cad-*` command skills stay listed. The agents still
-dispatch. `route.mjs` picks each one, the skill that dispatches it names its
-bare file stem, and the module adds the plugin's prefix to that Agent call. The
-model used to read that prefix off the listing, so without the module putting
-it back a filtered host couldn't dispatch them at all. A host without mods
+dispatch. `route.mjs` picks each one and returns it already carrying the plugin's
+prefix, taken from the name in plugin.json, and the skill dispatches that name,
+so a filtered listing and a host without mods both reach Cadence's agents. On a
+host with mods the module still adds the prefix to a bare rung stem as a safety
+net, except when a project or user agent of that exact name exists. That one it
+leaves alone. A host without mods
 carries every one of those lines, as it always has.
 
 Two honest notes on that. The plugin's own weighed total went up over the same
