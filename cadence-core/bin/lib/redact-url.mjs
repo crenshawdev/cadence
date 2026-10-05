@@ -93,7 +93,7 @@
 //      `[0-9+.-]*` INSIDE the capture absorbs whatever non-letter prefix the run
 //      begins with. Inside the capture and not before it: `$1` is written back,
 //      so a prefix left outside would be dropped from the output. `9a9b://x@`
-//      and `x9https://ghp_tok@h` both come back byte-identical to what the
+//      and `x9https://tok@h` both come back byte-identical to what the
 //      unpinned form produced.
 //
 // None of the three moves a verdict, and that is deliberate: the QUANTIFIERS
@@ -103,7 +103,7 @@
 // that reintroduces a measured leak is not a cost bound worth having.
 //
 // Redaction is by SHAPE - the userinfo POSITION in a URL - never by matching
-// known token prefixes. A prefix list (`ghp_`, `glpat-`, `x-access-token`) is a
+// known token prefixes. A prefix list (GitHub's, GitLab's, `x-access-token`) is a
 // list of the credentials somebody already thought of, and the next forge's
 // scheme is not on it.
 
@@ -116,7 +116,7 @@ export const REDACTION_MARK = '<redacted>';
 const MARK = REDACTION_MARK;
 
 // 1. Scheme-anchored: `<scheme>://<userinfo>@`. The `://` is unambiguous, so
-//    this covers a password-less `https://ghp_token@host/r.git` where the whole
+//    this covers a password-less `https://<token>@host/r.git` where the whole
 //    credential IS the user part. The userinfo class excludes `/ ? # @` and
 //    whitespace, so an authority carrying no `@` (`https://host/r.git`) cannot
 //    match and comes back byte-identical.
@@ -148,7 +148,7 @@ const BARE_USERINFO = /(?<![^\s/:@])([^\s/:@]+:[^\s/@]+)@/g;
 //    the `@` gone the discriminator went with it, so 1b redacts any authority
 //    that ENDS the input: a body whose last characters are
 //    `see https://docs.example.com` comes back `see https://<redacted>`. That
-//    is deliberate, not an oversight - `https://ghp_token@host` is the ordinary
+//    is deliberate, not an oversight - `https://<token>@host` is the ordinary
 //    spelling of a forge PAT and rule 1 exists to catch it, and cut before its
 //    `@` it is byte-for-byte a plain host. 2b keeps rule 2's COLON, which is
 //    the only discriminator a scheme-less span ever had; without it every

@@ -75,16 +75,16 @@ test('an agent_id with no agent_type is still not the coordinator', () => {
 test('Bash records the program and NEVER the command line', () => {
   const r = recordFromHook({
     tool_name: 'Bash',
-    tool_input: { command: 'curl -H "Authorization: Bearer sk-live-XXXX" https://api.example.com' },
+    tool_input: { command: 'curl -H "Authorization: Bearer fake-key-XXXX" https://api.example.com' },
   }, TS);
   assert.equal(r.target, 'curl');
   const s = JSON.stringify(r);
-  assert.ok(!s.includes('sk-live'), 'a token reached the record');
+  assert.ok(!s.includes('fake-key'), 'a token reached the record');
   assert.ok(!s.includes('Bearer'), 'a header reached the record');
 });
 
 test('an inline env assignment is stripped, so an inline secret is never the token', () => {
-  assert.equal(programOf('API_KEY=sk-live-XXXX node app.mjs'), 'node');
+  assert.equal(programOf('API_KEY=fake-key-XXXX node app.mjs'), 'node');
   assert.equal(programOf('FOO=1 BAR=2 git status'), 'git');
   assert.equal(programOf('/usr/local/bin/rg --files'), 'rg');
   assert.equal(programOf('   '), null);
@@ -142,11 +142,11 @@ test('a cause line masks a credential VALUE and keeps its name', () => {
   const r = recordFromHook({
     tool_name: 'mcp__excerpt__excerpt_read',
     tool_input: { path: '/a' },
-    tool_response: { isError: true, error: 'auth failed: api_key=sk-live-ABC123 rejected' },
+    tool_response: { isError: true, error: 'auth failed: api_key=fake-key-ABC123 rejected' },
   }, TS);
-  assert.equal(r.error.includes('sk-live-ABC123'), false);
+  assert.equal(r.error.includes('fake-key-ABC123'), false);
   assert.equal(r.error.includes('api_key'), true);
-  assert.equal(redactCause('sent Bearer sk-live-XYZ'), 'sent Bearer <redacted>');
+  assert.equal(redactCause('sent Bearer fake-key-XYZ'), 'sent Bearer <redacted>');
   assert.equal(redactCause('/etc/hosts: declined'), '/etc/hosts: declined');
 });
 
@@ -705,8 +705,8 @@ test('a command that opens with cd bills the program that did the work', () => {
 
 test('a pipeline bills its first real stage, and secrets stay stripped per segment', () => {
   assert.equal(programOf('cat f | grep x'), 'cat');
-  assert.equal(programOf('cd /a && TOKEN=ghp_x curl https://api'), 'curl');
-  assert.ok(!String(programOf('cd /a && TOKEN=ghp_x curl https://api')).includes('ghp_'));
+  assert.equal(programOf('cd /a && TOKEN=fake_x curl https://api'), 'curl');
+  assert.ok(!String(programOf('cd /a && TOKEN=fake_x curl https://api')).includes('fake_'));
 });
 
 test('a heredoc body cannot reach the record', () => {
@@ -714,7 +714,7 @@ test('a heredoc body cannot reach the record', () => {
     'cd /code/cadence',
     "python3 - <<'EOF'",
     'x = "a | b && c"',
-    'TOKEN=sk-live-XXXX',
+    'TOKEN=fake-key-XXXX',
     'EOF',
   ].join('\n');
   const prog = programOf(cmd);
@@ -772,23 +772,23 @@ test('a Bash command yields the in-repo files it names, relative to the root', (
 test('a secret in the command line is not a file, so it cannot be recorded', () => {
   const root = fixture();
   const cmds = [
-    'curl -H "Authorization: Bearer sk-live-XXXX" https://api.example.com',
-    'export API_KEY=sk-live-XXXX && node src/app.mjs',
+    'curl -H "Authorization: Bearer fake-key-XXXX" https://api.example.com',
+    'export API_KEY=fake-key-XXXX && node src/app.mjs',
     'psql postgres://user:hunter2@db.internal/prod -c "select 1"',
     // The adversarial one: a token SHAPED like a path. It still is not a file.
-    'deploy --key sk/live/AKIAIOSFODNN7EXAMPLE',
+    'deploy --key fake/key/notarealpathtoken',
   ];
   for (const c of cmds) {
     const out = filesOf(c, { root, isFile });
     const s = JSON.stringify(out);
-    assert.ok(!s.includes('sk-live'), `a token reached the record: ${c}`);
+    assert.ok(!s.includes('fake-key'), `a token reached the record: ${c}`);
     assert.ok(!s.includes('hunter2'), `a password reached the record: ${c}`);
-    assert.ok(!s.includes('AKIA'), `a key reached the record: ${c}`);
+    assert.ok(!s.includes('notarealpathtoken'), `a key reached the record: ${c}`);
   }
   // The one command above that names a real file still bills it, so the filter
   // is not simply refusing everything.
   assert.deepEqual(
-    filesOf('export API_KEY=sk-live-XXXX && node src/app.mjs', { root, isFile }),
+    filesOf('export API_KEY=fake-key-XXXX && node src/app.mjs', { root, isFile }),
     [join('src', 'app.mjs')],
   );
 });

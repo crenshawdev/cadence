@@ -718,17 +718,17 @@ test('a token-carrying CLI stderr never reaches the envelope, in ANY shape', () 
   // names the degradation - and this asserts that over the whole envelope
   // rather than over the `detail` field alone.
   const SECRETS = [
-    'ghs_notarealtoken',            // inside a credentialed URL: redactUrl's own case
-    'ghp_alsonotarealtoken',        // a bare env-var assignment
-    'glpat-stillnotarealtoken',     // a bare forge token
+    'notarealurltoken',            // inside a credentialed URL: redactUrl's own case
+    'alsonotarealtoken',        // a bare env-var assignment
+    'stillnotarealtoken',     // a bare forge token
     'notarealbearertokenvalue',     // an Authorization header
   ];
   const dir = repo({ originUrl: GH_REPO, commits: COMMITS });
   const r = seam(['check', '--dir', dir, '--base', 'main'], {
     stubs: { gh: { code: 1, stderr: [
-      'fatal: https://x-access-token:ghs_notarealtoken@github.com/org/repo.git rejected',
-      'GITHUB_TOKEN=ghp_alsonotarealtoken',
-      'GLAB_TOKEN=glpat-stillnotarealtoken',
+      'fatal: https://x-access-token:notarealurltoken@github.com/org/repo.git rejected',
+      'GITHUB_TOKEN=alsonotarealtoken',
+      'GLAB_TOKEN=stillnotarealtoken',
       'Authorization: Bearer notarealbearertokenvalue',
     ].join('\n') } },
   });
