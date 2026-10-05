@@ -14,8 +14,9 @@
 // WHAT SPANS. Read both as the file holds it and as the host will print it,
 // a value spans when it is a block scalar (`|` or `>`), when its quote does not
 // close on the key's line, when it is double-quoted and carries an escaped
-// line break, or when the next non-blank frontmatter line is anything but a
-// new top-level key or the closing `---` (a plain value continued).
+// line break (hex-escaped included), or when the next non-blank, non-comment
+// frontmatter line is anything but a new top-level key or the closing `---` (a
+// plain value continued).
 //
 // WHAT IT LEAVES ALONE. A missing key is not this check's business. Skills not
 // ending `-contract` stay listed, so the filter never cuts them. A root with no
@@ -42,8 +43,23 @@ const KEYS = ['description', 'when_to_use'];
 /** A new top-level key: column 0, not a comment, not a list item. */
 const TOP_KEY = /^[^\s#-][^:]*:(\s|$)/;
 
-/** A YAML double-quoted escape the host prints as a line break. */
-const ESCAPED_BREAK = /(^|[^\\])(\\\\)*\\[nrNLP]/;
+/** The line breaks YAML decodes: LF, CR, NEL, LS, PS. */
+const BREAKS = new Set([0x0a, 0x0d, 0x85, 0x2028, 0x2029]);
+
+/**
+ * Whether a double-quoted value carries an escape the host prints as a line
+ * break: `\n \r \N \L \P`, or a hex escape (`\xHH`, `\uHHHH`, `\UHHHHHHHH`)
+ * naming one of the same code points. One pass, left to right, so `\\` is
+ * taken as a pair and never starts an escape.
+ * @param {string} value
+ */
+function escapedBreak(value) {
+  for (const m of value.matchAll(/\\(?:x([0-9a-fA-F]{2})|u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|([\s\S]))/g)) {
+    const hex = m[1] ?? m[2] ?? m[3];
+    if (hex ? BREAKS.has(parseInt(hex, 16)) : 'nrNLP'.includes(m[4])) return true;
+  }
+  return false;
+}
 
 /**
  * Whether a key's value, `value` on frontmatter line `at`, spans more than one line.
@@ -56,11 +72,13 @@ function spans(lines, at, value) {
   if (value.startsWith('"')) {
     const close = value.slice(1).search(/(^|[^\\])(\\\\)*"/);
     if (close < 0) return true;
-    if (ESCAPED_BREAK.test(value)) return true;
+    if (escapedBreak(value)) return true;
   } else if (value.startsWith("'") && !/^'([^']|'')*'/.test(value)) {
     return true;
   }
-  const next = lines.slice(at + 1).find((l) => l.trim() !== '');
+  // A comment line ends a plain scalar in YAML, so it is skipped, never read
+  // as the value continued.
+  const next = lines.slice(at + 1).find((l) => l.trim() !== '' && !l.trim().startsWith('#'));
   return next !== undefined && !TOP_KEY.test(next);
 }
 

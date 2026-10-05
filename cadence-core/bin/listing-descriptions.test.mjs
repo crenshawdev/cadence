@@ -46,6 +46,9 @@ const SPANNING = {
   'plain value continued': ['description: line one', '  line two'],
   'double quote closed on the next line': ['description: "line one', '  line two"'],
   'escaped line break': ['description: "line one\\nline two"'],
+  'hex-escaped line break \\x0a': ['description: "line one\\x0aline two"'],
+  'hex-escaped line break \\u000a': ['description: "line one\\u000aline two"'],
+  'hex-escaped line break \\U0000000a': ['description: "line one\\U0000000aline two"'],
 };
 
 for (const [shape, lines] of Object.entries(SPANNING)) {
@@ -76,6 +79,16 @@ test('a one-line when_to_use beside a one-line description is clean', () => {
   const dir = root({
     [CONTRACT]: fm('name: cad-reviewer-contract', 'description: "One line."',
       'when_to_use: when a rung agent starts', 'user-invocable: false'),
+  });
+  assert.deepEqual(listingDescriptionIssues(dir), []);
+});
+
+test('a one-line description followed by a comment line is clean', () => {
+  // A comment line ends a plain scalar in YAML; it is not the value continued.
+  const dir = root({
+    [AGENT]: fm('name: cad-reviewer-low', 'description: one line', '# comment', 'tools: Read'),
+    [CONTRACT]: fm('name: cad-reviewer-contract', 'description: one line', '  # comment',
+      'user-invocable: false'),
   });
   assert.deepEqual(listingDescriptionIssues(dir), []);
 });
