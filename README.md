@@ -11,7 +11,7 @@ Cadence is for developers using Claude Code on software they will still own afte
 
 Claude can write a convincing plan, produce working code, and tell you the job is finished. The harder part is keeping the decisions that led there, stopping a long session from becoming the project record, and establishing that what you got is what you asked for.
 
-Cadence keeps the project in the repository. Decisions, plans, progress, review findings and verification live under `.planning/`, where a new session reads them off disk. A planner, an executor, reviewers and a verifier each work in fresh context, and nothing is certified by the thing that wrote it. You are the engineer of record: you approve the plan, triage what the reviewers find, and authorize every push.
+Cadence keeps the project in the repository. Decisions, plans, progress, review findings and verification live under `.planning/`, where a new session reads them off disk. A planner, an executor, reviewers and a verifier each work in fresh context, and nothing is certified by the thing that wrote it. You are the engineer of record: you approve the plan, triage what the reviewers find, and authorize every push, except the unattended close, which runs only when both the repository's config and your own user-global config set `git.auto_close`.
 
 ![Running /cadence:cad-progress in the Verbatim repo. Cadence reports phase 1 of 4 executed with its SUMMARY written and UAT not passed, lists the three unplanned phases after it, confirms the state cursor agrees with disk, and offers to run /cad-verify 1.](./docs/screenshots/cad-progress-resume.png)
 
@@ -62,7 +62,7 @@ A one-line band sits above the prompt in any repo with a `.planning/` directory:
 
 `/cad-panel`, or `p` on the band, opens the full view: the current phase's plans and which are done, each running agent with its role, rung and model, the UAT counts, the open captures, the phase's token spend (the same figure `/cad-report` prints, with its exclusions named), and the next command. When the cursor and the files disagree about which phase is open, the panel says so instead of picking one.
 
-The module only reads. It never runs a Cadence command, never writes `STATE.md`, and never takes over the git rail: git-guard stays the command hook it has always been. It does two quiet jobs besides drawing. It keeps Cadence's 30 agent descriptions and 6 internal contract skills out of every session's prompt, about 8,000 characters Claude would otherwise reread on every request in every project, while Cadence's commands still dispatch those agents by name. And it prices the subagent dispatches whose return carried no token count, from the host's own usage for that agent, so `/cad-report` has fewer gaps.
+The module does more than draw, and [The module](#the-module) below lists all of it: it rewrites the Agent tool's `subagent_type` to the plugin-prefixed name, and it writes token counts to `.planning/trace.jsonl` through `planning.mjs`, the one file it writes. It never runs a slash command, never writes `STATE.md`, and never takes over the git rail: git-guard stays the command hook it has always been. It does two quiet jobs besides drawing. It keeps Cadence's 30 agent descriptions and 6 internal contract skills out of every session's prompt, about 8,000 characters Claude would otherwise reread on every request in every project, while Cadence's commands still dispatch those agents by name. And it prices the subagent dispatches whose return carried no token count, from the host's own usage for that agent, so `/cad-report` has fewer gaps.
 
 ## The controls
 
@@ -72,7 +72,7 @@ Eight of them, and every one hands its decision to you rather than deciding for 
 |---|---|---|
 | Plan review | before any code is written | an adversarial reviewer tries to break the plan, findings come back as a numbered list you triage |
 | Risk surface | on each plan's completed commit range | checks the diff against eight named surfaces, and blocks on a match by default |
-| Push rail | every `git push` a workflow attempts | a `PreToolUse` hook, `cadence-core/bin/git-guard.mjs`, stops and asks you. No exemption exists |
+| Push rail | every `git push` a workflow attempts | a `PreToolUse` hook, `cadence-core/bin/git-guard.mjs`, stops and asks you. The one exemption is the unattended close: `cadence-core/bin/git-publish.mjs` publishes the integration branch as a subprocess the hook never sees, and only when both the repository's config and your user-global config set `git.auto_close` |
 | Protected branch | a commit on `main` or `master` | asks, refuses, or allows, per `git.on_protected` |
 | Verification | after a phase is built | conversational UAT plus a goal-backward pass, claims scored verified, failed, or uncertain |
 | Traceability audit | before a release ships | `/cad-audit` traces every requirement to a phase, a plan and a verification, both directions |
