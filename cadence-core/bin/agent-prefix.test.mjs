@@ -1,6 +1,7 @@
 // @ts-check
-// Tests for lib/agent-prefix.mjs and the Agent half of the Cadence module's one
-// `tool.call` handler (phase 5, D-07).
+// Tests for lib/agent-prefix.mjs, the Agent half of the Cadence module's one
+// `tool.call` handler (phase 5, D-07), and the `agent.offer` observer that
+// leaves a user's own bare agent alone (MOD-04).
 'use strict';
 
 import { test } from 'node:test';
@@ -95,4 +96,94 @@ test('a throwing subagent_type or plugin sends the very event', async () => {
 // Bash, so that registration carries no matcher.
 test('the one tool.call registration is unnarrowed', () => {
   assert.equal(toolCall().matcher, undefined);
+});
+
+// --- a user's own agent keeps its bare name (MOD-04) --------------------------
+
+/**
+ * ONE `register` call, so an offer and a later call share the module's state:
+ * the `agent.offer` and `tool.call` handlers with their matchers.
+ */
+function session() {
+  /** @type {{matcher: any, handler: Function}[]} */
+  const offers = [];
+  /** @type {Function[]} */
+  const calls = [];
+  register((/** @type {string} */ pattern, /** @type {any} */ a, /** @type {any} */ b) => {
+    const entry = b === undefined ? { matcher: undefined, handler: a } : { matcher: a, handler: b };
+    if (pattern === 'agent.offer') offers.push(entry);
+    if (pattern === 'tool.call') calls.push(entry.handler);
+  });
+  assert.equal(offers.length, 1);
+  assert.equal(calls.length, 1);
+  const $ = only('cadence');
+  return {
+    offers,
+    /** Feed one offer; it must call `next` once with `e` and answer `next`'s object. */
+    async offer(/** @type {any} */ e) {
+      const r = recording();
+      const answer = await offers[0].handler($, e, r.next);
+      assert.equal(r.seen.length, 1);
+      assert.equal(r.seen[0], e);
+      assert.equal(answer, r.result);
+    },
+    /** One Agent call: the event `next` saw. */
+    async call(/** @type {string} */ type) {
+      const r = recording();
+      const e = agentCall(type);
+      await calls[0]($, e, r.next);
+      assert.equal(r.seen.length, 1);
+      return { e, sent: r.seen[0] };
+    },
+  };
+}
+
+const offer = (/** @type {string} */ agent, /** @type {string} */ source) =>
+  ({ agent, description: 'd', source, provider: { plugin: 'x', tier: 'y' } });
+
+test('a project agent named cad-reviewer keeps a bare cad-reviewer call as the very event', async () => {
+  const s = session();
+  await s.offer(offer('cad-reviewer', 'projectSettings'));
+  const { e, sent } = await s.call('cad-reviewer');
+  assert.equal(sent, e);
+});
+
+test('a user-level agent named cad-reviewer does the same', async () => {
+  const s = session();
+  await s.offer(offer('cad-reviewer', 'userSettings'));
+  const { e, sent } = await s.call('cad-reviewer');
+  assert.equal(sent, e);
+});
+
+test('with no offer, a bare cad-reviewer is rewritten', async () => {
+  const { sent } = await session().call('cad-reviewer');
+  assert.equal(sent.subagent_type, 'cadence:cad-reviewer');
+});
+
+test('plugin-sourced offers own nothing, so the call is rewritten', async () => {
+  const s = session();
+  await s.offer(offer('cadence:cad-reviewer', 'plugin'));
+  await s.offer(offer('cad-reviewer', 'plugin'));
+  const { sent } = await s.call('cad-reviewer');
+  assert.equal(sent.subagent_type, 'cadence:cad-reviewer');
+});
+
+test('an offer whose getters throw still reaches next once, and records nothing', async () => {
+  const s = session();
+  await s.offer({ get agent() { throw new Error('boom'); }, source: 'projectSettings' });
+  await s.offer({ agent: 'cad-reviewer', get source() { throw new Error('boom'); } });
+  const { sent } = await s.call('cad-reviewer');
+  assert.equal(sent.subagent_type, 'cadence:cad-reviewer');
+});
+
+test('owning cad-reviewer leaves a bare cad-reviewer-low rewritten', async () => {
+  const s = session();
+  await s.offer(offer('cad-reviewer', 'projectSettings'));
+  const { sent } = await s.call('cad-reviewer-low');
+  assert.equal(sent.subagent_type, 'cadence:cad-reviewer-low');
+});
+
+test('exactly one agent.offer registration, and it carries no matcher', () => {
+  const { offers } = session();
+  assert.equal(offers[0].matcher, undefined);
 });

@@ -50,17 +50,19 @@
 // reads, in every session and every repo (D-02): route.mjs picks each agent
 // and the skill dispatching it names it, so the descriptions bought nothing.
 // It edits the `prompt.attachment` text by lib/listing-filter.mjs's line rule.
-// Withholding the type through `agent.offer` would take it out of dispatch
-// too (`Agent type 'cadence:cad-reviewer-low' not found`), and `command.describe`
-// `isHidden` only hides the command menu entry.
+// The module never withholds through `agent.offer`, it only watches there:
+// withholding would take the type out of dispatch too (`Agent type
+// 'cadence:cad-reviewer-low' not found`), and `command.describe` `isHidden`
+// only hides the command menu entry.
 //
-// And the prefix restore (phase 5, D-07). Cadence commands dispatch the bare
-// agent stem route.mjs returns, and the host knows the agent only by its
-// plugin-prefixed name. The model used to read that prefix off the agent
-// listing the filter takes out, so an Agent call naming exactly one of
-// Cadence's stems gets `<plugin name>:` added here, the name read from
-// `$.plugin.name`. The rule is lib/agent-prefix.mjs; every other call goes
-// through as sent.
+// And the prefix safety net (phase 5, D-07; MOD-04). Cadence commands dispatch
+// route.mjs's `agent_type`, already `<plugin name>:<stem>`, since a bare name
+// belongs to whoever owns it. An Agent call that still names exactly one of
+// Cadence's bare stems gets `<plugin name>:` added here, read from
+// `$.plugin.name`, unless an `agent.offer` from a non-`plugin` source named
+// that bare agent: the offer observer records those, and a user's own
+// `cad-reviewer` goes through as sent. The rule is lib/agent-prefix.mjs; every
+// other call goes through as sent.
 //
 // Every handler calls `next` exactly once and swallows its own errors (D-12).
 //
@@ -71,7 +73,7 @@ import { planningRootAsync } from '../cadence-core/bin/lib/git-segments.mjs';
 import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
 import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
 import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
-import { prefixedAgent } from '../cadence-core/bin/lib/agent-prefix.mjs';
+import { ownedAgent, prefixedAgent } from '../cadence-core/bin/lib/agent-prefix.mjs';
 import { filterListing, LISTING_TYPES } from '../cadence-core/bin/lib/listing-filter.mjs';
 import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
 import { NO_PROJECT_TEXT, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv,
@@ -367,6 +369,11 @@ export function register(on) {
   /** @type {Capture} */
   const capture = { windows: new Map(), adopted: new Map(), held: new Map() };
   const { windows } = capture;
+  // Bare agent names a non-`plugin` `agent.offer` named (MOD-04). It only
+  // grows: an agent deleted mid-session stays owned, which errs toward sending
+  // the user's name as written.
+  /** @type {Set<string>} */
+  const owned = new Set();
 
   // Pass-through: `e` goes down unchanged (D-12 leaves Phase 6 its effort
   // override here). A subagent's step that reports usage replaces its window,
@@ -419,8 +426,9 @@ export function register(on) {
   // A subagent's own `planning.mjs trace close` gains `--agent-id` here (D-11),
   // and any figureless close that names an agent id prices it from its window.
   // An Agent call naming a bare Cadence stem gains the plugin's prefix (phase 5,
-  // D-07). Anything that goes wrong before `next` sends the event exactly as the
-  // model wrote it.
+  // D-07) as a safety net, unless the offer observer below saw a project or
+  // user agent of that bare name. Anything that goes wrong before `next` sends
+  // the event exactly as the model wrote it.
   on('tool.call', async ($, e, next) => {
     let sent = e;
     try {
@@ -428,7 +436,7 @@ export function register(on) {
         const rewritten = withAgentId(e.command, e.agentId);
         if (rewritten !== null) sent = { ...e, command: rewritten };
       } else if (e.tool === 'Agent') {
-        const type = prefixedAgent(e.subagent_type, $.plugin.name);
+        const type = prefixedAgent(e.subagent_type, $.plugin.name, owned);
         if (type !== null) sent = { ...e, subagent_type: type };
       }
     } catch {
@@ -439,6 +447,18 @@ export function register(on) {
     redraw($);
     refresh($, pane);
     return result;
+  });
+
+  // The offer observer (MOD-04). The listing batch reaches here before the
+  // first Agent call, so every project and user agent is known by then. No
+  // matcher: a matcher cannot say "any source but `plugin`". It passes `e`
+  // through and returns what `next` returned, never `isOffered: false`.
+  on('agent.offer', async ($, e, next) => {
+    try {
+      const name = ownedAgent(e);
+      if (name !== null) owned.add(name);
+    } catch { /* an offer it cannot read records nothing (D-04) */ }
+    return next(e);
   });
 
   // The two listings, without Cadence's agents and contract skills (phase 5,
