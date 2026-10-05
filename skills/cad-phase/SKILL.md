@@ -1,6 +1,6 @@
 ---
 name: cad-phase
-description: "CRUD phases in ROADMAP - add, insert, remove, edit, with remove/insert renumbering the following phases, their .planning dirs and their live references, while insert leaves shipped requirement rows as written"
+description: "CRUD phases in ROADMAP - add, insert, remove, edit, with remove/insert renumbering the following phases, their .planning dirs and their live references, while insert and remove leave shipped requirement rows as written"
 argument-hint: "add [description] | insert <N> | remove <N> | edit <N>"
 allowed-tools:
   - Read
@@ -17,7 +17,8 @@ Edit the phase list in ROADMAP.md safely. `add` and `edit` are near-trivial
 markdown changes; `insert` and `remove` are not - they shift phase numbers, and
 a phase number lives in four places whose live references have to follow or
 the project's references rot. Shipped requirement rows are history: insert
-leaves them as written. This skill keeps the live references consistent.
+and remove leave them as written. This skill keeps the live references
+consistent.
 </objective>
 
 <execution_context>
