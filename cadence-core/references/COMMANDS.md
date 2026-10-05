@@ -27,7 +27,7 @@ are the on-demand and standalone gates.
 | Command | What it does |
 |---|---|
 | `/cad-plan-review [N\|path]` | On-demand plan review through the `plan` trigger (for hand-written / imported / edited plans). |
-| `/cad-decision-review <path>` | On-demand refute-then-adjudicate pass over one load-bearing decision, grounded against Context7 and the codebase. |
+| `/cad-decision-review <path>` | On-demand refute-then-adjudicate pass over one load-bearing decision, grounded against the codebase, and against Context7 when its tools are available. |
 | `/cad-minimalism-review [path\|dir\|N]` | On-demand ranked delete-list over code that works and should not exist - reinvented stdlib, one-implementation abstractions, dead flexibility, config nobody sets. Applies nothing. |
 | `/cad-debug <symptom>` | Scientific-method debugging with `/clear`-persistent state; user-gated consult at dead-ends (`list`/`status`/`continue`/`--diagnose`). |
 | `/cad-coverage [N]` | Find requirements with zero failing-capable test coverage, then generate tests in the project's framework. |
@@ -37,7 +37,7 @@ are the on-demand and standalone gates.
 ## Lifecycle & git
 | Command | What it does |
 |---|---|
-| `/cad-land [base]` | Publish - report git state plus the tracker (which issues this branch's commits reference, which are still open; reads only, closes nothing; `git.issue_check: false` turns it off), ask the mechanism with NO default (push / MR-PR / tag / leave local), do exactly that. Fires no review of its own. |
+| `/cad-land [base]` | Publish - report git state plus the tracker (which issues this branch's commits reference, which are still open; reads only, closes nothing; `git.issue_check: false` turns it off), ask the mechanism with NO default (push / MR-PR / tag / leave local), do exactly that. One exception: with `git.auto_close` true in both the repo config and the user-global config, it closes unattended (PR -> merge). Fires no review of its own. |
 | `/cad-milestone [ver]` | Version cut - audit, bump, prune completed phases, evolve PROJECT.md, refresh REQUIREMENTS. Folds in cleanup. |
 | `/cad-phase <op> [N]` | CRUD phases (`add`/`insert`/`remove`/`edit`) with consistent renumber + reference repair. |
 | `/cad-undo <N>` | Roll back a phase's commits from the SUMMARY manifest - dirty guard, `--no-commit` squash, status reset. |
