@@ -30,8 +30,8 @@ import { emit } from '../lib/seam-io.mjs';
 // operation plan and touches nothing - it is what the confirmation gate shows.
 // On both ops, REQUIREMENTS.md tokens shift only on Pending `## Traceability`
 // rows, and remove blanks only Pending orphans; every other REQUIREMENTS line
-// is copied through byte-identical. Insert's REQUIREMENTS refs skip frozen rows
-// and add capital tokens left unshifted.
+// is copied through byte-identical. Both ops' REQUIREMENTS refs skip frozen
+// rows and add capital tokens left unshifted.
 // ---------------------------------------------------------------------------
 function gitMv(from, to) {
   try { execFileSync('git', ['mv', from, to], { stdio: 'pipe' }); return 'git'; }
