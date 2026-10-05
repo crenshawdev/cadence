@@ -2705,6 +2705,15 @@ export function shiftNextPhases(next, from, delta) {
 }
 
 /**
+ * Does a cursor `Next:` value name phase n, by the same grammar
+ * `shiftNextPhases` shifts?
+ * @param {string} next @param {number} n
+ */
+export function nextNamesPhase(next, n) {
+  return [...next.matchAll(NEXT_PHASE)].some((m) => Number(m[2]) === n);
+}
+
+/**
  * `renumber`'s REQUIREMENTS.md edit, for both ops. `delta` 1 is an insert at
  * `at`: tokens with K >= at move up one. `delta` -1 is a remove of phase `at`:
  * tokens with K >= at+1 move down one. Either way only `## Traceability` rows

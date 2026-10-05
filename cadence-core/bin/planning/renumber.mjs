@@ -17,7 +17,7 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 import { fail, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
-  atomicWrite, cutPhaseDetail, findProsePhaseRefs, parseCursor,
+  atomicWrite, cutPhaseDetail, findProsePhaseRefs, nextNamesPhase, parseCursor,
   parseRoadmapPhases, renderCursor, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
 import { requireInt } from '../lib/require-int.mjs';
@@ -346,6 +346,13 @@ function cmdRenumber(dir, sub, opts) {
     }
     if (sub === 'remove' && cursor.phase === at) {
       warn = `cursor points at removed phase ${at}; number left as-is - re-point it (cursor set)`;
+    }
+    // A Next: naming the removed phase keeps the number (shiftNextPhases leaves
+    // K < shiftFrom alone) and is never blanked, since an empty Next: makes
+    // parseCursor return null. Say so instead (D-06), after the notice above.
+    if (sub === 'remove' && nextNamesPhase(cursor.next, at)) {
+      const nextWarn = `Next: names removed phase ${at}; left as written - re-point it (cursor set)`;
+      warn = warn ? `${warn}; ${nextWarn}` : nextWarn;
     }
   }
   // Complete rows citing a moved phase, or on remove the removed one, were left

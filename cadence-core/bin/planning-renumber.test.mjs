@@ -1112,3 +1112,25 @@ test('renumber remove: in_text_refs reports a v2 bullet citing the removed phase
     assert.ok(!lines.includes(i + 1), `frozen line ${i + 1} reported: ${all[i]}`);
   }
 });
+
+// --- a Next: naming the removed phase is kept and named (D-06) ---------------
+// Never blanked: an empty Next: makes parseCursor return null.
+
+test('renumber remove: a Next: naming the removed phase is left as written and named in warn', () => {
+  const { r, next } = nextAfter('/cad-context 2', ['remove', '--n', '2'], { phase: 1, status: 'phase complete' });
+  assert.equal(next, '/cad-context 2');
+  assert.match(r.warn, /Next:/);
+  assert.match(r.warn, /removed phase 2/);
+});
+
+test('renumber remove: the cursor-on-removed warning comes first, then the Next: notice', () => {
+  const r = run(['renumber', 'remove', '--n', '2'], renumberTree());
+  assert.equal(r.ok, true);
+  assert.ok(r.warn.startsWith('cursor points at removed phase 2; number left as-is - re-point it (cursor set); '), r.warn);
+  assert.match(r.warn, /Next:/);
+});
+
+test('renumber remove: a decimal in Next: never names the removed phase', () => {
+  assert.equal(nextAfter('/cad-execute 2.1', ['remove', '--n', '2'], { phase: 1 }).r.warn, undefined);
+  assert.doesNotMatch(nextAfter('/cad-execute 12.1', ['remove', '--n', '1'], { phase: 2 }).r.warn ?? '', /Next:/);
+});
