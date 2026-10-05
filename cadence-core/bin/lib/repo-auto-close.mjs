@@ -1,8 +1,8 @@
 // @ts-check
 // repo-auto-close.mjs - the ONE read of `git.auto_close` that answers "may this
-// machine run an unattended publish or merge of THIS repository", extracted out
-// of git-publish.mjs where it lived as a private `repoAutoClose` (phase 1,
-// AUT-01). Zero-dep, node builtins only, two filesystem reads and no other I/O.
+// machine run an unattended publish or merge of THIS repository", first
+// extracted out of git-publish.mjs as a repo-only read (phase 1, AUT-01).
+// Zero-dep, node builtins only, two filesystem reads and no other I/O.
 //
 // The rule (D-02): the unattended close is authorized only when BOTH the
 // repository's `<dir>/.planning/config.json` AND the user-global config set
@@ -77,18 +77,4 @@ export function autoCloseLayers(dir) {
   const shared = rid !== null && rid === layerIdentity(GLOBAL_CONFIG);
   const global = shared ? 'unset' : layerOptIn(GLOBAL_CONFIG);
   return { authorized: repo === 'set' && global === 'set', repo, global, repoFile, globalFile: GLOBAL_CONFIG };
-}
-
-/**
- * Did the repository at `dir` itself set the key? Kept until git-publish.mjs
- * moves to `autoCloseLayers` (phase 3 PLAN-2 Task 2).
- *
- * @param {string} dir repo/planning root
- * @returns {boolean}
- */
-export function repoAutoClose(dir) {
-  try {
-    const repo = JSON.parse(readFileSync(join(dir, '.planning', 'config.json'), 'utf8'));
-    return repo?.git?.auto_close === true;
-  } catch { return false; }
 }

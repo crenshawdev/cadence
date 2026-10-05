@@ -601,29 +601,29 @@ test('git-publish + land-cleanup: one git.auto_close, two questions, two layer r
   assert.match(a.detail, /user-global setting cannot authorize/,
     'the refusal does not say WHICH authorization was missing');
 
-  // The contrast that makes both halves about the LAYER rather than about an
-  // absent key: the same value in the REPO layer turns both seams on, and a
-  // global `false` cannot turn either back off.
+  // The same value in the REPO layer alone authorizes nothing either (D-02):
+  // a global `false` leaves the user's half unset.
   const repoFx = gitLayers({
     branch: 'cadence/v9.9.9', origin: true,
     global: { git: { auto_close: false } },
     repo: { git: { auto_close: true } },
   });
   const d2 = seam('git-publish.mjs', ['publish', '--dir', repoFx.root, '--remote', 'origin'], repoFx);
-  assert.equal(d2.action, 'published');
-  assert.equal(refExists(repoFx.bare, 'refs/heads/cadence/v9.9.9'), true);
+  assert.equal(d2.reason, 'auto-close-off');
+  assert.equal(refExists(repoFx.bare, 'refs/heads/cadence/v9.9.9'), false);
   const g2 = seam('land-cleanup.mjs', ['gate', '--dir', repoFx.root], { ...repoFx, stdin: BLOCKER });
   assert.equal(g2.action, 'halt');
   const a2 = seam('git-publish.mjs', ['authorized', '--dir', repoFx.root], repoFx);
-  assert.equal(a2.ok, true, 'the repository\'s OWN opt-in authorizes, and a global false cannot withdraw it');
-  assert.equal(a2.action, 'repo-authorized');
+  assert.equal(a2.ok, false, 'a committed repository value cannot authorize on its own');
+  assert.match(a2.detail, /committed repository setting cannot authorize/);
 });
 
 test('git-publish: the protected list it refuses on IS the merged one get reports', () => {
   // The same seam's other config read goes through the merge, so this half is
   // an equality arm - the narrowing above is specific to git.auto_close.
+  // Both layers opt in (D-02), or gate 1 answers before the protected list.
   const spec = {
-    global: { git: { protected_branches: ['release'] } },
+    global: { git: { protected_branches: ['release'], auto_close: true } },
     repo: { git: { auto_close: true } },
   };
   const onList = gitLayers({ branch: 'release', origin: true, ...spec });
@@ -893,6 +893,7 @@ test('git-publish: a repo layer setting a global-only key cannot stop a land (AC
   const fx = gitLayers({
     branch: 'cadence/v9.9.9', origin: true,
     repo: { git: { auto_close: true }, ...GLOBAL_ONLY_REPO },
+    global: { git: { auto_close: true } },   // the user's half of the opt-in (D-02)
   });
   git(['-C', fx.root, 'branch', 'stale-branch']);   // something for the reap to delete
 

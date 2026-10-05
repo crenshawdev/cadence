@@ -4,7 +4,7 @@
 // subcommands: `publish` and `reap` ACT (they run git), `authorized` only
 // ANSWERS - it runs no git, spawns no process at all, and touches nothing. It
 // lives here rather than in a file of its own because the question it answers,
-// "did this repository authorize an unattended close", is the same question
+// "did both config layers authorize an unattended close", is the same question
 // gate 1 of `publish` asks, and one seam asking it twice is one place it can
 // drift. cad-land's autonomous
 // GitHub close (git.auto_close) needs the local-only integration branch on a
@@ -38,19 +38,21 @@
 //   reap [--dir <path>] --branch <name>
 //     --branch  the merged local integration branch to delete.
 //   authorized [--dir <path>]
-//     answers only: did this REPOSITORY authorize an unattended publish or
-//     merge. Mutates nothing and runs nothing, so a host whose publishing CLI
+//     answers only: did BOTH config layers authorize an unattended publish or
+//     merge (D-02). Mutates nothing and runs nothing, so a host whose publishing CLI
 //     does its own pushing (GitLab: `glab mr create` publishes the source
 //     branch itself) still has one authorization answer to consult BEFORE it
 //     mutates, instead of no gate at all.
-// publish refuses (ok:false + reason, pushes nothing) unless the repo-layer
-// git.auto_close is true AND HEAD is a non-protected branch whose name is safe
-// AND the remote is a configured bare name. Reads git.auto_close from the REPO
-// layer ONLY (never merged/global) to preserve D-08 - and reads the MERGED
-// value too, carried only as the `detail` sentence that says which of the two
-// authorizations was missing (lib/publish-decision.mjs authorizationDetail).
-// The merged value gates no verdict here; it gates the publish ASK in
-// skills/cad-land/SKILL.md, which is a different question.
+// publish refuses (ok:false + reason, pushes nothing) unless git.auto_close is
+// true in BOTH this repository's .planning/config.json and the user-global
+// config AND HEAD is a non-protected branch whose name is safe AND the remote is
+// a configured bare name. Either half alone authorizes nothing (D-02, keeping
+// D-08 and adding its converse): a cloned repository's committed config cannot
+// turn on an unattended push, and a home-directory value cannot speak for a
+// repository. The read is lib/repo-auto-close.mjs `autoCloseLayers`, never the
+// merged value; the refusal's `detail` names which file to fix
+// (lib/publish-decision.mjs authorizationDetail). skills/cad-land/SKILL.md
+// step 3 branches on `authorized`, so the ask it skips is this same answer.
 // reap refuses on a missing, unsafe, protected or checked-out branch, and
 // SKIPS an already-absent one (ok:true) so a close stays idempotent. It runs no
 // merged check - land-cleanup.mjs cleanup owns that verdict - and no auto_close
@@ -60,10 +62,9 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
-// The repo-layer-only `git.auto_close` read - the value that says the
-// REPOSITORY itself authorized the unattended close, never the merged one. Its
-// module header carries why it is a raw read and why it must fail closed.
-import { repoAutoClose } from './lib/repo-auto-close.mjs';
+// The both-layer `git.auto_close` read (D-02), never the merged one. Its module
+// header carries why each half is a raw read and why it must fail closed.
+import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { authorizationDetail, decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
@@ -109,13 +110,13 @@ function readRemotes(dir) {
  * global-only-key warning around this seam (D-18). `tornLayers` is the CLASS
  * this gate actually means.
  *
- * It also returns the MERGED `git.auto_close` - the REQUESTED value - because
- * this is the one place the file merges anything, and asking the merge a second
- * question costs nothing while a second `mergeLayers(` callsite would both
- * re-read the same files and move a count self-verify.test.mjs pins tree-wide.
- * The requested value decides NOTHING here: it only tells the refusal sentence
- * whether auto_close is off everywhere or on in the user's home directory with
- * this repository silent. */
+ * It also returns the MERGED `git.auto_close`, because this is the one place the
+ * file merges anything, and asking the merge a second question costs nothing
+ * while a second `mergeLayers(` callsite would both re-read the same files and
+ * move a count self-verify.test.mjs pins tree-wide. That value decides NOTHING
+ * here: `authorized` reports it as `requested`, what `config.mjs get` would
+ * show, so `/cad-land` can tell a user who set one half why the ask came back.
+ * The verdict is `autoCloseLayers`' both-layer read. */
 function readProtectedBranches(dir) {
   const { config, warnings, tornLayers } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
@@ -146,7 +147,7 @@ function branchExists(dir, branch) {
  * emitting a bare `undefined`. */
 const GATE_HINTS = Object.freeze({
   publish: Object.freeze({
-    'auto-close-off': 'this REPOSITORY has not authorized an unattended publish: run `config.mjs set --file <repo>/.planning/config.json git.auto_close=true` in the repo itself, because a user-global true does not speak for it - or push by hand',
+    'auto-close-off': 'the unattended close needs `git.auto_close` true in BOTH this repository\'s `.planning/config.json` and the user-global config - the detail names which file to fix - or push by hand',
     'no-branch': 'check out a branch first - a detached HEAD names nothing to publish',
     'bad-branch': 'rename the branch to plain characters (no leading `-`, no `:`, no shell metacharacters) and re-run',
     'protected-branch': 'publish the integration branch instead, or take this name off `git.protected_branches` if it was never meant to be protected',
@@ -168,33 +169,30 @@ const gateHint = (arm, reason) => (GATE_HINTS[arm] || {})[reason]
 function publish(dir, remote) {
   const currentBranch = readCurrentBranch(dir);
   const configuredRemotes = readRemotes(dir);
-  // The two resolutions of ONE key, by name at the boundary: `autoClose` is the
-  // authorized value (repository layer alone), `autoCloseRequested` the merged
-  // one. Only the first can unlock the push.
-  const autoClose = repoAutoClose(dir);
-  const { branches: protectedBranches, autoCloseRequested, warnings, tornLayers } = readProtectedBranches(dir);
+  const autoClose = autoCloseLayers(dir);
+  const { branches: protectedBranches, warnings, tornLayers } = readProtectedBranches(dir);
 
-  const decision = decidePublish({ autoClose, autoCloseRequested, currentBranch, protectedBranches, remote, configuredRemotes });
+  // No push while a config layer is torn (lib/publish-decision.mjs
+  // `tornLayerRefusal`), checked BEFORE decidePublish. Under the both-layer read
+  // a torn layer always makes one half false, so gate 1 would otherwise answer
+  // first and report a parse failure as a missing opt-in. Checking first masks
+  // no other gate's reason: with a torn layer gate 1 is the only gate
+  // decidePublish can reach. `reap` keeps its order - it has no auto-close gate.
+  const tornPublish = tornLayerRefusal({ warnings, tornLayers });
+  if (tornPublish) {
+    emit({ ok: false, reason: 'config-parse-failed', branch: currentBranch,
+      remote, detail: tornPublish,
+      hint: 'repair the config layer the detail names so the protected-branch list can be read, then re-run - nothing is pushed while that list is unprovable',
+      warnings });
+    return;
+  }
+
+  const decision = decidePublish({ autoClose, currentBranch, protectedBranches, remote, configuredRemotes });
   if (decision.action !== 'publish') {
     // `detail` is undefined on every gate but the auto-close one, and
     // JSON.stringify drops an undefined value, so those envelopes are unchanged.
     emit({ ok: false, reason: decision.reason, branch: decision.branch, remote: decision.remote,
       detail: decision.detail, hint: gateHint('publish', decision.reason), warnings });
-    return;
-  }
-
-  // No push while the protected list is unprovable (lib/publish-decision.mjs
-  // `tornLayerRefusal`). Sited at the MUTATION rather than right after the
-  // destructure, deliberately: every non-mutating arm keeps the answer it has
-  // today, so a refusal decidePublish already reached keeps its own named reason
-  // instead of being masked by this one. Nothing between the destructure and
-  // here does I/O beyond reading git facts.
-  const tornPublish = tornLayerRefusal({ warnings, tornLayers });
-  if (tornPublish) {
-    emit({ ok: false, reason: 'config-parse-failed', branch: decision.branch,
-      remote: decision.remote, detail: tornPublish,
-      hint: 'repair the config layer the detail names so the protected-branch list can be read, then re-run - nothing is pushed while that list is unprovable',
-      warnings });
     return;
   }
 
@@ -238,8 +236,8 @@ function reap(dir, branch) {
   }
 
   // No branch deletion while the protected list is unprovable - this is the arm
-  // the reproduction hit. Sited at the MUTATION for the reason publish states,
-  // and it is what keeps `reap`'s already-absent SKIP above at `ok:true`:
+  // the reproduction hit. Sited at the MUTATION, so every refusal decideReap
+  // reached keeps its own named reason, and it is what keeps `reap`'s already-absent SKIP above at `ok:true`:
   // cad-land's close is idempotent, and a torn layer must not break a re-run
   // that deletes nothing.
   const tornReap = tornLayerRefusal({ warnings, tornLayers });
@@ -273,8 +271,8 @@ function reap(dir, branch) {
   }
 }
 
-/** The read-only arm: did the REPOSITORY at `dir` authorize an unattended
- * publish or merge? Answers the same question `publish`'s gate 1 asks, from the
+/** The read-only arm: did BOTH config layers authorize an unattended publish or
+ * merge of the repository at `dir` (D-02)? Answers the same question `publish`'s gate 1 asks, from the
  * same pure core (lib/publish-decision.mjs authorizationDetail), so the two can
  * never word it differently - one core, two emits.
  *
@@ -282,23 +280,22 @@ function reap(dir, branch) {
  * GitHub and Forgejo the chain has to come through `publish` to get the branch
  * onto the remote, so the refusal above stops it; on GitLab `glab mr create`
  * publishes the source branch, no seam call happens, and an unattended merge
- * proceeded on a value the repository never set. This arm is what that path
- * consults first (skills/cad-land/SKILL.md step 3(b)).
+ * proceeded on a value nobody authorized. This arm is what that path consults
+ * first (skills/cad-land/SKILL.md step 3(b)), and what step 3 itself branches
+ * on, so the ask it skips is exactly the close this arm authorizes.
  *
  * It runs no git and spawns nothing at all - it reads two config layers. That
  * is deliberate: a seam that ran `glab` would put a third-party network CLI's
  * failure modes on the same envelope as a merge authorization.
  *
  * It deliberately does NOT apply `tornLayerRefusal`, unlike the two mutating
- * arms. Nothing mutates here, the repo-layer read already fails closed, and
- * refusing on a torn GLOBAL layer would let one corrupt file in a home
- * directory WITHDRAW a repository's authorization - the direction an
- * authorization check must never fail in. The merge's warnings still ride the
- * envelope, so a torn layer is visible rather than silent. */
+ * arms. Nothing mutates here, and the both-layer read already fails closed on
+ * a torn layer: that half reads `unreadable`, so the answer is `auto-close-off`
+ * with a detail naming the file that could not be read - the real cause, which
+ * `/cad-land` step 3 prints. The merge's warnings still ride the envelope. */
 function authorized(dir) {
-  const authorizedValue = repoAutoClose(dir);
   const { autoCloseRequested, warnings } = readProtectedBranches(dir);
-  const detail = authorizationDetail({ requested: autoCloseRequested, authorized: authorizedValue });
+  const detail = authorizationDetail(autoCloseLayers(dir));
   if (detail === null) {
     emit({ ok: true, action: 'repo-authorized', requested: autoCloseRequested, warnings });
     return;

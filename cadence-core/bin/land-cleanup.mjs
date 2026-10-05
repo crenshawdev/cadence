@@ -206,7 +206,7 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
 
 function gate(dir) {
   // The MERGED value, deliberately - NOT git-publish.mjs's repo-layer-only read.
-  // The two seams ask different questions of one key. `repoAutoClose`
+  // The two seams ask different questions of one key. lib/repo-auto-close.mjs
   // (git-publish.mjs:53-61) asks "am I authorized to push unattended HERE", which
   // D-08 answers repo-only so a user-global value starts no close in an unrelated
   // project. This gate asks "is anybody WATCHING", and that answer has to match
