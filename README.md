@@ -109,6 +109,85 @@ That shape was expensive to learn, and I paid for it twice. First a predicate ca
 
 [`METHOD.md`](./METHOD.md) is the full account of what the planner, executor, verifier and reviewers do and where each rule is enforced. [`INTERNALS.md`](./INTERNALS.md) is the mechanism underneath: routing, the publish seam, and why the decision cores are pure functions. [`docs/WORKFLOW.md`](./docs/WORKFLOW.md) is the same material as a diagram, five figures and the four tables behind them. [`docs/EVIDENCE.md`](./docs/EVIDENCE.md) defines the three weight terms and gives the `weight.mjs` commands that print the current numbers for any tree. [`docs/COST.md`](./docs/COST.md) is what a run costs on my own account. [`docs/EXAMPLE.md`](./docs/EXAMPLE.md) walks one small project through the whole cycle.
 
+## What Cadence sends, writes and reads
+
+Cadence sends no telemetry, makes no network call of its own except to a cross-model reviewer you turned on, and keeps its record in your repository. Everything else it touches outside the project is listed here, so you don't have to find it by reading the scripts.
+
+### Cross-model reviewers
+
+They're off by default. The shipped reviewer is the Claude subagent, which needs no key and sends nothing your session isn't already sending. A provider runs only when your user-global config's `review.reviewers` names it as well as the project's, so a repository's committed `review.reviewers` can't send your code to a provider on your key by itself, and cloning a repo that lists `openai` changes nothing until you've named `openai` yourself. Naming a provider there authorizes it for every repository whose own config names it too, and `/cad-config --review` asks before it writes that.
+
+| Provider | Host | Key |
+|---|---|---|
+| OpenAI | `https://api.openai.com` | `OPENAI_API_KEY` |
+| Gemini | `https://generativelanguage.googleapis.com` | `GEMINI_API_KEY` |
+| DeepSeek | `https://api.deepseek.com` | `DEEPSEEK_API_KEY` |
+
+The key comes from the environment first. When the variable isn't set, `cadence-core/bin/review-provider.mjs` reads it from `~/.config/cadence/providers.env` (under `$XDG_CONFIG_HOME` when that's set), or from the file `review.key_file` names in your user-global config. That's a script reading a credential off your machine, which is what the plugin directory flags, and it stays that way on purpose: a plugin `userConfig` secret only reaches hooks and MCP servers, and the review calls run through Bash. The key is never written to a config file or printed, and each key goes only to its own provider's host.
+
+`review-provider.mjs` makes three calls, each to that host with that key:
+
+- `review` sends the review instruction and the artifact under review, a plan or a diff, after credential redaction. It runs when a review gate fires with that provider in the reviewer set, and at `/cad-decision-review`.
+- `consult` sends a short description of a dead end, the goal, what was tried and the exact failing signal, after the same redaction. It runs only with `review.consult.enabled` true, and only after you say yes to an offer that names the provider and model. `/cad-debug`, `/cad-execute` and `/cad-plan` make that offer.
+- `detect-models` sends no project content, only the key as the request's credential, to list the provider's models when you run `/cad-config --review`.
+
+Redaction catches a credential by its shape, a credential-shaped name beside its value, a URL's userinfo, an `Authorization` header, and not by a list of known prefixes. A bare key sitting in a diff with nothing naming it goes out as written, so don't point a reviewer at a secrets file.
+
+### Your forge
+
+Every forge write goes through your own `tea`, `gh` or `glab`, signed in as you:
+
+- `repo create --private`, once, at `/cad-new-project`, after you confirm the owner and name;
+- `issue create`, with an `issue list` first to find a duplicate, when you send a review finding to the tracker instead of fixing it now;
+- PR or MR create and merge at `/cad-land`, when you pick that arm, or unattended when `git.auto_close` is true in both the repository's config and your user-global config.
+
+### Optional MCP tools
+
+Context7 and excerpt are used when they're installed and skipped when they're not, and Cadence installs neither. Without Context7, `/cad-decision-review` checks library and API claims against the installed package source, the lockfile or vendored docs, and lists every claim it couldn't check. Without excerpt, every agent reads and searches with the built-in Read and Grep.
+
+### The module
+
+On a host with mods, the module does five things:
+
+- draws the band and the `/cad-panel` pane from `planning.mjs` reads and the files under `.planning/`;
+- filters Cadence's 30 agents and 6 contract skills out of the agent and skill listings the model sees;
+- rewrites the Agent tool's `subagent_type` from a bare Cadence agent name to the plugin-prefixed one, and leaves your own agents' names alone;
+- adds `--agent-id <id>` to a Cadence subagent's own `planning.mjs trace close` command, so the record joins it to the right dispatch;
+- appends token-count facts to `.planning/trace.jsonl` through `planning.mjs trace append`.
+
+That trace is the only file it writes. It never touches `STATE.md` or the git rail.
+
+### The two hooks that watch
+
+- `subagent-trace` reads the stopped subagent's own transcript, the file the host keeps for that agent, to price the dispatch in `.planning/trace.jsonl`.
+- `read-trace` logs the path of each project file a tool call opens to `.planning/reads.jsonl`. Paths only, never contents, and a path outside the project is never recorded.
+
+### Outside the project
+
+What Cadence writes outside your repository:
+
+- `~/.claude/cadence/config.json`, or the file `CADENCE_GLOBAL_CONFIG` names, when a setup interview or `/cad-config` saves a machine-wide answer;
+- `CAPTURE.md` beside that config, from `/cad-capture --cadence`;
+- the `worktree.baseRef` key, merged into `.claude/settings.json` or `~/.claude/settings.json`, only after you pick the file at `/cad-config`;
+- scratch directories from `mktemp` under `TMPDIR`, or `/tmp` when it's unset.
+
+What it reads outside it: your user-global config, `providers.env` or the `review.key_file` file during a provider call, and `~/.claude/settings.json` and the platform's `managed-settings.json` to learn `worktree.baseRef` before running plans in parallel worktrees.
+
+### Why every command keeps Bash open
+
+Every Cadence command except `/cad-help` lists `Bash` in `allowed-tools` with no command pattern, so it doesn't ask before running a shell command. Narrowing that looks safer and isn't:
+
+- Cadence's own seam calls are typed by the model, and the form varies, a quoted `${CLAUDE_PLUGIN_ROOT}` path one time, an exported variable or a relative path the next. A permission rule matches only the exact form it names, so a narrowed command would stop and ask about its own scripts.
+- Workflows run compound scratch lines with `node -e` read-backs and `case ... esac` guards. The only rule that covers those allows arbitrary code, which narrows nothing.
+- Some commands run things with no fixed form at all. `/cad-execute`, `/cad-task` and `/cad-coverage` run `workflow.test_command` or a detected test runner, `/cad-spike` runs experiment code, and `/cad-debug` reruns reproductions.
+- `/cad-land` runs forge merge commands, and the unattended `/cad-milestone` into `/cad-land` chain can't stop to ask about them. A prompt that shows up mid-run stalls that chain where nobody is watching.
+
+Pushes are still guarded by git-guard, a hook rather than a permission rule, and the one push it never sees is the unattended close above.
+
+### Privacy
+
+No telemetry, no analytics, no phoning home. The only network calls Cadence makes itself are the three provider calls above, each on the terms stated there. Forge and push traffic goes through your own `tea`, `gh`, `glab` and `git`. The planning record, the run trace and the reads log stay in `.planning/` in your repository and go wherever you push it. Cadence runs inside Claude Code, so what your session sees goes wherever Claude Code sends it, which is the host's policy and not this plugin's.
+
 ## What each role costs
 
 Cadence used to ask how much you wanted a dispatch to cost, and then it asked what a break in the project would cost. Both were one word standing in for twelve decisions somebody else had already made for you. It asks you the twelve now, one role at a time:
