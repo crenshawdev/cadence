@@ -1,6 +1,6 @@
 ---
 name: cad-executor-contract
-description: "Internal role contract, preloaded into every cad-executor rung agent. Not a user command."
+description: "Role contract preloaded at spawn by the cad-executor, cad-executor-low, cad-executor-medium, cad-executor-xhigh and cad-executor-max agents. Not for direct use: do not invoke it from a conversation."
 user-invocable: false
 ---
 

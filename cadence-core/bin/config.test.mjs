@@ -76,7 +76,7 @@ function assertScopeRefusal(r, label) {
   assert.equal(r.ok, false, label);
   assert.equal(r.reason, 'invalid', `${label}: ${JSON.stringify(r)}`);
   assert.equal(r.detail.length, 1, label);
-  assert.equal(r.detail[0].key, 'git.auto_close', label);
+  assert.equal(r.detail[0].key, 'git.forge_repo', label);
   assert.match(r.detail[0].error, /--file/, label);     // the next step, not just the no
   assert.match(r.detail[0].error, /authorize/, label);  // and WHY the layer cannot honour it
   assert.equal(typeof r.hint, 'string', label);
@@ -84,11 +84,11 @@ function assertScopeRefusal(r, label) {
 }
 
 test('set --global refuses a repo-layer-only key and writes nothing', () => {
-  // #249: git.auto_close is honoured from the repo layer alone (its own purpose
-  // says so, and lib/repo-auto-close.mjs enforces it), but the refusal only
-  // arrived at LAND time - after the user had already written the value.
+  // #249: a repo_only key is honoured from the repo layer alone, and the
+  // refusal used to arrive only at use time - after the user had already
+  // written the value. git.forge_repo is the shipped key carrying the marker.
   const gpath = join(dir, 'scope-global-refuse.json');
-  const r = run(['set', '--global', 'git.auto_close=true'], gpath);
+  const r = run(['set', '--global', 'git.forge_repo=o/r'], gpath);
   assertScopeRefusal(r, '--global');
   assert.equal(existsSync(gpath), false); // --global auto-creates, so this proves nothing was written
 });
@@ -100,9 +100,9 @@ test('the refusal follows the resolved target FILE, not the --global flag', () =
   const gpath = join(dir, 'scope-by-file.json');
   writeFileSync(gpath, JSON.stringify({ granularity: 'coarse' }));
   const before = readFileSync(gpath, 'utf8');
-  assertScopeRefusal(run(['set', '--file', gpath, 'git.auto_close=true'], gpath), '--file <global>');
+  assertScopeRefusal(run(['set', '--file', gpath, 'git.forge_repo=o/r'], gpath), '--file <global>');
   assertScopeRefusal(
-    run(['set', '--file', join(dir, '.', 'scope-by-file.json'), 'git.auto_close=true'], gpath),
+    run(['set', '--file', join(dir, '.', 'scope-by-file.json'), 'git.forge_repo=o/r'], gpath),
     '--file <global-dir>/./config.json');
   assert.equal(readFileSync(gpath, 'utf8'), before); // neither spelling touched it
 });
@@ -112,9 +112,19 @@ test('the same repo-layer-only pair aimed at a REPO config is written', () => {
   const gpath = join(dir, 'scope-repo-global.json');
   const repo = join(dir, 'scope-repo-target.json');
   writeFileSync(repo, JSON.stringify({ granularity: 'coarse' }));
-  const r = run(['set', '--file', repo, 'git.auto_close=true'], gpath);
+  const r = run(['set', '--file', repo, 'git.forge_repo=o/r'], gpath);
   assert.equal(r.ok, true, JSON.stringify(r));
-  assert.equal(JSON.parse(readFileSync(repo, 'utf8')).git.auto_close, true);
+  assert.equal(JSON.parse(readFileSync(repo, 'utf8')).git.forge_repo, 'o/r');
+});
+
+test('set --global writes git.auto_close: it is the user-global half of the opt-in (D-02)', () => {
+  // No longer repo_only: under D-02 a user-global value authorizes nothing on
+  // its own, so it fails _meta.note's test, and the user's half has to be
+  // settable where the user keeps it.
+  const gpath = join(dir, 'scope-auto-close-global.json');
+  const r = run(['set', '--global', 'git.auto_close=true'], gpath);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(JSON.parse(readFileSync(gpath, 'utf8')).git.auto_close, true);
 });
 
 test('a multi-pair global set carrying one marked key leaves the file byte-identical', () => {
@@ -123,17 +133,17 @@ test('a multi-pair global set carrying one marked key leaves the file byte-ident
   const gpath = join(dir, 'scope-atomic.json');
   writeFileSync(gpath, JSON.stringify({ granularity: 'coarse' }, null, 2) + '\n');
   const before = readFileSync(gpath, 'utf8');
-  const r = run(['set', '--global', 'git.auto_close=true', 'granularity=fine'], gpath);
+  const r = run(['set', '--global', 'git.forge_repo=o/r', 'granularity=fine'], gpath);
   assertScopeRefusal(r, 'multi-pair');
   assert.equal(readFileSync(gpath, 'utf8'), before);
 });
 
 test('a marked key that is ALSO type-invalid reports the type, not the layer (D-11)', () => {
   const gpath = join(dir, 'scope-type-first.json');
-  const r = run(['set', '--global', 'git.auto_close=nonsense'], gpath);
+  const r = run(['set', '--global', 'git.forge_repo=onlyowner'], gpath);
   assert.equal(r.ok, false);
-  assert.equal(r.detail[0].key, 'git.auto_close');
-  assert.match(r.detail[0].error, /expected true or false/);
+  assert.equal(r.detail[0].key, 'git.forge_repo');
+  assert.match(r.detail[0].error, /owner\/name slug/);
   assert.doesNotMatch(r.detail[0].error, /--file/); // the type is wrong in EITHER layer
 });
 
@@ -685,22 +695,22 @@ test('ARG-06: every subcommand that ACCEPTS --global declares it, and reads it o
 });
 
 test('check --global reports the scope refusal the write face gives', () => {
-  // Before this, `check --global git.auto_close=true` answered `--global is not
+  // Before this, `check --global <repo_only key>=...` answered `--global is not
   // a key=value pair`: the inspect face could not be asked about the layer at
   // all, so it could not agree or disagree with what `set` would do.
   const gpath = join(dir, 'check-global.json');
-  const refused = run(['check', '--global', 'git.auto_close=true'], gpath);
+  const refused = run(['check', '--global', 'git.forge_repo=o/r'], gpath);
   assert.equal(refused.ok, false);
   assert.equal(refused.reason, 'invalid');
   // Byte-identical to the write face's entry, which is the whole point.
-  const written = run(['set', '--global', 'git.auto_close=true'], gpath);
+  const written = run(['set', '--global', 'git.forge_repo=o/r'], gpath);
   assert.deepEqual(refused.detail[0], written.detail[0]);
   assert.equal(existsSync(gpath), false); // check never writes, and neither did the refused set
 
   // A src:"repo" key is accepted at that same layer...
   assert.deepEqual(run(['check', '--global', 'granularity=fine'], gpath), { ok: true });
   // ...and with no --global the marked key is the ordinary repo-layer question.
-  assert.deepEqual(run(['check', 'git.auto_close=true'], gpath), { ok: true });
+  assert.deepEqual(run(['check', 'git.forge_repo=o/r'], gpath), { ok: true });
   // ...and the flag is consumed, never read as a pair.
   assert.deepEqual(run(['check', '--global'], gpath), { ok: true });
 });
@@ -877,7 +887,7 @@ test('CADENCE_CONFIG_SCHEMA without the sentinel is ignored; `keys` is the shipp
 
 test('SCP-01: a fixture schema marking a DIFFERENT key refuses that key', () => {
   // AC5. Both fixture keys are ordinary bools the shipped schema has never
-  // held, so a rule written against `git.auto_close` by name passes nothing
+  // held, so a rule written against a shipped key by name passes nothing
   // here; the only difference between the two is the marker. runWithSchema sets
   // CADENCE_TEST_SEAM as well as CADENCE_CONFIG_SCHEMA - without the sentinel
   // the override is ignored silently and this would pass against the shipped
@@ -924,11 +934,12 @@ test('SCP-01: the SHIPPED keys carrying the marker are the ones that authorize, 
   // earns it under `_meta.note`'s own test - would a user-global value
   // AUTHORIZE a change to a repository that never opted in? `git.forge_repo` is
   // the owner/name slug every forge call addresses, so ONE global value would
-  // aim EVERY repository's forge calls at a single target. `git.auto_close`
-  // authorizes the unattended publish of one repository.
+  // aim EVERY repository's forge calls at a single target. `git.auto_close` is
+  // NOT here: under D-02 its user-global value authorizes nothing alone - it is
+  // the user's half of a two-layer opt-in, so it must be settable there.
   const shipped = JSON.parse(readFileSync(join(dirname(CONFIG), '..', 'config.schema.json'), 'utf8')).keys;
   assert.deepEqual(Object.keys(shipped).filter((k) => shipped[k].repo_only === true),
-    ['git.forge_repo', 'git.auto_close']);
+    ['git.forge_repo']);
 
   // The slug's two siblings are deliberately NOT here, and their absence is the
   // half of D-02 that a "mark the whole family" edit would quietly undo: naming
@@ -947,7 +958,7 @@ test('SCP-01: the SHIPPED keys carrying the marker are the ones that authorize, 
   for (const k of ['granularity', 'review.mode', 'git.auto_close']) {
     assert.ok(srcRepo.includes(k), `${k} carries src:"repo"`);
   }
-  assert.deepEqual(srcRepo.filter((k) => shipped[k].repo_only !== undefined), ['git.auto_close']);
+  assert.deepEqual(srcRepo.filter((k) => shipped[k].repo_only !== undefined), []);
 });
 
 // --- model.effort.<role>: the per-role start rung, refused by key (RNG-02) ---

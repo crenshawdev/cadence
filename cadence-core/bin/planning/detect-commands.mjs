@@ -34,19 +34,31 @@ import { testSeamOpen } from '../lib/test-seam.mjs';
 // `[tool.ruff]` says its maintainers chose ruff; it does not say ruff is
 // installed on the machine reading it, and this seam's answer is handed to an
 // executor that runs it before every commit. So a winning arm is offered only
-// when the command's binaries RESOLVE - the driver, plus the delegated tool for
-// an `npx` arm, which is where npx itself would look (D-04). An unreachable arm
-// NULLS its slot and names the tool in warnings[]; it never falls through to a
-// lower arm (D-05), because falling through tells a tree holding `[tool.ruff]`
+// when its tool RESOLVES, and it is named by where it resolved: eslint and tsc
+// out of `<root>/node_modules/.bin` as that relative path, otherwise off PATH
+// as a bare name. An unreachable arm NULLS its slot and names the tool in
+// warnings[]; it never falls through to a lower arm (D-05), because falling through tells a tree holding `[tool.ruff]`
 // and a `go.mod` to run `go vet ./...` - a linter its maintainers did not
 // choose, over a language the change may not touch, which is the exact ordering
 // rule the ladder below states.
+//
+// NO ARM DELEGATES TO `npx` (audit W12). An `npx <tool>` that finds no local
+// install fetches the package from the registry and runs it, and a command an
+// executor runs before every commit must never download code to do it. Naming
+// the tool's own path asks for exactly the binary the project installed, and
+// nothing else.
 // ---------------------------------------------------------------------------
 
 // The flat-config spellings, in the order they are probed. A legacy `.eslintrc*`
 // of any extension is matched after them, by prefix.
 const ESLINT_CONFIGS = ['eslint.config.js', 'eslint.config.mjs',
   'eslint.config.cjs', 'eslint.config.ts'];
+
+// The tools a project installs as its own dependency, and so the only ones
+// looked for in `<root>/node_modules/.bin`. Every other driver - npm, cargo,
+// ruff, go, mypy - is the user's own install and resolves off PATH alone, so a
+// cloned repo carrying a `node_modules/.bin/cargo` cannot stand in for it.
+const PROJECT_TOOLS = new Set(['eslint', 'tsc']);
 
 function cmdDetectCommands(root) {
   /** @type {string[]} */
@@ -104,14 +116,14 @@ function cmdDetectCommands(root) {
   else {
     const cfg = ESLINT_CONFIGS.find((f) => has(f))
       || entries.find((e) => e.startsWith('.eslintrc'));
-    if (cfg) { lint = 'npx eslint .'; lintSource = cfg; }
+    if (cfg) { lint = 'eslint .'; lintSource = cfg; }
   }
 
   let typecheck = null;
   let typecheckSource = null;
   const tsScript = script('typecheck') || script('type-check');
   if (tsScript) { typecheck = `npm run ${tsScript}`; typecheckSource = 'package.json'; }
-  // TWO exact names, never a `tsconfig*.json` glob. `npx tsc --noEmit` ignores
+  // TWO exact names, never a `tsconfig*.json` glob. `tsc --noEmit` ignores
   // a config it is not pointed at, so a matched name has to bring the `-p` form
   // that points at it - and guessing which of several candidates is THE
   // typecheck would name an editor-only or per-package project file as the
@@ -119,14 +131,14 @@ function cmdDetectCommands(root) {
   // interpolated into a command.
   //
   // Order is the whole reason there are two arms rather than one: a tree
-  // carrying both keeps `npx tsc --noEmit` off `tsconfig.json`, because that is
+  // carrying both keeps `tsc --noEmit` off `tsconfig.json`, because that is
   // the project's own typecheck and the CI file is the narrower one. The second
   // arm exists for the tree that has ONLY the CI file - this repository, which
   // the comment here used to name as the case it declined, and which is exactly
   // the repository whose `.planning/config.json` can no longer supply a lint
   // command from a repo layer (CFG-02).
-  else if (has('tsconfig.json')) { typecheck = 'npx tsc --noEmit'; typecheckSource = 'tsconfig.json'; }
-  else if (has('tsconfig.ci.json')) { typecheck = 'npx tsc -p tsconfig.ci.json'; typecheckSource = 'tsconfig.ci.json'; }
+  else if (has('tsconfig.json')) { typecheck = 'tsc --noEmit'; typecheckSource = 'tsconfig.json'; }
+  else if (has('tsconfig.ci.json')) { typecheck = 'tsc -p tsconfig.ci.json'; typecheckSource = 'tsconfig.ci.json'; }
   else if (has('Cargo.toml')) { typecheck = 'cargo check --all-targets'; typecheckSource = 'Cargo.toml'; }
   else if (pyTable('[tool.mypy')) { typecheck = 'mypy .'; typecheckSource = 'pyproject.toml'; }
   else if (has('go.mod')) { typecheck = 'go build ./...'; typecheckSource = 'go.mod'; }
@@ -141,11 +153,10 @@ function cmdDetectCommands(root) {
   // PATH", which is a set a `||` chain cannot express because it is falsy.
   //
   // Present, it stands in for the WHOLE answer - no filesystem is consulted at
-  // all - rather than for the PATH half with the directory probe left live.
-  // One rule is what makes the hook testable in both directions: a fixture
-  // carrying its own `node_modules/.bin` proves the live probe hermetically
-  // (both binaries resolve out of the fixture's own bytes), and the SAME
-  // fixture under an empty override proves the variable had force, which a
+  // all - and a name in it reads as ON PATH, so under the override every arm
+  // comes back as its bare name. The `node_modules/.bin` arm is proven by the
+  // live probe instead, out of stubs in the fixture's own tree, and an empty
+  // override over that same fixture proves the variable had force, which a
   // half-replacement could never show. lib/on-path.mjs reads no Cadence
   // variable of its own (see its header); the hook lives here, at the one call
   // site that needs it.
@@ -153,27 +164,22 @@ function cmdDetectCommands(root) {
     ? new Set(String(process.env.CADENCE_DETECT_REACHABLE).split(',').map((t) => t.trim()).filter(Boolean))
     : null;
   const nodeBin = join(root, 'node_modules', '.bin');
-  const reachable = (/** @type {string} */ tool) => (reachOverride
-    ? reachOverride.has(tool)
-    : onPath(tool) || executableIn(nodeBin, tool));
 
   /**
-   * The binaries a command needs before it can be NAMED: its driver, and - for
-   * an `npx` arm - the tool npx would delegate to. Both halves are load-bearing
-   * on measured facts (D-04). `npx` is on PATH almost everywhere, so a
-   * driver-only rule leaves `npx eslint .` naming an eslint nobody has; and
-   * `tsc` is routinely absent from PATH while present at
-   * `node_modules/.bin/tsc`, so a PATH-only rule nulls the one command a
-   * TypeScript repo's CI actually runs.
-   *
-   * Every command in the ladder above is a fixed literal, so the split is over
-   * text this file wrote - no repo content is ever parsed into a binary name.
-   * @param {string} cmd @returns {string[]}
+   * The command to run for `cmd`, or null when its tool resolves nowhere. The
+   * tool is the first word. For a PROJECT_TOOLS tool the project's own install
+   * wins over PATH: `tsc` is routinely absent from PATH while present at
+   * `node_modules/.bin/tsc`, and the copy the project pinned is the one its CI
+   * runs. Every command in the
+   * ladder is a fixed literal, so the split is over text this file wrote - no
+   * repo content is ever parsed into a binary name.
+   * @param {string} cmd @returns {string|null}
    */
-  const needs = (cmd) => {
-    const words = cmd.split(/\s+/).filter(Boolean);
-    const delegated = words[0] === 'npx' && words[1] && !words[1].startsWith('-') ? words[1] : null;
-    return delegated ? [words[0], delegated] : [words[0]];
+  const resolve = (cmd) => {
+    const tool = cmd.split(' ', 1)[0];
+    if (reachOverride) return reachOverride.has(tool) ? cmd : null;
+    if (PROJECT_TOOLS.has(tool) && executableIn(nodeBin, tool)) return `node_modules/.bin/${cmd}`;
+    return onPath(tool) ? cmd : null;
   };
 
   /**
@@ -187,10 +193,11 @@ function cmdDetectCommands(root) {
    */
   const offer = (slot, cmd, src) => {
     if (cmd === null) return { command: null, source: null };
-    const missing = needs(cmd).filter((t) => !reachable(t));
-    if (!missing.length) return { command: cmd, source: src };
-    warnings.push(`${slot}: ${missing.join(' and ')} `
-      + `${missing.length > 1 ? 'are' : 'is'} not on PATH or in node_modules/.bin, so \`${cmd}\` `
+    const resolved = resolve(cmd);
+    if (resolved !== null) return { command: resolved, source: src };
+    const tool = cmd.split(' ', 1)[0];
+    const looked = PROJECT_TOOLS.has(tool) ? 'in node_modules/.bin or on PATH' : 'on PATH';
+    warnings.push(`${slot}: ${tool} is not ${looked}, so \`${cmd}\` `
       + `(from ${src}) was not offered; no lower arm was taken in its place`);
     return { command: null, source: null };
   };

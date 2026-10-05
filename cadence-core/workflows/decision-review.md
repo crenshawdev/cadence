@@ -4,8 +4,9 @@ An on-demand refute-then-adjudicate pass over ONE load-bearing decision - a
 section, or a row in PROJECT.md's Key Decisions table. It reuses the review
 subsystem (references/review-triggers.md): `cad-reviewer` (and, when
 configured, a cross-model provider) refutes the decision; the main model
-grounds each objection against Context7 and the real codebase, then rules it
-`survives | partial | refuted` and lists concrete amendments.
+grounds each objection against the real codebase, and against Context7 when
+its tools are available, then rules it `survives | partial | refuted` and
+lists concrete amendments.
 
 This workflow never auto-fires (no entry in references/review-triggers.md's
 wiring table). It runs only when a human invokes `/cad-decision-review
@@ -43,8 +44,7 @@ Assemble `{ instruction, artifact }`:
 Resolve the reviewer set exactly as references/review-triggers.md step 3
 does, from `review.reviewers[]`:
 - **claude-subagent** (always available): bracket this worker in the joined
-  run record first - it was the one paid dispatch in the spine that never
-  reached the record. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
+  run record first. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
   a PROJECT.md row it is the STATE cursor's phase (the rule review-triggers.md
   step 4 already states for a milestone-scoped trigger). The read-set is the
   decision doc the USER named, so write that reference to a scratch file and
@@ -54,7 +54,9 @@ does, from `review.reviewers[]`:
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read-file <path>
   ```
 
-  Then dispatch `cad-reviewer` through the
+  Then dispatch the `agent_type` that
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" agent-type --stem cad-reviewer`
+  prints (on `{ok:false}`, the bare `cad-reviewer`) through the
   spawn-agent seam with the payload above as its prompt. Parse the returned
   `{findings:[...]}` and close the bracket the moment you have it. OMIT
   `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
@@ -71,11 +73,13 @@ does, from `review.reviewers[]`:
   says - and `review.decision_review.tier` and `.effort` reach the cross-model
   arm below only (D-04).
 - **cross-model** (any provider in `review.reviewers` - `openai`, `gemini`,
-  `deepseek`, ...), only when `review.reviewers` names it
+  `deepseek`, ...), only when `review.reviewers` names it AND the user-global
+  config names it too - the `reviewers_global` list
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-reviewer`
+  returns (relay its `warnings[]`, seam-spawn-agent.md), never a raw read of
+  the global file, so this arm and step 3 agree -
   AND `review.providers.<name>.tiers[review.decision_review.tier]` is a
-  non-null model id (rests on the Phase-1 REV-01 seam repair - a symlinked
-  install must run this seam for real, not no-op): run the call-review-
-  provider seam
+  non-null model id: run the call-review-provider seam
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" review \
     --provider <name> --model <resolved id> --effort <review.decision_review.effort> \
@@ -102,19 +106,23 @@ For EACH finding returned by step `refute` (an "objection" to the decision),
 the main model grounds it before ruling:
 
 - **Library/API claims** - when an objection cites how a library, framework,
-  SDK, or API actually behaves, verify it live via Context7
-  (`mcp__context7__resolve-library-id` then `mcp__context7__query-docs`)
-  rather than trusting the objection's or your own training-data assumption.
-  Context7 is declared on THIS skill's main-model surface (D-08) - the
-  read-only `cad-reviewer` subagent has no MCP tools, so this verification
-  step only happens here, in adjudication.
+  SDK, or API actually behaves, check it against documentation rather than
+  the objection's or your own training-data assumption. When the Context7
+  tools are available (`mcp__context7__resolve-library-id` then
+  `mcp__context7__query-docs`), verify it live through them. When they are
+  not, ground it against what the repo carries: the installed package
+  source, the lockfile's resolved version, or vendored docs. A claim no
+  documentation could check is named in the report as unchecked, never ruled
+  from training data. Context7, when available, is declared on THIS skill's
+  main-model surface (D-08) - the read-only `cad-reviewer` subagent has no
+  MCP tools, so this verification step only happens here, in adjudication.
 - **Factual/codebase claims** - when an objection cites what the code
   currently does or does not do, verify it with Read/Grep/Bash against the
   real repo, not the objection's paraphrase.
-- Every run must ground at least one library/API claim against Context7 and
-  at least one factual claim against the codebase; if the claim set has
-  none of one kind, say so explicitly rather than skipping the requirement
-  silently.
+- Every run grounds at least one library/API claim by whichever of those
+  routes is available, and at least one factual claim against the codebase;
+  if the claim set has none of one kind, say so explicitly rather than
+  skipping the requirement silently.
 
 **Zero objections (a clean pass).** With no findings there is nothing to
 ground, so the requirement above would lapse exactly when the result is most
@@ -149,13 +157,16 @@ figures, so never fabricate one):
   when a bare tier/effort line reads as if the run had honoured one
 - the call count (one `cad-reviewer` dispatch, plus one
   `review-provider.mjs` call per surviving cross-model reviewer)
-- any reviewer that was offered but dropped (no-key, no tier assigned), and why
+- any reviewer that was offered but dropped (no-key, no tier assigned, not
+  named by the user-global config), and why
 </step>
 
 <step name="present">
 Present, per objection: the ruling (`survives | partial | refuted`), the
-grounding that produced it (the Context7 doc or codebase citation), and the
-amendment (when ruled `survives`/`partial`).
+grounding that produced it (the Context7 doc when its tools were available,
+else the installed source, lockfile or vendored doc, or the codebase
+citation), and the amendment (when ruled `survives`/`partial`). List every
+library/API claim no documentation could check as unchecked.
 
 On a clean pass, present the grounded load-bearing claims instead, each
 `confirmed`/`contradicted` with its citation, and say no reviewer objected.
@@ -191,9 +202,13 @@ amend and does it themselves (or via a follow-up `/cad-context` correction,
       amendment
 - [ ] On zero objections, the decision's own load-bearing claims were
       grounded instead - never a bare "no findings"
-- [ ] At least one library/API claim was checked against Context7 and at
-      least one factual claim against the codebase, on whichever claim set
-      applied - or that set was noted to contain none of that kind
+- [ ] At least one library/API claim was checked against documentation -
+      Context7 when its tools were available, else the installed source,
+      lockfile or vendored docs - and at least one factual claim against the
+      codebase, on whichever claim set applied, or that set was noted to
+      contain none of that kind
+- [ ] Every library/API claim no documentation could check is listed as
+      unchecked, never ruled from training data
 - [ ] The report names which reviewers ran and the tier/effort that reached
       the cross-model arm, qualitatively, never presented as applying to
       `cad-reviewer` - no fabricated token/dollar figures

@@ -16,12 +16,16 @@ import { agentRows, NO_CURSOR_NEXT, phaseView, READING_LINE, spendOf } from './p
 import { SPEND_EXCLUDES } from './trace-suggest.mjs';
 
 /**
- * @typedef {{text: string, color?: string, bold?: boolean, dim?: boolean}} Segment
+ * @typedef {{text: string, color?: string, bg?: string, bold?: boolean, dim?: boolean, action?: 'next'}} Segment
  * @typedef {Segment[]} Row
  */
 
 /** Cells the section heads take, the head included. */
 const LABEL_CELLS = 11;
+
+/** A phase status's chip colour, by the first word it starts with. */
+const STATUS_COLORS = Object.freeze([['unplanned', 'gray'], ['context', 'blue'], ['planned', 'cyan'],
+  ['executing', 'yellow'], ['executed', 'magenta'], ['verif', 'green'], ['complete', 'green']]);
 
 /** The UAT counts in `status`'s order, and the color each draws in. */
 const UAT_COLORS = Object.freeze({ pass: 'green', fail: 'red', pending: 'yellow', skipped: undefined, blocked: 'red' });
@@ -38,16 +42,18 @@ export function paneView(snapshot, width, roster = [], sights = []) {
   if (!snapshot) return [fitRow([{ text: READING_LINE, dim: true }], width)];
   const phase = phaseView(snapshot.status);
   const bar = barCells(width);
+  /** @type {Row} */
+  const rule = [{ text: '─'.repeat(Math.max(0, width)), dim: true }];
   /** @type {Row[]} */
   const rows = [
     ...headingRows(snapshot, phase),
-    [{ text: ' ' }],
+    rule,
     ...planRows(phase.rows, bar),
-    ...(phase.rows.length ? [[{ text: ' ' }]] : []),
+    ...(phase.rows.length ? [rule] : []),
     ...agentLines(roster, sights, snapshot),
     ...uatRows(phase.entry, bar),
     capturesRow(snapshot.captures),
-    ...spendRows(snapshot.spend),
+    ...spendRows(snapshot.spend, width),
   ];
   return rows.map((row) => fitRow(row.map((s) => ({ ...s, text: visible(s.text) })), width));
 }
@@ -64,14 +70,14 @@ function headingRows(snapshot, phase) {
   /** @type {Row[]} */
   const rows = [];
   if (!s) rows.push([{ text: first, color: 'red' }]);
-  else if (phase.entry) rows.push([{ text: `Phase ${s.current} of ${s.total} · `, bold: true }, { text: String(phase.entry.name), bold: true }]);
+  else if (phase.entry) rows.push([{ text: `Phase ${s.current}`, bold: true, color: 'cyan' }, { text: ` of ${s.total}  `, dim: true }, { text: String(phase.entry.name), bold: true }]);
   else rows.push([{ text: first, bold: true }]);
   /** @type {Row} */
   const next = snapshot.cursor
-    ? [{ text: 'next ', dim: true }, { text: snapshot.cursor.next }]
+    ? [{ text: 'next ', dim: true }, { text: snapshot.cursor.next, action: 'next' }]
     : [{ text: NO_CURSOR_NEXT, color: 'yellow' }];
-  rows.push(phase.entry ? [{ text: String(phase.entry.status), dim: true }, { text: '  ›  ', dim: true }, ...next] : next);
-  for (const line of drift) rows.push([{ text: line, color: 'yellow' }]);
+  rows.push(phase.entry ? [chip(String(phase.entry.status)), { text: '  ' }, ...next] : next);
+  for (const line of drift) rows.push([{ text: '⚠ ', color: 'yellow' }, { text: line, color: 'yellow' }]);
   return rows;
 }
 
@@ -90,8 +96,8 @@ function planRows(lines, bar) {
   return [
     [head('PLANS'), ...barSegments(done, plans.length, bar, 'green'), { text: `  ${done} of ${plans.length}`, dim: true }],
     ...plans.map((m) => m[2] === 'complete'
-      ? [{ text: '  ' }, { text: '✓', color: 'green' }, { text: ` ${m[1]}`, color: 'green' }]
-      : [{ text: '  ' }, { text: '○', color: 'yellow' }, { text: ` ${m[1]}`, color: 'yellow' }]),
+      ? [{ text: '  ' }, { text: '☑', color: 'green' }, { text: ` ${m[1]}`, dim: true }]
+      : [{ text: '  ' }, { text: '☐', color: 'yellow' }, { text: ` ${m[1]}` }]),
   ];
 }
 
@@ -150,16 +156,19 @@ function capturesRow(captures) {
 /**
  * SPEND and its caveat, dim; none when there was no phase to price.
  * @param {import('./pane.mjs').Seam | null} spend
+ * @param {number} width the pane's width, which the caveat wraps inside
  * @returns {Row[]}
  */
-function spendRows(spend) {
+function spendRows(spend, width) {
   if (spend === null || spend === undefined) return [];
   if (!spend.ok) return [[head('SPEND'), unavailable(spend)]];
   const { total, unrecorded } = spendOf(spend.value);
   /** @type {Row} */
   const row = [head('SPEND'), total === null ? { text: 'none recorded', dim: true } : { text: `${grouped(total)} tokens` }];
   if (unrecorded) row.push({ text: ` · ${unrecorded} unrecorded`, dim: true });
-  return [row, [{ text: ' '.repeat(LABEL_CELLS) }, { text: `Excludes ${SPEND_EXCLUDES.join(', ')}`, dim: true }]];
+  const room = Math.max(10, width - LABEL_CELLS);
+  return [row, ...wrapWords(`Excludes ${SPEND_EXCLUDES.join(', ')}`, room)
+    .map((line) => [{ text: ' '.repeat(LABEL_CELLS) }, { text: line, dim: true }])];
 }
 
 /**
@@ -168,7 +177,34 @@ function spendRows(spend) {
  * @returns {Segment}
  */
 function head(label) {
-  return { text: label.padEnd(LABEL_CELLS), bold: true };
+  return { text: label.padEnd(LABEL_CELLS), bold: true, color: 'cyan' };
+}
+
+/**
+ * A status as a chip: the word on its colour.
+ * @param {string} status
+ * @returns {Segment}
+ */
+function chip(status) {
+  const hit = STATUS_COLORS.find(([word]) => status.startsWith(word));
+  return { text: ` ${status} `, color: 'black', bg: hit ? hit[1] : 'white', bold: true };
+}
+
+/**
+ * `text` in lines of at most `room` cells, broken at spaces.
+ * @param {string} text
+ * @param {number} room
+ * @returns {string[]}
+ */
+function wrapWords(text, room) {
+  const lines = [];
+  let line = '';
+  for (const word of text.split(' ')) {
+    if (line && (line + ' ' + word).length > room) { lines.push(line); line = word; }
+    else line = line ? `${line} ${word}` : word;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 /**

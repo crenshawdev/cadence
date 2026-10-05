@@ -5,10 +5,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { authorizationDetail, decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
 
-// A well-formed publish call: auto_close on, a non-protected feature branch, a
-// configured bare-name remote.
+// lib/repo-auto-close.mjs `autoCloseLayers`' per-layer answer, one per state.
+const BOTH = { repo: 'set', global: 'set' };
+const NEITHER = { repo: 'unset', global: 'unset' };
+const REPO_ONLY = { repo: 'set', global: 'unset' };
+const GLOBAL_ONLY = { repo: 'unset', global: 'set' };
+const GLOBAL_TORN = { repo: 'set', global: 'unreadable', globalFile: '/home/u/.claude/cadence/config.json' };
+
+// A well-formed publish call: auto_close on in both layers, a non-protected
+// feature branch, a configured bare-name remote.
 const OK = {
-  autoClose: true,
+  autoClose: BOTH,
   currentBranch: 'cadence/v1.1.0-rc.2',
   protectedBranches: ['main', 'master'],
   remote: 'origin',
@@ -58,46 +65,80 @@ test('refuse: auto_close undefined -> auto-close-off (only literal true publishe
   assert.equal(d.reason, 'auto-close-off');
 });
 
-// --- which authorization was missing (AUT-01, AC4) ---------------------------
+// --- which half of the opt-in was missing (D-02) -----------------------------
 //
-// `reason` is the token `auto-close-off` in BOTH off-states, deliberately - it
+// `reason` is the token `auto-close-off` in EVERY off-state, deliberately - it
 // is asserted by equality across git-publish.test.mjs and config-seams.test.mjs
-// and changing its text buys no behaviour. So the state a user has to act on -
-// "you turned it on in your home directory, and this repository never did" -
+// and changing its text buys no behaviour. So which file the user has to fix
 // can only reach them through the sentence.
 
-test('detail: off everywhere and requested-globally are DIFFERENT sentences', () => {
-  const off = decidePublish({ ...OK, autoClose: false, autoCloseRequested: false });
-  const requested = decidePublish({ ...OK, autoClose: false, autoCloseRequested: true });
-  assert.equal(off.reason, 'auto-close-off');
-  assert.equal(requested.reason, 'auto-close-off');
-  assert.ok(off.detail, 'off-everywhere carries a detail');
-  assert.ok(requested.detail, 'requested-globally carries a detail');
-  assert.notEqual(off.detail, requested.detail);
+test('detail: the four off-states are four DIFFERENT sentences', () => {
+  const states = [NEITHER, REPO_ONLY, GLOBAL_ONLY, GLOBAL_TORN];
+  const details = states.map((autoClose) => decidePublish({ ...OK, autoClose }));
+  for (const d of details) {
+    assert.equal(d.reason, 'auto-close-off');
+    assert.ok(d.detail);
+  }
+  assert.equal(new Set(details.map((d) => d.detail)).size, 4);
 });
 
-test('detail: the requested-globally sentence says a user-global setting cannot authorize here', () => {
-  const d = decidePublish({ ...OK, autoClose: false, autoCloseRequested: true }).detail || '';
+test('detail: repo-only names the user-global file as the missing half', () => {
+  const d = authorizationDetail(REPO_ONLY) || '';
+  assert.match(d, /~\/\.claude\/cadence\/config\.json/);
+  assert.match(d, /CADENCE_GLOBAL_CONFIG/);
+  assert.match(d, /committed repository setting cannot authorize/);
+  assert.match(d, /"git": \{"auto_close": true\}/);
+  assert.doesNotMatch(d, /config\.mjs/);
+});
+
+test('detail: global-only names the repository\'s .planning/config.json', () => {
+  const d = authorizationDetail(GLOBAL_ONLY) || '';
   assert.match(d, /user-global setting cannot authorize/);
-  assert.match(d, /never set it|did not opt in/);
-  // and names where the opt-in belongs, so the user needs no second lookup
-  assert.match(d, /\.planning\/config\.json/);
+  assert.match(d, /Set "git": \{"auto_close": true\} in this repository's own \.planning\/config\.json/);
+  assert.doesNotMatch(d, /config\.mjs/);
 });
 
-test('detail: the off-everywhere sentence still names where the opt-in belongs', () => {
-  const d = decidePublish({ ...OK, autoClose: false, autoCloseRequested: false }).detail || '';
-  assert.match(d, /not true anywhere/);
+test('detail: neither names both files', () => {
+  const d = authorizationDetail(NEITHER) || '';
+  assert.match(d, /set in neither layer/);
   assert.match(d, /\.planning\/config\.json/);
+  assert.match(d, /~\/\.claude\/cadence\/config\.json/);
+});
+
+test('detail: an unreadable half is named as unreadable, never as the missing half', () => {
+  const d = authorizationDetail(GLOBAL_TORN) || '';
+  assert.ok(d.includes(GLOBAL_TORN.globalFile), d);
+  assert.match(d, /could not be read/);
+  assert.match(d, /cannot be proven/);
+  assert.doesNotMatch(d, /does not:|Set "git"|missing/);
+  // A torn repo file names the repository's own file the same way.
+  const r = authorizationDetail({ repo: 'unreadable', global: 'set' }) || '';
+  assert.match(r, /this repository's \.planning\/config\.json could not be read/);
+});
+
+test('detail: one file wearing both layer names says so, and still refuses', () => {
+  // CADENCE_GLOBAL_CONFIG at the repo's own config: the repo half is set, the
+  // global half reads unset because it is the same file. Telling the user to
+  // set the key in "the user-global config" sends them to edit a file that
+  // already has it, and the re-run refuses again.
+  const file = '/work/repo/.planning/config.json';
+  const shared = { repo: 'set', global: 'unset', shared: true, globalFile: file };
+  const d = authorizationDetail(shared) || '';
+  assert.ok(d.includes(file), d);
+  assert.match(d, /resolves to this repository's own \.planning\/config\.json/);
+  assert.match(d, /two layers are one file/);
+  assert.match(d, /Point the user-global config at a separate file \(CADENCE_GLOBAL_CONFIG/);
+  assert.doesNotMatch(d, /does not:|committed repository setting/);
+  assert.equal(decidePublish({ ...OK, autoClose: shared }).reason, 'auto-close-off');
+  // A repo file that is unset reads the same way: the cause is the collapse.
+  assert.equal(authorizationDetail({ ...shared, repo: 'unset' }), d);
 });
 
 test('detail: an authorized call publishes and carries no detail at all', () => {
-  const d = decidePublish({ ...OK, autoCloseRequested: true });
+  const d = decidePublish(OK);
   assert.equal(d.action, 'publish');
   assert.equal(d.detail, undefined);
-  assert.equal(authorizationDetail({ requested: true, authorized: true }), null);
-  // Authorized here, never requested globally: the repository's own opt-in is
-  // the whole answer, so there is still nothing to say.
-  assert.equal(authorizationDetail({ requested: false, authorized: true }), null);
+  assert.equal(authorizationDetail(BOTH), null);
 });
 
 test('detail: gate 1 is the ONLY refusal that carries one', () => {
@@ -106,21 +147,20 @@ test('detail: gate 1 is the ONLY refusal that carries one', () => {
     { currentBranch: 'HEAD' }, { currentBranch: '-rf' }, { currentBranch: 'main' },
     { remote: '/tmp/e' }, { remote: 'origin', configuredRemotes: ['upstream'] },
   ]) {
-    const d = decidePublish({ ...OK, autoCloseRequested: true, ...args });
+    const d = decidePublish({ ...OK, ...args });
     assert.equal(d.action, 'refuse', JSON.stringify(args));
     assert.notEqual(d.reason, 'auto-close-off', JSON.stringify(args));
     assert.equal(d.detail, undefined, JSON.stringify(args));
   }
 });
 
-test('detail total: a bare call and non-boolean inputs coerce rather than throw', () => {
-  assert.ok(authorizationDetail());
-  assert.ok(authorizationDetail({}));
-  // Only a literal true authorizes, and only a literal true reads as requested.
-  assert.equal(authorizationDetail({ requested: 'true', authorized: 'true' }),
-    authorizationDetail({ requested: false, authorized: false }));
-  assert.equal(authorizationDetail({ requested: 1, authorized: null }),
-    authorizationDetail({ requested: false, authorized: false }));
+test('detail total: a bare call and non-object inputs coerce to off rather than throw', () => {
+  assert.equal(authorizationDetail(), authorizationDetail(NEITHER));
+  assert.equal(authorizationDetail({}), authorizationDetail(NEITHER));
+  // Only the literal 'set' state counts; a bare boolean is not the layer answer.
+  assert.equal(authorizationDetail(/** @type {any} */ (true)), authorizationDetail(NEITHER));
+  assert.equal(authorizationDetail({ repo: true, global: 'true' }), authorizationDetail(NEITHER));
+  assert.equal(decidePublish({ ...OK, autoClose: true }).reason, 'auto-close-off');
   assert.ok(decidePublish().detail, 'the bare decidePublish refusal still words itself');
 });
 

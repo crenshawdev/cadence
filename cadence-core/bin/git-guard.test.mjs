@@ -232,7 +232,7 @@ test('a mention or a read-only search is silent, so no deny gate is needed', () 
 // and a future reader does not mistake any of them for an oversight. The
 // tokenizer that saw them cost 840 lines, an escape surface that never stopped
 // producing findings, and a hook OOM that failed OPEN. references/git-publish.md rail 3
-// and the CHANGELOG entry that removed the parser carry the same list.
+// and the CHANGELOG-v1-v2.md entry that removed the parser carry the same list.
 test('shapes the anchored reader declines to see (stated cost, not an oversight)', () => {
   const p = project('feature', { git: { on_protected: 'refuse' } });
   for (const command of [

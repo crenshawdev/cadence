@@ -401,3 +401,45 @@ test('a failed write at a close still passes the close on once', async () => {
   }), answer);
   assert.equal(calls, 1);
 });
+
+// --- the held windows are bounded (PNL-07) ------------------------------------
+
+/** hooks/cadence-mod.mjs's HELD_MAX. Both arms below fail if the two disagree. */
+const HELD_MAX = 64;
+
+/** Agent `id` steps once and stops as a Cadence subagent that never closed itself. */
+async function stepAndStop(/** @type {Map<string, Function>} */ by, /** @type {any} */ $, /** @type {string} */ id) {
+  const e = Object.freeze({ turnId: 't', index: 0, model: 'm', messageCount: 3, agentId: id });
+  await drain(by.get('turn.step')($, e, stepNext(STEP_2)));
+  await by.get('classic.SubagentStop')($, stop({ agent_id: id }), async () => ({}));
+}
+
+/** A module and a host whose cursor reads 3, with `/proj` as the session cwd. */
+function boundedHost() {
+  const by = module();
+  const $ = host({ files: CURSOR_3 });
+  $.session.cwd = async () => '/proj';
+  return { by, $ };
+}
+
+test('stops no close ever names hold at most HELD_MAX windows, the oldest evicted', async () => {
+  // Every held window turns into exactly one write when its close comes, so
+  // closing them all counts the map.
+  const { by, $ } = boundedHost();
+  const ids = Array.from({ length: HELD_MAX + 5 }, (_, i) => `a${i}`);
+  for (const id of ids) await stepAndStop(by, $, id);
+  assert.equal($.runs.length, 0, 'a stop with no close wrote something');
+  for (const id of ids) await mainLoop(by, $, close(`--phase 4 --agent-id ${id}`));
+  assert.equal($.runs.length, HELD_MAX);
+  assert.deepEqual($.runs.map((r) => r.argv),
+    ids.slice(5).map((id) => stepWindowArgv('/plug', '4', id, stepWindow(STEP_2))),
+    'the windows kept are not the newest HELD_MAX');
+});
+
+test('a close after its own stop, with HELD_MAX - 1 stops in between, still writes that window', async () => {
+  const { by, $ } = boundedHost();
+  await stepAndStop(by, $, 'a1');
+  for (let i = 0; i < HELD_MAX - 1; i++) await stepAndStop(by, $, `b${i}`);
+  await mainLoop(by, $, close('--phase 4 --agent-id a1'));
+  assert.deepEqual($.runs.map((r) => r.argv), [stepWindowArgv('/plug', '4', 'a1', stepWindow(STEP_2))]);
+});

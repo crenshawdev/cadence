@@ -572,7 +572,7 @@ test('create: an UNREADABLE login list refuses the same way, leaking none of it'
   // envelope.
   const log = argvLog();
   const dir = planningRoot();
-  const secret = 'ghp_DEADBEEFCAFE01234567';
+  const secret = 'fake-token-DEADBEEFCAFE01234567';
   const bodies = [
     `not json at all - token: ${secret}`,
     `[{"name":"forge.example.com","user":"","token":"${secret}"}]`,
@@ -651,7 +651,7 @@ test('create: WITHOUT --confirmed nothing is spawned at all', () => {
 test('create: a CLI that fails leaks none of its own text and nulls detail', () => {
   // CONTEXT D-16. The stub prints a credential-shaped line on stderr and exits
   // nonzero; the envelope says what failed and carries not one byte of it.
-  const secret = 'fatal: Authorization: Bearer glpat-DEADBEEFCAFE';
+  const secret = 'fatal: Authorization: Bearer fake-pat-DEADBEEFCAFE';
   const dir = planningRoot();
   const { status, envelope } = run(
     ['create', '--provider', 'github', '--repo', 'o/r', '--confirmed',
@@ -663,7 +663,7 @@ test('create: a CLI that fails leaks none of its own text and nulls detail', () 
   assert.equal(envelope.detail, null);
   assert.ok(envelope.hint && envelope.hint.length > 0);
   const serialized = JSON.stringify(envelope);
-  for (const token of ['Bearer', 'glpat-DEADBEEFCAFE', 'fatal']) {
+  for (const token of ['Bearer', 'fake-pat-DEADBEEFCAFE', 'fatal']) {
     assert.equal(serialized.includes(token), false, `the child's stderr reached the envelope: ${token}`);
   }
   assert.match(envelope.reason, /o\/r/);

@@ -1,6 +1,6 @@
 ---
 name: cad-planner-contract
-description: "Internal role contract, preloaded into every cad-planner rung agent. Not a user command."
+description: "Role contract preloaded at spawn by the cad-planner, cad-planner-low, cad-planner-medium, cad-planner-xhigh and cad-planner-max agents. Not for direct use: do not invoke it from a conversation."
 user-invocable: false
 ---
 

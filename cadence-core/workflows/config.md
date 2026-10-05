@@ -504,17 +504,21 @@ rejoins here at **Wrap-up**.
 
 Summarize the final tier map per provider and note which triggers now have a
 cross-model reviewer (a trigger whose `tier` resolves to a non-null id on a
-configured reviewer). Remind the user this is re-runnable (`/cad-config
+reviewer that both this repository's and the user-global `review.reviewers`
+name). Remind the user this is re-runnable (`/cad-config
 --review`) and is auto-offered when a review fails with a model-not-found /
 deprecated error (trouble-triggered redetect, wired in the review dispatch).
 
-**Flag dangling enrollment.** If `review.reviewers` names a cross-model
-provider (`openai`/`gemini`) but one or more `review.triggers.<t>.tier`
+**Flag dangling enrollment, user-global half included.** If `review.reviewers`
+names a cross-model provider (`openai`/`gemini`) but one or more `review.triggers.<t>.tier`
 values resolve to `null` for it (that provider's tier is unassigned), say so
 explicitly: the trigger silently falls back to `claude-subagent`, so the
 cross-model setup is inert for it. Name the trigger and the empty tier and
-offer to assign it or drop the provider from `reviewers`. A config that
-enrolls a reviewer it cannot actually reach should never look configured.
+offer to assign it or drop the provider from `reviewers`. Flag too a provider
+this repository's `review.reviewers` names but the user-global config's does
+not: the user-global config must name it too, or every trigger drops it. A
+config that enrolls a reviewer it cannot actually reach should never look
+configured.
 
 ## Degradation contract
 

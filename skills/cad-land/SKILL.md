@@ -1,6 +1,6 @@
 ---
 name: cad-land
-description: "Land finished work - report git state, then ask the mechanism (push / MR or PR / tag / leave local). Never decides how you publish"
+description: "Land finished work - report git state, then ask how to publish (push / MR or PR / tag / leave local). With git.auto_close set in both the repository and your user-global config, it runs PR -> merge unattended and halts on a surviving blocker"
 argument-hint: "[base branch | defaults to git.base_branch]"
 allowed-tools:
   - Read
@@ -10,10 +10,11 @@ allowed-tools:
 ---
 
 <objective>
-Land the current branch's work. cad-land encodes "the git mechanism is the
-user's call" by construction: it never has a preselected publish action and
-never auto-pushes. It reports the state, asks how to publish, and executes
-exactly that - nothing more.
+Land the current branch's work. By default there is no preselected publish
+action: cad-land reports the state, asks how to publish, and executes only what
+you choose - nothing more. The one exception is the `git.auto_close` arm that
+both opt-ins authorize (this repository's config and your user-global config),
+which runs the close unattended; it is stated once, at step 3(b).
 </objective>
 
 <execution_context>
@@ -23,8 +24,8 @@ exactly that - nothing more.
 <process>
 Read every config key this run needs in ONE `config.mjs get` up front
 (conventions.md Parallel work) - `git.base_branch git.protected_branches
-git.auto_close git.on_land_cleanup git.create_tag` - and reuse the values
-across the steps below rather than re-reading per step.
+git.on_land_cleanup git.create_tag` - and reuse the values across the steps
+below rather than re-reading per step. Step 3 asks a seam, not this read.
 
 1. **Report git state.** Current branch; the base = `$ARGUMENTS`, else
    `git.base_branch`, else the first `git.protected_branches` entry that
@@ -61,7 +62,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
    land, or stop. If HEAD is a protected branch, the protected-branch guard
    (references/git-guard.md) applies to any commit here.
 
-3. **Publish - branch on `git.auto_close`.**
+3. **Publish - branch on the `git.auto_close` authorization.**
 
    **First the deferred queue, on BOTH arms and ahead of the branch below.** A
    gate resolved `deferred` ran its reviewer and let the run continue, so the
@@ -85,12 +86,24 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
    takes for a findings payload it could not parse.
 
    It is NOT `land-cleanup.mjs gate` and must not be folded into it: that gate
-   halts only when `git.auto_close` is true and reads only `risk_surface`
+   halts only under an authorized `git.auto_close` and reads only `risk_surface`
    survivors, so a default-configured project would publish straight over a
    deferred `plan`, `diff` or `phase_diff` finding.
 
-   **(a) `git.auto_close` false (default): ask the mechanism (ask-user seam, NO
-   preselected default):**
+   **Then the ONE answer both arms branch on**, on its own line:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <root>
+```
+
+   `ok:true` takes 3(b), `ok:false` takes 3(a). It is true only when this
+   repository's config and your user-global config BOTH set `git.auto_close`;
+   either alone authorizes nothing. When the refusal's `requested` is true,
+   print its `detail` as one line first, so a user who set one half learns why
+   the ask came back.
+
+   **(a) `git.auto_close` false, or not set in both layers (default): ask the
+   mechanism (ask-user seam, NO preselected default):**
    - **Direct push** - push the current branch to its remote.
    - **Open MR / PR** - the detected host's mechanism (`glab mr create` on
      GitLab, `gh pr create` on GitHub, `tea pr create --base <base> --head
@@ -113,8 +126,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
    title/summary the user confirms. Report precisely what was done (branch
    pushed, MR/PR URL, tag created) and nothing implied.
 
-   **(b) `git.auto_close` true: land the integration branch on base via
-   `PR -> merge`, no prompts.** Skip the 3a ask entirely (this is the single
+   **(b) `git.auto_close` true, set in both layers: land the integration branch
+   on base via `PR -> merge`, no prompts.** Skip the 3a ask entirely (this is the single
    opt-in that lets the close run unattended; it never installs a default into
    the 3a ask). The integration branch is local-only
    (references/git-publish.md rail 3 never
@@ -159,7 +172,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
      can tell an aggregate somebody read from one nobody has, and clearing it
      unread is the merge-over-a-blocker this gate exists to stop.
      Pipe `{"findings": [...], "unruled": [...]}` on stdin to
-     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate`; on
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate --dir <root>`,
+     the same `<root>` step 3's `authorized` call read; on
      `action:"halt"` stop the chain and surface the `findings` instead of
      merging over them, and surface a non-empty `overridden` with them - those
      are halting survivors a person already cleared, so they never move
@@ -186,8 +200,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" publish --dir <root>`
      It does ONE sanctioned `git push` of the current non-protected branch as a
      subprocess (execFileSync argv) that git-guard's Bash push hook never sees,
-     and refuses with `ok:false` unless repo `git.auto_close` is true and HEAD is
-     a non-protected branch. On `ok:true` proceed to open the PR; on `ok:false`
+     and refuses with `ok:false` unless both layers set `git.auto_close` and HEAD
+     is a non-protected branch. On `ok:true` proceed to open the PR; on `ok:false`
      stop and surface the reason - do NOT fall back to a raw `git push`, which
      would hit the guard's unconditional ask. Relay the envelope's `warnings[]`
      to the user rather than dropping them: `reason:"config-parse-failed"` means
@@ -201,9 +215,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
      asks BEFORE it probes, on its own physical line:
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <root>`
      On `ok:false` do not touch the remote at all - no view, no create, no merge -
-     stop and surface the `detail`, which says which authorization was missing
-     (a `git.auto_close` the user set globally does not authorize a repository
-     that never set it in its own `.planning/config.json`). That is the same
+     stop and surface the `detail`, which names the missing half (either half
+     alone authorizes nothing). That is the same
      stop the GitHub/Forgejo arm makes on the publish seam's `ok:false`. ONE
      consult, ahead of the whole bullet and not beside the create: the reuse
      arm is what would otherwise reach `glab mr merge` unasked, so placed here
@@ -283,8 +296,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
 
 <guardrails>
 - No preselected publish default, ever. No auto-push. No auto-commit. The one
-  exception is `git.auto_close` (default off), the explicit opt-in that runs the
-  close unattended; its mechanic is stated once, at step 3(b), beside the
+  exception is `git.auto_close` (default off), set true in both the repository's
+  config and your user-global config, the explicit opt-in that runs the close
+  unattended; its mechanic is stated once, at step 3(b), beside the
   code that runs it.
 - With `git.auto_close` off, execute only the single chosen mechanism; do not
   chain (e.g. push AND tag) unless the user chose both.

@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PLANNING, run } from './planning.test.mjs';
 
@@ -41,9 +41,9 @@ function projectTree(files) {
   return root;
 }
 
-/** Executable stubs at `<root>/node_modules/.bin`, which is where `npx`
- *  resolves a delegated tool. Bytes in the fixture's own tree, so the
- *  npx-delegated arm is pinned without any machine's install. */
+/** Executable stubs at `<root>/node_modules/.bin`, where a project installs
+ *  eslint and tsc. Bytes in the fixture's own tree, so the local arm is pinned
+ *  without any machine's install. */
 function nodeModulesBin(root, tools) {
   const dir = join(root, 'node_modules', '.bin');
   mkdirSync(dir, { recursive: true });
@@ -51,16 +51,26 @@ function nodeModulesBin(root, tools) {
   return root;
 }
 
+/** A directory of executable stubs to prepend to the child's PATH, the way
+ *  issue-check.test.mjs injects forge CLIs: the PATH arm is proven by the
+ *  production resolver against bytes the fixture wrote. */
+function pathStubs(tools) {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-detect-path-'));
+  for (const t of tools) writeFileSync(join(dir, t), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  return dir;
+}
+
 /**
  * Every tool this block's fixtures name. Passed as the reachable set by
  * default, so a row asserting WHICH command an arm produces is not also an
  * assertion about what is installed on the machine running the suite (RCH-01,
  * D-11): with the reachability rule live and no override, the `ruff`, `mypy`
- * and two `go` rows fail on a dev box without those tools, and the
- * `npx eslint`/`npx tsc` rows fail in every mkdtemp tree, which has no
- * `node_modules`. A row that is ABOUT reachability passes its own narrower set.
+ * and two `go` rows fail on a dev box without those tools, and the eslint
+ * and tsc rows fail on any box without them on PATH. A name in the set reads
+ * as on PATH, so every row under it answers with the bare name. A row that is
+ * ABOUT reachability passes its own narrower set.
  */
-const EVERY_TOOL = 'npm,npx,cargo,ruff,mypy,go,eslint,tsc';
+const EVERY_TOOL = 'npm,cargo,ruff,mypy,go,eslint,tsc';
 
 /**
  * detect-commands takes --root (the PROJECT root), never --dir.
@@ -69,14 +79,16 @@ const EVERY_TOOL = 'npm,npx,cargo,ruff,mypy,go,eslint,tsc';
  * `CADENCE_TEST_SEAM` sentinel; `null` runs the real probe, and `seam: false`
  * sets the variable with NO sentinel, which must be ignored. A row that needs
  * the LIVE probe stays hermetic by putting its binaries in the fixture's own
- * `node_modules/.bin` (see nodeModulesBin) rather than relying on the machine.
+ * `node_modules/.bin` (see nodeModulesBin), or in a `pathDir` prepended to
+ * the child's PATH (see pathStubs), rather than relying on the machine.
  */
-function detect(root, { extra = [], reachable = EVERY_TOOL, seam = true } = {}) {
+function detect(root, { extra = [], reachable = EVERY_TOOL, seam = true, pathDir = null } = {}) {
   const env = { ...process.env };
   delete env.CADENCE_TEST_SEAM;
   delete env.CADENCE_DETECT_REACHABLE;
   if (seam) env.CADENCE_TEST_SEAM = '1';
   if (reachable !== null) env.CADENCE_DETECT_REACHABLE = reachable;
+  if (pathDir !== null) env.PATH = pathDir + delimiter + (env.PATH || '');
   try {
     return JSON.parse(execFileSync('node', [PLANNING, 'detect-commands', '--root', root, ...extra],
       { encoding: 'utf8', env }));
@@ -129,9 +141,9 @@ test('detect-commands: go.mod answers both slots', () => {
 
 test('detect-commands: an eslint config, flat or legacy, is the last lint arm', () => {
   assert.equal(detect(projectTree({ 'eslint.config.mjs': 'export default [];\n' })).lint,
-    'npx eslint .');
+    'eslint .');
   const legacy = detect(projectTree({ '.eslintrc.json': '{}' }));
-  assert.equal(legacy.lint, 'npx eslint .');
+  assert.equal(legacy.lint, 'eslint .');
   assert.equal(legacy.source.lint, '.eslintrc.json');
 });
 
@@ -149,14 +161,14 @@ test('detect-commands: the project\'s own script beats a tool config in the same
 
 test('detect-commands: two EXACT tsconfig names, each with the form that points at it', () => {
   const plain = detect(projectTree({ 'tsconfig.json': '{}' }));
-  assert.equal(plain.typecheck, 'npx tsc --noEmit');
+  assert.equal(plain.typecheck, 'tsc --noEmit');
   assert.equal(plain.source.typecheck, 'tsconfig.json');
 
-  // `npx tsc --noEmit` ignores a config it is not pointed at, so the CI name
+  // `tsc --noEmit` ignores a config it is not pointed at, so the CI name
   // brings the `-p` form that does point at it - a fixed literal, never a
   // command built out of the matched file name.
   const ci = detect(projectTree({ 'tsconfig.ci.json': '{}' }));
-  assert.equal(ci.typecheck, 'npx tsc -p tsconfig.ci.json');
+  assert.equal(ci.typecheck, 'tsc -p tsconfig.ci.json');
   assert.equal(ci.source.typecheck, 'tsconfig.ci.json');
 });
 
@@ -165,7 +177,7 @@ test('detect-commands: a tree carrying BOTH tsconfigs answers with the project\'
   // the CI file is the narrower one, so the second arm must never shadow the
   // first.
   const both = detect(projectTree({ 'tsconfig.json': '{}', 'tsconfig.ci.json': '{}' }));
-  assert.equal(both.typecheck, 'npx tsc --noEmit');
+  assert.equal(both.typecheck, 'tsc --noEmit');
   assert.equal(both.source.typecheck, 'tsconfig.json');
 });
 
@@ -245,45 +257,92 @@ test('detect-commands: an unreachable winning arm nulls its slot and never falls
   assert.equal(r.source.typecheck, 'go.mod');
 });
 
-test('detect-commands: an npx arm probes the DELEGATED tool, not the driver alone', () => {
-  // `npx` is on PATH almost everywhere, so a driver-only rule would leave
-  // `npx eslint .` naming an eslint nobody has (D-04).
-  const tree = { 'eslint.config.mjs': 'export default [];\n' };
-  const without = detect(projectTree(tree), { reachable: 'npx' });
-  assert.equal(without.lint, null);
-  assert.equal(without.source.lint, null);
-  assert.equal(without.warnings.filter((w) => w.includes('eslint')).length, 1,
-    JSON.stringify(without.warnings));
-  const with_ = detect(projectTree(tree), { reachable: 'npx,eslint' });
-  assert.equal(with_.lint, 'npx eslint .');
-  assert.equal(with_.source.lint, 'eslint.config.mjs');
+test('detect-commands: no arm emits npx (audit W12)', () => {
+  // `npx <tool>` with no local install fetches the package from the registry,
+  // and this answer is run before every commit. Every arm, under the override
+  // and under the live probe, names the tool itself.
+  const tree = { 'eslint.config.js': 'module.exports = [];\n', 'tsconfig.json': '{}' };
+  const viaOverride = detect(projectTree(tree));
+  const live = detect(nodeModulesBin(projectTree(tree), ['eslint', 'tsc']), { reachable: null });
+  for (const r of [viaOverride, live]) {
+    assert.equal(JSON.stringify(r).includes('npx'), false, JSON.stringify(r));
+  }
 });
 
-test('detect-commands: the LIVE probe resolves a delegated tool out of node_modules/.bin', () => {
-  // Where `npx` itself looks, and the half a PATH-only rule would drop: this is
-  // the shape of a TypeScript repo whose only static-analysis command is the
-  // one CI runs, with `tsc` installed as a dependency and absent from PATH.
-  // Both binaries live in the FIXTURE's node_modules/.bin, so the row proves
-  // the production probe without depending on what this machine has installed.
-  const root = nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['npx', 'tsc']);
+test('detect-commands: eslint and tsc in node_modules/.bin are named by that path', () => {
+  // The LIVE probe, out of stubs the fixture wrote: the shape of a JS project
+  // with its linter and compiler installed as dependencies and neither on PATH.
+  // The path is relative, because every other arm already assumes the executor
+  // runs from the project root and an absolute one would carry this machine
+  // into the envelope.
+  const root = nodeModulesBin(projectTree({
+    'eslint.config.js': 'module.exports = [];\n',
+    'tsconfig.json': '{}',
+  }), ['eslint', 'tsc']);
   const r = detect(root, { reachable: null });
-  assert.equal(r.typecheck, 'npx tsc -p tsconfig.ci.json', JSON.stringify(r));
-  assert.equal(r.source.typecheck, 'tsconfig.ci.json');
+  assert.equal(r.lint, 'node_modules/.bin/eslint .', JSON.stringify(r));
+  assert.equal(r.typecheck, 'node_modules/.bin/tsc --noEmit', JSON.stringify(r));
+  assert.deepEqual(r.source, { lint: 'eslint.config.js', typecheck: 'tsconfig.json' });
   assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+
+  // The CI-file arm keeps its own arguments behind the same path.
+  const ci = detect(nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['tsc']),
+    { reachable: null });
+  assert.equal(ci.typecheck, 'node_modules/.bin/tsc -p tsconfig.ci.json', JSON.stringify(ci));
+  assert.equal(ci.source.typecheck, 'tsconfig.ci.json');
   // Only the POSITIVE half is asserted against the live probe, deliberately. A
   // fixture can guarantee a binary is PRESENT (it wrote it), and nothing on the
-  // machine can take it away; it cannot guarantee one is ABSENT, because a box
-  // with tsc installed answers `true` correctly and the row would fail for
-  // being right. The unreachable-delegated-tool half is pinned above, through
-  // the override, where the set is stated rather than discovered.
+  // machine can take it away; it cannot guarantee one is ABSENT. The
+  // unreachable half is pinned below, through the override, where the set is
+  // stated rather than discovered.
+});
+
+test('detect-commands: a tool only on PATH is named bare', () => {
+  // No node_modules at all, and a tsc stub on the child's PATH: the production
+  // resolver answers from bytes the fixture wrote.
+  const r = detect(projectTree({ 'tsconfig.json': '{}' }),
+    { reachable: null, pathDir: pathStubs(['tsc']) });
+  assert.equal(r.typecheck, 'tsc --noEmit', JSON.stringify(r));
+  assert.equal(r.source.typecheck, 'tsconfig.json');
+});
+
+test('detect-commands: a tool in both places is named by its node_modules/.bin path', () => {
+  // The project's pinned copy is the one its CI runs, so it beats whatever
+  // version sits on PATH.
+  const root = nodeModulesBin(projectTree({ 'tsconfig.json': '{}' }), ['tsc']);
+  const r = detect(root, { reachable: null, pathDir: pathStubs(['tsc']) });
+  assert.equal(r.typecheck, 'node_modules/.bin/tsc --noEmit', JSON.stringify(r));
+});
+
+test('detect-commands: a tool in neither place nulls its slot and names the tool', () => {
+  const tree = { 'eslint.config.mjs': 'export default [];\n', 'tsconfig.json': '{}' };
+  const r = detect(projectTree(tree), { reachable: 'npm' });
+  assert.equal(r.lint, null);
+  assert.equal(r.typecheck, null);
+  assert.deepEqual(r.source, { lint: null, typecheck: null });
+  assert.equal(r.warnings.filter((w) => w.startsWith('lint: eslint ')).length, 1,
+    JSON.stringify(r.warnings));
+  assert.equal(r.warnings.filter((w) => w.startsWith('typecheck: tsc ')).length, 1,
+    JSON.stringify(r.warnings));
+});
+
+test('detect-commands: only eslint and tsc are taken from node_modules/.bin', () => {
+  // A cloned repo can commit its own node_modules. A `node_modules/.bin/cargo`
+  // must not stand in for the user's cargo: the answer is the PATH one, or
+  // null, and never the fixture's path.
+  const root = nodeModulesBin(projectTree({ 'Cargo.toml': '[package]\nname = "x"\n' }), ['cargo']);
+  const r = detect(root, { reachable: null });
+  for (const slot of [r.lint, r.typecheck]) {
+    assert.equal(String(slot).startsWith('node_modules/'), false, JSON.stringify(r));
+  }
 });
 
 test('detect-commands: an EMPTY reachable set means nothing is reachable', () => {
   // The `||` hazard, pinned: an empty override is falsy, so a seam that read it
   // through `|| probe` would silently run the live probe and answer about the
-  // machine. The fixture's own node_modules/.bin would otherwise resolve both
-  // binaries, which is exactly what makes this row discriminating.
-  const root = nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['npx', 'tsc']);
+  // machine. The fixture's own node_modules/.bin would otherwise resolve tsc,
+  // which is exactly what makes this row discriminating.
+  const root = nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['tsc']);
   const r = detect(root, { reachable: '' });
   assert.equal(r.typecheck, null, JSON.stringify(r));
   assert.equal(r.source.typecheck, null);
@@ -294,9 +353,9 @@ test('detect-commands: the reachable set WITHOUT the sentinel is ignored', () =>
   // command an executor is told to run, so a repo-supplied .envrc setting it
   // must change nothing. Same fixture and same empty value as the row above,
   // which answered `null` there and answers the live probe here.
-  const root = nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['npx', 'tsc']);
+  const root = nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['tsc']);
   const r = detect(root, { reachable: '', seam: false });
-  assert.equal(r.typecheck, 'npx tsc -p tsconfig.ci.json', JSON.stringify(r));
+  assert.equal(r.typecheck, 'node_modules/.bin/tsc -p tsconfig.ci.json', JSON.stringify(r));
 });
 
 // --- a blank --root is refused by BOTH --root subcommands (COR-01) ----------

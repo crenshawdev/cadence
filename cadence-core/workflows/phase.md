@@ -3,9 +3,9 @@
 CRUD the ROADMAP `## Phases` list. The renumbering ops (insert/remove) are the
 reason this is a skill: a phase number appears in FOUR places (ROADMAP list,
 `.planning/phases/<N>/` dirs, the REQUIREMENTS `Phase` column, the STATE
-cursor) and renumbering keeps them in step. One exception: insert shifts the
-REQUIREMENTS column only on Pending `## Traceability` rows and leaves Complete
-and Deferred rows as written, since they record where work shipped. The
+cursor) and renumbering keeps them in step. One exception: insert and remove
+shift the REQUIREMENTS column only on Pending `## Traceability` rows and leave
+Complete and Deferred rows as written, since they record where work shipped. The
 mechanics live in the planning seam's `renumber` subcommand - this workflow
 gathers the judgment inputs, shows the dry-run at the confirmation gate, and
 repairs what the seam deliberately leaves to judgment.
@@ -40,9 +40,10 @@ plain markdown edit - no renumbering, no dir change.
    Require an explicit yes (ask-user seam).
 2. Re-run without `--dry-run`. The seam moves dirs high-to-low (collision-
    safe, `git mv` so history follows), shifts every `Phase K` token and
-   `phases/K/` path >= N in ROADMAP, and re-points the cursor. In REQUIREMENTS
-   it shifts only `## Traceability` rows whose Status is `Pending`; Complete
-   and Deferred rows, `## Shipped` and every other REQUIREMENTS line stay
+   `phases/K/` path >= N in ROADMAP, and re-points the cursor's `Phase:` line
+   and the phase numbers in its `Next:` command. In REQUIREMENTS it shifts
+   only `## Traceability` rows whose Status is `Pending`; Complete and
+   Deferred rows, `## Shipped` and every other REQUIREMENTS line stay
    byte-identical.
 3. The seam leaves the numbered slot empty (`slot` in its output): write the
    new `- [ ] **Phase N: Name**` line and its detail section from the
@@ -57,14 +58,19 @@ plain markdown edit - no renumbering, no dir change.
    batch them in one message; only a call that consumes a prior call's output
    is serialized.)
 2. Dry-run (`renumber remove --n <N> --dry-run`), show `ops`, the
-   `orphaned_reqs` (requirements that pointed at the removed phase), any
-   `in_text_refs` and `warn`. Require an explicit yes.
+   `orphaned_reqs` (Pending requirements that pointed at the removed phase),
+   any `in_text_refs` and `warn`. Show every `req_row_changes` entry verbatim,
+   with its `line`, `before` and `after` text, never as a summary. Require an
+   explicit yes.
 3. Re-run without `--dry-run`. The seam removes the list line and detail
-   section, `git rm`s the dir, renumbers low-to-high, blanks the orphaned
-   rows' Phase cells (they surface as `no-phase` in /cad-audit - never
-   silently dropped), and re-points the cursor.
-4. Reassign each orphaned requirement via the ask-user seam (a new phase, or
-   Deferred), and repair reported `in_text_refs` by hand.
+   section, `git rm`s the dir, renumbers low-to-high, and re-points the
+   cursor's `Phase:` line and the phase numbers in its `Next:` command. In
+   REQUIREMENTS it changes only Pending `## Traceability` rows, blanking the
+   Pending orphans' Phase cells (they surface as `no-phase` in /cad-audit -
+   never silently dropped); Complete and Deferred rows, `## Shipped` and every
+   other line stay byte-identical.
+4. Reassign each orphaned requirement, all Pending rows, via the ask-user seam
+   (a new phase, or Deferred), and repair reported `in_text_refs` by hand.
 
 ## Finish
 - A failed apply (`ok:false` with a `completed` list) leaves the tree partly

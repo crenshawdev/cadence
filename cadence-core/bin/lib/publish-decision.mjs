@@ -5,7 +5,7 @@
 // of the seam's two mutating actions may run, and if so return the byte-exact
 // git argv (minus the runtime `-C <dir>` prefix the seam prepends). They never
 // run live git and never do I/O - the git-publish.mjs seam reads the branch, the
-// configured remotes, and the repo-layer auto_close, then hands them here.
+// configured remotes, and the both-layer auto_close answer, then hands them here.
 // Mirrors branch-decision.mjs and close-decision.mjs discipline:
 // unknown/missing inputs never throw.
 //
@@ -27,41 +27,71 @@ const SAFE_BRANCH = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/;
 // URL can never stand in as the push destination.
 const REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
+// How the refusal sentences name the user-global file when no path is in hand.
+const GLOBAL_NAME = 'the user-global config (~/.claude/cadence/config.json, or the file CADENCE_GLOBAL_CONFIG names)';
+const SET_IT = '"git": {"auto_close": true}';
+
 /**
- * Which authorization was missing, as a sentence the user can act on - or null
- * when the repository did authorize the unattended close. PURE and TOTAL: any
- * non-`true` input reads as off, nothing throws.
+ * Which half of the unattended-close authorization was missing, as a sentence
+ * the user can act on - or null when both halves opted in. PURE and TOTAL: any
+ * input that is not the per-layer answer lib/repo-auto-close.mjs
+ * `autoCloseLayers` returns reads as off in both layers, nothing throws.
  *
- * One key, `git.auto_close`, now has TWO resolutions, and the reason this
- * function exists is that a single refusal token cannot tell them apart:
+ * Under D-02 the close needs `git.auto_close` true in BOTH this repository's
+ * `.planning/config.json` and the user-global config. `reason` stays the token
+ * `auto-close-off` for every off-state (consumers match it by equality), so
+ * which file to fix has to live in this sentence, and there is one per state:
+ * neither set, repo-only, global-only, and a file that exists but could not be
+ * read. That last one comes first and never calls the file the missing half:
+ * it may already carry the key, and only a repair can prove it.
  *
- *   requested  - the MERGED global+repo value. It is presentation: `/cad-land`
- *                skips the publish ask on it, and `land-cleanup.mjs gate` reads
- *                the same value so its halt covers the runs that skipped the
- *                human.
- *   authorized - the REPOSITORY layer alone (lib/repo-auto-close.mjs). Only it
- *                may unlock a mutation of somebody else's project.
+ * One more cause sits under those states: `shared`, the user-global path
+ * resolving to this repository's own config file. That is one layer, so the
+ * global half reads `unset`, and the repo-only sentence would tell the user to
+ * set a key the file already sets - advice that can never authorize anything.
+ * The sentence names the collapse instead. The verdict does not move.
  *
- * The interesting state is the one where they disagree: a `true` in the user's
- * own home directory means the run believes it is unattended while nothing in
- * the repository ever said so. `reason` stays the token `auto-close-off` for
- * both states (it is asserted by equality across the seam tests and changing
- * its text buys no behaviour), so the distinction has to live in a sentence.
+ * No sentence names a `config.mjs set` command: the sentence states the file
+ * and the key, which stays true whichever write face the user reaches for.
  *
- * @param {{ requested?: unknown, authorized?: unknown }} [args]
+ * @param {{ repo?: unknown, global?: unknown, shared?: unknown, globalFile?: unknown }} [layers]
  * @returns {string|null}
  */
-export function authorizationDetail({ requested, authorized } = {}) {
-  if (authorized === true) return null;
-  if (requested === true) {
-    return 'git.auto_close is true in the merged config, but this repository never set it: '
-      + 'a user-global setting cannot authorize an unattended publish or merge in a repository '
-      + 'that did not opt in. Set "git": {"auto_close": true} in this repository\'s own '
-      + '.planning/config.json to authorize it here.';
+export function authorizationDetail(layers) {
+  const { repo, global, shared, globalFile } = layers && typeof layers === 'object' ? layers : {};
+  if (repo === 'set' && global === 'set') return null;
+  const torn = [];
+  if (repo === 'unreadable') torn.push("this repository's .planning/config.json");
+  if (global === 'unreadable') {
+    torn.push(typeof globalFile === 'string' && globalFile
+      ? `the user-global config ${globalFile}` : GLOBAL_NAME);
   }
-  return 'git.auto_close is not true anywhere, so no unattended publish or merge is authorized. '
-    + 'A repository opts in by setting "git": {"auto_close": true} in its own '
-    + '.planning/config.json; a user-global setting cannot opt in on its behalf.';
+  if (torn.length) {
+    return `No unattended publish or merge is authorized: ${torn.join(' and ')} could not be read `
+      + 'as a JSON config object, so the git.auto_close opt-in it may carry cannot be proven. '
+      + 'Repair that file and re-run.';
+  }
+  if (shared === true) {
+    const named = typeof globalFile === 'string' && globalFile ? `the user-global config ${globalFile}` : 'the user-global config';
+    return `No unattended publish or merge is authorized: ${named} resolves to this repository's own `
+      + '.planning/config.json, so the two layers are one file, and one file cannot authorize it on its own. '
+      + 'Point the user-global config at a separate file (CADENCE_GLOBAL_CONFIG, or ~/.claude/cadence/config.json '
+      + `when that is unset) and set ${SET_IT} there.`;
+  }
+  if (repo === 'set') {
+    return "This repository's .planning/config.json sets git.auto_close, but " + GLOBAL_NAME
+      + ' does not: a committed repository setting cannot authorize an unattended publish or '
+      + `merge on its own. Set ${SET_IT} in the user-global config to authorize it on this machine.`;
+  }
+  if (global === 'set') {
+    return "The user-global config sets git.auto_close, but this repository's .planning/config.json "
+      + 'does not: a user-global setting cannot authorize an unattended publish or merge in a '
+      + `repository that did not opt in. Set ${SET_IT} in this repository's own .planning/config.json `
+      + 'to authorize it here.';
+  }
+  return 'git.auto_close is set in neither layer, so no unattended publish or merge is authorized. '
+    + `It needs ${SET_IT} in BOTH this repository's .planning/config.json and ${GLOBAL_NAME}; `
+    + 'either one alone authorizes nothing.';
 }
 
 /**
@@ -69,10 +99,9 @@ export function authorizationDetail({ requested, authorized } = {}) {
  * argv if so. PURE and TOTAL: non-array `protectedBranches`/`configuredRemotes`
  * coerce to [], a non-string `currentBranch`/`remote` yields a refuse, nothing
  * throws. Gates run FIRST-FAILING-WINS; every refuse is total (`argv:[]`):
- *   1. autoClose !== true    -> 'auto-close-off', plus the `detail` sentence
- *      `authorizationDetail` words from the requested/authorized pair - the ONE
- *      gate that carries a detail, so every other refusal's envelope is
- *      unchanged
+ *   1. not both layers opted in -> 'auto-close-off', plus the `detail` sentence
+ *      `authorizationDetail` words from the per-layer answer - the ONE gate
+ *      that carries a detail, so every other refusal's envelope is unchanged
  *   2. no branch / detached HEAD                 -> 'no-branch'
  *   3. branch fails SAFE_BRANCH                   -> 'bad-branch'
  *   4. branch is protected                        -> 'protected-branch'
@@ -87,15 +116,15 @@ export function authorizationDetail({ requested, authorized } = {}) {
  * regression reopening option injection):
  * `['push','--set-upstream','--',remote,'refs/heads/<b>:refs/heads/<b>']`.
  *
- * `autoClose` is the AUTHORIZED value (repo layer only); `autoCloseRequested` is
- * the merged one and is optional, carrying no verdict at all - it only tells
- * gate 1's sentence which of the two off-states the caller is in.
+ * `autoClose` is lib/repo-auto-close.mjs `autoCloseLayers`' per-layer answer
+ * (D-02). Gate 1 passes exactly when `authorizationDetail` has nothing to say,
+ * so the verdict and its sentence are one reading and cannot disagree.
  *
- * @param {{ autoClose?: boolean, autoCloseRequested?: unknown, currentBranch?: unknown,
+ * @param {{ autoClose?: unknown, currentBranch?: unknown,
  *   protectedBranches?: unknown, remote?: unknown, configuredRemotes?: unknown }} args
  * @returns {{ action:'publish'|'refuse', argv:string[], branch:string|null, remote:string|null, reason:string, detail?:string }}
  */
-export function decidePublish({ autoClose, autoCloseRequested, currentBranch, protectedBranches, remote, configuredRemotes } = {}) {
+export function decidePublish({ autoClose, currentBranch, protectedBranches, remote, configuredRemotes } = {}) {
   const protectedList = Array.isArray(protectedBranches) ? protectedBranches : [];
   const remotes = Array.isArray(configuredRemotes) ? configuredRemotes : [];
   const branch = typeof currentBranch === 'string' ? currentBranch : null;
@@ -105,15 +134,11 @@ export function decidePublish({ autoClose, autoCloseRequested, currentBranch, pr
    *  @returns {{ action:'refuse', argv:string[], branch:string|null, remote:string|null, reason:string, detail?:string }} */
   const refuse = (reason) => ({ action: 'refuse', argv: [], branch, remote: rem, reason });
 
-  // 1. auto_close must be explicitly on (repo layer only; the seam enforces the
-  //    layer). Preserves D-08: an off / global-only auto_close never publishes.
-  //    The reason token stays `auto-close-off` whichever off-state this is; the
-  //    detail is what tells "off everywhere" from "requested globally, never
-  //    authorized here".
-  if (autoClose !== true) {
-    return { ...refuse('auto-close-off'),
-      detail: /** @type {string} */ (authorizationDetail({ requested: autoCloseRequested, authorized: autoClose })) };
-  }
+  // 1. auto_close must be on in BOTH layers (D-02): repo-only, global-only and
+  //    an unreadable half never publish. The reason token stays
+  //    `auto-close-off` whichever off-state this is; the detail names the file.
+  const missing = authorizationDetail(/** @type {any} */ (autoClose));
+  if (missing !== null) return { ...refuse('auto-close-off'), detail: missing };
   // 2. A branch must exist and not be the detached-HEAD sentinel.
   if (!branch || branch === 'HEAD') return refuse('no-branch');
   // 3. The branch must be interpolation-safe (no leading '-', ':', or metachars).

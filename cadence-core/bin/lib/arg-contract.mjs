@@ -1310,6 +1310,12 @@ export const CONTRACTS = {
       // opposite arms, the union versus fail-closed.
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
     },
+    // The prefixed name for the two reviews that resolve no routing (MOD-04):
+    // they dispatch the base `cad-reviewer`, and a bare name is the user's to
+    // own, so they ask for `<plugin>:<stem>` without touching config or trace.
+    'agent-type': {
+      '--stem': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
   },
   'worktree-base.mjs': {
     '*': {

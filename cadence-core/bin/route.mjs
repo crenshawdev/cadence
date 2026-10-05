@@ -54,7 +54,14 @@
 //                              the default and is named in `warnings`
 //   review.reviewers           the reviewer backends the fire may go to, which
 //                              `resolve` filters per trigger by availability
-//                              into the `reviewers` map beside `review`
+//                              into the `reviewers` map beside `review`. A
+//                              cross-model name also needs the USER-GLOBAL
+//                              layer's own list to name it (D-14): a repo layer
+//                              arrives with a clone and the provider key comes
+//                              from the user's environment, so a repository can
+//                              narrow the set but never add a provider to it.
+//                              Those global names are returned as
+//                              `reviewers_global`
 //   review.triggers.*.tier     the model tier that trigger's cross-model half
 //                              runs at, which is also what its availability
 //                              test reads, falling back to that key's own schema
@@ -122,7 +129,7 @@
 import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, isAbsolute, sep } from 'node:path';
-import { mergeLayers } from './lib/config-merge.mjs';
+import { GLOBAL_CONFIG, layerIdentity, mergeLayers } from './lib/config-merge.mjs';
 import { rungFile, RUNG_FILES, RUNG_ORDER } from './lib/rung-agent.mjs';
 import { gateTriggers } from './lib/gate-agreement.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
@@ -159,6 +166,35 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 let SCHEMA;
 const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
   || join(HERE, '..', 'config.schema.json');
+
+// The plugin's agent-type prefix is plugin.json's `name` - the host namespaces a
+// plugin's agents by it, and `provider.plugin` (`cadence@cadence`) is NOT it.
+// Read relative to the SCRIPT, never the cwd or the directory's name, so a
+// `cadence-dev` install reaches its own agents. This mirrors planning/core.mjs's
+// MANIFEST_PATH the way SCHEMA_PATH mirrors config.mjs's: the same file, the
+// same CADENCE_PLUGIN_MANIFEST override, the same gate.
+const MANIFEST_PATH = (testSeamOpen() && process.env.CADENCE_PLUGIN_MANIFEST)
+  || join(HERE, '..', '..', '.claude-plugin', 'plugin.json');
+
+/**
+ * The ONE answer to "prefix or failure", for `resolve` and `agent-type` alike,
+ * so the two can never disagree about the prefix or about the fallback. Never
+ * throws. A manifest that cannot answer leaves `agentType` the bare stem - a
+ * dispatch of it meets the module's safety net, as v3.8.0's did - and hands
+ * back the one `reason` sentence naming the path. That sentence names no stem,
+ * so both reads produce it byte-for-byte.
+ * @param {string} stem
+ * @returns {{agentType: string, reason: string|null}}
+ */
+function prefixedAgentType(stem) {
+  try {
+    const name = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')).name;
+    if (typeof name === 'string' && name !== '') return { agentType: `${name}:${stem}`, reason: null };
+  } catch { /* falls through to the bare answer below */ }
+  return { agentType: stem,
+    reason: `agent_type is the bare agent: no plugin name could be read from ${MANIFEST_PATH}` };
+}
+
 // `hint` is the third argument and rides as a conditional key: an absent hint
 // adds no key, so no shipped assertion moves (phase-1 D-09/D-10).
 const fail = (reason, detail, hint) => {
@@ -262,7 +298,7 @@ const MAX_BODY_BYTES = 512 * 1024;
 // but did not block on: a layer that failed to parse, and any key v2.0.0
 // retired.
 function readConfig(file) {
-  const { config: c, source, warnings } = mergeLayers(file);
+  const { config: c, source, warnings, layers } = mergeLayers(file);
   const m = c.model || {};
   return {
     escalate_on_failure: m.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
@@ -313,6 +349,17 @@ function readConfig(file) {
     // DEFAULTS.reviewers backstops it below, the way DEFAULTS backstops every
     // other unset key.
     reviewers: reviewersIn(c),
+    // The cross-model names the USER-GLOBAL layer itself lists (D-14), read off
+    // the merge's own per-layer object rather than a second read of the file.
+    // `layers.global` is null when that file is absent, torn, not an object, or
+    // the same file as the repo config - so a torn file proves no opt-in and a
+    // collapsed one is ONE layer that cannot count as both, failing closed the
+    // way lib/repo-auto-close.mjs does for git.auto_close.
+    reviewersGlobal: (reviewersIn(layers.global) || []).filter((n) => n !== 'claude-subagent'),
+    // Which of those null causes it was, when it was the collapse: the drop
+    // below then names the one file, not a key that file may already carry.
+    // The same identity test mergeLayers runs, on the same two paths.
+    layersShared: layerIdentity(file) !== null && layerIdentity(file) === layerIdentity(GLOBAL_CONFIG),
     // `review.providers.<name>.tiers.<tier>` - the model id a provider is
     // configured with per tier, which is what "available" means for a
     // cross-model reviewer.
@@ -1150,9 +1197,14 @@ function resolve(opts) {
   // the tier THIS trigger resolves at - the layer's `review.triggers.<t>.tier`
   // when a layer set one, else the LEVEL's row of the table's hand-maintained
   // `tiers` grid (D-04: never config.schema.json's default, which would report
-  // the schema's answer as the user's). An empty set falls back to
-  // `claude-subagent`, because a blocking trigger with no reviewer is a gate
-  // that silently stops gating.
+  // the schema's answer as the user's) - AND the user-global layer's own
+  // `review.reviewers` must name it (D-14). A repo layer arrives with a clone,
+  // and review-provider.mjs `resolveKey` takes the provider key from the user's
+  // environment first, so a committed list alone would send the user's code
+  // out on the user's key. The merged list still decides what is WANTED, so a
+  // repository can narrow the set but never add a provider to it. An empty set
+  // falls back to `claude-subagent`, because a blocking trigger with no
+  // reviewer is a gate that silently stops gating.
   //
   // Detection, not prevention (D-07): nothing here refuses a dispatch to a
   // reviewer outside this set. The set plus the `reviewer` field on the
@@ -1219,12 +1271,25 @@ function resolve(opts) {
     const dropped = [];
     for (const name of wantedReviewers) {
       if (name === 'claude-subagent') { kept.push(name); continue; }
-      if (providerModel(cfg.providers, name, tier)) { kept.push(name); continue; }
-      dropped.push(tier
-        ? `${name} has no model id at the "${tier}" tier `
-          + `(review.providers.${name}.tiers.${tier}, tier from ${tierFrom})`
-        : `${name} cannot be placed: the ${trigger} trigger resolves no tier `
-          + `(no config layer set one and ${tierKey} carries no schema default)`);
+      if (!providerModel(cfg.providers, name, tier)) {
+        dropped.push(tier
+          ? `${name} has no model id at the "${tier}" tier `
+            + `(review.providers.${name}.tiers.${tier}, tier from ${tierFrom})`
+          : `${name} cannot be placed: the ${trigger} trigger resolves no tier `
+            + `(no config layer set one and ${tierKey} carries no schema default)`);
+        continue;
+      }
+      if (!cfg.reviewersGlobal.includes(name)) {
+        dropped.push(cfg.layersShared
+          ? `${name} cannot be enabled: the user-global config ${GLOBAL_CONFIG} resolves to the repository's `
+            + 'own config file, so the two layers are one file, and one file cannot enable a cross-model '
+            + 'provider on its own - point the user-global config at a separate file (CADENCE_GLOBAL_CONFIG, '
+            + `or ~/.claude/cadence/config.json when that is unset) and name ${name} in its review.reviewers`
+          : `${name} is not named by the user-global config's review.reviewers, `
+            + 'and a repository\'s review.reviewers alone cannot enable a cross-model provider');
+        continue;
+      }
+      kept.push(name);
     }
     // The cause travels IN the return, never left to be inferred from a set
     // that is smaller than the one the user configured. One warning per
@@ -1406,7 +1471,18 @@ function resolve(opts) {
   // missing entry and an unresolved one must not be one shape. It is what makes
   // `model: null` readable, since null is both the unset answer and the
   // rejected-value answer, and only this field tells them apart.
-  out({ ok: true, role: opts.role, agent, model, model_source: modelSource, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
+  //
+  // `agent_type` is the name a Cadence dispatch SENDS: plugin.json's name, `:`,
+  // the final `agent` (after any escalation, so the two never name different
+  // rungs). Cadence's own dispatches name their agents explicitly because a
+  // bare stem belongs to whoever owns that bare name - a user's own
+  // `cad-reviewer` in their agents folder - and a user agent's name cannot
+  // contain `:`, so a prefixed name is never theirs. `agent` stays the bare
+  // stem: it is the trace name and the mismatch name, and the routing event
+  // above carries it and not this field.
+  const prefixed = prefixedAgentType(agent);
+  if (prefixed.reason) reason.push(prefixed.reason);
+  out({ ok: true, role: opts.role, agent, agent_type: prefixed.agentType, model, model_source: modelSource, effort, review, reviewers, reviewers_global: cfg.reviewersGlobal, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------
@@ -1493,6 +1569,36 @@ function parseArgs(a) {
   return o;
 }
 
+// Every agent file stem Cadence ships, the only names `agent-type` will prefix.
+// A typo or an already-prefixed `cadence:cad-reviewer` is refused here rather
+// than handed back as an unknown type or a doubled prefix.
+const AGENT_STEMS = new Set(Object.values(RUNG_FILES).flatMap((rungs) => Object.values(rungs)));
+
+/**
+ * `agent-type --stem <name>`: the prefixed name for a dispatch that resolves
+ * no routing - `/cad-minimalism-review` and `/cad-decision-review` send the
+ * base `cad-reviewer` at the session default. It reads no config layer, picks
+ * no rung and appends no trace event, so those workflows' "resolves no routing
+ * at all" stays true. The prefix and its fallback come from the same
+ * `prefixedAgentType` `resolve` calls. Every refusal is `usage` and names
+ * `--stem`.
+ * @param {string[]} a
+ */
+function agentType(a) {
+  const parsed = evaluateFlag(a, '--stem', CONTRACTS['route.mjs']['agent-type']['--stem']);
+  if (!parsed.ok) {
+    out({ ok: false, reason: 'usage', detail: 'agent-type --stem needs an agent file stem after it: --stem <name>' });
+    return;
+  }
+  if (!AGENT_STEMS.has(parsed.value)) {
+    out({ ok: false, reason: 'usage',
+      detail: `agent-type --stem ${JSON.stringify(parsed.value)} names no Cadence agent file; pass a bare stem such as cad-reviewer` });
+    return;
+  }
+  const { agentType: prefixed, reason } = prefixedAgentType(parsed.value);
+  out({ ok: true, agent: parsed.value, agent_type: prefixed, reason: reason ? [reason] : [] });
+}
+
 try {
   // FATAL: every review gate, tier and effort this resolve answers is a schema
   // default now, and so is every role's start rung, so a schema it cannot read
@@ -1515,8 +1621,10 @@ try {
     const o = parseArgs(argv.slice(1));
     if (o.usage) out({ ok: false, reason: 'usage', detail: o.usage });
     else resolve(o);
+  } else if (cmd === 'agent-type') {
+    agentType(argv.slice(1));
   } else {
-    out({ ok: false, reason: 'usage', detail: 'subcommand: resolve' });
+    out({ ok: false, reason: 'usage', detail: 'subcommand: resolve | agent-type' });
   }
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });

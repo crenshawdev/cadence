@@ -6,8 +6,10 @@ pruning removes completed work from the LIVE planning docs, not from history.
 The release tag is NOT cut here: /cad-land cuts it on the pulled base after
 the merge confirms (tag-after-merge).
 
-This close reads ONE config key: `config.mjs get git.auto_close` up front, reused
-at step 7 rather than re-read. Step 2 decides release mode from evidence - a
+This close asks ONE question up front, reused at step 7 rather than re-asked:
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <root>`,
+which answers `ok:true` only when this repository's config and the user-global
+config both set `git.auto_close`. Step 2 decides release mode from evidence - a
 confirmed version and the tags this project has published - and from no key at
 all. Independent probes here share one message; only a call that consumes a
 prior call's output is serialized.
@@ -243,9 +245,10 @@ Commit the doc changes (`docs:`), cursor included, per references/git-guard.md -
 never leave the tree dirty.
 
 ## 7. Autonomous close (`git.auto_close` only)
-When `git.auto_close` is `false` (default), stop here: merging, tagging and
-publishing are the user's separate `/cad-land` call (step 8's note). When
-`git.auto_close` is `true`, chain the publish end-to-end - invoke `/cad-land`
+When the up-front `authorized` call answered `ok:false` (the default, and the
+answer when only one layer sets `git.auto_close`), stop here: merging, tagging
+and publishing are the user's separate `/cad-land` call (step 8's note). On
+`ok:true`, chain the publish end-to-end - invoke `/cad-land`
 via the SlashCommand tool so it runs PR -> merge -> tag -> reset with no
 per-step prompts (audit -> bump already ran above). The close gate inside
 cad-land still applies: a blocker/high `risk_surface` finding from this branch's

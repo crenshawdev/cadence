@@ -22,7 +22,8 @@
 // another phase. A subagent's own close (an advisory reviewer's tail) runs
 // before its last step, so its fact is written at its stop; a coordinator's
 // close runs after the stop, so its fact is written just before the close is
-// passed on. A window whose close never comes is never written. A subagent's
+// passed on. A window whose close never comes is never written, and at most
+// HELD_MAX of them wait at once (PNL-07). A subagent's
 // own `trace close` gains the `--agent-id` the host sees, so an advisory
 // reviewer's bracket and its fact join. The trace reader folds the fact only
 // into a bracket whose return carried no figure, so a return's own figure
@@ -39,25 +40,30 @@
 // has no core for `next` to run, and its own text, an empty one included,
 // replaces the line the host prints for a command nobody answered. The band's
 // `[ pane ]` button, `p` while the band holds the focus, opens the same pane.
-// It draws no border: the host frames a Pane already. It does draw a title row,
-// because the host shows the title only as a tab once two panes are open.
+// Docked beside the transcript it draws its own round frame, since the host
+// draws only a separator there; inline the host borders it, so it draws none.
+// It draws a title row, because the host shows the title only as a tab once
+// two panes are open. The next command is a button: `n` while the pane holds
+// the focus puts it in the prompt.
 //
 // And the listing filter (phase 5, D-01). The 30 rung agents' and the six
 // contract skills' entries come out of the agent and skill listings the model
 // reads, in every session and every repo (D-02): route.mjs picks each agent
 // and the skill dispatching it names it, so the descriptions bought nothing.
 // It edits the `prompt.attachment` text by lib/listing-filter.mjs's line rule.
-// Withholding the type through `agent.offer` would take it out of dispatch
-// too (`Agent type 'cadence:cad-reviewer-low' not found`), and `command.describe`
-// `isHidden` only hides the command menu entry.
+// The module never withholds through `agent.offer`, it only watches there:
+// withholding would take the type out of dispatch too (`Agent type
+// 'cadence:cad-reviewer-low' not found`), and `command.describe` `isHidden`
+// only hides the command menu entry.
 //
-// And the prefix restore (phase 5, D-07). Cadence commands dispatch the bare
-// agent stem route.mjs returns, and the host knows the agent only by its
-// plugin-prefixed name. The model used to read that prefix off the agent
-// listing the filter takes out, so an Agent call naming exactly one of
-// Cadence's stems gets `<plugin name>:` added here, the name read from
-// `$.plugin.name`. The rule is lib/agent-prefix.mjs; every other call goes
-// through as sent.
+// And the prefix safety net (phase 5, D-07; MOD-04). Cadence commands dispatch
+// route.mjs's `agent_type`, already `<plugin name>:<stem>`, since a bare name
+// belongs to whoever owns it. An Agent call that still names exactly one of
+// Cadence's bare stems gets `<plugin name>:` added here, read from
+// `$.plugin.name`, unless an `agent.offer` from a non-`plugin` source named
+// that bare agent: the offer observer records those, and a user's own
+// `cad-reviewer` goes through as sent. The rule is lib/agent-prefix.mjs; every
+// other call goes through as sent.
 //
 // Every handler calls `next` exactly once and swallows its own errors (D-12).
 //
@@ -68,7 +74,7 @@ import { planningRootAsync } from '../cadence-core/bin/lib/git-segments.mjs';
 import { parseCursor } from '../cadence-core/bin/lib/state-cursor.mjs';
 import { bandLine, rosterReconcile, rosterStart, rosterStop } from '../cadence-core/bin/lib/band.mjs';
 import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
-import { prefixedAgent } from '../cadence-core/bin/lib/agent-prefix.mjs';
+import { ownedAgent, prefixedAgent } from '../cadence-core/bin/lib/agent-prefix.mjs';
 import { filterListing, LISTING_TYPES } from '../cadence-core/bin/lib/listing-filter.mjs';
 import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
 import { NO_PROJECT_TEXT, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv,
@@ -89,8 +95,13 @@ const PANE = Object.freeze({ id: PANE_ID, title: 'Cadence' });
  * @param {any} Text
  * @param {import('../cadence-core/bin/lib/pane-view.mjs').Segment} s
  */
-const segmentText = (Text, s) => Text({ children: s.text,
-  ...(s.color ? { color: s.color } : {}), ...(s.bold ? { bold: true } : {}), ...(s.dim ? { dimColor: true } : {}) });
+const segmentText = (Text, s) => Text({ children: s.text, ...(s.color ? { color: s.color } : {}),
+  ...(s.bg ? { backgroundColor: s.bg } : {}), ...(s.bold ? { bold: true } : {}), ...(s.dim ? { dimColor: true } : {}) });
+
+/** The pane's button that puts the next command in the prompt: `n` while the pane has the keys. */
+const NEXT_KEY = 'n';
+/** Cells a frame takes from the body: the border and one cell of padding, each side. */
+const FRAME_CELLS = 4;
 
 /** The command that opens the pane. User-facing, so the name is locked (D-01). */
 const PANEL_COMMAND = 'cad-panel';
@@ -118,11 +129,19 @@ function redraw($) {
 }
 
 /**
+ * The most stopped subagents' windows `held` keeps waiting for a close (PNL-07).
+ * A close comes right after its subagent's return, so a window still waiting
+ * after this many later stops is one no close will ever name; the oldest goes.
+ */
+const HELD_MAX = 64;
+
+/**
  * @typedef {{windows: Map<string, number>, adopted: Map<string, {phase: string, anchor: string | null}>,
  *   held: Map<string, number>}} Capture
  * `windows`: each running subagent's latest step window. `adopted`: the
  * close a running subagent ran on itself, waiting for its last window.
- * `held`: a stopped Cadence subagent's last window, waiting for its close.
+ * `held`: a stopped Cadence subagent's last window, waiting for its close,
+ * at most HELD_MAX of them.
  * Every read-and-forget below happens before the first await, so two
  * handlers interleaving never write one window twice.
  */
@@ -162,7 +181,10 @@ async function stopped($, e, c) {
     c.adopted.delete(id);
     if (tokens === undefined || roleOfAgent(e.agent_type) === null) return;
     if (close === undefined) {
+      // Re-inserted, so a Map's insertion order stays oldest-first.
+      c.held.delete(id);
       c.held.set(id, tokens);
+      if (c.held.size > HELD_MAX) c.held.delete(c.held.keys().next().value);
       return;
     }
     await writeFact($, typeof e.cwd === 'string' && e.cwd ? e.cwd : await $.session.cwd(), close, id, tokens);
@@ -359,6 +381,11 @@ export function register(on) {
   /** @type {Capture} */
   const capture = { windows: new Map(), adopted: new Map(), held: new Map() };
   const { windows } = capture;
+  // Bare agent names a non-`plugin` `agent.offer` named (MOD-04). It only
+  // grows: an agent deleted mid-session stays owned, which errs toward sending
+  // the user's name as written.
+  /** @type {Set<string>} */
+  const owned = new Set();
 
   // Pass-through: `e` goes down unchanged (D-12 leaves Phase 6 its effort
   // override here). A subagent's step that reports usage replaces its window,
@@ -411,8 +438,9 @@ export function register(on) {
   // A subagent's own `planning.mjs trace close` gains `--agent-id` here (D-11),
   // and any figureless close that names an agent id prices it from its window.
   // An Agent call naming a bare Cadence stem gains the plugin's prefix (phase 5,
-  // D-07). Anything that goes wrong before `next` sends the event exactly as the
-  // model wrote it.
+  // D-07) as a safety net, unless the offer observer below saw a project or
+  // user agent of that bare name. Anything that goes wrong before `next` sends
+  // the event exactly as the model wrote it.
   on('tool.call', async ($, e, next) => {
     let sent = e;
     try {
@@ -420,7 +448,7 @@ export function register(on) {
         const rewritten = withAgentId(e.command, e.agentId);
         if (rewritten !== null) sent = { ...e, command: rewritten };
       } else if (e.tool === 'Agent') {
-        const type = prefixedAgent(e.subagent_type, $.plugin.name);
+        const type = prefixedAgent(e.subagent_type, $.plugin.name, owned);
         if (type !== null) sent = { ...e, subagent_type: type };
       }
     } catch {
@@ -431,6 +459,18 @@ export function register(on) {
     redraw($);
     refresh($, pane);
     return result;
+  });
+
+  // The offer observer (MOD-04). The listing batch reaches here before the
+  // first Agent call, so every project and user agent is known by then. No
+  // matcher: a matcher cannot say "any source but `plugin`". It passes `e`
+  // through and returns what `next` returned, never `isOffered: false`.
+  on('agent.offer', async ($, e, next) => {
+    try {
+      const name = ownedAgent(e);
+      if (name !== null) owned.add(name);
+    } catch { /* an offer it cannot read records nothing (D-04) */ }
+    return next(e);
   });
 
   // The two listings, without Cadence's agents and contract skills (phase 5,
@@ -503,6 +543,21 @@ export function register(on) {
     return openPane($, pane);
   });
 
+  // `/cad-panel`'s empty answer draws as a bare `cadence:`; draw one dim
+  // line in its place. A reason (no project, the open waited) draws as written.
+  on('ui.render', { component: 'CommandOutput', props: { command: PANEL_COMMAND } }, async ($, e, next) => {
+    const drawn = await next(e);
+    try {
+      // The host prints a plugin's answer after its name (`cadence: `).
+      const said = String(e.props.text).replace(`${$.plugin.name}:`, '').trim();
+      if (said) return drawn;
+      const { Box, Text } = $.ui.resolve(e);
+      return Box({ paddingLeft: 2, children: [Text({ dimColor: true, children: '⎿  Cadence pane open' })] });
+    } catch {
+      return drawn;
+    }
+  });
+
   // A close marks the pane down, so no event fetches for it.
   on('ui.close', { id: PANE_ID }, async ($, e, next) => {
     const answer = await next(e);
@@ -520,12 +575,25 @@ export function register(on) {
         pane.open = true;
         refresh($, pane);
       }
-      const { Box, Text } = $.ui.resolve(e);
+      const { Box, Text, Button } = $.ui.resolve(e);
       sights = sightDraw(sights, roster, Date.now());
-      const title = Text({ bold: true, wrap: 'truncate-end', children: ` ${PANE.title} ` });
-      const rows = paneView(pane.snapshot, e.props.bodyColumns, roster, sights)
-        .map((row) => Box({ flexDirection: 'row', children: row.map((s) => segmentText(Text, s)) }));
-      return Box({ flexDirection: 'column', children: [title, ...rows] });
+      // Docked beside the transcript the pane has a separator only, so it gets
+      // a frame; inline above the prompt the host draws a border already.
+      const framed = e.props.placement === 'dock';
+      const width = Math.max(1, e.props.bodyColumns - (framed ? FRAME_CELLS : 0));
+      const title = Box({ flexDirection: 'row', justifyContent: 'space-between', children: [
+        Text({ bold: true, color: 'cyan', children: '◆ Cadence' }),
+        Text({ dimColor: true, wrap: 'truncate-end', children: typeof Button === 'function' ? `${NEXT_KEY} next` : '' })] });
+      const cell = (/** @type {any} */ s) => s.action === 'next' && typeof Button === 'function'
+        ? Button({ key: 'next', label: s.text, hotkey: NEXT_KEY, variant: 'primary',
+          onPress: () => { $.prompt.fill({ text: s.text, mode: 'replace' }).catch(() => {}); } })
+        : segmentText(Text, s);
+      const rows = paneView(pane.snapshot, width, roster, sights)
+        .map((row) => Box({ flexDirection: 'row', children: row.map(cell) }));
+      const body = [title, Text({ children: ' ' }), ...rows];
+      return framed
+        ? Box({ flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', paddingX: 1, children: body })
+        : Box({ flexDirection: 'column', children: body });
     } catch {
       return drawn;
     }

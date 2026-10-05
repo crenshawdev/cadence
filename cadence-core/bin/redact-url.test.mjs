@@ -70,8 +70,8 @@ test('redactUrl: a password-less userinfo is the whole credential and still goes
   // `https://<token>@host` is how a forge PAT is usually spelled - there is no
   // password half, so a redactor keyed on the colon would ship the token. The
   // `://` anchor is what makes this unambiguous without a token-prefix list.
-  const out = redactUrl("fatal: unable to access 'https://ghp_liveTokenValue@host.invalid/o/r.git/'");
-  assert.equal(out.includes('ghp_liveTokenValue'), false, out);
+  const out = redactUrl("fatal: unable to access 'https://fakeLiveTokenValue@host.invalid/o/r.git/'");
+  assert.equal(out.includes('fakeLiveTokenValue'), false, out);
   assert.ok(out.includes("'https://<redacted>@host.invalid/o/r.git/'"), out);
 
   // The counter-rail, and the reason the scheme-less rule needs the colon: an
@@ -148,8 +148,8 @@ test('redactUrl: a userinfo span the window cut before its `@` still goes', () =
   // The password-less PAT has no colon to key on, so cut before its `@` it is
   // byte-for-byte a plain host and the scheme anchor is the only signal left.
   // Redacting it is why rule 1b does NOT require a colon.
-  const pat = redactUrl("fatal: unable to access 'https://ghp_liveTokenValue");
-  assert.equal(pat.includes('ghp_liveTokenValue'), false, pat);
+  const pat = redactUrl("fatal: unable to access 'https://fakeLiveTokenValue");
+  assert.equal(pat.includes('fakeLiveTokenValue'), false, pat);
 });
 
 test('redactUrl: a port is not userinfo, at end-of-input as much as mid-body', () => {
@@ -166,7 +166,7 @@ test('redactUrl: the end-of-input rules stay inside redactUrl\'s own half', () =
   // The split issue-check.mjs:41-47 states in these words: a `name=value` pair
   // is in URL position to nobody, and the new anchors must not widen redactUrl
   // into redactCredentials' coverage to reach the window edge.
-  const pair = 'key=sk-live-abc123';
+  const pair = 'key=fake-key-abc123';
   assert.equal(redactUrl(pair), pair);
 
   // And the tail the `"`/`'` exclusion protects: a JSON body's own closing
@@ -189,23 +189,23 @@ test('redactUrl: the end-of-input rules stay inside redactUrl\'s own half', () =
 // whole body would pass the first half and make the excerpt worthless.
 
 test('redactCredentials: an authorization echo loses the scheme word too', () => {
-  const out = redactCredentials('authorization: Bearer sk-live-abc123');
+  const out = redactCredentials('authorization: Bearer fake-key-abc123');
   assert.equal(out.includes('Bearer'), false, out);
-  assert.equal(out.includes('sk-live-abc123'), false, out);
+  assert.equal(out.includes('fake-key-abc123'), false, out);
   assert.equal(out, '<redacted>');
 
   // The JSON spelling of the same header, where the name is quoted away from
   // its colon so only the scheme word anchors the match.
-  const json = redactCredentials('{"headers": {"authorization": "Bearer sk-live-abc123"}}');
+  const json = redactCredentials('{"headers": {"authorization": "Bearer fake-key-abc123"}}');
   assert.equal(json.includes('Bearer'), false, json);
-  assert.equal(json.includes('sk-live-abc123'), false, json);
+  assert.equal(json.includes('fake-key-abc123'), false, json);
   assert.ok(json.includes('headers'), json);
 });
 
 test('redactCredentials: a credential-shaped query parameter, name and value', () => {
-  const out = redactCredentials('proxy error fetching https://api.example/v1?key=sk-live-abc123&x=1');
+  const out = redactCredentials('proxy error fetching https://api.example/v1?key=fake-key-abc123&x=1');
   assert.equal(out.includes('key='), false, out);
-  assert.equal(out.includes('sk-live-abc123'), false, out);
+  assert.equal(out.includes('fake-key-abc123'), false, out);
   // The half that makes the excerpt worth carrying: the endpoint and the
   // non-credential parameter survive, so a reader can still see WHAT failed.
   assert.ok(out.includes('https://api.example/v1?'), out);
@@ -214,9 +214,9 @@ test('redactCredentials: a credential-shaped query parameter, name and value', (
 });
 
 test('redactCredentials: the JSON pair spelling, and the bare form-body one', () => {
-  const json = redactCredentials('{"api_token": "glpat-xyz", "model": "gpt-5"}');
+  const json = redactCredentials('{"api_token": "fake-pat-xyz", "model": "gpt-5"}');
   assert.equal(json.includes('token'), false, json);
-  assert.equal(json.includes('glpat-xyz'), false, json);
+  assert.equal(json.includes('fake-pat-xyz'), false, json);
   assert.ok(json.includes('"model": "gpt-5"'), json);
 
   const form = redactCredentials('secret=hunter2');
@@ -224,8 +224,8 @@ test('redactCredentials: the JSON pair spelling, and the bare form-body one', ()
   assert.equal(form.includes('hunter2'), false, form);
 
   // The prefixed spellings a real header dump carries.
-  for (const line of ['x-api-key: sk-live-abc123', 'OPENAI_API_KEY=sk-live-abc123',
-    'access_token=sk-live-abc123', 'password: hunter2']) {
+  for (const line of ['x-api-key: fake-key-abc123', 'OPENAI_API_KEY=fake-key-abc123',
+    'access_token=fake-key-abc123', 'password: hunter2']) {
     const out = redactCredentials(line);
     assert.equal(out, '<redacted>', line);
   }
@@ -251,8 +251,8 @@ test('redactCredentials: total - a non-string input is coerced, nothing throws',
   assert.equal(redactCredentials(undefined), 'undefined');
   assert.equal(redactCredentials(null), 'null');
   assert.equal(redactCredentials(7), '7');
-  assert.equal(typeof redactCredentials(new Error('key=sk-live-abc123')), 'string');
-  assert.equal(redactCredentials(new Error('key=sk-live-abc123')).includes('sk-live-abc123'), false);
+  assert.equal(typeof redactCredentials(new Error('key=fake-key-abc123')), 'string');
+  assert.equal(redactCredentials(new Error('key=fake-key-abc123')).includes('fake-key-abc123'), false);
 });
 
 test('redactCredentials and redactUrl each keep their own coverage', () => {
@@ -260,7 +260,7 @@ test('redactCredentials and redactUrl each keep their own coverage', () => {
   // on saying redactUrl covers URL position and nothing else.
   const userinfo = 'https://cad:s3cr3t-tok@host.invalid/r.git';
   assert.equal(redactCredentials(userinfo), userinfo, 'userinfo is redactUrl\'s job');
-  const pair = 'key=sk-live-abc123';
+  const pair = 'key=fake-key-abc123';
   assert.equal(redactUrl(pair), pair, 'a name=value pair is redactCredentials\' job');
 });
 
@@ -286,8 +286,8 @@ test('redactCredentials: camelCase names are credential names too', () => {
   // Rule 4 crosses a `_`, `-` or `.` only, so the ordinary spelling of a JSON
   // key went through byte-identical. Case is the discriminator here.
   for (const name of ['apiSecret', 'clientSecret', 'apiKey', 'accessToken', 'refreshToken']) {
-    const body = `{"${name}":"sk-live-abc123"}`;
-    assert.equal(redactCredentials(body).includes('sk-live-abc123'), false,
+    const body = `{"${name}":"fake-key-abc123"}`;
+    assert.equal(redactCredentials(body).includes('fake-key-abc123'), false,
       `${name} leaked its value`);
   }
   // And the same false positives rule 4's lookbehind exists to prevent: a
@@ -389,14 +389,14 @@ test('the start lookbehinds remove attempts, never matches', () => {
     // A digit immediately before a scheme - the scheme rule starts at a letter,
     // so the run begins at the digit and the match begins one later.
     ['see 9abc://cad:s3cr3t-tok@host.invalid/r.git now', 's3cr3t-tok'],
-    ['x9https://ghp_deadbeef@host/r.git', 'ghp_deadbeef'],
+    ['x9https://fake_deadbeef@host/r.git', 'fake_deadbeef'],
     // A `+`, a `.` and a `-` are scheme-class characters in the same position.
     ['v1.2+git://cad:s3cr3t-tok@host.invalid/r.git', 's3cr3t-tok'],
     // The scheme-less rule, with an ordinary word character in front.
     ['prefixcad:s3cr3t-tok@host.invalid/r.git', 's3cr3t-tok'],
     // And the two cut rules, which end the input rather than at an `@`.
     ['9abc://cad:s3cr3t-tok', 's3cr3t-tok'],
-    ['9a9b://ghp_deadbeef', 'ghp_deadbeef'],
+    ['9a9b://fake_deadbeef', 'fake_deadbeef'],
     ['prefixcad:s3cr3t-tok', 's3cr3t-tok'],
   ]) {
     const out = redactUrl(body);
@@ -412,9 +412,9 @@ test('the scheme pin writes back the prefix it absorbed', () => {
   // prefix matched outside it would be deleted from the output rather than
   // preserved, which is a corruption and not a redaction.
   assert.equal(redactUrl('9a9b://x@'), `9a9b://${REDACTION_MARK}@`);
-  assert.equal(redactUrl('x9https://ghp_tok@h'), `x9https://${REDACTION_MARK}@h`);
+  assert.equal(redactUrl('x9https://fake_tok@h'), `x9https://${REDACTION_MARK}@h`);
   assert.equal(redactUrl('v1.2+git://cad:tok@host/r.git'),
     `v1.2+git://${REDACTION_MARK}@host/r.git`);
   // And the cut twin, which ends the input instead of at an `@`.
-  assert.equal(redactUrl('9a9b://ghp_tok'), `9a9b://${REDACTION_MARK}`);
+  assert.equal(redactUrl('9a9b://fake_tok'), `9a9b://${REDACTION_MARK}`);
 });

@@ -9,10 +9,10 @@
 // than about a command anyone can run, and two seams deciding "reachable"
 // their own way is how an advisory arm and an enforcing arm start disagreeing.
 //
-// PURE fs. No subprocess, ever: `detect-commands` probes up to two names per
-// slot on the path an executor runs before EVERY commit, and `command -v` per
-// arm would put child processes there where the seam has none today
-// (phase 3 D-10). No `emit`, no envelope, no I/O beyond `accessSync` - callers
+// PURE fs. No subprocess, ever: `detect-commands` probes one tool per slot, in
+// up to two places, on the path an executor runs before EVERY commit, and
+// `command -v` per arm would put child processes there where the seam has none
+// today (phase 3 D-10). No `emit`, no envelope, no I/O beyond `accessSync` - callers
 // own their own warning text, the way `lib/require-int.mjs` leaves the reason
 // string to its callers.
 //
@@ -24,7 +24,7 @@
 // keeps it at ITS call site, behind the `CADENCE_TEST_SEAM` sentinel.
 //
 // WIN32 IS NOT A DIFFERENT ANSWER, it is a different spelling (phase 3 D-09).
-// `npm`, `npx` and `tsc` ship on Windows as `.cmd`/`.ps1` shims, so a bare
+// `npm`, `eslint` and `tsc` ship on Windows as `.cmd`/`.ps1` shims, so a bare
 // `join(dir, bin)` finds nothing for any of them and both callers would report
 // every tool unreachable on a platform no file in this tree excludes. The
 // lookup therefore tries `PATHEXT`'s extensions after the bare name, which is
@@ -56,8 +56,8 @@ function spellings(bin) {
 /**
  * Does `bin` resolve as an executable inside THIS ONE directory?
  *
- * The half `detect-commands` needs for an `npx`-delegated arm, which resolves
- * its tool out of `<root>/node_modules/.bin` rather than off PATH at all.
+ * The half `detect-commands` asks first for eslint and tsc, which a project
+ * installs into `<root>/node_modules/.bin` and which need not be on PATH at all.
  * Anything that is not a non-empty string on either side is false rather than
  * a throw: the callers hand this whatever their own inputs held.
  * @param {unknown} dir @param {unknown} bin @returns {boolean}

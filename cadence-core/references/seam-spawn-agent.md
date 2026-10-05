@@ -18,8 +18,7 @@ How a workflow dispatches work to a fresh-context subagent.
   `maxTurns: 200` in its frontmatter, one uniform value across all 30 rung
   files, so that is the bound a dispatch runs under - and it is the only one
   this seam has: no wall-clock kill, and no way to cancel a dispatch already
-  running. A config key claimed a wall-clock kill until v2.7.0, when it was
-  deleted for naming a control nothing could apply. Plan size is still the real
+  running. Plan size is still the real
   lever on what one dispatch costs, which is what `workflow.max_plan_tasks` is
   for. So a dispatch that comes back unusable has exactly two producers:
   the turn cap cut the dispatch, or the return is missing or unparseable. A
@@ -270,8 +269,9 @@ so.
   stepped over rather than dispatched. At the top rung there is nowhere to
   climb: `reason` says the rung was held and `escalated` stays false - a held
   retry is never reported as an escalation.
-- Use the returned `agent` and `model` in the dispatch. `escalated`/`reason` are
-  for logging why.
+- Dispatch the returned `agent_type` with `model` - a bare name can be the user's
+  own agent. `agent` is the bare stem the trace and any mismatch line name;
+  `escalated`/`reason` are for logging why.
 - `{ok:false}` (unknown role, no table) → dispatch the **base** `agent_name` with
   no `model` override (session default). Routing never blocks a spawn.
 - **Relay every `warnings[]` entry to the user before dispatching**, each

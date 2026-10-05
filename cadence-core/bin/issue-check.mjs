@@ -67,7 +67,7 @@
 // child's stderr is discarded at the spawn, and `detail` is null on every arm
 // of `check`. redactUrl covers credentials in URL POSITION and nothing else, so
 // a diagnostic carrying a bare token (`Authorization: Bearer ...`,
-// `GLAB_TOKEN=glpat-...`) would pass through it intact onto a line /cad-land
+// `GLAB_TOKEN=<a GitLab PAT>`) would pass through it intact onto a line /cad-land
 // prints - and the reason already says what went wrong, so the raw text buys
 // nothing to pay for that. Not a second regex; no third-party bytes at all.
 //

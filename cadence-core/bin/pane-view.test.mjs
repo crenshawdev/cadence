@@ -32,7 +32,7 @@ test('no snapshot shows the reading line alone, dim', () => {
   assert.deepEqual(paneView(null, 80), [[{ text: READING_LINE, dim: true }]]);
 });
 
-test('2 of 3 plans: the bar, the count, green ticks and a yellow circle', () => {
+test('2 of 3 plans: the bar, the count, green ticked boxes and a yellow empty one', () => {
   const rows = paneView(snap(), 80);
   const plans = section(rows, 'PLANS');
   assert.ok(plans);
@@ -46,21 +46,43 @@ test('2 of 3 plans: the bar, the count, green ticks and a yellow circle', () => 
   const at = rows.indexOf(plans);
   const [one, two, three] = rows.slice(at + 1, at + 4);
   for (const [row, file] of [[one, 'PLAN-1.md'], [two, 'PLAN-2.md']]) {
-    assert.equal(text(row), `  ✓ ${file}`);
-    assert.equal(row.find((s) => s.text === '✓').color, 'green');
+    assert.equal(text(row), `  ☑ ${file}`);
+    assert.equal(row.find((s) => s.text === '☑').color, 'green');
+    assert.equal(row.at(-1).dim, true, 'a done plan reads dim');
   }
-  assert.equal(text(three), '  ○ PLAN-3.md');
-  assert.equal(three.find((s) => s.text === '○').color, 'yellow');
+  assert.equal(text(three), '  ☐ PLAN-3.md');
+  assert.equal(three.find((s) => s.text === '☐').color, 'yellow');
+  assert.equal(three.at(-1).dim, undefined, 'the open plan does not');
 });
 
-test('the heading, then the phase status beside the next command', () => {
+test('the heading, then the phase status as a chip beside the next command', () => {
   const rows = paneView(snap(), 80);
-  assert.equal(text(rows[0]), 'Phase 3 of 5 · Cadence status band');
-  assert.ok(rows[0].every((s) => s.bold));
-  assert.equal(text(rows[1]), 'executed  ›  next /cad-verify 3');
-  assert.equal(rows[1][0].dim, true);
+  assert.equal(text(rows[0]), 'Phase 3 of 5  Cadence status band');
+  assert.deepEqual([rows[0][0].color, rows[0][0].bold], ['cyan', true]);
+  assert.equal(rows[0].at(-1).bold, true);
+  assert.equal(text(rows[1]), ' executed   next /cad-verify 3');
+  assert.deepEqual(rows[1][0], { text: ' executed ', color: 'black', bg: 'magenta', bold: true });
+  assert.deepEqual(rows[1].at(-1), { text: '/cad-verify 3', action: 'next' });
   const none = paneView(snap({}, { cursor: null }), 80);
   assert.ok(none.some((r) => text(r).endsWith(NO_CURSOR_NEXT)));
+  assert.ok(none.flat().every((seg) => seg.action === undefined), 'no cursor, nothing to press');
+});
+
+test('each status word picks its chip colour, an unknown one white', () => {
+  const chipOf = (/** @type {string} */ status) =>
+    paneView(snap({ phases: [{ ...STATUS.phases[0], status }] }), 80)[1][0];
+  for (const [status, bg] of [['unplanned', 'gray'], ['context gathered', 'blue'], ['planned', 'cyan'],
+    ['executing', 'yellow'], ['executed', 'magenta'], ['verified', 'green'], ['complete', 'green'], ['odd', 'white']]) {
+    assert.equal(chipOf(status).bg, bg, status);
+  }
+});
+
+test('a dim rule as wide as the pane closes the heading and the plans', () => {
+  const rows = paneView(snap(), 60);
+  const rules = rows.filter((r) => r.length === 1 && /^─+$/.test(r[0].text));
+  assert.equal(rules.length, 2);
+  for (const rule of rules) assert.deepEqual(rule[0], { text: '─'.repeat(60), dim: true });
+  assert.ok(rows.every((r) => text(r).trim() !== ''), 'no blank spacer rows');
 });
 
 test('UAT with fails: pass green, fail red, a pass-of-total bar; zero counts left out', () => {
@@ -112,9 +134,9 @@ test('a running agent: a cyan dot, then its role, rung and model', () => {
 
 test('a cursor that disagrees gets a yellow line naming its phase', () => {
   const rows = paneView(snap({ cursor: { agrees: false, phase: 2, status: 'planned' } }), 80);
-  const drift = rows.find((r) => text(r) === 'Cursor says phase 2 · planned');
+  const drift = rows.find((r) => text(r) === '⚠ Cursor says phase 2 · planned');
   assert.ok(drift);
-  assert.equal(drift[0].color, 'yellow');
+  assert.ok(drift.every((seg) => seg.color === 'yellow'));
 });
 
 test('a closed milestone: its line, and no plan section', () => {
@@ -134,6 +156,19 @@ test('captures and spend: the open count, the grouped total, unrecorded and the 
   const caveat = rows[rows.indexOf(spend) + 1];
   assert.equal(text(caveat).trim(), `Excludes ${SPEND_EXCLUDES.join(', ')}`);
   assert.equal(caveat.at(-1).dim, true);
+});
+
+test('at 40 columns the spend caveat wraps under the label column instead of being cut', () => {
+  const rows = paneView(snap(), 40);
+  const spend = section(rows, 'SPEND');
+  const lines = rows.slice(rows.indexOf(spend) + 1);
+  assert.ok(lines.length >= 2);
+  for (const line of lines) {
+    assert.equal(line[0].text, ' '.repeat(11));
+    assert.ok(cells(line) <= 40, text(line));
+    assert.ok(!text(line).endsWith('…'), text(line));
+  }
+  assert.equal(lines.map((l) => text(l).trim()).join(' '), `Excludes ${SPEND_EXCLUDES.join(', ')}`);
 });
 
 test('a failed source reads as unavailable, in red, naming its reason', () => {

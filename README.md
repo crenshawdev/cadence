@@ -11,7 +11,7 @@ Cadence is for developers using Claude Code on software they will still own afte
 
 Claude can write a convincing plan, produce working code, and tell you the job is finished. The harder part is keeping the decisions that led there, stopping a long session from becoming the project record, and establishing that what you got is what you asked for.
 
-Cadence keeps the project in the repository. Decisions, plans, progress, review findings and verification live under `.planning/`, where a new session reads them off disk. A planner, an executor, reviewers and a verifier each work in fresh context, and nothing is certified by the thing that wrote it. You are the engineer of record: you approve the plan, triage what the reviewers find, and authorize every push.
+Cadence keeps the project in the repository. Decisions, plans, progress, review findings and verification live under `.planning/`, where a new session reads them off disk. A planner, an executor, reviewers and a verifier each work in fresh context, and nothing is certified by the thing that wrote it. You are the engineer of record: you approve the plan, triage what the reviewers find, and authorize every push, except the unattended close, which runs only when both the repository's config and your own user-global config set `git.auto_close`.
 
 ![Running /cadence:cad-progress in the Verbatim repo. Cadence reports phase 1 of 4 executed with its SUMMARY written and UAT not passed, lists the three unplanned phases after it, confirms the state cursor agrees with disk, and offers to run /cad-verify 1.](./docs/screenshots/cad-progress-resume.png)
 
@@ -62,7 +62,7 @@ A one-line band sits above the prompt in any repo with a `.planning/` directory:
 
 `/cad-panel`, or `p` on the band, opens the full view: the current phase's plans and which are done, each running agent with its role, rung and model, the UAT counts, the open captures, the phase's token spend (the same figure `/cad-report` prints, with its exclusions named), and the next command. When the cursor and the files disagree about which phase is open, the panel says so instead of picking one.
 
-The module only reads. It never runs a Cadence command, never writes `STATE.md`, and never takes over the git rail: git-guard stays the command hook it has always been. It does two quiet jobs besides drawing. It keeps Cadence's 30 agent descriptions and 6 internal contract skills out of every session's prompt, about 8,000 characters Claude would otherwise reread on every request in every project, while Cadence's commands still dispatch those agents by name. And it prices the subagent dispatches whose return carried no token count, from the host's own usage for that agent, so `/cad-report` has fewer gaps.
+The module does more than draw, and [The module](#the-module) below lists all of it: it rewrites the Agent tool's `subagent_type` to the plugin-prefixed name, and it writes token counts to `.planning/trace.jsonl` through `planning.mjs`, the one file it writes. It never runs a slash command, never writes `STATE.md`, and never takes over the git rail: git-guard stays the command hook it has always been. It does two quiet jobs besides drawing. It keeps Cadence's 30 agent descriptions and 6 internal contract skills out of every session's prompt, about 8,000 characters Claude would otherwise reread on every request in every project, while Cadence's commands still dispatch those agents by name. And it prices the subagent dispatches whose return carried no token count, from the host's own usage for that agent, so `/cad-report` has fewer gaps.
 
 ## The controls
 
@@ -72,7 +72,7 @@ Eight of them, and every one hands its decision to you rather than deciding for 
 |---|---|---|
 | Plan review | before any code is written | an adversarial reviewer tries to break the plan, findings come back as a numbered list you triage |
 | Risk surface | on each plan's completed commit range | checks the diff against eight named surfaces, and blocks on a match by default |
-| Push rail | every `git push` a workflow attempts | a `PreToolUse` hook, `cadence-core/bin/git-guard.mjs`, stops and asks you. No exemption exists |
+| Push rail | every `git push` a workflow attempts | a `PreToolUse` hook, `cadence-core/bin/git-guard.mjs`, stops and asks you. The one exemption is the unattended close: `cadence-core/bin/git-publish.mjs` publishes the integration branch as a subprocess the hook never sees, and only when both the repository's config and your user-global config set `git.auto_close` |
 | Protected branch | a commit on `main` or `master` | asks, refuses, or allows, per `git.on_protected` |
 | Verification | after a phase is built | conversational UAT plus a goal-backward pass, claims scored verified, failed, or uncertain |
 | Traceability audit | before a release ships | `/cad-audit` traces every requirement to a phase, a plan and a verification, both directions |
@@ -108,6 +108,85 @@ The git rails are a `PreToolUse` hook rather than a paragraph of instructions, b
 That shape was expensive to learn, and I paid for it twice. First a predicate called `isPlainPush` that would recognize a safe push and wave it through, very clever, and four rounds of adversarial review found four ways around it. Then a shell tokenizer, which took two milestones and the 2,251 lines v2.2.0 deleted before I admitted it could be switched off entirely by a long enough command line, in a hook that fails open. Both are gone. The one sanctioned push runs through a subprocess the hook never sees, built from an argument vector rather than a shell string, and what the guard reads now is eighty-five lines: a command counts if it starts with the word `git`. `bash -c "git push"` is invisible to it, and that is written down rather than left to be discovered.
 
 [`METHOD.md`](./METHOD.md) is the full account of what the planner, executor, verifier and reviewers do and where each rule is enforced. [`INTERNALS.md`](./INTERNALS.md) is the mechanism underneath: routing, the publish seam, and why the decision cores are pure functions. [`docs/WORKFLOW.md`](./docs/WORKFLOW.md) is the same material as a diagram, five figures and the four tables behind them. [`docs/EVIDENCE.md`](./docs/EVIDENCE.md) defines the three weight terms and gives the `weight.mjs` commands that print the current numbers for any tree. [`docs/COST.md`](./docs/COST.md) is what a run costs on my own account. [`docs/EXAMPLE.md`](./docs/EXAMPLE.md) walks one small project through the whole cycle.
+
+## What Cadence sends, writes and reads
+
+Cadence sends no telemetry, makes no network call of its own except to a cross-model reviewer you turned on, and keeps its record in your repository. Everything else it touches outside the project is listed here, so you don't have to find it by reading the scripts.
+
+### Cross-model reviewers
+
+They're off by default. The shipped reviewer is the Claude subagent, which needs no key and sends nothing your session isn't already sending. A provider runs only when your user-global config's `review.reviewers` names it as well as the project's, so a repository's committed `review.reviewers` can't send your code to a provider on your key by itself, and cloning a repo that lists `openai` changes nothing until you've named `openai` yourself. Naming a provider there authorizes it for every repository whose own config names it too, and `/cad-config --review` asks before it writes that.
+
+| Provider | Host | Key |
+|---|---|---|
+| OpenAI | `https://api.openai.com` | `OPENAI_API_KEY` |
+| Gemini | `https://generativelanguage.googleapis.com` | `GEMINI_API_KEY` |
+| DeepSeek | `https://api.deepseek.com` | `DEEPSEEK_API_KEY` |
+
+The key comes from the environment first. When the variable isn't set, `cadence-core/bin/review-provider.mjs` reads it from `~/.config/cadence/providers.env` (under `$XDG_CONFIG_HOME` when that's set), or from the file `review.key_file` names in your user-global config. That's a script reading a credential off your machine, which is what the plugin directory flags, and it stays that way on purpose: a plugin `userConfig` secret only reaches hooks and MCP servers, and the review calls run through Bash. The key is never written to a config file or printed, and each key goes only to its own provider's host.
+
+`review-provider.mjs` makes three calls, each to that host with that key:
+
+- `review` sends the review instruction and the artifact under review, a plan or a diff, after credential redaction. It runs when a review gate fires with that provider in the reviewer set, and at `/cad-decision-review`.
+- `consult` sends a short description of a dead end, the goal, what was tried and the exact failing signal, after the same redaction. It runs only with `review.consult.enabled` true, and only after you say yes to an offer that names the provider and model. `/cad-debug`, `/cad-execute` and `/cad-plan` make that offer.
+- `detect-models` sends no project content, only the key as the request's credential, to list the provider's models when you run `/cad-config --review`.
+
+Redaction catches a credential by its shape, a credential-shaped name beside its value, a URL's userinfo, an `Authorization` header, and not by a list of known prefixes. A bare key sitting in a diff with nothing naming it goes out as written, so don't point a reviewer at a secrets file.
+
+### Your forge
+
+Every forge write goes through your own `tea`, `gh` or `glab`, signed in as you:
+
+- `repo create --private`, once, at `/cad-new-project`, after you confirm the owner and name;
+- `issue create`, with an `issue list` first to find a duplicate, when you send a review finding to the tracker instead of fixing it now;
+- PR or MR create and merge at `/cad-land`, when you pick that arm, or unattended when `git.auto_close` is true in both the repository's config and your user-global config.
+
+### Optional MCP tools
+
+Context7 and excerpt are used when they're installed and skipped when they're not, and Cadence installs neither. Without Context7, `/cad-decision-review` checks library and API claims against the installed package source, the lockfile or vendored docs, and lists every claim it couldn't check. Without excerpt, every agent reads and searches with the built-in Read and Grep.
+
+### The module
+
+On a host with mods, the module does five things:
+
+- draws the band and the `/cad-panel` pane from `planning.mjs` reads and the files under `.planning/`;
+- filters Cadence's 30 agents and 6 contract skills out of the agent and skill listings the model sees;
+- rewrites the Agent tool's `subagent_type` from a bare Cadence agent name to the plugin-prefixed one, and leaves your own agents' names alone;
+- adds `--agent-id <id>` to a Cadence subagent's own `planning.mjs trace close` command, so the record joins it to the right dispatch;
+- appends token-count facts to `.planning/trace.jsonl` through `planning.mjs trace append`.
+
+That trace is the only file it writes. It never touches `STATE.md` or the git rail.
+
+### The two hooks that watch
+
+- `subagent-trace` reads the stopped subagent's own transcript, the file the host keeps for that agent, to price the dispatch in `.planning/trace.jsonl`.
+- `read-trace` logs the path of each project file a tool call opens to `.planning/reads.jsonl`. Paths only, never contents, and a path outside the project is never recorded.
+
+### Outside the project
+
+What Cadence writes outside your repository:
+
+- `~/.claude/cadence/config.json`, or the file `CADENCE_GLOBAL_CONFIG` names, when a setup interview or `/cad-config` saves a machine-wide answer;
+- `CAPTURE.md` beside that config, from `/cad-capture --cadence`;
+- the `worktree.baseRef` key, merged into `.claude/settings.json` or `~/.claude/settings.json`, only after you pick the file at `/cad-config`;
+- scratch directories from `mktemp` under `TMPDIR`, or `/tmp` when it's unset.
+
+What it reads outside it: your user-global config, `providers.env` or the `review.key_file` file during a provider call, and `~/.claude/settings.json` and the platform's `managed-settings.json` to learn `worktree.baseRef` before running plans in parallel worktrees.
+
+### Why every command keeps Bash open
+
+Every Cadence command except `/cad-help` lists `Bash` in `allowed-tools` with no command pattern, so it doesn't ask before running a shell command. Narrowing that looks safer and isn't:
+
+- Cadence's own seam calls are typed by the model, and the form varies, a quoted `${CLAUDE_PLUGIN_ROOT}` path one time, an exported variable or a relative path the next. A permission rule matches only the exact form it names, so a narrowed command would stop and ask about its own scripts.
+- Workflows run compound scratch lines with `node -e` read-backs and `case ... esac` guards. The only rule that covers those allows arbitrary code, which narrows nothing.
+- Some commands run things with no fixed form at all. `/cad-execute`, `/cad-task` and `/cad-coverage` run `workflow.test_command` or a detected test runner, `/cad-spike` runs experiment code, and `/cad-debug` reruns reproductions.
+- `/cad-land` runs forge merge commands, and the unattended `/cad-milestone` into `/cad-land` chain can't stop to ask about them. A prompt that shows up mid-run stalls that chain where nobody is watching.
+
+Pushes are still guarded by git-guard, a hook rather than a permission rule, and the one push it never sees is the unattended close above.
+
+### Privacy
+
+No telemetry, no analytics, no phoning home. The only network calls Cadence makes itself are the three provider calls above, each on the terms stated there. Forge and push traffic goes through your own `tea`, `gh`, `glab` and `git`. The planning record, the run trace and the reads log stay in `.planning/` in your repository and go wherever you push it. Cadence runs inside Claude Code, so what your session sees goes wherever Claude Code sends it, which is the host's policy and not this plugin's.
 
 ## What each role costs
 

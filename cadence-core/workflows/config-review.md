@@ -82,9 +82,24 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set \
 
 A position with no suitable model stays `null` (omit that pair) - triggers that
 map to that tier fall back to `claude-subagent` until it is assigned. Once a
-provider has assigned tiers, add its name to `review.reviewers` (e.g.
-`set 'review.reviewers=["claude-subagent","openai"]'`) so `fire()` actually
-resolves it - assignment alone does not enroll a reviewer.
+provider has assigned tiers, add its name to this repository's
+`review.reviewers` (e.g. `set 'review.reviewers=["claude-subagent","openai"]'`)
+- assignment alone does not enroll a reviewer. Nor does that `set` alone: a
+cross-model provider runs only when the user-global config names it too.
+
+So ask SEPARATELY (ask-user seam, no preselected default) whether to name it
+there, and say plainly what that does: it authorizes this provider, on your own
+key, for EVERY repository whose own `review.reviewers` names it; and in a
+repository with no `review.reviewers` of its own the user-global list becomes
+the list, because arrays replace across layers rather than merge. Only on yes,
+take the current user-global list (`config.mjs get --global review.reviewers`,
+else `["claude-subagent"]`), add the name, and write it back:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set --global 'review.reviewers=[<that list>]'
+```
+
+Declining leaves the enrollment repo-only and inert, and the Wrap-up flags it.
 
 ## Wrap-up
 

@@ -1036,36 +1036,54 @@ test('both fire sites invoke the risk-check seam rather than reading a prose lis
     'execute.md dropped the rule that an inconclusive range fires the trigger');
 });
 
-test('cad-land step 3: the auto_close branch takes its value from `config.mjs get`', () => {
-  // AC2's other half, at the CALL SITE. The seam-level arms in
-  // config-seams.test.mjs prove the two resolutions differ and that the gate
-  // reads the merged one - but they all still pass on a tree where THIS skill
-  // was repointed at the raw repo value, which would leave the ask and the gate
-  // reading different sources with every arm green. The pairing is: the arm
-  // that switched off the human is the arm the gate covers.
+test('cad-land step 3: the auto_close branch takes its value from `git-publish.mjs authorized`', () => {
+  // AC2's other half, at the CALL SITE. This pin used to forbid exactly this
+  // source: under the old two-resolution design the ask skipped on the MERGED
+  // value and only land-cleanup's gate covered it, so branching on the
+  // authorized value would have split the pair. Under D-02 the authorized value
+  // IS the requested value - both layers must opt in - so the collapse warning
+  // no longer applies and ONE seam answers both questions. The seam-level arms
+  // in config-seams.test.mjs prove the gate reads that same rule; they all
+  // still pass on a tree where THIS skill branched on something else, which is
+  // what this pin catches. And one rule is not enough: both reads also need
+  // one directory, so the gate call carries the same `--dir <root>`.
   const skill = doc('skills', 'cad-land', 'SKILL.md');
+  const milestone = doc('cadence-core', 'workflows', 'milestone.md');
   const labelOf = regionLabels(skill);
+  const lines = skill.split('\n');
+  const at = (needle) => lines.findIndex((l) => l.includes(needle));
 
-  // The ONE up-front read the whole run reuses, and the branch statement itself.
   const upfront = /Read every config key this run needs in ONE `config\.mjs get` up front[\s\S]*?\n\n/
     .exec(skill);
   assert.ok(upfront, 'cad-land no longer states its ONE up-front config.mjs get');
-  assert.match(upfront[0], /git\.auto_close/,
-    'git.auto_close left the up-front `config.mjs get` list, so the branch value comes from elsewhere');
-  const branch = skill.split('\n').filter((l, i) => labelOf(i) === '3').join('\n');
-  assert.match(branch, /branch on `git\.auto_close`/,
-    'step 3 no longer states what it branches on');
+  assert.doesNotMatch(upfront[0], /git\.auto_close/,
+    'git.auto_close is back in the up-front `config.mjs get` list - the merged value decides nothing');
 
-  // And from NO other source. A raw repo-layer read or the `authorized` seam
-  // appearing as the thing step 3 branches on is exactly the collapse 0b1c322
-  // made and had reverted: the ask would skip on one value while
-  // land-cleanup.mjs gate halts on another. `authorized` belongs INSIDE 3(b),
-  // gating the GitLab mutation - never above the branch.
-  const decides = upfront[0] + '\n' + branch;
-  assert.doesNotMatch(decides, /\.planning\/config\.json/,
-    'step 3 branches on a raw repo-layer read instead of the merged `config.mjs get`');
-  assert.doesNotMatch(decides, /git-publish\.mjs" authorized/,
-    'step 3 branches on the AUTHORIZED value; the ask and the gate must read one merged value');
+  const seamLine = 'git-publish.mjs" authorized --dir <root>';
+  const call = at(seamLine);
+  assert.ok(call > -1, 'cad-land step 3 no longer asks the authorization seam');
+  assert.equal(labelOf(call), '3', 'the authorization call moved inside a publish arm');
+  const armA = at('**(a) `git.auto_close` false');
+  const armB = at('**(b) `git.auto_close` true');
+  assert.ok(armA > -1 && armB > -1, 'step 3 no longer spells its two publish arms');
+  assert.ok(call < armA && call < armB, 'the authorization call comes after a publish arm begins');
+
+  // And from NO raw read: a step-3 branch on .planning/config.json would see
+  // one half of the opt-in and skip the ask a cloned repository set alone.
+  const step3 = lines.filter((l, i) => labelOf(i) === '3').join('\n');
+  assert.doesNotMatch(upfront[0] + '\n' + step3, /\.planning\/config\.json/,
+    'step 3 branches on a raw repo-layer read instead of the authorization seam');
+
+  // The gate reads the same root the branch did.
+  assert.match(skill, /land-cleanup\.mjs" gate --dir <root>/,
+    "the 3(b) gate call does not carry the `--dir <root>` step 3's authorized call reads");
+
+  // /cad-milestone chains /cad-land on the same answer.
+  const step7 = /## 7\. Autonomous close[\s\S]*?(?=\n## 8\.)/.exec(milestone);
+  assert.ok(step7, 'milestone.md lost its step 7');
+  assert.match(milestone, /git-publish\.mjs" authorized --dir <root>/,
+    'milestone.md no longer asks the authorization seam up front');
+  assert.match(step7[0], /`authorized` call/, 'milestone.md step 7 no longer branches on the authorized call');
 });
 
 test('cad-land 3(b): the GitLab arm consults the authorization seam BEFORE it creates', () => {

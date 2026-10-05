@@ -157,27 +157,30 @@ const paneEvent = (/** @type {any} */ props = {}) => ({ surface: 'terminal', com
 const run = (args = '') => ({ command: 'cad-panel', args, origin: { kind: 'composer' }, presentation: {} });
 
 /**
- * The rows of a Pane render's tree, after its bold ` Cadence ` title row: each
- * a row Box of Text segments, read as one line of their joined text.
+ * The rows of a Pane render's tree, after its `◆ Cadence` title row and the
+ * blank under it: each a row Box of Text segments (a Button reads as its
+ * label), read as one line of their joined text.
  */
 function linesOf(/** @type {any} */ tree) {
-  return rowsOf(tree).map((row) => row.map((/** @type {any} */ t) => t.props.children).join(''));
+  return rowsOf(tree).map((row) => row.map((/** @type {any} */ t) =>
+    (t.type === 'Button' ? t.props.label : t.props.children)).join(''));
 }
 
-/** The Text segments of each row of a Pane render's tree, after its title. */
+/** The Text and Button segments of each row of a Pane render's tree, after its title. */
 function rowsOf(/** @type {any} */ tree) {
   assert.equal(tree.type, 'Box');
   assert.equal(tree.props.flexDirection, 'column');
-  const [title, ...rows] = tree.props.children;
-  assert.equal(title.type, 'Text');
-  assert.equal(title.props.bold, true);
-  assert.equal(title.props.children, ' Cadence ');
+  const [title, blank, ...rows] = tree.props.children;
+  assert.equal(title.type, 'Box');
+  assert.equal(title.props.children[0].props.bold, true);
+  assert.equal(title.props.children[0].props.children, '◆ Cadence');
+  assert.equal(blank.props.children, ' ');
   return rows.map((/** @type {any} */ row) => {
     assert.equal(row.type, 'Box');
     assert.equal(row.props.flexDirection, 'row');
     for (const t of row.props.children) {
-      assert.equal(t.type, 'Text');
-      assert.equal(typeof t.props.children, 'string');
+      assert.ok(t.type === 'Text' || t.type === 'Button', t.type);
+      assert.equal(typeof (t.type === 'Button' ? t.props.label : t.props.children), 'string');
     }
     return row.props.children;
   });
@@ -614,8 +617,8 @@ test('/cad-panel runs status once, against the walked root, and the pane shows i
   assert.deepEqual(status[0].argv, ['node', join(REPO, 'cadence-core/bin/planning.mjs'), '--dir', `${root}/.planning`, 'status']);
   assert.equal(status[0].init.cwd, root);
   assert.equal(typeof status[0].init.timeoutMs, 'number');
-  assert.ok(lines.includes('  ○ PLAN-1.md'), lines.join('\n'));
-  assert.ok(lines.includes('  ○ PLAN-2.md'), lines.join('\n'));
+  assert.ok(lines.includes('  ☐ PLAN-1.md'), lines.join('\n'));
+  assert.ok(lines.includes('  ☐ PLAN-2.md'), lines.join('\n'));
 });
 
 test('ten band draws run no process', async () => {
@@ -1084,7 +1087,7 @@ test('the band\'s text, the gap and the button never exceed bodyColumns', async 
 const segment = (/** @type {any[][]} */ rows, /** @type {string} */ marker, /** @type {string} */ text) =>
   rows.find((row) => row.some((t) => t.props.children.includes(marker)))?.find((t) => t.props.children === text);
 
-test('the pane draws a bold Cadence title row, no border of its own, and its plan glyphs in color', async () => {
+test('inline, the pane draws a bold Cadence title row, no border of its own, and its plan glyphs in color', async () => {
   const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'],
     uat: [{ status: 'pass' }, { status: 'fail' }] } } });
   mkdirSync(join(dir, 'phases', '1', 'reports'));
@@ -1104,13 +1107,118 @@ test('the pane draws a bold Cadence title row, no border of its own, and its pla
     assert.ok(head, `${label} row`);
     assert.equal(head.props.bold, true, label);
   }
-  assert.equal(segment(rows, 'PLAN-1.md', '✓')?.props.color, 'green');
-  assert.equal(segment(rows, 'PLAN-2.md', '○')?.props.color, 'yellow');
+  assert.equal(segment(rows, 'PLAN-1.md', '☑')?.props.color, 'green');
+  assert.equal(segment(rows, 'PLAN-2.md', '☐')?.props.color, 'yellow');
   assert.equal(segment(rows, '1 fail', '1 fail')?.props.color, 'red');
   assert.equal(segment(rows, '1 pass', '1 pass')?.props.color, 'green');
   const plans = rows.find((row) => row[0].props.children.trimEnd() === 'PLANS');
   assert.ok(plans.some((t) => /^█+$/.test(t.props.children) && t.props.color === 'green'));
   assert.ok(plans.some((t) => /^░+$/.test(t.props.children) && t.props.dimColor === true));
+});
+
+/** A tree for the fixture phase, drawn at `bodyColumns` 80 where the host seats it at `placement`. */
+async function drawnAt(/** @type {'dock' | 'inline'} */ placement) {
+  const dir = makeTree({ roadmap: TWO, phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } } });
+  const h = handlers();
+  const $ = realHost(dirname(dir));
+  const drawn = $.drawn();
+  await h.hook('command.run')($, run(), counting({}));
+  await drawn;
+  return h.hook('ui.render', 'Pane')($, paneEvent({ bodyColumns: 80, placement }), counting(null));
+}
+
+test('docked, the pane draws a round frame and lays its rows out four cells narrower', async () => {
+  const tree = await drawnAt('dock');
+  assert.equal(tree.props.borderStyle, 'round');
+  assert.equal(tree.props.paddingX, 1);
+  const rules = linesOf(tree).filter((l) => /^─+$/.test(l));
+  assert.ok(rules.length >= 1);
+  for (const rule of rules) assert.equal(rule.length, 76);
+  assert.ok(linesOf(tree).every((l) => Array.from(l).length <= 76));
+});
+
+test('inline, the host borders the pane, so it draws no frame and uses the full width', async () => {
+  const tree = await drawnAt('inline');
+  assert.ok(!Object.keys(tree.props).some((k) => /^(border|padding)/.test(k)), JSON.stringify(Object.keys(tree.props)));
+  for (const rule of linesOf(tree).filter((l) => /^─+$/.test(l))) assert.equal(rule.length, 80);
+});
+
+test('the next command is a button: n puts it in the prompt, and the title says so', async () => {
+  const h = handlers();
+  const $ = standIn({ resolve: withButton });
+  /** @type {any[]} */
+  const fills = [];
+  Object.assign($, { prompt: { fill: async (/** @type {any} */ args) => { fills.push(args); return {}; } } });
+  const drawn = $.drawn();
+  await h.hook('command.run')($, run(), counting({}));
+  await drawn;
+  const tree = await h.hook('ui.render', 'Pane')($, paneEvent(), counting(null));
+  const buttons = find(tree, 'Button');
+  assert.equal(buttons.length, 1);
+  assert.deepEqual([buttons[0].props.label, buttons[0].props.hotkey, buttons[0].props.variant], ['/cad-execute 1', 'n', 'primary']);
+  assert.ok(find(tree, 'Text').some((t) => t.props.children === 'n next'));
+  buttons[0].props.onPress({});
+  await settle();
+  assert.deepEqual(fills, [{ text: '/cad-execute 1', mode: 'replace' }]);
+});
+
+test('with no Button in the table the next command draws as text, with no hint', async () => {
+  const h = handlers();
+  const $ = standIn();
+  const drawn = $.drawn();
+  await h.hook('command.run')($, run(), counting({}));
+  await drawn;
+  const tree = await h.hook('ui.render', 'Pane')($, paneEvent(), counting(null));
+  assert.equal(find(tree, 'Button').length, 0);
+  assert.ok(linesOf(tree).includes('next /cad-execute 1'));
+  assert.ok(!find(tree, 'Text').some((t) => t.props.children === 'n next'));
+});
+
+test('a fill that rejects is swallowed', async () => {
+  const h = handlers();
+  const $ = standIn({ resolve: withButton });
+  Object.assign($, { prompt: { fill: async () => { throw new Error('no composer'); } } });
+  const drawn = $.drawn();
+  await h.hook('command.run')($, run(), counting({}));
+  await drawn;
+  const tree = await h.hook('ui.render', 'Pane')($, paneEvent(), counting(null));
+  assert.doesNotThrow(() => find(tree, 'Button')[0].props.onPress({}));
+  await settle();
+});
+
+// --- /cad-panel's own row in the transcript --------------------------------
+
+const outputEvent = (/** @type {string} */ text) => ({ surface: 'terminal', component: 'CommandOutput', requestId: 'm1',
+  props: { command: 'cad-panel', args: '', text, isErrored: false } });
+
+test('the command row hook is narrowed to /cad-panel', () => {
+  const { matcher } = handlers().one('ui.render', 'CommandOutput');
+  assert.deepEqual(matcher, { component: 'CommandOutput', props: { command: 'cad-panel' } });
+});
+
+test('an empty answer, which the host prints as a bare cadence:, draws one dim line instead', async () => {
+  const hook = handlers().hook('ui.render', 'CommandOutput');
+  const engine = { type: 'engine' };
+  for (const text of ['cadence: ', 'cadence:', '']) {
+    const next = counting(engine);
+    const tree = await hook(standIn(), outputEvent(text), next);
+    assert.equal(next.calls, 1);
+    assert.equal(tree.type, 'Box');
+    assert.equal(tree.props.paddingLeft, 2);
+    const [line] = tree.props.children;
+    assert.deepEqual(line.props, { dimColor: true, children: '⎿  Cadence pane open' });
+  }
+});
+
+test('an answer with words, or a table that throws, draws what the host drew', async () => {
+  const hook = handlers().hook('ui.render', 'CommandOutput');
+  const engine = { type: 'engine' };
+  const said = counting(engine);
+  assert.equal(await hook(standIn(), outputEvent(`cadence: ${NO_PROJECT_TEXT}`), said), engine);
+  assert.equal(said.calls, 1);
+  const thrown = counting(engine);
+  assert.equal(await hook(standIn({ resolve: () => { throw new Error('no table'); } }), outputEvent('cadence: '), thrown), engine);
+  assert.equal(thrown.calls, 1);
 });
 
 test('a running agent draws behind a cyan dot', async () => {

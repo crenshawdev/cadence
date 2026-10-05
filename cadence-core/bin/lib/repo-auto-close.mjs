@@ -1,61 +1,83 @@
 // @ts-check
-// repo-auto-close.mjs - the ONE read of `git.auto_close` that answers "did this
-// REPOSITORY authorize an unattended publish or merge", extracted verbatim out
-// of git-publish.mjs where it lived as a private `repoAutoClose` (phase 1,
-// AUT-01). Zero-dep, node builtins only, one filesystem read and no other I/O.
+// repo-auto-close.mjs - the ONE read of `git.auto_close` that answers "may this
+// machine run an unattended publish or merge of THIS repository", first
+// extracted out of git-publish.mjs as a repo-only read (phase 1, AUT-01).
+// Zero-dep, node builtins only, two filesystem reads and no other I/O.
 //
-// Why this is not the merged value, and why that is the whole point. One config
-// key now has TWO resolutions and they are deliberately allowed to disagree:
+// The rule (D-02): the unattended close is authorized only when BOTH the
+// repository's `<dir>/.planning/config.json` AND the user-global config set
+// `git.auto_close` to an explicit `true`. Either half alone authorizes nothing:
 //
-//   requested  - the MERGED global+repo value, read through `config.mjs get`.
-//                It is presentation: skills/cad-land/SKILL.md branches on it and
-//                skips the publish ask, and land-cleanup.mjs `gate` reads the
-//                same value so its blocker/high halt covers exactly the runs
-//                that skipped the human. Those two must never diverge - 0b1c322
-//                aligned them onto the repo layer, broke the pairing, and was
-//                reverted.
-//   authorized - THIS read. Repository layer only, because an unattended push
-//                or merge is a mutation of somebody else's project, and a
-//                setting in the user's own home directory cannot speak for a
-//                repository that never opted in (D-08). It gates the mutation;
-//                the merged value gates the prompt.
+//   - a user-global value alone cannot speak for a repository that never opted
+//     in, because the close mutates THAT repository (D-08);
+//   - a repository value alone cannot speak for the user, because the repo
+//     config is committed and arrives with a clone, and a cloned repository
+//     must not be able to turn on an unattended push or merge on a machine
+//     whose user never opted in (D-08's converse).
 //
-// It stays a RAW `JSON.parse` of `<dir>/.planning/config.json` rather than
-// `mergeLayers(...).layers.repo`, for two reasons and the second is the
-// load-bearing one (D-02):
+// "Requested" and "authorized" are ONE answer now: `/cad-land` step 3 branches
+// on it (through `git-publish.mjs authorized`) and land-cleanup.mjs `gate` halts
+// on it, so the ask that gets skipped is exactly the ask the halt covers.
 //
-//   (a) `config.mjs get` cannot answer per-layer at all - it destructures
-//       `layers` away and publishes only `values`, `source` and `warnings`.
-//   (b) a merge-derived answer inherits the merge's torn-layer behaviour, under
-//       which a corrupt USER-GLOBAL file can refuse the operation. That would
-//       let one bad file in a home directory WITHDRAW a repository's
-//       authorization - an authorization check must never fail in that
-//       direction.
+// Each half stays a RAW `JSON.parse` of its own file rather than a
+// `mergeLayers(...)` read. `config.mjs get` cannot answer per-layer at all, the
+// census in self-verify.test.mjs pins the merge's callsites, and the merge
+// SKIPS a torn layer, where this read must WITHHOLD: a file that does not parse
+// cannot prove the opt-in it may carry, and failing closed is the only safe
+// direction for an answer that unlocks a push. So every throw - missing file,
+// unreadable file, truncated JSON - and every shape that is not an explicit
+// `true` reads as no opt-in. A file that EXISTS but cannot be read, parsed or
+// is not an object is still told apart as `unreadable`, so the refusal can name
+// it as broken rather than as the missing half.
 //
-// The raw read fails CLOSED instead: every throw - missing file, unreadable
-// file, truncated JSON - and every shape that is not an explicit `true` answers
-// `false`, which is "this repository did not opt in". That is the only safe
-// default for an answer that unlocks a mutation.
+// One file is one layer. When CADENCE_GLOBAL_CONFIG names the repository's own
+// config file (by `layerIdentity`, which sees through symlinks and relative
+// spellings), there is ONE layer, so at most one opt-in and no authorization.
+// That mirrors `mergeLayers`' own rule, and a cloned repository cannot set the
+// environment variable that would make its own file count twice. `shared` says
+// so in the answer, so the refusal names the one file as the cause instead of
+// telling the user to set a key that file already sets.
 'use strict';
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { GLOBAL_CONFIG, isPlainObject, layerIdentity } from './config-merge.mjs';
+
+/** @typedef {'set' | 'unset' | 'unreadable'} LayerOptIn */
 
 /**
- * Did the repository at `dir` itself authorize the unattended close?
+ * One layer's answer. `unset` for a missing file (and for the `''` path
+ * GLOBAL_CONFIG holds where homedir() throws); `unreadable` for a file that
+ * exists but would not read, parse, or is not a JSON object; `set` only for an
+ * explicit `git.auto_close === true`.
+ * @param {string} file
+ * @returns {LayerOptIn}
+ */
+function layerOptIn(file) {
+  if (!file) return 'unset';
+  let parsed;
+  try { parsed = JSON.parse(readFileSync(file, 'utf8')); }
+  catch (e) { return /** @type {any} */ (e)?.code === 'ENOENT' ? 'unset' : 'unreadable'; }
+  if (!isPlainObject(parsed)) return 'unreadable';
+  return parsed?.git?.auto_close === true ? 'set' : 'unset';
+}
+
+/**
+ * Did BOTH layers opt in to the unattended close of the repository at `dir`?
  *
- * TOTAL: never throws, whatever `dir` is or is not. `true` ONLY on an explicit
- * `git.auto_close === true` in `<dir>/.planning/config.json`; a missing file, an
- * unreadable one, unparseable JSON, a non-object payload, an absent key, a
- * falsy value, and a value that exists only in the user-global layer all answer
- * `false`.
+ * TOTAL: never throws, whatever `dir` is or is not. `authorized` is true ONLY
+ * when `repo` and `global` are both `set` and the two are different files.
+ * `shared` is true when they are one file, and then `global` reads `unset`.
  *
  * @param {string} dir repo/planning root
- * @returns {boolean}
+ * @returns {{authorized: boolean, repo: LayerOptIn, global: LayerOptIn, shared: boolean, repoFile: string, globalFile: string}}
  */
-export function repoAutoClose(dir) {
-  try {
-    const repo = JSON.parse(readFileSync(join(dir, '.planning', 'config.json'), 'utf8'));
-    return repo?.git?.auto_close === true;
-  } catch { return false; }
+export function autoCloseLayers(dir) {
+  let repoFile = '';
+  try { repoFile = join(dir, '.planning', 'config.json'); } catch { /* non-string dir */ }
+  const repo = layerOptIn(repoFile);
+  const rid = layerIdentity(repoFile);
+  const shared = rid !== null && rid === layerIdentity(GLOBAL_CONFIG);
+  const global = shared ? 'unset' : layerOptIn(GLOBAL_CONFIG);
+  return { authorized: repo === 'set' && global === 'set', repo, global, shared, repoFile, globalFile: GLOBAL_CONFIG };
 }

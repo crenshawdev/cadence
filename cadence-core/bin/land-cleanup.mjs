@@ -30,9 +30,9 @@
 //     JSON array) is the only way to say "nothing survived". Unreadable stdin,
 //     EMPTY stdin, malformed JSON and a valid non-findings envelope are each
 //     reported by NAME rather than collapsed to [], and under auto_close each
-//     halts (D-09). Then, under the MERGED git.auto_close (the value the prose
-//     branched on - see gate() below), decide whether that payload halts the
-//     chain before merge.
+//     halts (D-09). Then, when git.auto_close is set in BOTH layers (D-02, the
+//     same answer the prose branched on - see gate() below), decide whether
+//     that payload halts the chain before merge.
 //     WHAT RIDES `findings` IS RULINGS, NOT RAW REVIEW TEXT (LND-02, and this
 //     is the only statement in code of where the gate's input comes from).
 //     cad-land unions the `entries[]` of every ADJUDICATION-risk_surface*.json
@@ -60,6 +60,7 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
+import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { integrationBranchName } from './lib/branch-decision.mjs';
 import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-decision.mjs';
@@ -205,36 +206,25 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
 }
 
 function gate(dir) {
-  // The MERGED value, deliberately - NOT git-publish.mjs's repo-layer-only read.
-  // The two seams ask different questions of one key. `repoAutoClose`
-  // (git-publish.mjs:53-61) asks "am I authorized to push unattended HERE", which
-  // D-08 answers repo-only so a user-global value starts no close in an unrelated
-  // project. This gate asks "is anybody WATCHING", and that answer has to match
-  // whatever the prose branched on - skills/cad-land/SKILL.md:24 reads the merged
-  // value through `config.mjs get` and skips the publish ask under it
-  // (references/triage-gate.md, the git.auto_close carve-out: "land-cleanup.mjs
-  // gate's blocker/high halt is the only consequence").
+  // The halt exists ONLY to replace the human who was switched off: `proceed`
+  // is not this gate waving a blocker through, it is the gate saying a human is
+  // at /cad-land's publish ask, looking at the survivors this branch's
+  // risk_surface fires already reported. Under D-02 that human is switched off
+  // only when BOTH layers opt in - /cad-land step 3 branches on
+  // `git-publish.mjs authorized`, which reads lib/repo-auto-close.mjs
+  // `autoCloseLayers` - so this gate reads that same answer for the same --dir.
+  // 0b1c322's failure (the skipped ask and this halt reading two different
+  // values of one key, so a blocker merged unhalted on GitLab) cannot recur:
+  // there is no longer a second value to diverge from. The same answer is also
+  // what `authorized` gives the GitLab arm before `glab mr create`.
   //
-  // So `proceed` on false is not this gate waving a blocker through; it is the
-  // gate saying a human is at the publish ask, looking at the survivors this
-  // branch's risk_surface fires already reported. The halt exists ONLY to
-  // replace the human who was switched off, which makes the skipped ask and the
-  // halt a matched pair that must read the SAME value.
-  // Narrowing this to `layers.repo` (0b1c322, reverted here) aligned the two
-  // seams' VALUES and broke that pairing: with a global-only auto_close the prose
-  // still entered the unattended chain and still suppressed triage while this gate
-  // believed no chain was running. On GitHub the chain then died at the publish
-  // seam; on GitLab nothing gates it at all (`glab mr create` publishes the source
-  // branch itself), so a surviving blocker merged with no triage and no halt.
-  //
-  // warnings[] rides the envelope here for a sharper reason than elsewhere: a
-  // torn layer reads auto_close as absent, which is `false`, which is the arm
-  // that DOES NOT halt on a surviving blocker - the unattended close's one
-  // remaining stop. The caller must be able to tell "no chain is running" from
-  // "the file that says so did not parse".
-  const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
-  const git = config.git || {};
-  const autoClose = git.auto_close === true;
+  // The merge still runs, for its warnings[] alone, and they ride the envelope
+  // for a sharper reason than elsewhere: a torn layer reads auto_close as not
+  // opted in, which is the arm that DOES NOT halt on a surviving blocker. The
+  // caller must be able to tell "no chain is running" from "the file that says
+  // so did not parse".
+  const { warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
+  const autoClose = autoCloseLayers(dir).authorized;
   const { findings, unreadable, unruled } = readFindings();
   // The classification, at the seam and nowhere else (D-06). One pass over the
   // entries answers both halves: `halting` is what is GENUINELY unfixed - ruled

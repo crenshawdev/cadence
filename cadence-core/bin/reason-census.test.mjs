@@ -96,13 +96,16 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
  * This list is HAND-MAINTAINED: it is a claim about the tree, not a snapshot
  * the test recomputes and compares to itself. Removing an entry is legal and
  * means "that refusal is gone on purpose"; adding one is unnecessary, because
- * additions pass by construction.
+ * additions pass by construction. Since the measurement in the header, 'bad-table'
+ * left with route.mjs's routing table and risk-carry's four GH-302 refusals arrived:
+ * 'carry-dest-unsearchable', 'carry-write-failed', 'unreadable-carried-copy' and
+ * 'unreadable-ruling'.
  */
 const REASON_TOKENS = Object.freeze([
   'archive-root-unusable', 'auto-close-off', 'bad-args', 'bad-command', 'bad-date',
   'bad-json', 'bad-payload', 'bad-provider', 'bad-query', 'bad-result', 'bad-schema',
-  'bad-shape', 'bad-status', 'cannot-derive', 'carry-dest-unusable',
-  'carry-exists', 'census-at-risk', 'collision', 'config-parse-failed', 'create-failed',
+  'bad-shape', 'bad-status', 'cannot-derive', 'carry-dest-unsearchable', 'carry-dest-unusable',
+  'carry-exists', 'carry-write-failed', 'census-at-risk', 'collision', 'config-parse-failed', 'create-failed',
   'git-failed', 'http', 'invalid', 'line-count-drift', 'missing-file', 'no-cursor', 'no-diff',
   'no-git', 'no-key', 'no-output', 'no-payload', 'no-phase-dir', 'no-plan', 'no-planning-dir',
   'no-plans', 'no-range', 'no-record', 'no-requirements', 'no-roadmap', 'no-root',
@@ -113,8 +116,8 @@ const REASON_TOKENS = Object.freeze([
   'this create was not confirmed: no repository is created without the user answering the question first',
   'uat-exists', 'uncommitted-work', 'undeclared-census-files', 'undeclared-files',
   'unknown-item', 'unknown-key', 'unknown-phase', 'unknown-role', 'unparseable-cursor',
-  'unparseable-roadmap', 'unprovable-queue', 'unreadable-capture', 'unreadable-changelog',
-  'unreadable-git-state', 'unreadable-manifest', 'unreadable-requirements',
+  'unparseable-roadmap', 'unprovable-queue', 'unreadable-capture', 'unreadable-carried-copy', 'unreadable-changelog',
+  'unreadable-git-state', 'unreadable-manifest', 'unreadable-requirements', 'unreadable-ruling',
   'unreadable-sibling-manifest', 'unrepresentable-paths', 'unresolved', 'unresolved-range',
   'unsupported-extension', 'would-overwrite', 'write-failed',
 ]);

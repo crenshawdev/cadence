@@ -26,8 +26,12 @@ import { PLANNING, makeTree } from './planning.test.mjs';
 
 /** The close gate this carry exists to keep fed. */
 const LAND = fileURLToPath(new URL('./land-cleanup.mjs', import.meta.url));
-/** A hermetic user-global config layer, so no arm reads the dev's real one. */
-const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-risk-carry-global-')), 'global.json');
+/** A hermetic user-global config layer, so no arm reads the dev's real one. It
+ * opts in to git.auto_close beside each fixture repo's own `true`: the gate
+ * halts only when both layers do (D-02), and these arms are about the carry,
+ * not the layers, so their halt assertions must keep meaning what they say. */
+const GLOBAL_ON = join(mkdtempSync(join(tmpdir(), 'cad-risk-carry-global-')), 'global.json');
+writeFileSync(GLOBAL_ON, JSON.stringify({ git: { auto_close: true } }));
 
 /** A bare `.planning` root with `phases/<phase>/` holding `files`. */
 function carryTree(phase, files) {
@@ -423,6 +427,96 @@ test('risk-carry: a symlinked phases/ is refused too', () => {
   assert.deepEqual(carried(dir, 3), []);
 });
 
+// --- a destination or a ruling the carry cannot read (GH-302) ---------------
+
+/** The shape every GH-302 refusal shares: named, path in the detail, a hint,
+ *  exit 1, and no raw errno text anywhere in the envelope. */
+function assertNamedRefusal(r, reason, path) {
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, reason, JSON.stringify(r));
+  assert.ok(r.detail.includes(path), `the detail does not name ${path}: ${r.detail}`);
+  assert.equal(typeof r.hint, 'string');
+  assert.ok(r.hint.length > 0, 'empty hint');
+  assert.equal(r._exit, 1);
+  assert.doesNotMatch(JSON.stringify(r), /EACCES|EPERM/);
+}
+
+test('risk-carry: a risk-carry/ that cannot be searched refuses by name', {
+  skip: asRoot,
+}, () => {
+  // Criterion 1. 0o644 isolates the missing search bit: `risk-carry/` itself
+  // stats, `risk-carry/<N>` under it cannot, and that used to throw raw.
+  const dir = carryTree(3, { [review('plan-1')]: '{"findings":[]}\n' });
+  mkdirSync(join(dir, 'risk-carry'));
+  chmodSync(join(dir, 'risk-carry'), 0o644);
+  try {
+    const r = riskCarry(dir, ['--phase', '3']);
+    assertNamedRefusal(r, 'carry-dest-unsearchable', 'risk-carry/3');
+  } finally {
+    chmodSync(join(dir, 'risk-carry'), 0o755);
+  }
+  assert.deepEqual(carried(dir, 3), []);
+});
+
+test('risk-carry: an unreadable source ruling refuses before any directory is made', {
+  skip: asRoot,
+}, () => {
+  // Criterion 2. The file stats as a regular file, so every rail above passes,
+  // and the copy used to throw after `risk-carry/<N>/` already existed.
+  const dir = carryTree(3, {
+    [review('plan-1')]: '{"findings":[]}\n',
+    [record('plan-1')]: recordBody('plan-1', 1, [entry()]),
+  });
+  const ruling = join(dir, 'phases', '3', record('plan-1'));
+  chmodSync(ruling, 0o000);
+  try {
+    const r = riskCarry(dir, ['--phase', '3']);
+    assertNamedRefusal(r, 'unreadable-ruling', `phases/3/${record('plan-1')}`);
+  } finally {
+    chmodSync(ruling, 0o644);
+  }
+  assert.equal(existsSync(join(dir, 'risk-carry')), false,
+    'a refused carry minted its destination anyway');
+});
+
+test('risk-carry: an unreadable carried copy says so, never carry-exists', {
+  skip: asRoot,
+}, () => {
+  // Criterion 3. The copy is byte-identical to its source, so `carry-exists`
+  // and "differs" would both be claims about a comparison that never ran.
+  const body = '{"findings":[]}\n';
+  const dir = carryTree(3, { [review('plan-1')]: body });
+  mkdirSync(join(dir, 'risk-carry', '3'), { recursive: true });
+  const copy = join(dir, 'risk-carry', '3', review('plan-1'));
+  writeFileSync(copy, body);
+  chmodSync(copy, 0o000);
+  try {
+    const r = riskCarry(dir, ['--phase', '3']);
+    assertNamedRefusal(r, 'unreadable-carried-copy', `risk-carry/3/${review('plan-1')}`);
+    assert.match(r.detail, /could not be read/);
+    assert.doesNotMatch(r.detail, /differs/);
+  } finally {
+    chmodSync(copy, 0o644);
+  }
+});
+
+test('risk-carry: a risk-carry/ that cannot be written refuses by name', {
+  skip: asRoot,
+}, () => {
+  // 0o555 stats and searches fine, so the rails pass and the mkdir is the
+  // first thing to hit the missing write bit - the last raw throw left.
+  const dir = carryTree(3, { [review('plan-1')]: '{"findings":[]}\n' });
+  mkdirSync(join(dir, 'risk-carry'));
+  chmodSync(join(dir, 'risk-carry'), 0o555);
+  try {
+    const r = riskCarry(dir, ['--phase', '3']);
+    assertNamedRefusal(r, 'carry-write-failed', 'risk-carry/3');
+  } finally {
+    chmodSync(join(dir, 'risk-carry'), 0o755);
+  }
+  assert.deepEqual(carried(dir, 3), []);
+});
+
 // --- the whole point: the ruling survives the prune (AC6) -------------------
 
 /** Run `land-cleanup.mjs gate` over `root` with `payload` on stdin. */
@@ -431,7 +525,7 @@ function gate(root, payload) {
     return JSON.parse(execFileSync('node', [LAND, 'gate', '--dir', root],
       { encoding: 'utf8',
         input: JSON.stringify(payload),
-        env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL } }));
+        env: { ...process.env, CADENCE_GLOBAL_CONFIG: GLOBAL_ON } }));
   } catch (e) { return JSON.parse(e.stdout); }
 }
 

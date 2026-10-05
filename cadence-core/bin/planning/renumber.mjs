@@ -17,8 +17,8 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 import { fail, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
-  atomicWrite, cutPhaseDetail, findProsePhaseRefs, parseCursor, parseRequirements,
-  parseRoadmapPhases, renderCursor, shiftPendingReqRows, shiftPhaseTokens,
+  atomicWrite, cutPhaseDetail, findProsePhaseRefs, nextNamesPhase, parseCursor,
+  parseRoadmapPhases, renderCursor, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
 import { requireInt } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
@@ -28,9 +28,10 @@ import { emit } from '../lib/seam-io.mjs';
 // phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
 // reported for the model to repair with judgment. --dry-run computes the full
 // operation plan and touches nothing - it is what the confirmation gate shows.
-// On insert, REQUIREMENTS.md tokens shift only on Pending `## Traceability`
-// rows; every other REQUIREMENTS line is copied through byte-identical. Its
-// REQUIREMENTS refs skip frozen rows and add capital tokens left unshifted.
+// On both ops, REQUIREMENTS.md tokens shift only on Pending `## Traceability`
+// rows, and remove blanks only Pending orphans; every other REQUIREMENTS line
+// is copied through byte-identical. Both ops' REQUIREMENTS refs skip frozen
+// rows and add capital tokens left unshifted.
 // ---------------------------------------------------------------------------
 function gitMv(from, to) {
   try { execFileSync('git', ['mv', from, to], { stdio: 'pipe' }); return 'git'; }
@@ -298,7 +299,8 @@ function cmdRenumber(dir, sub, opts) {
 
   const reqFile = join(dir, 'REQUIREMENTS.md');
   const reqText = read(reqFile);
-  const orphanedReqs = [];
+  /** @type {string[]} */
+  let orphanedReqs = [];
   /** @type {Array<{line: number, before: string, after: string}>} */
   let reqRowChanges = [];
   /** @type {string[]} */
@@ -307,24 +309,12 @@ function cmdRenumber(dir, sub, opts) {
   let reqRefs = null;
   let newReqText = null;
   if (reqText !== null) {
-    let t = reqText;
-    if (sub === 'remove') {
-      for (const r of parseRequirements(t)) if (r.phase === at) orphanedReqs.push(r.id);
-      // Blank the orphaned rows' Phase cell so they surface as no-phase in
-      // audit rather than silently pointing at the shifted neighbor.
-      t = t.split('\n').map((line) => {
-        const cells = line.match(/^(\|[^|]*\|)([^|]*)(\|[^|]*\|.*)$/);
-        if (cells && new RegExp(`\\bPhase ${at}\\b`).test(cells[2])) return `${cells[1]}  ${cells[3]}`;
-        return line;
-      }).join('\n');
-    }
-    // Insert leaves shipped history alone (GH-259): only Pending Traceability
-    // rows move. Remove keeps its whole-file shift for now.
-    if (sub === 'insert') {
-      ({ text: newReqText, changes: reqRowChanges, movedComplete, refs: reqRefs } = shiftPendingReqRows(t, at));
-    } else {
-      newReqText = shiftPhaseTokens(t, shiftFrom, delta).text;
-    }
+    // Both ops leave shipped history alone (GH-259, GH-301): only Pending
+    // Traceability rows move, and on remove only a Pending row citing the
+    // removed phase is blanked and orphaned, so it surfaces as no-phase in
+    // audit rather than silently pointing at the shifted neighbour.
+    ({ text: newReqText, changes: reqRowChanges, movedComplete, refs: reqRefs, orphans: orphanedReqs } =
+      shiftPendingReqRows(reqText, at, delta));
   }
 
   const stateFile = join(dir, 'STATE.md');
@@ -332,7 +322,12 @@ function cmdRenumber(dir, sub, opts) {
   let newCursor = null;
   let warn;
   if (cursor) {
-    newCursor = { ...cursor, total: total + delta };
+    // `Next:` keeps naming the same work (REN-04): its phase numbers shift by
+    // the same rule as everything else, whether or not the cursor's own phase
+    // moved and for a decimal cursor too. Accepted (D-05): after `insert --at
+    // N+1` from a completed phase N, `Next:` names the old N+1's work, and
+    // `/cad-progress` still routes to the inserted phase.
+    newCursor = { ...cursor, total: total + delta, next: shiftNextPhases(cursor.next, shiftFrom, delta) };
     // The phase NUMBER only ever shifts for an integer cursor. A decimal
     // cursor's own ROADMAP token and phases/<phase>/ dir are never shifted
     // either (see decimalPhases below), so moving just the cursor's number
@@ -352,22 +347,33 @@ function cmdRenumber(dir, sub, opts) {
     if (sub === 'remove' && cursor.phase === at) {
       warn = `cursor points at removed phase ${at}; number left as-is - re-point it (cursor set)`;
     }
+    // A Next: naming the removed phase keeps the number (shiftNextPhases leaves
+    // K < shiftFrom alone) and is never blanked, since an empty Next: makes
+    // parseCursor return null. Say so instead (D-06), after the notice above.
+    if (sub === 'remove' && nextNamesPhase(cursor.next, at)) {
+      const nextWarn = `Next: names removed phase ${at}; left as written - re-point it (cursor set)`;
+      warn = warn ? `${warn}; ${nextWarn}` : nextWarn;
+    }
   }
-  // Complete rows citing a moved phase were left as written (D-02). Say so by
-  // ID, after any cursor warning and without touching its text: `warn` stays
-  // one string, since callers match it as one. No promise that status or audit
-  // will flag these later - neither does when the old number now lands on
-  // another completed phase.
+  // Complete rows citing a moved phase, or on remove the removed one, were left
+  // as written (D-02, D-03). Say so by ID, after any cursor warning and without
+  // touching its text: `warn` stays one string, since callers match it as one.
+  // No promise that status or audit will flag these later - neither does when
+  // the old number now lands on another completed phase.
   if (movedComplete.length) {
-    const completeWarn = `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this ` +
-      'insert moves and were left unchanged, so each may now name a different phase than the one ' +
-      'it shipped in - re-point a row by hand only if it belongs to the open milestone';
+    const completeWarn = sub === 'insert'
+      ? `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this ` +
+        'insert moves and were left unchanged, so each may now name a different phase than the one ' +
+        'it shipped in - re-point a row by hand only if it belongs to the open milestone'
+      : `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this remove deletes ` +
+        'or renumbers and were left unchanged, so each may now name a missing or different phase - ' +
+        're-point a row by hand only if it belongs to the open milestone';
     warn = warn ? `${warn}; ${completeWarn}` : completeWarn;
   }
 
   // Prose refs the shift leaves alone - the model repairs these with judgment.
-  // Insert's REQUIREMENTS refs come from the pass above, which leaves out the
-  // frozen rows (D-09).
+  // REQUIREMENTS refs come from the pass above on both ops, which leaves out
+  // the frozen rows (D-09, D-08).
   const inTextRefs = [];
   for (const f of ['ROADMAP.md', 'REQUIREMENTS.md', 'STATE.md', 'PROJECT.md']) {
     const t = read(join(dir, f));
@@ -384,11 +390,8 @@ function cmdRenumber(dir, sub, opts) {
     ...dirMoves.map(([f, t]) => ({ git_mv: [`phases/${f}`, `phases/${t}`] })),
     ...(sub === 'remove' && existingDir(at) ? [{ rm: `phases/${at}` }] : []),
     { edit: 'ROADMAP.md', changes: roadmapShift.count + (sub === 'remove' ? 1 : 0) },
-    // Insert counts changed lines (req_row_changes below), remove its orphans.
-    ...(newReqText !== null ? [{
-      edit: 'REQUIREMENTS.md',
-      changes: sub === 'insert' ? reqRowChanges.length : (orphanedReqs.length ? orphanedReqs.length : undefined),
-    }] : []),
+    // Both ops count changed lines, the req_row_changes below.
+    ...(newReqText !== null ? [{ edit: 'REQUIREMENTS.md', changes: reqRowChanges.length }] : []),
     ...(newCursor ? [{ edit: 'STATE.md', changes: 1 }] : []),
   ];
 

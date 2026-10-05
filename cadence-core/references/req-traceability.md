@@ -80,13 +80,14 @@ Live requirement -> phase -> plan -> verified trace for the open milestone.
 Bounded the same way. Row form: `| <ID> | Phase <N> | <Status> |`, with
 `Pending | Complete | Deferred` the only legal Status values. The `Phase N`
 spelling (not a bare number) is mandatory: `shiftPhaseTokens` shifts only
-`Phase K` tokens and `phases/K/` paths, and `renumber remove`'s
-orphan-blanking regex tests `\bPhase ${at}\b` - a bare-number cell would
-silently desync the table on the next phase insert or removal.
-`renumber insert` shifts them only on rows whose Status is exactly `Pending`.
-`Complete` and `Deferred` rows, and every REQUIREMENTS line outside this
-table including `## Shipped`, stay byte-identical. A `Complete` row citing a
-moved phase is named in the insert's `warn` so it can be re-pointed by hand.
+`Phase K` tokens and `phases/K/` paths, and `renumber remove` blanks a
+Pending row's cell only when it holds the removed integer `Phase N` - a
+bare-number cell would silently desync the table on the next phase insert or
+removal. `renumber insert` and `renumber remove` both shift them only on rows
+whose Status is exactly `Pending`. `Complete` and `Deferred` rows, and every
+REQUIREMENTS line outside this table including `## Shipped`, stay
+byte-identical. A `Complete` row citing a moved phase, or on remove the
+removed one, is named in `warn` so it can be re-pointed by hand.
 
 ## Who writes what
 

@@ -454,7 +454,7 @@ export function estimatePromptTokens(...parts) {
 // rediscovered: redaction is by SHAPE - a credential-shaped NAME beside its
 // value, a userinfo POSITION in a URL, an `authorization` echo - and never by a
 // known-prefix list, because a prefix list is a list of the credentials somebody
-// already thought of. A bare `sk-ant-...` sitting in a diff with no
+// already thought of. A bare Anthropic key sitting in a diff with no
 // credential-shaped name beside it is NOT caught. This lowers the exposure of a
 // path that had none; it does not license sending a secrets file to a reviewer.
 //
@@ -1019,7 +1019,7 @@ function usageOf(usage, input, output) {
     // either rule (D-14) - read here for its VERDICT rather than its text. A
     // usage object is bytes a PROVIDER chose and this one is copied verbatim
     // into an event that persists, so a hostile or compromised gateway
-    // answering 200 with `{"input_tokens":10,"api_key":"sk-live-..."}` would
+    // answering 200 with `{"input_tokens":10,"api_key":"<a live key>"}` would
     // otherwise land a credential in `.planning/trace.jsonl` for good - and the
     // outbound fence cannot see it, because it runs on the instruction and the
     // artifact, which are what LEAVES the machine, not on what comes back.

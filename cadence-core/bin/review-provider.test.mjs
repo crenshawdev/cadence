@@ -1255,7 +1255,7 @@ test('fence: a credential in the artifact does not reach the wire (#167)', async
   // deliberate split and neither is a superset of the other: a `name=value`
   // pair (redactCredentials) and a URL userinfo (redactUrl). An arm carrying
   // only one would pass against a fence that composed only half.
-  const SECRET = 'sk-ant-not-a-real-key-0123456789';
+  const SECRET = 'not-a-real-key-0123456789';
   const artifact = [
     'diff --git a/.env b/.env',
     '+OPENAI_API_KEY=' + SECRET,
@@ -1609,9 +1609,9 @@ test('bound: the http envelope carries a capped, sanitized excerpt - one shape a
   const body = JSON.stringify({
     error: { message: 'upstream rejected the request', code: 'bad_gateway' },
     request: {
-      authorization: 'Bearer sk-live-abc123',
-      url: 'https://api.example/v1/responses?key=sk-live-abc123&x=1',
-      api_token: 'glpat-xyz',
+      authorization: 'Bearer fake-key-abc123',
+      url: 'https://api.example/v1/responses?key=fake-key-abc123&x=1',
+      api_token: 'fake-pat-xyz',
       secret: 'hunter2',
     },
   });
@@ -1620,7 +1620,7 @@ test('bound: the http envelope carries a capped, sanitized excerpt - one shape a
   assert.equal(typeof r.envelope.detail.body, 'string');
   assert.ok(Buffer.byteLength(r.envelope.detail.body) <= MAX_HTTP_BODY_BYTES, r.envelope.detail.body);
   for (const planted of ['key=', 'token', 'secret', 'Bearer',
-    'sk-live-abc123', 'glpat-xyz', 'hunter2']) {
+    'fake-key-abc123', 'fake-pat-xyz', 'hunter2']) {
     assert.equal(r.envelope.detail.body.includes(planted), false,
       `${planted} survived: ${r.envelope.detail.body}`);
   }
@@ -1869,8 +1869,8 @@ test('CST-04: a credential-shaped span in the provider usage object never reache
   // an `authorization` echo, a URL carrying userinfo, and a camelCase name
   // (which rule 4 structurally cannot see - it crosses `_`, `-` and `.` only).
   const hostile = [
-    ['a credential-shaped name/value pair', { api_key: 'sk-live-AAAA1111BBBB2222' }],
-    ['an authorization echo', { authorization: 'Bearer sk-live-CCCC3333DDDD4444' }],
+    ['a credential-shaped name/value pair', { api_key: 'fake-key-AAAA1111BBBB2222' }],
+    ['an authorization echo', { authorization: 'Bearer fake-key-CCCC3333DDDD4444' }],
     ['a URL carrying userinfo', { gateway: 'https://cad:s3cr3t-tok@gw.example.invalid/v1' }],
     ['a camelCase credential name', { apiSecret: 'hunter2-not-a-real-secret' }],
   ];
@@ -1892,7 +1892,7 @@ test('CST-04: a credential-shaped span in the provider usage object never reache
   // Not merely off that one key: none of the four planted values is anywhere in
   // the record, which is the property the trace file actually has to have.
   const written = readFileSync(FAULT_TRACE, 'utf8');
-  for (const needle of ['sk-live-', 's3cr3t-tok', 'hunter2']) {
+  for (const needle of ['fake-key-', 's3cr3t-tok', 'hunter2']) {
     assert.equal(written.includes(needle), false, `${needle} reached the trace`);
   }
   // The negative control, so none of the above can pass by dropping `usage_raw`
@@ -2012,9 +2012,9 @@ test('RVP-01: the response is bounded by bytes Cadence owns, and the failure env
   const echo = JSON.stringify({
     error: { message: 'upstream rejected the request', code: 'bad_gateway' },
     request: {
-      authorization: 'Bearer sk-live-abc123',
-      url: 'https://api.example/v1/responses?key=sk-live-abc123',
-      api_token: 'glpat-xyz',
+      authorization: 'Bearer fake-key-abc123',
+      url: 'https://api.example/v1/responses?key=fake-key-abc123',
+      api_token: 'fake-pat-xyz',
       secret: 'hunter2',
     },
     padding: 'q'.repeat(4096),
@@ -2024,7 +2024,7 @@ test('RVP-01: the response is bounded by bytes Cadence owns, and the failure env
     `the envelope must carry ONE shape, got: ${typeof failure.envelope.detail.body}`);
   assert.ok(Buffer.byteLength(failure.envelope.detail.body) <= 1024,
     `the excerpt must be capped, got ${Buffer.byteLength(failure.envelope.detail.body)} bytes`);
-  for (const planted of ['Bearer', 'key=', 'token', 'secret', 'sk-live-abc123', 'glpat-xyz', 'hunter2']) {
+  for (const planted of ['Bearer', 'key=', 'token', 'secret', 'fake-key-abc123', 'fake-pat-xyz', 'hunter2']) {
     assert.equal(failure.envelope.detail.body.includes(planted), false,
       `${planted} rode the failure envelope`);
   }
