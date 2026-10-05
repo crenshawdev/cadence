@@ -26,8 +26,12 @@ import { PLANNING, makeTree } from './planning.test.mjs';
 
 /** The close gate this carry exists to keep fed. */
 const LAND = fileURLToPath(new URL('./land-cleanup.mjs', import.meta.url));
-/** A hermetic user-global config layer, so no arm reads the dev's real one. */
-const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-risk-carry-global-')), 'global.json');
+/** A hermetic user-global config layer, so no arm reads the dev's real one. It
+ * opts in to git.auto_close beside each fixture repo's own `true`: the gate
+ * halts only when both layers do (D-02), and these arms are about the carry,
+ * not the layers, so their halt assertions must keep meaning what they say. */
+const GLOBAL_ON = join(mkdtempSync(join(tmpdir(), 'cad-risk-carry-global-')), 'global.json');
+writeFileSync(GLOBAL_ON, JSON.stringify({ git: { auto_close: true } }));
 
 /** A bare `.planning` root with `phases/<phase>/` holding `files`. */
 function carryTree(phase, files) {
@@ -431,7 +435,7 @@ function gate(root, payload) {
     return JSON.parse(execFileSync('node', [LAND, 'gate', '--dir', root],
       { encoding: 'utf8',
         input: JSON.stringify(payload),
-        env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL } }));
+        env: { ...process.env, CADENCE_GLOBAL_CONFIG: GLOBAL_ON } }));
   } catch (e) { return JSON.parse(e.stdout); }
 }
 

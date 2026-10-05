@@ -75,6 +75,14 @@ function seam(args, stdin = '', globalFile = NO_GLOBAL) {
   }
 }
 
+// The user-global half of the opt-in (D-02). The gate halts only when BOTH
+// layers set git.auto_close, so every arm that is about what halts an
+// unattended close runs with this beside the repo's `true`.
+const GLOBAL_ON = globalLayer({ git: { auto_close: true } });
+
+/** `gate` over `dir` with both layers opted in. */
+const gateOn = (dir, stdin) => seam(['gate', '--dir', dir], stdin, GLOBAL_ON);
+
 // --- cleanup ----------------------------------------------------------------
 
 test('cleanup on a repo with the branch merged into base: reap true, return to base', () => {
@@ -150,7 +158,7 @@ test('cleanup with git.on_land_cleanup=false: skip, all flags false', () => {
 
 test('gate with a blocker on stdin + git.auto_close=true: halt', () => {
   const dir = fixture({ auto_close: true });
-  const r = seam(['gate', '--dir', dir], '{"findings":[{"ruling":"survived","severity":"blocker"}]}');
+  const r = gateOn(dir, '{"findings":[{"ruling":"survived","severity":"blocker"}]}');
   assert.equal(r.ok, true);
   assert.equal(r.action, 'halt');
   assert.equal(r.findings.length, 1);
@@ -160,7 +168,7 @@ test('gate with only a medium finding: proceed', () => {
   // A survivor BELOW the halting pair: `unfixedFromEntries` puts it on `filing`,
   // never on `halting`, so it reaches the user's ask and stops no close.
   const dir = fixture({ auto_close: true });
-  const r = seam(['gate', '--dir', dir], '{"findings":[{"ruling":"survived","severity":"medium"}]}');
+  const r = gateOn(dir, '{"findings":[{"ruling":"survived","severity":"medium"}]}');
   assert.equal(r.action, 'proceed');
 });
 
@@ -170,36 +178,40 @@ test('gate with git.auto_close=false + a blocker: proceed (chain not running)', 
   assert.equal(r.action, 'proceed');
 });
 
-test('gate: auto_close ONLY in the global layer (repo omits) -> halt', () => {
-  // The safety property, pinned in the direction that a repo-layer-only read
-  // breaks. skills/cad-land/SKILL.md:24 reads the MERGED auto_close and skips
-  // the publish ask under it, so on this input the prose has already entered the
-  // unattended chain with no human watching - and this halt is the only
-  // consequence left (references/triage-gate.md, the git.auto_close carve-out).
-  // Reading the repo layer here (0b1c322, reverted) answered `proceed` on
-  // exactly this input while the ask stayed skipped, and on the GitLab arm -
-  // where no publish seam gates the chain - the blocker merged.
-  const dir = fixture({ on_land_cleanup: true });
-  const r = seam(['gate', '--dir', dir], '{"findings":[{"ruling":"survived","severity":"blocker"}]}',
-    globalLayer({ git: { auto_close: true } }));
+test('gate: auto_close in BOTH layers -> halt', () => {
+  // The one configuration that switches the human off (D-02), so the one where
+  // this halt has to stand in for them.
+  const dir = fixture({ auto_close: true });
+  const r = gateOn(dir, '{"findings":[{"ruling":"survived","severity":"blocker"}]}');
   assert.equal(r.ok, true);
   assert.equal(r.action, 'halt');
 });
 
-test('gate: the repo layer wins the merge over a global auto_close:false -> halt', () => {
-  // The other direction, so the arm above pins the merged VALUE rather than
-  // merely the presence of a global key: repo `true` beats global `false`, which
-  // is ordinary repo-wins precedence and not a layer narrowing.
+test('gate: auto_close ONLY in the global layer (repo omits) -> proceed', () => {
+  // A user-global value alone authorizes nothing (D-08), so /cad-land's step 3
+  // gets ok:false from `git-publish.mjs authorized` and puts the publish ask to
+  // a human. The halt replaces only a human who was switched off, and here
+  // nobody was. 0b1c322's failure needed the ask and this gate to read two
+  // different values; both read lib/repo-auto-close.mjs now.
+  const dir = fixture({ on_land_cleanup: true });
+  const r = seam(['gate', '--dir', dir], '{"findings":[{"ruling":"survived","severity":"blocker"}]}',
+    globalLayer({ git: { auto_close: true } }));
+  assert.equal(r.ok, true);
+  assert.equal(r.action, 'proceed');
+});
+
+test('gate: repo auto_close:true over a global false -> proceed (repo alone authorizes nothing)', () => {
+  // The converse (D-02): a committed repo value cannot switch the human off on
+  // a machine whose user never opted in, so the ask is live and this proceeds.
   const dir = fixture({ auto_close: true });
   const r = seam(['gate', '--dir', dir], '{"findings":[{"ruling":"survived","severity":"blocker"}]}',
     globalLayer({ git: { auto_close: false } }));
-  assert.equal(r.action, 'halt');
+  assert.equal(r.action, 'proceed');
 });
 
-test('gate: global auto_close:true beaten by repo false -> proceed (repo wins)', () => {
-  // The merge is what this gate reads, so a repo layer that turns the chain OFF
-  // wins over a global layer that turns it on - and with no chain running the
-  // triage ask is live, so the blocker is the user's call rather than a halt.
+test('gate: global auto_close:true with repo false -> proceed', () => {
+  // Neither half alone switches the human off, so the blocker is the user's
+  // call at the publish ask rather than a halt.
   const dir = fixture({ auto_close: false });
   const r = seam(['gate', '--dir', dir], '{"findings":[{"ruling":"survived","severity":"blocker"}]}',
     globalLayer({ git: { auto_close: true } }));
@@ -219,7 +231,7 @@ const UNREADABLE_INPUTS = [
 for (const [name, stdin] of UNREADABLE_INPUTS) {
   test(`gate under auto_close: ${name} halts with a reason naming it, never "no surviving finding"`, () => {
     const dir = fixture({ auto_close: true });
-    const r = seam(['gate', '--dir', dir], stdin);
+    const r = gateOn(dir, stdin);
     assert.equal(r.ok, true, 'the advisory envelope is preserved - ok:true with one action');
     assert.equal(r.action, 'halt');
     assert.deepEqual(r.findings, []);
@@ -236,15 +248,15 @@ for (const [name, stdin] of UNREADABLE_INPUTS) {
 
 test('gate under auto_close: an EXPLICIT {"findings":[]} is the one spelling that proceeds', () => {
   const dir = fixture({ auto_close: true });
-  const r = seam(['gate', '--dir', dir], '{"findings":[]}');
+  const r = gateOn(dir, '{"findings":[]}');
   assert.equal(r.action, 'proceed');
   assert.match(r.reason, /no surviving blocker\/high finding/);
 });
 
 test('gate: a bare JSON array on stdin still reads as the findings list', () => {
   const dir = fixture({ auto_close: true });
-  assert.equal(seam(['gate', '--dir', dir], '[]').action, 'proceed');
-  assert.equal(seam(['gate', '--dir', dir], '[{"ruling":"survived","severity":"blocker"}]').action, 'halt');
+  assert.equal(gateOn(dir, '[]').action, 'proceed');
+  assert.equal(gateOn(dir, '[{"ruling":"survived","severity":"blocker"}]').action, 'halt');
 });
 
 // --- the seam classifies: what the record says, not what the review claimed ---
@@ -255,10 +267,10 @@ test('gate: a usable fix_commit on the same entry flips halt to proceed (LND-02)
   // fix commit FIRST and a fixed entry is in none of its three sets, so the
   // work-already-landed entry stops no close.
   const dir = fixture({ auto_close: true });
-  const halts = seam(['gate', '--dir', dir], '{"findings":[{"ruling":"survived","severity":"blocker"}]}');
+  const halts = gateOn(dir, '{"findings":[{"ruling":"survived","severity":"blocker"}]}');
   assert.equal(halts.action, 'halt');
   assert.equal(halts.findings.length, 1);
-  const fixed = seam(['gate', '--dir', dir],
+  const fixed = gateOn(dir,
     '{"findings":[{"ruling":"survived","severity":"blocker","fix_commit":"3341ffb0"}]}');
   assert.equal(fixed.action, 'proceed');
   assert.deepEqual(fixed.findings, []);
@@ -271,7 +283,7 @@ test('gate: a refuted or downgraded ruling stops no close, at any severity', () 
   // on a killed finding is not a live one.
   const dir = fixture({ auto_close: true });
   for (const ruling of ['refuted', 'downgraded']) {
-    const r = seam(['gate', '--dir', dir],
+    const r = gateOn(dir,
       `{"findings":[{"ruling":"${ruling}","severity":"blocker"}]}`);
     assert.equal(r.action, 'proceed', `${ruling} must not halt: ${r.reason}`);
   }
@@ -279,33 +291,33 @@ test('gate: a refuted or downgraded ruling stops no close, at any severity', () 
 
 test('gate: `unruled` is read off the same stdin object, and a malformed one fails CLOSED', () => {
   const dir = fixture({ auto_close: true });
-  const named = seam(['gate', '--dir', dir],
+  const named = gateOn(dir,
     '{"findings":[],"unruled":[".planning/phases/9/REVIEW-risk_surface-plan-1.md"]}');
   assert.equal(named.action, 'halt');
   assert.ok(named.reason.includes('unruled-review'), named.reason);
   assert.ok(named.reason.includes('.planning/phases/9/REVIEW-risk_surface-plan-1.md'), named.reason);
   // Additive on the way in: an ABSENT key is not an error, and `null` is how
   // JSON spells absent, so an old caller that names nothing still proceeds.
-  assert.equal(seam(['gate', '--dir', dir], '{"findings":[]}').action, 'proceed');
-  assert.equal(seam(['gate', '--dir', dir], '{"findings":[],"unruled":null}').action, 'proceed');
+  assert.equal(gateOn(dir, '{"findings":[]}').action, 'proceed');
+  assert.equal(gateOn(dir, '{"findings":[],"unruled":null}').action, 'proceed');
   // A PRESENT one that is not a list is the opposite case and used to give the
   // same answer, which was a fail-open: the payload names a review nothing
   // ruled, one producer serialization bug (or one hostile line) turns the list
   // into a bare string, and the fifth-state halt was thrown away silently while
   // the unattended merge ran. It halts now, and the reason names the value's
   // TYPE rather than quoting an untrusted, unparseable payload onto stdout.
-  const bare = seam(['gate', '--dir', dir],
+  const bare = gateOn(dir,
     '{"findings":[],"unruled":".planning/phases/9/REVIEW-risk_surface-plan-1.md"}');
   assert.equal(bare.action, 'halt', bare.reason);
   assert.ok(bare.reason.includes('unruled-review'), bare.reason);
   assert.ok(!bare.reason.includes('phases/9'),
     `the payload's own bytes must not ride the reason: ${bare.reason}`);
-  const object = seam(['gate', '--dir', dir], '{"findings":[],"unruled":{"0":"R.md"}}');
+  const object = gateOn(dir, '{"findings":[],"unruled":{"0":"R.md"}}');
   assert.equal(object.action, 'halt', object.reason);
   assert.ok(object.reason.includes('unruled-review'), object.reason);
   // ...but a payload carrying ONLY `unruled` is still the fourth unreadable
   // state: the explicit findings list is what the four-name contract requires.
-  const noList = seam(['gate', '--dir', dir], '{"unruled":["R.md"]}');
+  const noList = gateOn(dir, '{"unruled":["R.md"]}');
   assert.equal(noList.action, 'halt');
   assert.ok(noList.reason.includes('not-a-findings-payload'), noList.reason);
 });
@@ -320,7 +332,7 @@ test('gate: no stdin piped at all halts under auto_close, whatever the platform 
   try {
     out = execFileSync('node', [SEAM, 'gate', '--dir', dir], {
       encoding: 'utf8',
-      env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL },
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: GLOBAL_ON },
       stdio: ['ignore', 'pipe', 'ignore'],
     });
   } catch (e) { out = e.stdout; }
@@ -341,7 +353,7 @@ test('gate: a genuinely unreadable stdin is the fourth halting state, named', ()
   try {
     out = execFileSync('node', [SEAM, 'gate', '--dir', dir], {
       encoding: 'utf8',
-      env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL },
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: GLOBAL_ON },
       stdio: [fd, 'pipe', 'ignore'],
     });
   } catch (e) { out = e.stdout; } finally { closeSync(fd); }
@@ -467,7 +479,7 @@ test('v3.7.7 (a): the ruled record PROCEEDS - the regression LND-02 closes', () 
   // Read through the RULINGS it is a fixed finding, and a fixed finding stops
   // nothing.
   const dir = fixture({ auto_close: true });
-  const r = seam(['gate', '--dir', dir], JSON.stringify({ findings: V377_RECORD.entries }));
+  const r = gateOn(dir, JSON.stringify({ findings: V377_RECORD.entries }));
   assert.equal(r.action, 'proceed', r.reason);
   assert.deepEqual(r.findings, []);
   assert.deepEqual(r.overridden, [], 'it is FIXED, not cleared - no override to surface');
@@ -502,7 +514,7 @@ test('v3.7.7 (b): delete that ONE key and the same set halts, on that entry alon
     for (const k of Object.keys(entry)) assert.deepEqual(entry[k], original[k]);
   });
 
-  const r = seam(['gate', '--dir', dir], JSON.stringify({ findings: broken }));
+  const r = gateOn(dir, JSON.stringify({ findings: broken }));
   assert.equal(r.action, 'halt', r.reason);
   assert.equal(r.findings.length, 1, 'the two mediums stood too, and neither halts');
   assert.equal(r.findings[0].line, 460);
@@ -514,7 +526,7 @@ test('v3.7.7 (c): the same review with nothing ruling it halts as unruled-review
   // this repo's .planning/ have no sibling record at all, and a deferred fire
   // writes none by design, so the caller names them and the gate stops.
   const dir = fixture({ auto_close: true });
-  const r = seam(['gate', '--dir', dir], JSON.stringify({
+  const r = gateOn(dir, JSON.stringify({
     findings: V377_REVIEW.findings,
     unruled: ['.planning/phases/2/REVIEW-risk_surface-plan-1.md'],
   }));
@@ -528,7 +540,7 @@ test('v3.7.7 (c): the same review with nothing ruling it halts as unruled-review
   // findings carry no `ruling`, so on their own they are not survivors and the
   // gate proceeds. `unruled` is what makes an unadjudicated fire stop a close;
   // a caller that pipes raw findings and names nothing gets no halt from them.
-  const unnamed = seam(['gate', '--dir', dir], JSON.stringify({ findings: V377_REVIEW.findings }));
+  const unnamed = gateOn(dir, JSON.stringify({ findings: V377_REVIEW.findings }));
   assert.equal(unnamed.action, 'proceed', unnamed.reason);
 });
 
@@ -539,7 +551,7 @@ test('v3.7.7 (d): the same high, overridden - named on `overridden`, `action` un
   const dir = fixture({ auto_close: true });
   const cleared = { ...V377_HIGH, overridden: true };
   delete cleared.fix_commit;
-  const r = seam(['gate', '--dir', dir], JSON.stringify({ findings: [cleared] }));
+  const r = gateOn(dir, JSON.stringify({ findings: [cleared] }));
   assert.equal(r.action, 'proceed', r.reason);
   assert.deepEqual(r.findings, []);
   assert.equal(r.overridden.length, 1);
@@ -550,7 +562,7 @@ test('v3.7.7 (d): the same high, overridden - named on `overridden`, `action` un
   // not halt and it is not an unfixed override, so it appears nowhere in the
   // surfacing. Leaving that to filter order is how one entry becomes a
   // permanent unfixed override at every close.
-  const both = seam(['gate', '--dir', dir],
+  const both = gateOn(dir,
     JSON.stringify({ findings: [{ ...V377_HIGH, overridden: true }] }));
   assert.equal(both.action, 'proceed', both.reason);
   assert.deepEqual(both.overridden, []);
