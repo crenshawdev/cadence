@@ -22,7 +22,8 @@
 // another phase. A subagent's own close (an advisory reviewer's tail) runs
 // before its last step, so its fact is written at its stop; a coordinator's
 // close runs after the stop, so its fact is written just before the close is
-// passed on. A window whose close never comes is never written. A subagent's
+// passed on. A window whose close never comes is never written, and at most
+// HELD_MAX of them wait at once (PNL-07). A subagent's
 // own `trace close` gains the `--agent-id` the host sees, so an advisory
 // reviewer's bracket and its fact join. The trace reader folds the fact only
 // into a bracket whose return carried no figure, so a return's own figure
@@ -128,11 +129,19 @@ function redraw($) {
 }
 
 /**
+ * The most stopped subagents' windows `held` keeps waiting for a close (PNL-07).
+ * A close comes right after its subagent's return, so a window still waiting
+ * after this many later stops is one no close will ever name; the oldest goes.
+ */
+const HELD_MAX = 64;
+
+/**
  * @typedef {{windows: Map<string, number>, adopted: Map<string, {phase: string, anchor: string | null}>,
  *   held: Map<string, number>}} Capture
  * `windows`: each running subagent's latest step window. `adopted`: the
  * close a running subagent ran on itself, waiting for its last window.
- * `held`: a stopped Cadence subagent's last window, waiting for its close.
+ * `held`: a stopped Cadence subagent's last window, waiting for its close,
+ * at most HELD_MAX of them.
  * Every read-and-forget below happens before the first await, so two
  * handlers interleaving never write one window twice.
  */
@@ -172,7 +181,10 @@ async function stopped($, e, c) {
     c.adopted.delete(id);
     if (tokens === undefined || roleOfAgent(e.agent_type) === null) return;
     if (close === undefined) {
+      // Re-inserted, so a Map's insertion order stays oldest-first.
+      c.held.delete(id);
       c.held.set(id, tokens);
+      if (c.held.size > HELD_MAX) c.held.delete(c.held.keys().next().value);
       return;
     }
     await writeFact($, typeof e.cwd === 'string' && e.cwd ? e.cwd : await $.session.cwd(), close, id, tokens);
