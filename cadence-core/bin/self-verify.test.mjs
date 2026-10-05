@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -2618,4 +2618,54 @@ test('check 27: the LIVE tree is within both limits, and `checked` names the che
   const j = run([]);
   assert.equal(j.ok, true, JSON.stringify(j.problems));
   assert.match(j.checked, /\bdirectory-limits\b/);
+});
+
+test('check 27: a path in an unmerged index counts once, not once per stage', () => {
+  // 509 pad files, `pad/` and big.txt are 511. Stages 1-3 of big.txt list it
+  // three times, which would make 513 and three oversize problems.
+  const root = limitRoot();
+  gitLimit(root, ['init', '-q']);
+  padFiles(root, 'pad', 509);
+  writeFileSync(join(root, 'big.txt'), 'x'.repeat(300000));
+  gitLimit(root, ['add', 'pad']);
+  const git = (args, input) => execFileSync('git', ['-C', root, ...args],
+    { env: { ...process.env, ...GIT_LIMIT_ENV }, encoding: 'utf8', input });
+  const sha = git(['hash-object', '-w', 'big.txt']).trim();
+  git(['update-index', '--index-info'], [1, 2, 3].map((s) => `100644 ${sha} ${s}\tbig.txt\n`).join(''));
+  assert.equal(git(['ls-files']).split('\n').filter((l) => l === 'big.txt').length, 3);
+  const p = limitProblems(root);
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].kind, 'oversize-file');
+  assert.equal(p[0].file, 'big.txt');
+});
+
+test('check 27: a file whose name is not UTF-8 is still size-checked, in both arms', (t) => {
+  const name = Buffer.concat([Buffer.from('caf'), Buffer.from([0xe9]), Buffer.from('.md')]);
+  for (const arm of ['walk', 'git']) {
+    const root = limitRoot();
+    mkdirSync(join(root, 'misc'));
+    const file = Buffer.concat([Buffer.from(join(root, 'misc') + '/'), name]);
+    try { writeFileSync(file, 'x'.repeat(300000)); } catch {
+      t.skip('this filesystem refuses a non-UTF-8 file name');
+      return;
+    }
+    if (arm === 'git') {
+      gitLimit(root, ['init', '-q']);
+      gitLimit(root, ['add', 'misc']);
+    }
+    const p = limitProblems(root);
+    assert.equal(p.length, 1, `${arm}: ${JSON.stringify(p)}`);
+    assert.equal(p[0].kind, 'oversize-file');
+    assert.match(p[0].file, /^misc\/caf.*\.md$/);
+  }
+});
+
+test("check 27: the git arm does not run the target repo's core.fsmonitor", () => {
+  const root = limitRoot();
+  const sentinel = join(mkdtempSync(join(tmpdir(), 'cad-selfverify-fsmonitor-')), 'ran');
+  gitLimit(root, ['init', '-q']);
+  gitLimit(root, ['add', 'cadence-core']);
+  gitLimit(root, ['config', 'core.fsmonitor', `touch '${sentinel}'; false`]);
+  limitProblems(root);
+  assert.equal(existsSync(sentinel), false, 'self-verify ran the repo-configured fsmonitor hook');
 });

@@ -553,20 +553,33 @@ const MAX_ENTRIES = 512;
 const SIZE_EXEMPT = /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg|tiff?|woff2?|ttf|otf|eot)$/i;
 
 /**
- * The files that ship from `root`, as root-relative `/` paths, plus the folder
- * count. `git ls-files` when root is its work tree's top level, a walk
- * otherwise. Folders are every ancestor of a listed path, so `skills/`, which
- * holds only folders, counts the way `git ls-tree -r -d` counts it.
+ * Check 27's paths are latin1 strings, one char per raw byte, so a name that
+ * is not UTF-8 still reaches lstat instead of decoding to U+FFFD and missing.
+ * @param {string} root
+ * @param {string} rel
+ */
+const bytePath = (root, rel) =>
+  Buffer.concat([Buffer.from(root), Buffer.from(rel ? `/${rel}` : '', 'latin1')]);
+
+/**
+ * The files that ship from `root`, as root-relative `/` paths in latin1, plus
+ * the folder count. `git ls-files` when root is its work tree's top level, a
+ * walk otherwise. Folders are every ancestor of a listed path, so `skills/`,
+ * which holds only folders, counts the way `git ls-tree -r -d` counts it.
  * @param {string} root
  * @returns {{ files: string[], folders: number }}
  */
 function shippedEntries(root) {
   try {
-    const git = (/** @type {string[]} */ args) => execFileSync('git', ['-C', root, ...args],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
-    const top = git(['rev-parse', '--show-toplevel']).trim();
+    // core.fsmonitor is a command from the target's own .git/config, and
+    // reading the index would run it.
+    const git = (/** @type {string[]} */ args) =>
+      execFileSync('git', ['-c', 'core.fsmonitor=false', '-C', root, ...args],
+        { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
+    const top = git(['rev-parse', '--show-toplevel']).toString('utf8').trim();
     if (top && realpathSync(top) === realpathSync(root)) {
-      const files = git(['ls-files', '-z']).split('\0').filter(Boolean);
+      // An unmerged path is listed once per stage.
+      const files = [...new Set(git(['ls-files', '-z']).toString('latin1').split('\0').filter(Boolean))];
       const dirs = new Set();
       for (const f of files) {
         for (let i = f.indexOf('/'); i !== -1; i = f.indexOf('/', i + 1)) dirs.add(f.slice(0, i));
@@ -578,10 +591,11 @@ function shippedEntries(root) {
   let folders = 0;
   const visit = (/** @type {string} */ rel) => {
     let entries;
-    try { entries = readdirSync(join(root, rel), { withFileTypes: true }); } catch { return; }
+    try { entries = readdirSync(bytePath(root, rel), { withFileTypes: true, encoding: 'buffer' }); } catch { return; }
     for (const e of entries) {
-      if (!rel && e.name === '.git') continue;
-      const r = rel ? `${rel}/${e.name}` : e.name;
+      const name = e.name.toString('latin1');
+      if (!rel && name === '.git') continue;
+      const r = rel ? `${rel}/${name}` : name;
       if (e.isDirectory()) { folders++; visit(r); } else files.push(r);
     }
   };
@@ -600,9 +614,9 @@ function directoryLimitIssues(root) {
   for (const f of files) {
     if (SIZE_EXEMPT.test(f)) continue;
     let size;
-    try { size = lstatSync(join(root, f)).size; } catch { continue; }
+    try { size = lstatSync(bytePath(root, f)).size; } catch { continue; }
     if (size > MAX_FILE_BYTES) {
-      problems.push({ kind: 'oversize-file', file: f,
+      problems.push({ kind: 'oversize-file', file: Buffer.from(f, 'latin1').toString('utf8'),
         detail: `${size} bytes, over the directory's ${MAX_FILE_BYTES}-byte limit for a file that is not an image or font` });
     }
   }
