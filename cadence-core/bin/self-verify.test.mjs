@@ -2514,3 +2514,108 @@ test('check 26: the LIVE tree carries no multi-line listed description', () => {
   const p = run(['--root', REPO]).problems;
   assert.deepEqual(p.filter((x) => x.kind === 'multiline-listing-text'), []);
 });
+
+// --- check 27: the directory's file limits -------------------------------------
+//
+// 262,144 bytes for a file that is not an image or font, 512 files plus folders.
+// A fixture with no git is the walk arm; a `git init` fixture is the git arm,
+// which reads the tracked set and not the disk.
+
+const LIMIT_KINDS = ['oversize-file', 'too-many-entries'];
+const limitProblems = (root) =>
+  run(['--root', root], GIT_LIMIT_ENV).problems.filter((p) => LIMIT_KINDS.includes(p.kind));
+const GIT_LIMIT_ENV = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' };
+
+/** Two entries: the `cadence-core/` folder and the schema every run reads. */
+function limitRoot() {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-limits-'));
+  mkdirSync(join(root, 'cadence-core'));
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  return root;
+}
+
+/** `n` one-byte files under `root/<dir>`. */
+function padFiles(root, dir, n) {
+  mkdirSync(join(root, dir), { recursive: true });
+  for (let i = 0; i < n; i++) writeFileSync(join(root, dir, `f${i}`), 'x');
+}
+
+function gitLimit(root, args) {
+  execFileSync('git', ['-C', root, ...args], { env: { ...process.env, ...GIT_LIMIT_ENV }, stdio: 'ignore' });
+}
+
+test('check 27: a 262,145-byte text file fails naming its path, and 262,144 bytes passes', () => {
+  const over = limitRoot();
+  mkdirSync(join(over, 'misc'));
+  writeFileSync(join(over, 'misc', 'big.txt'), 'x'.repeat(262145));
+  const p = limitProblems(over);
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].kind, 'oversize-file');
+  assert.equal(p[0].file, 'misc/big.txt');
+  assert.match(p[0].detail, /262145 bytes/);
+
+  const at = limitRoot();
+  mkdirSync(join(at, 'misc'));
+  writeFileSync(join(at, 'misc', 'big.txt'), 'x'.repeat(262144));
+  assert.deepEqual(limitProblems(at), []);
+});
+
+test('check 27: an image or font over the limit passes, extension compared without case', () => {
+  const root = limitRoot();
+  mkdirSync(join(root, 'assets'));
+  writeFileSync(join(root, 'assets', 'figure.png'), Buffer.alloc(300000));
+  writeFileSync(join(root, 'assets', 'font.WOFF2'), Buffer.alloc(300000));
+  assert.deepEqual(limitProblems(root), []);
+});
+
+test('check 27: 513 entries fail and 512 pass, and a folder counts as an entry', () => {
+  // limitRoot is 2 entries, `pad/` is a third, 509 files make 512.
+  const at = limitRoot();
+  padFiles(at, 'pad', 509);
+  assert.deepEqual(limitProblems(at), []);
+
+  const over = limitRoot();
+  padFiles(over, 'pad', 509);
+  mkdirSync(join(over, 'pad', 'empty'));
+  const p = limitProblems(over);
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].kind, 'too-many-entries');
+  assert.match(p[0].detail, /510 files and 3 folders make 513 entries/);
+});
+
+test('check 27: in a git checkout an untracked oversize file is not counted, and once added it is', () => {
+  const root = limitRoot();
+  gitLimit(root, ['init', '-q']);
+  writeFileSync(join(root, 'big.txt'), 'x'.repeat(300000));
+  assert.deepEqual(limitProblems(root), []);
+  gitLimit(root, ['add', 'big.txt']);
+  const p = limitProblems(root);
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].kind, 'oversize-file');
+  assert.equal(p[0].file, 'big.txt');
+});
+
+test('check 27: the git arm counts a folder that holds only folders', () => {
+  // 511 tracked files under a/b/ and none in a/: 511 files and 2 folders is 513.
+  // Counting each file's dirname alone finds 1 folder, 512, and passes.
+  const over = limitRoot();
+  gitLimit(over, ['init', '-q']);
+  padFiles(over, 'a/b', 511);
+  gitLimit(over, ['add', 'a']);
+  const p = limitProblems(over);
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.match(p[0].detail, /511 files and 2 folders make 513 entries/);
+
+  const at = limitRoot();
+  gitLimit(at, ['init', '-q']);
+  padFiles(at, 'a/b', 510);
+  gitLimit(at, ['add', 'a']);
+  assert.deepEqual(limitProblems(at), []);
+});
+
+test('check 27: the LIVE tree is within both limits, and `checked` names the check', () => {
+  const j = run([]);
+  assert.equal(j.ok, true, JSON.stringify(j.problems));
+  assert.match(j.checked, /\bdirectory-limits\b/);
+});

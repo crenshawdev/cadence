@@ -268,12 +268,26 @@
 //                    decides that it applies to the whole root. It takes no
 //                    CONTRACTS row, for the reason check 14 states about
 //                    `lib/*.mjs`.
+//  27. directory     no shipped file that is not an image or font is over
+//      limits        262,144 bytes, and shipped files plus folders number 512
+//                    or fewer. Those are the plugin directory's two "held for
+//                    a reviewer" file limits, and weight-budgets.json cannot
+//                    hold them: it covers prose surfaces and deliberately
+//                    leaves README and CHANGELOG out, which is how CHANGELOG.md
+//                    reached 283,134 bytes. In a git checkout whose top level
+//                    is the root, the shipped set is `git ls-files`, so the
+//                    gitignored node_modules/ and .planning/ stay out of the
+//                    count. Anywhere else - a fixture, an unpacked copy, no git
+//                    on PATH - it walks the root instead, so the check still
+//                    runs rather than passing silent. It is not gated on
+//                    isFullTree for that reason.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
 'use strict';
 
-import { readFileSync, readdirSync, existsSync, statSync, readlinkSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, lstatSync, readlinkSync, realpathSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
@@ -529,6 +543,75 @@ function expand(token, triggers, providers, roles) {
   out = subst(out, /<(?:name|provider)>?/g, providers);
   out = subst(out, /<role>?/g, Array.isArray(roles) ? roles : []);
   return out;
+}
+
+// --- check 27: the directory's file limits ----------------------------------
+
+const MAX_FILE_BYTES = 262144;
+const MAX_ENTRIES = 512;
+// Images and fonts are exempt from the size limit only. SVG counts as an image.
+const SIZE_EXEMPT = /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg|tiff?|woff2?|ttf|otf|eot)$/i;
+
+/**
+ * The files that ship from `root`, as root-relative `/` paths, plus the folder
+ * count. `git ls-files` when root is its work tree's top level, a walk
+ * otherwise. Folders are every ancestor of a listed path, so `skills/`, which
+ * holds only folders, counts the way `git ls-tree -r -d` counts it.
+ * @param {string} root
+ * @returns {{ files: string[], folders: number }}
+ */
+function shippedEntries(root) {
+  try {
+    const git = (/** @type {string[]} */ args) => execFileSync('git', ['-C', root, ...args],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
+    const top = git(['rev-parse', '--show-toplevel']).trim();
+    if (top && realpathSync(top) === realpathSync(root)) {
+      const files = git(['ls-files', '-z']).split('\0').filter(Boolean);
+      const dirs = new Set();
+      for (const f of files) {
+        for (let i = f.indexOf('/'); i !== -1; i = f.indexOf('/', i + 1)) dirs.add(f.slice(0, i));
+      }
+      return { files, folders: dirs.size };
+    }
+  } catch { /* not a git top level, or no git: walk instead */ }
+  const files = [];
+  let folders = 0;
+  const visit = (/** @type {string} */ rel) => {
+    let entries;
+    try { entries = readdirSync(join(root, rel), { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (!rel && e.name === '.git') continue;
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) { folders++; visit(r); } else files.push(r);
+    }
+  };
+  visit('');
+  return { files, folders };
+}
+
+/**
+ * Check 27's problems: one per non-exempt file over MAX_FILE_BYTES, and one
+ * when files plus folders pass MAX_ENTRIES.
+ * @param {string} root
+ */
+function directoryLimitIssues(root) {
+  const problems = [];
+  const { files, folders } = shippedEntries(root);
+  for (const f of files) {
+    if (SIZE_EXEMPT.test(f)) continue;
+    let size;
+    try { size = lstatSync(join(root, f)).size; } catch { continue; }
+    if (size > MAX_FILE_BYTES) {
+      problems.push({ kind: 'oversize-file', file: f,
+        detail: `${size} bytes, over the directory's ${MAX_FILE_BYTES}-byte limit for a file that is not an image or font` });
+    }
+  }
+  const total = files.length + folders;
+  if (total > MAX_ENTRIES) {
+    problems.push({ kind: 'too-many-entries', file: '.',
+      detail: `${files.length} files and ${folders} folders make ${total} entries, over the directory's limit of ${MAX_ENTRIES}` });
+  }
+  return problems;
 }
 
 // --- checks ------------------------------------------------------------------
@@ -1384,6 +1467,10 @@ function run(root) {
   // whole root.
   for (const issue of listingDescriptionIssues(root)) problems.push(issue);
 
+  // 27. directory limits: no shipped file but an image or font over 256 KiB,
+  // and 512 shipped files plus folders at most. Every root, fixture included.
+  for (const issue of directoryLimitIssues(root)) problems.push(issue);
+
   return problems;
 }
 
@@ -1410,7 +1497,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, listing-descriptions', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, listing-descriptions, directory-limits', problems });
 } catch (e) {
   // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
