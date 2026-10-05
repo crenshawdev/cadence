@@ -54,7 +54,14 @@
 //                              the default and is named in `warnings`
 //   review.reviewers           the reviewer backends the fire may go to, which
 //                              `resolve` filters per trigger by availability
-//                              into the `reviewers` map beside `review`
+//                              into the `reviewers` map beside `review`. A
+//                              cross-model name also needs the USER-GLOBAL
+//                              layer's own list to name it (D-14): a repo layer
+//                              arrives with a clone and the provider key comes
+//                              from the user's environment, so a repository can
+//                              narrow the set but never add a provider to it.
+//                              Those global names are returned as
+//                              `reviewers_global`
 //   review.triggers.*.tier     the model tier that trigger's cross-model half
 //                              runs at, which is also what its availability
 //                              test reads, falling back to that key's own schema
@@ -291,7 +298,7 @@ const MAX_BODY_BYTES = 512 * 1024;
 // but did not block on: a layer that failed to parse, and any key v2.0.0
 // retired.
 function readConfig(file) {
-  const { config: c, source, warnings } = mergeLayers(file);
+  const { config: c, source, warnings, layers } = mergeLayers(file);
   const m = c.model || {};
   return {
     escalate_on_failure: m.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
@@ -342,6 +349,13 @@ function readConfig(file) {
     // DEFAULTS.reviewers backstops it below, the way DEFAULTS backstops every
     // other unset key.
     reviewers: reviewersIn(c),
+    // The cross-model names the USER-GLOBAL layer itself lists (D-14), read off
+    // the merge's own per-layer object rather than a second read of the file.
+    // `layers.global` is null when that file is absent, torn, not an object, or
+    // the same file as the repo config - so a torn file proves no opt-in and a
+    // collapsed one is ONE layer that cannot count as both, failing closed the
+    // way lib/repo-auto-close.mjs does for git.auto_close.
+    reviewersGlobal: (reviewersIn(layers.global) || []).filter((n) => n !== 'claude-subagent'),
     // `review.providers.<name>.tiers.<tier>` - the model id a provider is
     // configured with per tier, which is what "available" means for a
     // cross-model reviewer.
@@ -1179,9 +1193,14 @@ function resolve(opts) {
   // the tier THIS trigger resolves at - the layer's `review.triggers.<t>.tier`
   // when a layer set one, else the LEVEL's row of the table's hand-maintained
   // `tiers` grid (D-04: never config.schema.json's default, which would report
-  // the schema's answer as the user's). An empty set falls back to
-  // `claude-subagent`, because a blocking trigger with no reviewer is a gate
-  // that silently stops gating.
+  // the schema's answer as the user's) - AND the user-global layer's own
+  // `review.reviewers` must name it (D-14). A repo layer arrives with a clone,
+  // and review-provider.mjs `resolveKey` takes the provider key from the user's
+  // environment first, so a committed list alone would send the user's code
+  // out on the user's key. The merged list still decides what is WANTED, so a
+  // repository can narrow the set but never add a provider to it. An empty set
+  // falls back to `claude-subagent`, because a blocking trigger with no
+  // reviewer is a gate that silently stops gating.
   //
   // Detection, not prevention (D-07): nothing here refuses a dispatch to a
   // reviewer outside this set. The set plus the `reviewer` field on the
@@ -1248,12 +1267,20 @@ function resolve(opts) {
     const dropped = [];
     for (const name of wantedReviewers) {
       if (name === 'claude-subagent') { kept.push(name); continue; }
-      if (providerModel(cfg.providers, name, tier)) { kept.push(name); continue; }
-      dropped.push(tier
-        ? `${name} has no model id at the "${tier}" tier `
-          + `(review.providers.${name}.tiers.${tier}, tier from ${tierFrom})`
-        : `${name} cannot be placed: the ${trigger} trigger resolves no tier `
-          + `(no config layer set one and ${tierKey} carries no schema default)`);
+      if (!providerModel(cfg.providers, name, tier)) {
+        dropped.push(tier
+          ? `${name} has no model id at the "${tier}" tier `
+            + `(review.providers.${name}.tiers.${tier}, tier from ${tierFrom})`
+          : `${name} cannot be placed: the ${trigger} trigger resolves no tier `
+            + `(no config layer set one and ${tierKey} carries no schema default)`);
+        continue;
+      }
+      if (!cfg.reviewersGlobal.includes(name)) {
+        dropped.push(`${name} is not named by the user-global config's review.reviewers, `
+          + 'and a repository\'s review.reviewers alone cannot enable a cross-model provider');
+        continue;
+      }
+      kept.push(name);
     }
     // The cause travels IN the return, never left to be inferred from a set
     // that is smaller than the one the user configured. One warning per
@@ -1446,7 +1473,7 @@ function resolve(opts) {
   // above carries it and not this field.
   const prefixed = prefixedAgentType(agent);
   if (prefixed.reason) reason.push(prefixed.reason);
-  out({ ok: true, role: opts.role, agent, agent_type: prefixed.agentType, model, model_source: modelSource, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
+  out({ ok: true, role: opts.role, agent, agent_type: prefixed.agentType, model, model_source: modelSource, effort, review, reviewers, reviewers_global: cfg.reviewersGlobal, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------

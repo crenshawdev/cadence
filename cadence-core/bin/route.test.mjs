@@ -58,6 +58,12 @@ function resolve(role, file, extra = [], opts = {}) {
   }
 }
 
+/** A user-global layer whose `review.reviewers` is `names` - the half of a
+ * cross-model enrollment a repository cannot supply for the user (D-14). */
+function globalNaming(names, name) {
+  return rawCfg({ review: { reviewers: names } }, name || `global-reviewers-${++cfgN}.json`);
+}
+
 /** The shipped config schema, parsed fresh so a mutation stays local. */
 const shippedSchema = () => JSON.parse(
   readFileSync(join(dirname(ROUTE), '..', 'config.schema.json'), 'utf8'));
@@ -225,9 +231,11 @@ test('a provider with no model id at the trigger\'s tier falls back, naming both
   // set: the provider cannot be dispatched to, so the fire would go to a
   // subagent - the 2026-08-13 substitution. The fallback and its CAUSE are in
   // the return rather than inferred from a set the caller never sees resolved.
+  // The user-global layer names openai too (D-14), so the TIER is the one
+  // thing missing and the cause below is the tier cause.
   const c = rawCfg({ review: { reviewers: ['openai'] } },
     'reviewers-unavailable.json');
-  const r = resolve('cad-reviewer', c);
+  const r = resolve('cad-reviewer', c, [], { global: globalNaming(['openai']) });
   assert.deepEqual(r.reviewers, {
     plan: ['claude-subagent'], diff: ['claude-subagent'],
     risk_surface: ['claude-subagent'], phase_diff: ['claude-subagent'],
@@ -249,7 +257,8 @@ test('a provider WITH a model id at that tier is the resolved reviewer', () => {
   const c = rawCfg({
     review: { reviewers: ['openai'], providers: { openai: { tiers: { cheap: 'gpt-5-mini' } } } },
   }, 'reviewers-available.json');
-  const r = resolve('cad-reviewer', c);
+  const g = globalNaming(['openai']);
+  const r = resolve('cad-reviewer', c, [], { global: g });
   assert.deepEqual(r.reviewers.plan, ['openai']);
   assert.deepEqual(r.reviewers.risk_surface, ['openai']);
   assert.deepEqual(r.reviewers.diff, ['openai']);
@@ -259,7 +268,7 @@ test('a provider WITH a model id at that tier is the resolved reviewer', () => {
   const wrong = rawCfg({
     review: { reviewers: ['openai'], providers: { openai: { tiers: { flagship: 'gpt-5' } } } },
   }, 'reviewers-wrong-tier.json');
-  assert.deepEqual(resolve('cad-reviewer', wrong).reviewers.plan, ['claude-subagent']);
+  assert.deepEqual(resolve('cad-reviewer', wrong, [], { global: g }).reviewers.plan, ['claude-subagent']);
 });
 
 test('a config-set tier wins over the schema default for the availability test (D-04)', () => {
@@ -273,7 +282,7 @@ test('a config-set tier wins over the schema default for the availability test (
       triggers: { plan: { tier: 'flagship' } },
     },
   }, 'reviewers-tier-set.json');
-  const r = resolve('cad-reviewer', c);
+  const r = resolve('cad-reviewer', c, [], { global: globalNaming(['openai']) });
   assert.deepEqual(r.reviewers.plan, ['openai']);
   assert.deepEqual(r.reviewers.phase_diff, ['claude-subagent']); // still cheap, unassigned
   assert.match(r.warnings.find((w) => w.startsWith('phase_diff:')), /schema default/);
@@ -286,11 +295,78 @@ test('one available reviewer beside one unavailable keeps the set and names the 
       providers: { openai: { tiers: { flagship: 'gpt-5' } } },
     },
   }, 'reviewers-partial.json');
-  const r = resolve('cad-reviewer', c);
+  const r = resolve('cad-reviewer', c, [], { global: globalNaming(['gemini']) });
   assert.deepEqual(r.reviewers.plan, ['claude-subagent']);
   const plan = r.warnings.find((w) => w.startsWith('plan:'));
-  assert.match(plan, /gemini/);
+  assert.match(plan, /gemini has no model id/);   // the tier cause, not the global one
   assert.match(plan, /leaving \[claude-subagent\]/);
+});
+
+// --- a cross-model provider needs the user-global layer to name it (D-14) ----
+//
+// A repo layer arrives with a clone, and review-provider.mjs takes the provider
+// key from the user's environment first, so a committed `review.reviewers`
+// alone must not send the user's code out on the user's key.
+
+const OPENAI_AT_CHEAP = { openai: { tiers: { cheap: 'gpt-5-mini' } } };
+const TRIGGERS = ['plan', 'diff', 'risk_surface', 'phase_diff'];
+
+test('D-14 (a): only the repo names openai, at a resolvable tier - placed nowhere, the warning names the user-global config', () => {
+  const c = rawCfg({ review: { reviewers: ['claude-subagent', 'openai'], providers: OPENAI_AT_CHEAP } },
+    'd14-repo-only.json');
+  const r = resolve('cad-reviewer', c);
+  for (const t of TRIGGERS) assert.deepEqual(r.reviewers[t], ['claude-subagent'], t);
+  const plan = r.warnings.find((w) => w.startsWith('plan:'));
+  assert.match(plan, /openai is not named by the user-global config's review\.reviewers/);
+  assert.match(plan, /repository's review\.reviewers alone cannot enable/);
+  assert.doesNotMatch(plan, /has no model id/, 'the global cause reads differently from the tier cause');
+  assert.deepEqual(r.reviewers_global, []);
+});
+
+test('D-14 (b): both layers name it - placed, and reviewers_global lists the cross-model names only', () => {
+  const c = rawCfg({ review: { reviewers: ['claude-subagent', 'openai'], providers: OPENAI_AT_CHEAP } },
+    'd14-both.json');
+  const r = resolve('cad-reviewer', c, [], { global: globalNaming(['claude-subagent', 'openai', 'gemini']) });
+  for (const t of TRIGGERS) assert.deepEqual(r.reviewers[t], ['claude-subagent', 'openai'], t);
+  assert.equal(r.warnings, undefined);
+  // (g) exactly the cross-model names the user-global layer names.
+  assert.deepEqual(r.reviewers_global, ['openai', 'gemini']);
+});
+
+test('D-14 (c): only the user-global layer names it and the repo sets no list - placed', () => {
+  const c = rawCfg({ review: { providers: OPENAI_AT_CHEAP } }, 'd14-global-only.json');
+  const r = resolve('cad-reviewer', c, [], { global: globalNaming(['openai']) });
+  for (const t of TRIGGERS) assert.deepEqual(r.reviewers[t], ['openai'], t);
+  // (g) again, the list the user wrote.
+  assert.deepEqual(r.reviewers_global, ['openai']);
+});
+
+test('D-14 (d): the repo names it and the user-global layer names only claude-subagent - not placed', () => {
+  const c = rawCfg({ review: { reviewers: ['openai'], providers: OPENAI_AT_CHEAP } }, 'd14-global-subagent.json');
+  const r = resolve('cad-reviewer', c, [], { global: globalNaming(['claude-subagent']) });
+  for (const t of TRIGGERS) assert.deepEqual(r.reviewers[t], ['claude-subagent'], t);
+  assert.match(r.warnings.find((w) => w.startsWith('plan:')), /user-global config/);
+  assert.deepEqual(r.reviewers_global, []);
+});
+
+test('D-14 (e): the repo names it and the user-global file does not parse - not placed', () => {
+  // A torn file cannot prove the user's opt-in, so it fails closed.
+  const c = rawCfg({ review: { reviewers: ['openai'], providers: OPENAI_AT_CHEAP } }, 'd14-torn.json');
+  const torn = join(dir, 'd14-torn-global.json');
+  writeFileSync(torn, '{"review":{"reviewers":["openai"]');
+  const r = resolve('cad-reviewer', c, [], { global: torn });
+  for (const t of TRIGGERS) assert.deepEqual(r.reviewers[t], ['claude-subagent'], t);
+  assert.ok(r.warnings.some((w) => /failed to parse/.test(w)), JSON.stringify(r.warnings));
+  assert.deepEqual(r.reviewers_global, []);
+});
+
+test('D-14 (f): CADENCE_GLOBAL_CONFIG naming the repo file is ONE layer - not placed', () => {
+  // One file cannot be both halves, and a cloned repository cannot set the
+  // environment variable that would make its own list count twice.
+  const c = rawCfg({ review: { reviewers: ['openai'], providers: OPENAI_AT_CHEAP } }, 'd14-collapsed.json');
+  const r = resolve('cad-reviewer', c, [], { global: c });
+  for (const t of TRIGGERS) assert.deepEqual(r.reviewers[t], ['claude-subagent'], t);
+  assert.deepEqual(r.reviewers_global, []);
 });
 
 test('the reviewer set is its own field - `review` gains, loses and reorders nothing', () => {

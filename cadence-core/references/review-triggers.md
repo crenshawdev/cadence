@@ -99,7 +99,8 @@ What the seam decided, stated so the set is readable rather than mysterious:
 - any cross-model provider named in `review.reviewers` (`openai`, `gemini`,
   `deepseek`, ...) is kept iff `review.providers.<name>.tiers[<tier>]` is a
   non-null model id, where `<tier>` is the layer's `review.triggers.<t>.tier`
-  when a layer set one and that key's schema default otherwise. The rule
+  when a layer set one and that key's schema default otherwise, and the
+  user-global config's own `review.reviewers` names it too. The rule
   is by provider `<name>`, not a fixed list: any provider with an adapter in
   `review-provider.mjs` and a config `review.providers.<name>` block resolves
   the same way. A key is resolved lazily at CALL time, so a `no-key` result
