@@ -18,7 +18,7 @@ import { fail, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   atomicWrite, cutPhaseDetail, findProsePhaseRefs, parseCursor,
-  parseRoadmapPhases, renderCursor, shiftPendingReqRows, shiftPhaseTokens,
+  parseRoadmapPhases, renderCursor, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
 import { requireInt } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
@@ -327,7 +327,12 @@ function cmdRenumber(dir, sub, opts) {
   let newCursor = null;
   let warn;
   if (cursor) {
-    newCursor = { ...cursor, total: total + delta };
+    // `Next:` keeps naming the same work (REN-04): its phase numbers shift by
+    // the same rule as everything else, whether or not the cursor's own phase
+    // moved and for a decimal cursor too. Accepted (D-05): after `insert --at
+    // N+1` from a completed phase N, `Next:` names the old N+1's work, and
+    // `/cad-progress` still routes to the inserted phase.
+    newCursor = { ...cursor, total: total + delta, next: shiftNextPhases(cursor.next, shiftFrom, delta) };
     // The phase NUMBER only ever shifts for an integer cursor. A decimal
     // cursor's own ROADMAP token and phases/<phase>/ dir are never shifted
     // either (see decimalPhases below), so moving just the cursor's number

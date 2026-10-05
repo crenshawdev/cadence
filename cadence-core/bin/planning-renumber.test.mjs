@@ -948,3 +948,44 @@ test('renumber remove: a CRLF REQUIREMENTS.md stays CRLF, and its Pending orphan
   }
   assert.deepEqual(r.orphaned_reqs, ['PND-03']);
 });
+
+// --- the cursor's Next: follows the phases it names (REN-04) -----------------
+// A three-phase tree, cursor on 3, `Next:` as given. The integer after one of
+// the four phase commands and capital `Phase K` shift with the op; decimals,
+// lowercase prose and every other number stay as written (D-05).
+
+/** @param {string} next @param {Partial<{phase: number, status: string}>} [at] */
+function nextCursorTree(next, at = {}) {
+  return makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 3, name: 'Three' }],
+    phases: { 1: { plan: true }, 2: { plan: true }, 3: { plan: true } },
+    cursor: { phase: at.phase ?? 3, total: 3, name: 'Three', status: at.status ?? 'planned', next, updated: '2026-01-01' },
+  });
+}
+
+/** Run `renumber <args>` on a fresh tree and return the result and the cursor's Next:. */
+function nextAfter(next, args, at) {
+  const dir = nextCursorTree(next, at);
+  const r = run(['renumber', ...args], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  return { r, next: run(['cursor', 'get'], dir).next };
+}
+
+test('renumber: insert and remove re-point the cursor Next: with its phase', () => {
+  assert.equal(nextAfter('/cad-execute 3', ['insert', '--at', '2']).next, '/cad-execute 4');
+  assert.equal(nextAfter('/cad-execute 3', ['remove', '--n', '2']).next, '/cad-execute 2');
+});
+
+test('renumber insert: Next: shifts command arguments and Phase K, nothing else', () => {
+  const ins = (next) => nextAfter(next, ['insert', '--at', '2']).next;
+  assert.equal(ins('/cad-context 1 then /cad-plan 3'), '/cad-context 1 then /cad-plan 4');
+  assert.equal(ins('/cad-execute 3 - plan 1 done; continue from task 2'),
+    '/cad-execute 4 - plan 1 done; continue from task 2');
+  assert.equal(ins('/cad-plan 3 --gaps (see Phase 3 UAT; phase 3 prose)'),
+    '/cad-plan 4 --gaps (see Phase 4 UAT; phase 3 prose)');
+});
+
+test('renumber insert: a Next: decimal is never read as its integer prefix', () => {
+  assert.equal(nextAfter('/cad-execute 2.1', ['insert', '--at', '2']).next, '/cad-execute 2.1');
+  assert.equal(nextAfter('/cad-execute 12.1', ['insert', '--at', '1']).next, '/cad-execute 12.1');
+});

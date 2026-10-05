@@ -2688,6 +2688,22 @@ export function shiftPhaseTokens(text, from, delta) {
   return { text: out, count };
 }
 
+// A phase number in the cursor's `Next:` (D-05): the integer right after one of
+// the four commands that take one, or a capital `Phase K`. `\b(?!\.\d)` is
+// `shiftPhaseTokens`'s guard, so `2.1` is a decimal and stays; the `\b` stops
+// `\d+` backtracking into `12.1` and shifting its `1`. Lowercase `phase K`,
+// `phases/K/` paths and any other number (`plan 1 done`) are not phase numbers.
+const NEXT_PHASE = /(\/cad-(?:context|plan|execute|verify)\s+|\bPhase )(\d+)\b(?!\.\d)/g;
+
+/**
+ * Shift the phase numbers in a cursor `Next:` value: each integer K >= from
+ * moves by delta, once. Not `shiftPhaseTokens`, which also moves paths.
+ * @param {string} next @param {number} from @param {number} delta
+ */
+export function shiftNextPhases(next, from, delta) {
+  return next.replace(NEXT_PHASE, (m, lead, k) => Number(k) >= from ? `${lead}${Number(k) + delta}` : m);
+}
+
 /**
  * `renumber`'s REQUIREMENTS.md edit, for both ops. `delta` 1 is an insert at
  * `at`: tokens with K >= at move up one. `delta` -1 is a remove of phase `at`:
