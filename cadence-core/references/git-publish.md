@@ -16,7 +16,7 @@ on base via a host-CLI PR/MR **merge** on the platform (`gh pr merge` /
 local-only integration branch is first published by the git-publish seam - one
 sanctioned push of the current non-protected branch, run as a subprocess so the
 Bash `git push` guard never sees it and there is no prompt. The seam refuses
-unless repo `git.auto_close` is true and HEAD is a non-protected branch, and it
+unless `git.auto_close` is true in both layers and HEAD is a non-protected branch, and it
 pushes exactly that branch to a configured bare-name remote. Every Bash
 `git push` the guard sees still asks unconditionally (git-guard now carries NO
 push exemption); the git-publish seam is the one code-guarded exception, invoked
@@ -24,9 +24,9 @@ only by cad-land, so the never-auto-push rule and the no-preselected-default
 posture both still hold. On GitLab `glab mr create` publishes the source branch
 itself, so THAT is the mutation and no push seam sits in its path: the GitLab
 arm consults `git-publish.mjs authorized` before it creates, and creates nothing
-on `ok:false`. Same repo-layer opt-in, asked one step earlier. A user-global
-`git.auto_close` authorizes neither arm - it is read only to say which
-authorization was missing. A surviving blocker/high `risk_surface` finding still halts the chain
+on `ok:false`. Both arms need `git.auto_close` true in this repository's
+`.planning/config.json` AND the user-global config: either half alone
+authorizes neither arm, and the refusal's `detail` names the missing half. A surviving blocker/high `risk_surface` finding still halts the chain
 before merge.
 
 After a land/merge actually lands on this machine, `git.on_land_cleanup`
