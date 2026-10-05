@@ -84,6 +84,19 @@ const unprovable = (label, n) =>
 const UNSEARCHABLE_HINT = 'make every directory on that path readable and searchable (chmod u+rx),'
   + ' then re-run BEFORE milestone-prune, which deletes the phase directory - nothing was copied';
 
+/**
+ * The `carry-dest-unsearchable` detail for a destination path whose stat
+ * failed. Like `unprovable`, it never says the path exists or is missing.
+ */
+const undestinable = (label) =>
+  `${label} could not be inspected (risk-carry/ or a directory under it may not be searchable),`
+  + ' so this carry cannot tell what is already there';
+
+/** The remedy for a destination path that could not be stat'ed. */
+const UNSEARCHABLE_DEST_HINT = 'make risk-carry/ and everything under it readable, writable and'
+  + ' searchable (chmod u+rwx), then re-run BEFORE milestone-prune - nothing was copied, and the'
+  + ' rulings are still in the phase directory the prune deletes';
+
 function cmdRiskCarry(dir, opts) {
   const parsed = requirePhaseArg(opts.phase);
   if (!parsed.ok) {
@@ -112,7 +125,15 @@ function cmdRiskCarry(dir, opts) {
   const carryRoot = join(dir, 'risk-carry');
   const dest = join(dir, 'risk-carry', n);
   for (const [path, label] of [[carryRoot, 'risk-carry/'], [dest, `risk-carry/${n}`]]) {
-    const stat = lstatSync(path, { throwIfNoEntry: false });
+    let stat;
+    try { stat = lstatSync(path, { throwIfNoEntry: false }); }
+    catch {
+      // Not absence, for the reason the source side's catch gives (GH-302): a
+      // `risk-carry/` without its search bit cannot say whether `<N>` is there,
+      // and "absent, go ahead" would send the mkdir below into the same wall as
+      // a raw `internal`.
+      return fail('carry-dest-unsearchable', undestinable(label), UNSEARCHABLE_DEST_HINT);
+    }
     if (stat && !stat.isDirectory()) {
       return fail('carry-dest-unusable',
         `${label} exists and is not a real directory`
@@ -215,8 +236,26 @@ function cmdRiskCarry(dir, opts) {
         're-run BEFORE milestone-prune, which deletes that directory - nothing was copied, and a'
         + ' carried ruling is only ever a file the phase it names wrote');
     }
+    // EVERY SOURCE IS READ HERE, the ones about to be copied as well as the ones
+    // about to be compared, so an unreadable ruling refuses BEFORE the mkdir
+    // below mints a destination (GH-302). Left to `copyFileSync`, it threw raw
+    // after `risk-carry/<N>/` already existed; left to the comparison, it read
+    // as "differs" when nothing was compared at all.
+    let fromBytes;
+    try { fromBytes = readFileSync(from); }
+    catch {
+      return fail('unreadable-ruling',
+        `phases/${n}/${name} could not be read, so this carry cannot copy that ruling`,
+        'make that file readable (chmod u+r) and re-run BEFORE milestone-prune, which deletes it'
+        + ' - nothing was copied');
+    }
     const to = join(dest, name);
-    const destStat = lstatSync(to, { throwIfNoEntry: false });
+    let destStat;
+    try { destStat = lstatSync(to, { throwIfNoEntry: false }); }
+    catch {
+      return fail('carry-dest-unsearchable', undestinable(`risk-carry/${n}/${name}`),
+        UNSEARCHABLE_DEST_HINT);
+    }
     if (!destStat) { copying.push(name); continue; }
     // A REGULAR FILE OR NOTHING, asked HERE rather than left to the comparison
     // below - the two-level rail above is the same rail, and this is it
@@ -234,10 +273,19 @@ function cmdRiskCarry(dir, opts) {
         'clear that path and re-run BEFORE milestone-prune - nothing has been copied yet, and the'
         + ' rulings are still in the phase directory the prune deletes');
     }
-    let same = false;
-    try { same = readFileSync(to).equals(readFileSync(from)); }
-    catch { same = false; }
-    if (same) { skipped.push(name); continue; }
+    // A carried copy that cannot be read is NOT a copy that differs (GH-302):
+    // `carry-exists` there would send the user to delete a file that may be
+    // byte-identical, on a comparison that never ran.
+    let toBytes;
+    try { toBytes = readFileSync(to); }
+    catch {
+      return fail('unreadable-carried-copy',
+        `risk-carry/${n}/${name} already exists and could not be read, so this carry cannot tell`
+        + ` whether it matches phases/${n}/${name}`,
+        'make that file readable (chmod u+r) and re-run BEFORE milestone-prune - nothing was'
+        + ' copied, and this seam never overwrites a carried ruling it has not compared');
+    }
+    if (toBytes.equals(fromBytes)) { skipped.push(name); continue; }
     return fail('carry-exists',
       `risk-carry/${n}/${name} already exists and differs from phases/${n}/${name} - this seam`
       + ' never overwrites a carried ruling',
@@ -251,8 +299,26 @@ function cmdRiskCarry(dir, opts) {
   // arrived is skipped and the rest is copied. Staging would put a transient
   // directory inside the very destination the gate's caller globs, to protect
   // against a case a re-run already fixes.
-  mkdirSync(dest, { recursive: true });
-  for (const name of copying) copyFileSync(join(src, name), join(dest, name));
+  //
+  // A WRITE THAT FAILS is named, never `internal` (GH-302): a `risk-carry/`
+  // without its write bit stats fine and then refuses the mkdir. What already
+  // arrived is listed, because the re-run the hint asks for skips it.
+  const done = [];
+  let at = `risk-carry/${n}/`;
+  try {
+    mkdirSync(dest, { recursive: true });
+    for (const name of copying) {
+      at = `risk-carry/${n}/${name}`;
+      copyFileSync(join(src, name), join(dest, name));
+      done.push(name);
+    }
+  } catch {
+    return fail('carry-write-failed',
+      `${at} could not be written`
+      + (done.length ? ` (${done.length} of ${copying.length} copied before it)` : ' - nothing was copied'),
+      'make risk-carry/ and everything under it writable and searchable (chmod u+rwx), then re-run'
+      + ' BEFORE milestone-prune - a re-run skips what already arrived and copies the rest');
+  }
   return ok({
     phase: n,
     carried: copying.map((name) => ({ from: `phases/${n}/${name}`, to: `risk-carry/${n}/${name}` })),
