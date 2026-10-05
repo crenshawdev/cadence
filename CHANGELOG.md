@@ -7,6 +7,85 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.8.1] - 2026-10-05
+
+Fixes for what v3.8.0's reviews and UAT left open (GH-301, GH-302, GH-303), and
+the changes the Claude plugin directory's pre-submission checks asked for. Two of
+those change behavior on upgrade, both in the same direction: a repository's
+committed config can no longer turn on something that acts with your
+credentials. Read Changed before you upgrade if you use `git.auto_close` or a
+cross-model reviewer.
+
+### Changed
+
+- **`git.auto_close` needs both layers.** An unattended close now runs only when
+  the repository's `.planning/config.json` AND your user-global
+  `~/.claude/cadence/config.json` both set it true. A cloned repo can no longer
+  authorize an unattended push and merge on its own. If you relied on the repo
+  setting alone, run `config.mjs set --global git.auto_close=true` once. The
+  refusal names the missing half, and says so when both paths are the same file.
+- **Cross-model reviewers need your user-global config to name them.** A
+  provider in `review.reviewers` (`openai`, `gemini`, `deepseek`) runs only when
+  your user-global `review.reviewers` names it too, so a repo's config cannot
+  send your code to a provider with your key. An enrollment written before this
+  release sits in the repo layer only and goes inert until the provider is also
+  named globally. `/cad-config --review` now asks before writing that global
+  half, and its wrap-up flags a repo-only enrollment.
+- **Context7 is optional in `/cad-decision-review`.** It grounds library and API
+  claims against Context7 when its tools are available, and otherwise against
+  the installed source, lockfile or vendored docs, naming any claim it could not
+  check.
+- **Generated lint and typecheck commands no longer go through `npx`.** A tool
+  in `node_modules/.bin` is named by that path, one only on `PATH` by its bare
+  name, and anything else leaves the slot empty, so no detected command can
+  fetch a package.
+- **The CHANGELOG is split.** Releases 1.0.0 through 2.7.0 moved to
+  `CHANGELOG-v1-v2.md`, which keeps every file under the directory's 256 KiB
+  limit. Release tooling is unchanged.
+
+### Added
+
+- **`agent_type` on every `route.mjs resolve`.** The resolved agent with the
+  plugin's own prefix from `plugin.json` (`cadence:cad-reviewer-xhigh`), which
+  Cadence's dispatches now name directly. `route.mjs agent-type --stem <name>`
+  answers the same for the reviews that dispatch without routing. `resolve` also
+  returns `reviewers_global`, the providers your user-global config names.
+- **Self-verify check 27.** Fails on any tracked file over 256 KiB that is not an
+  image or font, and on more than 512 tracked files and folders: the plugin
+  directory's two file limits, held in CI.
+- **"What Cadence sends, writes and reads" in the README.** Every external host
+  and what goes to it, the provider key read, every forge write, the optional
+  MCP tools, what the mods module does, the transcript and read logging, every
+  write outside the project, why the skills keep `Bash` pre-approved, and a
+  privacy note.
+- **Contract skill descriptions name the agents that preload them**, and say they
+  are not for direct use.
+
+### Fixed
+
+- **A user's own agent keeps its name (GH-303).** On a mods host the module no
+  longer rewrites a bare `cad-*` call to Cadence's agent when a project or user
+  agent owns that exact name. It still prefixes a bare rung stem nobody else
+  owns, as a safety net.
+- **`renumber` leaves shipped history alone (GH-301, GH-303).** `renumber remove`
+  shifts or blanks only Pending Traceability rows, leaves Complete and Deferred
+  rows and `## Shipped` byte-identical, names any Complete row citing a removed
+  or moved phase in `warn`, and lists every changed line in `req_row_changes`.
+  Both `insert` and `remove` re-point the phase number in the cursor's `Next:`.
+- **`risk-carry` refuses by name (GH-302).** An unsearchable or unwritable
+  `.planning/risk-carry/`, an unreadable source ruling and an unreadable carried
+  copy each get their own reason, the path and a hint, never `internal` and never
+  `carry-exists` for a copy it could not read. Every source is read before any
+  directory is made.
+- **Check 26 reads descriptions the way YAML does (GH-303).** `\x0a`, `\u000a` and
+  `\U0000000a` in a double-quoted description now fail as a line break, and a
+  one-line description followed by a comment line passes.
+- **Held step windows are bounded (GH-303).** The mod holds at most 64 stopped
+  subagent windows waiting for a close and evicts the oldest, so stops no close
+  ever names cannot pile up for the life of a session.
+- **No test fixture looks like a real credential.** Every key-shaped test value
+  was replaced with one that matches no real key pattern.
+
 ## [3.8.0] - 2026-10-04
 
 Cadence can now show you where the loop stands without a command. On a Claude
@@ -2761,6 +2840,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.8.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.1
 [3.8.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.0
 [3.7.13]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.13
 [3.7.12]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.12
