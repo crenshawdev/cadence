@@ -1,6 +1,6 @@
 ---
 name: cad-land
-description: "Land finished work - report git state, then ask the mechanism (push / MR or PR / tag / leave local). Never decides how you publish"
+description: "Land finished work - report git state, then ask how to publish (push / MR or PR / tag / leave local). With git.auto_close set in both the repository and your user-global config, it runs PR -> merge unattended and halts on a surviving blocker"
 argument-hint: "[base branch | defaults to git.base_branch]"
 allowed-tools:
   - Read
@@ -10,10 +10,11 @@ allowed-tools:
 ---
 
 <objective>
-Land the current branch's work. cad-land encodes "the git mechanism is the
-user's call" by construction: it never has a preselected publish action and
-never auto-pushes. It reports the state, asks how to publish, and executes
-exactly that - nothing more.
+Land the current branch's work. By default there is no preselected publish
+action: cad-land reports the state, asks how to publish, and executes only what
+you choose - nothing more. The one exception is the `git.auto_close` arm that
+both opt-ins authorize (this repository's config and your user-global config),
+which runs the close unattended; it is stated once, at step 3(b).
 </objective>
 
 <execution_context>
