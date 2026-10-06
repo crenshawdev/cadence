@@ -719,7 +719,7 @@ test('a heredoc body cannot reach the record', () => {
   ].join('\n');
   const prog = programOf(cmd);
   assert.equal(prog, 'python3');
-  assert.ok(!String(prog).includes('sk-live'));
+  assert.ok(!String(prog).includes('fake-key'));
 });
 
 test('anything that is not a bare program name is refused, not recorded', () => {

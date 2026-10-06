@@ -7,6 +7,20 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.8.2] - 2026-10-06
+
+Test fixtures only. Nothing a user runs changed.
+
+### Changed
+
+- **No test source carries a token-shaped literal.** The directory's scan of
+  v3.8.0 held `review-provider.test.mjs` for what read as a credential. The
+  last `sk-` prefixed value and the three `Bearer` tokens the redaction tests
+  plant are now assembled when the test runs, so the bytes under test are the
+  same and no file ships them whole. The `read-trace` test's leftover check for
+  an `sk-live` token, which could no longer fail after v3.8.1 renamed the
+  planted value, now checks the value that is planted.
+
 ## [3.8.1] - 2026-10-05
 
 Fixes for what v3.8.0's reviews and UAT left open (GH-301, GH-302, GH-303), and
@@ -2840,6 +2854,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.8.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.2
 [3.8.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.1
 [3.8.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.0
 [3.7.13]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.13
