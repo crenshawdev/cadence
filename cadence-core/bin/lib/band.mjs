@@ -24,6 +24,20 @@ import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
 export const NO_CURSOR_LINE = 'Cadence · no readable cursor · run /cad-progress';
 
 /**
+ * The status the band and the pane draw: `executing` while a Cadence executor
+ * runs on a `planned` phase, the status as given otherwise. Display only: no
+ * cursor or derived status is ever `executing`, since a value outside
+ * planning.mjs's AGREE map reads as drift. An executor `/cad-task --plan`
+ * dispatches shows the same way, because the roster cannot tell them apart.
+ * @param {string} status
+ * @param {readonly {role: string}[]} running
+ * @returns {string}
+ */
+export function shownStatus(status, running) {
+  return status === 'planned' && running.some((a) => a.role === 'cad-executor') ? 'executing' : status;
+}
+
+/**
  * @param {{phase: number, total: number, status: string, next: string} | null} cursor
  * @param {readonly {role: string, rung: string}[]} running
  * @param {number} width cells the line may take
@@ -31,7 +45,7 @@ export const NO_CURSOR_LINE = 'Cadence · no readable cursor · run /cad-progres
  */
 export function bandLine(cursor, running, width) {
   if (!cursor) return fit(NO_CURSOR_LINE, width);
-  const head = `Cadence · Phase ${cursor.phase} of ${cursor.total} · ${visible(cursor.status)}`;
+  const head = `Cadence · Phase ${cursor.phase} of ${cursor.total} · ${visible(shownStatus(cursor.status, running))}`;
   const tail = ` · next ${visible(cursor.next)}`;
   const names = running.map((a) => `${a.role} (${a.rung})`);
   let line = head + (names.length ? ` · running ${names.join(', ')}` : '') + tail;

@@ -12,6 +12,7 @@
 // hooks module loads this.
 'use strict';
 
+import { shownStatus } from './band.mjs';
 import { agentRows, NO_CURSOR_NEXT, phaseView, READING_LINE, spendOf } from './pane.mjs';
 import { SPEND_EXCLUDES } from './trace-suggest.mjs';
 
@@ -46,7 +47,7 @@ export function paneView(snapshot, width, roster = [], sights = []) {
   const rule = [{ text: '─'.repeat(Math.max(0, width)), dim: true }];
   /** @type {Row[]} */
   const rows = [
-    ...headingRows(snapshot, phase),
+    ...headingRows(snapshot, phase, roster),
     rule,
     ...planRows(phase.rows, bar),
     ...(phase.rows.length ? [rule] : []),
@@ -62,9 +63,10 @@ export function paneView(snapshot, width, roster = [], sights = []) {
  * The heading, the next command, and the drift line when the cursor disagrees.
  * @param {import('./pane.mjs').Snapshot} snapshot
  * @param {ReturnType<typeof phaseView>} phase
+ * @param {readonly import('./pane.mjs').RosterEntry[]} roster
  * @returns {Row[]}
  */
-function headingRows(snapshot, phase) {
+function headingRows(snapshot, phase, roster) {
   const s = snapshot.status && snapshot.status.ok ? snapshot.status.value : null;
   const [first, ...drift] = phase.heading;
   /** @type {Row[]} */
@@ -76,7 +78,7 @@ function headingRows(snapshot, phase) {
   const next = snapshot.cursor
     ? [{ text: 'next ', dim: true }, { text: snapshot.cursor.next, action: 'next' }]
     : [{ text: NO_CURSOR_NEXT, color: 'yellow' }];
-  rows.push(phase.entry ? [chip(String(phase.entry.status)), { text: '  ' }, ...next] : next);
+  rows.push(phase.entry ? [chip(shownStatus(String(phase.entry.status), roster)), { text: '  ' }, ...next] : next);
   for (const line of drift) rows.push([{ text: '⚠ ', color: 'yellow' }, { text: line, color: 'yellow' }]);
   return rows;
 }
