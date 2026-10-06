@@ -8,11 +8,16 @@
 // drift and closed-milestone lines and the plan rows come from phaseView, the
 // agents from agentRows, the spend from spendOf. Nothing is derived twice.
 //
+// The cache figures are the one part paneLines never had. They come from the
+// module's live meter (lib/cache-meter.mjs), not a seam, so they are the
+// session's and say so, never the phase's.
+//
 // No imports beyond lib/ files that import nothing, no Node globals: the
 // hooks module loads this.
 'use strict';
 
 import { shownStatus } from './band.mjs';
+import { breaksText, EMPTY_METER, hitRate, kilo, MAIN, percent } from './cache-meter.mjs';
 import { agentRows, NO_CURSOR_NEXT, phaseView, READING_LINE, spendOf } from './pane.mjs';
 import { SPEND_EXCLUDES } from './trace-suggest.mjs';
 
@@ -37,9 +42,10 @@ const UAT_COLORS = Object.freeze({ pass: 'green', fail: 'red', pending: 'yellow'
  * @param {number} width the pane's `bodyColumns`
  * @param {readonly import('./pane.mjs').RosterEntry[]} [roster]
  * @param {readonly import('./pane.mjs').Sight[]} [sights]
+ * @param {import('./cache-meter.mjs').Meter} [meter] the session's cache meter
  * @returns {Row[]}
  */
-export function paneView(snapshot, width, roster = [], sights = []) {
+export function paneView(snapshot, width, roster = [], sights = [], meter = EMPTY_METER) {
   if (!snapshot) return [fitRow([{ text: READING_LINE, dim: true }], width)];
   const phase = phaseView(snapshot.status);
   const bar = barCells(width);
@@ -51,10 +57,11 @@ export function paneView(snapshot, width, roster = [], sights = []) {
     rule,
     ...planRows(phase.rows, bar),
     ...(phase.rows.length ? [rule] : []),
-    ...agentLines(roster, sights, snapshot),
+    ...agentLines(roster, sights, snapshot, meter),
     ...uatRows(phase.entry, bar),
     capturesRow(snapshot.captures),
     ...spendRows(snapshot.spend, width),
+    ...cacheRows(meter, width),
   ];
   return rows.map((row) => fitRow(row.map((s) => ({ ...s, text: visible(s.text) })), width));
 }
@@ -104,17 +111,25 @@ function planRows(lines, bar) {
 }
 
 /**
- * AGENTS: one row per running agent behind a cyan `●`, the first beside the head.
+ * AGENTS: one row per running agent behind a cyan `●`, the first beside the
+ * head, then its cache rate once it has sent a request, and its breaks.
  * @param {readonly import('./pane.mjs').RosterEntry[]} roster
  * @param {readonly import('./pane.mjs').Sight[]} sights
  * @param {import('./pane.mjs').Snapshot} snapshot
+ * @param {import('./cache-meter.mjs').Meter} meter
  * @returns {Row[]}
  */
-function agentLines(roster, sights, snapshot) {
+function agentLines(roster, sights, snapshot, meter) {
   const lines = agentRows(roster, sights, snapshot.resolves || [], snapshot.sessionModel ?? null);
   if (roster.length === 0) return [[head('AGENTS'), { text: lines[0], dim: true }]];
-  return lines.map((line, i) => [i === 0 ? head('AGENTS') : { text: ' '.repeat(LABEL_CELLS) },
-    { text: '●', color: 'cyan' }, { text: ` ${line}` }]);
+  return lines.map((line, i) => {
+    const loop = meter.loops.get(roster[i].id);
+    /** @type {Row} */
+    const cache = loop ? [{ text: ' · ', dim: true }, { text: `cache ${percent(hitRate(loop))}` }] : [];
+    if (loop && loop.breaks) cache.push({ text: ' · ', dim: true }, { text: breaksText(loop.breaks), color: 'yellow' });
+    return [i === 0 ? head('AGENTS') : { text: ' '.repeat(LABEL_CELLS) },
+      { text: '●', color: 'cyan' }, { text: ` ${line}` }, ...cache];
+  });
 }
 
 /**
@@ -170,6 +185,27 @@ function spendRows(spend, width) {
   if (unrecorded) row.push({ text: ` · ${unrecorded} unrecorded`, dim: true });
   const room = Math.max(10, width - LABEL_CELLS);
   return [row, ...wrapWords(`Excludes ${SPEND_EXCLUDES.join(', ')}`, room)
+    .map((line) => [{ text: ' '.repeat(LABEL_CELLS) }, { text: line, dim: true }])];
+}
+
+/**
+ * CACHE: the main loop's hit rate over the session and on its last request,
+ * its breaks with the last one's tokens lost, and the breaks in agents, then
+ * a dim line saying whose figures they are.
+ * @param {import('./cache-meter.mjs').Meter} meter
+ * @param {number} width the pane's width, which the caveat wraps inside
+ * @returns {Row[]}
+ */
+function cacheRows(meter, width) {
+  const main = meter.loops.get(MAIN);
+  if (!main) return [[head('CACHE'), { text: 'no request yet this session', dim: true }]];
+  /** @type {Row} */
+  const row = [head('CACHE'), { text: `main ${percent(hitRate(main))}` }, { text: ` (last ${percent(main.last)})`, dim: true }];
+  if (main.breaks) row.push({ text: ' · ', dim: true }, { text: `${breaksText(main.breaks)}, last ${kilo(main.lost)} lost`, color: 'yellow' });
+  const agents = meter.breaks - main.breaks;
+  if (agents > 0) row.push({ text: ' · ', dim: true }, { text: `${agents} in agents`, color: 'yellow' });
+  const room = Math.max(10, width - LABEL_CELLS);
+  return [row, ...wrapWords('This session, live: not part of the phase\'s spend', room)
     .map((line) => [{ text: ' '.repeat(LABEL_CELLS) }, { text: line, dim: true }])];
 }
 

@@ -4,6 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EMPTY_METER, MAIN, meterStep } from './lib/cache-meter.mjs';
 import { paneView } from './lib/pane-view.mjs';
 import { NO_CURSOR_NEXT, READING_LINE, sightStart } from './lib/pane.mjs';
 import { SPEND_EXCLUDES } from './lib/trace-suggest.mjs';
@@ -169,7 +170,7 @@ test('captures and spend: the open count, the grouped total, unrecorded and the 
 test('at 40 columns the spend caveat wraps under the label column instead of being cut', () => {
   const rows = paneView(snap(), 40);
   const spend = section(rows, 'SPEND');
-  const lines = rows.slice(rows.indexOf(spend) + 1);
+  const lines = rows.slice(rows.indexOf(spend) + 1, rows.indexOf(section(rows, 'CACHE')));
   assert.ok(lines.length >= 2);
   for (const line of lines) {
     assert.equal(line[0].text, ' '.repeat(11));
@@ -191,6 +192,59 @@ test('a failed source reads as unavailable, in red, naming its reason', () => {
   assert.equal(phase[0][0].color, 'red');
 });
 
+// --- the cache meter -----------------------------------------------------------
+
+/** One request's usage: cache read, cache write, 2 fresh. */
+const usage = (/** @type {number} */ read, /** @type {number} */ write) =>
+  ({ cache_read_input_tokens: read, cache_creation_input_tokens: write, input_tokens: 2, output_tokens: 9 });
+
+/** Main reads all back once, then breaks losing 38,500; agent a1 breaks once; agent a9 breaks and stops. */
+function brokenMeter() {
+  let m = meterStep(EMPTY_METER, MAIN, 'opus', 3, usage(0, 40000));
+  m = meterStep(m, MAIN, 'opus', 5, usage(40000, 1000));
+  m = meterStep(m, MAIN, 'opus', 7, usage(2500, 39000));
+  m = meterStep(m, 'a1', 'opus', 1, usage(0, 9000));
+  m = meterStep(m, 'a1', 'opus', 3, usage(1000, 9000));
+  m = meterStep(m, 'a9', 'opus', 1, usage(0, 9000));
+  m = meterStep(m, 'a9', 'opus', 3, usage(0, 9000));
+  return m;
+}
+
+test('before any request the CACHE row says so, dim, and nothing else', () => {
+  const rows = paneView(snap(), 120);
+  const cache = section(rows, 'CACHE');
+  assert.equal(text(cache).trim().replace(/\s+/g, ' '), 'CACHE no request yet this session');
+  assert.equal(cache[1].dim, true);
+  assert.equal(rows.at(-1), cache);
+});
+
+test('the CACHE row: main\'s rate and last rate, its breaks in yellow, the agents\' breaks, then whose figures they are', () => {
+  const rows = paneView(snap(), 120, [], [], brokenMeter());
+  const cache = section(rows, 'CACHE');
+  assert.equal(rows.indexOf(cache), rows.indexOf(section(rows, 'SPEND')) + 2, 'after the spend and its caveat');
+  assert.equal(text(cache).replace(/^CACHE\s+/, ''),
+    'main 34.7% (last 6.0%) · 1 cache break, last 38.5k lost · 2 in agents');
+  assert.ok(cache.filter((seg) => /break|agents/.test(seg.text)).every((seg) => seg.color === 'yellow'));
+  const caveat = rows[rows.indexOf(cache) + 1];
+  assert.equal(text(caveat).trim(), 'This session, live: not part of the phase\'s spend');
+  assert.equal(caveat.at(-1).dim, true);
+});
+
+test('no breaks: the CACHE row carries the rates alone', () => {
+  let m = meterStep(EMPTY_METER, MAIN, 'opus', 3, usage(0, 40000));
+  m = meterStep(m, MAIN, 'opus', 5, usage(40000, 1000));
+  assert.equal(text(section(paneView(snap(), 120, [], [], m), 'CACHE')).replace(/^CACHE\s+/, ''), 'main 49.4% (last 97.6%)');
+});
+
+test('a running agent\'s row gains its cache rate, and its breaks in yellow; one with no request gains nothing', () => {
+  const roster = [{ id: 'a1', role: 'cad-executor', rung: 'xhigh' }, { id: 'a2', role: 'cad-reviewer', rung: 'low' }];
+  const rows = paneView(snap(), 120, roster, [], brokenMeter());
+  const first = section(rows, 'AGENTS');
+  assert.match(text(first), /● cad-executor · rung xhigh · unrecorded · cache 5\.3% · 1 cache break$/);
+  assert.equal(first.at(-1).color, 'yellow');
+  assert.match(text(rows[rows.indexOf(first) + 1]), /● cad-reviewer · rung low · unrecorded$/);
+});
+
 test('40 and 120 columns: the bar scales and no row runs past the width', () => {
   const uat = { pass: 3, fail: 1, pending: 1, skipped: 0, blocked: 0 };
   const s = snap({ phases: [{ ...STATUS.phases[0], uat }] });
@@ -199,9 +253,11 @@ test('40 and 120 columns: the bar scales and no row runs past the width', () => 
   assert.equal(filled(narrow) + empty(narrow), 10);
   assert.equal(filled(wide) + empty(wide), 24);
   const long = { ...s, cursor: { next: `/cad-execute 3 ${'x'.repeat(200)} 😀😀` } };
+  const roster = [{ id: 'a1', role: 'cad-executor', rung: 'xhigh' }];
   for (const each of [null, s, long]) {
     for (let width = 0; width <= 160; width++) {
       for (const row of paneView(each, width)) assert.ok(cells(row) <= width, `${width}: ${text(row)}`);
+      for (const row of paneView(each, width, roster, [], brokenMeter())) assert.ok(cells(row) <= width, `${width}: ${text(row)}`);
     }
   }
   const cut = paneView(long, 40)[1];

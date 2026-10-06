@@ -5,6 +5,9 @@
 // No imports beyond lib/, no Node globals: a hooks module may load nothing
 // else. The module does the I/O and hands this the parsed cursor.
 //
+// Once the session has a cache break (lib/cache-meter.mjs), the count follows
+// the status, so it is seen before the running list or next is.
+//
 // The line never wraps and never runs past the width it is given. Too long,
 // the running list shrinks to its first agent plus a count, then the end of
 // the line is cut with an ellipsis.
@@ -18,6 +21,7 @@
 // `roleOfAgent` and `rungOfAgent`, never from a `-<rung>` suffix.
 'use strict';
 
+import { breaksText } from './cache-meter.mjs';
 import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
 
 /** The line when STATE.md is missing or does not parse (phase 3, D-06). */
@@ -41,11 +45,13 @@ export function shownStatus(status, running) {
  * @param {{phase: number, total: number, status: string, next: string} | null} cursor
  * @param {readonly {role: string, rung: string}[]} running
  * @param {number} width cells the line may take
+ * @param {number} [breaks] the session's cache breaks
  * @returns {string}
  */
-export function bandLine(cursor, running, width) {
-  if (!cursor) return fit(NO_CURSOR_LINE, width);
-  const head = `Cadence · Phase ${cursor.phase} of ${cursor.total} · ${visible(shownStatus(cursor.status, running))}`;
+export function bandLine(cursor, running, width, breaks = 0) {
+  const flag = breaks > 0 ? ` · ${breaksText(breaks)}` : '';
+  if (!cursor) return fit(NO_CURSOR_LINE + flag, width);
+  const head = `Cadence · Phase ${cursor.phase} of ${cursor.total} · ${visible(shownStatus(cursor.status, running))}${flag}`;
   const tail = ` · next ${visible(cursor.next)}`;
   const names = running.map((a) => `${a.role} (${a.rung})`);
   let line = head + (names.length ? ` · running ${names.join(', ')}` : '') + tail;

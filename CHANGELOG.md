@@ -7,6 +7,25 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.8.4] - 2026-10-06
+
+The prompt cache, on the band and in the pane.
+
+### Added
+
+- **The band and the pane show the prompt cache.** On a mods host the module
+  reads the token usage the host reports for every request, the main loop's and
+  each agent's, and keeps a hit rate per loop: the share of what it sent that
+  the cache served. A cache break is a request that read back less than the same
+  loop's previous request cached, on the same model with no compaction, `/clear`
+  or rewind in between, and a cache that expired between requests counts. The
+  band counts the session's breaks after the status once there is one. The pane
+  gets a CACHE section after SPEND with the main loop's rate, its last request's
+  rate, its breaks and the tokens the last one lost, and the breaks in agents,
+  and each running agent's row ends in its own rate and breaks. The figures are
+  this session's, held in memory and gone on a module reload, and none of them
+  reach the trace yet (GH-309).
+
 ## [3.8.3] - 2026-10-06
 
 The band and the pane, and the README section that shows them.
@@ -2876,6 +2895,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.8.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.4
 [3.8.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.3
 [3.8.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.2
 [3.8.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.1

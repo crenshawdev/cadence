@@ -74,14 +74,24 @@ test('no executor, or a phase that is not planned, keeps the status as written',
   }
 });
 
+test('the session\'s cache breaks follow the status once there is one', () => {
+  assert.equal(bandLine(CURSOR, [], 200, 0), 'Cadence · Phase 1 of 2 · planned · next /cad-execute 1');
+  assert.equal(bandLine(CURSOR, [REVIEWER], 200, 1),
+    'Cadence · Phase 1 of 2 · planned · 1 cache break · running cad-reviewer (low) · next /cad-execute 1');
+  assert.equal(bandLine(CURSOR, [], 200, 2), 'Cadence · Phase 1 of 2 · planned · 2 cache breaks · next /cad-execute 1');
+  assert.equal(bandLine(null, [], 200, 3), 'Cadence · no readable cursor · run /cad-progress · 3 cache breaks');
+});
+
 test('no line is ever longer than the width', () => {
   const lists = [[], [REVIEWER], [REVIEWER, EXECUTOR], [REVIEWER, EXECUTOR, REVIEWER, EXECUTOR]];
   for (const cursor of [CURSOR, null, { ...CURSOR, next: '/cad-verify 1 😀😀' }]) {
     for (const running of lists) {
       for (let width = 0; width <= 140; width++) {
-        const line = bandLine(cursor, running, width);
-        assert.ok(Array.from(line).length <= width, `${width}: ${line}`);
-        assert.ok(!line.includes('\n'));
+        for (const breaks of [0, 1, 12]) {
+          const line = bandLine(cursor, running, width, breaks);
+          assert.ok(Array.from(line).length <= width, `${width}: ${line}`);
+          assert.ok(!line.includes('\n'));
+        }
       }
     }
   }
