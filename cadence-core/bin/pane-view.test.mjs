@@ -236,6 +236,16 @@ test('no breaks: the CACHE row carries the rates alone', () => {
   assert.equal(text(section(paneView(snap(), 120, [], [], m), 'CACHE')).replace(/^CACHE\s+/, ''), 'main 49.4% (last 97.6%)');
 });
 
+test('a loop\'s first request shows what it wrote, not a rate, in the CACHE row and on its agent\'s row', () => {
+  let m = meterStep(EMPTY_METER, MAIN, 'opus', 3, usage(25725, 16588));
+  m = meterStep(m, 'a1', 'opus', 1, usage(0, 9000));
+  const rows = paneView(snap(), 120, [{ id: 'a1', role: 'cad-executor', rung: 'xhigh' }], [], m);
+  assert.equal(text(section(rows, 'CACHE')).replace(/^CACHE\s+/, ''), 'main first request, 16.6k written');
+  assert.match(text(section(rows, 'AGENTS')), /● cad-executor · rung xhigh · unrecorded · cache first request, 9\.0k written$/);
+  m = meterStep(m, MAIN, 'opus', 5, usage(42313, 982));
+  assert.equal(text(section(paneView(snap(), 120, [], [], m), 'CACHE')).replace(/^CACHE\s+/, ''), 'main 79.5% (last 97.7%)');
+});
+
 test('a running agent\'s row gains its cache rate, and its breaks in yellow; one with no request gains nothing', () => {
   const roster = [{ id: 'a1', role: 'cad-executor', rung: 'xhigh' }, { id: 'a2', role: 'cad-reviewer', rung: 'low' }];
   const rows = paneView(snap(), 120, roster, [], brokenMeter());
