@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentRows, NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, parseResolves, READING_LINE, seamAnswer, sightDraw,
+import { agentRows, NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, panelOn, parseResolves, READING_LINE, seamAnswer, sightDraw,
   sightStart, sightStop, singleFlight, spendOf } from './lib/pane.mjs';
 import { appendEvent, DISPATCH, STEP_WINDOW } from './lib/trace.mjs';
 import { SPEND_EXCLUDES } from './lib/trace-suggest.mjs';
@@ -79,13 +79,16 @@ test('control characters never reach a line', () => {
 
 // --- the handlers -----------------------------------------------------------
 
-/** The module's handlers, as a recording `on` collects them, sharing one state. */
-function handlers() {
+/**
+ * The module's handlers, as a recording `on` collects them, sharing one state.
+ * The band's `panel` setting is on unless `options` says otherwise.
+ */
+function handlers(/** @type {unknown} */ options = { panel: true }) {
   /** @type {{pattern: string, matcher: any, hook: Function}[]} */
   const seen = [];
   register((/** @type {string} */ pattern, /** @type {any} */ a, /** @type {any} */ b) => {
     seen.push(b === undefined ? { pattern, matcher: undefined, hook: a } : { pattern, matcher: a, hook: b });
-  });
+  }, options);
   /** The one handler for a pattern, narrowed by `component` when given. */
   const one = (/** @type {string} */ pattern, /** @type {string} */ component = undefined) => {
     const found = seen.filter((h) => h.pattern === pattern && (component === undefined || h.matcher?.component === component));
@@ -1049,6 +1052,32 @@ test('a press whose open throws is swallowed', async () => {
   const tree = await h.hook('ui.render', 'AbovePrompt')($, bandEvent(), counting(null));
   assert.doesNotThrow(() => find(tree, 'Button')[0].props.onPress({}));
   await settle();
+});
+
+test('the panel setting is on only when it is exactly true', () => {
+  assert.equal(panelOn({ panel: true }), true);
+  for (const off of [undefined, null, {}, { panel: false }, { panel: 'true' }, { panel: 1 }, 'panel']) {
+    assert.equal(panelOn(off), false, JSON.stringify(off));
+  }
+});
+
+test('with the panel setting off or unset, the band draws nothing and passes the drawing beneath through', async () => {
+  const theirs = { type: 'Text', props: { children: 'another mod' } };
+  // No options at all: registered by hand, since `handlers()` turns the band on.
+  /** @type {Function[]} */
+  const bare = [];
+  register((/** @type {string} */ pattern, /** @type {any} */ a, /** @type {any} */ b) => {
+    if (pattern === 'ui.render' && a?.component === 'AbovePrompt') bare.push(b);
+  });
+  for (const band of [bare[0], ...[null, {}, { panel: false }].map((o) => handlers(o).hook('ui.render', 'AbovePrompt'))]) {
+    const next = counting(theirs);
+    const tree = await band(standIn({ resolve: withButton }), bandEvent(), next);
+    assert.equal(tree, theirs);
+    assert.equal(next.calls, 1);
+  }
+  const on = await handlers({ panel: true }).hook('ui.render', 'AbovePrompt')(standIn({ resolve: withButton }), bandEvent(),
+    counting(theirs));
+  assert.equal(find(on, 'Button').length, 1);
 });
 
 test('no Button under a survey, or with no .planning/ up the walk', async () => {

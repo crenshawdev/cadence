@@ -14,6 +14,12 @@
 // it tracks from subagent start and stop, and redrawn on those and on every
 // tool call (Plan 2 of phase 3).
 //
+// The band and token capture run only with the plugin's `panel` userConfig
+// field on, which is off by default. Off, the band draws nothing, so the
+// drawing beneath it shows as it was, and no window is kept, no fact written
+// and no close rewritten. The pane, the listing filter, the prefix safety net
+// and the cache meter run either way.
+//
 // And token capture (Plan 3, D-10/D-11). It keeps each subagent's last
 // `turn.step` window, never `turn.complete`'s sum, and writes it as one
 // `step_window` fact through `planning.mjs trace append` for the figureless
@@ -82,7 +88,7 @@ import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
 import { ownedAgent, prefixedAgent } from '../cadence-core/bin/lib/agent-prefix.mjs';
 import { filterListing, LISTING_TYPES } from '../cadence-core/bin/lib/listing-filter.mjs';
 import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
-import { NO_PROJECT_TEXT, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv,
+import { NO_PROJECT_TEXT, panelOn, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv,
   sightDraw, sightStart, sightStop, singleFlight } from '../cadence-core/bin/lib/pane.mjs';
 import { paneView } from '../cadence-core/bin/lib/pane-view.mjs';
 import { EMPTY_METER, MAIN, meterDrop, meterStep } from '../cadence-core/bin/lib/cache-meter.mjs';
@@ -371,8 +377,15 @@ async function openPane($, p) {
   }
 }
 
-/** @param {any} on the host's hook registrar */
-export function register(on) {
+/**
+ * @param {any} on the host's hook registrar
+ * @param {unknown} [options] the plugin's userConfig values; a change reloads
+ *   the module, so they are fixed for this activation
+ */
+export function register(on, options) {
+  // The band and token capture run only with the `panel` setting on, off by
+  // default.
+  const panel = panelOn(options);
   // The Cadence agents running in this session (D-07). Every write is
   // `roster = transition(roster, ...)` with its await done first, so two
   // handlers interleaving never write back a stale roster.
@@ -398,12 +411,12 @@ export function register(on) {
 
   // Pass-through: `e` goes down unchanged (D-12 leaves Phase 6 its effort
   // override here). A subagent's step that reports usage replaces its window,
-  // so the last step wins. Every step, main's too, goes to the cache meter,
-  // and a break or an open pane asks for a draw.
+  // so the last step wins, with the `panel` setting on. Every step, main's
+  // too, goes to the cache meter, and a break or an open pane asks for a draw.
   on('turn.step', async function* ($, e, next) {
     const result = yield* next(e);
     try {
-      const w = typeof e.agentId === 'string' ? stepWindow(result && result.usage) : null;
+      const w = panel && typeof e.agentId === 'string' ? stepWindow(result && result.usage) : null;
       if (w !== null) windows.set(e.agentId, w);
     } catch {
       // a step we could not read prices nothing
@@ -446,7 +459,7 @@ export function register(on) {
     }
     redraw($);
     refresh($, pane);
-    await stopped($, e, capture);
+    if (panel) await stopped($, e, capture);
     return answer;
   });
 
@@ -454,8 +467,9 @@ export function register(on) {
   // writers, so redrawing after each tool call shows a cursor change as soon as
   // it lands. A write from outside the session shows at the next event. No timer.
   //
-  // A subagent's own `planning.mjs trace close` gains `--agent-id` here (D-11),
-  // and any figureless close that names an agent id prices it from its window.
+  // With the `panel` setting on, a subagent's own `planning.mjs trace close`
+  // gains `--agent-id` here (D-11), and any figureless close that names an
+  // agent id prices it from its window.
   // An Agent call naming a bare Cadence stem gains the plugin's prefix (phase 5,
   // D-07) as a safety net, unless the offer observer below saw a project or
   // user agent of that bare name. Anything that goes wrong before `next` sends
@@ -463,7 +477,7 @@ export function register(on) {
   on('tool.call', async ($, e, next) => {
     let sent = e;
     try {
-      if (e.tool === 'Bash' && typeof e.agentId === 'string') {
+      if (panel && e.tool === 'Bash' && typeof e.agentId === 'string') {
         const rewritten = withAgentId(e.command, e.agentId);
         if (rewritten !== null) sent = { ...e, command: rewritten };
       } else if (e.tool === 'Agent') {
@@ -473,7 +487,7 @@ export function register(on) {
     } catch {
       sent = e;
     }
-    await closing($, sent, capture);
+    if (panel) await closing($, sent, capture);
     const result = await next(sent);
     redraw($);
     refresh($, pane);
@@ -508,12 +522,13 @@ export function register(on) {
   });
 
   // The band. AbovePrompt holds one tree, so the band goes in a column above
-  // whatever the mods beneath drew, never in place of it. No band while a
-  // survey holds the row, or outside a Cadence project (D-06).
+  // whatever the mods beneath drew, never in place of it. No band with the
+  // `panel` setting off, while a survey holds the row, or outside a Cadence
+  // project (D-06).
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const drawn = await next(e);
     try {
-      if (e.props.hasSurvey) return drawn;
+      if (!panel || e.props.hasSurvey) return drawn;
       const root = await planningRootAsync(await $.session.cwd(), (dir, name) => $.fs.exists(at(dir, name)));
       if (root === null) return drawn;
       let cursor = null;

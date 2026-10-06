@@ -15,5 +15,13 @@
     "claude-code",
     "software-development",
     "git"
-  ]
+  ],
+  "userConfig": {
+    "panel": {
+      "type": "boolean",
+      "title": "Cadence band and token capture",
+      "description": "The one-line Cadence band above the prompt with its [ pane ] button, and the step-window token figures the module records for /cad-report. Off by default. /cad-panel on or /cad-panel off flips it, and /cad-panel opens the pane either way.",
+      "default": false
+    }
+  }
 }

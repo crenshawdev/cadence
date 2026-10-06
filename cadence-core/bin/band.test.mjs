@@ -99,13 +99,13 @@ test('no line is ever longer than the width', () => {
 
 // --- the handler ------------------------------------------------------------
 
-/** The module's handlers, as a recording `on` collects them. */
+/** The module's handlers, as a recording `on` collects them, with the band's `panel` setting on. */
 function handlers() {
   /** @type {{pattern: string, matcher: any, hook: Function}[]} */
   const seen = [];
   register((/** @type {string} */ pattern, /** @type {any} */ a, /** @type {any} */ b) => {
     seen.push(b === undefined ? { pattern, matcher: undefined, hook: a } : { pattern, matcher: a, hook: b });
-  });
+  }, { panel: true });
   return seen;
 }
 

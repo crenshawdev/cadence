@@ -68,6 +68,16 @@ export const NO_CURSOR_NEXT = 'next · no readable cursor · run /cad-progress';
 export const NO_PROJECT_TEXT =
   'No .planning/ here, so there is no Cadence pane to open. /cad-new-project or /cad-adopt starts one.';
 
+/**
+ * Whether the band draws: the plugin's `panel` userConfig field, as
+ * `register(on, options)` receives it. Off unless it is exactly true, so a
+ * host that hands no options draws no band.
+ * @param {unknown} options
+ */
+export function panelOn(options) {
+  return typeof options === 'object' && options !== null && /** @type {any} */ (options).panel === true;
+}
+
 /** How long one seam run may take before the host kills it. */
 export const SEAM_TIMEOUT_MS = 10000;
 

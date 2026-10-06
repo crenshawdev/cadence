@@ -75,13 +75,13 @@ test('the rewritten close, run in a project, closes a bracket carrying that agen
 
 // --- the handler, through the adapter ----------------------------------------
 
-/** The module's `tool.call` handler, as a recording `on` collects it. */
-function toolCall() {
+/** The module's `tool.call` handler, as a recording `on` collects it, the `panel` setting on unless `options` says otherwise. */
+function toolCall(/** @type {unknown} */ options = { panel: true }) {
   /** @type {Function[]} */
   const found = [];
   register((/** @type {string} */ pattern, /** @type {any} */ a, /** @type {any} */ b) => {
     if (pattern === 'tool.call') found.push(b === undefined ? a : b);
-  });
+  }, options);
   assert.equal(found.length, 1);
   return found[0];
 }
@@ -155,13 +155,13 @@ test('the fact\'s argv runs the plugin\'s own trace append', () => {
   assert.equal(stepWindowArgv('/plug/', '3', 'a1', 1)[1], '/plug/cadence-core/bin/planning.mjs');
 });
 
-/** Every handler of one `register`, by pattern, so they share the module's state. */
-function module() {
+/** Every handler of one `register`, by pattern, so they share the module's state; the `panel` setting on unless `options` says otherwise. */
+function module(/** @type {unknown} */ options = { panel: true }) {
   /** @type {Map<string, Function>} */
   const by = new Map();
   register((/** @type {string} */ pattern, /** @type {any} */ a, /** @type {any} */ b) => {
     by.set(pattern, b === undefined ? a : b);
-  });
+  }, options);
   return by;
 }
 
@@ -241,6 +241,25 @@ test('a Cadence subagent\'s stop writes its LAST step window under the phase its
   // The agent is forgotten: a second stop writes nothing.
   await by.get('classic.SubagentStop')($, stop(), async () => answer);
   assert.equal($.runs.length, 1);
+});
+
+test('with the panel setting off, the close goes as written and neither its stop nor a coordinator close writes', async () => {
+  for (const options of [{}, { panel: false }]) {
+    const by = module(options);
+    const $ = host();
+    await twoSteps(by, $);
+    /** @type {any[]} */
+    const sent = [];
+    await by.get('tool.call')($, { tool: 'Bash', tool_use_id: 'c', agentId: 'a1', command: TAIL },
+      async (/** @type {any} */ e) => { sent.push(e); return {}; });
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].command, TAIL);
+    await by.get('classic.SubagentStop')($, stop({}), async () => ({}));
+    await by.get('tool.call')($, { tool: 'Bash', tool_use_id: 'd',
+      command: 'node "/plug/cadence-core/bin/planning.mjs" trace close --phase 4 --plan 1 --role cad-reviewer --agent-id a1' },
+    async () => ({}));
+    assert.equal($.runs.length, 0, JSON.stringify(options));
+  }
 });
 
 test('with no close seen, the stop writes nothing under the cursor\'s phase', async () => {
