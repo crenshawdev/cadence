@@ -7,6 +7,10 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.8.5] - 2026-10-06
+
+The pane's cache figure on a loop's first request.
+
 ### Fixed
 
 - **A loop's first request shows what it wrote, not a hit rate.** A first
