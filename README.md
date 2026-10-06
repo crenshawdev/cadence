@@ -56,11 +56,11 @@ That is five commands out of twenty-eight. `/cad-help` prints the full reference
 
 ## The pane
 
-On a Claude Code version with mods support (2.1.287 or later), Cadence also loads a small module that shows where the loop stands without you running a command. On an older version the module never loads and everything else works exactly as before.
+On a Claude Code version with mods support (2.1.287 or later), Cadence also loads a small module that shows where the loop stands. On an older version the module never loads and everything else works exactly as before.
 
-A one-line band sits above the prompt in any repo with a `.planning/` directory: the phase you are on, its status, any Cadence agent running right now with its rung, and the next command. Once a request in this session reads back less of the prompt cache than the request before it left, a cache break, the band counts them after the status. It redraws when an agent starts or returns and after every tool call, so a `cursor set` shows up as soon as it lands. In a repo without `.planning/` there is no band.
+The band is off until you turn it on: `/cad-panel on`, or the "Cadence band and token capture" row in `/config`. `/cad-panel off` turns it off again. With it on, a one-line band sits above the prompt in any repo with a `.planning/` directory: the phase you are on, its status, any Cadence agent running right now with its rung, and the next command. Once a request in this session reads back less of the prompt cache than the request before it left, a cache break, the band counts them after the status. It redraws when an agent starts or returns and after every tool call, so a `cursor set` shows up as soon as it lands. In a repo without `.planning/` there is no band.
 
-`/cad-panel`, or `p` on the band, opens the pane: the current phase's plans and which are done, each running agent with its role, rung and model, the UAT counts, the open captures, the phase's token spend (the same figure `/cad-report` prints, with its exclusions named), the prompt-cache hit rate and cache breaks for the main loop and each running agent, and the next command. The cache figures are this session's, live, and not part of the phase's spend. `n` puts that command in the prompt. When the cursor and the files disagree about which phase is open, the pane says so instead of picking one.
+`/cad-panel`, or `p` on the band, opens the pane, band on or off: the current phase's plans and which are done, each running agent with its role, rung and model, the UAT counts, the open captures, the phase's token spend (the same figure `/cad-report` prints, with its exclusions named), the prompt-cache hit rate and cache breaks for the main loop and each running agent, and the next command. The cache figures are this session's, live, and not part of the phase's spend. `n` puts that command in the prompt. When the cursor and the files disagree about which phase is open, the pane says so instead of picking one.
 
 ![The Cadence pane docked beside the transcript. Phase 9 of 9, Bounded guard process and storage access, status executing, next /cad-execute 9. The plans bar reads 1 of 3, with PLAN-1.md checked and PLAN-2.md and PLAN-3.md open. One agent is running, cad-executor at rung xhigh, its model unrecorded. Two captures are open, and spend reads 2,745,857 tokens with 3 dispatches unrecorded, excluding the orchestrator's own turns and figureless returns.](./docs/screenshots/cad-panel.png)
 
@@ -159,7 +159,9 @@ On a host with mods, the module does five things:
 - adds `--agent-id <id>` to a Cadence subagent's own `planning.mjs trace close` command, so the record joins it to the right dispatch;
 - appends token-count facts to `.planning/trace.jsonl` through `planning.mjs trace append`, pricing a dispatch whose return carried no token count from the host's own usage for that agent, so `/cad-report` has fewer gaps.
 
-That trace is the only file it writes. It never runs a slash command, never touches `STATE.md`, and never takes over the git rail: git-guard stays a command hook.
+The band and the token-count facts run only with the `panel` setting on, and it's off by default. With it off, `/cad-report`'s figures come from the returns and the `subagent-trace` hook alone.
+
+That trace is the only file it writes. `/cad-panel on` and `off` change the `panel` setting through Claude Code, which saves it in `settings.json` like any other `/config` row. It never runs a slash command, never touches `STATE.md`, and never takes over the git rail: git-guard stays a command hook.
 
 ### The two hooks that watch
 
