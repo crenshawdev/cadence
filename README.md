@@ -58,9 +58,9 @@ That is five commands out of twenty-eight. `/cad-help` prints the full reference
 
 On a Claude Code version with mods support (2.1.287 or later), Cadence also loads a small module that shows where the loop stands without you running a command. On an older version the module never loads and everything else works exactly as before.
 
-A one-line band sits above the prompt in any repo with a `.planning/` directory: the phase you are on, its status, any Cadence agent running right now with its rung, and the next command. It redraws when an agent starts or returns and after every tool call, so a `cursor set` shows up as soon as it lands. In a repo without `.planning/` there is no band.
+A one-line band sits above the prompt in any repo with a `.planning/` directory: the phase you are on, its status, any Cadence agent running right now with its rung, and the next command. Once a request in this session reads back less of the prompt cache than the request before it left, a cache break, the band counts them after the status. It redraws when an agent starts or returns and after every tool call, so a `cursor set` shows up as soon as it lands. In a repo without `.planning/` there is no band.
 
-`/cad-panel`, or `p` on the band, opens the pane: the current phase's plans and which are done, each running agent with its role, rung and model, the UAT counts, the open captures, the phase's token spend (the same figure `/cad-report` prints, with its exclusions named), and the next command. `n` puts that command in the prompt. When the cursor and the files disagree about which phase is open, the pane says so instead of picking one.
+`/cad-panel`, or `p` on the band, opens the pane: the current phase's plans and which are done, each running agent with its role, rung and model, the UAT counts, the open captures, the phase's token spend (the same figure `/cad-report` prints, with its exclusions named), the prompt-cache hit rate and cache breaks for the main loop and each running agent, and the next command. The cache figures are this session's, live, and not part of the phase's spend. `n` puts that command in the prompt. When the cursor and the files disagree about which phase is open, the pane says so instead of picking one.
 
 ![The Cadence pane docked beside the transcript. Phase 9 of 9, Bounded guard process and storage access, status executing, next /cad-execute 9. The plans bar reads 1 of 3, with PLAN-1.md checked and PLAN-2.md and PLAN-3.md open. One agent is running, cad-executor at rung xhigh, its model unrecorded. Two captures are open, and spend reads 2,745,857 tokens with 3 dispatches unrecorded, excluding the orchestrator's own turns and figureless returns.](./docs/screenshots/cad-panel.png)
 
@@ -153,7 +153,7 @@ Context7 and excerpt are used when they're installed and skipped when they're no
 
 On a host with mods, the module does five things:
 
-- draws the band and the `/cad-panel` pane from `planning.mjs` reads and the files under `.planning/`;
+- draws the band and the `/cad-panel` pane from `planning.mjs` reads, the files under `.planning/` and the token usage the host reports for each request;
 - filters Cadence's 30 agents and 6 contract skills out of the agent and skill listings the model sees, about 8,000 characters Claude would otherwise reread on every request in every project, while Cadence's commands still dispatch those agents by name;
 - rewrites the Agent tool's `subagent_type` from a bare Cadence agent name to the plugin-prefixed one, and leaves your own agents' names alone;
 - adds `--agent-id <id>` to a Cadence subagent's own `planning.mjs trace close` command, so the record joins it to the right dispatch;
