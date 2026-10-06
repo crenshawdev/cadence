@@ -7,6 +7,28 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.8.3] - 2026-10-06
+
+The band and the pane, and the README section that shows them.
+
+### Fixed
+
+- **A phase being executed no longer reads `planned`.** Nothing sets an
+  `executing` status, so through a whole `/cad-execute` run the band and the
+  pane's status chip said `planned`, beside a running `cad-executor` and a plans
+  bar already partway done. Both now draw `executing` while the phase is
+  `planned` and a `cad-executor` is running. It is display only: the cursor and
+  the derived status keep their values. An executor that `/cad-task --plan`
+  dispatches on a `planned` phase shows the same way, because the running list
+  cannot tell the two apart.
+
+### Changed
+
+- **The README shows the pane.** The section is now The pane, with a
+  screenshot of it mid-execute, and it says that `n` puts the next command in
+  the prompt. Its paragraph on what the module does besides drawing moved into
+  The module's list.
+
 ## [3.8.2] - 2026-10-06
 
 Test fixtures only. Nothing a user runs changed.
@@ -2854,6 +2876,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.8.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.3
 [3.8.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.2
 [3.8.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.1
 [3.8.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.0
