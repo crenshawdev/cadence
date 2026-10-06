@@ -1,10 +1,11 @@
 // @ts-check
 // Zero-dep tests for lib/cache-meter.mjs: each loop's hit rate and the break
-// rule.
+// rule, and the Cadence module feeding it from `turn.step`.
 // Run: node --test cadence-core/bin/cache-meter.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { breaksText, EMPTY_METER, hitRate, kilo, MAIN, meterDrop, meterStep, percent } from './lib/cache-meter.mjs';
+import { register } from '../../hooks/cadence-mod.mjs';
 
 /** One request's usage: cache read, cache write, fresh input. */
 const usage = (/** @type {number} */ read, /** @type {number} */ write, /** @type {number} */ fresh = 2) =>
@@ -114,4 +115,97 @@ test('the formats', () => {
   assert.equal(breaksText(2), '2 cache breaks');
   assert.equal(hitRate(undefined), null);
   assert.equal(hitRate(run([['opus', 1, usage(0, 0, 0)]]).loops.get(MAIN)), null);
+});
+
+// --- the module feeds it -------------------------------------------------------
+
+/** Every handler of one `register`, by pattern and component, so they share the module's state. */
+function module() {
+  /** @type {Map<string, Function>} */
+  const by = new Map();
+  register((/** @type {string} */ pattern, /** @type {any} */ a, /** @type {any} */ b) => {
+    by.set(b === undefined ? pattern : `${pattern}:${a.component ?? ''}`, b === undefined ? a : b);
+  });
+  return by;
+}
+
+/** Drive a streaming hook to its end: what it returned. */
+async function drain(/** @type {AsyncGenerator<any, any>} */ gen) {
+  for (;;) {
+    const { value, done } = await gen.next();
+    if (done) return value;
+  }
+}
+
+/** A `turn.step` `next` that streams nothing and returns a result carrying `usage`. */
+function stepNext(/** @type {any} */ result) {
+  const next = (/** @type {any} */ e) => {
+    next.calls.push(e);
+    return (async function* () { return result; })();
+  };
+  next.calls = /** @type {any[]} */ ([]);
+  return next;
+}
+
+/** A stand-in `$` in a Cadence project, counting draws. */
+function host() {
+  const files = /** @type {Record<string, string>} */ ({ '/proj/.planning': '',
+    '/proj/.planning/STATE.md': 'Phase: 1 of 2 (Fixture)\nStatus: planned\nNext: /cad-execute 1\nUpdated: 2026-10-06\n' });
+  const $ = {
+    draws: 0,
+    session: { cwd: async () => '/proj', id: async () => 'session-1' },
+    agent: { list: async () => [] },
+    fs: {
+      exists: async (/** @type {string} */ p) => Object.hasOwn(files, p),
+      read: async (/** @type {string} */ p) => files[p],
+    },
+    ui: {
+      invalidate: () => { $.draws++; },
+      resolve: () => ({
+        Box: (/** @type {any} */ props) => ({ type: 'Box', props }),
+        Text: (/** @type {any} */ props) => ({ type: 'Text', props }),
+      }),
+    },
+  };
+  return $;
+}
+
+/** The band's line as the AbovePrompt render draws it. */
+async function bandOf(/** @type {Map<string, Function>} */ by, /** @type {any} */ $) {
+  const tree = await by.get('ui.render:AbovePrompt')($, { surface: 'terminal', component: 'AbovePrompt', requestId: 'r',
+    props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 200 } }, async () => null);
+  return tree.props.children[0].props.children;
+}
+
+test('two main-loop steps with a break between them put 1 cache break on the band', async () => {
+  const by = module();
+  const $ = host();
+  for (const [messages, u] of /** @type {[number, any][]} */ ([[3, usage(0, 40000)], [5, usage(3000, 38000)]])) {
+    const e = Object.freeze({ turnId: 't', index: 0, model: 'opus', messageCount: messages });
+    const result = { turnId: 't', index: 0, answer: '', toolUses: [], stopReason: 'end_turn', usage: u };
+    const next = stepNext(result);
+    assert.equal(await drain(by.get('turn.step')($, e, next)), result);
+    assert.deepEqual(next.calls, [e], 'e goes down once, unchanged');
+  }
+  assert.equal($.draws, 1, 'the break asked for a draw; the first step, with the pane shut, did not');
+  assert.equal(await bandOf(by, $), 'Cadence · Phase 1 of 2 · planned · 1 cache break · next /cad-execute 1');
+});
+
+test('an agent\'s break counts on the band and stays after its stop', async () => {
+  const by = module();
+  const $ = host();
+  for (const [messages, u] of /** @type {[number, any][]} */ ([[1, usage(0, 9000)], [3, usage(0, 9000)]])) {
+    await drain(by.get('turn.step')($, { turnId: 't', index: 0, model: 'opus', messageCount: messages, agentId: 'a1' },
+      stepNext({ usage: u })));
+  }
+  await by.get('classic.SubagentStop')($, { session_id: 'session-1', agent_id: 'a1', agent_type: 'Explore' }, async () => ({}));
+  assert.match(await bandOf(by, $), / · 1 cache break · /);
+});
+
+test('a step whose usage throws when read still answers next\'s result, and counts nothing', async () => {
+  const by = module();
+  const $ = host();
+  const result = { get usage() { throw new Error('unreadable'); } };
+  assert.equal(await drain(by.get('turn.step')($, { turnId: 't', index: 0, model: 'opus', messageCount: 1 }, stepNext(result))), result);
+  assert.equal(await bandOf(by, $), 'Cadence · Phase 1 of 2 · planned · next /cad-execute 1');
 });

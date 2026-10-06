@@ -65,6 +65,11 @@
 // `cad-reviewer` goes through as sent. The rule is lib/agent-prefix.mjs; every
 // other call goes through as sent.
 //
+// And the cache meter. The same `turn.step` hands every request's usage, the
+// main loop's and each agent's, to lib/cache-meter.mjs. The band counts the
+// session's cache breaks once there is one, and the pane shows each loop's hit
+// rate and breaks. Live and in memory only; the trace keeps none of it (#309).
+//
 // Every handler calls `next` exactly once and swallows its own errors (D-12).
 //
 // git-guard, read-trace and subagent-trace stay command hooks on every host, so
@@ -80,6 +85,7 @@ import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-c
 import { NO_PROJECT_TEXT, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv,
   sightDraw, sightStart, sightStop, singleFlight } from '../cadence-core/bin/lib/pane.mjs';
 import { paneView } from '../cadence-core/bin/lib/pane-view.mjs';
+import { EMPTY_METER, MAIN, meterDrop, meterStep } from '../cadence-core/bin/lib/cache-meter.mjs';
 
 /**
  * The pane's id and title, held once: `/cad-panel` and anything else that
@@ -380,6 +386,9 @@ export function register(on) {
   const pane = { snapshot: null, open: false, kick: singleFlight() };
   /** @type {Capture} */
   const capture = { windows: new Map(), adopted: new Map(), held: new Map() };
+  // The session's cache meter. Like the roster, every write is
+  // `meter = meterStep(meter, ...)`.
+  let meter = EMPTY_METER;
   const { windows } = capture;
   // Bare agent names a non-`plugin` `agent.offer` named (MOD-04). It only
   // grows: an agent deleted mid-session stays owned, which errs toward sending
@@ -389,7 +398,8 @@ export function register(on) {
 
   // Pass-through: `e` goes down unchanged (D-12 leaves Phase 6 its effort
   // override here). A subagent's step that reports usage replaces its window,
-  // so the last step wins.
+  // so the last step wins. Every step, main's too, goes to the cache meter,
+  // and a break or an open pane asks for a draw.
   on('turn.step', async function* ($, e, next) {
     const result = yield* next(e);
     try {
@@ -397,6 +407,14 @@ export function register(on) {
       if (w !== null) windows.set(e.agentId, w);
     } catch {
       // a step we could not read prices nothing
+    }
+    try {
+      const before = meter.breaks;
+      meter = meterStep(meter, typeof e.agentId === 'string' ? e.agentId : MAIN, e.model, e.messageCount,
+        result && result.usage);
+      if (meter.breaks !== before || pane.open) redraw($);
+    } catch {
+      // a step we could not read counts nothing
     }
     return result;
   });
@@ -422,6 +440,7 @@ export function register(on) {
     try {
       roster = rosterStop(roster, e.agent_id);
       sights = sightStop(sights, e.agent_id);
+      meter = meterDrop(meter, e.agent_id);
     } catch {
       // the next draw's reconcile drops what this missed
     }
@@ -511,12 +530,12 @@ export function register(on) {
       }
       const { Box, Text, Button } = $.ui.resolve(e);
       if (typeof Button !== 'function') {
-        const band = Text({ wrap: 'truncate-end', children: bandLine(cursor, roster, e.props.bodyColumns) });
+        const band = Text({ wrap: 'truncate-end', children: bandLine(cursor, roster, e.props.bodyColumns, meter.breaks) });
         return Box({ flexDirection: 'column', children: [band, drawn] });
       }
       // The pane's button beside the line, which takes what is left. A letter,
       // never a digit: a bare digit in an empty composer presses a band Button.
-      const line = bandLine(cursor, roster, Math.max(0, e.props.bodyColumns - PANE_BUTTON_CELLS - 1));
+      const line = bandLine(cursor, roster, Math.max(0, e.props.bodyColumns - PANE_BUTTON_CELLS - 1), meter.breaks);
       const button = Button({ label: PANE_BUTTON_LABEL, hotkey: PANE_BUTTON_KEY,
         onPress: () => { openPane($, pane).catch(() => {}); } });
       const band = Box({ flexDirection: 'row', gap: 1, children: [Text({ wrap: 'truncate-end', children: line }), button] });
@@ -588,7 +607,7 @@ export function register(on) {
         ? Button({ key: 'next', label: s.text, hotkey: NEXT_KEY, variant: 'primary',
           onPress: () => { $.prompt.fill({ text: s.text, mode: 'replace' }).catch(() => {}); } })
         : segmentText(Text, s);
-      const rows = paneView(pane.snapshot, width, roster, sights)
+      const rows = paneView(pane.snapshot, width, roster, sights, meter)
         .map((row) => Box({ flexDirection: 'row', children: row.map(cell) }));
       const body = [title, Text({ children: ' ' }), ...rows];
       return framed
