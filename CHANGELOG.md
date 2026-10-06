@@ -7,6 +7,29 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.8.6] - 2026-10-06
+
+A switch for the band and token capture, off by default.
+
+### Changed
+
+- **The band and token capture are off by default.** On a mods host the band
+  above the prompt, its `[ pane ]` button and the token-count facts the module
+  writes for `/cad-report` run only with the plugin's `panel` setting on, so
+  upgrading turns them off. `/cad-panel on` or the "Cadence band and token
+  capture" row in `/config` turns them back on. With it off, whatever another
+  mod draws above the prompt shows as it was, `/cad-report` takes its figures
+  from the returns and the `subagent-trace` hook alone, and a subagent's own
+  `trace close` goes through as written. The pane, the listing filter, the
+  agent-name prefix and the cache meter run either way.
+
+### Added
+
+- **`/cad-panel on` and `/cad-panel off`.** They write the `panel` setting the
+  way its `/config` row does, and Claude Code reloads the module with the new
+  value. `off` closes the pane first. `/cad-panel` alone still opens the pane,
+  band on or off.
+
 ## [3.8.5] - 2026-10-06
 
 The pane's cache figure on a loop's first request.
