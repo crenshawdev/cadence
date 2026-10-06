@@ -77,6 +77,14 @@ test('each status word picks its chip colour, an unknown one white', () => {
   }
 });
 
+test('a planned phase with an executor running chips as executing, in yellow', () => {
+  const planned = snap({ phases: [{ ...STATUS.phases[0], status: 'planned' }] });
+  const executor = [{ id: 'a1', role: 'cad-executor', rung: 'xhigh' }];
+  assert.deepEqual(paneView(planned, 80, executor)[1][0], { text: ' executing ', color: 'black', bg: 'yellow', bold: true });
+  assert.equal(paneView(planned, 80)[1][0].text, ' planned ', 'nothing running');
+  assert.equal(paneView(snap(), 80, executor)[1][0].text, ' executed ', 'only a planned phase');
+});
+
 test('a dim rule as wide as the pane closes the heading and the plans', () => {
   const rows = paneView(snap(), 60);
   const rules = rows.filter((r) => r.length === 1 && /^─+$/.test(r[0].text));

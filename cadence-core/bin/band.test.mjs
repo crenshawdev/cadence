@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bandLine, NO_CURSOR_LINE, rosterReconcile, rosterStart, rosterStop } from './lib/band.mjs';
+import { bandLine, NO_CURSOR_LINE, rosterReconcile, rosterStart, rosterStop, shownStatus } from './lib/band.mjs';
 import { parseCursor } from './lib/state-cursor.mjs';
 import { register } from '../../hooks/cadence-mod.mjs';
 
@@ -19,6 +19,7 @@ const STATE = '# State\n\nPhase: 1 of 2 (Fixture)\nStatus: planned\nNext: /cad-e
 const CURSOR = { phase: 1, total: 2, status: 'planned', next: '/cad-execute 1' };
 const REVIEWER = { role: 'cad-reviewer', rung: 'low' };
 const EXECUTOR = { role: 'cad-executor', rung: 'high' };
+const PLANNER = { role: 'cad-planner', rung: 'high' };
 const SESSION = 'session-1';
 
 // --- the line ---------------------------------------------------------------
@@ -45,18 +46,32 @@ test('no readable cursor draws the /cad-progress line', () => {
 test('running agents sit between status and next', () => {
   assert.equal(bandLine(CURSOR, [REVIEWER], 200),
     'Cadence · Phase 1 of 2 · planned · running cad-reviewer (low) · next /cad-execute 1');
-  assert.equal(bandLine(CURSOR, [REVIEWER, EXECUTOR], 200),
-    'Cadence · Phase 1 of 2 · planned · running cad-reviewer (low), cad-executor (high) · next /cad-execute 1');
+  assert.equal(bandLine(CURSOR, [REVIEWER, PLANNER], 200),
+    'Cadence · Phase 1 of 2 · planned · running cad-reviewer (low), cad-planner (high) · next /cad-execute 1');
 });
 
 test('a narrow width keeps the first agent plus a count, then cuts with …', () => {
-  const three = [REVIEWER, EXECUTOR, { role: 'cad-verifier', rung: 'medium' }];
+  const three = [REVIEWER, PLANNER, { role: 'cad-verifier', rung: 'medium' }];
   // Wide enough for the collapsed list, too narrow for the full one.
   assert.equal(bandLine(CURSOR, three, 90),
     'Cadence · Phase 1 of 2 · planned · running cad-reviewer (low) +2 · next /cad-execute 1');
   const cut = bandLine(CURSOR, three, 50);
   assert.equal(cut, 'Cadence · Phase 1 of 2 · planned · running cad-re…');
   assert.equal(Array.from(cut).length, 50);
+});
+
+test('a running executor shows a planned phase as executing', () => {
+  assert.equal(bandLine(CURSOR, [EXECUTOR], 200),
+    'Cadence · Phase 1 of 2 · executing · running cad-executor (high) · next /cad-execute 1');
+  assert.equal(shownStatus('planned', [REVIEWER, EXECUTOR]), 'executing');
+});
+
+test('no executor, or a phase that is not planned, keeps the status as written', () => {
+  assert.equal(shownStatus('planned', []), 'planned');
+  assert.equal(shownStatus('planned', [REVIEWER, PLANNER]), 'planned');
+  for (const status of ['ready to plan', 'context gathered', 'executed', 'phase complete', 'paused']) {
+    assert.equal(shownStatus(status, [EXECUTOR]), status);
+  }
 });
 
 test('no line is ever longer than the width', () => {
