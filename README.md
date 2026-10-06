@@ -54,15 +54,19 @@ Step 1 also takes a shortcut when the questioning already happened somewhere els
 
 That is five commands out of twenty-eight. `/cad-help` prints the full reference inside a session, and [`cadence-core/references/COMMANDS.md`](./cadence-core/references/COMMANDS.md) is that same reference in the repo, readable before you install anything.
 
-## The panel
+## The pane
 
 On a Claude Code version with mods support (2.1.287 or later), Cadence also loads a small module that shows where the loop stands without you running a command. On an older version the module never loads and everything else works exactly as before.
 
 A one-line band sits above the prompt in any repo with a `.planning/` directory: the phase you are on, its status, any Cadence agent running right now with its rung, and the next command. It redraws when an agent starts or returns and after every tool call, so a `cursor set` shows up as soon as it lands. In a repo without `.planning/` there is no band.
 
-`/cad-panel`, or `p` on the band, opens the full view: the current phase's plans and which are done, each running agent with its role, rung and model, the UAT counts, the open captures, the phase's token spend (the same figure `/cad-report` prints, with its exclusions named), and the next command. When the cursor and the files disagree about which phase is open, the panel says so instead of picking one.
+`/cad-panel`, or `p` on the band, opens the pane: the current phase's plans and which are done, each running agent with its role, rung and model, the UAT counts, the open captures, the phase's token spend (the same figure `/cad-report` prints, with its exclusions named), and the next command. `n` puts that command in the prompt. When the cursor and the files disagree about which phase is open, the pane says so instead of picking one.
 
-The module does more than draw, and [The module](#the-module) below lists all of it: it rewrites the Agent tool's `subagent_type` to the plugin-prefixed name, and it writes token counts to `.planning/trace.jsonl` through `planning.mjs`, the one file it writes. It never runs a slash command, never writes `STATE.md`, and never takes over the git rail: git-guard stays the command hook it has always been. It does two quiet jobs besides drawing. It keeps Cadence's 30 agent descriptions and 6 internal contract skills out of every session's prompt, about 8,000 characters Claude would otherwise reread on every request in every project, while Cadence's commands still dispatch those agents by name. And it prices the subagent dispatches whose return carried no token count, from the host's own usage for that agent, so `/cad-report` has fewer gaps.
+![The Cadence pane docked beside the transcript. Phase 9 of 9, Bounded guard process and storage access, status planned, next /cad-execute 9. The plans bar reads 2 of 3, with PLAN-1.md and PLAN-2.md checked and PLAN-3.md open. One agent is running, cad-executor at rung xhigh on opus. Two captures are open, and spend reads 2,745,857 tokens with 3 dispatches unrecorded, excluding the orchestrator's own turns and figureless returns.](./docs/screenshots/cad-panel.png)
+
+*Mid-execute: two of phase 9's three plans are done, the executor is on the third at the xhigh rung, and the spend line counts the dispatches it has no figure for and names what it excludes.*
+
+The module does more than draw. [The module](#the-module) below lists everything it does and the one file it writes.
 
 ## The controls
 
@@ -150,12 +154,12 @@ Context7 and excerpt are used when they're installed and skipped when they're no
 On a host with mods, the module does five things:
 
 - draws the band and the `/cad-panel` pane from `planning.mjs` reads and the files under `.planning/`;
-- filters Cadence's 30 agents and 6 contract skills out of the agent and skill listings the model sees;
+- filters Cadence's 30 agents and 6 contract skills out of the agent and skill listings the model sees, about 8,000 characters Claude would otherwise reread on every request in every project, while Cadence's commands still dispatch those agents by name;
 - rewrites the Agent tool's `subagent_type` from a bare Cadence agent name to the plugin-prefixed one, and leaves your own agents' names alone;
 - adds `--agent-id <id>` to a Cadence subagent's own `planning.mjs trace close` command, so the record joins it to the right dispatch;
-- appends token-count facts to `.planning/trace.jsonl` through `planning.mjs trace append`.
+- appends token-count facts to `.planning/trace.jsonl` through `planning.mjs trace append`, pricing a dispatch whose return carried no token count from the host's own usage for that agent, so `/cad-report` has fewer gaps.
 
-That trace is the only file it writes. It never touches `STATE.md` or the git rail.
+That trace is the only file it writes. It never runs a slash command, never touches `STATE.md`, and never takes over the git rail: git-guard stays a command hook.
 
 ### The two hooks that watch
 
