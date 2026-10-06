@@ -10,7 +10,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentRows, NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, panelOn, parseResolves, READING_LINE, seamAnswer, sightDraw,
+import { agentRows, NO_CURSOR_NEXT, NO_PROJECT_TEXT, paneLines, PANEL_OFF_TEXT, PANEL_ON_TEXT, PANEL_USAGE, panelArg,
+  panelOn, parseResolves, READING_LINE, seamAnswer, sightDraw,
   sightStart, sightStop, singleFlight, spendOf } from './lib/pane.mjs';
 import { appendEvent, DISPATCH, STEP_WINDOW } from './lib/trace.mjs';
 import { SPEND_EXCLUDES } from './lib/trace-suggest.mjs';
@@ -100,18 +101,25 @@ function handlers(/** @type {unknown} */ options = { panel: true }) {
 
 /**
  * A stand-in `$` over a fixture tree of path -> text (a directory maps to '').
- * It records each `ui.open`, and `drawn()` settles at the next invalidate.
+ * It records each `ui.open`, `ui.close` and `config.set`, and `drawn()`
+ * settles at the next invalidate.
  */
 function standIn({ cwd = '/proj/sub', files = { '/proj/.planning': '', '/proj/.planning/STATE.md': STATE },
-  read, resolve, open } = /** @type {any} */ ({})) {
+  read, resolve, open, set } = /** @type {any} */ ({})) {
   /** @type {any[]} */
   const opens = [];
+  /** @type {any[]} */
+  const closes = [];
+  /** @type {any[]} */
+  const sets = [];
   /** @type {any[]} */
   const registered = [];
   /** @type {(() => void)[]} */
   let waiting = [];
   const $ = {
     opens,
+    closes,
+    sets,
     registered,
     invalidations: 0,
     /** Settles at the next `ui.invalidate`. */
@@ -121,6 +129,7 @@ function standIn({ cwd = '/proj/sub', files = { '/proj/.planning': '', '/proj/.p
     agent: { list: async () => [] },
     process: { run: async () => { throw new Error('no process in this stand-in'); } },
     command: { register: async (/** @type {any} */ spec) => { registered.push(spec); return { command: spec.name }; } },
+    config: { set: set || (async (/** @type {any} */ args) => { sets.push(args); return { value: args.value }; }) },
     fs: {
       exists: async (/** @type {string} */ p) => Object.hasOwn(files, p),
       read: read || (async (/** @type {string} */ p) => {
@@ -130,6 +139,7 @@ function standIn({ cwd = '/proj/sub', files = { '/proj/.planning': '', '/proj/.p
     },
     ui: {
       open: open || (async (/** @type {any} */ args) => { opens.push(args); return { isPlaced: true }; }),
+      close: async (/** @type {any} */ args) => { closes.push(args); },
       /** The engine's list: every pane opened here, unless a test empties it. */
       panes: async () => opens.map((o) => ({ id: o.id, title: o.title, isShown: true, isFocused: false, isPlaced: true })),
       invalidate: () => {
@@ -199,6 +209,7 @@ test('session.start registers /cad-panel once, immediate, and runs next once', a
   assert.equal($.registered.length, 1);
   assert.equal($.registered[0].name, 'cad-panel');
   assert.equal($.registered[0].immediate, true);
+  assert.equal($.registered[0].argumentHint, 'on | off');
   assert.equal(typeof $.registered[0].description, 'string');
   assert.ok(!$.registered[0].description.includes('\n'));
 
@@ -236,6 +247,64 @@ test('an open that waits undrawn answers its reason', async () => {
   const $ = standIn({ open: async () => ({ isPlaced: false, reason: 'widen the terminal to 144 columns' }) });
   const answer = await hook('command.run')($, run(), counting({}));
   assert.deepEqual(answer, { text: 'widen the terminal to 144 columns' });
+});
+
+test('panelArg reads no argument as open, on and off in any case, and nothing else', () => {
+  for (const [args, want] of /** @type {[unknown, string | null][]} */ ([['', 'open'], ['  ', 'open'], [undefined, 'open'],
+    ['on', 'on'], [' ON ', 'on'], ['off', 'off'], ['Off', 'off'], ['nope', null], ['on off', null], ['open', null]])) {
+    assert.equal(panelArg(args), want, JSON.stringify(args));
+  }
+});
+
+test('/cad-panel on writes cadence.panel true and opens nothing; off closes the pane, then writes false', async () => {
+  for (const options of [{ panel: true }, { panel: false }]) {
+    const { hook } = handlers(options);
+    const on = standIn();
+    const next = counting({});
+    assert.deepEqual(await hook('command.run')(on, run('on'), next), { text: PANEL_ON_TEXT });
+    assert.equal(next.calls, 1);
+    assert.deepEqual(on.sets, [{ key: 'cadence.panel', value: true }]);
+    assert.equal(on.opens.length, 0);
+    assert.equal(on.closes.length, 0);
+
+    const off = standIn();
+    /** @type {string[]} */
+    const order = [];
+    off.ui.close = async (/** @type {any} */ args) => { order.push(`close ${args.id}`); };
+    off.config.set = async (/** @type {any} */ args) => { order.push(`set ${args.key} ${args.value}`); return { value: args.value }; };
+    assert.deepEqual(await hook('command.run')(off, run('off'), counting({})), { text: PANEL_OFF_TEXT });
+    assert.deepEqual(order, ['close cadence', 'set cadence.panel false']);
+  }
+});
+
+test('a denied or failed write says the setting did not change and names its /config row', async () => {
+  const { hook } = handlers();
+  const denied = standIn({ set: async () => ({ deny: 'managed settings own it' }) });
+  const said = await hook('command.run')(denied, run('on'), counting({}));
+  assert.match(said.text, /did not change: managed settings own it\./);
+  assert.match(said.text, /\/config/);
+  const threw = standIn({ set: async () => { throw new Error('no row'); } });
+  const failed = await hook('command.run')(threw, run('off'), counting({}));
+  assert.match(failed.text, /^The panel setting did not change\. /);
+  assert.match(failed.text, /\/config/);
+});
+
+test('/cad-panel with another argument answers the usage line and writes nothing', async () => {
+  const { hook } = handlers();
+  const $ = standIn();
+  const next = counting({});
+  assert.deepEqual(await hook('command.run')($, run('nope'), next), { text: PANEL_USAGE });
+  assert.equal(next.calls, 1);
+  assert.equal($.sets.length, 0);
+  assert.equal($.opens.length, 0);
+});
+
+test('bare /cad-panel opens the pane with the panel setting off', async () => {
+  const { hook } = handlers({ panel: false });
+  const $ = standIn();
+  await hook('command.run')($, run(), counting({}));
+  assert.equal($.opens.length, 1);
+  assert.equal($.sets.length, 0);
 });
 
 test('with no .planning/ up the walk, /cad-panel opens nothing and answers a text', async () => {

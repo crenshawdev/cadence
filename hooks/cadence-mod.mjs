@@ -18,7 +18,9 @@
 // field on, which is off by default. Off, the band draws nothing, so the
 // drawing beneath it shows as it was, and no window is kept, no fact written
 // and no close rewritten. The pane, the listing filter, the prefix safety net
-// and the cache meter run either way.
+// and the cache meter run either way. `/cad-panel on` and `/cad-panel off`
+// write the field through `$.config.set`, as the `/config` row does, and the
+// host reloads the module with the new value.
 //
 // And token capture (Plan 3, D-10/D-11). It keeps each subagent's last
 // `turn.step` window, never `turn.complete`'s sum, and writes it as one
@@ -88,8 +90,9 @@ import { roleOfAgent } from '../cadence-core/bin/lib/rung-agent.mjs';
 import { ownedAgent, prefixedAgent } from '../cadence-core/bin/lib/agent-prefix.mjs';
 import { filterListing, LISTING_TYPES } from '../cadence-core/bin/lib/listing-filter.mjs';
 import { closeArgs, stepWindow, stepWindowArgv, withAgentId } from '../cadence-core/bin/lib/token-capture.mjs';
-import { NO_PROJECT_TEXT, panelOn, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv,
-  sightDraw, sightStart, sightStop, singleFlight } from '../cadence-core/bin/lib/pane.mjs';
+import { NO_PROJECT_TEXT, PANEL_FIELD, PANEL_OFF_TEXT, PANEL_ON_TEXT, PANEL_USAGE, panelArg, panelOn,
+  panelUnchanged, parseResolves, RUN_FAILED, SEAM_TIMEOUT_MS, seamAnswer, seamArgv, sightDraw, sightStart, sightStop,
+  singleFlight } from '../cadence-core/bin/lib/pane.mjs';
 import { paneView } from '../cadence-core/bin/lib/pane-view.mjs';
 import { EMPTY_METER, MAIN, meterDrop, meterStep } from '../cadence-core/bin/lib/cache-meter.mjs';
 
@@ -378,6 +381,32 @@ async function openPane($, p) {
 }
 
 /**
+ * Write the `panel` setting, as its `/config` row would. Off closes the pane
+ * first: the write reloads the module, and the pane goes with the band. The
+ * answer is the command's text, the host's deny included.
+ * @param {any} $
+ * @param {Pane} p
+ * @param {boolean} value
+ */
+async function setPanel($, p, value) {
+  if (!value) {
+    try {
+      await $.ui.close({ id: PANE_ID });
+    } catch {
+      // not up
+    }
+    p.open = false;
+  }
+  try {
+    const set = await $.config.set({ key: `${$.plugin.name}.${PANEL_FIELD}`, value });
+    if (set && set.deny !== undefined) return { text: panelUnchanged(String(set.deny)) };
+  } catch {
+    return { text: panelUnchanged('') };
+  }
+  return { text: value ? PANEL_ON_TEXT : PANEL_OFF_TEXT };
+}
+
+/**
  * @param {any} on the host's hook registrar
  * @param {unknown} [options] the plugin's userConfig values; a change reloads
  *   the module, so they are fixed for this activation
@@ -564,7 +593,7 @@ export function register(on, options) {
 
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: PANEL_COMMAND, immediate: true,
+      await $.command.register({ name: PANEL_COMMAND, immediate: true, argumentHint: 'on | off',
         description: 'Open the Cadence pane: plans, running agents, UAT, captures, spend and next command' });
     } catch {
       // no command this session; the band still draws
@@ -572,9 +601,13 @@ export function register(on, options) {
     return next(e);
   });
 
+  // `/cad-panel` opens the pane whatever the setting; `on` and `off` write it.
   on('command.run', { command: PANEL_COMMAND }, async ($, e, next) => {
     await next(e);
-    return openPane($, pane);
+    const arg = panelArg(e.args);
+    if (arg === 'open') return openPane($, pane);
+    if (arg === null) return { text: PANEL_USAGE };
+    return setPanel($, pane, arg === 'on');
   });
 
   // `/cad-panel`'s empty answer draws as a bare `cadence:`; draw one dim
