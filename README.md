@@ -62,9 +62,9 @@ A one-line band sits above the prompt in any repo with a `.planning/` directory:
 
 `/cad-panel`, or `p` on the band, opens the pane: the current phase's plans and which are done, each running agent with its role, rung and model, the UAT counts, the open captures, the phase's token spend (the same figure `/cad-report` prints, with its exclusions named), and the next command. `n` puts that command in the prompt. When the cursor and the files disagree about which phase is open, the pane says so instead of picking one.
 
-![The Cadence pane docked beside the transcript. Phase 9 of 9, Bounded guard process and storage access, status planned, next /cad-execute 9. The plans bar reads 2 of 3, with PLAN-1.md and PLAN-2.md checked and PLAN-3.md open. One agent is running, cad-executor at rung xhigh on opus. Two captures are open, and spend reads 2,745,857 tokens with 3 dispatches unrecorded, excluding the orchestrator's own turns and figureless returns.](./docs/screenshots/cad-panel.png)
+![The Cadence pane docked beside the transcript. Phase 9 of 9, Bounded guard process and storage access, status executing, next /cad-execute 9. The plans bar reads 1 of 3, with PLAN-1.md checked and PLAN-2.md and PLAN-3.md open. One agent is running, cad-executor at rung xhigh, its model unrecorded. Two captures are open, and spend reads 2,745,857 tokens with 3 dispatches unrecorded, excluding the orchestrator's own turns and figureless returns.](./docs/screenshots/cad-panel.png)
 
-*Mid-execute: two of phase 9's three plans are done, the executor is on the third at the xhigh rung, and the spend line counts the dispatches it has no figure for and names what it excludes.*
+*Mid-execute: one of phase 9's three plans is done, the executor is running at the xhigh rung, and the spend line counts the dispatches it has no figure for and names what it excludes.*
 
 The module does more than draw. [The module](#the-module) below lists everything it does and the one file it writes.
 
