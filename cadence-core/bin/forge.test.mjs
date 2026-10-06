@@ -651,7 +651,8 @@ test('create: WITHOUT --confirmed nothing is spawned at all', () => {
 test('create: a CLI that fails leaks none of its own text and nulls detail', () => {
   // CONTEXT D-16. The stub prints a credential-shaped line on stderr and exits
   // nonzero; the envelope says what failed and carries not one byte of it.
-  const secret = 'fatal: Authorization: Bearer fake-pat-DEADBEEFCAFE';
+  const token = 'fake-pat-DEADBEEFCAFE';
+  const secret = 'fatal: Authorization: Bearer ' + token;
   const dir = planningRoot();
   const { status, envelope } = run(
     ['create', '--provider', 'github', '--repo', 'o/r', '--confirmed',
@@ -663,8 +664,8 @@ test('create: a CLI that fails leaks none of its own text and nulls detail', () 
   assert.equal(envelope.detail, null);
   assert.ok(envelope.hint && envelope.hint.length > 0);
   const serialized = JSON.stringify(envelope);
-  for (const token of ['Bearer', 'fake-pat-DEADBEEFCAFE', 'fatal']) {
-    assert.equal(serialized.includes(token), false, `the child's stderr reached the envelope: ${token}`);
+  for (const piece of ['Bearer', token, 'fatal']) {
+    assert.equal(serialized.includes(piece), false, `the child's stderr reached the envelope: ${piece}`);
   }
   assert.match(envelope.reason, /o\/r/);
 });

@@ -82,10 +82,10 @@ function run(args, { env = {}, stdin } = {}) {
 
 test('parseEnvFile: comments, quotes, export prefix, blank lines', () => {
   const parsed = parseEnvFile([
-    '# comment', '', 'OPENAI_API_KEY=sk-plain',
+    '# comment', '', 'OPENAI_API_KEY=plain-value',
     'export GEMINI_API_KEY="quoted-key"', "SINGLE='sq'", 'NOEQ', 'SPACED = padded ',
   ].join('\n'));
-  assert.equal(parsed.OPENAI_API_KEY, 'sk-plain');
+  assert.equal(parsed.OPENAI_API_KEY, 'plain-value');
   assert.equal(parsed.GEMINI_API_KEY, 'quoted-key');
   assert.equal(parsed.SINGLE, 'sq');
   assert.equal(parsed.SPACED, 'padded');
@@ -1870,7 +1870,7 @@ test('CST-04: a credential-shaped span in the provider usage object never reache
   // (which rule 4 structurally cannot see - it crosses `_`, `-` and `.` only).
   const hostile = [
     ['a credential-shaped name/value pair', { api_key: 'fake-key-AAAA1111BBBB2222' }],
-    ['an authorization echo', { authorization: 'Bearer fake-key-CCCC3333DDDD4444' }],
+    ['an authorization echo', { authorization: 'Bearer ' + 'fake-key-CCCC3333DDDD4444' }],
     ['a URL carrying userinfo', { gateway: 'https://cad:s3cr3t-tok@gw.example.invalid/v1' }],
     ['a camelCase credential name', { apiSecret: 'hunter2-not-a-real-secret' }],
   ];

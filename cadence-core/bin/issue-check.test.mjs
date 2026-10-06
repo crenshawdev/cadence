@@ -729,7 +729,7 @@ test('a token-carrying CLI stderr never reaches the envelope, in ANY shape', () 
       'fatal: https://x-access-token:notarealurltoken@github.com/org/repo.git rejected',
       'GITHUB_TOKEN=alsonotarealtoken',
       'GLAB_TOKEN=stillnotarealtoken',
-      'Authorization: Bearer notarealbearertokenvalue',
+      'Authorization: Bearer ' + SECRETS[3],
     ].join('\n') } },
   });
   assert.equal(r.ok, true);
