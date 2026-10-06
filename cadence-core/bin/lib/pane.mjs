@@ -68,6 +68,46 @@ export const NO_CURSOR_NEXT = 'next · no readable cursor · run /cad-progress';
 export const NO_PROJECT_TEXT =
   'No .planning/ here, so there is no Cadence pane to open. /cad-new-project or /cad-adopt starts one.';
 
+/** The plugin's userConfig field that turns the band and token capture on: `<plugin>.panel` in `/config`. */
+export const PANEL_FIELD = 'panel';
+
+/**
+ * Whether the band draws and token capture runs: the `panel` field, as
+ * `register(on, options)` receives it. Off unless it is exactly true, so a
+ * host that hands no options runs neither.
+ * @param {unknown} options
+ */
+export function panelOn(options) {
+  return typeof options === 'object' && options !== null && /** @type {any} */ (options)[PANEL_FIELD] === true;
+}
+
+/**
+ * What `/cad-panel <args>` asks for: `open` with no argument, `on` or `off`
+ * in any case, or null for anything else.
+ * @param {unknown} args
+ * @returns {'open' | 'on' | 'off' | null}
+ */
+export function panelArg(args) {
+  const arg = String(args ?? '').trim().toLowerCase();
+  if (arg === '') return 'open';
+  return arg === 'on' || arg === 'off' ? arg : null;
+}
+
+/** `/cad-panel on`'s answer once the setting is written. */
+export const PANEL_ON_TEXT = 'Cadence band and token capture on. /cad-panel off turns them off.';
+/** `/cad-panel off`'s answer once the setting is written. */
+export const PANEL_OFF_TEXT = 'Cadence band and token capture off. /cad-panel on turns them back on.';
+/** `/cad-panel` with an argument it does not take. */
+export const PANEL_USAGE = '/cad-panel opens the pane. /cad-panel on or /cad-panel off turns the band and token capture on or off.';
+
+/**
+ * `/cad-panel on` or `off`'s answer when the setting was not written.
+ * @param {string} reason the host's deny, or '' when the write threw
+ */
+export function panelUnchanged(reason) {
+  return `The panel setting did not change${reason ? `: ${reason}` : ''}. It is "Cadence band and token capture" in /config.`;
+}
+
 /** How long one seam run may take before the host kills it. */
 export const SEAM_TIMEOUT_MS = 10000;
 

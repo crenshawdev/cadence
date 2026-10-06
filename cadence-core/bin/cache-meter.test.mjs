@@ -119,13 +119,13 @@ test('the formats', () => {
 
 // --- the module feeds it -------------------------------------------------------
 
-/** Every handler of one `register`, by pattern and component, so they share the module's state. */
+/** Every handler of one `register`, by pattern and component, so they share the module's state; the band's on. */
 function module() {
   /** @type {Map<string, Function>} */
   const by = new Map();
   register((/** @type {string} */ pattern, /** @type {any} */ a, /** @type {any} */ b) => {
     by.set(b === undefined ? pattern : `${pattern}:${a.component ?? ''}`, b === undefined ? a : b);
-  });
+  }, { panel: true });
   return by;
 }
 

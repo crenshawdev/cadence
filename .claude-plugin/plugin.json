@@ -2,7 +2,7 @@
   "name": "cadence",
   "displayName": "Cadence",
   "description": "A plan/execute/verify loop for a single developer in Claude Code, with adversarial review at every gate: plans and diffs get refuted by a fresh Claude subagent or a panel of outside models (OpenAI, Gemini, DeepSeek), not just approved. State lives in files, not the conversation, so you clear aggressively and keep both your context and your token bill lean.",
-  "version": "3.8.5",
+  "version": "3.8.6",
   "author": {
     "name": "John Crenshaw"
   },
@@ -15,5 +15,13 @@
     "claude-code",
     "software-development",
     "git"
-  ]
+  ],
+  "userConfig": {
+    "panel": {
+      "type": "boolean",
+      "title": "Cadence band and token capture",
+      "description": "The one-line Cadence band above the prompt with its [ pane ] button, and the step-window token figures the module records for /cad-report. Off by default. /cad-panel on or /cad-panel off flips it, and /cad-panel opens the pane either way.",
+      "default": false
+    }
+  }
 }
