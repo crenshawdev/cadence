@@ -7,6 +7,22 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.8.5] - 2026-10-06
+
+The pane's cache figure on a loop's first request.
+
+### Fixed
+
+- **A loop's first request shows what it wrote, not a hit rate.** A first
+  request has to write whatever of its prefix the cache does not hold yet, so
+  the pane opened every session near 60% and every agent's row lower, a figure
+  that said nothing about whether the cache was holding. Until a loop has sent
+  a second request, the CACHE section reads `main first request, 16.6k written`
+  and an agent's row reads `cache first request, 9.0k written`, and the main
+  loop's `(last ...)` rate waits for the second request too. The meter, its
+  rate and its breaks are unchanged. It says first and not cold because after a
+  module reload the first request the meter sees may already be cached.
+
 ## [3.8.4] - 2026-10-06
 
 The prompt cache, on the band and in the pane.

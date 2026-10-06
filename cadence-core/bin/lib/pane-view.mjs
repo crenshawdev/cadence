@@ -112,7 +112,7 @@ function planRows(lines, bar) {
 
 /**
  * AGENTS: one row per running agent behind a cyan `●`, the first beside the
- * head, then its cache rate once it has sent a request, and its breaks.
+ * head, then its cache figure once it has sent a request, and its breaks.
  * @param {readonly import('./pane.mjs').RosterEntry[]} roster
  * @param {readonly import('./pane.mjs').Sight[]} sights
  * @param {import('./pane.mjs').Snapshot} snapshot
@@ -125,7 +125,7 @@ function agentLines(roster, sights, snapshot, meter) {
   return lines.map((line, i) => {
     const loop = meter.loops.get(roster[i].id);
     /** @type {Row} */
-    const cache = loop ? [{ text: ' · ', dim: true }, { text: `cache ${percent(hitRate(loop))}` }] : [];
+    const cache = loop ? [{ text: ' · ', dim: true }, { text: `cache ${rateText(loop)}` }] : [];
     if (loop && loop.breaks) cache.push({ text: ' · ', dim: true }, { text: breaksText(loop.breaks), color: 'yellow' });
     return [i === 0 ? head('AGENTS') : { text: ' '.repeat(LABEL_CELLS) },
       { text: '●', color: 'cyan' }, { text: ` ${line}` }, ...cache];
@@ -190,8 +190,9 @@ function spendRows(spend, width) {
 
 /**
  * CACHE: the main loop's hit rate over the session and on its last request,
- * its breaks with the last one's tokens lost, and the breaks in agents, then
- * a dim line saying whose figures they are.
+ * or what its first request wrote while that is all it has sent, its breaks
+ * with the last one's tokens lost, and the breaks in agents, then a dim line
+ * saying whose figures they are.
  * @param {import('./cache-meter.mjs').Meter} meter
  * @param {number} width the pane's width, which the caveat wraps inside
  * @returns {Row[]}
@@ -200,13 +201,25 @@ function cacheRows(meter, width) {
   const main = meter.loops.get(MAIN);
   if (!main) return [[head('CACHE'), { text: 'no request yet this session', dim: true }]];
   /** @type {Row} */
-  const row = [head('CACHE'), { text: `main ${percent(hitRate(main))}` }, { text: ` (last ${percent(main.last)})`, dim: true }];
+  const row = [head('CACHE'), { text: `main ${rateText(main)}` }];
+  if (main.calls > 1) row.push({ text: ` (last ${percent(main.last)})`, dim: true });
   if (main.breaks) row.push({ text: ' · ', dim: true }, { text: `${breaksText(main.breaks)}, last ${kilo(main.lost)} lost`, color: 'yellow' });
   const agents = meter.breaks - main.breaks;
   if (agents > 0) row.push({ text: ' · ', dim: true }, { text: `${agents} in agents`, color: 'yellow' });
   const room = Math.max(10, width - LABEL_CELLS);
   return [row, ...wrapWords('This session, live: not part of the phase\'s spend', room)
     .map((line) => [{ text: ' '.repeat(LABEL_CELLS) }, { text: line, dim: true }])];
+}
+
+/**
+ * A loop's hit rate over the session, or what its first request wrote while
+ * that is all it has sent: one request's rate is only its cold write. After a
+ * module reload that first request may be warm, so this says first, not cold.
+ * @param {import('./cache-meter.mjs').Loop} loop
+ * @returns {string}
+ */
+function rateText(loop) {
+  return loop.calls === 1 ? `first request, ${kilo(loop.write)} written` : percent(hitRate(loop));
 }
 
 /**
