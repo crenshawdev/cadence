@@ -100,6 +100,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch \
   workflow.test_evidence \
+  workflow.check_inspection \
   roles.cad-executor.codex.enabled
 ```
 
@@ -299,7 +300,11 @@ dispatched; the digest deliberately does not carry it. Open a report file at
 three kinds of moment only: the `summary` step, once per plan; a continuation
 branch, where you read ONLY the task numbers and commit hashes for the `git log`
 confirmation that branch already performs; and `locate`'s replay stop, which
-reads the FIRST LINE alone. Nowhere else, and never back into a
+reads the FIRST LINE alone. With `workflow.check_inspection` true there are two
+more: the check inspection after a plan's risk step, which appends the user's
+answer and, on a reply naming a check or test wrong, rewrites the first line;
+and `summary`'s read of each rotated `plan-<k>.<n>.md` sibling for its
+`Check inspection:` block alone. Nowhere else, and never back into a
 dispatch prompt - re-inlining the table returns the bytes the file exists to
 move out. Before a worktree branch is merged its report lives in the worktree,
 not here: `git worktree list --porcelain` gives the worktree root for branch
@@ -501,6 +506,33 @@ next reader cannot see.
 Fire ONCE here, on the committed range, never per risky commit and never
 mid-plan.
 
+**Check inspection.** With `workflow.check_inspection` true, inspect the plan's
+checks once its risk step has settled - `risk-check status` above no longer
+refuses, or the `risk_check_skipped` event was appended for a plan that landed
+nothing - and before the `diff` fire below and the next plan's dispatch:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-checks <the plan file>
+```
+
+Then ask ONE open-ended question through the ask-user seam. It lists every
+check and every listed test the answer carries, each with its command, its test
+file, its function and its claim - a check's criterion and Expected, a test's
+Asserts and Catches - marking each `human-verify:` check as such, and asks the
+user to confirm that each one tests what it claims and stubs nothing it asserts
+about. A plan the answer reports as carrying neither section gets one line
+saying there is nothing to inspect, and no ask. Append the reply verbatim to
+`<plandir>/reports/plan-<k>.md`, after a line reading `Check inspection:`. A
+plain confirmation: the plan is done. A reply naming a check or test as wrong -
+not testing what it claims, or stubbing what it asserts about - rewrites the
+report's first line, and only that line, to `PLAN CHECKPOINT: structural`, so
+`replay-check` and `status` count the plan outstanding. Then take
+`handle_checkpoint`'s structural arm (its consult offer, then approve, adjust or
+stop) with the named items as the deviation, each named with the task that
+delivers it: a check's Task cell, or a test's label task. A continuation that
+completes the plan again meets the inspection again. With the switch false,
+nothing here runs.
+
 Then fire the `diff` review trigger
 (references/review-triggers.md) with the refs
 `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
@@ -581,6 +613,11 @@ With `workflow.test_evidence` true, that continuation prompt also carries
 `execute_sequential`'s `<test_evidence>` block, beside the Codex-mode line, and
 so does every re-dispatched remainder the partial and turn-cap arms send; when
 it is false, nothing is added.
+
+With `workflow.check_inspection` true and the report carrying a
+`Check inspection:` block, that continuation prompt also tells the executor to
+carry the block forward: copy it, verbatim, into the report it writes after the
+contract's rotation, which would otherwise move it aside.
 </step>
 
 <step name="execute_parallel">

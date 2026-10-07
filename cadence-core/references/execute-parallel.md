@@ -63,6 +63,10 @@ on this path is a real defect to report, not the fork-point default.
    The same triple and never the phase-wide arm, which compares no range and
    would clear this plan on a record an earlier and narrower one left. The plan
    is NOT reported done while that call refuses.
+   Then the check inspection `workflows/execute.md` states runs for that plan; a
+   structural continuation it causes runs in the main tree, on the sequential
+   path, as the fix dispatch there does, because step 4 has already removed
+   that plan's worktree.
 
    Then fire the
    `diff` trigger for every plan CONCURRENTLY in one message (artifact: shape
