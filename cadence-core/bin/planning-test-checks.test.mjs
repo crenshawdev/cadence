@@ -594,3 +594,24 @@ test('a report built from execute.md\'s <test_evidence> header rows attaches its
   assert.ok(r.checks[0].evidence.control);
   assert.ok(r.tests[0].evidence.control);
 });
+
+// --- a heading, a name, a line and a red run the read once let through -------
+
+test('a near-miss section heading is an issue at its line, never a plan listing nothing', () => {
+  const cases = [
+    [plan({ map: MAP_HEAD + '| AC1 | 1 | x | none | none | y | z | w |\n' }), '## Evidence map', ['## Evidence Map', '### Evidence map']],
+    [plan({ tests: '**Task 1** `t.mjs` `node t.mjs`\n\n' + TESTS_HEAD + '| a | b | c | d |\n' }), '## Tests', ['## tests', '### Tests']],
+  ];
+  for (const [base, exact, nears] of cases) {
+    for (const near of nears) {
+      const text = base.replace(`${exact}\n`, `${near}\n`);
+      const r = parseTestChecks(text);
+      assert.equal(r.sections, 'neither', near);
+      assert.deepEqual(r.issues.map((i) => i.line), [lineOf(text, near)], near);
+      assert.match(r.issues[0].reason, new RegExp(`not the section heading ${exact}`), near);
+      const j = judge(inRepo(text, report({ section: false })).plan);
+      assert.deepEqual([j.ok, j.reason], [false, 'evidence-short'], near);
+      assert.match(j.detail, new RegExp(`plan line ${lineOf(text, near)}:`), near);
+    }
+  }
+});

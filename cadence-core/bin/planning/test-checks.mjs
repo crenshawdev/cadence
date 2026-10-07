@@ -92,12 +92,21 @@ function parseTestChecks(text) {
 
   // The task numbers the plan declares, read outside fences the same way
   // sectionSpan reads its headings, so a fenced example task is not one.
+  // The same pass names a near-miss section heading (`## Evidence Map`,
+  // `### Tests`): the sections are read only under their exact headings, and a
+  // near miss would otherwise read as a plan listing nothing.
   const tasks = new Set();
   let fenceOpen = false;
-  for (const l of lines) {
+  for (const [i, l] of lines.entries()) {
     if (/^ {0,3}(`{3,}|~{3,})/.test(l)) { fenceOpen = !fenceOpen; continue; }
-    const m = !fenceOpen && l.match(/^### Task (\d+)\b/);
+    if (fenceOpen) continue;
+    const m = l.match(/^### Task (\d+)\b/);
     if (m) tasks.add(Number(m[1]));
+    const h = l.trim();
+    const near = h.match(/^#{1,6}\s+(evidence\s+map|tests)\s*$/i);
+    if (near && h !== '## Evidence map' && h !== '## Tests') {
+      issue(i, `heading "${h}" is not the section heading ${/^t/i.test(near[1]) ? '## Tests' : '## Evidence map'}, so nothing under it was read`);
+    }
   }
   const taskOf = (/** @type {string} */ cell) => {
     const m = cell.match(/^(?:Task\s+)?(\d+)$/i);
@@ -405,7 +414,7 @@ function cmdTestEvidence(paths) {
       'only a PLAN COMPLETE report is judged - nothing was written');
   }
   const counts = { checks: checks.length, tests: tests.length };
-  if (parsed.sections === 'neither') {
+  if (parsed.sections === 'neither' && !parsed.issues.length) {
     return ok({ plan: planPath, report: report.path, state: 'lists-nothing', ...counts,
       note: 'the plan carries neither ## Evidence map nor ## Tests, so there is nothing to require' });
   }
