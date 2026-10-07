@@ -7,6 +7,11 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.8.7] - 2026-10-07
+
+git-guard follows `-C` to the repository a commit lands in, and `design-notes/`
+leaves the repository to make room under the plugin directory's limit.
+
 ### Fixed
 
 - **git-guard checks the repository a commit lands in.** `git -C <dir> commit`
@@ -2954,6 +2959,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.8.7]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.7
 [3.8.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.4
 [3.8.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.3
 [3.8.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.2
