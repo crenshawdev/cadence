@@ -50,7 +50,9 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
   spawned, and `review.request_timeout_ms` as a wall-clock SIGKILL of the run and
   what it started (`transport`), not as socket inactivity - and its output past
   4 MiB is `over-response`. Its event carries `transport: "codex"`, and its
-  `usage` and `usage_raw` come from the `turn.completed` event.
+  `usage` and `usage_raw` come from the `turn.completed` event. A temp dir the
+  run could not remove (EBUSY on win32) is left behind and never adds a line:
+  a review that finished stays `ok` and says so in `detail`.
 - The payload is FENCED before the cap: every string field crosses one filter -
   URL userinfo, an `authorization` echo, a credential-shaped `name=value` - so
   `over-cap` measures what actually leaves the machine. `redactions: <n>` on the

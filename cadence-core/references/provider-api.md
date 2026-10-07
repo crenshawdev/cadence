@@ -40,13 +40,24 @@ codex-cli 0.160.1 on a ChatGPT login, 2026-10-07. No key is read; `consult` and
 
 - **Argv:** `codex exec -C <empty temp dir> --skip-git-repo-check -s read-only
   --ephemeral`, `--disable <feature>` for every tool-giving feature in
-  `CODEX_DISABLED_FEATURES`, `-c web_search=disabled`, `--output-schema <file>`,
-  `-o <file>`, `--json`, `-m <model>`, and `-c model_reasoning_effort=<effort>`
-  only when an effort was given (`minimal` sent as `low`). `--disable
-  shell_tool` alone left `exec_command` and web search reachable; `unified_exec`
-  and the `web_search` setting close them. An unknown feature name exits 1.
+  `CODEX_DISABLED_FEATURES`, `-c web_search=disabled`,
+  `-c project_root_markers=[]`, `--output-schema <file>`, `-o <file>`,
+  `--json`, `-m <model>`, and `-c model_reasoning_effort=<effort>` only when an
+  effort was given (`minimal` sent as `low`). `--disable shell_tool` alone left
+  `exec_command` and web search reachable; `unified_exec` and the `web_search`
+  setting close them. An unknown feature name exits 1. Codex reads every
+  AGENTS.md from its cwd up to the nearest `.git` marker, so a `.git` above the
+  temp dir would load that tree's AGENTS.md into the prompt;
+  `project_root_markers=[]` makes the work dir its own root. `codex debug
+  prompt-input` (no model call) showed a planted ancestor AGENTS.md without it
+  and not with it, while CODEX_HOME's AGENTS.md loaded both times.
+- **Environment:** the parent's, minus `OPENAI_API_KEY`, `CODEX_API_KEY` and
+  `CODEX_ACCESS_TOKEN`, the three auth variables codex-cli 0.160.1 reads. The
+  last overrides the stored login, so all three go and the run uses whatever
+  `codex login` stored.
 - **Prompt:** on stdin, one prompt - the instruction, then the artifact between
-  BEGIN and END marker lines. Nothing from the payload is on argv (spawn fails
+  BEGIN and END marker lines carrying a random tag minted per call, so an
+  artifact holding a plain END line cannot close its own block. Nothing from the payload is on argv (spawn fails
   with E2BIG past 131,072 argument bytes, and a `-c` value is parsed as TOML).
 - **Schema:** `--output-schema` names a file holding `FINDING_SCHEMA` unchanged.
   Whether Codex enforces it or only requests it is unmeasured beyond one probe
