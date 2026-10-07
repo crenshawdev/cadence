@@ -615,3 +615,17 @@ test('a near-miss section heading is an issue at its line, never a plan listing 
     }
   }
 });
+
+test('a test name listed twice within one task is an issue at the second row, since (Task, Test) keys its control', () => {
+  const text = plan({ tests: '**Task 1** `a.test.mjs` `node --test a.test.mjs`\n\n' + TESTS_HEAD
+    + '| rejects empty | "" | throws | a missing guard |\n\n'
+    + '**Task 1** `c.test.mjs` `node --test c.test.mjs`\n\n' + TESTS_HEAD
+    + '| rejects empty | [] | throws | a missing guard |\n\n'
+    + '**Task 2** `b.test.mjs` `node --test b.test.mjs`\n\n' + TESTS_HEAD
+    + '| rejects empty | {} | throws | a missing guard |\n' });
+  const r = parseTestChecks(text);
+  const second = lineOf(text, '| rejects empty | [] |');
+  assert.deepEqual(r.issues.map((i) => i.line), [second]);
+  assert.match(r.issues[0].reason, new RegExp(`test "rejects empty" is already listed for Task 1 at line ${lineOf(text, '| rejects empty | "" |')}`));
+  assert.deepEqual(r.tests.map((t) => [t.task, t.test_file]), [[1, 'a.test.mjs'], [2, 'b.test.mjs']]);
+});

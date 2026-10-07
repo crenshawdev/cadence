@@ -163,6 +163,9 @@ function parseTestChecks(text) {
   /** @type {any[]} */
   const tests = [];
   if (testsSpan.start >= 0) {
+    // (Task, Test) is the key a control row matches on, so one name listed
+    // twice within a task could never get its second control.
+    const named = new Map();
     for (const t of tablesIn(lines, testsSpan.start + 1, testsSpan.end)) {
       if (!sameHeader(cells(lines[t.header]), TESTS_HEADER)) {
         issue(t.header, 'table header is not the tests header | Test | Supplied | Asserts | Catches |');
@@ -195,6 +198,12 @@ function parseTestChecks(text) {
           issue(r, `row has ${c.length} cells where the header has ${TESTS_HEADER.length}`);
           continue;
         }
+        const key = `${task}\0${c[0]}`;
+        if (named.has(key)) {
+          issue(r, `test "${c[0]}" is already listed for Task ${task} at line ${named.get(key)}`);
+          continue;
+        }
+        named.set(key, r + 1);
         tests.push({
           task, test_file: spans[0], command: spans[1],
           test: c[0], supplied: c[1], asserts: c[2], catches: c[3], line: r + 1,
