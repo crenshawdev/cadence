@@ -9,10 +9,10 @@
 // The sandbox is pinned on the command line, where no config file can loosen
 // it: `workspace-write` (no network, `.git` read-only), no execpolicy `.rules`
 // (a persisted `allow` runs a command outside the sandbox), approvals refused
-// rather than waited on, network off and no extra writable roots. The user's
-// Codex config otherwise loads as set - model, effort, profile - because the
-// shell is the tool this path needs, so nothing is disabled the way the review
-// transport disables it.
+// rather than waited on, network and web search off and no extra writable
+// roots. The user's Codex config otherwise loads as set - model, effort,
+// profile - because the shell is the tool this path needs, so its features
+// stay on rather than being disabled the way the review transport disables them.
 //
 // The child never sees OPENAI_API_KEY, CODEX_API_KEY or CODEX_ACCESS_TOKEN, so
 // it runs on the stored Codex login and bills that plan.
@@ -53,6 +53,7 @@ function codexExecArgs(out) {
     '-c', 'approval_policy="never"',
     '-c', 'sandbox_workspace_write.network_access=false',
     '-c', 'sandbox_workspace_write.writable_roots=[]',
+    '-c', 'web_search=disabled',
     '-o', out, '-'];
 }
 

@@ -134,7 +134,8 @@ test('ok: argv pins the sandbox, the keys are dropped, stdin is the prompt', { s
   assert.equal(argv[0], 'exec');
   assert.match(joined, /(^| )-s workspace-write( |$)/);
   for (const a of ['--ignore-rules', 'approval_policy="never"',
-    'sandbox_workspace_write.network_access=false', 'sandbox_workspace_write.writable_roots=[]']) {
+    'sandbox_workspace_write.network_access=false', 'sandbox_workspace_write.writable_roots=[]',
+    'web_search=disabled']) {
     assert.ok(argv.includes(a), `argv lacks ${a}: ${joined}`);
   }
   for (const a of ['danger-full-access', '--dangerously-bypass-approvals-and-sandbox', '--worktree']) {
