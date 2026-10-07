@@ -156,8 +156,15 @@ unfinished one.
      check, a compile error or a quoting mistake is work to fix, not a reason to
      stop. Stop only when the task cannot be built as written without leaving
      its scope.
-   - **Tests.** Reserved for a later test-evidence switch's rules. Until one
-     fills it, the prompt says nothing here.
+   - **Tests.** Only when your dispatch prompt carries the test-evidence block
+     (`<test_evidence>`); without it the prompt says nothing here, so a Codex
+     prompt with the switch off is what it was. With it, this section carries:
+     the evidence-map checks whose Task cell is k, and task k's labelled
+     `## Tests` tables, copied from the plan; that block's red-first,
+     red-under-Break and negative-control instructions, verbatim; and a request
+     to report, in the final message, each red run's failing line and whether
+     it ran before the behaviour or under the Break, and each control's break,
+     failing line and restore.
    - **What to return.** A final message listing each file changed and why;
      each Verify command run, with its exact last output line; each choice the
      task left open and what was chosen; each new test and the defect it
@@ -195,12 +202,42 @@ unfinished one.
    Verify commits nothing, and its row says so; HEAD not moving is never read as
    done for a task whose Verify depends on uncommitted bytes.
 8. **Report.** Rewrite the report per `<report_file>`, copying the relevant
-   lines of Codex's final message into the task's Note.
+   lines of Codex's final message into the task's Note. With the test-evidence
+   block present, also write task k's `Test evidence:` rows, the rows copied
+   forward kept:
+   - **Red by** is `before` or `break`, as Codex's final message reports the
+     red run.
+   - **Red at** is `git rev-parse --short HEAD` as it stood when step 1's
+     before-state was taken: Codex commits nothing, so its red run ran on that
+     HEAD.
+   - The failing lines, breaks and restores are copied from Codex's final
+     message, the control rows of task k's checks that have a test file
+     included.
+   - Each **Passing line** comes from your own step-5 run of the check's
+     Command.
+   - A run Codex did not report gets no row, and the gap reaches the report
+     check as missing evidence. You still write no source file and run no
+     control yourself.
 
 ### Suite, continuations and trace
 
 After the last task, run the suite once as the contract states; green writes
 `PLAN COMPLETE`. A continuation skips the tasks its report names as committed.
+
+A continuation whose prompt carries a `test-evidence` rejection as its
+checkpoint outcome also runs one evidence-only `codex exec` for each committed
+task with missing rows, as that outcome's detail names them (each entry carries
+`(Task <n>)`), and for no other task:
+- Its prompt keeps step 2's sections up to **Scope**. Its **Tests** section asks
+  only for the missing runs: for each, apply the Break, run, keep the failing
+  line, and restore. It asks for no other change.
+- After it, confirm every declared path of that task is back at HEAD:
+  `git status --porcelain=v1 --untracked-files=all` lists none of them.
+- Then run each check's Command, or the test's command, yourself for the passing
+  line, and write the rows, a check's with `Red by: break` and **Red at** the
+  HEAD the run started on.
+- This is the one Codex run that task gets in this dispatch, so `### Failures`'
+  rule against re-running Codex on a task within a dispatch still holds.
 You write no trace event: the bracket around this dispatch is the
 orchestrator's.
 
@@ -218,8 +255,9 @@ Each of these returns the contract's existing `CHECKPOINT: blocked`, and nothing
 else does: the subcommand's `no-codex`, `codex-exit`, `codex-timeout` or
 `no-output`; a changed path outside the task's files; a dirty declared path
 before the first run; a failing Verify; failing static analysis; a `lease-check`
-refusal; a red suite after the last task. There is no other return arm, and none
-labelled timeout. On each:
+refusal; a red suite after the last task; a declared path not back at HEAD
+after an evidence-only run, named in `Need`. There is no other return arm, and
+none labelled timeout. On each:
 
 - Write the report first, its first line `PLAN CHECKPOINT: blocked`, with the
   rows completed so far.
