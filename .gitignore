@@ -18,10 +18,6 @@ scratch/
 # Working handoffs (local only, not published)
 /RESUME.md
 
-# Candid design explorations stay local; the dated records beside them are tracked,
-# because a rejected option with its evidence is what stops the next sweep re-deriving it
-/design-notes/dd-*.md
-
 # Raw planning queue — local recall only, keeps candid working notes out of the public repo
 /.planning/CAPTURE.md
 

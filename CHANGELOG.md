@@ -7,6 +7,15 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+### Removed
+
+- **`design-notes/` is out of the repository.** The thirteen dated working
+  notes took 14 of the plugin directory's 512 files and folders, and the repo
+  sat at exactly 512, so nothing new could be added. Git history keeps them:
+  `git show v3.8.6:design-notes/<name>` prints any of them. The schema and the
+  config catalog now cite the plan-task-ceiling arithmetic that way. Nothing
+  Cadence runs read them.
+
 ## [3.8.6] - 2026-10-06
 
 A switch for the band and token capture, off by default.
