@@ -380,6 +380,33 @@ Handle the executor's return:
   the state, and ask the user (ask-user seam) whether to re-dispatch the
   remainder or stop. Never silently re-run a plan on top of partial commits.
 
+**Test evidence at a complete return.** With `workflow.test_evidence` true,
+every `PLAN COMPLETE` return from a dispatched executor is checked before the
+complete arm records it - a first dispatch, a continuation, a re-dispatched
+remainder and the `risk_surface` fix dispatch alike:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-evidence <the plan file>
+```
+
+A digest reading `Commits: none (already applied)` is checked too. A dispatch
+that committed nothing still carries forward, or records, the rows the plan
+needs, and exempting it would pass a report a continuation never completed.
+On `ok:true` the complete arm proceeds; when the answer's `state` is
+`lists-nothing`, say in one line that the switch had nothing to require. On
+`ok:false` the seam has already rewritten the report's first line to
+`PLAN CHECKPOINT: blocked`, so `replay-check` and `status` count the plan
+outstanding: take `handle_checkpoint`'s `blocked` arm, relaying the answer's
+`detail` as what is needed, and run no risk sequence or diff fire for that plan
+until a continuation's complete return passes this check. A refusal that wrote
+nothing (no report, or a first line other than `PLAN COMPLETE`) is relayed as
+such and routes the same way. A replay is exempt only where `locate` already
+makes it so: `replay-check` leaves a plan whose report reads `PLAN COMPLETE` out
+of the dispatch set, so that plan never reaches this check. The trace close
+above is written exactly as before, its `--replay` flag included, since the
+executor did return complete. This adds no return arm and no `locate` arm, and
+with the switch false nothing here runs.
+
 **The worker key of a SECOND dispatch.** Three of those arms dispatch again, and
 the key is `<k>` - the plan number the first dispatch took, never a coined
 `1-fix`. A continuation, a re-dispatched remainder and a `risk_surface` fix pass

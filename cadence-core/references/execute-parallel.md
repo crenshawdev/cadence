@@ -29,6 +29,12 @@ on this path is a real defect to report, not the fork-point default.
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.test_command` -
    and run it once if set.
 
+   With `workflow.test_evidence` true, the `test-evidence` check
+   `workflows/execute.md` states at a complete return runs here per plan, once
+   its branch has merged and before its risk sequence; a rejected plan's
+   continuation runs in the main tree, on the sequential path, as the fix
+   dispatch there does.
+
    Then the risk sequence, per plan, in the main tree the merges landed in - a
    fire issued before them asks git for a commit this tree does not hold.
 
