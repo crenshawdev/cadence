@@ -233,8 +233,8 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
   - **Amended 2026-10-07: two opt-in Codex paths.** API reviewers stay the default cross-model
     path, and the reasons above still hold for them. Two switches now add `codex exec`, both
     off by default. The executor switch, `roles.cad-executor.codex.enabled`, has the `cad-executor` wrapper
-    run one `codex exec` per plan task in Codex's `workspace-write` sandbox, which has no network and
-    a `.git` Codex can't write. So the Claude wrapper checks each change, runs the task's Verify,
+    run one `codex exec` per plan task in Codex's `workspace-write` sandbox, which has no network or web search
+    and a `.git` Codex can't write. So the Claude wrapper checks each change, runs the task's Verify,
     commits and writes the report, every commit passes the hooks, and Codex can't push. The review
     transport, `review.providers.openai.transport` set to `codex`, sends the openai reviewer's
     `review` call through `codex exec` on the user's Codex login instead of the API, and openai

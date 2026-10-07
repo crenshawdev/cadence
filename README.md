@@ -173,7 +173,7 @@ For each task, OpenAI gets the whole plan verbatim, its goal, must-be-true list,
 
 The run is under the login `codex login` stored. Cadence removes `OPENAI_API_KEY` and `CODEX_API_KEY` from Codex's environment, so a key in your shell isn't what pays, and your Codex config loads as you set it. On a ChatGPT login it bills your Codex plan, and if you signed Codex in with an API key it bills that key.
 
-Codex runs in its `workspace-write` sandbox. Whatever your Codex config says, Cadence pins it to no network, no persisted exec-policy rules, no approvals and no extra writable roots, so Codex can't write `.git` and the Claude executor makes every commit. A missing `codex`, a failed run or a run past its time limit stops the plan as blocked, and nothing falls back to a Claude executor.
+Codex runs in its `workspace-write` sandbox. Whatever your Codex config says, Cadence pins it to no network, no web search, no persisted exec-policy rules, no approvals and no extra writable roots, so Codex can't write `.git` and the Claude executor makes every commit. A missing `codex`, a failed run or a run past its time limit stops the plan as blocked, and nothing falls back to a Claude executor.
 
 What Cadence doesn't police is what Codex writes to paths the repository ignores, build output, `.env` and the like. The executor checks every tracked and untracked change against the task's declared files, but leaves ignored paths out, because builds and Cadence's own hooks write there.
 
