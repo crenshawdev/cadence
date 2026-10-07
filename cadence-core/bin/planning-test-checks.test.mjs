@@ -7,9 +7,9 @@
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PLANNING } from './planning.test.mjs';
 import { parseTestChecks } from './planning/test-checks.mjs';
@@ -227,4 +227,28 @@ test('a path it cannot read is refused naming that path, never as internal', () 
   assert.notEqual(r.reason, 'internal');
   assert.match(r.detail, /\/nonexistent\/PLAN\.md/);
   assert.ok(r.hint);
+});
+
+// --- the planner's block and the parser are one grammar ----------------------
+
+test('a plan built from plan.md\'s <test_method> header rows and label line reads with no issue', () => {
+  const md = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'workflows', 'plan.md'), 'utf8');
+  const block = md.slice(md.indexOf('<test_method>'), md.indexOf('</test_method>')).split('\n');
+  const at = (prefix) => {
+    const i = block.findIndex((l) => l.startsWith(prefix));
+    assert.ok(i >= 0, `plan.md's <test_method> block has no line starting ${prefix}`);
+    return i;
+  };
+  const map = at('| Criterion |');
+  const tests = at('| Test |');
+  const label = block[at('**Task <n>**')].replace('<n>', '1');
+  const text = plan({
+    map: `${block[map]}\n${block[map + 1]}\n| AC1 rest | 1 | \`node a.mjs \\| wc\` | a.test.mjs | f | 1 | a | b |\n`,
+    tests: `${label}\n\n${block[tests]}\n${block[tests + 1]}\n| t | s | a | c |\n`,
+  });
+  const r = parseTestChecks(text);
+  assert.deepEqual(r.issues, []);
+  assert.equal(r.checks.length, 1);
+  assert.equal(r.checks[0].command, 'node a.mjs | wc');
+  assert.deepEqual([r.tests.length, r.tests[0].test_file], [1, '<test file>']);
 });

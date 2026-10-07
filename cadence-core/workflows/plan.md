@@ -39,6 +39,7 @@ Read config through the seam - one call for every key this workflow uses:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.plan_check workflow.inline_plan_threshold workflow.max_plan_tasks \
   workflow.max_plan_bytes \
+  workflow.test_attack workflow.test_evidence workflow.check_inspection workflow.independent_rerun \
   planning.commit_docs \
   git.protected_branches git.on_protected \
   git.base_branch memory.backend
@@ -193,6 +194,43 @@ never restate them in the dispatch tail; seam-spawn-agent.md's cache
 discipline.)
 ```
 
+When any of the four test switches `parse` read - `workflow.test_attack`,
+`workflow.test_evidence`, `workflow.check_inspection`,
+`workflow.independent_rerun` - is `true`, the prompt carries one more block,
+the `<test_method>` below, placed directly before `<recalled_memory>`, or
+directly before `</planning_context>` when that block is absent. With all four
+`false` it carries none of it, no heading and no blank line, and the prompt is
+the template above byte for byte. Gaps and revision modes reuse this prompt and
+so carry the block. It asks for the two plan-level sections, `## Evidence map`
+and `## Tests`, in exactly the grammar the `test-checks` seam parses; a change
+to one is a change to the other.
+
+```text
+<test_method>
+Test switches are on for this project. The plan carries two more plan-level sections, outside every task, so each task keeps its three fields.
+
+The `## Evidence map` section sits after `## Context` and before `## Tasks`. Open it with these rules, as its first sentences: every acceptance criterion this plan serves is bound to exactly one check, and a criterion with no check, or a check under no criterion, is a plan defect. Each check is written and run red before the behaviour it proves and green after. A check that cannot fail before its behaviour, because it pins something already true, runs red under its Break instead: the Break is applied, the check is seen to fail, and the code is restored. Expected values come from the design, never from the code under test. Then ONE table, one row per check:
+
+| Criterion | Task | Command | Test file | Function | Expected | Unit and fakes | Break |
+|---|---|---|---|---|---|---|---|
+
+- Criterion begins with a criterion token: the CONTEXT acceptance-criterion id the check serves (AC<N>), or, when CONTEXT holds no AC<N> criteria, MT<n> for the nth bullet of this plan's "Must be true when done", counted from 1. Text may follow the token. A token sits on one row only.
+- Task is the number of the task that delivers the check, the task in which its red run happens.
+- Command runs the check. A criterion only a human can observe has a Command that begins `human-verify:` and names what to observe.
+- Test file and Function name where the check's test lives, or are `none` for a command-only check.
+- Expected is the value or property, derived from the design. Unit and fakes names the one unit exercised and every seam it fakes. Break names the wrong implementation the check must fail under.
+
+The `## Tests` section sits after the last task and before `## Notes`. Open it with these rules, as its first sentences: a test not on this list is not written, and a test the executor believes is missing is a deviation in its report. Every listed test, and every check with a test file, gets a negative control: the guarded behaviour is broken, the test is seen to fail, and the code is restored. A check's control breaks it the way its Break names. The evidence-map checks are not repeated here. Then, per task that writes tests, one table per test file, each directly preceded, blank lines aside, by its label line, whose first backtick span names the test file and whose second names the command that runs it:
+
+**Task <n>** `<test file>` `<command that runs it>`
+
+| Test | Supplied | Asserts | Catches |
+|---|---|---|---|
+
+In either table a literal | inside a cell is written \| and a cell that is one backtick span stands for its content.
+</test_method>
+```
+
 Revision mode: dispatch a FRESH cad-planner (never resume the prior run - the
 plan on disk carries the grounding). Append the checker's issues verbatim in a
 `<checker_issues>` block and instruct: fix each issue with minimal edits to the
@@ -224,6 +262,10 @@ the census counts and a second copy that can drift from the first.
 `check_census` applies here too, under the same prohibition on a second
 spelling: run that step exactly as written once this step's `PLAN.md` is on
 disk, and do not continue while it refuses.
+
+With any of the four test switches on, the inline plan carries the same two
+sections, `## Evidence map` and `## Tests`, in the grammar of spawn_planner's
+`<test_method>` block.
 </step>
 
 <step name="handle_return">
