@@ -32,6 +32,41 @@ provider ships is selectable even if Cadence has never heard of it.
     and `output_tokens`.
 - **Detect:** `GET /v1/models` -> `{data:[{id, ...}]}`. IDs live in `data[].id`.
 
+## OpenAI through `codex exec` (review only)
+
+Used when `review.providers.openai.transport` is `codex`. Checked against
+codex-cli 0.160.1 on a ChatGPT login, 2026-10-07. No key is read; `consult` and
+`detect-models` stay on the Responses API above.
+
+- **Argv:** `codex exec -C <empty temp dir> --skip-git-repo-check -s read-only
+  --ephemeral`, `--disable <feature>` for every tool-giving feature in
+  `CODEX_DISABLED_FEATURES`, `-c web_search=disabled`, `--output-schema <file>`,
+  `-o <file>`, `--json`, `-m <model>`, and `-c model_reasoning_effort=<effort>`
+  only when an effort was given (`minimal` sent as `low`). `--disable
+  shell_tool` alone left `exec_command` and web search reachable; `unified_exec`
+  and the `web_search` setting close them. An unknown feature name exits 1.
+- **Prompt:** on stdin, one prompt - the instruction, then the artifact between
+  BEGIN and END marker lines. Nothing from the payload is on argv (spawn fails
+  with E2BIG past 131,072 argument bytes, and a `-c` value is parsed as TOML).
+- **Schema:** `--output-schema` names a file holding `FINDING_SCHEMA` unchanged.
+  Whether Codex enforces it or only requests it is unmeasured beyond one probe
+  that returned the exact shape, so `validateFindings` is the guarantee.
+- **Answer:** `-o` holds the final message. Success exits 0 with that file
+  written; a failed turn exits 1 and writes no `-o` file, and under `--json` its
+  error arrives on stdout as `turn.failed`. A model the login does not serve
+  fails that way with a 400 that names it.
+- **Usage:** the `usage` object of `turn.completed` on the `--json` stdout, with
+  keys `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`,
+  `output_tokens` and `reasoning_output_tokens`. The pair read is
+  `input_tokens` and `output_tokens`; whether `output_tokens` includes
+  `reasoning_output_tokens` is unmeasured, so the whole object rides as
+  `usage_raw`. Codex's harness adds roughly 13,000 to 15,000 input tokens per
+  call, mostly cached on repeat (14,708 cold, 12,881 with 10,752 cached). That
+  is plan usage, not API spend.
+- **Rate limits:** concurrent panel calls share one Codex plan and may hit its
+  limits. A limited call exits non-zero and is recorded as a review that did not
+  run (`codex-exit`).
+
 ## Gemini (Generative Language API, generateContent)
 
 - Host `https://generativelanguage.googleapis.com`. Auth header

@@ -128,9 +128,14 @@ taken, and nothing else in the review subsystem reads it.
   thinking time rather than detecting a dead
   connection. Set it too low and the blocking gates lose their cross-model
   voices to `reason:"transport"` while still reporting PASS.
+  Under `review.providers.openai.transport: codex` the openai call is this same
+  command, unchanged, and needs no key - the seam runs `codex exec` on the
+  user's Codex login - and this timeout rule still applies, the bound there
+  being a wall-clock kill of the run.
   - `ok:false` -> this reviewer is unavailable or unusable. Before dropping it,
     emit one visible line naming the degradation - the reviewer and its
-    `reason` (`no-key` names where to set the key), e.g. "cross-model reviewer
+    `reason` (`no-key` names where to set the key, `no-codex` names the
+    missing Codex CLI), e.g. "cross-model reviewer
     `openai` unavailable: no-key (set $OPENAI_API_KEY) - dropping it from the
     reviewer set". Do not swallow the reason silently. Drop the reviewer from
     the set. If dropping it empties the set, fall back to `claude-subagent`
