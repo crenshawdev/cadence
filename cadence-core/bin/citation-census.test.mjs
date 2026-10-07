@@ -16,7 +16,7 @@
 //     land red on a record no one may rewrite" (self-verify.mjs:1236).
 //   - `.planning/ROADMAP.md` (the executor contract forbids writing it at
 //     all), `.planning/ARCHIVE.md`, `REQUIREMENTS.md`'s `## Shipped` rows,
-//     `.planning/phases/*/` records and `design-notes/sweep-*.md` cite line
+//     and `.planning/phases/*/` records cite line
 //     numbers inside quotes of what was true when they were written -
 //     rewriting those would make a record say something it did not.
 //
