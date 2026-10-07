@@ -93,6 +93,24 @@ Assemble `{ instruction, artifact }` from the wiring table:
     `## Evidence map` or `## Tests` section that does not follow the grammar of
     `workflows/plan.md`'s `<test_method>` block, whose `line` is that line and
     whose `claim` says what it breaks.
+  - **`workflow.test_attack` `true`:** the instruction also asks the reviewer,
+    for every check in each plan's `## Evidence map` and every test in its
+    `## Tests`, to name a specific wrong implementation that would still pass
+    it. Each one named is ONE finding at severity `high`: `file` is the plan,
+    `line` is where the test or check is named, `claim` names the test, and
+    `failure_scenario` names the wrong implementation. A test for which none can
+    be named draws no finding. The findings schema does not change. The attack
+    follows the `plan` gate as step 1 resolved it, so `off` fires nothing and
+    the other arms treat these findings like any other.
+  - **The fire site's report, with `workflow.test_attack` `true`.** Once the
+    review's findings are in hand, at whichever point this fire reports them
+    under its gate, the fire site runs
+    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-checks <each PLAN file the payload names>`
+    and prints one line `<test>: none named` for each listed check and test
+    against which no reviewer raised a finding. That is the raised set, before
+    adjudication, so a killed finding still counts as an attack. A plan the
+    seam reports as carrying neither section gets one line saying it lists no
+    checks or tests.
 
   The finding shape, the gate and the reviewer set are unchanged: this is
   instruction text, so the claude-subagent payload and the cross-model

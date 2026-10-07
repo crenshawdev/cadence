@@ -589,6 +589,11 @@ Citations: {planned C of S} -> {committed C of S}; {the search was off | it surf
 Commit: {hash | not committed (planning.commit_docs false)}
 ```
 
+With `workflow.test_attack` on, the Review line is followed by the `none named`
+lines the `plan` fire site prints (references/review-triggers.md step 2) once
+the findings file is on disk; an advisory review still in flight reads as in
+flight, with no such lines yet.
+
 NAME the three states apart rather than leaving a reader to derive them from two
 numbers: the search was off (`backend: none` on the envelope), it surfaced
 nothing (`surfaced.count` 0 with no `backend` field), or it surfaced a non-empty
