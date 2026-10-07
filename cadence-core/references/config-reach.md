@@ -170,6 +170,7 @@ purpose test runs against the reach the author just replaced.
 | `review.providers.openai.tiers.flagship` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
 | `review.providers.openai.tiers.balanced` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
 | `review.providers.openai.tiers.cheap` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
+| `review.providers.openai.transport` | openai review calls only | `bin/review-provider.mjs` `review --provider openai`, read off the merged config to choose the HTTPS path or `codex exec`; `workflows/config-review.md` reads it to offer manual openai tier entry. `consult` and `detect-models` never read it |
 | `review.providers.gemini.tiers.flagship` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
 | `review.providers.gemini.tiers.balanced` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
 | `review.providers.gemini.tiers.cheap` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
