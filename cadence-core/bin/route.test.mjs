@@ -2565,3 +2565,58 @@ test('codex: a non-boolean switch warns, names the key and value, and reads off'
   assert.equal('codex_mode' in r, false);
   assert.ok(r.warnings.some((w) => w.includes('roles.cad-executor.codex.enabled') && w.includes('"yes"')));
 });
+
+// --- Codex mode: the wrapper's own model and rung (D-06) ---
+
+const wrapped = (codex) => ({ roles: { 'cad-executor': { model: 'opus', effort: 'xhigh', codex } } });
+
+test('codex: the wrapper model and rung decide the dispatch while Codex mode is on', () => {
+  const r = resolve('cad-executor', rawCfg(wrapped({ enabled: true, wrapper_model: 'haiku', wrapper_effort: 'low' })));
+  assert.equal(r.model, 'haiku');
+  assert.equal(r.model_source, 'roles.cad-executor.codex.wrapper_model');
+  assert.equal(r.pinned, false);
+  assert.equal(r.effort, 'low');
+  assert.equal(r.agent, 'cad-executor-low');
+  assert.match(r.agent_type, /:cad-executor-low$/);
+  assert.ok(r.reason.some((x) => x.includes('roles.cad-executor.codex.wrapper_effort')));
+  assert.equal('warnings' in r, false);
+});
+
+test('codex: with the switch off the wrapper keys are read for nothing', () => {
+  const off = resolve('cad-executor', rawCfg(wrapped({ enabled: false, wrapper_model: 'haiku', wrapper_effort: 'low' })));
+  const bare = resolve('cad-executor', rawCfg({ roles: { 'cad-executor': { model: 'opus', effort: 'xhigh' } } }));
+  assert.deepEqual(off, bare);
+  assert.equal(off.model, 'opus');
+  assert.equal(off.agent, 'cad-executor-xhigh');
+});
+
+test('codex: unset wrapper keys leave roles.cad-executor\'s model and rung', () => {
+  const r = resolve('cad-executor', rawCfg(wrapped({ enabled: true })));
+  assert.equal(r.codex_mode, true);
+  assert.equal(r.model, 'opus');
+  assert.equal(r.model_source, 'roles.cad-executor.model');
+  assert.equal(r.effort, 'xhigh');
+  assert.equal(r.agent, 'cad-executor-xhigh');
+});
+
+test('codex: a wrapper model the host does not accept warns and sends no model', () => {
+  const r = resolve('cad-executor', rawCfg(wrapped({ enabled: true, wrapper_model: 'gpt-5' })));
+  assert.equal(r.model, null);
+  assert.equal(r.model_source, 'session');
+  assert.ok(r.warnings.some((w) => w.includes('roles.cad-executor.codex.wrapper_model') && w.includes('"gpt-5"')));
+});
+
+test('codex: a wrapper rung no file carries warns and the start rung stands', () => {
+  const r = resolve('cad-executor', rawCfg(wrapped({ enabled: true, wrapper_effort: 'huge' })));
+  assert.equal(r.effort, 'xhigh');
+  assert.equal(r.agent, 'cad-executor-xhigh');
+  assert.ok(r.warnings.some((w) => w.includes('roles.cad-executor.codex.wrapper_effort') && w.includes('"huge"')));
+});
+
+test('codex: a retry holds the wrapper rung, not the start rung', () => {
+  const body = { model: { escalate_on_failure: true }, ...wrapped({ enabled: true, wrapper_effort: 'medium' }) };
+  const r = resolve('cad-executor', rawCfg(body), ['--attempt', '2']);
+  assert.equal(r.effort, 'medium');
+  assert.equal(r.agent, 'cad-executor-medium');
+  assert.equal(r.escalated, false);
+});

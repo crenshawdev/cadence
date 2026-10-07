@@ -52,6 +52,11 @@
 //                              Either layer turns it on; a cad-executor resolve
 //                              then carries `codex_mode: true`, absent when off,
 //                              and a retry holds its rung
+//   roles.cad-executor.codex.wrapper_model
+//   roles.cad-executor.codex.wrapper_effort
+//                              the wrapper's model and rung, read only while
+//                              Codex mode is on; unset, roles.cad-executor's
+//                              own answer stands
 //   review.triggers.*.gate     a gate a LAYER set, which must be one of that
 //                              key's own `values` and then wins over the key's
 //                              schema default, reporting the disagreement
@@ -1088,6 +1093,22 @@ function resolve(opts) {
       + 'a boolean; Codex mode stays off');
   }
 
+  // The wrapper's own rung (D-06), in Codex mode only. It replaces the start
+  // rung outright, so it is also the rung the retry hold below keeps. A value
+  // naming no filed rung loses its turn the way every rung source above does:
+  // it warns and the start rung stands. With the switch off it is never read.
+  const wrapperEffort = codexMode ? codex.wrapper_effort : undefined;
+  if (wrapperEffort !== undefined && wrapperEffort !== null) {
+    if (typeof wrapperEffort === 'string' && rungFile(opts.role, wrapperEffort)) {
+      effort = wrapperEffort;
+      reason.push(`roles.cad-executor.codex.wrapper_effort="${wrapperEffort}" (config): the `
+        + 'wrapper runs at this rung');
+    } else {
+      warnings.push(`roles.cad-executor.codex.wrapper_effort=${JSON.stringify(wrapperEffort)} `
+        + `names no rung this role has (${hasRungs.join(', ')}); the start rung "${effort}" stands`);
+    }
+  }
+
   let agent = agentFor(effort);
   let escalated = false;
 
@@ -1418,7 +1439,24 @@ function resolve(opts) {
   const rolesModel = roleEntry.model;
   const rolesModelKey = `roles.${opts.role}.model`;
   const pin = cfg.overrides[opts.role];
-  if (rolesModel !== null && rolesModel !== undefined) {
+  // The wrapper's own model (D-06), in Codex mode only, and on the terms the
+  // roles key below states: once set it owns the answer, so a value the host
+  // does not accept sends no model parameter rather than falling through.
+  // `pinned` stays false, since that flag means `model.overrides` chose.
+  const wrapperModel = codexMode ? codex.wrapper_model : undefined;
+  const wrapperModelKey = 'roles.cad-executor.codex.wrapper_model';
+  if (wrapperModel !== null && wrapperModel !== undefined) {
+    if (HOST_MODELS.includes(wrapperModel)) {
+      reason.push(`${wrapperModelKey}=${wrapperModel} (config): the wrapper's model`);
+      model = wrapperModel;
+      modelSource = wrapperModelKey;
+    } else {
+      warnings.push(`${wrapperModelKey}=${JSON.stringify(wrapperModel)} is not a model the host `
+        + `accepts (${HOST_MODELS.join(', ')}); no model parameter is sent and the dispatch `
+        + "runs at the session's model");
+      reason.push(`${wrapperModelKey} ignored (the host does not accept it); no model parameter`);
+    }
+  } else if (rolesModel !== null && rolesModel !== undefined) {
     // A roles key, once SET, owns the answer for this role whether or not the
     // host accepts its value. Falling through to the pin on a rejected string
     // would hand the role back to an older key the user has already replaced -
