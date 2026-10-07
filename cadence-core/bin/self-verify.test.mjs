@@ -326,6 +326,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`workflow.lint_command` `workflow.max_plan_tasks` `workflow.max_plan_bytes`\n' +
     '`workflow.max_dispatch_tokens`\n' +
+    '`workflow.test_attack` `workflow.test_evidence` `workflow.check_inspection` `workflow.independent_rerun`\n' +
     '`parallelization.enabled` `parallelization.max_concurrent_agents`\n' +
     '`parallelization.min_plans_for_parallel` `parallelization.use_worktrees`\n' +
     '`git.protected_branches` `git.on_protected` `git.integration_branch`\n' +
