@@ -74,6 +74,29 @@ Assemble `{ instruction, artifact }` from the wiring table:
 - `instruction` = what to critique and how, e.g. "Refute this phase plan against
   its goal" / "Refute this diff; find the input that breaks it." Keep it specific
   to the trigger.
+- **The `plan` trigger's test rule** (the `plan` trigger alone). The fire reads
+  the four test switches, `workflow.test_attack`, `workflow.test_evidence`,
+  `workflow.check_inspection` and `workflow.independent_rerun`, from the calling
+  workflow's own config batch when that batch holds them, as `/cad-plan`'s
+  `parse` does. A fire reached any other way, `/cad-plan-review` among them,
+  reads them in ONE call:
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.test_attack workflow.test_evidence workflow.check_inspection workflow.independent_rerun`.
+  - **All four `false`:** the instruction is composed exactly as it is without
+    this rule.
+  - **Any one `true`:** the instruction adds that each CONTEXT acceptance
+    criterion the phase's plans serve is bound to exactly one row of a plan's
+    `## Evidence map`, by its criterion token (`AC<N>`, or `MT<n>` for a plan's
+    nth "Must be true when done" bullet when CONTEXT holds no `AC<N>`
+    criteria). A criterion bound to no check is one finding whose `claim` names
+    that criterion and whose `file` is a plan file. So is a check bound to no
+    criterion, whose `claim` names that check. So is a line of a plan's
+    `## Evidence map` or `## Tests` section that does not follow the grammar of
+    `workflows/plan.md`'s `<test_method>` block, whose `line` is that line and
+    whose `claim` says what it breaks.
+
+  The finding shape, the gate and the reviewer set are unchanged: this is
+  instruction text, so the claude-subagent payload and the cross-model
+  `instruction` both carry it.
 - `artifact` = a REFERENCE, never the material itself. Inlining a diff keeps
   every byte of it resident here for the rest of the run, when the reviewer can
   produce it in one command. Three shapes; every fire site names the one it uses:
