@@ -270,7 +270,7 @@ One row per listed test, Task its task number and Test its name as `## Tests` li
 
 Rewrite the section with the report after every task commit.
 
-Copy forward: whether this is a first dispatch, a continuation or a replay, copy every evidence row of the report you continue from. That report is the `plan-<k>.md` on disk when you start, which the contract's rotation renames to a `plan-<k>.<n>.md` sibling before your first write. Complete a copied row in place, and never write a second row for one check or test.
+Copy forward: whatever the dispatch, copy every evidence row of the report you continue from, the `plan-<k>.md` on disk at your start (the rotation renames it `plan-<k>.<n>.md`). Complete a copied row in place, never a second one. A check or test whose test file you rewrite has its copied rows reset, red run and control re-recorded, never carried complete.
 
 Already in HEAD: a dispatch whose tasks are already in HEAD still records every run the copied rows lack. A check gets its red run under its Break, and a test or check gets its control.
 
