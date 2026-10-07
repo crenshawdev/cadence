@@ -96,6 +96,10 @@
 //                                   in warnings[], never a fall-through to a
 //                                   lower one (NOT --dir: --root is the
 //                                   PROJECT root, one level deep only)
+//   test-checks <plan file>...      every evidence-map check and listed test of
+//                                   each plan, with the lines of those two
+//                                   sections it could not read; positional
+//                                   paths, the way `recall` takes its words
 //   codex-exec                      one `codex exec` in the cwd for a Codex-mode
 //                                   executor, the prompt on stdin, in the
 //                                   workspace-write sandbox and bounded below
@@ -229,6 +233,7 @@ import { cmdLeaseCheck } from './planning/lease-check.mjs';
 import { cmdTaskRecord } from './planning/task-record.mjs';
 import { cmdDetectCommands } from './planning/detect-commands.mjs';
 import { cmdCodexExec } from './planning/codex-exec.mjs';
+import { cmdTestChecks } from './planning/test-checks.mjs';
 import { cmdDetectSurfaces } from './planning/detect-surfaces.mjs';
 import { cmdReads } from './planning/reads.mjs';
 import { cmdCapture } from './planning/capture.mjs';
@@ -298,6 +303,9 @@ const COMMANDS = {
   // The one async handler: it owns its own catch, since the one at the foot
   // of this file cannot see a rejection.
   'codex-exec': (_dir, _sub, _opts) => cmdCodexExec(),
+  // Plan paths are positional words, as `recall`'s query is, so the
+  // subcommand declares no flag of its own.
+  'test-checks': (_dir, _sub, _opts, rest) => cmdTestChecks(rest),
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the
   // cwd, which would report a different tree than the caller named (#42/#45) -

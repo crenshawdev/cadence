@@ -712,6 +712,8 @@ export const CONTRACTS = {
     },
     // The prompt is stdin and the cwd is the repository, so it takes no flag.
     'codex-exec': {},
+    // Plan file paths are positional words, so it takes no flag.
+    'test-checks': {},
     // `--answered` carries the set a config layer ALREADY holds, so the
     // re-entrant ask (`/cad-config --surfaces`) reaches the same option rule
     // the first fire does instead of merging the current answer itself. Same
