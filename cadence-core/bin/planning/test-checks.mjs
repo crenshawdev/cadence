@@ -10,15 +10,30 @@
 // It reports and refuses nothing about the plan itself: an unreadable row is an
 // `issues` entry, never `ok:false`. Only a missing argument or an unreadable
 // path refuses.
+//
+// It also reads the plan's executor report, `reports/plan-<k>.md`, for its
+// `Test evidence:` section (the red-first runs and negative controls the
+// test-evidence switch asks for), and attaches each recorded row to the check
+// or listed test it is for. The report path comes from core.mjs's
+// `readPlanReports`, the one derivation `replay-check` and `status` read, so a
+// rotated `plan-<k>.<n>.md` sibling is never what gets read.
 'use strict';
 
 import { readFileSync } from 'node:fs';
-import { fail, ok } from './core.mjs';
+import { basename, dirname, join } from 'node:path';
+import { fail, ok, readPlanReports } from './core.mjs';
 import { sectionSpan } from '../lib/planning-files.mjs';
 
 const MAP_HEADER = ['criterion', 'task', 'command', 'test file', 'function', 'expected',
   'unit and fakes', 'break'];
 const TESTS_HEADER = ['test', 'supplied', 'asserts', 'catches'];
+const RUN_HEADER = ['check', 'command', 'red by', 'red at', 'failing line', 'passing line'];
+const CONTROL_HEADER = ['task', 'test', 'break', 'failing line', 'restore'];
+/** The criterion token a cell begins with, or null - the token alone matches. */
+const tokenOf = (/** @type {string} */ cell) => {
+  const m = cell.match(/^(AC\d+|MT\d+)(?![A-Za-z0-9_])/);
+  return m ? m[1] : null;
+};
 
 /**
  * The cells of one GFM table row: split on unescaped `|`, `\|` unescaped, each
@@ -115,17 +130,17 @@ function parseTestChecks(text) {
           issue(r, `row has ${c.length} cells where the header has ${MAP_HEADER.length}`);
           continue;
         }
-        const token = c[0].match(/^(AC\d+|MT\d+)(?![A-Za-z0-9_])/);
+        const token = tokenOf(c[0]);
         if (!token) { issue(r, 'Criterion cell does not begin with an AC<N> or MT<n> token'); continue; }
-        if (seen.has(token[1])) {
-          issue(r, `criterion token ${token[1]} is already carried by line ${seen.get(token[1])}`);
+        if (seen.has(token)) {
+          issue(r, `criterion token ${token} is already carried by line ${seen.get(token)}`);
           continue;
         }
         const task = taskOf(c[1]);
         if (task === null) { issue(r, `Task cell "${c[1]}" names no ### Task <n> heading of this plan`); continue; }
-        seen.set(token[1], r + 1);
+        seen.set(token, r + 1);
         checks.push({
-          criterion: token[1], criterion_cell: c[0], task, command: c[2],
+          criterion: token, criterion_cell: c[0], task, command: c[2],
           test_file: noneToEmpty(c[3]), function: noneToEmpty(c[4]), expected: c[5],
           unit_and_fakes: c[6], break: c[7], line: r + 1,
           human_verify: c[2].startsWith('human-verify:'),
@@ -185,22 +200,141 @@ function parseTestChecks(text) {
   return { sections, checks, tests, issues };
 }
 
+/**
+ * Read a report's `Test evidence:` section: from a line reading exactly that at
+ * column 0, up to the first line that is neither blank nor table-shaped. Pure.
+ * Line numbers are 1-based report lines.
+ * @param {string} text
+ */
+function parseEvidence(text) {
+  const lines = String(text).split(/\r?\n/);
+  /** @type {{line: number, reason: string}[]} */
+  const issues = [];
+  /** @type {any[]} */
+  const runs = [];
+  /** @type {any[]} */
+  const controls = [];
+  const start = lines.indexOf('Test evidence:');
+  if (start < 0) return { section: false, runs, controls, issues };
+  let end = start + 1;
+  while (end < lines.length && (!lines[end].trim() || lines[end].trim().startsWith('|'))) end++;
+  for (const t of tablesIn(lines, start + 1, end)) {
+    const head = cells(lines[t.header]);
+    const want = sameHeader(head, RUN_HEADER) ? RUN_HEADER : sameHeader(head, CONTROL_HEADER) ? CONTROL_HEADER : null;
+    if (!want) {
+      issues.push({ line: t.header + 1, reason: 'table header is neither the red-run header'
+        + ' | Check | Command | Red by | Red at | Failing line | Passing line | nor the control header'
+        + ' | Task | Test | Break | Failing line | Restore |' });
+      for (const r of t.rows) issues.push({ line: r + 1, reason: `row of the table at line ${t.header + 1}, which was not read` });
+      continue;
+    }
+    for (const r of t.rows) {
+      const c = cells(lines[r]);
+      if (c.length !== want.length) {
+        issues.push({ line: r + 1, reason: `row has ${c.length} cells where the header has ${want.length}` });
+        continue;
+      }
+      if (want === RUN_HEADER) {
+        runs.push({ check: c[0], command: c[1], red_by: c[2], red_at: c[3],
+          failing_line: c[4], passing_line: c[5], line: r + 1 });
+      } else {
+        controls.push({ task: c[0], test: c[1], break: c[2], failing_line: c[3], restore: c[4], line: r + 1 });
+      }
+    }
+  }
+  return { section: true, runs, controls, issues };
+}
+
+/**
+ * Attach a report's evidence rows to the plan's checks and listed tests. A
+ * check takes the first red-run row whose Check cell begins with its token, and
+ * the first control row whose Task cell does; a listed test takes the first
+ * control row whose Task and Test equal its own. A later row for the same entry
+ * is a duplicate, and a row for no entry an orphan, each named by report line.
+ * @param {{checks: any[], tests: any[]}} parsed
+ * @param {{runs: any[], controls: any[]}} ev
+ */
+function attachEvidence(parsed, ev) {
+  const checks = parsed.checks.map((c) => ({ ...c, evidence: { run: null, control: null } }));
+  const tests = parsed.tests.map((t) => ({ ...t, evidence: { control: null } }));
+  /** @type {{line: number, table: string}[]} */
+  const orphans = [];
+  /** @type {{line: number, table: string, first: number}[]} */
+  const duplicates = [];
+  const place = (/** @type {any} */ entry, /** @type {string} */ slot, /** @type {any} */ row, /** @type {string} */ table) => {
+    if (!entry) orphans.push({ line: row.line, table });
+    else if (entry.evidence[slot]) duplicates.push({ line: row.line, table, first: entry.evidence[slot].line });
+    else entry.evidence[slot] = row;
+  };
+  for (const row of ev.runs) {
+    const token = tokenOf(row.check);
+    place(token && checks.find((c) => c.criterion === token), 'run', row, 'red-run');
+  }
+  for (const row of ev.controls) {
+    const token = tokenOf(row.task);
+    const n = row.task.match(/^(?:Task\s+)?(\d+)$/i);
+    const entry = token ? checks.find((c) => c.criterion === token)
+      : n ? tests.find((t) => t.task === Number(n[1]) && t.test === row.test) : null;
+    place(entry, 'control', row, 'control');
+  }
+  return { checks, tests, orphans, duplicates };
+}
+
+/**
+ * A plan's report and its evidence, read and attached. `report.state` is
+ * `absent`, `no_section` or `read`. Writes nothing.
+ * @param {string} planPath
+ * @param {{checks: any[], tests: any[]}} parsed
+ */
+function readEvidence(planPath, parsed) {
+  const pdir = dirname(planPath);
+  const [r] = readPlanReports(pdir, [basename(planPath)]);
+  const path = join(pdir, r.report);
+  let text = null;
+  if (r.exists) { try { text = readFileSync(path, 'utf8'); } catch { text = null; } }
+  const ev = text === null ? null : parseEvidence(text);
+  const state = ev === null ? 'absent' : ev.section ? 'read' : 'no_section';
+  const at = attachEvidence(parsed, ev || { runs: [], controls: [] });
+  return {
+    checks: at.checks, tests: at.tests,
+    report: { path, state, status: r.status, orphans: at.orphans, duplicates: at.duplicates,
+      issues: ev ? ev.issues : [] },
+    text,
+  };
+}
+
+/**
+ * Read each plan file, or refuse naming the first one that cannot be read.
+ * @param {string[]} paths
+ * @returns {string[]|null}
+ */
+function readPlans(paths) {
+  const texts = [];
+  for (const p of paths) {
+    try { texts.push(readFileSync(p, 'utf8')); }
+    catch (e) {
+      const code = e && typeof e === 'object' && 'code' in e ? e.code : 'unreadable';
+      fail('unreadable-plan', `cannot read ${p} (${code})`,
+        'check the path names an existing PLAN file and re-run - nothing was read');
+      return null;
+    }
+  }
+  return texts;
+}
+
 /** @param {string[]} paths */
 function cmdTestChecks(paths) {
   if (!paths.length) {
     return fail('bad-args', 'test-checks needs at least one plan file path',
       'pass each PLAN file to read as a positional word after `test-checks`, then re-run');
   }
-  const texts = [];
-  for (const p of paths) {
-    try { texts.push(readFileSync(p, 'utf8')); }
-    catch (e) {
-      const code = e && typeof e === 'object' && 'code' in e ? e.code : 'unreadable';
-      return fail('unreadable-plan', `cannot read ${p} (${code})`,
-        'check the path names an existing PLAN file and re-run - nothing was read');
-    }
-  }
-  ok({ plans: paths.map((p, i) => ({ plan: p, ...parseTestChecks(texts[i]) })) });
+  const texts = readPlans(paths);
+  if (!texts) return;
+  ok({ plans: paths.map((p, i) => {
+    const parsed = parseTestChecks(texts[i]);
+    const { checks, tests, report } = readEvidence(p, parsed);
+    return { plan: p, ...parsed, checks, tests, report };
+  }) });
 }
 
-export { cmdTestChecks, parseTestChecks };
+export { cmdTestChecks, parseEvidence, parseTestChecks };

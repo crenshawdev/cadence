@@ -252,3 +252,132 @@ test('a plan built from plan.md\'s <test_method> header rows and label line read
   assert.equal(r.checks[0].command, 'node a.mjs | wc');
   assert.deepEqual([r.tests.length, r.tests[0].test_file], [1, '<test file>']);
 });
+
+// --- the report's `Test evidence:` section -----------------------------------
+//
+// The test-evidence switch has the executor record, in its report, each
+// check's red-first run and each listed test's negative control. `test-checks`
+// attaches those rows to what the plan lists; `test-evidence` (below) judges
+// whether the record is complete.
+
+import { mkdirSync } from 'node:fs';
+
+const RUN_HEAD = '| Check | Command | Red by | Red at | Failing line | Passing line |\n|---|---|---|---|---|---|\n';
+const CONTROL_HEAD = '| Task | Test | Break | Failing line | Restore |\n|---|---|---|---|---|\n';
+
+/** FULL's complete red-run rows, at commit `h`. AC3 is human-verify, so it has none. */
+const fullRuns = (h) => `| AC1 | node --test a.test.mjs | before | ${h} | not ok 1 - adds two | ok 1 - adds two |\n`
+  + `| AC2 the flag | grep -c x b.md \\| wc -l | break | ${h} | 0 | 1 |\n`;
+/** FULL's complete control rows: one per listed test, and AC1's (it has a test file). */
+const FULL_CONTROLS = '| 1 | adds two | add returns a+a | not ok 1 - adds two | add restored; ok 1 - adds two |\n'
+  + '| 1 | adds zero | add returns 0 | not ok 2 - adds zero | add restored; ok 2 - adds zero |\n'
+  + '| 2 | reads b | read returns empty | not ok 1 - reads b | read restored; ok 1 - reads b |\n'
+  + '| AC1 | adds two | add returns a+a | not ok 1 - adds two | add restored; ok 1 - adds two |\n';
+
+/** An executor report around the given evidence-table bodies; `section: false` writes none. */
+function report({ runs = fullRuns('abc1234'), controls = FULL_CONTROLS, status = 'PLAN COMPLETE', section = true } = {}) {
+  return `${status}\nPlan: PLAN-1.md\nTasks: 2 of 2\n| Task | Commit | Note |\n|---|---|---|\n`
+    + '| 1 - first | abc1234 | done |\n| 2 - second | def5678 | done |\n\n'
+    + (section ? `Test evidence:\n\n${RUN_HEAD}${runs}\n${CONTROL_HEAD}${controls}\n` : '')
+    + 'Deviations: none\nOpen items: none\n';
+}
+
+/** A plan at `<dir>/PLAN-1.md` and, unless `body` is null, its report at `<dir>/reports/plan-1.md`. */
+function planWithReport(planText, body, dir = mkdtempSync(join(tmpdir(), 'cad-test-evidence-'))) {
+  writeFileSync(join(dir, 'PLAN-1.md'), planText);
+  if (body !== null) {
+    mkdirSync(join(dir, 'reports'), { recursive: true });
+    writeFileSync(join(dir, 'reports', 'plan-1.md'), body);
+  }
+  return { plan: join(dir, 'PLAN-1.md'), report: join(dir, 'reports', 'plan-1.md'), dir };
+}
+
+test('evidence: a full section attaches every row, a check\'s control row included', () => {
+  const body = report();
+  const { plan: p } = planWithReport(FULL, body);
+  const r = cli([p]).plans[0];
+  assert.equal(r.report.state, 'read');
+  assert.deepEqual([r.report.orphans, r.report.duplicates, r.report.issues], [[], [], []]);
+  const [ac1, ac2, ac3] = r.checks;
+  assert.deepEqual(ac1.evidence.run, {
+    check: 'AC1', command: 'node --test a.test.mjs', red_by: 'before', red_at: 'abc1234',
+    failing_line: 'not ok 1 - adds two', passing_line: 'ok 1 - adds two', line: lineOf(body, '| AC1 | node'),
+  });
+  assert.equal(ac1.evidence.control.line, lineOf(body, '| AC1 | adds two'));
+  assert.equal(ac2.evidence.run.red_by, 'break');
+  assert.equal(ac2.evidence.control, null);
+  assert.deepEqual(ac3.evidence, { run: null, control: null });
+  assert.deepEqual(r.tests.map((t) => t.evidence.control.line),
+    [lineOf(body, '| 1 | adds two'), lineOf(body, '| 1 | adds zero'), lineOf(body, '| 2 | reads b')]);
+  assert.equal(r.tests[1].evidence.control.restore, 'add restored; ok 2 - adds zero');
+});
+
+test('evidence: a Check cell reading AC4 then other text attaches to AC4, and an MT2 row to MT2', () => {
+  const text = plan({ map: MAP_HEAD + '| AC4 | 1 | `x` | none | none | y | z | w |\n'
+    + '| MT2 bullet | 2 | `v` | none | none | y | z | w |\n' });
+  const { plan: p } = planWithReport(text, report({
+    runs: '| AC4 the switch row | x | before | abc1234 | f | p |\n| MT2 | v | break | abc1234 | f | p |\n', controls: '' }));
+  const r = cli([p]).plans[0];
+  assert.deepEqual(r.checks.map((c) => [c.criterion, c.evidence.run && c.evidence.run.check]),
+    [['AC4', 'AC4 the switch row'], ['MT2', 'MT2']]);
+  assert.deepEqual(r.report.orphans, []);
+});
+
+test('evidence: a second row for one check is reported as a duplicate with its line', () => {
+  const runs = fullRuns('abc1234') + '| AC1 again | node --test a.test.mjs | before | abc1234 | x | y |\n';
+  const body = report({ runs });
+  const r = cli([planWithReport(FULL, body).plan]).plans[0];
+  assert.equal(r.checks[0].evidence.run.line, lineOf(body, '| AC1 | node'));
+  assert.deepEqual(r.report.duplicates,
+    [{ line: lineOf(body, '| AC1 again'), table: 'red-run', first: lineOf(body, '| AC1 | node') }]);
+});
+
+test('evidence: a missing row leaves its entry without evidence', () => {
+  const body = report({ runs: fullRuns('abc1234').split('\n')[1] + '\n',
+    controls: FULL_CONTROLS.split('\n').filter((l) => !l.includes('adds zero')).join('\n') });
+  const r = cli([planWithReport(FULL, body).plan]).plans[0];
+  assert.equal(r.checks[0].evidence.run, null);
+  assert.ok(r.checks[1].evidence.run);
+  assert.equal(r.tests[1].evidence.control, null);
+  assert.ok(r.tests[0].evidence.control);
+});
+
+test('evidence: an orphan row is named with its line', () => {
+  const body = report({ runs: fullRuns('abc1234') + '| AC9 | x | before | abc1234 | f | p |\n',
+    controls: FULL_CONTROLS + '| 2 | not listed | b | f | r |\n' });
+  const r = cli([planWithReport(FULL, body).plan]).plans[0];
+  assert.deepEqual(r.report.orphans, [
+    { line: lineOf(body, '| AC9 |'), table: 'red-run' },
+    { line: lineOf(body, '| 2 | not listed'), table: 'control' },
+  ]);
+});
+
+test('evidence: an escaped \\| in a Command reads back unescaped', () => {
+  const r = cli([planWithReport(FULL, report()).plan]).plans[0];
+  assert.equal(r.checks[1].evidence.run.command, 'grep -c x b.md | wc -l');
+});
+
+test('evidence: an absent report is stated, and so is an absent section', () => {
+  const absent = cli([planWithReport(FULL, null).plan]).plans[0];
+  assert.equal(absent.report.state, 'absent');
+  assert.equal(absent.checks[0].evidence.run, null);
+  const none = cli([planWithReport(FULL, report({ section: false })).plan]).plans[0];
+  assert.equal(none.report.state, 'no_section');
+  assert.deepEqual(none.tests.map((t) => t.evidence.control), [null, null, null]);
+});
+
+test('evidence: only plan-<k>.md is read when a plan-<k>.1.md sibling also exists', () => {
+  const { plan: p, dir } = planWithReport(FULL, report({ section: false }));
+  writeFileSync(join(dir, 'reports', 'plan-1.1.md'), report());
+  const r = cli([p]).plans[0];
+  assert.equal(r.report.path, join(dir, 'reports', 'plan-1.md'));
+  assert.equal(r.report.state, 'no_section');
+  assert.equal(r.checks[0].evidence.run, null);
+});
+
+test('evidence: the report\'s bytes are unchanged after the run', () => {
+  const body = report();
+  const { plan: p, report: rp } = planWithReport(FULL, body);
+  cli([p]);
+  assert.equal(readFileSync(rp, 'utf8'), body);
+});
