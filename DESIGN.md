@@ -2,7 +2,7 @@
 
 A single-developer distillation descended from GSD, derived from a file-backed deep-dive of all 69 skills,
 34 agents, and the `gsd-core` engine (110 workflows / 94 references / 143 node scripts /
-~55K lines). Per-skill analyses live in `.planning/design-notes/dd-*.md` (local only).
+~55K lines).
 
 Audience assumptions (John): solo dev; Rust/CLI/backend + some COSMIC/iced UI + general
 scripts; NOT building AI/LLM products; already runs mem-* (primary memory), claude-mem,
