@@ -98,7 +98,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   planning.commit_docs \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
-  git.protected_branches git.on_protected git.base_branch
+  git.protected_branches git.on_protected git.base_branch \
+  roles.cad-executor.codex.enabled
 ```
 
 The `diff` and `phase_diff` gates are NOT read here: fire(trigger) takes every
@@ -159,6 +160,11 @@ path and is never a reason to pause or stop.
 
 <step name="choose_path">
 Sequential (default) unless ALL of these hold:
+- `roles.cad-executor.codex.enabled` is not `true`. In Codex mode the wrapper
+  runs Codex in the main tree's cwd, while references/worktree-executor.md and
+  the parallel merge assume an executor committing inside a host worktree, so
+  the phase runs sequentially and the `worktree.baseRef` offer below is never
+  made.
 - `parallelization.enabled` is true
 - plan count >= `parallelization.min_plans_for_parallel`
 - no plan builds on another's output (your judgment, from the plans' goals
