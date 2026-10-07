@@ -321,6 +321,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     // and 1b refuses a bare family name as a reader, so these two go through the
     // <role> placeholder expand() carries.
     '`roles.<role>.model` `roles.<role>.effort`\n' +
+    '`roles.<role>.codex`\n' +
     '`workflow.research` `workflow.plan_check` `workflow.verifier` `workflow.skip_discuss`\n' +
     '`workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`workflow.lint_command` `workflow.max_plan_tasks` `workflow.max_plan_bytes`\n' +

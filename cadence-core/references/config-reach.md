@@ -128,6 +128,9 @@ purpose test runs against the reach the author just replaced.
 | `roles.cad-reviewer.effort` | universal | `bin/route.mjs` - names the rung this role starts at and is the FIRST source, winning over `model.effort.cad-reviewer`; unset takes this key's own schema default, and no risk floor moves it |
 | `roles.cad-executor.effort` | universal | `bin/route.mjs` - names the rung this role starts at and is the FIRST source, winning over `model.effort.cad-executor`; unset takes this key's own schema default, and no risk floor moves it |
 | `roles.cad-plan-checker.effort` | universal | `bin/route.mjs` - names the rung this role starts at and is the FIRST source, winning over `model.effort.cad-plan-checker`; unset takes this key's own schema default, and no risk floor moves it |
+| `roles.cad-executor.codex.enabled` | universal | `bin/route.mjs resolve` - adds the Codex-mode envelope key to a `cad-executor` resolve, absent when off, and turns on the wrapper's own model and rung; `workflows/execute.md`'s `choose_path` takes the sequential path under it |
+| `roles.cad-executor.codex.wrapper_model` | universal | `bin/route.mjs resolve` - the wrapper's model while Codex mode is on; unset takes what `roles.cad-executor` resolves, and with the switch off it is read for nothing |
+| `roles.cad-executor.codex.wrapper_effort` | universal | `bin/route.mjs resolve` - the wrapper's rung file while Codex mode is on, held on a retry; unset takes `roles.cad-executor`'s start rung, and with the switch off it is read for nothing |
 | `workflow.research` | new-project research step only | `workflows/new-project.md`'s research pass; no other workflow reads it |
 | `workflow.plan_check` | universal | `workflows/plan.md` - whether the plan checker runs before code |
 | `workflow.verifier` | universal | `workflows/verify.md` - off switch for the goal-backward pass |
