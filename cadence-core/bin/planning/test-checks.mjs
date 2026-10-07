@@ -212,6 +212,19 @@ function parseTestChecks(text) {
     }
   }
 
+  // A list item, or a row written without its leading `|`, would otherwise be
+  // dropped as prose and take a check or a listed test with it. Prose and label
+  // lines carry neither shape; a `|` inside a backtick span is not a cell edge.
+  for (const span of [mapSpan, testsSpan]) {
+    for (let i = span.start + 1; span.start >= 0 && i < span.end; i++) {
+      const l = lines[i].trim();
+      if (!l || l.startsWith('|')) continue;
+      if (/^([-*+]|\d+[.)])\s/.test(l) || /(?<!\\)\|/.test(l.replace(/`[^`]*`/g, ''))) {
+        issue(i, 'line is not a table row beginning with |, so it was not read');
+      }
+    }
+  }
+
   const has = { map: mapSpan.start >= 0, tests: testsSpan.start >= 0 };
   const sections = has.map && has.tests ? 'both'
     : has.map ? 'evidence_map' : has.tests ? 'tests' : 'neither';

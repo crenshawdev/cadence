@@ -629,3 +629,22 @@ test('a test name listed twice within one task is an issue at the second row, si
   assert.match(r.issues[0].reason, new RegExp(`test "rejects empty" is already listed for Task 1 at line ${lineOf(text, '| rejects empty | "" |')}`));
   assert.deepEqual(r.tests.map((t) => [t.task, t.test_file]), [[1, 'a.test.mjs'], [2, 'b.test.mjs']]);
 });
+
+test('a list item or a table row without its leading | inside either section is named as unread, prose and labels are not', () => {
+  const bullets = plan({ tests: 'A test not on this list is not written.\n\n- adds zero: supplied 2,0 asserts 2\n1. adds two\n' });
+  const b = parseTestChecks(bullets);
+  assert.deepEqual(b.tests, []);
+  assert.deepEqual(b.issues.map((i) => i.line), [lineOf(bullets, '- adds zero'), lineOf(bullets, '1. adds two')]);
+  assert.match(b.issues[0].reason, /not a table row beginning with \|/);
+
+  const pipeless = plan({ map: MAP_HEAD + '| AC1 | 1 | x | none | none | y | z | w |\n\n'
+    + 'Criterion | Task | Command | Test file | Function | Expected | Unit and fakes | Break\n'
+    + '---|---|---|---|---|---|---|---\n'
+    + 'AC2 | 2 | `v` | none | none | y | z | w\n',
+  tests: 'Opening sentence, with `a | b` in a span.\n\n**Task 1** `t.mjs` `node t.mjs | cat`\n\n' + TESTS_HEAD + '| t | s | a | c |\n' });
+  const p = parseTestChecks(pipeless);
+  assert.deepEqual(p.checks.map((c) => c.criterion), ['AC1']);
+  assert.deepEqual(p.tests.map((t) => t.command), ['node t.mjs | cat']);
+  assert.deepEqual(p.issues.map((i) => i.line),
+    ['Criterion | Task', '---|---', 'AC2 | 2'].map((head) => pipeless.split('\n').findIndex((l) => l.startsWith(head)) + 1));
+});
