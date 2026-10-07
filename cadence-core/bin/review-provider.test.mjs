@@ -2227,3 +2227,174 @@ test('RVP-02: local validation refuses exactly what the canonical schema refuses
       `${c.name}: the diagnostic must name the offending field, got: ${r.envelope.detail}`);
   }
 });
+
+// --- the Codex transport (phase 2, CDX-02) ------------------------------------
+//
+// `review.providers.openai.transport: codex` hands an openai review to `codex
+// exec`. Standing in for Codex is a stub named `codex` FIRST ON PATH (D-11), so
+// the production runner - the spawn, the kill, the reads - is what runs, and no
+// variable or config key redirects which binary that is. Every run pins
+// CADENCE_GLOBAL_CONFIG to a fixture path, so the developer's own user-global
+// config cannot reach it.
+
+import { chmodSync } from 'node:fs';
+import { delimiter } from 'node:path';
+
+// The stub records what it was handed - argv, stdin, which of the two keys its
+// environment held, a listing of its `-C` directory, a copy of the schema - and
+// then does what `behaviour.json` beside it says.
+const CODEX_STUB = `
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+const here = path.dirname(fileURLToPath(import.meta.url));
+const b = JSON.parse(fs.readFileSync(path.join(here, 'behaviour.json'), 'utf8'));
+const argv = process.argv.slice(2);
+const at = (f) => { const i = argv.indexOf(f); return i === -1 ? null : argv[i + 1]; };
+const work = at('-C'), schema = at('--output-schema'), out = at('-o');
+fs.writeFileSync(path.join(here, 'record.json'), JSON.stringify({
+  argv, stdin: fs.readFileSync(0, 'utf8'), cwd: process.cwd(),
+  keys: { OPENAI_API_KEY: 'OPENAI_API_KEY' in process.env, CODEX_API_KEY: 'CODEX_API_KEY' in process.env },
+  workListing: work ? fs.readdirSync(work) : null,
+  schema: schema ? JSON.parse(fs.readFileSync(schema, 'utf8')) : null,
+  paths: [work, schema, out].filter(Boolean),
+}));
+if (b.stderr) process.stderr.write(b.stderr);
+if (b.stdout) process.stdout.write(b.stdout);
+if (b.out !== undefined && out) fs.writeFileSync(out, b.out);
+if (b.flood) {
+  const chunk = Buffer.alloc(65536, 120);
+  const pump = () => { while (process.stdout.write(chunk)); process.stdout.once('drain', pump); };
+  pump();
+} else if (b.hang) {
+  spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: ['ignore', 'inherit', 'inherit'] });
+  setTimeout(() => {}, 30000);
+} else process.exitCode = b.code ?? 0;
+`;
+
+/** A fresh directory whose `codex` runs the stub above with `behaviour`. */
+function codexStubDir(behaviour) {
+  const d = mkdtempSync(join(tmpdir(), 'cad-codex-bin-'));
+  writeFileSync(join(d, 'stub.mjs'), CODEX_STUB);
+  writeFileSync(join(d, 'behaviour.json'), JSON.stringify(behaviour));
+  const sh = join(d, 'codex');
+  writeFileSync(sh, `#!/bin/sh\nexec "${process.execPath}" "${join(d, 'stub.mjs')}" "$@"\n`);
+  chmodSync(sh, 0o755);
+  return d;
+}
+
+const CODEX_ON = { review: { providers: { openai: { transport: 'codex' } } } };
+const CODEX_MODEL = 'gpt-codex-fixture';
+const CODEX_ARGS = ['review', '--provider', 'openai', '--model', CODEX_MODEL, '--trigger', 'diff'];
+const CODEX_MARKER = 'ARTIFACT-MARKER-7f3a';
+const CODEX_PAYLOAD = {
+  instruction: 'Review this for defects.',
+  artifact: `${CODEX_MARKER}: function add(a, b) { return a - b; }`,
+};
+const CODEX_FINDINGS = {
+  findings: [{ file: 'src/add.js', line: 1, severity: 'high', claim: 'add subtracts',
+    failure_scenario: 'add(2, 2) returns 0 where every caller expects 4' }],
+};
+
+/**
+ * One review through the real script, launched by `process.execPath`, in a
+ * fresh `providerCwd` whose repo layer is `repo`. `global`, when given, is the
+ * user-global layer; otherwise CADENCE_GLOBAL_CONFIG names a file that does not
+ * exist. Neither key is in the child's environment unless `env` puts it there.
+ * `timeout` bounds the whole run, so a regression fails rather than hangs.
+ */
+function codexRun({ repo = {}, global = null, behaviour = { out: JSON.stringify(CODEX_FINDINGS) },
+  extra = [], env = {}, PATH, timeout = 60000 } = {}) {
+  const cwd = providerCwd('codex', false, repo);
+  const globalFile = join(cwd, 'global-config.json');
+  if (global) writeFileSync(globalFile, JSON.stringify(global));
+  const stubDir = codexStubDir(behaviour);
+  const payloadFile = join(cwd, 'payload.json');
+  writeFileSync(payloadFile, JSON.stringify(CODEX_PAYLOAD));
+  const childEnv = { ...process.env };
+  for (const k of ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'DEEPSEEK_API_KEY', 'CODEX_API_KEY']) delete childEnv[k];
+  Object.assign(childEnv, {
+    CADENCE_GLOBAL_CONFIG: globalFile,
+    PATH: PATH ?? stubDir + delimiter + (process.env.PATH || ''),
+  }, env);
+  const started = Date.now();
+  let stdout;
+  try {
+    stdout = execFileSync(process.execPath, [SCRIPT, ...CODEX_ARGS, '--payload', payloadFile, ...extra],
+      { cwd, env: childEnv, encoding: 'utf8', timeout });
+  } catch (e) {
+    stdout = e.stdout;
+  }
+  const recordFile = join(stubDir, 'record.json');
+  return {
+    envelope: JSON.parse(stdout),
+    record: existsSync(recordFile) ? JSON.parse(readFileSync(recordFile, 'utf8')) : null,
+    events: providerEventsIn(join(cwd, '.planning', 'trace.jsonl')),
+    elapsed: Date.now() - started,
+  };
+}
+
+test('codex transport: on in the repo layer alone, or the user-global layer alone, the review runs through codex exec', () => {
+  for (const [where, layers] of [['repo', { repo: CODEX_ON }], ['user-global', { global: CODEX_ON }]]) {
+    const r = codexRun(layers);
+    assert.ok(r.record, `${where}: the stub codex was never invoked`);
+    assert.deepEqual(r.envelope,
+      { ok: true, provider: 'openai', model: CODEX_MODEL, findings: CODEX_FINDINGS.findings }, where);
+    assert.equal(r.events.length, 1, where);
+    assert.equal(r.events[0].outcome, 'ok', where);
+  }
+});
+
+test('codex transport: off in both layers, the HTTP path refuses no-key exactly as before and codex never runs', () => {
+  const r = codexRun({ extra: ['--key-file', join(tmpdir(), 'cad-absent-providers.env')] });
+  assert.equal(r.record, null, 'the stub codex ran with the switch off');
+  assert.equal(r.envelope.reason, 'no-key');
+});
+
+test('codex transport: the argv carries the bounds, the effort, and no payload byte', () => {
+  const r = codexRun({ repo: CODEX_ON, extra: ['--effort', 'minimal'] });
+  const argv = r.record.argv;
+  const pair = (flag, value) => argv.some((a, i) => a === flag && argv[i + 1] === value);
+  assert.equal(argv[0], 'exec');
+  assert.ok(pair('-s', 'read-only'), argv.join(' '));
+  for (const flag of ['--ephemeral', '--skip-git-repo-check', '--output-schema', '--json', '-o', '-C']) {
+    assert.ok(argv.includes(flag), `${flag} missing: ${argv.join(' ')}`);
+  }
+  assert.ok(reviewProvider.CODEX_DISABLED_FEATURES.includes('shell_tool'));
+  for (const f of reviewProvider.CODEX_DISABLED_FEATURES) assert.ok(pair('--disable', f), `--disable ${f}`);
+  assert.ok(pair('-m', CODEX_MODEL));
+  assert.ok(pair('-c', 'model_reasoning_effort=low'), 'minimal must go as low');
+  assert.ok(r.record.stdin.includes(CODEX_MARKER), 'the artifact must arrive on stdin');
+  assert.ok(r.record.stdin.includes(CODEX_PAYLOAD.instruction), 'the instruction must arrive on stdin');
+  assert.equal(argv.some((a) => a.includes(CODEX_MARKER)), false, 'no payload byte on argv');
+});
+
+test('codex transport: neither API key reaches the codex child', () => {
+  const r = codexRun({ repo: CODEX_ON,
+    env: { OPENAI_API_KEY: 'sk-parent-not-real', CODEX_API_KEY: 'sk-codex-not-real' } });
+  assert.deepEqual(r.record.keys, { OPENAI_API_KEY: false, CODEX_API_KEY: false });
+  assert.equal(r.envelope.ok, true);
+});
+
+test('codex transport: the schema goes unchanged, -C is empty, and every temp path is gone after', () => {
+  const r = codexRun({ repo: CODEX_ON });
+  assert.deepEqual(r.record.schema, reviewProvider.FINDING_SCHEMA);
+  assert.deepEqual(r.record.workListing, []);
+  assert.equal(r.record.paths.length, 3);
+  for (const p of r.record.paths) assert.equal(existsSync(p), false, `${p} outlived the run`);
+});
+
+test('codex transport: exit 0 with no message, prose, and the wrong shape each degrade, never findings', () => {
+  for (const [reason, out] of [['no-output', undefined], ['no-output', '  \n'],
+    ['bad-json', 'I found nothing wrong.'], ['bad-shape', '{"findings":[{"file":"a"}]}']]) {
+    const r = codexRun({ repo: CODEX_ON, behaviour: out === undefined ? {} : { out } });
+    assert.equal(r.envelope.ok, false, reason);
+    assert.equal(r.envelope.reason, reason, JSON.stringify(r.envelope));
+    assert.equal('findings' in r.envelope, false, reason);
+    assert.ok(r.envelope.hint, reason);
+    assert.equal(r.events.length, 1, reason);
+    assert.equal(r.events[0].outcome, reason);
+    assert.equal(r.events[0].degraded, true, reason);
+  }
+});

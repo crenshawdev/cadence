@@ -28,8 +28,9 @@
 //   node cadence-core/bin/test.mjs --list          the groups and their files
 'use strict';
 
-import { readdirSync } from 'node:fs';
+import { mkdtempSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -108,5 +109,14 @@ if (unknown.length) {
 const files = wanted.flatMap((g) => all[g]).map((s) => join(HERE, `${s}.test.mjs`));
 if (!files.length) { console.error('no test files matched'); process.exit(2); }
 
-const r = spawnSync(process.execPath, ['--test', ...files], { stdio: 'inherit' });
+// The suite never reads the developer's own user-global config: unless the
+// caller pinned CADENCE_GLOBAL_CONFIG, it points at a path in a fresh temp dir
+// that does not exist, which is what CI sees. A user-global
+// `review.providers.openai.transport: codex` would otherwise send the review
+// tests to the real `codex`.
+const env = process.env.CADENCE_GLOBAL_CONFIG ? process.env : {
+  ...process.env,
+  CADENCE_GLOBAL_CONFIG: join(mkdtempSync(join(tmpdir(), 'cad-test-global-')), 'config.json'),
+};
+const r = spawnSync(process.execPath, ['--test', ...files], { stdio: 'inherit', env });
 process.exit(r.status === null ? 1 : r.status);
