@@ -381,3 +381,188 @@ test('evidence: the report\'s bytes are unchanged after the run', () => {
   cli([p]);
   assert.equal(readFileSync(rp, 'utf8'), body);
 });
+
+// --- `test-evidence`: a short record is not a completed plan -----------------
+//
+// The fixtures sit in a scratch git repository with real commits, so a **Red
+// at** cell can name one HEAD descends from - and one on a branch it does not.
+
+import { makeTree, run } from './planning.test.mjs';
+
+let repoMemo = null;
+/** One scratch repository: `head` on the checked-out branch, `side` on a branch HEAD does not contain. */
+function scratchRepo() {
+  if (repoMemo) return repoMemo;
+  const repo = mkdtempSync(join(tmpdir(), 'cad-test-evidence-repo-'));
+  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' }).trim();
+  g('init', '-q');
+  g('config', 'user.email', 't@example.com');
+  g('config', 'user.name', 'T');
+  g('config', 'commit.gpgsign', 'false');
+  writeFileSync(join(repo, 'a.txt'), 'a');
+  g('add', 'a.txt');
+  g('commit', '-q', '-m', 'one');
+  const head = g('rev-parse', '--short', 'HEAD');
+  g('checkout', '-q', '-b', 'side');
+  writeFileSync(join(repo, 'b.txt'), 'b');
+  g('add', 'b.txt');
+  g('commit', '-q', '-m', 'side');
+  const side = g('rev-parse', '--short', 'HEAD');
+  g('checkout', '-q', '-');
+  repoMemo = { repo, head, side };
+  return repoMemo;
+}
+
+/** A plan and report in a fresh directory inside the scratch repository. */
+const inRepo = (planText, body) => planWithReport(planText, body, mkdtempSync(join(scratchRepo().repo, 'case-')));
+
+function judge(p) {
+  let stdout;
+  let code = 0;
+  try {
+    stdout = execFileSync('node', [PLANNING, 'test-evidence', p], { encoding: 'utf8' });
+  } catch (e) { stdout = e.stdout; code = e.status; }
+  return { ...JSON.parse(stdout), _exit: code };
+}
+
+/** FULL's complete record at the scratch HEAD, with `edit` applied to its text. */
+const recordWith = (edit = (s) => s) => edit(report({ runs: fullRuns(scratchRepo().head) }));
+
+/** Judge FULL against a record; assert it was rejected for `rule`, and only line 1 changed. */
+function assertRejected(body, rule, planText = FULL) {
+  const { plan: p, report: rp } = inRepo(planText, body);
+  const r = judge(p);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'evidence-short');
+  assert.match(r.detail, rule);
+  assert.ok(r.hint);
+  const after = readFileSync(rp, 'utf8');
+  assert.equal(after.split('\n')[0], 'PLAN CHECKPOINT: blocked');
+  assert.equal(after.slice(after.indexOf('\n')), body.slice(body.indexOf('\n')));
+  return r;
+}
+
+const swapRun = (from, to) => (s) => s.replace(from, to);
+
+test('test-evidence rejects: a Red at that is not hex, or is too short', () => {
+  const h = scratchRepo().head;
+  assertRejected(recordWith(swapRun(`before | ${h}`, 'before | zzzzzzz')), /AC1 \(Task 1\): Red at "zzzzzzz" is not 7 to 40 hex/);
+  assertRejected(recordWith(swapRun(`before | ${h}`, 'before | abc12')), /AC1 \(Task 1\): Red at "abc12" is not 7 to 40 hex/);
+});
+
+test('test-evidence rejects: a well-formed Red at naming no commit', () => {
+  assertRejected(recordWith(swapRun(`before | ${scratchRepo().head}`, 'before | 0000000')),
+    /AC1 \(Task 1\): Red at 0000000 is not a commit HEAD descends from/);
+});
+
+test('test-evidence rejects: a Red at naming a commit on a branch HEAD does not contain', () => {
+  const { head, side } = scratchRepo();
+  assertRejected(recordWith(swapRun(`break | ${head}`, `break | ${side}`)),
+    new RegExp(`AC2 \\(Task 2\\): Red at ${side} is not a commit HEAD descends from`));
+});
+
+test('test-evidence rejects: a Failing line or Passing line reading -, then NONE, then blank', () => {
+  assertRejected(recordWith(swapRun('| not ok 1 - adds two | ok 1 - adds two |\n| AC2',
+    '| - | ok 1 - adds two |\n| AC2')), /AC1 \(Task 1\): red-run row has an empty Failing line/);
+  assertRejected(recordWith(swapRun('| 0 | 1 |', '| 0 | NONE |')), /AC2 \(Task 2\): red-run row has an empty Passing line/);
+  assertRejected(recordWith(swapRun('| 0 | 1 |', '|  | 1 |')), /AC2 \(Task 2\): red-run row has an empty Failing line/);
+});
+
+test('test-evidence rejects: a Red by that is neither before nor break', () => {
+  assertRejected(recordWith(swapRun('| before |', '| after |')), /AC1 \(Task 1\): Red by "after" is neither before nor break/);
+});
+
+test('test-evidence rejects: a control row with an empty Break, and one with an empty Restore', () => {
+  assertRejected(recordWith(swapRun('| add returns 0 |', '| - |')), /test "adds zero" \(Task 1\): control row has an empty Break/);
+  assertRejected(recordWith(swapRun('read restored; ok 1 - reads b', 'none')), /test "reads b" \(Task 2\): control row has an empty Restore/);
+});
+
+test('test-evidence rejects: a check with a test file and Red by before but no control row', () => {
+  const r = assertRejected(recordWith((s) => s.split('\n').filter((l) => !l.startsWith('| AC1 | adds two')).join('\n')),
+    /AC1 \(Task 1\): no control row/);
+  assert.doesNotMatch(r.detail, /AC2/);
+});
+
+test('test-evidence rejects: an unreadable plan line, and a duplicate criterion token', () => {
+  const bad = FULL.replace('| AC3 | 2 | human-verify', '| AC3 | 2 | human-verify | extra cell');
+  assertRejected(recordWith(), new RegExp(`plan line ${lineOf(bad, 'extra cell')}: row has 9 cells`), bad);
+  const dup = FULL.replace('| AC3 | 2 | human-verify', '| AC1 | 2 | human-verify');
+  assertRejected(recordWith(), /criterion token AC1 is already carried/, dup);
+});
+
+test('test-evidence rejects: a missing red run, naming the check and its Task cell', () => {
+  assertRejected(recordWith((s) => s.split('\n').filter((l) => !l.startsWith('| AC2 the flag')).join('\n')),
+    /AC2 \(Task 2\): no red-run row/);
+});
+
+test('test-evidence accepts a complete record and leaves the file byte-identical', () => {
+  const body = recordWith();
+  const { plan: p, report: rp } = inRepo(FULL, body);
+  const r = judge(p);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.state, 'complete');
+  assert.deepEqual([r.checks, r.tests], [3, 3]);
+  assert.equal(readFileSync(rp, 'utf8'), body);
+});
+
+test('test-evidence accepts a Red by: break row standing as its check\'s control', () => {
+  const body = recordWith((s) => s.replace('| before |', '| break |')
+    .split('\n').filter((l) => !l.startsWith('| AC1 | adds two')).join('\n'));
+  const r = judge(inRepo(FULL, body).plan);
+  assert.equal(r.ok, true, JSON.stringify(r));
+});
+
+test('test-evidence accepts a none Test file check with no control row', () => {
+  const body = recordWith((s) => s.replace('| break |', '| before |'));
+  assert.ok(!body.includes('| AC2 |') && body.includes('| AC2 the flag | grep -c x b.md \\| wc -l | before |'));
+  const r = judge(inRepo(FULL, body).plan);
+  assert.equal(r.ok, true, JSON.stringify(r));
+});
+
+test('test-evidence accepts a plan carrying neither section, saying it lists nothing', () => {
+  const body = report({ section: false });
+  const { plan: p, report: rp } = inRepo(plan({}), body);
+  const r = judge(p);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.state, 'lists-nothing');
+  assert.equal(readFileSync(rp, 'utf8'), body);
+});
+
+test('test-evidence refuses an absent report and a first line other than PLAN COMPLETE, writing nothing', () => {
+  const none = judge(inRepo(FULL, null).plan);
+  assert.deepEqual([none.ok, none.reason], [false, 'no-report']);
+  const body = recordWith((s) => s.replace('PLAN COMPLETE', 'PLAN PARTIAL'));
+  const { plan: p, report: rp } = inRepo(FULL, body);
+  const r = judge(p);
+  assert.deepEqual([r.ok, r.reason], [false, 'not-complete']);
+  assert.equal(readFileSync(rp, 'utf8'), body);
+  let out;
+  try { out = execFileSync('node', [PLANNING, 'test-evidence'], { encoding: 'utf8' }); } catch (e) { out = e.stdout; }
+  assert.equal(JSON.parse(out).reason, 'bad-args');
+});
+
+test('agreement: a report test-evidence rejects is outstanding to replay-check and status', () => {
+  const dir = makeTree({ roadmap: [{ n: 3, name: 'Three' }], phases: { 3: { plan: ['PLAN-1.md'] } } });
+  const repo = dirname(dir);
+  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' }).trim();
+  g('init', '-q');
+  g('config', 'user.email', 't@example.com');
+  g('config', 'user.name', 'T');
+  g('config', 'commit.gpgsign', 'false');
+  writeFileSync(join(repo, 'a.txt'), 'a');
+  g('add', 'a.txt');
+  g('commit', '-q', '-m', 'one');
+  const h = g('rev-parse', '--short', 'HEAD');
+  const pdir = join(dir, 'phases', '3');
+  const body = report({ runs: fullRuns(h).split('\n')[1] + '\n' });
+  planWithReport(FULL, body, pdir);
+  assert.equal(run(['replay-check', '--phase', '3'], dir).replay, true, 'precondition: complete before the check');
+
+  const r = judge(join(pdir, 'PLAN-1.md'));
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.match(r.detail, /AC1 \(Task 1\): no red-run row/);
+  const replay = run(['replay-check', '--phase', '3'], dir);
+  assert.deepEqual([replay.replay, replay.dispatch_set], [false, ['PLAN-1.md']]);
+  const status = run(['status'], dir);
+  assert.deepEqual(status.outstanding, [{ phase: 3, plans: ['PLAN-1.md'] }], JSON.stringify(status.outstanding));
+});

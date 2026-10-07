@@ -19,10 +19,11 @@
 // rotated `plan-<k>.<n>.md` sibling is never what gets read.
 'use strict';
 
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fail, ok, readPlanReports } from './core.mjs';
-import { sectionSpan } from '../lib/planning-files.mjs';
+import { atomicWrite, sectionSpan } from '../lib/planning-files.mjs';
 
 const MAP_HEADER = ['criterion', 'task', 'command', 'test file', 'function', 'expected',
   'unit and fakes', 'break'];
@@ -337,4 +338,115 @@ function cmdTestChecks(paths) {
   }) });
 }
 
-export { cmdTestChecks, parseEvidence, parseTestChecks };
+// ---------------------------------------------------------------------------
+// test-evidence <plan file> - is a `PLAN COMPLETE` report's evidence record
+// complete? With the test-evidence switch on, /cad-execute runs this on every
+// complete return before recording it. A short record rewrites the report's
+// FIRST line to `PLAN CHECKPOINT: blocked` and nothing else, so `replay-check`
+// and `status` (which read that line through `readPlanReports`) agree the plan
+// is not complete, and the orchestrator takes handle_checkpoint's existing
+// `blocked` arm. `blocked` because a new checkpoint type would be a new arm.
+// ---------------------------------------------------------------------------
+
+/** Blank, `-` or `none`, any case, after trimming. */
+const isEmpty = (/** @type {string} */ c) => ['', '-', 'none'].includes(String(c).trim().toLowerCase());
+
+/**
+ * Is `hash` a commit HEAD descends from, in the repository holding `cwd`? A
+ * hash naming no commit, or no repository at all, answers false.
+ * @param {string} hash
+ * @param {string} cwd
+ */
+const isAncestor = (hash, cwd) =>
+  spawnSync('git', ['merge-base', '--is-ancestor', hash, 'HEAD'], { cwd, stdio: 'ignore' }).status === 0;
+
+/**
+ * What a check's red-run row fails, or null when it is whole.
+ * @param {any} run
+ * @param {string} cwd
+ */
+function runFault(run, cwd) {
+  if (!run) return 'no red-run row';
+  const by = run.red_by.trim().toLowerCase();
+  if (by !== 'before' && by !== 'break') return `Red by "${run.red_by}" is neither before nor break`;
+  if (!/^[0-9a-f]{7,40}$/i.test(run.red_at)) return `Red at "${run.red_at}" is not 7 to 40 hex characters`;
+  if (!isAncestor(run.red_at, cwd)) return `Red at ${run.red_at} is not a commit HEAD descends from`;
+  if (isEmpty(run.failing_line)) return 'red-run row has an empty Failing line';
+  if (isEmpty(run.passing_line)) return 'red-run row has an empty Passing line';
+  return null;
+}
+
+/** What a control row fails, or null when it is whole. @param {any} control */
+function controlFault(control) {
+  if (!control) return 'no control row';
+  for (const [key, name] of [['break', 'Break'], ['failing_line', 'Failing line'], ['restore', 'Restore']]) {
+    if (isEmpty(control[key])) return `control row has an empty ${name}`;
+  }
+  return null;
+}
+
+/** @param {string[]} paths */
+function cmdTestEvidence(paths) {
+  if (paths.length !== 1) {
+    return fail('bad-args', `test-evidence needs exactly one plan file path (got ${paths.length})`,
+      'pass the one PLAN file whose report to judge as a positional word after `test-evidence`, then re-run');
+  }
+  const texts = readPlans(paths);
+  if (!texts) return;
+  const planPath = paths[0];
+  const parsed = parseTestChecks(texts[0]);
+  const { checks, tests, report, text } = readEvidence(planPath, parsed);
+  if (text === null) {
+    return fail('no-report', `${report.path} does not exist, so there is no record to judge`,
+      'this judges a report an executor returned PLAN COMPLETE on - nothing was written');
+  }
+  if (report.status !== 'PLAN COMPLETE') {
+    return fail('not-complete', `${report.path} reads "${report.status}" on its first line, not PLAN COMPLETE`,
+      'only a PLAN COMPLETE report is judged - nothing was written');
+  }
+  const counts = { checks: checks.length, tests: tests.length };
+  if (parsed.sections === 'neither') {
+    return ok({ plan: planPath, report: report.path, state: 'lists-nothing', ...counts,
+      note: 'the plan carries neither ## Evidence map nor ## Tests, so there is nothing to require' });
+  }
+
+  const cwd = dirname(planPath);
+  const short = [];
+  for (const c of checks) {
+    if (c.human_verify) continue;
+    const at = `${c.criterion} (Task ${c.task})`;
+    const fault = runFault(c.evidence.run, cwd);
+    if (fault) short.push(`${at}: ${fault}`);
+    const byBreak = c.evidence.run && c.evidence.run.red_by.trim().toLowerCase() === 'break';
+    if (!isEmpty(c.test_file) && !byBreak) {
+      const cf = controlFault(c.evidence.control);
+      if (cf) short.push(`${at}: ${cf}`);
+    }
+  }
+  for (const t of tests) {
+    const cf = controlFault(t.evidence.control);
+    if (cf) short.push(`test "${t.test}" (Task ${t.task}): ${cf}`);
+  }
+  for (const i of parsed.issues) short.push(`plan line ${i.line}: ${i.reason}`);
+  const orphans = report.orphans.map((o) => o.line);
+
+  if (!short.length) {
+    return ok({ plan: planPath, report: report.path, state: 'complete', ...counts,
+      orphans: report.orphans, duplicates: report.duplicates });
+  }
+  const nl = text.indexOf('\n');
+  const eol = nl === -1 ? text.length : nl > 0 && text[nl - 1] === '\r' ? nl - 1 : nl;
+  try { atomicWrite(report.path, `PLAN CHECKPOINT: blocked${text.slice(eol)}`); }
+  catch (e) {
+    const code = e && typeof e === 'object' && 'code' in e ? e.code : 'unwritable';
+    return fail('unwritable-report', `the record is short but ${report.path} could not be rewritten (${code})`,
+      'make the report writable and re-run - its first line still reads PLAN COMPLETE');
+  }
+  return fail('evidence-short',
+    `${report.path} now reads PLAN CHECKPOINT: blocked - ${short.join('; ')}`
+      + (orphans.length ? `; evidence rows matching nothing the plan lists (not counted against it) at report lines ${orphans.join(', ')}` : ''),
+    'record the missing runs with a continuation dispatch of this plan: each check red before its behaviour'
+      + ' or under its Break, each listed test and each check with a test file broken, failed and restored');
+}
+
+export { cmdTestChecks, cmdTestEvidence, parseEvidence, parseTestChecks };
