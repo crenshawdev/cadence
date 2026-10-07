@@ -482,6 +482,18 @@ Handle the return:
 </step>
 
 <step name="review">
+When any of the four test switches `parse` read is `true`, read the written
+plans before the fire, whatever the `plan` gate resolves to, so a gate resolved
+`off` still gets the read. Run the `test-checks` call that
+references/review-triggers.md's `plan` payload spells, once, over every PLAN
+file of the phase - by reference, not restated here. Every issue it names is a
+plan defect fixed before execution: say each one out loud with its plan file and
+line, then either re-dispatch cad-planner ONCE in revision mode with those
+issues quoted, as `check_size` re-dispatches, or edit the named lines yourself,
+and run the same read again. Do not fire the review and do not continue to
+`commit` while an issue stands. No issue: continue to the fire. With all four
+`false`, skip this paragraph.
+
 Fire the `plan` review trigger per references/review-triggers.md, payload = the
 PLAN file(s) PLUS the three artifacts the reviewer is asked to check them
 against: `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and
