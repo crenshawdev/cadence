@@ -652,6 +652,19 @@ this step: what shipped, commits per task with hashes, deviations, open items,
 and the goal-check paragraph. Do not commit yet - the cursor lands in the
 same docs commit (state step).
 
+With `workflow.check_inspection` true, SUMMARY.md also carries a
+`## Check inspection` section, one entry per plan of the phase - a plan skipped
+from this run's dispatch set included, since this step reads every plan's
+report. A structural continuation's rotation renames `plan-<k>.md` aside, so a
+reply naming a check wrong can sit only in a rotated sibling: each entry reads
+the `Check inspection:` blocks of `plan-<k>.md`, in the read above, AND of every
+rotated `plan-<k>.<n>.md` sibling of that plan, each sibling for that block
+alone. It holds every reply those reports record after a `Check inspection:`
+line, verbatim, oldest first (the rotated siblings before `plan-<k>.md`), and a
+reply carried forward into a later report is listed once. Where none of them
+records one, the entry is a line saying so. `templates/SUMMARY.md` has no such
+section, because it exists only under the switch.
+
 A deviation that REFUTES a numbered context decision - it cites a D-NN and
 shows that decision's claim false against ground truth - also corrects the
 record it refuted: append ` [corrected by plan-<k> deviation: <the true fact,
