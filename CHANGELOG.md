@@ -7,6 +7,17 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- **git-guard checks the repository a commit lands in.** `git -C <dir> commit`
+  was judged by the session directory's branch, so a commit into a scratch repo
+  under `/tmp` asked as if it were a commit on the project's `main`. A literal
+  `-C` path is now followed, and the commit is policed in that repository, or
+  not at all when it is not a Cadence project. A `-C` the guard cannot read
+  before the shell expands it, such as `"$S"`, keeps the old reading of the
+  session directory and the prompt says which `-C` it could not follow, so
+  nothing that asked before goes quiet.
+
 ### Removed
 
 - **`design-notes/` is out of the repository.** The thirteen dated working

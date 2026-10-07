@@ -520,3 +520,63 @@ test('a deferred gate in the config layer changes no guard decision', () => {
     review: { triggers: { risk_surface: { gate: 'deferred' } } },
   })), null);
 });
+
+// --- The commit rail follows `-C` to the repository the commit lands in. ----
+
+/** A plain git repo, not a Cadence project, on `branch`. */
+function scratch(branch) {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-guard-scratch-'));
+  git(['-C', dir, 'init', '-q', '-b', branch]);
+  return dir;
+}
+
+test('-C into a scratch repo on main is silent, even from a project on main', () => {
+  const s = scratch('main');
+  assert.equal(guard(`git -C ${s} commit -q --allow-empty -m base`, project('main')), null);
+  assert.equal(guard(`git -C "${s}" commit -m x`, project('main')), null);
+  assert.equal(guard(`git -C '${s}' commit -m x`, project('main')), null);
+});
+
+test('-C into a Cadence project on main asks, from a project on a task branch', () => {
+  const target = project('main');
+  const d = guard(`git -C ${target} commit -m x`, project('improve/thing'));
+  assert.equal(d.permissionDecision, 'ask');
+  assert.match(d.permissionDecisionReason, /"main" is a protected branch/);
+});
+
+test('-C into a project on a task branch is silent, from a project on main', () => {
+  const target = project('improve/thing');
+  assert.equal(guard(`git -C ${target} commit -m x`, project('main')), null);
+});
+
+test('-C applies cumulatively, as git applies it', () => {
+  const target = project('main');
+  const d = guard(`git -C ${dirname(target)} -C ${target.slice(dirname(target).length + 1)} commit -m x`,
+    project('improve/thing'));
+  assert.equal(d.permissionDecision, 'ask');
+});
+
+test('an unresolvable -C keeps reading the session directory, and says so', () => {
+  const d = guard('git -C "$S" commit -m x', project('main'));
+  assert.equal(d.permissionDecision, 'ask');
+  assert.match(d.permissionDecisionReason, /cannot tell which repository `git -C "\$S"` commits in/);
+  assert.match(d.permissionDecisionReason, /"main" is a protected branch/);
+  // No new prompt: the same command from a task branch stays silent, as before.
+  assert.equal(guard('git -C "$S" commit -m x', project('improve/thing')), null);
+  assert.equal(guard('git -C ~/x commit -m x', project('improve/thing')), null);
+});
+
+test('-C into a Cadence project is policed even from outside any project', () => {
+  const target = project('main');
+  const outside = mkdtempSync(join(tmpdir(), 'cad-guard-outside-'));
+  const d = guard(`git -C ${target} commit -m x`, outside);
+  assert.equal(d.permissionDecision, 'ask');
+  // and a push from outside any project stays silent, as before
+  assert.equal(guard(`git -C ${target} push`, outside), null);
+});
+
+test('several commits in one command: a deny beats an ask', () => {
+  const refuse = project('main', { git: { on_protected: 'refuse' } });
+  const d = guard(`git commit -m a && git -C ${refuse} commit -m b`, project('main'));
+  assert.equal(d.permissionDecision, 'deny');
+});

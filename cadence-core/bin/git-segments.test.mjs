@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path, { join } from 'node:path';
 
-import { gitVerbs, parentDir, planningRoot, planningRootAsync } from './lib/git-segments.mjs';
+import { gitInvocations, gitVerbs, parentDir, planningRoot, planningRootAsync } from './lib/git-segments.mjs';
 
 // --- The anchor: a segment counts only when its command word is `git`. -------
 
@@ -221,4 +221,18 @@ test('parentDir steps exactly as path.posix.dirname and path.win32.dirname do', 
   };
   chase(POSIX_SHAPES, path.posix.dirname);
   chase(WIN32_SHAPES, path.win32.dirname);
+});
+
+// --- gitInvocations: the same scan, keeping each segment's -C arguments. ----
+
+test('gitInvocations keeps -C arguments in order, raw, and gitVerbs is its verb list', () => {
+  assert.deepEqual(gitInvocations('git -C /tmp/x commit -m y'), [{ verb: 'commit', dirs: ['/tmp/x'] }]);
+  assert.deepEqual(gitInvocations('git -C a -c k=v -C "$S" commit && git push'),
+    [{ verb: 'commit', dirs: ['a', '"$S"'] }, { verb: 'push', dirs: [] }]);
+  assert.deepEqual(gitInvocations('git -C'), []);
+  assert.deepEqual(gitInvocations(42), []);
+  for (const [cmd, verbs] of SEEN) {
+    assert.deepEqual(gitInvocations(cmd).map((g) => g.verb), verbs, cmd);
+    assert.deepEqual(gitVerbs(cmd), verbs, cmd);
+  }
 });

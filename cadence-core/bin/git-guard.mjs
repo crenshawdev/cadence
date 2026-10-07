@@ -26,9 +26,9 @@
 
 import { existsSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { mergeLayers, GLOBAL_CONFIG } from './lib/config-merge.mjs';
-import { gitVerbs, planningRoot } from './lib/git-segments.mjs';
+import { gitInvocations, planningRoot } from './lib/git-segments.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 // The current-branch reader lives in lib/ because three seams ask this same
 // question. It degrades to '' rather than throwing, which matters most HERE:
@@ -161,6 +161,46 @@ function commitDecision(root, cwd) {
   return branchDecision;
 }
 
+const has = (dir, name) => existsSync(join(dir, name));
+
+// A `-C` argument as a path, or null when this reader cannot know it: empty, a
+// variable or a substitution (`$`, a backtick), a `~`, or quoting it cannot
+// strip as one matching pair around the whole word. The command text arrives
+// before the shell expands it, so `-C "$S"` is the literal `"$S"` here.
+function literalDir(raw) {
+  let w = raw;
+  if (/^(["']).*\1$/s.test(w) && w.length >= 2) w = w.slice(1, -1);
+  if (!w || /[$`"'\\]/.test(w) || w.startsWith('~')) return null;
+  return w;
+}
+
+// The protected-branch decision for ONE `git commit`, in the repository it
+// actually lands in. With no `-C` that is the session directory, as before. A
+// literal `-C` path is followed (cumulatively, as git applies them) and that
+// repository is policed only if it is a Cadence project - a scratch repo under
+// /tmp is not, so it stays silent. A `-C` this reader cannot resolve keeps the
+// old reading of the session directory, so nothing that asked before goes
+// quiet, and says which `-C` value it could not follow.
+function commitFor(dirs, cwd, cwdRoot) {
+  if (!dirs.length) return cwdRoot ? commitDecision(cwdRoot, cwd) : null;
+  let target = cwd;
+  for (const raw of dirs) {
+    const dir = literalDir(raw);
+    if (dir === null) {
+      if (!cwdRoot) return null;
+      const d = commitDecision(cwdRoot, cwd);
+      return d && {
+        decision: d.decision,
+        reason: `Cadence rail: cannot tell which repository \`git -C ${raw || '(no path)'}\` commits in, `
+          + `so this read the session directory instead. ${d.reason.replace(/^Cadence rail: /, '')}`,
+      };
+    }
+    target = resolve(target, dir);
+  }
+  const root = planningRoot(target, has);
+  return root ? commitDecision(root, target) : null;
+}
+
 // No process.exit() anywhere below: the decision JSON is written to stdout,
 // and exiting right after a write can truncate it on a pipe (the same rule
 // lib/seam-io.mjs pins for the seam scripts). Plain returns let the stream
@@ -174,24 +214,30 @@ function main() {
   // cwd can sit BELOW the project root (a session opened in src/, say), and
   // checking only cwd would let every commit from a subdirectory slip under the
   // rails. lib/git-segments.mjs holds the walk, shared with the recorders.
-  const root = planningRoot(cwd, (dir, name) => existsSync(join(dir, name)));
-  if (!root) return;
-  const verbs = gitVerbs(command);
+  const root = planningRoot(cwd, has);
+  const calls = gitInvocations(command);
+  const verbs = calls.map((c) => c.verb);
 
   // A push needs no config: EVERY Bash `git push` asks unconditionally - no
   // exemption of any kind lives here (rail 3). cad-land's sanctioned unattended
   // publish runs through the git-publish seam as a subprocess argv push, which
   // is not a Bash tool call, so this hook never sees it.
-  if (verbs.includes('push')) {
+  if (root && verbs.includes('push')) {
     decide('ask', 'Cadence rail: workflows never push - publishing is /cad-land\'s ' +
       'call (references/git-publish.md rail 3). Approve only if you are deliberately publishing.');
     return;
   }
 
-  if (verbs.includes('commit')) {
-    const d = commitDecision(root, cwd);
-    if (d) { decide(d.decision, d.reason); return; }
+  // Each commit is judged in its own repository; across several in one
+  // command a deny beats an ask, and the first reason of the winning kind is
+  // the one shown.
+  let pick = null;
+  for (const call of calls) {
+    if (call.verb !== 'commit') continue;
+    const d = commitFor(call.dirs, cwd, root);
+    if (d && (!pick || (d.decision === 'deny' && pick.decision !== 'deny'))) pick = d;
   }
+  if (pick) decide(pick.decision, pick.reason);
 }
 
 try { main(); } catch { /* never block on a guard failure */ }

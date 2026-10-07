@@ -79,24 +79,43 @@ const SEPARATOR = /&&|\|\||[;|&\n]/;
  * @returns {string[]} the verbs, in the order they appear
  */
 export function gitVerbs(text) {
+  return gitInvocations(text).map((g) => g.verb);
+}
+
+/**
+ * The same scan as `gitVerbs`, keeping each segment's `-C` arguments in order:
+ * `git -C /tmp/x commit` reads `[{verb: 'commit', dirs: ['/tmp/x']}]`. `-C` is
+ * which repository a commit lands in, so the commit rail needs it. The words are
+ * raw - quotes and `$` are left for the caller to judge - and a `-C` with
+ * nothing after it keeps `''`, which no reader resolves.
+ *
+ * @param {unknown} text the raw command string from the hook payload
+ * @returns {{verb: string, dirs: string[]}[]}
+ */
+export function gitInvocations(text) {
   if (typeof text !== 'string' || !text) return [];
 
-  const verbs = [];
+  const out = [];
   for (const segment of text.split(SEPARATOR)) {
     const words = segment.trim().split(/\s+/).filter(Boolean);
     const head = words[0];
     // ANCHORED: the command word, and nothing else, admits a segment.
     if (head !== 'git' && !(head !== undefined && head.endsWith('/git'))) continue;
 
+    const dirs = [];
     for (let i = 1; i < words.length; i++) {
       const word = words[i];
-      if (GLOBAL_OPT_WITH_ARG.has(word)) { i++; continue; } // skip it AND its argument
+      if (GLOBAL_OPT_WITH_ARG.has(word)) { // skip it AND its argument
+        if (word === '-C') dirs.push(words[i + 1] ?? '');
+        i++;
+        continue;
+      }
       if (word.startsWith('-')) continue;
-      verbs.push(word);
+      out.push({ verb: word, dirs });
       break; // the first non-flag word is the verb; the rest are its operands
     }
   }
-  return verbs;
+  return out;
 }
 
 /**
