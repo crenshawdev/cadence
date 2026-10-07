@@ -173,13 +173,21 @@ unfinished one.
      catches, and any negative control run; hand checks run, with their output;
      anything that could not be tested, and why; doc drift fixed; anything that
      looks wrong in the plan or the design; anything that stopped the work.
-3. **Run Codex**, with an explicit Bash timeout of 600000:
-   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codex-exec < "$D/prompt-<k>.md"`.
-   The host's 120000 default would kill it first and print nothing. It runs in
-   the repository root, in the sandbox `roles.cad-executor.codex.sandbox`
-   names: `workspace-write`, unless the user-global config says
-   `danger-full-access`, which runs Codex unsandboxed. It prints one JSON line;
-   `ok:true` carries Codex's final message as `message`.
+3. **Run Codex.** Start it, then wait on it, each a Bash call with an explicit
+   timeout of 600000 (the host's 120000 default would kill a wait first):
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codex-exec --start < "$D/prompt-<k>.md"`,
+   then `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codex-exec --wait`
+   again each time the answer carries `running: true`. A running answer comes
+   back about every eight minutes with `elapsed_ms`, `bound_ms` and
+   `dirty_paths`: progress, not a result, so wait again and do nothing else.
+   The final answer is one JSON line; `ok:true` carries Codex's final message
+   as `message`. The run is bounded by `roles.cad-executor.codex.timeout_ms`,
+   540000 when unset. Codex runs in the repository root, in the sandbox
+   `roles.cad-executor.codex.sandbox` names: `workspace-write`, unless the
+   user-global config says `danger-full-access`, which runs Codex unsandboxed.
+   A `codex-busy` start means another live run holds this tree; never
+   `--stop` a run you did not start. A run no wait is attached to for five
+   minutes is killed as `codex-abandoned`.
 4. **Refs and changed paths.** Take the refs again as in step 1; any line that
    differs is a stop. Take the after-state as in step 1. The changed paths are
    every porcelain path whose entry or content hash differs between the two,
@@ -259,13 +267,13 @@ report, as that dispatch says.
 ### Failures
 
 Each of these returns the contract's existing `CHECKPOINT: blocked`, and nothing
-else does: the subcommand's `no-codex`, `codex-exit`, `codex-timeout` or
-`no-output`; a changed path outside the task's files; a dirty declared path
+else does: the subcommand's `no-codex`, `codex-exit`, `codex-timeout`,
+`no-output`, `codex-abandoned`, `codex-busy` or `no-run`; a changed path outside the task's files; a dirty declared path
 before the first run; a failing Verify; failing static analysis; a `lease-check`
 refusal; a red suite after the last task; a declared path not back at HEAD
 after an evidence-only run, named in `Need`; a git ref that moved across any
-Codex run, named in `Need` with its before and after lines. There is no other return arm, and
-none labelled timeout. On each:
+Codex run, named in `Need` with its before and after lines. There is no other
+return arm, and none labelled timeout. On each:
 
 - Write the report first, its first line `PLAN CHECKPOINT: blocked`, with the
   rows completed so far.
@@ -273,7 +281,8 @@ none labelled timeout. On each:
   `Need`.
 - `Need` names the cause: the subcommand's `reason` and `detail`, the offending
   paths, or the failing command and where its output was written. For
-  `codex-timeout` it says the remedy is a smaller task. It lists the
+  `codex-timeout` it says the remedy is a smaller task or a larger
+  `roles.cad-executor.codex.timeout_ms`. It lists the
   uncommitted changes Codex left, which stay as Codex left them: you never
   revert or edit them, so `git status` shows no source change of yours.
 

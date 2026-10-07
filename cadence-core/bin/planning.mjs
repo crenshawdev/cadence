@@ -105,14 +105,17 @@
 //                                   plan lists; a short record rewrites the
 //                                   report's first line to PLAN CHECKPOINT:
 //                                   blocked and nothing else
-//   codex-exec                      one `codex exec` in the cwd for a Codex-mode
+//   codex-exec [--start|--wait|--stop]
+//                                   one `codex exec` in the cwd for a Codex-mode
 //                                   executor, the prompt on stdin, in the
 //                                   workspace-write sandbox (or none, when the
 //                                   user-global config says danger-full-access)
-//                                   and bounded below
-//                                   the host's Bash ceiling; ok:true carries
-//                                   Codex's final message, and each way the run
-//                                   fails has its own reason
+//                                   and bounded by
+//                                   roles.cad-executor.codex.timeout_ms; bare it
+//                                   runs in the foreground,
+//                                   --start runs it detached, --wait answers it
+//                                   or says it is still running, --stop ends it;
+//                                   each way the run fails has its own reason
 //   detect-surfaces [--root <path>] [--answered <a,b,c>]
 //                                   which of the eight risk-surface categories
 //                                   the project's STRUCTURE evidences - dirs,
@@ -309,7 +312,7 @@ const COMMANDS = {
   'lease-check': (dir, _sub, opts) => cmdLeaseCheck(dir, opts),
   // The one async handler: it owns its own catch, since the one at the foot
   // of this file cannot see a rejection.
-  'codex-exec': (_dir, _sub, _opts) => cmdCodexExec(),
+  'codex-exec': (_dir, _sub, opts) => cmdCodexExec(opts),
   // Plan paths are positional words, as `recall`'s query is, so the
   // subcommand declares no flag of its own.
   'test-checks': (_dir, _sub, _opts, rest) => cmdTestChecks(rest),
