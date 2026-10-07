@@ -99,6 +99,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch \
+  workflow.test_evidence \
   roles.cad-executor.codex.enabled
 ```
 
@@ -231,9 +232,52 @@ successive executors in the phase share a cached prefix: phase-level context
 - The Codex-mode line, when the executor's own resolve carries
   `codex_mode: true` (references/seam-spawn-agent.md's Routing block states the
   line). It is the same for every plan in the phase, so it sits here.
+- The `<test_evidence>` block below, verbatim, ONLY when `workflow.test_evidence`
+  (read in `locate`) is true; when it is false, nothing at all is added. It is
+  the same for every plan in the phase, so it sits here.
 - Then the plan-specific tail: the plan file to read, commit scope
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."
+
+With `workflow.test_evidence` true, every dispatch of a plan carries this block -
+first, continuation, re-dispatched remainder or replay alike. It is how the
+report gets the `Test evidence:` section that `planning.mjs test-evidence`
+judges below, in the grammar `planning.mjs test-checks` reads; a change to one
+is a change to the other.
+
+```text
+<test_evidence>
+Test evidence is on for this project. Besides your task table, the report file records each check's red run and each test's negative control, as below.
+
+Each check: every row of the plan's `## Evidence map` whose Command does not begin `human-verify:`, in the task its Task cell names. Write the check's test, or set up its command, before the behaviour it proves. Run the Command and keep its failing line and what `git rev-parse --short HEAD` prints at that moment: that is `Red by: before`. Build the behaviour, run the Command again, and keep its passing line.
+
+A check that cannot fail before its behaviour, because it pins something already true, runs red after the behaviour instead. Apply its Break, run the Command, and keep the failing line and HEAD. Restore the code, run the Command again, and keep the passing line: that is `Red by: break`.
+
+Each control: for each test in the plan's `## Tests`, once it passes, break the behaviour it guards, run it, keep the failing line, restore the code, and see it pass. Each check whose Test file is not `none` gets the same control under its Break, in a row keyed by its criterion token. A check recorded `Red by: break` needs no second control.
+
+The record: a line reading exactly `Test evidence:` at column 0, after the task table and before `Deviations:`, then these two tables with their header rows as written here, and only blank lines and table rows until `Deviations:`. Escape a `|` inside a cell as `\|`.
+
+| Check | Command | Red by | Red at | Failing line | Passing line |
+|---|---|---|---|---|---|
+
+One row per check that is not `human-verify:`. Check begins with its criterion token (AC<N> or MT<n>). Command is the command as run. Red by is `before` or `break`. Red at is the short hash `git rev-parse --short HEAD` printed when the red run ran. Failing line and Passing line are the red run's and the green run's output lines, verbatim.
+
+| Task | Test | Break | Failing line | Restore |
+|---|---|---|---|---|
+
+One row per listed test, Task its task number and Test its name as `## Tests` lists it, and one per check whose Test file is not `none`, Task its criterion token and Test its Function. Break is what was broken, Failing line the test's failing line under the break, and Restore how the code was restored and the passing line after.
+
+Rewrite the section with the report after every task commit.
+
+Copy forward: whether this is a first dispatch, a continuation or a replay, copy every evidence row of the report you continue from. That report is the `plan-<k>.md` on disk when you start, which the contract's rotation renames to a `plan-<k>.<n>.md` sibling before your first write. Complete a copied row in place, and never write a second row for one check or test.
+
+Already in HEAD: a dispatch whose tasks are already in HEAD still records every run the copied rows lack. A check gets its red run under its Break, and a test or check gets its control.
+
+What cannot be recorded: a check that fails neither before its behaviour nor under its Break, or a test that survives its break, is a deviation in the report. It never becomes a row with an invented line.
+
+None of this goes in the five-field digest.
+</test_evidence>
+```
 
 With Codex mode switched on (`roles.cad-executor.codex.enabled` true), an
 executor resolve that answers `ok:false` does NOT take the seam's base-agent
@@ -411,6 +455,11 @@ here. The re-arm on that fix is CAPPED at ONE narrowed round per
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
 before the fix lands, since this workflow does not preload it.
 
+With `workflow.test_evidence` true, that fix dispatch's prompt also carries one
+line: keep the report's `Test evidence:` section byte for byte when appending the
+fix row. That dispatch does not rotate the report, so the line is all it needs,
+and its `PLAN COMPLETE` return is checked like any other.
+
 Then, before the plan is reported done:
 
 ```
@@ -500,6 +549,11 @@ report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
 re-inline the table. Bracket it under the SAME worker key `<k>` the first
 dispatch took, and write this plan's risk record and receipt with that one
 spelling.
+
+With `workflow.test_evidence` true, that continuation prompt also carries
+`execute_sequential`'s `<test_evidence>` block, beside the Codex-mode line, and
+so does every re-dispatched remainder the partial and turn-cap arms send; when
+it is false, nothing is added.
 </step>
 
 <step name="execute_parallel">

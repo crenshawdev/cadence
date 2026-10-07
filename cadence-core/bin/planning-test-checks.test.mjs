@@ -566,3 +566,31 @@ test('agreement: a report test-evidence rejects is outstanding to replay-check a
   const status = run(['status'], dir);
   assert.deepEqual(status.outstanding, [{ phase: 3, plans: ['PLAN-1.md'] }], JSON.stringify(status.outstanding));
 });
+
+// --- the executor's block and the report parse are one grammar ---------------
+
+test('a report built from execute.md\'s <test_evidence> header rows attaches its rows with no issue', () => {
+  const md = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'workflows', 'execute.md'), 'utf8');
+  const block = md.slice(md.indexOf('<test_evidence>\n'), md.indexOf('</test_evidence>')).split('\n');
+  const at = (prefix) => {
+    const i = block.findIndex((l) => l.startsWith(prefix));
+    assert.ok(i >= 0, `execute.md's <test_evidence> block has no line starting ${prefix}`);
+    return i;
+  };
+  assert.ok(block.includes('Test evidence:') || block.some((l) => l.includes('`Test evidence:`')),
+    'the block names the section line');
+  const runs = at('| Check |');
+  const controls = at('| Task |');
+  const body = 'PLAN COMPLETE\nTasks: 2 of 2\n\nTest evidence:\n\n'
+    + `${block[runs]}\n${block[runs + 1]}\n`
+    + '| AC1 rest | node --test a.test.mjs \\| cat | before | abc1234 | not ok 1 | ok 1 |\n\n'
+    + `${block[controls]}\n${block[controls + 1]}\n`
+    + '| 1 | adds two | add returns a+a | not ok 1 | restored; ok 1 |\n| AC1 | adds two | b | f | r |\n\n'
+    + 'Deviations: none\n';
+  const r = cli([planWithReport(FULL, body).plan]).plans[0];
+  assert.equal(r.report.state, 'read');
+  assert.deepEqual([r.report.issues, r.report.orphans, r.report.duplicates], [[], [], []]);
+  assert.equal(r.checks[0].evidence.run.command, 'node --test a.test.mjs | cat');
+  assert.ok(r.checks[0].evidence.control);
+  assert.ok(r.tests[0].evidence.control);
+});
