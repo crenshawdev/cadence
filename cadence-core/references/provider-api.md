@@ -210,7 +210,29 @@ report, as that dispatch says.
 
 ### Failures
 
-Any step above that fails stops the dispatch through the arm below.
+Each of these returns the contract's existing `CHECKPOINT: blocked`, and nothing
+else does: the subcommand's `no-codex`, `codex-exit`, `codex-timeout` or
+`no-output`; a changed path outside the task's files; a dirty declared path
+before the first run; a failing Verify; failing static analysis; a `lease-check`
+refusal; a red suite after the last task. There is no other return arm, and none
+labelled timeout. On each:
+
+- Write the report first, its first line `PLAN CHECKPOINT: blocked`, with the
+  rows completed so far.
+- Return the five-field digest plus `CHECKPOINT: blocked`, `Current task` and
+  `Need`.
+- `Need` names the cause: the subcommand's `reason` and `detail`, the offending
+  paths, or the failing command and where its output was written. For
+  `codex-timeout` it says the remedy is a smaller task. It lists the
+  uncommitted changes Codex left, which stay as Codex left them: you never
+  revert or edit them, so `git status` shows no source change of yours.
+
+There is no repair attempt in Codex mode. The contract's three-attempt loop and
+the suite's one repair round both need an edit you may not make, and a second
+`codex exec` for a task that gets one. The first failure stops the dispatch, and
+the human decides. Never implement the task yourself, retry with another sandbox,
+another flag or a direct `codex` call, re-run Codex on the same task within the
+dispatch, report success, or ask for a Claude rung in Codex's place.
 
 ## Gemini (Generative Language API, generateContent)
 
