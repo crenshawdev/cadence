@@ -67,8 +67,9 @@ function boundMs() {
 
 /**
  * Run codex once. On POSIX it leads its own process group, so the bound kills
- * whatever it started too, and a signal that stops this process stops the
- * group rather than leaving Codex editing the tree on its own.
+ * whatever it started too, and SIGINT, SIGTERM or SIGHUP on this process stops
+ * the group rather than leaving Codex editing the tree on its own. A SIGKILL of
+ * this process cannot be relayed: Codex then runs on until it exits.
  * @param {string[]} args @param {number} ms
  * @returns {Promise<{code: number|null, signal: string|null, timedOut?: boolean, spawnError?: any}>}
  */
@@ -131,8 +132,11 @@ async function cmdCodexExec() {
         : run.code === null ? `was killed by signal ${run.signal}` : `exited with code ${run.code}`;
       return emit({ ok: false, reason: 'codex-exit', status: run.code,
         ...(run.signal ? { signal: run.signal } : {}), detail: `codex exec ${how}`,
-        hint: 'run `codex login status`, and check that the model your Codex config names is one'
-          + ' your login serves; then re-run' });
+        hint: run.spawnError
+          ? 'codex is on PATH but could not be started; on Windows Codex mode cannot launch an npm'
+            + ' `codex.cmd` shim yet, so install a `codex.exe` or set roles.cad-executor.codex.enabled to false'
+          : 'run `codex login status`, and check that the model your Codex config names is one'
+            + ' your login serves; then re-run' });
     }
     let text = '';
     try { text = readFileSync(out, 'utf8'); } catch { /* no final message: refused below */ }

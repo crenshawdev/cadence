@@ -177,8 +177,12 @@ unfinished one.
    `.planning/trace.1.jsonl`), even where a project does not ignore them.
    Ignored paths are not policed, by design: the hooks and every build and test
    run write there, and the sandbox still keeps every write inside the
-   repository and `.git` read-only. Every other changed path must equal a path
-   in the task's Files or lie under one that names a directory.
+   repository and `.git` read-only. A changed path under `.planning/` that is
+   not in the task's Files does not block, because Cadence and other sessions
+   write there while Codex runs (an advisory diff review's findings file, a
+   planner's PLAN); list each in the task's Note and never stage it. Every
+   other changed path must equal a path in the task's Files or lie under one
+   that names a directory.
 5. **Verify**, per the contract's step 2, prediction first, in your own shell
    outside the sandbox. A check needing the network runs here.
 6. **Static analysis**, per the contract's step 3.
