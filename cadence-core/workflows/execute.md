@@ -222,9 +222,18 @@ successive executors in the phase share a cached prefix: phase-level context
   the bar the work is written to, not a review that fires later. On
   `surfaces_answered: false` say that no layer answered, so ALL of the
   table's categories stand rather than none.
+- The Codex-mode line, when the executor's own resolve carries
+  `codex_mode: true` (references/seam-spawn-agent.md's Routing block states the
+  line). It is the same for every plan in the phase, so it sits here.
 - Then the plan-specific tail: the plan file to read, commit scope
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."
+
+With Codex mode switched on (`roles.cad-executor.codex.enabled` true), an
+executor resolve that answers `ok:false` does NOT take the seam's base-agent
+fallback: stop with a `structural` checkpoint naming the resolve's `reason`, so
+no Claude executor runs a plan the user put on Codex. This is the one exception
+to that seam's `{ok:false}` rule.
 
 Do NOT restate the executor's standing rules (atomic commit per task,
 deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
@@ -380,7 +389,8 @@ persisted at `.planning/phases/<N>/REVIEW-risk_surface-plan-<k>.md`
 only; and the instruction NOT to rotate the plan's report but to append its fix
 row to the existing `<plandir>/reports/plan-<k>.md`, since the executor
 contract's rotation rule is unconditional and would otherwise rename the
-completed plan's report aside. When a finding names a path outside the plan's
+completed plan's report aside - plus the Codex-mode line when the resolve
+carries `codex_mode: true`. When a finding names a path outside the plan's
 declared `files:` lease, the coordinator AMENDS `PLAN-<k>.md`'s `files:` to
 cover that path BEFORE dispatching, so `lease-check` still runs and still
 answers on the fix commit's staged set - `PLAN-<k>.md` is inside `.planning/`,
@@ -479,7 +489,8 @@ changed paths. A fallback and not a bounded re-dispatch loop.
 
 Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
 report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
-"continue from task <k>". Fresh context each time - never resume, and never
+"continue from task <k>", plus the Codex-mode line when the resolve carries
+`codex_mode: true`. Fresh context each time - never resume, and never
 re-inline the table. Bracket it under the SAME worker key `<k>` the first
 dispatch took, and write this plan's risk record and receipt with that one
 spelling.
