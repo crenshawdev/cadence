@@ -392,16 +392,48 @@ const isAncestor = (hash, cwd) =>
   spawnSync('git', ['merge-base', '--is-ancestor', hash, 'HEAD'], { cwd, stdio: 'ignore' }).status === 0;
 
 /**
- * What a check's red-run row fails, or null when it is whole.
+ * The commits the report's task table names per task number: the hashes in the
+ * Commit cell of each `| Task | Commit | Note |` row whose Task cell begins
+ * with that number.
+ * @param {string} text
+ */
+function taskCommits(text) {
+  const lines = String(text).split(/\r?\n/);
+  /** @type {Map<number, string[]>} */
+  const out = new Map();
+  for (const t of tablesIn(lines, 0, lines.length)) {
+    if (!sameHeader(cells(lines[t.header]), ['task', 'commit', 'note'])) continue;
+    for (const r of t.rows) {
+      const c = cells(lines[r]);
+      const n = (c[0] || '').match(/^(?:Task\s+)?(\d+)\b/i);
+      if (!n) continue;
+      const k = Number(n[1]);
+      out.set(k, [...(out.get(k) || []), ...((c[1] || '').match(/\b[0-9a-f]{7,40}\b/gi) || [])]);
+    }
+  }
+  return out;
+}
+
+/**
+ * What a check's red-run row fails, or null when it is whole. `delivered` is
+ * the commits the task table names for the check's task: a `before` run at one
+ * of them ran where the behaviour already was, so it is no red-first run.
  * @param {any} run
  * @param {string} cwd
+ * @param {number} task
+ * @param {string[]} delivered
  */
-function runFault(run, cwd) {
+function runFault(run, cwd, task, delivered) {
   if (!run) return 'no red-run row';
   const by = run.red_by.trim().toLowerCase();
   if (by !== 'before' && by !== 'break') return `Red by "${run.red_by}" is neither before nor break`;
   if (!/^[0-9a-f]{7,40}$/i.test(run.red_at)) return `Red at "${run.red_at}" is not 7 to 40 hex characters`;
   if (!isAncestor(run.red_at, cwd)) return `Red at ${run.red_at} is not a commit HEAD descends from`;
+  const at = run.red_at.toLowerCase();
+  const hit = delivered.some((h) => h.toLowerCase().startsWith(at) || at.startsWith(h.toLowerCase()));
+  if (by === 'before' && hit) {
+    return `Red by before at ${run.red_at} is the commit that delivered Task ${task}, which already holds the behaviour`;
+  }
   if (isEmpty(run.failing_line)) return 'red-run row has an empty Failing line';
   if (isEmpty(run.passing_line)) return 'red-run row has an empty Passing line';
   return null;
@@ -442,11 +474,12 @@ function cmdTestEvidence(paths) {
   }
 
   const cwd = dirname(planPath);
+  const commits = taskCommits(text);
   const short = [];
   for (const c of checks) {
     if (c.human_verify) continue;
     const at = `${c.criterion} (Task ${c.task})`;
-    const fault = runFault(c.evidence.run, cwd);
+    const fault = runFault(c.evidence.run, cwd, c.task, commits.get(c.task) || []);
     if (fault) short.push(`${at}: ${fault}`);
     const byBreak = c.evidence.run && c.evidence.run.red_by.trim().toLowerCase() === 'break';
     if (!isEmpty(c.test_file) && !byBreak) {

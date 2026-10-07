@@ -648,3 +648,16 @@ test('a list item or a table row without its leading | inside either section is 
   assert.deepEqual(p.issues.map((i) => i.line),
     ['Criterion | Task', '---|---', 'AC2 | 2'].map((head) => pipeless.split('\n').findIndex((l) => l.startsWith(head)) + 1));
 });
+
+test('test-evidence rejects a Red by: before row whose Red at is the commit the task table says delivered its task', () => {
+  const { repo, head } = scratchRepo();
+  const full = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+  for (const commit of [head, full]) {
+    const r = assertRejected(recordWith((s) => s.replace('| 1 - first | abc1234 |', `| 1 - first | ${commit} |`)),
+      new RegExp(`AC1 \\(Task 1\\): Red by before at ${head} is the commit that delivered Task 1`));
+    assert.doesNotMatch(r.detail, /AC2/);
+  }
+  const body = recordWith((s) => s.replace('| 2 - second | def5678 |', `| 2 - second | ${head} |`));
+  const ok = judge(inRepo(FULL, body).plan);
+  assert.equal(ok.ok, true, `a Red by: break row at its task's commit stands: ${JSON.stringify(ok)}`);
+});
