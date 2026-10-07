@@ -6,6 +6,11 @@ a provider changes its API, update the adapter in the script AND this file
 together. The script isolates every provider-specific byte in its `ADAPTERS`
 object so a change touches one place.
 
+One section is read at runtime: `## Codex executor mode`, which a `cad-executor`
+dispatch reads when its prompt carries the Codex-mode line and holds for the
+whole dispatch. Nothing else in this file is read by an agent, so an edit there
+changes what every Codex-mode run does.
+
 Model ID strings are deliberately NOT pinned here - they are discovered live via
 `detect-models` (see `model-hints.json` for soft tier classification). Anything a
 provider ships is selectable even if Cadence has never heard of it.
@@ -77,6 +82,135 @@ codex-cli 0.160.1 on a ChatGPT login, 2026-10-07. No key is read; `consult` and
 - **Rate limits:** concurrent panel calls share one Codex plan and may hit its
   limits. A limited call exits non-zero and is recorded as a review that did not
   run (`codex-exit`).
+
+## Codex executor mode
+
+Read by the `cad-executor` wrapper when its dispatch prompt carries the
+Codex-mode line, before task 1, and held for the whole dispatch the way
+`<worktree_mode>` is. Every contract rule still binds except where this section
+replaces one. `codex exec` builds each task; you check it, commit it and report.
+
+**You never write or edit a source file yourself.** Your only writes are the
+report file the contract names and scratch files in a directory you made with
+`mktemp -d`, outside the repository. A Codex run replaces the contract's
+`<process>` step 1 ("Implement the task's change"). Running the subcommand below
+is this dispatch's own instruction, not an agent spawn or a review the
+contract's `<never>` forbids. Never call `codex` any other way.
+
+Make the scratch directory once per dispatch and carry the echoed path as a
+literal into later commands; the guard refuses a path a literal cannot survive:
+
+```
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-codex-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"
+```
+
+### Before the first Codex run
+
+A path the plan declares that already differs from HEAD (`git status
+--porcelain=v1 --untracked-files=all` lists it) stops the plan `blocked`, naming
+the path: Codex never builds on uncommitted work nobody can attribute. The one
+exception is a continuation whose report names that task as this plan's own
+unfinished one.
+
+### Per task, in order
+
+1. **Before-state.** Record `git status --porcelain=v1 -z --untracked-files=all`
+   (tracked and untracked; ignored paths are not listed) and a `git hash-object`
+   of every listed path that exists, into `$D`.
+2. **Build prompt.** Write it to `$D/prompt-<k>.md`. Every path in it is
+   absolute: whether `CLAUDE_PLUGIN_ROOT` and `PATH` reach Codex's commands is
+   unmeasured. Its sections, in this order:
+   - **Where you are.** The repository path, the current branch, and that this
+     is task k of `<plan file>` in phase N. No other agent works in this tree
+     during the run.
+   - **The whole plan.** The plan's Goal, Must be true when done, Context and
+     every task, verbatim, with task k marked as the one to build; the phase
+     CONTEXT's decisions; and the project `CLAUDE.md` content your dispatch
+     prompt names, since Codex loads `AGENTS.md` itself and never `CLAUDE.md`.
+     For a `/cad-task` plan, its files, action and verification.
+   - **Read before coding.** The project's rules file (`AGENTS.md` or
+     `CLAUDE.md`) first; its rules bind everything Codex does. Then every
+     document and source file the plan names for task k.
+   - **Build exactly what the plan says.** Where it leaves a small choice open,
+     make the simplest choice that fits and report it rather than stopping.
+   - **Keep existing behaviour.** Existing tests change only where the plan says
+     so, and then still assert what they asserted.
+   - **Docs move with the code.** A doc task k touches matches the code when it
+     finishes: line references re-derived, drift in the touched sections fixed
+     and reported. Written for an engineer who has never seen the project, with
+     no conversation quotes and no ruling or finding labels.
+   - **No new dependency** unless the plan names it. A lockfile changing beyond
+     what the plan names is a stop, reported.
+   - **Test hygiene.** No test starts a real program it does not own, reads a
+     real home directory, environment variable or config folder, reads a live
+     clock, or uses the network, unless the plan says so.
+   - **Scope.** Change only task k's declared Files. A change needed outside them
+     is a stop: say so in the final message rather than making it.
+   - **Git.** Read-only git only: `status`, `diff`, `log`, `show`. Never `add`,
+     `commit`, `stash`, `branch`, `checkout`, `switch`, `reset`, `rebase`,
+     `merge`, `tag` or `push`, and never git config or remotes. The executor
+     checks the work, then stages and commits it. The sandbox also keeps `.git`
+     read-only; this states the intent so Codex does not spend the run fighting
+     it.
+   - **Checks.** Run task k's Verify commands that need no network. A failing
+     check, a compile error or a quoting mistake is work to fix, not a reason to
+     stop. Stop only when the task cannot be built as written without leaving
+     its scope.
+   - **Tests.** Reserved for a later test-evidence switch's rules. Until one
+     fills it, the prompt says nothing here.
+   - **What to return.** A final message listing each file changed and why;
+     each Verify command run, with its exact last output line; each choice the
+     task left open and what was chosen; each new test and the defect it
+     catches, and any negative control run; hand checks run, with their output;
+     anything that could not be tested, and why; doc drift fixed; anything that
+     looks wrong in the plan or the design; anything that stopped the work.
+3. **Run Codex**, with an explicit Bash timeout of 600000:
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codex-exec < "$D/prompt-<k>.md"`.
+   The host's 120000 default would kill it first and print nothing. It runs in
+   the repository root, in Codex's `workspace-write` sandbox, and prints one
+   JSON line; `ok:true` carries Codex's final message as `message`.
+4. **Changed paths.** Take the after-state as in step 1. The changed paths are
+   every porcelain path whose entry or content hash differs between the two,
+   including one already dirty before the run that Codex edited again. Never
+   count your own report and scratch files, or the files Cadence's hooks write
+   (`.planning/reads.jsonl`, `.planning/trace.jsonl`, `.planning/reads.1.jsonl`,
+   `.planning/trace.1.jsonl`), even where a project does not ignore them.
+   Ignored paths are not policed, by design: the hooks and every build and test
+   run write there, and the sandbox still keeps every write inside the
+   repository and `.git` read-only. Every other changed path must equal a path
+   in the task's Files or lie under one that names a directory.
+5. **Verify**, per the contract's step 2, prediction first, in your own shell
+   outside the sandbox. A check needing the network runs here.
+6. **Static analysis**, per the contract's step 3.
+7. **Commit.** After Verify passes, stage one by one every declared path of the
+   task that differs from HEAD, whether or not this run's diff saw it, so a
+   re-edited dirty file is committed rather than left behind. Run
+   `lease-check` per the commit protocol (skipped for a `/cad-task` plandir, as
+   the contract says), commit with the dispatch's scope, and do the post-commit
+   glance. A task with no declared path differing from HEAD and a passing
+   Verify commits nothing, and its row says so; HEAD not moving is never read as
+   done for a task whose Verify depends on uncommitted bytes.
+8. **Report.** Rewrite the report per `<report_file>`, copying the relevant
+   lines of Codex's final message into the task's Note.
+
+### Suite, continuations and trace
+
+After the last task, run the suite once as the contract states; green writes
+`PLAN COMPLETE`. A continuation skips the tasks its report names as committed.
+You write no trace event: the bracket around this dispatch is the
+orchestrator's.
+
+### The fix pass
+
+A `risk_surface` fix pass is one Codex run. Its Files are the plan's declared
+`files:` lease, which the orchestrator amends before dispatch; its Action is the
+dispatch's fix instruction with the blocker and high findings from the findings
+file it names; its Verify is the suite run. Its row is appended to the existing
+report, as that dispatch says.
+
+### Failures
+
+Any step above that fails stops the dispatch through the arm below.
 
 ## Gemini (Generative Language API, generateContent)
 
