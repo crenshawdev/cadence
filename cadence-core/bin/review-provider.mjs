@@ -142,7 +142,7 @@ function ok(obj) { emit({ ok: true, ...obj }); throw DONE; }
 // from `main()` records nothing by construction rather than by a check.
 /** @type {{command: string, provider: any, model: any, effort: any,
  *   trigger?: any, started: number, redactions?: number,
- *   usage?: ProviderUsage}|null} */
+ *   usage?: ProviderUsage, transport?: 'codex'}|null} */
 let activeMeta = null;
 
 // Exactly one event per call, whichever site records first. The explicit
@@ -601,7 +601,7 @@ function tierOf(provider, model) {
  * Never throws, never writes to a stream, never touches the caller's envelope.
  * @param {{command: string, provider: any, model: any, effort: any,
  *   trigger?: any, started: number, redactions?: number,
- *   usage?: ProviderUsage}} meta
+ *   usage?: ProviderUsage, transport?: 'codex'}} meta
  * @param {string} outcome the fail() reason, or 'ok'
  * @param {string} [detail]
  */
@@ -624,6 +624,10 @@ function traceProvider(meta, outcome, detail) {
       event: 'request',
       command: meta.command,
       provider: typeof meta.provider === 'string' ? meta.provider : null,
+      // HOW the call was sent, written only on the Codex path (D-10), so an
+      // HTTP-path event stays byte-for-byte what it was and a reader can split
+      // plan usage from API spend.
+      ...(meta.transport === 'codex' ? { transport: 'codex' } : {}),
       model: typeof meta.model === 'string' ? meta.model : null,
       effort: typeof meta.effort === 'string' ? meta.effort : null,
       // WHICH trigger fired this call, so a cross-model review and a subagent
@@ -1576,6 +1580,26 @@ function codexFailure(stdout) {
   return found;
 }
 
+/**
+ * What the run cost, off the `usage` object of the last `turn.completed` event
+ * on codex's `--json` stdout, or undefined when there is none - never a zero.
+ * `input_tokens` and `output_tokens` are the pair; `cached_input_tokens` and
+ * `reasoning_output_tokens` stay in `usage_raw` only, because whether
+ * `output_tokens` already includes the reasoning is unmeasured.
+ * @param {string} stdout @returns {ProviderUsage|undefined}
+ */
+function codexUsage(stdout) {
+  let usage;
+  for (const line of stdout.split('\n')) {
+    if (!line.includes('turn.completed')) continue;
+    try {
+      const e = JSON.parse(line);
+      if (e && e.type === 'turn.completed') usage = e.usage;
+    } catch { /* not an event */ }
+  }
+  return usageOf(usage, usage?.input_tokens, usage?.output_tokens);
+}
+
 const CODEX_EXIT_HINT = 'a 400 naming the model means your Codex login does not serve it - set '
   + 'review.providers.openai.tiers.<tier> to an id it serves; otherwise run `codex login` if the '
   + 'login lapsed, or re-run later if the plan hit its rate limit';
@@ -1614,6 +1638,10 @@ async function callCodex(opts, instruction, artifact, meta) {
       // codexSpawn's cmd.exe refusal, the one synchronous throw on this path.
       fail('codex-exit', `codex exec could not start: ${e.message}`, CODEX_EXIT_HINT);
     }
+    // As soon as the child is done and before every degrading exit below, so a
+    // run that burned plan usage and came back unusable still records its cost
+    // - the rule callStructured states for the HTTP path.
+    meta.usage = codexUsage(run.stdout);
     if (run.timedOut) {
       failRequest(meta, new Error(`codex exec ran past ${requestTimeoutMs()}ms and was killed`));
     }
@@ -1667,6 +1695,7 @@ async function cmdReview(opts) {
       trigger: opts.trigger });
   // Exactly `codex` or the HTTP path, absent and any other value included (D-01).
   const viaCodex = opts.provider === 'openai' && openaiTransport() === 'codex';
+  if (viaCodex) meta.transport = 'codex';
   const { provider, adapter, key } = resolveProvider(opts, 'review', viaCodex);
   const payload = await readPayload(opts);
   if (!payload || typeof payload.instruction !== 'string' || typeof payload.artifact !== 'string') {

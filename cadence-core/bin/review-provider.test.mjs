@@ -2475,3 +2475,50 @@ test('codex transport: the launcher drops both keys on POSIX and on win32', () =
     assert.throws(() => reviewProvider.codexSpawn(['exec', bad], 'win32'), /cmd\.exe/);
   }
 });
+
+// --- the Codex transport on the run record (D-10) ------------------------------
+
+// The figures the 2026-10-07 probe measured, as codex prints them under --json.
+const CODEX_USAGE = { input_tokens: 14708, cached_input_tokens: 10752,
+  cache_write_input_tokens: 0, output_tokens: 122, reasoning_output_tokens: 55 };
+const CODEX_JSONL = [
+  JSON.stringify({ type: 'thread.started', thread_id: 'fixture' }),
+  'not an event at all',
+  JSON.stringify({ type: 'turn.started' }),
+  JSON.stringify({ type: 'turn.completed', usage: CODEX_USAGE }),
+].join('\n') + '\n';
+
+test('codex transport: the event carries the transport and the turn.completed usage', () => {
+  const r = codexRun({ repo: CODEX_ON,
+    behaviour: { stdout: CODEX_JSONL, out: JSON.stringify(CODEX_FINDINGS) } });
+  assert.equal(r.envelope.ok, true);
+  assert.equal(r.events.length, 1);
+  assert.equal(r.events[0].transport, 'codex');
+  assert.equal(r.events[0].provider, 'openai');
+  assert.deepEqual(r.events[0].usage, { input: 14708, output: 122 });
+  assert.deepEqual(r.events[0].usage_raw, CODEX_USAGE);
+});
+
+test('codex transport: a bad-shape answer still records what the run cost', () => {
+  const r = codexRun({ repo: CODEX_ON,
+    behaviour: { stdout: CODEX_JSONL, out: '{"findings":[{"file":"a"}]}' } });
+  assertDidNotRun(r, 'bad-shape');
+  assert.equal(r.events[0].transport, 'codex');
+  assert.deepEqual(r.events[0].usage, { input: 14708, output: 122 });
+  assert.deepEqual(r.events[0].usage_raw, CODEX_USAGE);
+});
+
+test('codex transport: a no-codex refusal is marked codex and carries no usage', () => {
+  const r = codexRun({ repo: CODEX_ON, PATH: mkdtempSync(join(tmpdir(), 'cad-codex-nopath-')) });
+  assertDidNotRun(r, 'no-codex');
+  assert.equal(r.events[0].transport, 'codex');
+  assert.equal('usage' in r.events[0], false);
+  assert.equal('usage_raw' in r.events[0], false);
+});
+
+test('codex transport: an HTTP-path event never carries a transport key', () => {
+  const r = codexRun({ extra: ['--key-file', join(tmpdir(), 'cad-absent-providers.env')] });
+  assert.equal(r.envelope.reason, 'no-key');
+  assert.equal(r.events.length, 1);
+  assert.equal('transport' in r.events[0], false, JSON.stringify(r.events[0]));
+});
