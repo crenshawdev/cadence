@@ -107,7 +107,9 @@
 //                                   blocked and nothing else
 //   codex-exec                      one `codex exec` in the cwd for a Codex-mode
 //                                   executor, the prompt on stdin, in the
-//                                   workspace-write sandbox and bounded below
+//                                   workspace-write sandbox (or none, when the
+//                                   user-global config says danger-full-access)
+//                                   and bounded below
 //                                   the host's Bash ceiling; ok:true carries
 //                                   Codex's final message, and each way the run
 //                                   fails has its own reason

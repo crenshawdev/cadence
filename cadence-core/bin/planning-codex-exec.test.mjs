@@ -56,9 +56,23 @@ if (mode === 'ok') fs.writeFileSync(argv[argv.indexOf('-o') + 1], 'the final mes
   return { dir, rec };
 }
 
-/** Run the subcommand with `pathDirs` as the whole PATH and both keys set. */
-function codexExec(pathDirs) {
-  const cwd = mkdtempSync(join(tmpdir(), 'cad-codex-cwd-'));
+/** A config layer file holding `codex` as the executor's codex block. @param {any} codex */
+function layer(codex) {
+  const d = mkdtempSync(join(tmpdir(), 'cad-codex-cfg-'));
+  mkdirSync(join(d, '.planning'));
+  const f = join(d, '.planning', 'config.json');
+  writeFileSync(f, JSON.stringify({ roles: { 'cad-executor': { codex } } }));
+  return { dir: d, file: f };
+}
+
+/**
+ * Run the subcommand with `pathDirs` as the whole PATH and both keys set. The
+ * user-global layer is `globalFile` (default: a path that does not exist, so no
+ * real ~/.claude config reaches a test), and `cwd` may carry a repo layer.
+ * @param {string[]} pathDirs @param {{cwd?: string, globalFile?: string}} [o]
+ */
+function codexExec(pathDirs, o = {}) {
+  const cwd = o.cwd || mkdtempSync(join(tmpdir(), 'cad-codex-cwd-'));
   const started = Date.now();
   const r = spawnSync(process.execPath, [PLANNING, 'codex-exec'], {
     cwd, input: PROMPT, encoding: 'utf8', timeout: 30000,
@@ -66,6 +80,7 @@ function codexExec(pathDirs) {
       PATH: pathDirs.join(':'),
       OPENAI_API_KEY: 'sentinel-openai', CODEX_API_KEY: 'sentinel-codex',
       CADENCE_TEST_SEAM: '1', CADENCE_CODEX_EXEC_TIMEOUT_MS: String(TEST_BOUND_MS),
+      CADENCE_GLOBAL_CONFIG: o.globalFile || join(cwd, 'no-global-config.json'),
     },
   });
   return { status: r.status, env: JSON.parse(r.stdout), ms: Date.now() - started };
@@ -144,4 +159,44 @@ test('ok: argv pins the sandbox, the keys are dropped, stdin is the prompt', { s
 
   assert.deepEqual(JSON.parse(readFileSync(join(rec, 'env.json'), 'utf8')), { openai: false, codex: false });
   assert.equal(readFileSync(join(rec, 'stdin.txt'), 'utf8'), PROMPT);
+});
+
+test('full access: the user-global sandbox runs codex unsandboxed, rules, approvals and web search still pinned', { skip: !posix }, () => {
+  const { dir, rec } = stubDir('ok');
+  const global = layer({ sandbox: 'danger-full-access' });
+  const r = codexExec([dir, nodeOnlyDir()], { globalFile: global.file });
+  assert.deepEqual(r.env, { ok: true, message: 'the final message\n' });
+  const argv = JSON.parse(readFileSync(join(rec, 'argv.json'), 'utf8'));
+  const joined = argv.join(' ');
+  assert.match(joined, /(^| )-s danger-full-access( |$)/);
+  assert.equal(joined.includes('workspace-write'), false, joined);
+  for (const a of ['--ignore-rules', 'approval_policy="never"', 'web_search=disabled']) {
+    assert.ok(argv.includes(a), `argv lacks ${a}: ${joined}`);
+  }
+  for (const a of ['--dangerously-bypass-approvals-and-sandbox', '--worktree']) {
+    assert.equal(joined.includes(a), false, `argv carries ${a}`);
+  }
+  assert.deepEqual(JSON.parse(readFileSync(join(rec, 'env.json'), 'utf8')), { openai: false, codex: false });
+});
+
+test('full access: a repository config cannot turn it on', { skip: !posix }, () => {
+  const { dir, rec } = stubDir('ok');
+  const repo = layer({ sandbox: 'danger-full-access' });
+  const r = codexExec([dir, nodeOnlyDir()], { cwd: repo.dir });
+  assert.equal(r.env.ok, true);
+  const joined = JSON.parse(readFileSync(join(rec, 'argv.json'), 'utf8')).join(' ');
+  assert.match(joined, /(^| )-s workspace-write( |$)/);
+  assert.equal(joined.includes('danger-full-access'), false, joined);
+});
+
+test('full access: any other value reads as workspace-write', { skip: !posix }, () => {
+  for (const sandbox of ['full', 'DANGER-FULL-ACCESS', true, null]) {
+    const { dir, rec } = stubDir('ok');
+    const global = layer({ sandbox });
+    const r = codexExec([dir, nodeOnlyDir()], { globalFile: global.file });
+    assert.equal(r.env.ok, true);
+    const joined = JSON.parse(readFileSync(join(rec, 'argv.json'), 'utf8')).join(' ');
+    assert.match(joined, /(^| )-s workspace-write( |$)/, `${JSON.stringify(sandbox)}: ${joined}`);
+    assert.ok(joined.includes('sandbox_workspace_write.network_access=false'), joined);
+  }
 });

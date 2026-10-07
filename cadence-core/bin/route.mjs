@@ -1093,6 +1093,19 @@ function resolve(opts) {
       + 'a boolean; Codex mode stays off');
   }
 
+  // The sandbox is read by `planning.mjs codex-exec`, never here, and only from
+  // the user-global layer (the merge strips a repo's value). Saying so here puts
+  // an unsandboxed run, or a value codex-exec will read as `workspace-write`, in
+  // front of the user before the dispatch rather than in a failed build.
+  const sandbox = codexMode ? codex.sandbox : undefined;
+  if (sandbox === 'danger-full-access') {
+    reason.push('roles.cad-executor.codex.sandbox="danger-full-access" (user-global config): '
+      + 'Codex runs with no sandbox');
+  } else if (sandbox !== undefined && sandbox !== null && sandbox !== 'workspace-write') {
+    warnings.push(`roles.cad-executor.codex.sandbox=${JSON.stringify(sandbox)} is not `
+      + '"workspace-write" or "danger-full-access"; Codex runs in workspace-write');
+  }
+
   // The wrapper's own rung (D-06), in Codex mode only. It replaces the start
   // rung outright, so it is also the rung the retry hold below keeps. A value
   // naming no filed rung loses its turn the way every rung source above does:

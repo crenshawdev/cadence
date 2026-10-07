@@ -6,11 +6,16 @@
 // Codex works in this process's cwd. The run is bounded below the host's
 // 600,000 ms Bash ceiling, so a kill still leaves time to print the envelope.
 //
-// The sandbox is pinned on the command line, where no config file can loosen
-// it: `workspace-write` (no network, `.git` read-only), no execpolicy `.rules`
-// (a persisted `allow` runs a command outside the sandbox), approvals refused
-// rather than waited on, network and web search off and no extra writable
-// roots. The user's Codex config otherwise loads as set - model, effort,
+// The sandbox is pinned on the command line, where no Codex config file can
+// loosen it: `workspace-write` (no network, `.git` read-only), no execpolicy
+// `.rules` (a persisted `allow` runs a command outside the sandbox), approvals
+// refused rather than waited on, network and web search off and no extra
+// writable roots. The one way out is `roles.cad-executor.codex.sandbox` set to
+// `danger-full-access` in the user-global Cadence config (a repository's value
+// is stripped at the merge): then Codex runs unsandboxed, the way a hand-run
+// `codex exec --sandbox danger-full-access` does, for builds that write caches
+// outside the repository. Rules, approvals and web search stay pinned either
+// way. The user's Codex config otherwise loads as set - model, effort,
 // profile - because the shell is the tool this path needs, so its features
 // stay on rather than being disabled the way the review transport disables them.
 //
@@ -31,6 +36,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fail, ok } from './core.mjs';
+import { mergeLayers } from '../lib/config-merge.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { onPath } from '../lib/on-path.mjs';
 import { testSeamOpen } from '../lib/test-seam.mjs';
@@ -41,18 +47,40 @@ const CODEX_EXEC_TIMEOUT_MS = 540_000;
 /** The auth variables the child must never see. */
 const DROPPED_KEYS = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN'];
 
+const FULL_ACCESS = 'danger-full-access';
+
+/**
+ * The sandbox the merged config names. Only the exact loosening value loosens
+ * it: anything else, an unreadable config included, is `workspace-write`. The
+ * merge's warnings ride every envelope this run answers with, so a torn layer
+ * that kept the sandbox on is said, not silent.
+ * @returns {{sandbox: 'workspace-write'|'danger-full-access', warnings: string[]}}
+ */
+function sandboxMode() {
+  try {
+    const { config, warnings } = mergeLayers('.planning/config.json');
+    const full = config?.roles?.['cad-executor']?.codex?.sandbox === FULL_ACCESS;
+    return { sandbox: full ? FULL_ACCESS : 'workspace-write', warnings };
+  } catch (e) {
+    return { sandbox: 'workspace-write',
+      warnings: [`config unreadable (${e instanceof Error ? e.message : String(e)}); workspace-write`] };
+  }
+}
+
 /**
  * The argv after `codex`. `-` reads the prompt from stdin. Never
- * `danger-full-access`, `--dangerously-bypass-approvals-and-sandbox`,
- * `--worktree`, `-m` or a profile.
+ * `--dangerously-bypass-approvals-and-sandbox`, `--worktree`, `-m` or a profile.
  * @param {string} out the last-message file
+ * @param {'workspace-write'|'danger-full-access'} sandbox
  * @returns {string[]}
  */
-function codexExecArgs(out) {
-  return ['exec', '-s', 'workspace-write', '--ignore-rules',
+function codexExecArgs(out, sandbox) {
+  const pins = sandbox === FULL_ACCESS ? []
+    : ['-c', 'sandbox_workspace_write.network_access=false',
+      '-c', 'sandbox_workspace_write.writable_roots=[]'];
+  return ['exec', '-s', sandbox, '--ignore-rules',
     '-c', 'approval_policy="never"',
-    '-c', 'sandbox_workspace_write.network_access=false',
-    '-c', 'sandbox_workspace_write.writable_roots=[]',
+    ...pins,
     '-c', 'web_search=disabled',
     '-o', out, '-'];
 }
@@ -121,9 +149,11 @@ async function cmdCodexExec() {
   try {
     const out = join(root, 'last-message.txt');
     const ms = boundMs();
-    const run = await runCodex(codexExecArgs(out), ms);
+    const { sandbox, warnings } = sandboxMode();
+    const said = warnings.length ? { warnings } : {};
+    const run = await runCodex(codexExecArgs(out, sandbox), ms);
     if (run.timedOut) {
-      return emit({ ok: false, reason: 'codex-timeout', bound_ms: ms,
+      return emit({ ok: false, reason: 'codex-timeout', bound_ms: ms, ...said,
         detail: `codex exec ran past ${ms}ms and was killed`,
         hint: 'split the task into smaller ones and re-run; whatever Codex changed before the kill'
           + ' is still in the working tree, uncommitted' });
@@ -131,7 +161,7 @@ async function cmdCodexExec() {
     if (run.spawnError || run.code !== 0) {
       const how = run.spawnError ? `could not start: ${run.spawnError.code || run.spawnError.message}`
         : run.code === null ? `was killed by signal ${run.signal}` : `exited with code ${run.code}`;
-      return emit({ ok: false, reason: 'codex-exit', status: run.code,
+      return emit({ ok: false, reason: 'codex-exit', status: run.code, ...said,
         ...(run.signal ? { signal: run.signal } : {}), detail: `codex exec ${how}`,
         hint: run.spawnError
           ? 'codex is on PATH but could not be started; on Windows Codex mode cannot launch an npm'
@@ -142,10 +172,10 @@ async function cmdCodexExec() {
     let text = '';
     try { text = readFileSync(out, 'utf8'); } catch { /* no final message: refused below */ }
     if (!text.trim()) {
-      return fail('no-output', 'codex exec exited 0 with no final message',
-        'read `git status` to see what Codex changed, then re-run the task');
+      return emit({ ok: false, reason: 'no-output', detail: 'codex exec exited 0 with no final message',
+        hint: 'read `git status` to see what Codex changed, then re-run the task', ...said });
     }
-    return ok({ message: text });
+    return ok({ message: text, ...said });
   } finally {
     try { rmSync(root, { recursive: true, force: true }); } catch { /* best effort */ }
   }

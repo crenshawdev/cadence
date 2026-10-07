@@ -116,7 +116,9 @@ unfinished one.
 
 1. **Before-state.** Record `git status --porcelain=v1 -z --untracked-files=all`
    (tracked and untracked; ignored paths are not listed) and a `git hash-object`
-   of every listed path that exists, into `$D`.
+   of every listed path that exists, into `$D`. Record the refs there too, before
+   this and every other Codex run in the dispatch:
+   `git rev-parse --symbolic-full-name HEAD; git rev-parse HEAD; git for-each-ref --format='%(objectname) %(refname)'`.
 2. **Build prompt.** Write it to `$D/prompt-<k>.md`. Every path in it is
    absolute: whether `CLAUDE_PLUGIN_ROOT` and `PATH` reach Codex's commands is
    unmeasured. Its sections, in this order:
@@ -149,9 +151,9 @@ unfinished one.
    - **Git.** Read-only git only: `status`, `diff`, `log`, `show`. Never `add`,
      `commit`, `stash`, `branch`, `checkout`, `switch`, `reset`, `rebase`,
      `merge`, `tag` or `push`, and never git config or remotes. The executor
-     checks the work, then stages and commits it. The sandbox also keeps `.git`
-     read-only; this states the intent so Codex does not spend the run fighting
-     it.
+     checks the work, then stages and commits it. Under the default sandbox
+     `.git` is read-only as well. Either way the executor compares every git
+     ref before and after the run, and a moved ref stops the task.
    - **Checks.** Run task k's Verify commands that need no network. A failing
      check, a compile error or a quoting mistake is work to fix, not a reason to
      stop. Stop only when the task cannot be built as written without leaving
@@ -174,17 +176,21 @@ unfinished one.
 3. **Run Codex**, with an explicit Bash timeout of 600000:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codex-exec < "$D/prompt-<k>.md"`.
    The host's 120000 default would kill it first and print nothing. It runs in
-   the repository root, in Codex's `workspace-write` sandbox, and prints one
-   JSON line; `ok:true` carries Codex's final message as `message`.
-4. **Changed paths.** Take the after-state as in step 1. The changed paths are
+   the repository root, in the sandbox `roles.cad-executor.codex.sandbox`
+   names: `workspace-write`, unless the user-global config says
+   `danger-full-access`, which runs Codex unsandboxed. It prints one JSON line;
+   `ok:true` carries Codex's final message as `message`.
+4. **Refs and changed paths.** Take the refs again as in step 1; any line that
+   differs is a stop. Take the after-state as in step 1. The changed paths are
    every porcelain path whose entry or content hash differs between the two,
    including one already dirty before the run that Codex edited again. Never
    count your own report and scratch files, or the files Cadence's hooks write
    (`.planning/reads.jsonl`, `.planning/trace.jsonl`, `.planning/reads.1.jsonl`,
    `.planning/trace.1.jsonl`), even where a project does not ignore them.
    Ignored paths are not policed, by design: the hooks and every build and test
-   run write there, and the sandbox still keeps every write inside the
-   repository and `.git` read-only. A changed path under `.planning/` that is
+   run write there. Under `workspace-write` the sandbox keeps every write
+   inside the repository and temp folders, with `.git` read-only; under
+   `danger-full-access` nothing outside the repository is checked. A changed path under `.planning/` that is
    not in the task's Files does not block, because Cadence and other sessions
    write there while Codex runs (an advisory diff review's findings file, a
    planner's PLAN); list each in the task's Note and never stage it. Every
@@ -231,8 +237,9 @@ task with missing rows, as that outcome's detail names them (each entry carries
 - Its prompt keeps step 2's sections up to **Scope**. Its **Tests** section asks
   only for the missing runs: for each, apply the Break, run, keep the failing
   line, and restore. It asks for no other change.
-- After it, confirm every declared path of that task is back at HEAD:
-  `git status --porcelain=v1 --untracked-files=all` lists none of them.
+- After it, confirm no ref moved, as in step 4, and every declared path of
+  that task is back at HEAD: `git status --porcelain=v1 --untracked-files=all`
+  lists none of them.
 - Then run each check's Command, or the test's command, yourself for the passing
   line, and write the rows, a check's with `Red by: break` and **Red at** the
   HEAD the run started on.
@@ -256,7 +263,8 @@ else does: the subcommand's `no-codex`, `codex-exit`, `codex-timeout` or
 `no-output`; a changed path outside the task's files; a dirty declared path
 before the first run; a failing Verify; failing static analysis; a `lease-check`
 refusal; a red suite after the last task; a declared path not back at HEAD
-after an evidence-only run, named in `Need`. There is no other return arm, and
+after an evidence-only run, named in `Need`; a git ref that moved across any
+Codex run, named in `Need` with its before and after lines. There is no other return arm, and
 none labelled timeout. On each:
 
 - Write the report first, its first line `PLAN CHECKPOINT: blocked`, with the

@@ -2566,6 +2566,39 @@ test('codex: a non-boolean switch warns, names the key and value, and reads off'
   assert.ok(r.warnings.some((w) => w.includes('roles.cad-executor.codex.enabled') && w.includes('"yes"')));
 });
 
+// --- Codex mode: the sandbox, user-global only ---
+
+const sandboxed = (sandbox) => ({ roles: { 'cad-executor': { codex: { enabled: true, sandbox } } } });
+
+test('codex: a user-global danger-full-access sandbox is said in reason, envelope shape unchanged', () => {
+  const plain = resolve('cad-executor', rawCfg({}), [], { global: rawCfg(CODEX_ON) });
+  const full = resolve('cad-executor', rawCfg({}), [], { global: rawCfg(sandboxed('danger-full-access')) });
+  assert.deepEqual(Object.keys(full), Object.keys(plain));
+  assert.ok(full.reason.some((x) => x.includes('roles.cad-executor.codex.sandbox="danger-full-access"')));
+  assert.equal(plain.reason.some((x) => x.includes('codex.sandbox')), false);
+});
+
+test('codex: a repository danger-full-access sandbox is stripped, never said as on', () => {
+  const r = resolve('cad-executor', rawCfg(sandboxed('danger-full-access')));
+  assert.equal(r.codex_mode, true);
+  assert.equal(r.reason.some((x) => x.includes('codex.sandbox')), false);
+  assert.equal((r.warnings || []).some((w) => w.includes('danger-full-access')), false);
+});
+
+test('codex: a sandbox value that is neither mode warns that workspace-write runs', () => {
+  const r = resolve('cad-executor', rawCfg({}), [], { global: rawCfg(sandboxed('full')) });
+  assert.ok(r.warnings.some((w) => w.includes('roles.cad-executor.codex.sandbox="full"')
+    && w.includes('workspace-write')));
+});
+
+test('codex: with the switch off the sandbox is read for nothing', () => {
+  const r = resolve('cad-executor', rawCfg({}), [], {
+    global: rawCfg({ roles: { 'cad-executor': { codex: { sandbox: 'full' } } } }) });
+  assert.equal('codex_mode' in r, false);
+  assert.equal((r.warnings || []).some((w) => w.includes('codex.sandbox')), false);
+  assert.equal(r.reason.some((x) => x.includes('codex.sandbox')), false);
+});
+
 // --- Codex mode: the wrapper's own model and rung (D-06) ---
 
 const wrapped = (codex) => ({ roles: { 'cad-executor': { model: 'opus', effort: 'xhigh', codex } } });

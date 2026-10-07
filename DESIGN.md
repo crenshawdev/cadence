@@ -235,7 +235,14 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
     off by default. The executor switch, `roles.cad-executor.codex.enabled`, has the `cad-executor` wrapper
     run one `codex exec` per plan task in Codex's `workspace-write` sandbox, which has no network or web search
     and a `.git` Codex can't write. So the Claude wrapper checks each change, runs the task's Verify,
-    commits and writes the report, every commit passes the hooks, and Codex can't push. The review
+    commits and writes the report, every commit passes the hooks, and Codex can't push. Amended
+    again the same day: `roles.cad-executor.codex.sandbox` set to `danger-full-access` in the
+    user-global config runs Codex with no sandbox, the way a hand-run `codex exec --sandbox
+    danger-full-access` does, because a Rust build's target folder, `CARGO_HOME` and sccache cache
+    sit outside the repository and the sandbox refuses those writes. Under it Codex can write `.git`
+    and reach the network. What remains is the build prompt's git rules and a compare of every git
+    ref after each run, which stops the plan when one moved, and a repository's config can't turn it
+    on. The review
     transport, `review.providers.openai.transport` set to `codex`, sends the openai reviewer's
     `review` call through `codex exec` on the user's Codex login instead of the API, and openai
     still runs only when the user-global `review.reviewers` names it. Either config layer can turn

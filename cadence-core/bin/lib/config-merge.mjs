@@ -219,7 +219,7 @@ export function mergeLayers(repoFile, opts = {}) {
   // `--global` read has no repo layer to name; every other caller asked for a
   // repo config that the user's global env happens to alias.
   const sharedSource = opts && opts.asGlobal ? 'global' : 'repo';
-  // The three keys a tracked file must not be able to choose (CFG-02), removed
+  // The keys a tracked file must not be able to choose (CFG-02), removed
   // from the object the MERGE consumes - `layers.repo` keeps the file's own
   // parsed content, and `config`, `source` and `warnings` keep their values for
   // every existing caller.
