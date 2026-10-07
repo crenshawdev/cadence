@@ -2398,3 +2398,80 @@ test('codex transport: exit 0 with no message, prose, and the wrong shape each d
     assert.equal(r.events[0].degraded, true, reason);
   }
 });
+
+// --- the Codex transport's failure arms (D-05, D-09) --------------------------
+//
+// Each is a review that did not run: `ok:false` with its own reason, no
+// `findings` key, one degraded event, and never an API fallback.
+
+import { REDACTION_MARK } from './lib/redact-url.mjs';
+
+/** The shared shape of every failure arm below. */
+function assertDidNotRun(r, reason) {
+  assert.equal(r.envelope.ok, false, JSON.stringify(r.envelope));
+  assert.equal(r.envelope.reason, reason, JSON.stringify(r.envelope));
+  assert.equal('findings' in r.envelope, false);
+  assert.ok(r.envelope.hint, `${reason} carries no hint`);
+  assert.equal(r.events.length, 1, JSON.stringify(r.events));
+  assert.equal(r.events[0].outcome, reason);
+  assert.equal(r.events[0].degraded, true);
+}
+
+test('codex transport: no codex on PATH is no-codex, never no-key, and nothing is spawned', () => {
+  // PATH holds one empty directory, so no `codex` resolves - the developer's
+  // real one included - and the script itself is launched by absolute path.
+  const empty = mkdtempSync(join(tmpdir(), 'cad-codex-nopath-'));
+  const r = codexRun({ repo: CODEX_ON, PATH: empty });
+  assertDidNotRun(r, 'no-codex');
+  assert.equal(r.record, null);
+});
+
+test('codex transport: a non-zero exit is codex-exit with stderr redacted, and the API is never tried', () => {
+  const token = 'sk-fake-codex-TOKEN-0123456789abcdef';
+  const r = codexRun({ repo: CODEX_ON, env: { OPENAI_API_KEY: 'sk-parent-not-real' },
+    behaviour: { code: 1, stderr: `Authorization: Bearer ${token}\n` } });
+  assertDidNotRun(r, 'codex-exit');
+  assert.match(r.envelope.detail, /code 1/);
+  assert.ok(r.envelope.detail.includes(REDACTION_MARK), r.envelope.detail);
+  assert.equal(r.envelope.detail.includes(token), false, 'the token reached the envelope');
+  assert.equal(JSON.stringify(r.events).includes(token), false, 'the token reached the record');
+});
+
+test('codex transport: a refused model surfaces the 400 that names it', () => {
+  const failed = JSON.stringify({ type: 'turn.failed', error: { message:
+    "The 'gpt-codex-fixture' model is not supported when using Codex with a ChatGPT account." } });
+  const r = codexRun({ repo: CODEX_ON, behaviour: { code: 1, stdout: `${failed}\n` } });
+  assertDidNotRun(r, 'codex-exit');
+  assert.match(r.envelope.detail, /gpt-codex-fixture.*not supported/);
+});
+
+test('codex transport: a run past the timeout is killed with what it started, and answers transport at once', () => {
+  // The stub starts a grandchild holding its stdout, then sleeps itself: the
+  // envelope may wait for neither. The outer timeout fails a regression rather
+  // than hanging the suite.
+  const r = codexRun({ repo: { review: { ...CODEX_ON.review, request_timeout_ms: 300 } },
+    behaviour: { hang: true }, timeout: 20000 });
+  assertDidNotRun(r, 'transport');
+  assert.match(r.envelope.detail, /codex exec.*300ms/);
+  assert.ok(r.elapsed < 10000, `took ${r.elapsed}ms`);
+});
+
+test('codex transport: stdout past 4 MiB, or an -o file past it, is over-response', () => {
+  assertDidNotRun(codexRun({ repo: CODEX_ON, behaviour: { flood: true } }), 'over-response');
+  assertDidNotRun(codexRun({ repo: CODEX_ON, behaviour: { out: 'x'.repeat(4194305) } }),
+    'over-response');
+});
+
+test('codex transport: the launcher drops both keys on POSIX and on win32', () => {
+  const posix = reviewProvider.codexSpawn(['exec', '-m', 'gpt-x'], 'linux');
+  assert.deepEqual(posix, { file: '/usr/bin/env', verbatim: false,
+    args: ['-u', 'OPENAI_API_KEY', '-u', 'CODEX_API_KEY', '--', 'codex', 'exec', '-m', 'gpt-x'] });
+  const win = reviewProvider.codexSpawn(['exec', '-C', 'C:\\Temp\\cad codex\\work'], 'win32');
+  assert.equal(win.file, 'cmd.exe');
+  assert.equal(win.verbatim, true);
+  assert.deepEqual(win.args, ['/d', '/s', '/c',
+    '"set "OPENAI_API_KEY=" & set "CODEX_API_KEY=" & "codex" "exec" "-C" "C:\\Temp\\cad codex\\work""']);
+  for (const bad of ['a"b', '100%', 'a\nb']) {
+    assert.throws(() => reviewProvider.codexSpawn(['exec', bad], 'win32'), /cmd\.exe/);
+  }
+});

@@ -118,6 +118,7 @@ import { appendEvent } from './lib/trace.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
 import { redactUrl, redactCredentials, REDACTION_MARK } from './lib/redact-url.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
+import { onPath } from './lib/on-path.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1454,33 +1455,102 @@ function codexPrompt(instruction, artifact) {
     + `----- BEGIN MATERIAL UNDER REVIEW -----\n${artifact}\n----- END MATERIAL UNDER REVIEW -----\n`;
 }
 
+/** The two keys the Codex child must never see, so it bills the Codex login. */
+const CODEX_DROPPED_KEYS = ['OPENAI_API_KEY', 'CODEX_API_KEY'];
+
 /**
- * Run `codex exec` once. Asynchronous `spawn`, never the sync forms: those
- * cannot kill a process group or stop waiting on a pipe a descendant holds.
+ * How `codex` is started on this platform. EXPORTED for its unit test, which
+ * checks both answers on any platform.
+ *
+ * Neither form builds an environment here. POSIX starts `/usr/bin/env -u` for
+ * each key, which then execs `codex` through the same PATH lookup `onPath`
+ * answered. win32 has no `env`, and a shell-less spawn finds only `.com` and
+ * `.exe` where an npm install leaves `codex.cmd`, so the whole call goes
+ * through `cmd.exe /d /s /c`: it unsets both keys and resolves `codex` by
+ * PATHEXT, the OS's own rule. Every argument there is quoted and fixed - a flag,
+ * a temp path this script made, or a model id and effort `CODEX_SAFE_ARG`
+ * already cleared - and one that cmd.exe would still read (`"`, `%`, a line
+ * break) is refused rather than escaped.
+ * @param {string[]} args @param {string} platform
+ * @returns {{file: string, args: string[], verbatim: boolean}}
+ */
+export function codexSpawn(args, platform) {
+  if (platform !== 'win32') {
+    return { file: '/usr/bin/env',
+      args: [...CODEX_DROPPED_KEYS.flatMap((k) => ['-u', k]), '--', 'codex', ...args], verbatim: false };
+  }
+  const bad = args.find((a) => /["%\r\n]/.test(a));
+  if (bad !== undefined) throw new Error(`cannot pass ${JSON.stringify(bad)} through cmd.exe`);
+  const line = [...CODEX_DROPPED_KEYS.map((k) => `set "${k}="`), ['codex', ...args].map((a) => `"${a}"`).join(' ')]
+    .join(' & ');
+  return { file: 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], verbatim: true };
+}
+
+/**
+ * Run `codex exec` once, bounded. Asynchronous `spawn`, never the sync forms:
+ * those cannot kill a process group or stop waiting on a pipe.
+ *
+ * The bound is wall-clock (D-09): at `requestTimeoutMs()` the child is killed
+ * with SIGKILL - on POSIX its whole process group, since it starts as the
+ * group's leader, so whatever codex started dies with it; win32 has no groups
+ * and kills the child alone. The answer then comes back at once, never after
+ * the pipes close, because a descendant holding them open would otherwise keep
+ * this script waiting past the host's 600,000 ms limit, where it prints
+ * nothing. stdout is counted as it arrives, as `request()` counts a body, and
+ * past `MAX_RESPONSE_BYTES` the group is killed the same way. Only a bounded
+ * head of stderr is kept, and it reaches a caller only through `bodyExcerpt`.
  * @param {string[]} args @param {string} cwd @param {string} prompt
  * @returns {Promise<{code: number|null, signal: string|null, stdout: string,
- *   stderr: Buffer, spawnError?: any}>}
+ *   stderr: string, timedOut?: boolean, over?: number, spawnError?: any}>}
  */
 function runCodex(args, cwd, prompt) {
   return new Promise((resolve) => {
-    // `env -u` drops the two keys, so the run bills the Codex login and never
-    // an API key. The OS does it rather than a copy of the environment built
-    // here: this module reads no environment beyond the key lookup and the XDG
-    // path, which the destination guard in review-provider.test.mjs pins.
-    const child = spawn('/usr/bin/env',
-      ['-u', 'OPENAI_API_KEY', '-u', 'CODEX_API_KEY', '--', 'codex', ...args],
-      { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    const posix = process.platform !== 'win32';
+    const how = codexSpawn(args, process.platform);
+    const child = spawn(how.file, how.args, { cwd, detached: posix,
+      windowsVerbatimArguments: how.verbatim, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
+    let bytes = 0;
     /** @type {Buffer[]} */
     const err = [];
+    let errBytes = 0;
     let settled = false;
-    /** @param {any} r */
-    const settle = (r) => { if (!settled) { settled = true; resolve(r); } };
+    const kill = () => {
+      try {
+        if (posix) process.kill(-child.pid, 'SIGKILL');
+        else child.kill('SIGKILL');
+      } catch { /* already gone */ }
+    };
+    /** @param {any} r @param {boolean} [killed] */
+    const settle = (r, killed) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (killed) {
+        kill();
+        child.stdin.destroy();
+        child.stdout.destroy();
+        child.stderr.destroy();
+        child.unref();
+      }
+      resolve({ stdout, stderr: Buffer.concat(err).toString('utf8'), ...r });
+    };
+    const ms = requestTimeoutMs();
+    const timer = setTimeout(() => settle({ code: null, signal: null, timedOut: true }, true), ms);
+    child.stdout.on('data', (c) => {
+      bytes += Buffer.byteLength(c);
+      if (bytes > MAX_RESPONSE_BYTES) { settle({ code: null, signal: null, over: bytes }, true); return; }
+      stdout += c;
+    });
     child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (c) => { stdout += c; });
-    child.stderr.on('data', (c) => { err.push(c); });
-    child.on('error', (e) => settle({ code: null, signal: null, stdout, stderr: Buffer.concat(err), spawnError: e }));
-    child.on('close', (code, signal) => settle({ code, signal, stdout, stderr: Buffer.concat(err) }));
+    child.stderr.on('data', (c) => {
+      // One byte past the window, so bodyExcerpt takes its windowed arm.
+      if (errBytes > SANITIZE_WINDOW_BYTES) return;
+      err.push(c);
+      errBytes += c.length;
+    });
+    child.on('error', (e) => settle({ code: null, signal: null, spawnError: e }, true));
+    child.on('close', (code, signal) => settle({ code, signal }));
     // A codex that exits before reading its prompt closes stdin under us; the
     // exit code decides what that was, never an EPIPE.
     child.stdin.on('error', () => {});
@@ -1489,14 +1559,43 @@ function runCodex(args, cwd, prompt) {
 }
 
 /**
+ * The `message` of the last `turn.failed` event on codex's `--json` stdout,
+ * or null. Where a refused model's 400 lands (it names the model); stderr
+ * carries only codex's own banner.
+ * @param {string} stdout @returns {string|null}
+ */
+function codexFailure(stdout) {
+  let found = null;
+  for (const line of stdout.split('\n')) {
+    if (!line.includes('turn.failed')) continue;
+    try {
+      const e = JSON.parse(line);
+      if (e && e.type === 'turn.failed' && typeof e.error?.message === 'string') found = e.error.message;
+    } catch { /* not an event */ }
+  }
+  return found;
+}
+
+const CODEX_EXIT_HINT = 'a 400 naming the model means your Codex login does not serve it - set '
+  + 'review.providers.openai.tiers.<tier> to an id it serves; otherwise run `codex login` if the '
+  + 'login lapsed, or re-run later if the plan hit its rate limit';
+
+/**
  * The Codex half of a review: run it, read its `-o` file, parse. Returns the
- * parsed object for cmdReview's shared shape check, or degrades via fail().
- * Every temp path is gone by the time this returns or throws, the DONE unwind
- * from fail() included.
+ * parsed object for cmdReview's shared shape check, or degrades via fail(),
+ * every arm recorded on `meta`'s one event and none of them ever trying the
+ * HTTP adapter (D-05). Every temp path is gone by the time this returns or
+ * throws, the DONE unwind from fail() included.
  * @param {any} opts @param {string} instruction @param {string} artifact
+ * @param {any} meta
  * @returns {Promise<any>}
  */
-async function callCodex(opts, instruction, artifact) {
+async function callCodex(opts, instruction, artifact, meta) {
+  // Before any temp file or spawn: nothing has been sent when this refuses.
+  if (!onPath('codex')) {
+    fail('no-codex', 'codex is not on PATH',
+      'install the Codex CLI and run `codex login`, or set review.providers.openai.transport back to api');
+  }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cad-codex-'));
   try {
     // `-C` and the child's cwd: an empty directory holding nothing Cadence
@@ -1506,19 +1605,44 @@ async function callCodex(opts, instruction, artifact) {
     const schema = path.join(root, 'schema.json');
     fs.writeFileSync(schema, JSON.stringify(FINDING_SCHEMA));
     const out = path.join(root, 'last-message.txt');
-    const run = await runCodex(
-      codexArgs({ work, schema, out, model: opts.model, effort: opts.effort }),
-      work, codexPrompt(instruction, artifact));
-    if (run.spawnError || run.code !== 0) {
-      fail('codex-exit', run.spawnError
-        ? `codex exec could not start: ${run.spawnError.code || run.spawnError.message}`
-        : `codex exec exited with ${run.code === null ? `signal ${run.signal}` : `code ${run.code}`}`,
-      'run `codex login` if the login lapsed, or re-run later if the plan is rate limited');
+    let run;
+    try {
+      run = await runCodex(
+        codexArgs({ work, schema, out, model: opts.model, effort: opts.effort }),
+        work, codexPrompt(instruction, artifact));
+    } catch (e) {
+      // codexSpawn's cmd.exe refusal, the one synchronous throw on this path.
+      fail('codex-exit', `codex exec could not start: ${e.message}`, CODEX_EXIT_HINT);
     }
-    let text = null;
-    try { text = fs.readFileSync(out, 'utf8'); } catch { /* no final message: no-output below */ }
+    if (run.timedOut) {
+      failRequest(meta, new Error(`codex exec ran past ${requestTimeoutMs()}ms and was killed`));
+    }
+    if (run.over) {
+      failRequest(meta, Object.assign(
+        new Error(`codex exec output over ${MAX_RESPONSE_BYTES} bytes (read ${run.over})`),
+        { [OVER_RESPONSE]: true }));
+    }
+    // After `onPath` found codex, a spawn error is never `no-codex`: an ENOENT
+    // here means the launcher (`/usr/bin/env`, `cmd.exe`) is what is missing.
+    if (run.spawnError) {
+      fail('codex-exit', `codex exec could not start: ${run.spawnError.code || run.spawnError.message}`,
+        CODEX_EXIT_HINT);
+    }
+    if (run.code !== 0) {
+      const how = run.code === null ? `was killed by signal ${run.signal}` : `exited with code ${run.code}`;
+      fail('codex-exit', `codex exec ${how}: ${bodyExcerpt(codexFailure(run.stdout) ?? run.stderr)}`,
+        CODEX_EXIT_HINT);
+    }
+    let size = -1;
+    try { size = fs.statSync(out).size; } catch { /* no final message: no-output below */ }
+    if (size > MAX_RESPONSE_BYTES) {
+      failRequest(meta, Object.assign(
+        new Error(`codex exec final message over ${MAX_RESPONSE_BYTES} bytes (${size})`),
+        { [OVER_RESPONSE]: true }));
+    }
+    const text = size < 0 ? '' : fs.readFileSync(out, 'utf8');
     // Exit 0 with nothing to read is a review that did not run, never `findings: []`.
-    if (text === null || !text.trim()) {
+    if (!text.trim()) {
       fail('no-output', 'codex exec exited 0 with no final message',
         're-run once, and name a different model for this reviewer if it repeats');
     }
@@ -1561,7 +1685,7 @@ async function cmdReview(opts) {
   // same `ok` record and the same envelope, so the adjudicator cannot tell them
   // apart.
   const parsed = viaCodex
-    ? await callCodex(opts, instruction.text, artifact.text)
+    ? await callCodex(opts, instruction.text, artifact.text, meta)
     : await callStructured(adapter, key, adapter.structuredRequest({
       model: opts.model, effort: opts.effort,
       system: instruction.text, user: artifact.text,
