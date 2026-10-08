@@ -25,18 +25,12 @@
 //
 // IT ALSO HOLDS THE SCOPE RULE: the `.planning/` walk that decides whether a
 // directory sits inside a Cadence project. git-guard applies it, read-trace and
-// subagent-trace share it, and the Cadence module (hooks/cadence-mod.mjs)
-// imports it. It lives here because git-guard.test.mjs pins git-guard's import
-// set, and this is the one dependency-free file in that set.
+// subagent-trace share it. It lives here because git-guard.test.mjs pins
+// git-guard's import set, and this is the one dependency-free file in that set.
 //
-// The module runs with no Node globals and may import no `node:` module, so
-// nothing in this file may either. That shapes the walk two ways:
-// - The existence probe is injected. The walk is one generator that yields
-//   `[dir, name]` and takes back a boolean; `planningRoot` drives it with a
-//   sync probe (the hooks' `existsSync`), `planningRootAsync` with an async one
-//   (the module's `$.fs.exists`). One loop, two drivers.
-// - The parent step is `parentDir`, a port of node's own `dirname`, so the
-//   hooks and the module step through the same directories.
+// The walk is one generator that yields `[dir, name]` and takes back a
+// boolean; `planningRoot` drives it with the hooks' sync `existsSync` probe.
+// The parent step is `parentDir`, a port of node's own `dirname`.
 'use strict';
 
 /** The git global options that take a SEPARATE argument. A fixed list, not a
@@ -188,23 +182,6 @@ export function planningRoot(start, has) {
   while (!step.done) {
     const [dir, name] = step.value;
     step = walk.next(has(dir, name));
-  }
-  return step.value;
-}
-
-/**
- * The same answer through an async probe. Driver for the module.
- *
- * @param {string} start
- * @param {(dir: string, name: string) => Promise<boolean> | boolean} has
- * @returns {Promise<string | null>}
- */
-export async function planningRootAsync(start, has) {
-  const walk = planningWalk(start);
-  let step = walk.next();
-  while (!step.done) {
-    const [dir, name] = step.value;
-    step = walk.next(await has(dir, name));
   }
   return step.value;
 }

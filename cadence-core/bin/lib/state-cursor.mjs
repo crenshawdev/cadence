@@ -1,11 +1,9 @@
 // @ts-check
 // state-cursor.mjs - the grammar of STATE.md's four-line cursor, read side.
 //
-// It lives apart from lib/planning-files.mjs so the Cadence module
-// (hooks/cadence-mod.mjs) can load it: a hooks module may import only relative
-// files and `claude-code`, and planning-files imports `node:fs`. The band reads
-// STATE.md through `$.fs.read` and parses it here, with the same parser
-// `planning.mjs cursor get` uses (phase 3, D-05).
+// It was split out of lib/planning-files.mjs so the Cadence module, which
+// 3.9.0 removed, could load it without `node:fs` (phase 3, D-05). It stays
+// apart because nothing gains from moving it back.
 //
 // planning-files re-exports `parseCursor`, so the seam and its tests still
 // import it from there. The writer (`renderCursor`) and the status vocabulary
@@ -36,8 +34,7 @@ export function parseCursor(text) {
  * The rest of a `Key:` line, trimmed, or null when the line is missing or
  * holds nothing. Greedy to the end of the line and then `trim()`, never a lazy
  * capture before `\s*$`: that one backtracks in quadratic time on a long run of
- * inner spaces, and the band parses STATE.md inside the host's hooks worker on
- * every draw.
+ * inner spaces, and `planning.mjs cursor get` parses STATE.md on every read.
  *
  * The capture stops at `\r` or `\n` only, never at `.`'s edge: `.` and a
  * multiline `$` also stop at U+2028 and U+2029, which `cursor set` accepts in a

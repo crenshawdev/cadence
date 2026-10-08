@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path, { join } from 'node:path';
 
-import { gitInvocations, gitVerbs, parentDir, planningRoot, planningRootAsync } from './lib/git-segments.mjs';
+import { gitInvocations, gitVerbs, parentDir, planningRoot } from './lib/git-segments.mjs';
 
 // --- The anchor: a segment counts only when its command word is `git`. -------
 
@@ -142,7 +142,7 @@ test('a separator run does not manufacture a verb', () => {
   assert.deepEqual(gitVerbs('git --no-pager'), []); // flags only
 });
 
-// --- The scope rule: the `.planning/` walk the hooks and the module share. ---
+// --- The scope rule: the `.planning/` walk the hooks share. ---------------
 
 // Four trees, one per answer the walk can give. The probe answers only inside
 // the fixture, so a stray `.planning` or `.git` above the temp dir on some
@@ -182,13 +182,6 @@ test('planningRoot answers the four shapes through a sync probe', () => {
   }
   // The last case ran last: its walk ended at the filesystem root.
   assert.equal(probed.at(-1), path.parse(cases[3][1]).root);
-});
-
-test('planningRootAsync gives the same four answers through an async probe', async () => {
-  const { has, cases } = walkFixture();
-  for (const [name, start, want] of cases) {
-    assert.equal(await planningRootAsync(start, async (dir, n) => has(dir, n)), want, name);
-  }
 });
 
 test('the walk checks .planning before .git in the same directory', () => {

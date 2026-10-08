@@ -116,8 +116,8 @@ try {
   const cwd = String(input?.cwd || process.cwd());
   // Walk up from cwd, stopping at the repo root: a session opened in a
   // subdirectory still bills the project. lib/git-segments.mjs defines the walk
-  // once for git-guard, read-trace and the Cadence module, so they all agree on
-  // which directory is a Cadence project.
+  // once for git-guard, read-trace and this hook, so they all agree on which
+  // directory is a Cadence project.
   const project = planningRoot(cwd, (dir, name) => existsSync(join(dir, name)));
   const root = project === null ? null : join(project, '.planning');
   if (root) {

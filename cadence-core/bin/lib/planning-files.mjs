@@ -2,9 +2,9 @@
 // planning-files.mjs - format-pinned parsers/writers for the .planning file
 // set. This is where the .planning grammars live (cursor, ROADMAP phases,
 // REQUIREMENTS traceability, UAT items), with one exception: the cursor's
-// PARSER is in lib/state-cursor.mjs, because the Cadence module parses STATE.md
-// in-process and a file that imports `node:fs` cannot load there (phase 3,
-// D-05). This file re-exports it and is still where everything imports it from.
+// PARSER is in lib/state-cursor.mjs, split out for the Cadence module that
+// 3.9.0 removed (phase 3, D-05). This file re-exports it and is still where
+// everything imports it from.
 // A format change is one function here (or there) + its tests; workflow prose
 // never describes file mechanics.
 // Zero-dep: node: builtins only. Consumed by bin/planning.mjs and its tests.

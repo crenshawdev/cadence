@@ -35,8 +35,7 @@ import {
 } from 'node:fs';
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
 // The join below needs a recorded `agent_type` stem back to the role a dispatch
-// event names. Those reverse lookups live beside RUNG_FILES in lib/rung-agent.mjs,
-// which is fs-free, so the Cadence module can load them too.
+// event names. Those reverse lookups live beside RUNG_FILES in lib/rung-agent.mjs.
 import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
 
 export const READS_FILE = 'reads.jsonl';

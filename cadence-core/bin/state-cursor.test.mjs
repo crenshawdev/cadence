@@ -1,5 +1,5 @@
-// Tests for lib/state-cursor.mjs, the STATE.md cursor parser the Cadence module
-// loads. Run: node --test cadence-core/bin/state-cursor.test.mjs
+// Tests for lib/state-cursor.mjs, the STATE.md cursor parser planning-files
+// re-exports. Run: node --test cadence-core/bin/state-cursor.test.mjs
 //
 // Not named planning-*: test-groups.test.mjs pins the `planning` group to
 // exactly those files.
