@@ -20,6 +20,20 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ### Removed
 
+- **The Cadence module is gone, and `/cad-panel` with it.** Anthropic's plugin
+  directory blocks a mod that keeps a copy of its engine and also calls
+  `config.set`, and the module did both, so the listing could not go live
+  with it. `hooks/hooks.json` names no module, the `panel` setting is out of
+  `plugin.json`, and the libraries only the module loaded are deleted. That
+  takes away the band and the pane, the cache meter, the step-window token
+  figures, the listing filter, and the prefix safety net. The 30 rung agents
+  and the six contract skills are back in the model's listings, and
+  `route.mjs` already hands every dispatch the `cadence:` name, so nothing
+  dispatches a bare stem. A `trace.jsonl` written before this still renders
+  the step-window figures it holds. git-guard, read-trace and subagent-trace
+  are plain command hooks and stay as they were. Self-verify drops check 26,
+  the one-line listing rule, which only the filter needed, and the old check
+  27 is now 26.
 - **`design-notes/` is out of the repository.** The thirteen dated working
   notes took 14 of the plugin directory's 512 files and folders, and the repo
   sat at exactly 512, so nothing new could be added. Git history keeps them:
