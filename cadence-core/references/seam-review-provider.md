@@ -2,12 +2,10 @@
 
 ## Seam: call-review-provider
 
-How the review subsystem reaches a cross-model reviewer. Review is a pure
-function (artifact in -> structured findings out). By default a cross-model
-review is a direct provider HTTPS call, and the provider API enforces the
-finding schema. For openai, when `review.providers.openai.transport` is `codex`,
-it is a `codex exec` run inside the same script instead: the same envelope, the
-same findings shape, and no key. All provider specifics live in one bundled
+How the review subsystem reaches a cross-model reviewer. A cross-model review
+is a direct provider HTTPS call (OpenAI / Gemini), NOT a CLI subprocess: review
+is a pure function (artifact in -> structured findings out), and the provider
+API enforces the finding schema. All provider specifics live in one bundled
 script; workflows invoke the script and never inline HTTP or provider bytes.
 
 **Claude Code binding:**
@@ -25,8 +23,8 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
 - The script resolves the key itself (env first, then the shared providers.env)
   and NEVER logs it; the workflow passes no key.
 - Degradation is structured, not exceptional: `ok:false` with `reason` one of
-  `no-key | no-codex | codex-exit | transport | http | over-response | no-output
-  | bad-json | bad-shape` (call-shape problems surface as `over-cap | bad-payload | bad-provider |
+  `no-key | transport | http | over-response | no-output | bad-json | bad-shape`
+  (call-shape problems surface as `over-cap | bad-payload | bad-provider |
   bad-args | bad-command`, and an unforeseen bug as `internal`). `over-cap` is
   the prompt bound: `review` and `consult` both refuse a payload over
   `review.max_prompt_tokens` estimated tokens (chars/4, default 120000) BEFORE
@@ -39,20 +37,6 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
   1024-byte excerpt, always a string, never the body. On `no-key`
   the review subsystem falls back to `claude-subagent` and does not offer a
   consult; a `blocking` trigger reports the failure rather than silently pass.
-  `no-codex` drops the reviewer the same way.
-- Under the Codex transport (openai `review` only; `consult` and
-  `detect-models` stay on the API): `no-codex` means `codex` is not on PATH, so
-  nothing was sent; `codex-exit` means `codex exec` exited non-zero or died by a
-  signal Cadence did not send, the detail carrying the code and a sanitized
-  excerpt that names a model the login does not serve. There is no API fallback,
-  even with a key set: a failed run is a review that did not run. The run is
-  bounded like a request - `review.max_prompt_tokens` before anything is
-  spawned, and `review.request_timeout_ms` as a wall-clock SIGKILL of the run and
-  what it started (`transport`), not as socket inactivity - and its output past
-  4 MiB is `over-response`. Its event carries `transport: "codex"`, and its
-  `usage` and `usage_raw` come from the `turn.completed` event. A temp dir the
-  run could not remove (EBUSY on win32) is left behind and never adds a line:
-  a review that finished stays `ok` and says so in `detail`.
 - The payload is FENCED before the cap: every string field crosses one filter -
   URL userinfo, an `authorization` echo, a credential-shaped `name=value` - so
   `over-cap` measures what actually leaves the machine. `redactions: <n>` on the
@@ -80,5 +64,4 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
 - Model, effort, and per-provider endpoint/key-file path come from config
   (`review.providers.<name>`; per-trigger `review.triggers.<t>.tier` resolves
   the model id, `.effort` the reasoning level).
-  A non-HTTP backend lives inside this script, as the Codex transport does,
-  never in the workflows.
+  A future non-HTTP reviewer backend replaces this script, not the workflows.

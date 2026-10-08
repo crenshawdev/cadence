@@ -230,13 +230,10 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
   - Trade-off on record: API means the subsystem carries provider clients + key management as a
     real dependency, pushing on "zero-dep/distributable." The `claude-subagent` default is the
     no-key fallback; the API path is the cross-model *upgrade* a user opts into.
-  - **Amended 2026-10-07: an opt-in Codex review transport.** API reviewers stay the default
-    cross-model path, and the reasons above still hold for them. `review.providers.openai.transport`
-    set to `codex` sends the openai reviewer's `review` call through `codex exec` on the user's
-    Codex login instead of the API, and openai still runs only when the user-global
-    `review.reviewers` names it. Either config layer can turn it on. A Codex executor switch was
-    built beside it the same day and dropped on 2026-10-08, before 3.9.0 shipped: the executor
-    is Claude only.
+  - **Amended 2026-10-07, reversed 2026-10-08.** A Codex executor switch and a `codex exec`
+    review transport were built for the 3.9.0 cycle and dropped before it shipped. The
+    decision above stands as written: cross-model reviewers are API calls, and the executor is
+    Claude only.
 - **Division of labor:** API reviewers (Codex/GPT, Gemini, DeepSeek) = structured single-shot independent
   critique. Main model = agentic grounding, false-positive kill, dedupe of convergent findings,
   final verdict. Same as `/panel-review`, which is the proven pattern.

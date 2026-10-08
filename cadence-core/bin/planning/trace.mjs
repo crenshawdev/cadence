@@ -545,16 +545,13 @@ function parseDurationMs(raw) {
 //
 // AND ONLY THE CALLS THAT REACHED THE WIRE. The seam writes its event for a
 // call it refused before sending anything, too - no key, no model id, an
-// unknown provider, an unparseable payload, an artifact over the cap, or no
-// `codex` on PATH when the review transport is Codex - and D-04
+// unknown provider, an unparseable payload, an artifact over the cap - and D-04
 // says those "have nothing to read" for the same reason they are dropped here:
 // no request left the machine, so there was no spend and no reviewer. Counted,
 // each would raise `unrecorded`, claiming an unknown cost for a call that
 // provably cost nothing. Everything PAST the send stays counted, degraded
 // outcomes included: a call that burned its budget and came back unusable is
-// exactly the one whose cost must still reach this figure (D-04). On the Codex
-// transport that line is the spawn: a `codex exec` that started and then
-// failed may have spent plan usage, so `codex-exit` stays counted.
+// exactly the one whose cost must still reach this figure (D-04).
 // `UNSENT_OUTCOMES` is `review-provider.mjs`'s vocabulary read back out of a
 // FILE rather than imported, so a refusal reason added there and not here lands
 // as one more unrecorded call - the safe direction, because this figure may
@@ -570,7 +567,7 @@ function parseDurationMs(raw) {
  * No bytes on the wire, so no spend to price and no call to count (D-04).
  */
 const UNSENT_OUTCOMES = new Set([
-  'bad-provider', 'bad-args', 'no-key', 'bad-payload', 'over-cap', 'no-codex',
+  'bad-provider', 'bad-args', 'no-key', 'bad-payload', 'over-cap',
 ]);
 
 /**

@@ -564,13 +564,14 @@ test('a config still holding model.profile warns and never reports a configured 
   assert.match(r.reason.join(' '), /roles\.cad-planner\.effort default "high" \(unset in layers\)/);
 });
 
-test('a config still holding the dropped Codex executor keys resolves the Claude executor and says so', () => {
+test('a config still holding the dropped Codex keys resolves the Claude executor and says so', () => {
   // Baley's repo layer carried `codex.enabled` and `codex.timeout_ms`, and the
   // user-global layer carried `codex.sandbox`, when the Codex executor was
-  // dropped before 3.9.0 shipped. Each must read as a warning naming its unset,
-  // never as a mode switch or a refusal.
+  // dropped before 3.9.0 shipped, and the review transport went with it. Each
+  // must read as a warning naming its unset, never as a mode switch or a refusal.
   const repo = rawCfg({ roles: { 'cad-executor': { effort: 'high',
-    codex: { enabled: true, timeout_ms: 1800000 } } } }, 'stale-codex-repo.json');
+    codex: { enabled: true, timeout_ms: 1800000 } } },
+  review: { providers: { openai: { transport: 'codex' } } } }, 'stale-codex-repo.json');
   const global = rawCfg({ roles: { 'cad-executor': { codex: { sandbox: 'danger-full-access' } } } },
     'stale-codex-global.json');
   const r = resolve('cad-executor', repo, [], { global });
@@ -582,6 +583,7 @@ test('a config still holding the dropped Codex executor keys resolves the Claude
     assert.match(w, new RegExp(`roles\\.cad-executor\\.codex\\.${k}" was retired in v3\\.9\\.0`), k);
   }
   assert.match(w, /config\.mjs unset --global roles\.cad-executor\.codex\.sandbox/);
+  assert.match(w, /review\.providers\.openai\.transport" was retired in v3\.9\.0/);
 });
 
 test('the first reason names the LAYERS that were read, and claims nothing about them', () => {

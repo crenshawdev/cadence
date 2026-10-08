@@ -196,6 +196,14 @@ export const RETIRED_KEYS = Object.freeze({
       + 'task is written by the Claude executor, and nothing reads this key; '
       + '`config.mjs unset roles.cad-executor.codex.timeout_ms` drops it',
   }),
+  'review.providers.openai.transport': Object.freeze({
+    replacement: null,
+    since: 'v3.9.0',
+    detail: 'the codex exec review transport was dropped before 3.9.0 shipped - '
+      + 'an openai review is always an API call on OPENAI_API_KEY, and nothing '
+      + 'reads this key; `config.mjs unset review.providers.openai.transport` '
+      + 'drops it',
+  }),
 });
 
 /**

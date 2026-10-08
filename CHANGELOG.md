@@ -34,10 +34,12 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
   are plain command hooks and stay as they were. Self-verify drops check 26,
   the one-line listing rule, which only the filter needed, and the old check
   27 is now 26.
-- **The Codex executor is dropped.** A 3.9.0 development build could hand
-  each plan task to `codex exec` under a `roles.cad-executor.codex.*` switch.
-  It never reached a tagged release, and every plan task is written by the
-  Claude executor. A config that still holds one of those keys gets a warning
+- **Codex is out of Cadence.** A 3.9.0 development build could hand each plan
+  task to `codex exec` under a `roles.cad-executor.codex.*` switch, and send
+  an OpenAI review through `codex exec` under
+  `review.providers.openai.transport`. Neither reached a tagged release. Every
+  plan task is written by the Claude executor, and every cross-model review is
+  an API call. A config that still holds one of those keys gets a warning
   naming the `config.mjs unset` that drops it, and nothing reads the value.
 - **`design-notes/` is out of the repository.** The thirteen dated working
   notes took 14 of the plugin directory's 512 files and folders, and the repo

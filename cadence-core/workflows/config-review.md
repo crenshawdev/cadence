@@ -17,16 +17,6 @@ provider over the gathered results.
 
 ### 1. Detect all providers (one concurrent batch)
 
-First read openai's transport:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get review.providers.openai.transport
-```
-
-When it reads `codex`, openai reviews run on the user's Codex login and
-`detect-models` cannot list its models (it needs the API key). Leave openai out
-of the batch below, skip step 2 for it, and give it step 3's Codex arm.
-
 Fire `detect-models` for every provider under `review.providers` (openai,
 gemini, deepseek) in ONE message (seam-spawn-agent.md concurrent dispatch) -
 not one provider at a time, or three full timeouts run back to back. No
@@ -77,12 +67,6 @@ Ask the user (ask-user seam) which mode:
   candidates (`id` + tier hint, most-relevant first) as choices, plus an
   `Other` option for a free-typed id. Unknown-tier ids may be assigned to any
   position.
-
-- **openai under the Codex transport**: no mode question. Manual with no
-  detected candidates - ask for the flagship, balanced and cheap ids as
-  free-typed values (the `Other` path). Each must be an id the user's Codex
-  login serves; one it does not serve fails at review time as `codex-exit`,
-  naming the model. Then step 4 as for any provider.
 
 ### 4. Write
 

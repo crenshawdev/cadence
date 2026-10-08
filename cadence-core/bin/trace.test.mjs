@@ -1370,18 +1370,6 @@ test('seam: a review refused before the request was sent is not a call', () => {
     'no `unrecorded: 5` - nothing left the machine on those, so their cost is not unknown, it is nothing');
 });
 
-test('seam: a missing codex sent nothing, a codex run that failed may have spent', () => {
-  const dir = root();
-  provider(dir, 0, { input: 900, output: 100 });
-  provider(dir, 1, null, { outcome: 'no-codex' });
-  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '9']).provider_spend,
-    { calls: 1, tokens: 1000 },
-    'no codex on PATH is refused before the spawn, so it is not a call of unknown cost');
-  provider(dir, 2, null, { outcome: 'codex-exit', transport: 'codex' });
-  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '9']).provider_spend,
-    { calls: 2, tokens: 1000, unrecorded: 1 });
-});
-
 test('seam: a review that reached the wire and failed still cost something', () => {
   const dir = root();
   // D-04: usage is recorded on the degraded outcomes that still burned the

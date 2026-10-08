@@ -81,7 +81,7 @@ Two of those rows, at work:
 
 `/cad-report` renders one phase's record as a narrative, and `/cad-suggest` reads the same record back the other way: it turns what the dispatches actually cost and what the gates actually caught into retune suggestions, each carrying its config key, the value in force and a direction, plus a target where the record can price one, and it offers to route the ones you accept to `/cad-config`. The controls generate the evidence, and that is what the evidence is for.
 
-The reviewers are adversarial by construction, because you cannot personally re-derive everything the model wrote and neither can I. The default reviewer is a fresh-context Claude subagent and needs no API key. An OpenAI, Gemini, or DeepSeek key runs the identical job as a direct API call by default, and the OpenAI reviewer can run it through `codex exec` on your Codex login instead, with no key. That lets you put up to four independent voices on one plan and have your main session adjudicate against the cited code. Every backend returns the same shape on purpose, so each finding is ruled on against the code it cites and never on which reviewer raised it. Each ruling still records its voice, which is what lets you count every reviewer's hit rate. The one signal treated as strong is convergence, two reviewers landing on the same defect independently. What survives comes back as a multi-select prompt whose default is none of it, never a queue the model starts working through.
+The reviewers are adversarial by construction, because you cannot personally re-derive everything the model wrote and neither can I. The default reviewer is a fresh-context Claude subagent and needs no API key. An OpenAI, Gemini, or DeepSeek key runs the identical job as a direct API call, which lets you put up to four independent voices on one plan and have your main session adjudicate against the cited code. Every backend returns the same shape on purpose, so each finding is ruled on against the code it cites and never on which reviewer raised it. Each ruling still records its voice, which is what lets you count every reviewer's hit rate. The one signal treated as strong is convergence, two reviewers landing on the same defect independently. What survives comes back as a multi-select prompt whose default is none of it, never a queue the model starts working through.
 
 `/cad-minimalism-review` points the same posture at code that works and should not exist, an abstraction with one implementation, flexibility nothing exercises, config nobody sets, and hands back a ranked delete-list. It applies none of it.
 
@@ -115,29 +115,13 @@ They're off by default. The shipped reviewer is the Claude subagent, which needs
 
 The key comes from the environment first. When the variable isn't set, `cadence-core/bin/review-provider.mjs` reads it from `~/.config/cadence/providers.env` (under `$XDG_CONFIG_HOME` when that's set), or from the file `review.key_file` names in your user-global config. That's a script reading a credential off your machine, which is what the plugin directory flags, and it stays that way on purpose: a plugin `userConfig` secret only reaches hooks and MCP servers, and the review calls run through Bash. The key is never written to a config file or printed, and each key goes only to its own provider's host.
 
-By default `review-provider.mjs` makes three calls, each to that host with that key. The one exception is the OpenAI `review` call under the Codex transport below, which goes through Codex on your Codex login with no key.
+`review-provider.mjs` makes three calls, each to that host with that key:
 
 - `review` sends the review instruction and the artifact under review, a plan or a diff, after credential redaction. It runs when a review gate fires with that provider in the reviewer set, and at `/cad-decision-review`.
 - `consult` sends a short description of a dead end, the goal, what was tried and the exact failing signal, after the same redaction. It runs only with `review.consult.enabled` true, and only after you say yes to an offer that names the provider and model. `/cad-debug`, `/cad-execute` and `/cad-plan` make that offer.
 - `detect-models` sends no project content, only the key as the request's credential, to list the provider's models when you run `/cad-config --review`.
 
 Redaction catches a credential by its shape, a credential-shaped name beside its value, a URL's userinfo, an `Authorization` header, and not by a list of known prefixes. A bare key sitting in a diff with nothing naming it goes out as written, so don't point a reviewer at a secrets file.
-
-The OpenAI reviewer has a Codex transport, and it's off by default. With `review.providers.openai.transport` set to `codex`, the `review` call runs through your own `codex exec` instead of the API, and no key is read. Codex has to be installed and signed in with `codex login`. To turn it on for one repository, run this in a Claude Code session there:
-
-```
-/cad-config review.providers.openai.transport=codex
-```
-
-To turn it on for every repository, add this to `~/.claude/cadence/config.json`, or the file `CADENCE_GLOBAL_CONFIG` names, merged into whatever keys are already there:
-
-```json
-{"review": {"providers": {"openai": {"transport": "codex"}}}}
-```
-
-Either layer can turn it on, so a repository's committed config can move an OpenAI reviewer you've already authorized onto your Codex login. It still can't authorize `openai` by itself, that takes your user-global `review.reviewers` as before.
-
-Through Codex, OpenAI gets the same review instruction and artifact after the same redaction, plus the findings schema. The run is under the login `codex login` stored, with `OPENAI_API_KEY`, `CODEX_API_KEY` and `CODEX_ACCESS_TOKEN` removed from its environment, so no key or token in your shell can take it over. On a ChatGPT login it bills your Codex plan, and if you signed Codex in with an API key it bills that key. Codex runs read-only in an empty temporary directory with its shell, web search and other tools switched off. That directory is its own project root, so no `AGENTS.md` from a folder above it reaches the prompt. Codex still loads your Codex config as you set it, your global `AGENTS.md` included, so an MCP server configured there is reachable during a review. A Codex run that fails drops that reviewer the same way a missing key does, and nothing falls back to the API. `consult` and `detect-models` still go to `https://api.openai.com` on the key, which is why `/cad-config --review` asks you to type OpenAI's three model ids while the transport is on.
 
 ### Your forge
 

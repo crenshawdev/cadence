@@ -111,9 +111,8 @@ if (!files.length) { console.error('no test files matched'); process.exit(2); }
 
 // The suite never reads the developer's own user-global config: unless the
 // caller pinned CADENCE_GLOBAL_CONFIG, it points at a path in a fresh temp dir
-// that does not exist, which is what CI sees. A user-global
-// `review.providers.openai.transport: codex` would otherwise send the review
-// tests to the real `codex`.
+// that does not exist, which is what CI sees, so a developer's own settings
+// can't change what a test resolves.
 const env = process.env.CADENCE_GLOBAL_CONFIG ? process.env : {
   ...process.env,
   CADENCE_GLOBAL_CONFIG: join(mkdtempSync(join(tmpdir(), 'cad-test-global-')), 'config.json'),
