@@ -203,7 +203,7 @@ A phase whose declared files touch one of those surfaces, read at plan time befo
 
 ## Help and bug reports
 
-Questions and discussion go in the #cadence channel on the [jcrenshaw.dev Discord](https://discord.gg/fedQDmhRrx). Bug reports go to [GitHub issues](https://github.com/crenshawdev/cadence/issues), not Discord.
+Questions and discussion go in the #cadence channel on the [jcrenshaw.dev Discord](https://jcrenshaw.dev/discord). Bug reports go to [GitHub issues](https://github.com/crenshawdev/cadence/issues), not Discord.
 
 ## Where it came from
 
