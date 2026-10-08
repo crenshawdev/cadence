@@ -201,6 +201,10 @@ It used to check the file NAMES a plan declared, at dispatch time, and raise the
 
 A phase whose declared files touch one of those surfaces, read at plan time before any code exists, does exactly two things: the plan review becomes blocking, and the deep verify pass turns on. No role's model moves and no role's rung moves, so what you set is what dispatches. No key turns deep verification on - that floor does, `/cad-verify --deep` is the manual switch, and `workflow.verifier: false` is the off switch. [`INTERNALS.md`](./INTERNALS.md) has the mechanism.
 
+## Help and bug reports
+
+Questions and discussion go in the #cadence channel on the [jcrenshaw.dev Discord](https://discord.gg/fedQDmhRrx). Bug reports go to [GitHub issues](https://github.com/crenshawdev/cadence/issues), not Discord.
+
 ## Where it came from
 
 Cadence descends from [GSD](https://github.com/open-gsd/gsd-core), the discuss/plan/execute/verify loop, which is where I first ran into it. GSD gets the hard thing right and then buries it. Seventy-one skills, thirty-four agents, forty-six capabilities underneath those, and one-point-one million words of documentation wrapped around a four-step idea, which is an elephant being a mouse built to government standards. I kept the loop and threw out the standards. Cadence carries about 3% of GSD's documentary mass, measured 2026-07-10 against GSD commit d010ea1. Today it is 28 skills and 6 agent roles across 30 rung files.

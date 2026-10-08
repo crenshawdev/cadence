@@ -7,6 +7,12 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+### Added
+
+- **The README and `/cad-help` say where to ask and where to report.** Questions
+  go to #cadence on the jcrenshaw.dev Discord, https://discord.gg/fedQDmhRrx,
+  and bug reports go to GitHub issues.
+
 ### Fixed
 
 - **git-guard checks the repository a commit lands in.** `git -C <dir> commit`

@@ -60,3 +60,7 @@ are the on-demand and standalone gates.
   configured (`/cad-config --review`).
 - **Consult** - references/consult.md. User-gated second-model help at dead-ends,
   offered by cad-debug, cad-execute (structural stop), cad-plan (phase too big).
+
+## Help and bug reports
+Questions: #cadence on the jcrenshaw.dev Discord, https://discord.gg/fedQDmhRrx.
+Bugs: https://github.com/crenshawdev/cadence/issues.
