@@ -60,7 +60,10 @@ codex-cli 0.160.1 on a ChatGPT login, 2026-10-07. No key is read; `consult` and
   `CODEX_ACCESS_TOKEN`, the three auth variables codex-cli 0.160.1 reads. The
   last overrides the stored login, so all three go and the run uses whatever
   `codex login` stored.
-- **Prompt:** on stdin, one prompt - the instruction, then the artifact between
+- **Prompt:** on stdin, one prompt - a note that the review has no tools and no
+  workspace and must be done from the material alone (without it the model
+  planned to check the workspace, found no tools, and answered early with no
+  findings), the instruction, then the artifact between
   BEGIN and END marker lines carrying a random tag minted per call, so an
   artifact holding a plain END line cannot close its own block. Nothing from the payload is on argv (spawn fails
   with E2BIG past 131,072 argument bytes, and a `-c` value is parsed as TOML).

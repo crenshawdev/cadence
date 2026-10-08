@@ -2411,6 +2411,11 @@ test('codex transport: an artifact carrying the plain END line cannot close the 
   assert.notEqual(tags[0], tags[1], 'the tag must be minted per call');
 });
 
+test('codex transport: the prompt opens with the no-tools note, before the instruction', () => {
+  const { stdin } = codexRun({ repo: CODEX_ON }).record;
+  assert.ok(stdin.startsWith(`${reviewProvider.CODEX_REVIEW_NOTE}\n\n${CODEX_PAYLOAD.instruction}\n\n`), stdin.slice(0, 400));
+});
+
 test('codex transport: the schema goes unchanged, -C is empty, and every temp path is gone after', () => {
   const r = codexRun({ repo: CODEX_ON });
   assert.deepEqual(r.record.schema, reviewProvider.FINDING_SCHEMA);
