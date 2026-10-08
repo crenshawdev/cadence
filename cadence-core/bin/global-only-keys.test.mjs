@@ -14,10 +14,9 @@ const FILE = '/w/.planning/config.json';
 
 // --- the set itself -----------------------------------------------------------
 
-test('the set is exactly the three keys CFG-02 names plus the Codex sandbox, and is frozen', () => {
+test('the set is exactly the three keys CFG-02 names, and is frozen', () => {
   assert.deepEqual([...GLOBAL_ONLY_KEYS],
-    ['workflow.test_command', 'workflow.lint_command', 'review.key_file',
-      'roles.cad-executor.codex.sandbox']);
+    ['workflow.test_command', 'workflow.lint_command', 'review.key_file']);
   assert.equal(Object.isFrozen(GLOBAL_ONLY_KEYS), true);
   assert.equal(GLOBAL_SRC, 'global');
 });
@@ -38,15 +37,13 @@ test('a non-null value warns, naming BOTH the key and the file it came from', ()
   assert.match(warnings[0], /user-global config layer only/);
 });
 
-test('all four keys are stripped, one warning each - not just the first', () => {
+test('all three keys are stripped, one warning each - not just the first', () => {
   const { layer, warnings } = stripGlobalOnly({
     workflow: { test_command: 'a', lint_command: 'b' },
     review: { key_file: '/tmp/keys.env' },
-    roles: { 'cad-executor': { codex: { sandbox: 'danger-full-access', enabled: true } } },
   }, FILE);
-  assert.deepEqual(layer, { workflow: {}, review: {},
-    roles: { 'cad-executor': { codex: { enabled: true } } } });
-  assert.equal(warnings.length, 4);
+  assert.deepEqual(layer, { workflow: {}, review: {} });
+  assert.equal(warnings.length, 3);
   for (const key of GLOBAL_ONLY_KEYS) {
     assert.ok(warnings.some((w) => w.includes(`"${key}"`)), `${key}: ${JSON.stringify(warnings)}`);
   }

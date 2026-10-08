@@ -47,7 +47,14 @@ const RETIRED_KEYS_FILE = fileURLToPath(new URL('./lib/retired-keys.mjs', import
 // no `replacement`, no `since` and no `detail` moved with it. This is what the
 // pin costs and what it is worth: a comment edit has to be declared here in the
 // same commit, and in exchange nothing can edit a ROW without being seen.
-const RETIRED_KEYS_SHA256 = '0b64617d291fa189e91c8249a46cef8b89af73adb5c9fda525c15fb2e8fffff9';
+//
+// A FOURTH time, off
+// `0b64617d291fa189e91c8249a46cef8b89af73adb5c9fda525c15fb2e8fffff9`, by
+// decision: John dropped the Codex executor before 3.9.0 shipped, and the five
+// `roles.cad-executor.codex.*` keys joined this map in the same commit that took
+// them out of the schema, so a config that still holds one (Baley's did) meets
+// a message naming the fix instead of a key read silently for nothing.
+const RETIRED_KEYS_SHA256 = '9b98942be818039f721482e386f74aeb314f886be2bbf438491c6ed89055ece0';
 
 test('lib/retired-keys.mjs is byte-identical - the eight risk.override.* keys stay retired', () => {
   // WHAT THIS PROTECTS. D-03 keeps the retired family retired because a key

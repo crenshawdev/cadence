@@ -161,6 +161,41 @@ export const RETIRED_KEYS = Object.freeze({
       + 'reasoning effort to reach; set review.triggers.risk_surface.effort for '
       + 'the gate that still runs on this branch\'s work',
   }),
+  'roles.cad-executor.codex.enabled': Object.freeze({
+    replacement: null,
+    since: 'v3.9.0',
+    detail: 'the Codex executor was dropped before 3.9.0 shipped - every plan '
+      + 'task is written by the Claude executor, and nothing reads this key; '
+      + '`config.mjs unset roles.cad-executor.codex.enabled` drops it',
+  }),
+  'roles.cad-executor.codex.wrapper_model': Object.freeze({
+    replacement: null,
+    since: 'v3.9.0',
+    detail: 'the Codex executor was dropped before 3.9.0 shipped - every plan '
+      + 'task is written by the Claude executor, and nothing reads this key; '
+      + '`config.mjs unset roles.cad-executor.codex.wrapper_model` drops it',
+  }),
+  'roles.cad-executor.codex.wrapper_effort': Object.freeze({
+    replacement: null,
+    since: 'v3.9.0',
+    detail: 'the Codex executor was dropped before 3.9.0 shipped - every plan '
+      + 'task is written by the Claude executor, and nothing reads this key; '
+      + '`config.mjs unset roles.cad-executor.codex.wrapper_effort` drops it',
+  }),
+  'roles.cad-executor.codex.sandbox': Object.freeze({
+    replacement: null,
+    since: 'v3.9.0',
+    detail: 'the Codex executor was dropped before 3.9.0 shipped - every plan '
+      + 'task is written by the Claude executor, and nothing reads this key; '
+      + '`config.mjs unset --global roles.cad-executor.codex.sandbox` drops it',
+  }),
+  'roles.cad-executor.codex.timeout_ms': Object.freeze({
+    replacement: null,
+    since: 'v3.9.0',
+    detail: 'the Codex executor was dropped before 3.9.0 shipped - every plan '
+      + 'task is written by the Claude executor, and nothing reads this key; '
+      + '`config.mjs unset roles.cad-executor.codex.timeout_ms` drops it',
+  }),
 });
 
 /**

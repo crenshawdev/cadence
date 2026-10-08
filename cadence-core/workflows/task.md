@@ -137,14 +137,7 @@ No PLAN.md, no SUMMARY.md, no state writes.
    atomically per task.
    Exception: if the current context is already heavy or the work benefits
    from a fresh context, dispatch cad-executor with the plan via the
-   spawn-agent seam instead, and wait for its result. Before that dispatch,
-   read the Codex switch:
-   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get roles.cad-executor.codex.enabled`.
-   When the resolve carries `codex_mode: true`, the prompt carries the
-   Codex-mode line references/seam-spawn-agent.md's Routing block states. When
-   the switch reads true and the resolve answers `ok:false`, stop with a
-   `structural` checkpoint naming its `reason` rather than dispatching the base
-   agent.
+   spawn-agent seam instead, and wait for its result.
 3. Append a 3-5 line "Outcome" section to the PLAN.md (what shipped, commit
    hashes, deviations). When step 2's cad-executor exception was taken, write
    it from `.planning/tasks/{slug}/reports/plan-1.md` - the executor returns a
@@ -281,8 +274,7 @@ FAIL, since this workflow does not preload it and the cap lives only there.
 
 On the `--plan` path, the fix is owned by a continuation `cad-executor`
 dispatched with `.planning/tasks/{slug}/PLAN.md` and the persisted findings
-path, plus the Codex-mode line when the resolve carries `codex_mode: true`,
-bracketed like any executor. Its worker key is the plan key `1` -
+path, bracketed like any executor. Its worker key is the plan key `1` -
 `skills/cad-executor-contract/SKILL.md` derives `k` from the plan file's own
 name, `1` for a bare `PLAN.md` - deliberately a different key from this run's
 own `--plan {slug}` `cad-task` bracket, so the two workers do not pair FIFO

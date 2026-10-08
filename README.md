@@ -101,7 +101,7 @@ That shape was expensive to learn, and I paid for it twice. First a predicate ca
 
 ## What Cadence sends, writes and reads
 
-Cadence sends no telemetry and keeps its record in your repository. The only network traffic it starts itself goes to a cross-model reviewer or through the Codex executor, and only when you've turned one on. Everything else it touches outside the project is listed here, so you don't have to find it by reading the scripts.
+Cadence sends no telemetry and keeps its record in your repository. The only network traffic it starts itself goes to a cross-model reviewer, and only when you've turned one on. Everything else it touches outside the project is listed here, so you don't have to find it by reading the scripts.
 
 ### Cross-model reviewers
 
@@ -138,32 +138,6 @@ To turn it on for every repository, add this to `~/.claude/cadence/config.json`,
 Either layer can turn it on, so a repository's committed config can move an OpenAI reviewer you've already authorized onto your Codex login. It still can't authorize `openai` by itself, that takes your user-global `review.reviewers` as before.
 
 Through Codex, OpenAI gets the same review instruction and artifact after the same redaction, plus the findings schema. The run is under the login `codex login` stored, with `OPENAI_API_KEY`, `CODEX_API_KEY` and `CODEX_ACCESS_TOKEN` removed from its environment, so no key or token in your shell can take it over. On a ChatGPT login it bills your Codex plan, and if you signed Codex in with an API key it bills that key. Codex runs read-only in an empty temporary directory with its shell, web search and other tools switched off. That directory is its own project root, so no `AGENTS.md` from a folder above it reaches the prompt. Codex still loads your Codex config as you set it, your global `AGENTS.md` included, so an MCP server configured there is reachable during a review. A Codex run that fails drops that reviewer the same way a missing key does, and nothing falls back to the API. `consult` and `detect-models` still go to `https://api.openai.com` on the key, which is why `/cad-config --review` asks you to type OpenAI's three model ids while the transport is on.
-
-### The Codex executor
-
-It's off by default. With `roles.cad-executor.codex.enabled` set to `true`, the executor hands each plan task to your own `codex exec` instead of writing the code itself, and plans run one at a time. Codex has to be installed and signed in with `codex login`. To turn it on for one repository, run this in a Claude Code session there:
-
-```
-/cad-config roles.cad-executor.codex.enabled=true
-```
-
-To turn it on for every repository, add this to `~/.claude/cadence/config.json`, or the file `CADENCE_GLOBAL_CONFIG` names, merged into whatever keys are already there:
-
-```json
-{"roles": {"cad-executor": {"codex": {"enabled": true}}}}
-```
-
-Either layer turns it on by itself, a repository's committed `.planning/config.json` included. That's not how the reviewers above work: a repository can't authorize a review provider on its own, but it can turn this on, so running `/cad-execute` in a cloned repository that sets it runs `codex exec` under your Codex login.
-
-For each task, OpenAI gets the whole plan verbatim, its goal, must-be-true list, context and every task, marked with the task being built, plus the phase CONTEXT's locked decisions, your project's `CLAUDE.md`, and whatever files Codex reads while it works. The sandbox limits what Codex can write, not what it can read. It can read any file your user can read, `~/.config/cadence/providers.env` and `~/.codex/auth.json` included, and whatever it reads can reach OpenAI. Codex also loads a repository's `AGENTS.md` on its own, so a cloned repository that turns this on can instruct Codex directly.
-
-The run is under the login `codex login` stored. Cadence removes `OPENAI_API_KEY`, `CODEX_API_KEY` and `CODEX_ACCESS_TOKEN` from Codex's environment, so a key in your shell isn't what pays, and your Codex config loads as you set it. On a ChatGPT login it bills your Codex plan, and if you signed Codex in with an API key it bills that key.
-
-Codex runs in its `workspace-write` sandbox. Whatever your Codex config says, Cadence pins it to no network, no web search, no persisted exec-policy rules, no approvals and no extra writable roots, so Codex can't write `.git` and the Claude executor makes every commit. A missing `codex`, a failed run or a run past its time limit stops the plan as blocked, and nothing falls back to a Claude executor. The limit is `roles.cad-executor.codex.timeout_ms`, nine minutes by default and up to four hours. A run longer than the ten minutes one Claude Code command may take still works, because Cadence starts Codex detached and checks on it every eight minutes. A run nothing checks on for five minutes is killed.
-
-If your build writes outside the repository, a cargo target folder, `CARGO_HOME` or an sccache cache, the sandbox refuses those writes and the build fails inside Codex. Set `roles.cad-executor.codex.sandbox` to `danger-full-access` in your user-global config, `~/.claude/cadence/config.json`, and Codex runs with no sandbox, the way `codex exec --sandbox danger-full-access` does by hand. A repository's config can't set it. Codex can then write `.git`, reach the network and write anywhere your user can. Web search, exec-policy rules and approvals stay off, the build prompt still tells Codex git is read-only, and the executor compares every git ref before and after each run and stops the plan when one moved. A push that already happened stays pushed.
-
-What Cadence doesn't police is what Codex writes to paths the repository ignores, build output, `.env` and the like. The executor checks every tracked and untracked change against the task's declared files, but leaves ignored paths out, because builds and Cadence's own hooks write there.
 
 ### Your forge
 
@@ -206,7 +180,7 @@ Pushes are still guarded by git-guard, a hook rather than a permission rule, and
 
 ### Privacy
 
-No telemetry, no analytics, no phoning home. The only network traffic Cadence starts itself is the provider calls and the Codex executor's `codex exec` runs above, each on the terms stated there. Forge and push traffic goes through your own `tea`, `gh`, `glab` and `git`. The planning record, the run trace and the reads log stay in `.planning/` in your repository and go wherever you push it. Cadence runs inside Claude Code, so what your session sees goes wherever Claude Code sends it, which is the host's policy and not this plugin's.
+No telemetry, no analytics, no phoning home. The only network traffic Cadence starts itself is the provider calls above, on the terms stated there. Forge and push traffic goes through your own `tea`, `gh`, `glab` and `git`. The planning record, the run trace and the reads log stay in `.planning/` in your repository and go wherever you push it. Cadence runs inside Claude Code, so what your session sees goes wherever Claude Code sends it, which is the host's policy and not this plugin's.
 
 ## What each role costs
 

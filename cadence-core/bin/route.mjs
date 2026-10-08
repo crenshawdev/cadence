@@ -47,16 +47,6 @@
 //                              default answers when neither layer set either.
 //                              Setting both for one role warns and names the
 //                              winner
-//   roles.cad-executor.codex.enabled
-//                              Codex mode for the executor, off by default.
-//                              Either layer turns it on; a cad-executor resolve
-//                              then carries `codex_mode: true`, absent when off,
-//                              and a retry holds its rung
-//   roles.cad-executor.codex.wrapper_model
-//   roles.cad-executor.codex.wrapper_effort
-//                              the wrapper's model and rung, read only while
-//                              Codex mode is on; unset, roles.cad-executor's
-//                              own answer stands
 //   review.triggers.*.gate     a gate a LAYER set, which must be one of that
 //                              key's own `values` and then wins over the key's
 //                              schema default, reporting the disagreement
@@ -1068,60 +1058,6 @@ function resolve(opts) {
       ...(warnings.length ? { warnings } : {}) }); return;
   }
 
-  // CODEX MODE (D-10), read once the start rung is chosen and for `cad-executor`
-  // alone: a `codex` block under any other role is ignored, and saying nothing
-  // about it keeps that role's envelope what it was. Precedence is the merge's
-  // own, so either layer turns it on and a repo `false` turns a global `true`
-  // off. There is no user-global co-sign here, unlike `review.reviewers` (D-02).
-  // Only the boolean `true` is on. A set value that is not a boolean warns and
-  // reads off, and null reads as unset, as it does for every key above.
-  //
-  // When on, the envelope gains `codex_mode: true` and nothing else changes
-  // shape: `agent` and `agent_type` still name a `cad-executor` rung file, and
-  // that is what the dispatch site sends (D-03). When off, the envelope carries
-  // no such key at all, so it is byte for byte the envelope it was before.
-  const codexBlock = opts.role === 'cad-executor' ? roleEntry.codex : undefined;
-  const codex = codexBlock && typeof codexBlock === 'object' && !Array.isArray(codexBlock)
-    ? codexBlock : {};
-  let codexMode = false;
-  if (codex.enabled === true) {
-    codexMode = true;
-    reason.push('roles.cad-executor.codex.enabled=true (config): Codex mode, the wrapper '
-      + 'drives `codex exec`');
-  } else if (codex.enabled !== undefined && codex.enabled !== null && codex.enabled !== false) {
-    warnings.push(`roles.cad-executor.codex.enabled=${JSON.stringify(codex.enabled)} is not `
-      + 'a boolean; Codex mode stays off');
-  }
-
-  // The sandbox is read by `planning.mjs codex-exec`, never here, and only from
-  // the user-global layer (the merge strips a repo's value). Saying so here puts
-  // an unsandboxed run, or a value codex-exec will read as `workspace-write`, in
-  // front of the user before the dispatch rather than in a failed build.
-  const sandbox = codexMode ? codex.sandbox : undefined;
-  if (sandbox === 'danger-full-access') {
-    reason.push('roles.cad-executor.codex.sandbox="danger-full-access" (user-global config): '
-      + 'Codex runs with no sandbox');
-  } else if (sandbox !== undefined && sandbox !== null && sandbox !== 'workspace-write') {
-    warnings.push(`roles.cad-executor.codex.sandbox=${JSON.stringify(sandbox)} is not `
-      + '"workspace-write" or "danger-full-access"; Codex runs in workspace-write');
-  }
-
-  // The wrapper's own rung (D-06), in Codex mode only. It replaces the start
-  // rung outright, so it is also the rung the retry hold below keeps. A value
-  // naming no filed rung loses its turn the way every rung source above does:
-  // it warns and the start rung stands. With the switch off it is never read.
-  const wrapperEffort = codexMode ? codex.wrapper_effort : undefined;
-  if (wrapperEffort !== undefined && wrapperEffort !== null) {
-    if (typeof wrapperEffort === 'string' && rungFile(opts.role, wrapperEffort)) {
-      effort = wrapperEffort;
-      reason.push(`roles.cad-executor.codex.wrapper_effort="${wrapperEffort}" (config): the `
-        + 'wrapper runs at this rung');
-    } else {
-      warnings.push(`roles.cad-executor.codex.wrapper_effort=${JSON.stringify(wrapperEffort)} `
-        + `names no rung this role has (${hasRungs.join(', ')}); the start rung "${effort}" stands`);
-    }
-  }
-
   let agent = agentFor(effort);
   let escalated = false;
 
@@ -1139,13 +1075,8 @@ function resolve(opts) {
   // a rung this role has no FILE for is stepped over rather than dispatched -
   // `cad-plan-checker` files every rung today, but the map is per-role and a
   // role that ever files a partial ladder must climb to its next REAL rung.
-  // Codex mode never climbs (D-05): a failed Codex run comes back `blocked`,
-  // and a higher Claude rung would be a fallback by another name. With
-  // escalation off the existing held-rung line below already says it.
   if ((opts.attempt || 1) > 1) {
-    if (cfg.escalate_on_failure && codexMode) {
-      reason.push(`rung held at ${effort} (Codex mode is on, so a retry does not climb)`);
-    } else if (cfg.escalate_on_failure) {
+    if (cfg.escalate_on_failure) {
       const at = RUNG_ORDER.indexOf(effort);
       let target = null;
       for (let i = at + 1; at >= 0 && i < RUNG_ORDER.length; i += 1) {
@@ -1452,24 +1383,7 @@ function resolve(opts) {
   const rolesModel = roleEntry.model;
   const rolesModelKey = `roles.${opts.role}.model`;
   const pin = cfg.overrides[opts.role];
-  // The wrapper's own model (D-06), in Codex mode only, and on the terms the
-  // roles key below states: once set it owns the answer, so a value the host
-  // does not accept sends no model parameter rather than falling through.
-  // `pinned` stays false, since that flag means `model.overrides` chose.
-  const wrapperModel = codexMode ? codex.wrapper_model : undefined;
-  const wrapperModelKey = 'roles.cad-executor.codex.wrapper_model';
-  if (wrapperModel !== null && wrapperModel !== undefined) {
-    if (HOST_MODELS.includes(wrapperModel)) {
-      reason.push(`${wrapperModelKey}=${wrapperModel} (config): the wrapper's model`);
-      model = wrapperModel;
-      modelSource = wrapperModelKey;
-    } else {
-      warnings.push(`${wrapperModelKey}=${JSON.stringify(wrapperModel)} is not a model the host `
-        + `accepts (${HOST_MODELS.join(', ')}); no model parameter is sent and the dispatch `
-        + "runs at the session's model");
-      reason.push(`${wrapperModelKey} ignored (the host does not accept it); no model parameter`);
-    }
-  } else if (rolesModel !== null && rolesModel !== undefined) {
+  if (rolesModel !== null && rolesModel !== undefined) {
     // A roles key, once SET, owns the answer for this role whether or not the
     // host accepts its value. Falling through to the pin on a rejected string
     // would hand the role back to an older key the user has already replaced -
@@ -1568,7 +1482,7 @@ function resolve(opts) {
   // above carries it and not this field.
   const prefixed = prefixedAgentType(agent);
   if (prefixed.reason) reason.push(prefixed.reason);
-  out({ ok: true, role: opts.role, agent, agent_type: prefixed.agentType, model, model_source: modelSource, effort, review, reviewers, reviewers_global: cfg.reviewersGlobal, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, escalated, pinned, attempt: opts.attempt || 1, ...(codexMode ? { codex_mode: true } : {}), reason, ...(warnings.length ? { warnings } : {}) });
+  out({ ok: true, role: opts.role, agent, agent_type: prefixed.agentType, model, model_source: modelSource, effort, review, reviewers, reviewers_global: cfg.reviewersGlobal, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------

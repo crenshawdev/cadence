@@ -100,8 +100,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch \
   workflow.test_evidence \
-  workflow.check_inspection \
-  roles.cad-executor.codex.enabled
+  workflow.check_inspection
 ```
 
 The `diff` and `phase_diff` gates are NOT read here: fire(trigger) takes every
@@ -177,11 +176,6 @@ path and is never a reason to pause or stop.
 
 <step name="choose_path">
 Sequential (default) unless ALL of these hold:
-- `roles.cad-executor.codex.enabled` is not `true`. In Codex mode the wrapper
-  runs Codex in the main tree's cwd, while references/worktree-executor.md and
-  the parallel merge assume an executor committing inside a host worktree, so
-  the phase runs sequentially and the `worktree.baseRef` offer below is never
-  made.
 - `parallelization.enabled` is true
 - plan count >= `parallelization.min_plans_for_parallel`
 - no plan builds on another's output (your judgment, from the plans' goals
@@ -245,9 +239,6 @@ successive executors in the phase share a cached prefix: phase-level context
   the bar the work is written to, not a review that fires later. On
   `surfaces_answered: false` say that no layer answered, so ALL of the
   table's categories stand rather than none.
-- The Codex-mode line, when the executor's own resolve carries
-  `codex_mode: true` (references/seam-spawn-agent.md's Routing block states the
-  line). It is the same for every plan in the phase, so it sits here.
 - The `<test_evidence>` block below, verbatim, ONLY when `workflow.test_evidence`
   (read in `locate`) is true; when it is false, nothing at all is added. It is
   the same for every plan in the phase, so it sits here.
@@ -294,12 +285,6 @@ What cannot be recorded: a check that fails neither before its behaviour nor und
 None of this goes in the five-field digest.
 </test_evidence>
 ```
-
-With Codex mode switched on (`roles.cad-executor.codex.enabled` true), an
-executor resolve that answers `ok:false` does NOT take the seam's base-agent
-fallback: stop with a `structural` checkpoint naming the resolve's `reason`, so
-no Claude executor runs a plan the user put on Codex. This is the one exception
-to that seam's `{ok:false}` rule.
 
 Do NOT restate the executor's standing rules (atomic commit per task,
 deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
@@ -486,8 +471,7 @@ persisted at `.planning/phases/<N>/REVIEW-risk_surface-plan-<k>.md`
 only; and the instruction NOT to rotate the plan's report but to append its fix
 row to the existing `<plandir>/reports/plan-<k>.md`, since the executor
 contract's rotation rule is unconditional and would otherwise rename the
-completed plan's report aside - plus the Codex-mode line when the resolve
-carries `codex_mode: true`. When a finding names a path outside the plan's
+completed plan's report aside. When a finding names a path outside the plan's
 declared `files:` lease, the coordinator AMENDS `PLAN-<k>.md`'s `files:` to
 cover that path BEFORE dispatching, so `lease-check` still runs and still
 answers on the fix commit's staged set - `PLAN-<k>.md` is inside `.planning/`,
@@ -618,15 +602,13 @@ changed paths. A fallback and not a bounded re-dispatch loop.
 
 Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
 report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
-"continue from task <k>", plus the Codex-mode line when the resolve carries
-`codex_mode: true`. Fresh context each time - never resume, and never
+"continue from task <k>". Fresh context each time - never resume, and never
 re-inline the table. Bracket it under the SAME worker key `<k>` the first
 dispatch took, and write this plan's risk record and receipt with that one
 spelling.
 
 With `workflow.test_evidence` true, that continuation prompt also carries
-`execute_sequential`'s `<test_evidence>` block, beside the Codex-mode line, and
-so does every re-dispatched remainder the partial and turn-cap arms send; when
+`execute_sequential`'s `<test_evidence>` block, and so does every re-dispatched remainder the partial and turn-cap arms send; when
 it is false, nothing is added.
 
 With `workflow.check_inspection` true and the report carrying a

@@ -710,15 +710,6 @@ export const CONTRACTS = {
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // The prompt is stdin and the cwd is the repository. Bare, it runs Codex in
-    // the foreground; `--start`, `--wait` and `--stop` run, wait on and end the
-    // tree's one detached run, and `--run <job>` is the runner `--start` spawns.
-    'codex-exec': {
-      '--start': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
-      '--wait': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
-      '--stop': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
-      '--run': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-    },
     // Plan file paths are positional words, so it takes no flag.
     'test-checks': {},
     // One plan file path as a positional word, so it takes no flag.

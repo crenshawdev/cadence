@@ -17,9 +17,6 @@ user-global layer, because a user-global value cannot authorize a change to the
 one repository that has to honour it. **Purpose** is the question text; each **Value → Explanation**
 pair is one selectable option and its `description`.
 
-`roles.<role>.codex` is a block only `cad-executor` carries, and no other role
-has one. Its five keys put the executor in Codex mode.
-
 | Key `[src]` | Type | Purpose (question) | Value → Explanation (option → description) | Default |
 |---|---|---|---|---|
 | **Core** |||||
@@ -35,11 +32,6 @@ has one. Its five keys put the executor in Codex mode.
 | `roles.cad-reviewer.effort` | enum | How hard should the local reviewer think, at the rung it STARTS from? | `low` · `medium` · `high` · `xhigh` · `max` · empty→`null` (the default decides); over the cap, three plus `Other` | medium |
 | `roles.cad-executor.model` | str\|null | Which model writes the code, one dispatch per plan? The single largest spend in a phase | same four as the planner, plus `fable` via `Other` | null |
 | `roles.cad-executor.effort` | enum | How hard should the executor think, at the rung it STARTS from? | `low` · `medium` · `high` · `xhigh` · `max` · empty→`null` (the default decides); over the cap, three plus `Other` | high |
-| `roles.cad-executor.codex.enabled` | bool | Should each plan task be written by `codex exec` instead of Claude? Off by default. Codex runs in the sandbox `roles.cad-executor.codex.sandbox` names, under your Codex login, Claude checks, commits and reports, plans run one at a time, and a repository's committed config can turn it on | `true`→Codex mode · `false`→the normal executor | false |
-| `roles.cad-executor.codex.wrapper_model` | str\|null | Which Claude model drives Codex and makes the commits while Codex mode is on? Read only with the switch on | same four as the planner, plus `fable` via `Other`; empty→`null` takes the executor's own model | null |
-| `roles.cad-executor.codex.wrapper_effort` | enum | At which rung does the Claude wrapper run while Codex mode is on? Held on a retry, never climbed | `low` · `medium` · `high` · `xhigh` · `max` · empty→`null` takes the executor's own start rung; over the cap, three plus `Other` | null |
-| `roles.cad-executor.codex.sandbox` `[global]` | enum | Which sandbox does Codex run in while Codex mode is on? Set it in the user-global layer, a repo layer's value is ignored | `workspace-write`→writes only inside the repository and temp folders, no network, `.git` read-only · `danger-full-access`→no sandbox, for a build that writes outside the repository; Codex can write `.git` and reach the network, and a moved git ref stops the plan | workspace-write |
-| `roles.cad-executor.codex.timeout_ms` | int | How long may one Codex task run before it is killed and the plan stops? | ms, 60000 to 14400000 | 540000 |
 | `roles.cad-plan-checker.model` | str\|null | Which model checks a plan against its context before any code is written? Only when `workflow.plan_check` is on - short, structured work | same four as the planner, plus `fable` via `Other` | null |
 | `roles.cad-plan-checker.effort` | enum | How hard should the plan checker think, at the rung it STARTS from? | `low` · `medium` · `high` · `xhigh` · `max` · empty→`null` (the default decides); over the cap, three plus `Other` | low |
 | `model.escalate_on_failure` | bool | Re-dispatch a failed attempt one rung above the rung it started at | `true`→retry one rung up, holding at the top rung · `false`→hold the retry at the rung it started on | false |

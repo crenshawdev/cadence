@@ -321,7 +321,6 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     // and 1b refuses a bare family name as a reader, so these two go through the
     // <role> placeholder expand() carries.
     '`roles.<role>.model` `roles.<role>.effort`\n' +
-    '`roles.<role>.codex`\n' +
     '`workflow.research` `workflow.plan_check` `workflow.verifier` `workflow.skip_discuss`\n' +
     '`workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`workflow.lint_command` `workflow.max_plan_tasks` `workflow.max_plan_bytes`\n' +
@@ -1478,8 +1477,8 @@ test('check 12: *.test.mjs is off the walk - a test may write any shape', () => 
   assert.deepEqual(mergeProblems(binFixture({ 'seam.test.mjs': BARE_CALL })), []);
 });
 
-// CADENCE-CENSUS: self-verify-merge-layers | asserts: twenty mergeLayers callsites over fifteen files, each in one of the two warning-surfacing arms
-test('check 12: the live tree is TWENTY callsites over FIFTEEN files, each in an arm', () => {
+// CADENCE-CENSUS: self-verify-merge-layers | asserts: eighteen mergeLayers callsites over fourteen files, each in one of the two warning-surfacing arms
+test('check 12: the live tree is NINETEEN callsites over FOURTEEN files, each in an arm', () => {
   // The count is taken here INDEPENDENTLY of the rule (a plain line scan), so a
   // miscount in either direction fails rather than passing quietly, and a
   // new callsite cannot be added without choosing an arm.
@@ -1494,8 +1493,7 @@ test('check 12: the live tree is TWENTY callsites over FIFTEEN files, each in an
   // eighteen reads over fourteen files. Then FRG-06 gave forge.mjs `create` a
   // read of its own - the persisted instance whose port a `--remote-url` must
   // name - so that file now holds two: nineteen reads over the same fourteen
-  // files. Then planning/codex-exec.mjs read the Codex sandbox setting: twenty
-  // reads over fifteen files.
+  // files.
   const binDir = join(REPO, 'cadence-core', 'bin');
   const skip = join(binDir, 'lib', 'config-merge.mjs');
   /** @param {string} dir @returns {string[]} */
@@ -1528,8 +1526,8 @@ test('check 12: the live tree is TWENTY callsites over FIFTEEN files, each in an
       }
     }
   }
-  assert.equal(total, 20, `callsites: ${files.join(', ')}`);
-  assert.equal(files.length, 15, files.join(', '));
+  assert.equal(total, 19, `callsites: ${files.join(', ')}`);
+  assert.equal(files.length, 14, files.join(', '));
   // Arm (b) is the exception, not the habit: exactly one file states the reason
   // in its header, and it is the one whose two other reads are memoized scalars.
   assert.deepEqual(armB, [join('cadence-core', 'bin', 'review-provider.mjs')]);

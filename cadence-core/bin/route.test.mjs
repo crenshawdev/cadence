@@ -564,6 +564,26 @@ test('a config still holding model.profile warns and never reports a configured 
   assert.match(r.reason.join(' '), /roles\.cad-planner\.effort default "high" \(unset in layers\)/);
 });
 
+test('a config still holding the dropped Codex executor keys resolves the Claude executor and says so', () => {
+  // Baley's repo layer carried `codex.enabled` and `codex.timeout_ms`, and the
+  // user-global layer carried `codex.sandbox`, when the Codex executor was
+  // dropped before 3.9.0 shipped. Each must read as a warning naming its unset,
+  // never as a mode switch or a refusal.
+  const repo = rawCfg({ roles: { 'cad-executor': { effort: 'high',
+    codex: { enabled: true, timeout_ms: 1800000 } } } }, 'stale-codex-repo.json');
+  const global = rawCfg({ roles: { 'cad-executor': { codex: { sandbox: 'danger-full-access' } } } },
+    'stale-codex-global.json');
+  const r = resolve('cad-executor', repo, [], { global });
+  assert.equal(r.ok, true);
+  assert.equal(r.codex_mode, undefined);
+  assert.equal(r.effort, 'high');
+  const w = (r.warnings || []).join(' ');
+  for (const k of ['enabled', 'timeout_ms', 'sandbox']) {
+    assert.match(w, new RegExp(`roles\\.cad-executor\\.codex\\.${k}" was retired in v3\\.9\\.0`), k);
+  }
+  assert.match(w, /config\.mjs unset --global roles\.cad-executor\.codex\.sandbox/);
+});
+
 test('the first reason names the LAYERS that were read, and claims nothing about them', () => {
   // It used to open on the stakes level's source, which was a claim about a
   // value; with the level gone there is no single value to make that claim
@@ -2502,154 +2522,4 @@ test('agent-type: writes no routing record, even run beside a planning root', ()
   const r = routeWith(['agent-type', '--stem', 'cad-reviewer'], { cwd: dirname(planning) });
   assert.equal(r.ok, true);
   assert.equal(existsSync(join(planning, 'trace.jsonl')), false);
-});
-
-// --- Codex mode (phase 1 of v3.9.0, D-02/D-05/D-10) ---
-
-const CODEX_ON = { roles: { 'cad-executor': { codex: { enabled: true } } } };
-const CODEX_OFF = { roles: { 'cad-executor': { codex: { enabled: false } } } };
-
-test('codex: the repo layer alone turns Codex mode on with one envelope key', () => {
-  const on = resolve('cad-executor', rawCfg(CODEX_ON));
-  const off = resolve('cad-executor', rawCfg({}));
-  assert.equal(on.ok, true);
-  assert.equal(on.codex_mode, true);
-  assert.deepEqual(Object.keys(on).filter((k) => !(k in off)), ['codex_mode']);
-  assert.match(on.agent, /^cad-executor/);
-  assert.match(on.agent_type, /:cad-executor/);
-  assert.ok(on.reason.some((x) => x.includes('roles.cad-executor.codex.enabled')));
-});
-
-test('codex: the user-global layer alone turns it on, with no co-sign asked of it', () => {
-  const r = resolve('cad-executor', rawCfg({}), [], { global: rawCfg(CODEX_ON) });
-  assert.equal(r.codex_mode, true);
-});
-
-test('codex: a repo false over a global true reads off', () => {
-  const r = resolve('cad-executor', rawCfg(CODEX_OFF), [], { global: rawCfg(CODEX_ON) });
-  assert.equal('codex_mode' in r, false);
-  assert.equal(r.reason.some((x) => x.includes('codex')), false);
-});
-
-test('codex: absent from every layer reads off and says nothing', () => {
-  const r = resolve('cad-executor', rawCfg({}));
-  assert.equal('codex_mode' in r, false);
-  assert.equal(r.reason.some((x) => x.includes('codex')), false);
-  assert.equal('warnings' in r, false);
-});
-
-test('codex: no other role carries the key, even with a codex block of its own', () => {
-  const body = { roles: { 'cad-executor': { codex: { enabled: true } },
-    'cad-planner': { codex: { enabled: true } } } };
-  const r = resolve('cad-planner', rawCfg(body));
-  const plain = resolve('cad-planner', rawCfg({}));
-  assert.equal('codex_mode' in r, false);
-  assert.deepEqual(r.reason, plain.reason);
-  assert.equal('warnings' in r, false);
-});
-
-test('codex: --attempt 2 with escalation on holds the attempt-1 rung and keeps the key', () => {
-  const body = { model: { escalate_on_failure: true }, ...CODEX_ON };
-  const first = resolve('cad-executor', rawCfg(body));
-  const retry = resolve('cad-executor', rawCfg(body), ['--attempt', '2']);
-  assert.equal(retry.codex_mode, true);
-  assert.equal(retry.escalated, false);
-  assert.equal(retry.effort, first.effort);
-  assert.equal(retry.agent, first.agent);
-  assert.ok(retry.reason.some((x) => /rung held at .*Codex mode/.test(x)));
-});
-
-test('codex: a non-boolean switch warns, names the key and value, and reads off', () => {
-  const r = resolve('cad-executor', rawCfg({ roles: { 'cad-executor': { codex: { enabled: 'yes' } } } }));
-  assert.equal(r.ok, true);
-  assert.equal('codex_mode' in r, false);
-  assert.ok(r.warnings.some((w) => w.includes('roles.cad-executor.codex.enabled') && w.includes('"yes"')));
-});
-
-// --- Codex mode: the sandbox, user-global only ---
-
-const sandboxed = (sandbox) => ({ roles: { 'cad-executor': { codex: { enabled: true, sandbox } } } });
-
-test('codex: a user-global danger-full-access sandbox is said in reason, envelope shape unchanged', () => {
-  const plain = resolve('cad-executor', rawCfg({}), [], { global: rawCfg(CODEX_ON) });
-  const full = resolve('cad-executor', rawCfg({}), [], { global: rawCfg(sandboxed('danger-full-access')) });
-  assert.deepEqual(Object.keys(full), Object.keys(plain));
-  assert.ok(full.reason.some((x) => x.includes('roles.cad-executor.codex.sandbox="danger-full-access"')));
-  assert.equal(plain.reason.some((x) => x.includes('codex.sandbox')), false);
-});
-
-test('codex: a repository danger-full-access sandbox is stripped, never said as on', () => {
-  const r = resolve('cad-executor', rawCfg(sandboxed('danger-full-access')));
-  assert.equal(r.codex_mode, true);
-  assert.equal(r.reason.some((x) => x.includes('codex.sandbox')), false);
-  assert.equal((r.warnings || []).some((w) => w.includes('danger-full-access')), false);
-});
-
-test('codex: a sandbox value that is neither mode warns that workspace-write runs', () => {
-  const r = resolve('cad-executor', rawCfg({}), [], { global: rawCfg(sandboxed('full')) });
-  assert.ok(r.warnings.some((w) => w.includes('roles.cad-executor.codex.sandbox="full"')
-    && w.includes('workspace-write')));
-});
-
-test('codex: with the switch off the sandbox is read for nothing', () => {
-  const r = resolve('cad-executor', rawCfg({}), [], {
-    global: rawCfg({ roles: { 'cad-executor': { codex: { sandbox: 'full' } } } }) });
-  assert.equal('codex_mode' in r, false);
-  assert.equal((r.warnings || []).some((w) => w.includes('codex.sandbox')), false);
-  assert.equal(r.reason.some((x) => x.includes('codex.sandbox')), false);
-});
-
-// --- Codex mode: the wrapper's own model and rung (D-06) ---
-
-const wrapped = (codex) => ({ roles: { 'cad-executor': { model: 'opus', effort: 'xhigh', codex } } });
-
-test('codex: the wrapper model and rung decide the dispatch while Codex mode is on', () => {
-  const r = resolve('cad-executor', rawCfg(wrapped({ enabled: true, wrapper_model: 'haiku', wrapper_effort: 'low' })));
-  assert.equal(r.model, 'haiku');
-  assert.equal(r.model_source, 'roles.cad-executor.codex.wrapper_model');
-  assert.equal(r.pinned, false);
-  assert.equal(r.effort, 'low');
-  assert.equal(r.agent, 'cad-executor-low');
-  assert.match(r.agent_type, /:cad-executor-low$/);
-  assert.ok(r.reason.some((x) => x.includes('roles.cad-executor.codex.wrapper_effort')));
-  assert.equal('warnings' in r, false);
-});
-
-test('codex: with the switch off the wrapper keys are read for nothing', () => {
-  const off = resolve('cad-executor', rawCfg(wrapped({ enabled: false, wrapper_model: 'haiku', wrapper_effort: 'low' })));
-  const bare = resolve('cad-executor', rawCfg({ roles: { 'cad-executor': { model: 'opus', effort: 'xhigh' } } }));
-  assert.deepEqual(off, bare);
-  assert.equal(off.model, 'opus');
-  assert.equal(off.agent, 'cad-executor-xhigh');
-});
-
-test('codex: unset wrapper keys leave roles.cad-executor\'s model and rung', () => {
-  const r = resolve('cad-executor', rawCfg(wrapped({ enabled: true })));
-  assert.equal(r.codex_mode, true);
-  assert.equal(r.model, 'opus');
-  assert.equal(r.model_source, 'roles.cad-executor.model');
-  assert.equal(r.effort, 'xhigh');
-  assert.equal(r.agent, 'cad-executor-xhigh');
-});
-
-test('codex: a wrapper model the host does not accept warns and sends no model', () => {
-  const r = resolve('cad-executor', rawCfg(wrapped({ enabled: true, wrapper_model: 'gpt-5' })));
-  assert.equal(r.model, null);
-  assert.equal(r.model_source, 'session');
-  assert.ok(r.warnings.some((w) => w.includes('roles.cad-executor.codex.wrapper_model') && w.includes('"gpt-5"')));
-});
-
-test('codex: a wrapper rung no file carries warns and the start rung stands', () => {
-  const r = resolve('cad-executor', rawCfg(wrapped({ enabled: true, wrapper_effort: 'huge' })));
-  assert.equal(r.effort, 'xhigh');
-  assert.equal(r.agent, 'cad-executor-xhigh');
-  assert.ok(r.warnings.some((w) => w.includes('roles.cad-executor.codex.wrapper_effort') && w.includes('"huge"')));
-});
-
-test('codex: a retry holds the wrapper rung, not the start rung', () => {
-  const body = { model: { escalate_on_failure: true }, ...wrapped({ enabled: true, wrapper_effort: 'medium' }) };
-  const r = resolve('cad-executor', rawCfg(body), ['--attempt', '2']);
-  assert.equal(r.effort, 'medium');
-  assert.equal(r.agent, 'cad-executor-medium');
-  assert.equal(r.escalated, false);
 });

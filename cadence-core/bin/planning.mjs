@@ -105,17 +105,6 @@
 //                                   plan lists; a short record rewrites the
 //                                   report's first line to PLAN CHECKPOINT:
 //                                   blocked and nothing else
-//   codex-exec [--start|--wait|--stop]
-//                                   one `codex exec` in the cwd for a Codex-mode
-//                                   executor, the prompt on stdin, in the
-//                                   workspace-write sandbox (or none, when the
-//                                   user-global config says danger-full-access)
-//                                   and bounded by
-//                                   roles.cad-executor.codex.timeout_ms; bare it
-//                                   runs in the foreground,
-//                                   --start runs it detached, --wait answers it
-//                                   or says it is still running, --stop ends it;
-//                                   each way the run fails has its own reason
 //   detect-surfaces [--root <path>] [--answered <a,b,c>]
 //                                   which of the eight risk-surface categories
 //                                   the project's STRUCTURE evidences - dirs,
@@ -242,7 +231,6 @@ import { cmdRecall } from './planning/recall.mjs';
 import { cmdLeaseCheck } from './planning/lease-check.mjs';
 import { cmdTaskRecord } from './planning/task-record.mjs';
 import { cmdDetectCommands } from './planning/detect-commands.mjs';
-import { cmdCodexExec } from './planning/codex-exec.mjs';
 import { cmdTestChecks, cmdTestEvidence } from './planning/test-checks.mjs';
 import { cmdDetectSurfaces } from './planning/detect-surfaces.mjs';
 import { cmdReads } from './planning/reads.mjs';
@@ -310,9 +298,6 @@ const COMMANDS = {
   // `subcommandKey` consumes a second word only for the `TWO_WORD` families.
   'task-record': (dir, _sub, opts) => cmdTaskRecord(dir, opts),
   'lease-check': (dir, _sub, opts) => cmdLeaseCheck(dir, opts),
-  // The one async handler: it owns its own catch, since the one at the foot
-  // of this file cannot see a rejection.
-  'codex-exec': (_dir, _sub, opts) => cmdCodexExec(opts),
   // Plan paths are positional words, as `recall`'s query is, so the
   // subcommand declares no flag of its own.
   'test-checks': (_dir, _sub, _opts, rest) => cmdTestChecks(rest),

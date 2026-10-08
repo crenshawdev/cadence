@@ -272,26 +272,8 @@ so.
 - Dispatch the returned `agent_type` with `model` - a bare name can be the user's
   own agent. `agent` is the bare stem the trace and any mismatch line name;
   `escalated`/`reason` are for logging why.
-- **Codex mode.** A `cad-executor` resolve carries `codex_mode: true` when
-  `roles.cad-executor.codex.enabled` is on. Dispatch the returned `agent_type`
-  with `model` exactly as always, and add ONE line to the prompt: "Codex mode:
-  before task 1, read the `## Codex executor mode` section of
-  `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/provider-api.md` and hold every
-  rule in it for the whole dispatch." It is the `<worktree_mode>` shape, carried
-  by the prompt because the contract does not change, and it is identical for
-  every executor in a phase, so it goes in the stable prefix. The close is the
-  usual `trace close --role cad-executor --plan <k>` with the wrapper's own
-  figures: Codex's tokens are not in that bracket, so
-  `workflow.max_dispatch_tokens.cad-executor` measures the wrapper. A retry's
-  rung is held in Codex mode. A `blocked` return goes through the dispatching
-  workflow's checkpoint arm and is never re-dispatched without the line or on
-  another rung.
 - `{ok:false}` (unknown role, no table) → dispatch the **base** `agent_name` with
-  no `model` override (session default). Routing never blocks a spawn, with ONE
-  exception: a `cad-executor` resolve while `roles.cad-executor.codex.enabled`
-  reads true. The workflow stops with a `structural` checkpoint naming the
-  resolve's `reason` instead, so no Claude executor runs a plan the user put on
-  Codex.
+  no `model` override (session default). Routing never blocks a spawn.
 - **Relay every `warnings[]` entry to the user before dispatching**, each
   DISTINCT warning once per workflow run - not once per dispatch. A warning
   that reaches JSON and no human is a resolved-then-dropped value wearing a
@@ -338,9 +320,8 @@ so.
   `review.request_timeout_ms` inside the host's Bash ceiling. Choosing it is the
   user's assertion about their own org.
 - **`model_source` says which key decided.** It is always present and carries
-  the dotted key that chose the model - `roles.<role>.model`,
-  `model.overrides.<role>`, or `roles.cad-executor.codex.wrapper_model` for a
-  Codex-mode executor - or the string `session` when no key did, a set key
+  the dotted key that chose the model - `roles.<role>.model` or
+  `model.overrides.<role>` - or the string `session` when no key did, a set key
   whose value the host rejected included. It rides the `routing.resolve` trace
   event too. `pinned` stays FALSE when the roles block chose the model: it means
   `model.overrides` chose it, which is what the announcement rule below is keyed

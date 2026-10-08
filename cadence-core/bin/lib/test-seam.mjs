@@ -17,10 +17,7 @@
 // probe. Present, it stands in for the whole reachability answer: no filesystem
 // is consulted, which is what lets one fixture prove the live probe (a tree
 // carrying its own `node_modules/.bin`) and the same fixture prove the
-// variable had force. A fourth, `CADENCE_CODEX_EXEC_TIMEOUT_MS`, shortens
-// `planning.mjs codex-exec`'s bound on a `codex exec` run, so its tests prove
-// the kill in seconds; ungated, a repo-supplied env block could cut every
-// Codex-mode task short. Each of the first three carried a comment saying
+// variable had force. Each carried a comment saying
 // "hermetic test injection only" and was honored in production with nothing
 // gating it, so the comment described an intent the code did not enforce.
 // Reading the override only when this sentinel holds closes that gap: the

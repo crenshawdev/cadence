@@ -1411,20 +1411,17 @@ test('get: all three keys at null - the shipped template shape - are silently dr
   assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
 });
 
-test('get: all four keys are stripped, not just the first one in the set', () => {
+test('get: all three keys are stripped, not just the first one in the set', () => {
   const repo = {
     workflow: { test_command: 'repo-t', lint_command: 'repo-l' },
     review: { key_file: '/repo/keys.env' },
-    roles: { 'cad-executor': { codex: { sandbox: 'danger-full-access' } } },
   };
   const global = {
     workflow: { test_command: 'global-t', lint_command: 'global-l' },
     review: { key_file: '/global/keys.env' },
-    roles: { 'cad-executor': { codex: { sandbox: 'workspace-write' } } },
   };
   for (const [key, want] of [['workflow.test_command', 'global-t'],
-    ['workflow.lint_command', 'global-l'], ['review.key_file', '/global/keys.env'],
-    ['roles.cad-executor.codex.sandbox', 'workspace-write']]) {
+    ['workflow.lint_command', 'global-l'], ['review.key_file', '/global/keys.env']]) {
     const { r } = scoped(`all-${key}`, repo, global, key);
     assert.equal(r.values[key], want, `${key}: ${JSON.stringify(r)}`);
   }

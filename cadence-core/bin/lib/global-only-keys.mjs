@@ -1,10 +1,9 @@
 // @ts-check
 // global-only-keys.mjs - the ONE statement of which config keys are honoured
 // from the USER-GLOBAL layer alone, and the strip that enforces it. A
-// `.planning/config.json` arrives with a clone; these choose what Cadence RUNS
-// (`workflow.test_command`, `workflow.lint_command`), where a provider key is
-// read from (`review.key_file`) and whether Codex runs outside its sandbox
-// (`roles.cad-executor.codex.sandbox`), so a tracked file must not be able to
+// `.planning/config.json` arrives with a clone; these three choose what Cadence
+// RUNS (`workflow.test_command`, `workflow.lint_command`) and where a provider
+// key is read from (`review.key_file`), so a tracked file must not be able to
 // set them (CFG-02).
 //
 // Enforced at the MERGE, never at the prose sites that interpolate the values.
@@ -38,7 +37,6 @@ export const GLOBAL_ONLY_KEYS = Object.freeze([
   'workflow.test_command',
   'workflow.lint_command',
   'review.key_file',
-  'roles.cad-executor.codex.sandbox',
 ]);
 
 /** The `src` value config.schema.json marks a global-only key with. */
