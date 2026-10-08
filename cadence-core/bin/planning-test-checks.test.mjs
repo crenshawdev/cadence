@@ -616,6 +616,21 @@ test('a near-miss section heading is an issue at its line, never a plan listing 
   }
 });
 
+test('a plan line the grammar cannot read sends the hint to the plan, not to a continuation', () => {
+  // A map written before the switches, in a shape of its own.
+  const text = plan({ map: '| Criterion | Evidence | Command |\n|---|---|---|\n| AC6 | red before green | `cargo test` |\n' });
+  assert.ok(parseTestChecks(text).issues.length > 0);
+  const j = judge(inRepo(text, report({ section: false })).plan);
+  assert.deepEqual([j.ok, j.reason], [false, 'evidence-short']);
+  assert.match(j.hint, /does not parse at the plan lines named/);
+  assert.match(j.hint, /before any continuation$/);
+  // A plan that also lists runs nobody recorded gets the record half after it.
+  const both = judge(inRepo(FULL.replace('## Tests\n', '## Tests\n\n- a stray list item\n'),
+    report({ section: false })).plan);
+  assert.equal(both.reason, 'evidence-short');
+  assert.match(both.hint, /does not parse at the plan lines named[\s\S]*; then record the missing runs/);
+});
+
 test('a test name listed twice within one task is an issue at the second row, since (Task, Test) keys its control', () => {
   const text = plan({ tests: '**Task 1** `a.test.mjs` `node --test a.test.mjs`\n\n' + TESTS_HEAD
     + '| rejects empty | "" | throws | a missing guard |\n\n'

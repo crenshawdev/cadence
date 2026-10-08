@@ -108,6 +108,21 @@ The `diff` and `phase_diff` gates are NOT read here: fire(trigger) takes every
 gate from the routing bundle (`route.mjs resolve`). A `config.mjs get` of a gate
 is not a source for one either way - unset, it answers `null` and names
 `route.mjs resolve` as where the gate is resolved.
+
+**Test sections, before any dispatch.** With `workflow.test_evidence` or
+`workflow.check_inspection` true, read every plan in the dispatch set once:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-checks <every plan file in the dispatch set>
+```
+
+A plan whose entry carries any `issues` has an `## Evidence map` or `## Tests`
+line the grammar cannot read, so its complete return would be rejected after
+the work is done and paid for. Stop here, before `git_guard` and any dispatch,
+naming each such plan with its issues' lines and reasons, and tell the user the
+two ways on: rewrite those sections in the grammar `workflows/plan.md` gives the
+planner, or remove them, so the plan lists nothing to require. A plan carrying
+neither section passes: there is nothing to require of it.
 </step>
 
 <step name="git_guard">

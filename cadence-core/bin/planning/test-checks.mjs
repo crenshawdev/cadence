@@ -506,11 +506,21 @@ function cmdTestEvidence(paths) {
     return fail('unwritable-report', `the record is short but ${report.path} could not be rewritten (${code})`,
       'make the report writable and re-run - its first line still reads PLAN COMPLETE');
   }
+  const record = 'record the missing runs with a continuation dispatch of this plan: each check red before'
+    + ' its behaviour or under its Break, each listed test and each check with a test file broken, failed'
+    + ' and restored';
+  // A plan line the grammar cannot read is the plan's defect, not the
+  // executor's: no continuation can record runs for rows nobody read, so the
+  // hint sends the user to the plan first.
+  const hint = parsed.issues.length
+    ? 'the plan\'s own ## Evidence map or ## Tests does not parse at the plan lines named: rewrite those'
+      + ' sections in the grammar workflows/plan.md gives the planner, or remove them, before any'
+      + ` continuation${short.length > parsed.issues.length ? `; then ${record}` : ''}`
+    : record;
   return fail('evidence-short',
     `${report.path} now reads PLAN CHECKPOINT: blocked - ${short.join('; ')}`
       + (orphans.length ? `; evidence rows matching nothing the plan lists (not counted against it) at report lines ${orphans.join(', ')}` : ''),
-    'record the missing runs with a continuation dispatch of this plan: each check red before its behaviour'
-      + ' or under its Break, each listed test and each check with a test file broken, failed and restored');
+    hint);
 }
 
 export { cmdTestChecks, cmdTestEvidence, parseEvidence, parseTestChecks };
