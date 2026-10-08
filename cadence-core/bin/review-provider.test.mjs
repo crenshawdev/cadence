@@ -626,6 +626,19 @@ test('adapters: deepseek structuredRequest is chat/completions json_object with 
   assert.equal(minimal.body.reasoning_effort, 'low');
 });
 
+test('xhigh: openai sends it as is, gemini and deepseek send high, the top of their dials', () => {
+  const ask = (name) => ADAPTERS[name].structuredRequest({
+    model: 'm', effort: 'xhigh', system: 's', user: 'u', schema: {}, schemaName: 'x' }).body;
+  assert.deepEqual(ask('openai').reasoning, { effort: 'xhigh' });
+  assert.deepEqual(ask('gemini').generationConfig.thinkingConfig, { thinkingLevel: 'high' });
+  assert.equal(ask('deepseek').reasoning_effort, 'high');
+});
+
+test('codex transport: xhigh goes on the argv as is', () => {
+  const argv = codexRun({ repo: CODEX_ON, extra: ['--effort', 'xhigh'] }).record.argv;
+  assert.ok(argv.some((a, i) => a === '-c' && argv[i + 1] === 'model_reasoning_effort=xhigh'), argv.join(' '));
+});
+
 test('parseArgs: subcommand plus --flag value pairs', () => {
   const { cmd, opts } = parseArgs(['review', '--provider', 'openai', '--model', 'm']);
   assert.equal(cmd, 'review');

@@ -1134,10 +1134,11 @@ export const ADAPTERS = {
         // Gemini responseSchema is an OpenAPI-3.0 subset that rejects the
         // `additionalProperties` keyword (which OpenAI strict mode requires),
         // so strip it for Gemini only. thinkingLevel is the Gemini 3.x effort
-        // dial (minimal|low|medium|high); omitted when no effort is set.
+        // dial (minimal|low|medium|high); omitted when no effort is set, and
+        // the shared enum's `xhigh` goes as `high`, the dial's top.
         responseSchema: stripAdditionalProperties(schema),
       };
-      if (effort) generationConfig.thinkingConfig = { thinkingLevel: effort };
+      if (effort) generationConfig.thinkingConfig = { thinkingLevel: effort === 'xhigh' ? 'high' : effort };
       const body = {
         systemInstruction: { parts: [{ text: system }] },
         contents: [{ role: 'user', parts: [{ text: user }] }],
@@ -1208,9 +1209,10 @@ export const ADAPTERS = {
         response_format: { type: 'json_object' },
       };
       // DeepSeek's reasoning_effort accepts low|medium|high only; the shared
-      // config effort enum also allows `minimal`, which DeepSeek 400s on - so
-      // clamp minimal up to low rather than drop the reviewer on a 400.
-      const eff = effort === 'minimal' ? 'low' : effort;
+      // config effort enum also allows `minimal` and `xhigh`, which DeepSeek
+      // 400s on - so clamp each to the nearest it takes rather than drop the
+      // reviewer on a 400.
+      const eff = effort === 'minimal' ? 'low' : effort === 'xhigh' ? 'high' : effort;
       if (eff) body.reasoning_effort = eff;
       return { path: '/chat/completions', method: 'POST', body };
     },
