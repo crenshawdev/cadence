@@ -98,13 +98,30 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   planning.commit_docs \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
-  git.protected_branches git.on_protected git.base_branch
+  git.protected_branches git.on_protected git.base_branch \
+  workflow.test_evidence \
+  workflow.check_inspection
 ```
 
 The `diff` and `phase_diff` gates are NOT read here: fire(trigger) takes every
 gate from the routing bundle (`route.mjs resolve`). A `config.mjs get` of a gate
 is not a source for one either way - unset, it answers `null` and names
 `route.mjs resolve` as where the gate is resolved.
+
+**Test sections, before any dispatch.** With `workflow.test_evidence` or
+`workflow.check_inspection` true, read every plan in the dispatch set once:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-checks <every plan file in the dispatch set>
+```
+
+A plan whose entry carries any `issues` has an `## Evidence map` or `## Tests`
+line the grammar cannot read, so its complete return would be rejected after
+the work is done and paid for. Stop here, before `git_guard` and any dispatch,
+naming each such plan with its issues' lines and reasons, and tell the user the
+two ways on: rewrite those sections in the grammar `workflows/plan.md` gives the
+planner, or remove them, so the plan lists nothing to require. A plan carrying
+neither section passes: there is nothing to require of it.
 </step>
 
 <step name="git_guard">
@@ -222,9 +239,52 @@ successive executors in the phase share a cached prefix: phase-level context
   the bar the work is written to, not a review that fires later. On
   `surfaces_answered: false` say that no layer answered, so ALL of the
   table's categories stand rather than none.
+- The `<test_evidence>` block below, verbatim, ONLY when `workflow.test_evidence`
+  (read in `locate`) is true; when it is false, nothing at all is added. It is
+  the same for every plan in the phase, so it sits here.
 - Then the plan-specific tail: the plan file to read, commit scope
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."
+
+With `workflow.test_evidence` true, every dispatch of a plan carries this block -
+first, continuation, re-dispatched remainder or replay alike. It is how the
+report gets the `Test evidence:` section that `planning.mjs test-evidence`
+judges below, in the grammar `planning.mjs test-checks` reads; a change to one
+is a change to the other.
+
+```text
+<test_evidence>
+Test evidence is on for this project. Besides your task table, the report file records each check's red run and each test's negative control, as below.
+
+Each check: every row of the plan's `## Evidence map` whose Command does not begin `human-verify:`, in the task its Task cell names. Write the check's test, or set up its command, before the behaviour it proves. Run the Command and keep its failing line and what `git rev-parse --short HEAD` prints at that moment: that is `Red by: before`. Build the behaviour, run the Command again, and keep its passing line.
+
+A check that cannot fail before its behaviour, because it pins something already true, runs red after the behaviour instead. Apply its Break, run the Command, and keep the failing line and HEAD. Restore the code, run the Command again, and keep the passing line: that is `Red by: break`.
+
+Each control: for each test in the plan's `## Tests`, once it passes, break the behaviour it guards, run it, keep the failing line, restore the code, and see it pass. Each check whose Test file is not `none` gets the same control under its Break, in a row keyed by its criterion token. A check recorded `Red by: break` needs no second control.
+
+The record: a line reading exactly `Test evidence:` at column 0, after the task table and before `Deviations:`, then these two tables with their header rows as written here, and only blank lines and table rows until `Deviations:`. Escape a `|` inside a cell as `\|`.
+
+| Check | Command | Red by | Red at | Failing line | Passing line |
+|---|---|---|---|---|---|
+
+One row per check that is not `human-verify:`. Check begins with its criterion token (AC<N> or MT<n>). Command is the command as run. Red by is `before` or `break`. Red at is the short hash `git rev-parse --short HEAD` printed when the red run ran. Failing line and Passing line are the red run's and the green run's output lines, verbatim.
+
+| Task | Test | Break | Failing line | Restore |
+|---|---|---|---|---|
+
+One row per listed test, Task its task number and Test its name as `## Tests` lists it, and one per check whose Test file is not `none`, Task its criterion token and Test its Function. Break is what was broken, Failing line the test's failing line under the break, and Restore how the code was restored and the passing line after.
+
+Rewrite the section with the report after every task commit.
+
+Copy forward: whatever the dispatch, copy every evidence row of the report you continue from, the `plan-<k>.md` on disk at your start (the rotation renames it `plan-<k>.<n>.md`). Complete a copied row in place, never a second one. A check or test whose test file you rewrite has its copied rows reset, red run and control re-recorded, never carried complete.
+
+Already in HEAD: a dispatch whose tasks are already in HEAD still records every run the copied rows lack. A check gets its red run under its Break, and a test or check gets its control.
+
+What cannot be recorded: a check that fails neither before its behaviour nor under its Break, or a test that survives its break, is a deviation in the report. It never becomes a row with an invented line.
+
+None of this goes in the five-field digest.
+</test_evidence>
+```
 
 Do NOT restate the executor's standing rules (atomic commit per task,
 deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
@@ -240,7 +300,11 @@ dispatched; the digest deliberately does not carry it. Open a report file at
 three kinds of moment only: the `summary` step, once per plan; a continuation
 branch, where you read ONLY the task numbers and commit hashes for the `git log`
 confirmation that branch already performs; and `locate`'s replay stop, which
-reads the FIRST LINE alone. Nowhere else, and never back into a
+reads the FIRST LINE alone. With `workflow.check_inspection` true there are two
+more: the check inspection after a plan's risk step, which appends the user's
+answer and, on a reply naming a check or test wrong, rewrites the first line;
+and `summary`'s read of each rotated `plan-<k>.<n>.md` sibling for its
+`Check inspection:` block alone. Nowhere else, and never back into a
 dispatch prompt - re-inlining the table returns the bytes the file exists to
 move out. Before a worktree branch is merged its report lives in the worktree,
 not here: `git worktree list --porcelain` gives the worktree root for branch
@@ -321,6 +385,33 @@ Handle the executor's return:
   the state, and ask the user (ask-user seam) whether to re-dispatch the
   remainder or stop. Never silently re-run a plan on top of partial commits.
 
+**Test evidence at a complete return.** With `workflow.test_evidence` true,
+every `PLAN COMPLETE` return from a dispatched executor is checked before the
+complete arm records it - a first dispatch, a continuation, a re-dispatched
+remainder and the `risk_surface` fix dispatch alike:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-evidence <the plan file>
+```
+
+A digest reading `Commits: none (already applied)` is checked too. A dispatch
+that committed nothing still carries forward, or records, the rows the plan
+needs, and exempting it would pass a report a continuation never completed.
+On `ok:true` the complete arm proceeds; when the answer's `state` is
+`lists-nothing`, say in one line that the switch had nothing to require. On
+`ok:false` the seam has already rewritten the report's first line to
+`PLAN CHECKPOINT: blocked`, so `replay-check` and `status` count the plan
+outstanding: take `handle_checkpoint`'s `blocked` arm, relaying the answer's
+`detail` as what is needed, and run no risk sequence or diff fire for that plan
+until a continuation's complete return passes this check. A refusal that wrote
+nothing (no report, or a first line other than `PLAN COMPLETE`) is relayed as
+such and routes the same way. A replay is exempt only where `locate` already
+makes it so: `replay-check` leaves a plan whose report reads `PLAN COMPLETE` out
+of the dispatch set, so that plan never reaches this check. The trace close
+above is written exactly as before, its `--replay` flag included, since the
+executor did return complete. This adds no return arm and no `locate` arm, and
+with the switch false nothing here runs.
+
 **The worker key of a SECOND dispatch.** Three of those arms dispatch again, and
 the key is `<k>` - the plan number the first dispatch took, never a coined
 `1-fix`. A continuation, a re-dispatched remainder and a `risk_surface` fix pass
@@ -395,6 +486,11 @@ here. The re-arm on that fix is CAPPED at ONE narrowed round per
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
 before the fix lands, since this workflow does not preload it.
 
+With `workflow.test_evidence` true, that fix dispatch's prompt also carries one
+line: keep the report's `Test evidence:` section byte for byte when appending the
+fix row. That dispatch does not rotate the report, so the line is all it needs,
+and its `PLAN COMPLETE` return is checked like any other.
+
 Then, before the plan is reported done:
 
 ```
@@ -408,6 +504,33 @@ next reader cannot see.
 
 Fire ONCE here, on the committed range, never per risky commit and never
 mid-plan.
+
+**Check inspection.** With `workflow.check_inspection` true, inspect the plan's
+checks once its risk step has settled - `risk-check status` above no longer
+refuses, or the `risk_check_skipped` event was appended for a plan that landed
+nothing - and before the `diff` fire below and the next plan's dispatch:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-checks <the plan file>
+```
+
+Then ask ONE open-ended question through the ask-user seam. It lists every
+check and every listed test the answer carries, each with its command, its test
+file, its function and its claim - a check's criterion and Expected, a test's
+Asserts and Catches - marking each `human-verify:` check as such, and asks the
+user to confirm that each one tests what it claims and stubs nothing it asserts
+about. A plan the answer reports as carrying neither section gets one line
+saying there is nothing to inspect, and no ask. Append the reply verbatim to
+`<plandir>/reports/plan-<k>.md`, after a line reading `Check inspection:`. A
+plain confirmation: the plan is done. A reply naming a check or test as wrong -
+not testing what it claims, or stubbing what it asserts about - rewrites the
+report's first line, and only that line, to `PLAN CHECKPOINT: structural`, so
+`replay-check` and `status` count the plan outstanding. Then take
+`handle_checkpoint`'s structural arm (its consult offer, then approve, adjust or
+stop) with the named items as the deviation, each named with the task that
+delivers it: a check's Task cell, or a test's label task. A continuation that
+completes the plan again meets the inspection again. With the switch false,
+nothing here runs.
 
 Then fire the `diff` review trigger
 (references/review-triggers.md) with the refs
@@ -483,6 +606,15 @@ report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
 re-inline the table. Bracket it under the SAME worker key `<k>` the first
 dispatch took, and write this plan's risk record and receipt with that one
 spelling.
+
+With `workflow.test_evidence` true, that continuation prompt also carries
+`execute_sequential`'s `<test_evidence>` block, and so does every re-dispatched remainder the partial and turn-cap arms send; when
+it is false, nothing is added.
+
+With `workflow.check_inspection` true and the report carrying a
+`Check inspection:` block, that continuation prompt also tells the executor to
+carry the block forward: copy it, verbatim, into the report it writes after the
+contract's rotation, which would otherwise move it aside.
 </step>
 
 <step name="execute_parallel">
@@ -516,6 +648,19 @@ executor reports - read each plan's `<plandir>/reports/plan-<k>.md` once, at
 this step: what shipped, commits per task with hashes, deviations, open items,
 and the goal-check paragraph. Do not commit yet - the cursor lands in the
 same docs commit (state step).
+
+With `workflow.check_inspection` true, SUMMARY.md also carries a
+`## Check inspection` section, one entry per plan of the phase - a plan skipped
+from this run's dispatch set included, since this step reads every plan's
+report. A structural continuation's rotation renames `plan-<k>.md` aside, so a
+reply naming a check wrong can sit only in a rotated sibling: each entry reads
+the `Check inspection:` blocks of `plan-<k>.md`, in the read above, AND of every
+rotated `plan-<k>.<n>.md` sibling of that plan, each sibling for that block
+alone. It holds every reply those reports record after a `Check inspection:`
+line, verbatim, oldest first (the rotated siblings before `plan-<k>.md`), and a
+reply carried forward into a later report is listed once. Where none of them
+records one, the entry is a line saying so. `templates/SUMMARY.md` has no such
+section, because it exists only under the switch.
 
 A deviation that REFUTES a numbered context decision - it cites a D-NN and
 shows that decision's claim false against ground truth - also corrects the

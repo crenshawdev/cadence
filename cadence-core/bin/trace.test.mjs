@@ -23,7 +23,6 @@ import {
   ANCHOR, DISPATCH, TERMINAL, COORDINATOR, WORKER_CACHE, ROTATION,
 } from './lib/trace.mjs';
 import { STEP_WINDOW } from './lib/trace.mjs';
-import { STEP_WINDOW as STEP_WINDOW_DEFINED } from './lib/token-capture.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PLANNING = join(HERE, 'planning.mjs');
@@ -4569,10 +4568,11 @@ test('render: a fact with no bracket to name adds no effort, no rung and no row'
 
 // --- the step-window fact prices a figureless bracket (phase 3, D-10) -------
 //
-// On a host with mods the Cadence module writes a `STEP_WINDOW` fact when a
-// Cadence subagent stops: the host's own usage for its last `turn.step`. The
-// post-pass gives it to a bracket naming the same `corr` and `agent_id` whose
-// return carried no figure, and to nothing else.
+// Through 3.8, the Cadence module wrote a `STEP_WINDOW` fact when a Cadence
+// subagent stopped: the host's own usage for its last `turn.step`. Nothing
+// writes one since 3.9.0 removed the module, but a trace from an earlier run
+// still holds them. The post-pass gives one to a bracket naming the same
+// `corr` and `agent_id` whose return carried no figure, and to nothing else.
 
 /** The dispatch every step-window fixture opens with. */
 const sDispatch = (extra) => ({
@@ -4584,7 +4584,7 @@ const sClose = (extra) => ({
   phase: 1, family: 'lifecycle', event: 'return', plan: 'cad-reviewer',
   role: 'cad-reviewer', ts: '2026-10-04T10:02:00.000Z', agent_id: 'a1', ...extra,
 });
-/** A step-window fact, in the shape the module's `trace append` writes. */
+/** A step-window fact, in the shape the module's `trace append` wrote. */
 const sFact = (extra) => ({
   phase: 1, family: 'lifecycle', event: STEP_WINDOW, agent_id: 'a1',
   ts: '2026-10-04T10:01:59.000Z', tokens: 123, ...extra,
@@ -4607,8 +4607,7 @@ function windowed(rows) {
   return r;
 }
 
-test('STEP_WINDOW: one definition, a lifecycle name outside TERMINAL', () => {
-  assert.equal(STEP_WINDOW, STEP_WINDOW_DEFINED);
+test('STEP_WINDOW: a lifecycle name outside TERMINAL', () => {
   assert.equal(TERMINAL.includes(STEP_WINDOW), false);
   assert.equal(FAMILIES.includes(STEP_WINDOW), false);
 });

@@ -3,8 +3,7 @@
 // which role, imported by route.mjs (which resolves a cell's rung to an agent
 // name), through lib/route-cells.mjs by self-verify.mjs (which proves every
 // name the grids can produce exists on disk), and through `roleOfAgent` and
-// `rungOfAgent` by lib/read-trace.mjs, lib/subagent-trace.mjs and the Cadence
-// module, hooks/cadence-mod.mjs (which names running agents in its band).
+// `rungOfAgent` by lib/read-trace.mjs and lib/subagent-trace.mjs.
 // Spelling the map twice is exactly the resolved-then-silently-wrong class this
 // repo keeps closing (#39, #43, #64): route.mjs would name a file the linter
 // never looked for.
@@ -214,7 +213,7 @@ function stemOfAgent(agent) {
  *
  * EXPORTED for `lib/read-trace.mjs`'s join, for `lib/subagent-trace.mjs`, whose
  * `SubagentStop` self-filter asks the same question of the same spelling (both
- * through read-trace's re-export), and for the band in `hooks/cadence-mod.mjs`.
+ * through read-trace's re-export).
  * They import this rather than holding a copy: two readers of one record
  * deriving the role independently is how they start disagreeing about which
  * bracket closed.
@@ -244,8 +243,7 @@ export function roleOfAgent(agent) {
  *
  * EXPORTED for `lib/subagent-trace.mjs`, whose `SubagentStop` close records the
  * rung a worker was DISPATCHED under beside the effort its own transcript says
- * it RAN at - the pair the run record exists to let a reader compare - and for
- * the band, which names the rung of each running Cadence agent.
+ * it RAN at - the pair the run record exists to let a reader compare.
  * @param {any} agent
  * @returns {string|null}
  */

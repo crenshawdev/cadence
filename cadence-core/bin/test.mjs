@@ -28,8 +28,9 @@
 //   node cadence-core/bin/test.mjs --list          the groups and their files
 'use strict';
 
-import { readdirSync } from 'node:fs';
+import { mkdtempSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -67,7 +68,7 @@ const GROUPS = Object.freeze({
     'planning-phase-done', 'planning-plans', 'planning-recall', 'planning-recall-fold',
     'planning-replay-check', 'planning-risk-carry',
     'planning-renumber', 'planning-seed-reqs', 'planning-status',
-    'planning-task-record', 'planning-trace-ignore', 'planning-uat',
+    'planning-task-record', 'planning-test-checks', 'planning-trace-ignore', 'planning-uat',
     'trace', 'bm25', 'debt-markers'],
   // The prose<->code drift linters. Slow because they read the whole tree.
   prose: ['self-verify', 'prose-agreement', 'weight', 'deferred-reads',
@@ -108,5 +109,13 @@ if (unknown.length) {
 const files = wanted.flatMap((g) => all[g]).map((s) => join(HERE, `${s}.test.mjs`));
 if (!files.length) { console.error('no test files matched'); process.exit(2); }
 
-const r = spawnSync(process.execPath, ['--test', ...files], { stdio: 'inherit' });
+// The suite never reads the developer's own user-global config: unless the
+// caller pinned CADENCE_GLOBAL_CONFIG, it points at a path in a fresh temp dir
+// that does not exist, which is what CI sees, so a developer's own settings
+// can't change what a test resolves.
+const env = process.env.CADENCE_GLOBAL_CONFIG ? process.env : {
+  ...process.env,
+  CADENCE_GLOBAL_CONFIG: join(mkdtempSync(join(tmpdir(), 'cad-test-global-')), 'config.json'),
+};
+const r = spawnSync(process.execPath, ['--test', ...files], { stdio: 'inherit', env });
 process.exit(r.status === null ? 1 : r.status);

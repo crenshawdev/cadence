@@ -710,6 +710,10 @@ export const CONTRACTS = {
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // Plan file paths are positional words, so it takes no flag.
+    'test-checks': {},
+    // One plan file path as a positional word, so it takes no flag.
+    'test-evidence': {},
     // `--answered` carries the set a config layer ALREADY holds, so the
     // re-entrant ask (`/cad-config --surfaces`) reaches the same option rule
     // the first fire does instead of merging the current answer itself. Same

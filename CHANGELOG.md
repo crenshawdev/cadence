@@ -5,10 +5,75 @@ All notable changes to Cadence are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
-## [Unreleased]
+## [3.9.0] - 2026-10-12
+
+Four test switches, all off by default, hold a plan's tests to evidence that
+each one can fail. The Cadence module and both Codex paths are gone.
+
+### Added
+
+- **Four test switches, all off by default.** `workflow.test_attack`,
+  `workflow.test_evidence`, `workflow.check_inspection` and
+  `workflow.independent_rerun`, set with `/cad-config` or `config.mjs set`.
+  Any one of them has the planner write an evidence map, one check per
+  acceptance criterion, and a table per task naming what each test supplies,
+  asserts and catches, and plan review raises any criterion no check covers.
+  With all four off, plan, execute and verify run as they did in 3.8.6.
+  - `test_attack`: plan review names, for each listed check and test, a wrong
+    implementation that would still pass it.
+  - `test_evidence`: the executor records each check's red run and a negative
+    control for each test, and a report missing one is not complete.
+    `/cad-execute` only, never `/cad-task`.
+  - `check_inspection`: once a plan completes, you are asked to confirm its
+    checks and tests, and SUMMARY.md carries the answers.
+  - `independent_rerun`: `/cad-verify` runs each check's command itself
+    instead of trusting the executor's report, and fails a check that could
+    not have failed.
+
+  `/cad-execute` reads the plans through `planning.mjs test-checks` before any
+  executor runs and stops on a test section it cannot parse, so a malformed
+  plan is caught before the work is paid for.
+- **Review effort goes to `xhigh`.** `review.triggers.<trigger>.effort` takes
+  `xhigh`. OpenAI gets it as written. Gemini's `thinkingLevel` and DeepSeek's
+  `reasoning_effort` stop at high, so those adapters send `high`.
+- **The README and `/cad-help` say where to ask and where to report.** Questions
+  go to #cadence on the jcrenshaw.dev Discord, https://discord.gg/fedQDmhRrx,
+  and bug reports go to GitHub issues.
+
+### Fixed
+
+- **git-guard checks the repository a commit lands in.** `git -C <dir> commit`
+  was judged by the session directory's branch, so a commit into a scratch repo
+  under `/tmp` asked as if it were a commit on the project's `main`. A literal
+  `-C` path is now followed, and the commit is policed in that repository, or
+  not at all when it is not a Cadence project. A `-C` the guard cannot read
+  before the shell expands it, such as `"$S"`, keeps the old reading of the
+  session directory and the prompt says which `-C` it could not follow, so
+  nothing that asked before goes quiet.
 
 ### Removed
 
+- **The Cadence module is gone, and `/cad-panel` with it.** Anthropic's plugin
+  directory blocks a mod that keeps a copy of its engine and also calls
+  `config.set`, and the module did both, so the listing could not go live
+  with it. `hooks/hooks.json` names no module, the `panel` setting is out of
+  `plugin.json`, and the libraries only the module loaded are deleted. That
+  takes away the band and the pane, the cache meter, the step-window token
+  figures, the listing filter, and the prefix safety net. The 30 rung agents
+  and the six contract skills are back in the model's listings, and
+  `route.mjs` already hands every dispatch the `cadence:` name, so nothing
+  dispatches a bare stem. A `trace.jsonl` written before this still renders
+  the step-window figures it holds. git-guard, read-trace and subagent-trace
+  are plain command hooks and stay as they were. Self-verify drops check 26,
+  the one-line listing rule, which only the filter needed, and the old check
+  27 is now 26.
+- **Codex is out of Cadence.** A 3.9.0 development build could hand each plan
+  task to `codex exec` under a `roles.cad-executor.codex.*` switch, and send
+  an OpenAI review through `codex exec` under
+  `review.providers.openai.transport`. Neither reached a tagged release. Every
+  plan task is written by the Claude executor, and every cross-model review is
+  an API call. A config that still holds one of those keys gets a warning
+  naming the `config.mjs unset` that drops it, and nothing reads the value.
 - **`design-notes/` is out of the repository.** The thirteen dated working
   notes took 14 of the plugin directory's 512 files and folders, and the repo
   sat at exactly 512, so nothing new could be added. Git history keeps them:

@@ -43,7 +43,7 @@ provider ships is selectable even if Cadence has never heard of it.
     `generationConfig.responseSchema` (an OpenAPI-3.0 subset - it REJECTS
     `additionalProperties`, which the script strips for Gemini only).
   - Effort (Gemini 3.x): `generationConfig.thinkingConfig.thinkingLevel` in
-    `minimal|low|medium|high`. (Gemini 2.5 uses a numeric `thinkingBudget` instead;
+    `minimal|low|medium|high`; the config's `xhigh` is sent as `high`. (Gemini 2.5 uses a numeric `thinkingBudget` instead;
     the effort dial targets current 3.x reviewers.)
   - Output text: `candidates[0].content.parts[].text`.
   - Usage (checked 2026-09-01): `usageMetadata`, NOT `usage` - fields
@@ -75,8 +75,9 @@ provider ships is selectable even if Cadence has never heard of it.
   - Effort: `reasoning_effort` (`low|medium|high`) - a first-class Chat
     Completions param, honored by thinking models (`deepseek-v4-pro`, the
     `deepseek-v4-flash` thinking mode) and ignored by non-thinking ones. The
-    shared config effort enum also allows `minimal`, which DeepSeek rejects, so
-    the adapter clamps `minimal` up to `low`.
+    shared config effort enum also allows `minimal` and `xhigh`, which DeepSeek
+    rejects, so the adapter clamps `minimal` up to `low` and `xhigh` down to
+    `high`.
   - Output text: `choices[0].message.content`.
   - Usage (checked 2026-09-01): `usage.prompt_tokens`, `usage.completion_tokens`,
     `usage.total_tokens`, plus `prompt_cache_hit_tokens`,

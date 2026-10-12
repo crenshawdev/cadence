@@ -179,8 +179,8 @@ const MANIFEST_PATH = (testSeamOpen() && process.env.CADENCE_PLUGIN_MANIFEST)
 /**
  * The ONE answer to "prefix or failure", for `resolve` and `agent-type` alike,
  * so the two can never disagree about the prefix or about the fallback. Never
- * throws. A manifest that cannot answer leaves `agentType` the bare stem - a
- * dispatch of it meets the module's safety net, as v3.8.0's did - and hands
+ * throws. A manifest that cannot answer leaves `agentType` the bare stem, as
+ * v3.8.0's dispatch named it, and hands
  * back the one `reason` sentence naming the path. That sentence names no stem,
  * so both reads produce it byte-for-byte.
  * @param {string} stem

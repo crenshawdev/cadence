@@ -51,14 +51,12 @@
 //     is nowhere else to get one: if the return surfaces no number, the record
 //     holds none.
 //
-//     On a host WITH mods, the Cadence module (hooks/cadence-mod.mjs) adds one
-//     capture, for the bracket ROW alone: a `STEP_WINDOW` fact, the host's own
-//     usage for a Cadence subagent's last step, never estimated, written at the
-//     subagent's stop or at the coordinator's close that names its agent id.
-//     `renderTrace` folds it only into a bracket whose return carried nothing.
-//     It never reaches `roles`, so `unrecorded` still counts every figureless
-//     return. The rules below are for the prose and stand unchanged: the module
-//     writes its own line, and no prose site copies a figure from it.
+//     Through 3.8, a Cadence module on a host with mods also wrote a
+//     `STEP_WINDOW` fact: the host's own usage for a Cadence subagent's last
+//     step. 3.9.0 removed the module, so nothing writes one now, but a
+//     trace.jsonl from an earlier run may still hold them. `renderTrace` folds
+//     one only into a bracket whose return carried nothing, and it never
+//     reaches `roles`. The rules below are for the prose and stand unchanged.
 //
 //     So the flag is OMITTED when the return carries no figure. An absent total
 //     means "no dispatch of this role reported one", and `--tokens 0` would
@@ -91,7 +89,6 @@ import {
   readSync, renameSync, statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { STEP_WINDOW } from './token-capture.mjs';
 
 /** The trace file's name inside a planning root. */
 export const TRACE_FILE = 'trace.jsonl';
@@ -265,13 +262,20 @@ export const COORDINATOR = 'coordinator';
  */
 export const WORKER_CACHE = 'worker_cache';
 
-// The lifecycle event the Cadence module writes with a subagent's last
-// `turn.step` window. Defined in lib/token-capture.mjs, which the module can
-// load and this file cannot be, and re-exported here beside `WORKER_CACHE` so
-// the census in trace.test.mjs and every reader take it from one place. Its doc
-// comment there states why it is a name and not a family, why it never joins
-// `TERMINAL`, and what its figure is denominated in.
-export { STEP_WINDOW };
+/**
+ * The lifecycle event the Cadence module wrote, through 3.8, for a Cadence
+ * subagent's figureless close: the host's own usage for that subagent's LAST
+ * `turn.step`, keyed by `corr` and `agent_id`. 3.9.0 removed the module, so
+ * nothing writes it any more; it stays named so a trace.jsonl from an earlier
+ * run still renders the figures it recorded.
+ *
+ * It is a lifecycle NAME and not a fifth family, for the reason `COORDINATOR`
+ * states: `FAMILIES` is validated at the seam while `renderTrace`'s `counts`
+ * is a fixed four-key literal. It must NEVER join `TERMINAL`, for the reason
+ * `WORKER_CACHE` states. Its `tokens` is ONE step's window, the same
+ * denomination as a return's `tokens`.
+ */
+export const STEP_WINDOW = 'step_window';
 
 /**
  * The lifecycle event a ROTATION writes as the last line of the record it
@@ -1330,7 +1334,7 @@ export function appendEvent(planningRoot, event) {
  *   `tokens` is what the RETURN reported, off the close or the dispatch half.
  *   Where neither carried one, the post-pass may fill it from a `STEP_WINDOW`
  *   fact matching `corr` AND `agent_id`: the host's own usage for that
- *   subagent's last step, written by the Cadence module on a host with mods.
+ *   subagent's last step, which a run before 3.9.0 may have recorded.
  *   It fills a null and never replaces a number, and it never reaches `roles`,
  *   so `unrecorded` there still counts the return as figureless (D-13). Still
  *   null where neither source had a figure.
@@ -1830,8 +1834,9 @@ export function renderTrace(planningRoot, phase) {
     }
 
     // The step-window fact (D-10), collected here and folded after the loop for
-    // the reason the cache fact is: the module writes it at `SubagentStop`,
-    // before the orchestrator's close names the id it joins on. It needs an id
+    // the reason the cache fact is: the module wrote it at `SubagentStop`,
+    // before the orchestrator's close named the id it joins on. Only a trace
+    // from before 3.9.0 holds one. It needs an id
     // and a non-negative INTEGER figure; anything less has nothing to give.
     if (e.event === STEP_WINDOW) {
       if (typeof e.agent_id === 'string' && e.agent_id

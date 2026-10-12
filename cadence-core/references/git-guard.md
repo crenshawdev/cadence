@@ -101,7 +101,11 @@ its first non-flag word.** Segments split on `;`, a newline, `|`, `||`, `&&` and
 `&`. The seven git global options that take a separate argument (`-C`, `-c`,
 `--git-dir`, `--work-tree`, `--namespace`, `--exec-path`, `--config-env`) are
 skipped WITH that argument, which is the only reason the scan looks past a flag
-at all. Nothing else is inferred. That is the entire grammar.
+at all. The commit rail keeps the `-C` argument: a literal path (bare, or in one
+pair of quotes) is followed as git follows it, and the commit is policed in THAT
+repository, silent when it is not a Cadence project. A value the reader cannot
+know before the shell expands it (`$`, a backtick, `~`) keeps the session
+directory and says which `-C` it could not follow. Nothing else is inferred.
 
 It is a **detection widener, not a security boundary**: being wrong here costs a
 prompt, never a bypass, and the sanctioned publish never reaches this hook at

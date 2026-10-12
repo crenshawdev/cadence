@@ -46,17 +46,9 @@ ever paid back. A subagent's full output no longer stays resident in the context
 that dispatched it, it writes a file and the parent keeps a five-field digest.
 And the skill and agent descriptions, which ride the system prompt of every
 session in every project whether or not you ever run a Cadence command, were cut
-to one routing line each. On a Claude Code host with mods support most of those
-lines are gone: the Cadence module takes the 30 rung agents' entries and the six
-contract skills' entries out of the listings the model reads, in every session
-and every repo, and the `/cad-*` command skills stay listed. The agents still
-dispatch. `route.mjs` picks each one and returns it already carrying the plugin's
-prefix, taken from the name in plugin.json, and the skill dispatches that name,
-so a filtered listing and a host without mods both reach Cadence's agents. On a
-host with mods the module still adds the prefix to a bare rung stem as a safety
-net, except when a project or user agent of that exact name exists. That one it
-leaves alone. A host without mods
-carries every one of those lines, as it always has.
+to one routing line each. The agents still dispatch by name:
+`route.mjs` picks each one and returns it already carrying the plugin's prefix,
+taken from the name in plugin.json, and the skill dispatches that name.
 
 Two honest notes on that. The plugin's own weighed total went up over the same
 stretch, because moving a rule out of a shared reference and into the workflow

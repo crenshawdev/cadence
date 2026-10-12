@@ -29,6 +29,12 @@ on this path is a real defect to report, not the fork-point default.
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.test_command` -
    and run it once if set.
 
+   With `workflow.test_evidence` true, the `test-evidence` check
+   `workflows/execute.md` states at a complete return runs here per plan, once
+   its branch has merged and before its risk sequence; a rejected plan's
+   continuation runs in the main tree, on the sequential path, as the fix
+   dispatch there does.
+
    Then the risk sequence, per plan, in the main tree the merges landed in - a
    fire issued before them asks git for a commit this tree does not hold.
 
@@ -57,6 +63,10 @@ on this path is a real defect to report, not the fork-point default.
    The same triple and never the phase-wide arm, which compares no range and
    would clear this plan on a record an earlier and narrower one left. The plan
    is NOT reported done while that call refuses.
+   Then the check inspection `workflows/execute.md` states runs for that plan; a
+   structural continuation it causes runs in the main tree, on the sequential
+   path, as the fix dispatch there does, because step 4 has already removed
+   that plan's worktree.
 
    Then fire the
    `diff` trigger for every plan CONCURRENTLY in one message (artifact: shape

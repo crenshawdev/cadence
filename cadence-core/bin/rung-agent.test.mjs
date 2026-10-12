@@ -14,6 +14,7 @@ import {
   RUNG_ORDER, rungOrderIssues, roleOfAgent, rungOfAgent,
 } from './lib/rung-agent.mjs';
 import * as readTrace from './lib/read-trace.mjs';
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -550,5 +551,59 @@ test('roleOfAgent and rungOfAgent live here, read-trace re-exports them, and the
   for (const other of ['fork', 'general-purpose', 'coordinator', '', 42]) {
     assert.equal(roleOfAgent(other), null, String(other));
     assert.equal(rungOfAgent(other), null, String(other));
+  }
+});
+
+// --- the contract surfaces stay at their 3.8.6 bytes -------------------------
+// Switch text reaches an agent only through what an orchestrator composes, never
+// through a contract skill, a rung file, the reviewer brief or the PLAN template.
+// Each digest was taken from `git show v3.8.6:<path> | sha256sum`, not from the
+// working tree, so the expected value comes from the release.
+
+const CONTRACT_SURFACE_DIGESTS = {
+  'agents/cad-assumptions-analyzer-high.md': 'b6859e429e56c8d11c91631584c4eb7b60e43c3e1660d5704255cb8630c46568',
+  'agents/cad-assumptions-analyzer-low.md': '96fcb97af3d50cb81e975a5c9b1647a215192ff4446bdc086604852c49d44699',
+  'agents/cad-assumptions-analyzer-max.md': 'd895ab30eae38601aaa6452a1b0edbe66da97aee13abab2b58d6d5644bbb4a3d',
+  'agents/cad-assumptions-analyzer-medium.md': 'fdb9577f9dc2a956d85667fc6416f61e87a3710ccfc94bf6e491853ab0f89cbc',
+  'agents/cad-assumptions-analyzer.md': '37b06dc2a8f739854c57097bf5dadab579ef4d59cbf6e02a8925058a73d5d005',
+  'agents/cad-executor-low.md': '229c8d41198f02e6a3231c78e2d68a0e7a8142dd5ac94115fb4d57973c7df256',
+  'agents/cad-executor-max.md': '4dcc0a4942957e23ce82eff95e102dee236eb940b2274ceb6fec889d463680bf',
+  'agents/cad-executor-medium.md': '695bfc491912885b9bad113156511bf8e5e9861cc974a00d002edb846a05f1d0',
+  'agents/cad-executor-xhigh.md': 'd9ce7be13a00e33836e55be4c39894101b03dc204df3814bd0485237b6e39792',
+  'agents/cad-executor.md': '23a07469ff4e42667a975e14c027b2ed6dc8a9093240a493c5d445c9c45d1f0b',
+  'agents/cad-plan-checker-high.md': 'f347da5f4def97339e019a0bb87a1a549d4c48e538c8b0a571738d9b104792a0',
+  'agents/cad-plan-checker-max.md': '972f903e3e737e783f9bfe1823f0b24f84c88e49bba9ddbf19c399eda69d0b17',
+  'agents/cad-plan-checker-medium.md': '95b21520e1dd3b3f592a912107d731c908c72d252b2a5a25e708e0670a73af77',
+  'agents/cad-plan-checker-xhigh.md': 'fb3b965baede0fc4986e81be915ba1539a386c11fde99b20d00c1247b9c1ab9c',
+  'agents/cad-plan-checker.md': '4510617adab8a4b2b79391e28ed5d943285c375bd721c8f3ee417f563ba7959a',
+  'agents/cad-planner-low.md': '16b28be6a65f0892b9279fba8411e07607ab648e3018f9a806feed49a196f628',
+  'agents/cad-planner-max.md': 'e1345768c0c8c881ea95e76c5935cabbfdcefd181834f5b8c1609687f93b08a0',
+  'agents/cad-planner-medium.md': '5531546b4d8ef5031e65a8e6542e886de561a802be58998d08927d0ebfffdcaf',
+  'agents/cad-planner-xhigh.md': 'e852d30e35b2e52e82dff5c00650b4a2c705329dc20e257b8f41f89a7052e591',
+  'agents/cad-planner.md': 'ae38d3abb12bd2f36c45e1a9c49e6a67da679e9c04a392514c46f7c6c45f2168',
+  'agents/cad-reviewer-low.md': '8ec1170f5f141e2b2ad04bc73511d57055d3296aa2b8ce2d50a988f97ee71dc8',
+  'agents/cad-reviewer-max.md': 'f43d1a658bdb775b6cc46d80206ac8291f1f1d131dcc42aba800acffdcf334a8',
+  'agents/cad-reviewer-medium.md': 'bbb45095b89133fc6505438afca1efc7c7c47f6810cc3b08d70c0efd96266458',
+  'agents/cad-reviewer-xhigh.md': 'ac25454d35fbb729f6c8e7035157f6c74b126e1f230cdcb032f45f4e54800925',
+  'agents/cad-reviewer.md': '9cf15689f264e26b7687e83e6d59cb9e0251fb12b54a60b37d9a2d99be2cc765',
+  'agents/cad-verifier-low.md': '918a80a8d1ab8bc83e90c0ec311ef767d16bd2cffe712ab30d4b94b1d1e8b4e0',
+  'agents/cad-verifier-max.md': '1afb599b71fc069510b4da98bce5abd8f39cd9c5d1383c6649db68de6def07b2',
+  'agents/cad-verifier-medium.md': 'de9b3cd88a901e313d17add259a4ee0fee20f730d09d8379f210b8e4b7e9d46d',
+  'agents/cad-verifier-xhigh.md': '28b870f5382fed9352af937c45fddcf1e328543a22d689f4c2f1ae0e4a398cac',
+  'agents/cad-verifier.md': 'be71c3f4fa00a3af1fc2acf8e7fd9b2eb465da457fc3dec841e6d95589921299',
+  'cadence-core/references/reviewer-brief.md': '85bf804814bf313af230fffc75337601cd5ab01e23d7d28c05d4bc8d0c116e6f',
+  'cadence-core/templates/PLAN.md': 'f20e93597ac87e8a682d0ba7323f8d20b179db6f8c161c6efce08d2638f9574f',
+  'skills/cad-assumptions-analyzer-contract/SKILL.md': '1c5f3b0b38fb266aac941e99ca58d0547d5f975b0f1f6feaf549cd671ee073c3',
+  'skills/cad-executor-contract/SKILL.md': '2a1632e752abdc7cbc4056782e9a3e17a5bf6fbec8510354210e5f4903827225',
+  'skills/cad-plan-checker-contract/SKILL.md': 'cda2faa4a6f6b96e395f8e21e887365f35835aaa41a7b77651f1b878b91e1504',
+  'skills/cad-planner-contract/SKILL.md': '0d2eeb8457ca8c58be91091365a57f18fcf2b07995fb2d37ed04c5818a0eeb04',
+  'skills/cad-reviewer-contract/SKILL.md': 'c42a962077b4c7df8b1507d1462db9657d2f4ceda39d22402925b50bbc920d01',
+  'skills/cad-verifier-contract/SKILL.md': '289b2dc849576496c54d5f4e180e08c2829bc60634bbdbc097f6bd7fb2afe577',
+};
+
+test('a switch\'s text written into a contract surface changes its 3.8.6 digest', () => {
+  for (const [path, want] of Object.entries(CONTRACT_SURFACE_DIGESTS)) {
+    const got = createHash('sha256').update(readFileSync(join(REPO, path))).digest('hex');
+    assert.equal(got, want, `${path} no longer matches its v3.8.6 bytes`);
   }
 });

@@ -324,6 +324,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`workflow.lint_command` `workflow.max_plan_tasks` `workflow.max_plan_bytes`\n' +
     '`workflow.max_dispatch_tokens`\n' +
+    '`workflow.test_attack` `workflow.test_evidence` `workflow.check_inspection` `workflow.independent_rerun`\n' +
     '`parallelization.enabled` `parallelization.max_concurrent_agents`\n' +
     '`parallelization.min_plans_for_parallel` `parallelization.use_worktrees`\n' +
     '`git.protected_branches` `git.on_protected` `git.integration_branch`\n' +
@@ -2491,31 +2492,7 @@ test('check 25: the LIVE tree registers only event names the register declares',
   assert.deepEqual(p.filter((x) => x.file === 'hooks/hooks.json'), []);
 });
 
-// --- check 26: Cadence's listed descriptions stay on one line -------------------
-//
-// lib/listing-filter.mjs takes a target entry out of the host's listing line by
-// line, and a description holding an empty line or a `- ` line would leave its
-// tail behind. These rows drive the check through the CLI, which proves it is
-// wired into `run(root)`; the rule's own cases live in listing-descriptions.test.mjs.
-
-test('check 26: an agent whose description is a two-line block is ONE problem naming the file', () => {
-  const text = rungAgentText('cad-reviewer-low', 'low')
-    .replace('---\nname: cad-reviewer-low\n',
-      '---\nname: cad-reviewer-low\ndescription: |\n  line one\n  line two\n');
-  const j = run(['--root', fixtureWith({ agents: { 'cad-reviewer-low.md': text } })]);
-  assert.equal(j.ok, false);
-  assert.match(j.checked, /listing-descriptions/);
-  const hits = j.problems.filter((p) => p.kind === 'multiline-listing-text');
-  assert.equal(hits.length, 1, JSON.stringify(j.problems));
-  assert.equal(hits[0].file, 'agents/cad-reviewer-low.md');
-});
-
-test('check 26: the LIVE tree carries no multi-line listed description', () => {
-  const p = run(['--root', REPO]).problems;
-  assert.deepEqual(p.filter((x) => x.kind === 'multiline-listing-text'), []);
-});
-
-// --- check 27: the directory's file limits -------------------------------------
+// --- check 26: the directory's file limits -------------------------------------
 //
 // 262,144 bytes for a file that is not an image or font, 512 files plus folders.
 // A fixture with no git is the walk arm; a `git init` fixture is the git arm,
@@ -2545,7 +2522,7 @@ function gitLimit(root, args) {
   execFileSync('git', ['-C', root, ...args], { env: { ...process.env, ...GIT_LIMIT_ENV }, stdio: 'ignore' });
 }
 
-test('check 27: a 262,145-byte text file fails naming its path, and 262,144 bytes passes', () => {
+test('check 26: a 262,145-byte text file fails naming its path, and 262,144 bytes passes', () => {
   const over = limitRoot();
   mkdirSync(join(over, 'misc'));
   writeFileSync(join(over, 'misc', 'big.txt'), 'x'.repeat(262145));
@@ -2561,7 +2538,7 @@ test('check 27: a 262,145-byte text file fails naming its path, and 262,144 byte
   assert.deepEqual(limitProblems(at), []);
 });
 
-test('check 27: an image or font over the limit passes, extension compared without case', () => {
+test('check 26: an image or font over the limit passes, extension compared without case', () => {
   const root = limitRoot();
   mkdirSync(join(root, 'assets'));
   writeFileSync(join(root, 'assets', 'figure.png'), Buffer.alloc(300000));
@@ -2569,7 +2546,7 @@ test('check 27: an image or font over the limit passes, extension compared witho
   assert.deepEqual(limitProblems(root), []);
 });
 
-test('check 27: 513 entries fail and 512 pass, and a folder counts as an entry', () => {
+test('check 26: 513 entries fail and 512 pass, and a folder counts as an entry', () => {
   // limitRoot is 2 entries, `pad/` is a third, 509 files make 512.
   const at = limitRoot();
   padFiles(at, 'pad', 509);
@@ -2584,7 +2561,7 @@ test('check 27: 513 entries fail and 512 pass, and a folder counts as an entry',
   assert.match(p[0].detail, /510 files and 3 folders make 513 entries/);
 });
 
-test('check 27: in a git checkout an untracked oversize file is not counted, and once added it is', () => {
+test('check 26: in a git checkout an untracked oversize file is not counted, and once added it is', () => {
   const root = limitRoot();
   gitLimit(root, ['init', '-q']);
   writeFileSync(join(root, 'big.txt'), 'x'.repeat(300000));
@@ -2596,7 +2573,7 @@ test('check 27: in a git checkout an untracked oversize file is not counted, and
   assert.equal(p[0].file, 'big.txt');
 });
 
-test('check 27: the git arm counts a folder that holds only folders', () => {
+test('check 26: the git arm counts a folder that holds only folders', () => {
   // 511 tracked files under a/b/ and none in a/: 511 files and 2 folders is 513.
   // Counting each file's dirname alone finds 1 folder, 512, and passes.
   const over = limitRoot();
@@ -2614,13 +2591,13 @@ test('check 27: the git arm counts a folder that holds only folders', () => {
   assert.deepEqual(limitProblems(at), []);
 });
 
-test('check 27: the LIVE tree is within both limits, and `checked` names the check', () => {
+test('check 26: the LIVE tree is within both limits, and `checked` names the check', () => {
   const j = run([]);
   assert.equal(j.ok, true, JSON.stringify(j.problems));
   assert.match(j.checked, /\bdirectory-limits\b/);
 });
 
-test('check 27: a path in an unmerged index counts once, not once per stage', () => {
+test('check 26: a path in an unmerged index counts once, not once per stage', () => {
   // 509 pad files, `pad/` and big.txt are 511. Stages 1-3 of big.txt list it
   // three times, which would make 513 and three oversize problems.
   const root = limitRoot();
@@ -2639,7 +2616,7 @@ test('check 27: a path in an unmerged index counts once, not once per stage', ()
   assert.equal(p[0].file, 'big.txt');
 });
 
-test('check 27: a file whose name is not UTF-8 is still size-checked, in both arms', (t) => {
+test('check 26: a file whose name is not UTF-8 is still size-checked, in both arms', (t) => {
   const name = Buffer.concat([Buffer.from('caf'), Buffer.from([0xe9]), Buffer.from('.md')]);
   for (const arm of ['walk', 'git']) {
     const root = limitRoot();
@@ -2660,7 +2637,7 @@ test('check 27: a file whose name is not UTF-8 is still size-checked, in both ar
   }
 });
 
-test("check 27: the git arm does not run the target repo's core.fsmonitor", () => {
+test("check 26: the git arm does not run the target repo's core.fsmonitor", () => {
   const root = limitRoot();
   const sentinel = join(mkdtempSync(join(tmpdir(), 'cad-selfverify-fsmonitor-')), 'ran');
   gitLimit(root, ['init', '-q']);

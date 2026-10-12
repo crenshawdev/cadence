@@ -171,6 +171,59 @@ substitute - `uat status` returns no item list and no `expected` string. ONE
 read BEFORE the chain starts, so the "no UAT.md re-reads between items" rule is
 unchanged and still governs pass 2.
 
+**The independent re-run.** Then read the two test switches in one call:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.independent_rerun workflow.test_evidence
+```
+
+With `workflow.independent_rerun` false, nothing in this paragraph applies. With
+it true, read the phase's list once:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-checks <every PLAN file of the phase>
+```
+
+Then run, yourself, in this session's shell and never in the verifier subagent,
+each check's Command, for every check whose Command does not begin
+`human-verify:`, and run each listed test's command, taken from its table's
+label line, once for all the tests of that table. The fields file each
+`uat record ... --source model` call below carries holds the command and its
+output as `evidence`.
+
+- **Which items.** A check records on the UAT item whose `criterion` is its
+  criterion token; a check or test may instead match, by name, the item an
+  earlier re-run appended for it. The re-run covers an item that is `pending`
+  or holds a `verifier` source; an item the user answered keeps the user's
+  answer. Pass 1 runs no command of its own for an item the re-run recorded.
+- **The result.** A check or test is a `fail` when any of these holds, its
+  `cause` riding the same fields file and `--severity` inferred as pass 2
+  infers it: its command fails, and a failing label command fails each test of
+  its table; reading its test function, you judge under Baley's VER-R6 that it
+  could not have failed - it asserts nothing the criterion or its Asserts cell
+  cares about, or it stubs the thing it claims to test - and the cause names
+  which, and why; or, for a check only, `workflow.test_evidence` is true and
+  `test-checks` shows no recorded red run for it, no evidence row whose
+  `Red by` reads `before` or `break`. Otherwise it is a `pass`.
+- **No matching item.** A failing or rejected check or test that matches no UAT
+  item is never only printed. Append the unmatched ones as new items in ONE
+  call to the `uat refresh --phase <N>` seam `build_or_resume` spells, then
+  record each `fail` with `uat record ... --source model` and its `cause`.
+  Each new item is named for its plan and its check's criterion token, or its
+  test's task and name, so a later re-run finds it by name. Its `expected` is
+  the check's Expected, or the test's Asserts; it carries `criterion` only when
+  the token is an `AC<N>` id; and it takes the numbers after the highest item
+  number the UAT.md read above showed. A passing check or test with no item
+  gets a row in the results table only.
+- **The report is not evidence.** The executor's report is never the evidence:
+  it is read, through `test-checks`, only to see whether a red run is
+  recorded, and the pass or fail evidence is always this walk's own run.
+- **Routing.** These failures reach `route_failures` with their cause already
+  recorded, so each starts at its step 2 (propose the fix) rather than being
+  skipped as diagnosed. A `human-verify:` check stays a pass-2 item. Every
+  re-run row, the passing unmatched ones included, joins pass 1's one results
+  table.
+
 Then, before offering ANY item, run the check for every pending item that
 clears the bar and record each the moment it is settled. The evidence is
 composed from what the check printed, so write

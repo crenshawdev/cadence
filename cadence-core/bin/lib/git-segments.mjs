@@ -25,18 +25,12 @@
 //
 // IT ALSO HOLDS THE SCOPE RULE: the `.planning/` walk that decides whether a
 // directory sits inside a Cadence project. git-guard applies it, read-trace and
-// subagent-trace share it, and the Cadence module (hooks/cadence-mod.mjs)
-// imports it. It lives here because git-guard.test.mjs pins git-guard's import
-// set, and this is the one dependency-free file in that set.
+// subagent-trace share it. It lives here because git-guard.test.mjs pins
+// git-guard's import set, and this is the one dependency-free file in that set.
 //
-// The module runs with no Node globals and may import no `node:` module, so
-// nothing in this file may either. That shapes the walk two ways:
-// - The existence probe is injected. The walk is one generator that yields
-//   `[dir, name]` and takes back a boolean; `planningRoot` drives it with a
-//   sync probe (the hooks' `existsSync`), `planningRootAsync` with an async one
-//   (the module's `$.fs.exists`). One loop, two drivers.
-// - The parent step is `parentDir`, a port of node's own `dirname`, so the
-//   hooks and the module step through the same directories.
+// The walk is one generator that yields `[dir, name]` and takes back a
+// boolean; `planningRoot` drives it with the hooks' sync `existsSync` probe.
+// The parent step is `parentDir`, a port of node's own `dirname`.
 'use strict';
 
 /** The git global options that take a SEPARATE argument. A fixed list, not a
@@ -79,24 +73,43 @@ const SEPARATOR = /&&|\|\||[;|&\n]/;
  * @returns {string[]} the verbs, in the order they appear
  */
 export function gitVerbs(text) {
+  return gitInvocations(text).map((g) => g.verb);
+}
+
+/**
+ * The same scan as `gitVerbs`, keeping each segment's `-C` arguments in order:
+ * `git -C /tmp/x commit` reads `[{verb: 'commit', dirs: ['/tmp/x']}]`. `-C` is
+ * which repository a commit lands in, so the commit rail needs it. The words are
+ * raw - quotes and `$` are left for the caller to judge - and a `-C` with
+ * nothing after it keeps `''`, which no reader resolves.
+ *
+ * @param {unknown} text the raw command string from the hook payload
+ * @returns {{verb: string, dirs: string[]}[]}
+ */
+export function gitInvocations(text) {
   if (typeof text !== 'string' || !text) return [];
 
-  const verbs = [];
+  const out = [];
   for (const segment of text.split(SEPARATOR)) {
     const words = segment.trim().split(/\s+/).filter(Boolean);
     const head = words[0];
     // ANCHORED: the command word, and nothing else, admits a segment.
     if (head !== 'git' && !(head !== undefined && head.endsWith('/git'))) continue;
 
+    const dirs = [];
     for (let i = 1; i < words.length; i++) {
       const word = words[i];
-      if (GLOBAL_OPT_WITH_ARG.has(word)) { i++; continue; } // skip it AND its argument
+      if (GLOBAL_OPT_WITH_ARG.has(word)) { // skip it AND its argument
+        if (word === '-C') dirs.push(words[i + 1] ?? '');
+        i++;
+        continue;
+      }
       if (word.startsWith('-')) continue;
-      verbs.push(word);
+      out.push({ verb: word, dirs });
       break; // the first non-flag word is the verb; the rest are its operands
     }
   }
-  return verbs;
+  return out;
 }
 
 /**
@@ -169,23 +182,6 @@ export function planningRoot(start, has) {
   while (!step.done) {
     const [dir, name] = step.value;
     step = walk.next(has(dir, name));
-  }
-  return step.value;
-}
-
-/**
- * The same answer through an async probe. Driver for the module.
- *
- * @param {string} start
- * @param {(dir: string, name: string) => Promise<boolean> | boolean} has
- * @returns {Promise<string | null>}
- */
-export async function planningRootAsync(start, has) {
-  const walk = planningWalk(start);
-  let step = walk.next();
-  while (!step.done) {
-    const [dir, name] = step.value;
-    step = walk.next(await has(dir, name));
   }
   return step.value;
 }

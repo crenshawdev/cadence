@@ -1,5 +1,4 @@
 {
-  "modules": ["./cadence-mod.mjs"],
   "hooks": {
     "PreToolUse": [
       {

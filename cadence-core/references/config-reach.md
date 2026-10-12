@@ -52,6 +52,9 @@ paraphrases. The phrases in use today:
 - `new-project roadmap step only`
 - `new-project research step only`
 - `plan-size report only`
+- `the attack fires only when the plan gate is not off`
+- `executor reports under /cad-execute only, never /cad-task`
+- `/cad-execute plan completion only, never /cad-task`
 - `progress next-step suggestion only`
 - `repo config layer only`
 - `repo config layer only for the unattended publish`
@@ -131,6 +134,10 @@ purpose test runs against the reach the author just replaced.
 | `workflow.research` | new-project research step only | `workflows/new-project.md`'s research pass; no other workflow reads it |
 | `workflow.plan_check` | universal | `workflows/plan.md` - whether the plan checker runs before code |
 | `workflow.verifier` | universal | `workflows/verify.md` - off switch for the goal-backward pass |
+| `workflow.test_attack` | the attack fires only when the plan gate is not off | `references/review-triggers.md`'s `plan` trigger payload, fired from `/cad-plan` and `/cad-plan-review`; resolved `off`, the gate fires nothing and the attack with it. Also one of the four any-switch readers: `workflows/plan.md`'s planner block and the any-switch rule in the `plan` payload |
+| `workflow.test_evidence` | executor reports under /cad-execute only, never /cad-task | `workflows/execute.md`, on both its paths, for the executor dispatch block and the report check; `/cad-task` dispatches without it. Also `workflows/verify.md`'s red-run rule when `workflow.independent_rerun` is on, and the any-switch readers in `workflows/plan.md` and the `plan` payload |
+| `workflow.check_inspection` | /cad-execute plan completion only, never /cad-task | `workflows/execute.md`'s plan completion, once per plan; also the any-switch readers in `workflows/plan.md` and the `plan` payload |
+| `workflow.independent_rerun` | universal | `workflows/verify.md`'s walk re-runs each check; also the any-switch readers in `workflows/plan.md` and the `plan` payload |
 | `workflow.skip_discuss` | progress next-step suggestion only | `workflows/progress.md`'s next-step table, for an unplanned current phase |
 | `workflow.inline_plan_threshold` | universal | `workflows/plan.md` - task count at/below which a plan runs inline |
 | `workflow.max_plan_tasks` | universal | `workflows/plan.md` - the ceiling handed to cad-planner, PER PLAN; a phase needing more capacity gets more plans. `planning.mjs plan-size --max-tasks` counts the written plan against it at `check_size`, and cad-plan-checker flags compound tasks under Proportionality - the half a count cannot see |
