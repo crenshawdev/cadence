@@ -5,10 +5,37 @@ All notable changes to Cadence are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
-## [Unreleased]
+## [3.9.0] - 2026-10-12
+
+Four test switches, all off by default, hold a plan's tests to evidence that
+each one can fail. The Cadence module and both Codex paths are gone.
 
 ### Added
 
+- **Four test switches, all off by default.** `workflow.test_attack`,
+  `workflow.test_evidence`, `workflow.check_inspection` and
+  `workflow.independent_rerun`, set with `/cad-config` or `config.mjs set`.
+  Any one of them has the planner write an evidence map, one check per
+  acceptance criterion, and a table per task naming what each test supplies,
+  asserts and catches, and plan review raises any criterion no check covers.
+  With all four off, plan, execute and verify run as they did in 3.8.6.
+  - `test_attack`: plan review names, for each listed check and test, a wrong
+    implementation that would still pass it.
+  - `test_evidence`: the executor records each check's red run and a negative
+    control for each test, and a report missing one is not complete.
+    `/cad-execute` only, never `/cad-task`.
+  - `check_inspection`: once a plan completes, you are asked to confirm its
+    checks and tests, and SUMMARY.md carries the answers.
+  - `independent_rerun`: `/cad-verify` runs each check's command itself
+    instead of trusting the executor's report, and fails a check that could
+    not have failed.
+
+  `/cad-execute` reads the plans through `planning.mjs test-checks` before any
+  executor runs and stops on a test section it cannot parse, so a malformed
+  plan is caught before the work is paid for.
+- **Review effort goes to `xhigh`.** `review.triggers.<trigger>.effort` takes
+  `xhigh`. OpenAI gets it as written. Gemini's `thinkingLevel` and DeepSeek's
+  `reasoning_effort` stop at high, so those adapters send `high`.
 - **The README and `/cad-help` say where to ask and where to report.** Questions
   go to #cadence on the jcrenshaw.dev Discord, https://discord.gg/fedQDmhRrx,
   and bug reports go to GitHub issues.
