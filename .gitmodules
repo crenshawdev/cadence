@@ -1,0 +1,3 @@
+[submodule ".sentinel"]
+	path = .sentinel
+	url = https://github.com/jcrenshaw-dev/sentinel

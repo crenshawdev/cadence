@@ -1,0 +1,88 @@
+# sentinel fast check, on every pull request.
+#
+# Copy this file into .github/workflows/ (GitHub) or .forgejo/workflows/
+# (Forgejo) in the repo under audit. It expects sentinel as a git submodule at
+# the path in SENTINEL_DIR.
+#
+# The mechanical job runs on both GitHub and Forgejo. The security-review job
+# runs on GitHub only, because it posts its review as a pull request comment
+# through the GitHub API, and a job skipped by its `if:` never downloads its
+# actions.
+#
+# On a public repo, set the repository variable SENTINEL_REVIEW_AGE_RECIPIENT
+# to your age public key. The review is then encrypted and uploaded as the
+# `security-review` artifact, and the comment, log and job summary show only
+# the count of findings. `.sentinel/ci/read-review.sh <pull request number>`
+# decrypts it on your machine. Without the variable the whole review is posted.
+name: sentinel-fast
+
+on:
+  pull_request:
+
+env:
+  SENTINEL_DIR: .sentinel
+
+permissions:
+  contents: read
+
+jobs:
+  mechanical:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          # Builds run the pull request's code; keep the token out of .git/config.
+          persist-credentials: false
+      - name: Install gating tools
+        run: '"$SENTINEL_DIR/ci/install-tools.sh"'
+      - name: Mechanical checks
+        run: '"$SENTINEL_DIR/mechanical/check.sh" .'
+
+  security-review:
+    # Dependabot's pull requests get no Actions secrets, so the review could
+    # never run on them; their dependency changes go through the mechanical
+    # job's dependency checks instead.
+    if: github.server_url == 'https://github.com' && github.event.pull_request.user.login != 'dependabot[bot]'
+    needs: mechanical
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          # The reviewer can read files; keep the token out of .git/config.
+          persist-credentials: false
+      # Claude Code needs Node 22 or newer; older Node gets an old CLI that
+      # cannot run current models.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.300
+      - name: Install age
+        if: vars.SENTINEL_REVIEW_AGE_RECIPIENT != ''
+        run: sudo apt-get update -q && sudo apt-get install -y -q age
+      - name: Review the diff
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BASE_REF: ${{ github.base_ref }}
+          SENTINEL_REVIEW_AGE_RECIPIENT: ${{ vars.SENTINEL_REVIEW_AGE_RECIPIENT }}
+        run: '"$SENTINEL_DIR/ci/security-review.sh" "origin/$BASE_REF"'
+      - name: Upload the encrypted review
+        if: ${{ !cancelled() && hashFiles('security-review.md.age') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: security-review
+          path: security-review.md.age
+          retention-days: 14
+      - name: Post the review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR" --body-file security-review.md
