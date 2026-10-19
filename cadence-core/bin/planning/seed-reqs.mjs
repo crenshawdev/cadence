@@ -10,6 +10,7 @@ import {
   atomicWrite, insertReqRows, parseActiveIds, parsePlanRequirements,
 } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
+import { PLAN_FILE } from '../lib/phase-plans.mjs';
 
 // ---------------------------------------------------------------------------
 // seed-reqs - insert Traceability rows for the requirement ids a phase's
@@ -53,7 +54,7 @@ function cmdSeedReqs(dir, opts) {
 
   const pdir = join(dir, 'phases', pname);
   let planFiles = [];
-  try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
+  try { planFiles = readdirSync(pdir).filter((f) => PLAN_FILE.test(f)).sort(); }
   catch {
     return fail('no-phase-dir', `${pdir} not found`,
       'run /cad-plan <N> first - the ids seeded here come from the `requirements:` lines of the'

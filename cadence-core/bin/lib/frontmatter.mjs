@@ -18,6 +18,9 @@
 // statements beyond this module's own exports.
 'use strict';
 
+/** A leading frontmatter block; group 1 is the text between the fences. */
+export const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
+
 /**
  * Parse an agent frontmatter block's `skills:` value into skill names. Accepts
  * the three spellings a hand-written agent file realistically uses: the block

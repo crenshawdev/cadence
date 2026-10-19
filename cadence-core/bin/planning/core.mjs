@@ -27,6 +27,7 @@ import { recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS } from '../lib/arg-contract.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
+import { PLAN_FILE } from '../lib/phase-plans.mjs';
 import { parseUat, uatComplete } from '../lib/planning-files.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
@@ -193,7 +194,7 @@ function derivePhases(dir, roadmapPhases) {
     const pdir = join(dir, 'phases', String(p.n));
     let plans = [];
     try {
-      plans = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort();
+      plans = readdirSync(pdir).filter((f) => PLAN_FILE.test(f)).sort();
     } catch { /* no dir -> unplanned */ }
     const summary = existsSync(join(pdir, 'SUMMARY.md'));
     const uatText = read(join(pdir, 'UAT.md'));
@@ -316,7 +317,7 @@ function listPlanFiles(pdir) {
   const plans = [];
   const nonconforming = [];
   for (const f of entries) {
-    if (/^PLAN(-\d+)?\.md$/.test(f)) plans.push(f);
+    if (PLAN_FILE.test(f)) plans.push(f);
     else if (f.startsWith('PLAN') && f.endsWith('.md')) nonconforming.push(f);
   }
   return { plans: plans.sort(), nonconforming: nonconforming.sort() };

@@ -10,10 +10,10 @@
 // lib/risk-diff.mjs's `scanDeclared`, and a second matcher beside the reader is
 // how the two came to disagree before.
 //
-// It adds NO grammar of its own: `parseCursor` and `readFrontmatterList` come
-// from ./planning-files.mjs, the one place a `.planning` grammar lives, and the
-// conforming plan-file set is `listPlanFiles`'s (`PLAN.md`, `PLAN-<k>.md`) with
-// `PLAN.md` reading as plan 1 spelled bare. That set is also the LOCATOR's test
+// `parseCursor` and `readFrontmatterList` come from ./planning-files.mjs. The
+// conforming plan-file set lives here, as `PLAN_FILE` (`PLAN.md`, `PLAN-<k>.md`)
+// and `planFileFor`, with `PLAN.md` reading as plan 1 spelled bare, and the
+// planning seam's listers import it. That set is also the LOCATOR's test
 // for what a phase directory is (`phaseDirsIn`), which is what reaches the
 // phases a milestone close archived: locating and reading are separate here, so
 // a caller can ask the same reader about `_archive-<label>/<N>/` that a resolve
@@ -41,7 +41,17 @@ const MAX_PLAN_BYTES = 512 * 1024;
 
 // A split phase carries PLAN-1.md and PLAN-2.md and BOTH declare files; an
 // unsplit one carries PLAN.md. Nothing else in `phases/<N>/` is a plan.
-const PLAN_FILE = /^PLAN(-\d+)?\.md$/;
+export const PLAN_FILE = /^PLAN(-\d+)?\.md$/;
+
+/**
+ * The file in `names` that holds plan `key`: `PLAN-<key>.md`, or the bare
+ * `PLAN.md` for plan 1.
+ * @param {string[]} names @param {string} key @returns {string|undefined}
+ */
+export function planFileFor(names, key) {
+  return names.find((f) => f === `PLAN-${key}.md`)
+    || (key === '1' ? names.find((f) => f === 'PLAN.md') : undefined);
+}
 
 // The directories `milestone-prune --mode archive` moves a closed milestone's
 // phases into, beside `phases/` under the same planning root. Matched by PREFIX
@@ -299,8 +309,7 @@ export function declaredFilesIn(dir, planKey) {
     for (const name of names) readOnePlan(join(dir, name), acc, seen);
     return acc;
   }
-  const name = names.find((f) => f === `PLAN-${key}.md`)
-    || (key === '1' ? names.find((f) => f === 'PLAN.md') : undefined);
+  const name = planFileFor(names, key);
   if (!name) {
     acc.warnings.push(`${W}plan ${key} names no plan file in ${dir} `
       + `(found: ${names.length ? names.join(', ') : 'none'}); `

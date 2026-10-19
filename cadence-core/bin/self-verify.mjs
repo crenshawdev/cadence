@@ -282,7 +282,7 @@ import { globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
 import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
 import { relayIssues } from './lib/route-relay.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
-import { parseSkillsField } from './lib/frontmatter.mjs';
+import { FRONTMATTER_RE, parseSkillsField } from './lib/frontmatter.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { referenceRouterIssues } from './lib/reference-routers.mjs';
 import { includeConsumerIssues } from './lib/include-consumers.mjs';
@@ -1006,7 +1006,7 @@ function run(root) {
       const rel = relative(root, file);
       // Frontmatter is the block between the first `---` and the next `---`;
       // the rest is the prose body the lint scans.
-      const fm = text.match(/^---\n([\s\S]*?)\n---/);
+      const fm = text.match(FRONTMATTER_RE);
       const declared = new Set();
       if (fm) {
         const toolsLine = fm[1].match(/^tools:\s*(.+)$/m);
@@ -1036,7 +1036,7 @@ function run(root) {
         } catch {
           continue;
         }
-        const skillFm = skillText.match(/^---\n([\s\S]*?)\n---/);
+        const skillFm = skillText.match(FRONTMATTER_RE);
         if (skillFm && /^disable-model-invocation:[ \t]*true[ \t]*$/m.test(skillFm[1])) {
           problems.push({ kind: 'unpreloadable-agent-skill', file: rel,
             detail: `${skill} sets disable-model-invocation: true` });
