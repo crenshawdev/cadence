@@ -210,43 +210,6 @@ import {
 // dispatch at the foot of it. What the door itself needs is the raw argument
 // list, the refusal composer and `fail`.
 import { ARGV, argRefusal, fail } from './planning/core.mjs';
-// The command modules. Static imports and synchronous handlers, so the
-// `COMMANDS` arrows below keep their exact form and the `fail('internal', ...)`
-// catch-all at the foot of this file still turns every parse problem into an
-// ok:false envelope rather than a stack trace (D-02).
-import { cmdStatus } from './planning/status.mjs';
-import { cmdCursorGet } from './planning/cursor-get.mjs';
-import { cmdCursorSet } from './planning/cursor-set.mjs';
-import { cmdPhaseDone } from './planning/phase-done.mjs';
-import { cmdUat } from './planning/uat.mjs';
-import { cmdAudit } from './planning/audit.mjs';
-import { cmdCriteriaCoverage } from './planning/criteria-coverage.mjs';
-import { cmdCriteriaSize } from './planning/criteria-size.mjs';
-import { cmdPlanSize } from './planning/plan-size.mjs';
-import { cmdPlanOverlap } from './planning/plan-overlap.mjs';
-import { cmdReplayCheck } from './planning/replay-check.mjs';
-import { cmdCiteCount } from './planning/cite-count.mjs';
-import { cmdSeedReqs } from './planning/seed-reqs.mjs';
-import { cmdRecall } from './planning/recall.mjs';
-import { cmdLeaseCheck } from './planning/lease-check.mjs';
-import { cmdTaskRecord } from './planning/task-record.mjs';
-import { cmdDetectCommands } from './planning/detect-commands.mjs';
-import { cmdTestChecks, cmdTestEvidence } from './planning/test-checks.mjs';
-import { cmdDetectSurfaces } from './planning/detect-surfaces.mjs';
-import { cmdReads } from './planning/reads.mjs';
-import { cmdCapture } from './planning/capture.mjs';
-import { cmdCaptureSections } from './planning/capture-sections.mjs';
-import { cmdCaptureCheck } from './planning/capture-check.mjs';
-import { cmdDebtHarvest } from './planning/debt-harvest.mjs';
-import { cmdMilestonePrune } from './planning/milestone-prune.mjs';
-import { cmdTrace } from './planning/trace.mjs';
-import { cmdRiskCheck } from './planning/risk-check.mjs';
-import { cmdAdjudication } from './planning/adjudication.mjs';
-import { cmdDeferredRecord } from './planning/deferred-record.mjs';
-import { cmdDeferredList } from './planning/deferred-list.mjs';
-import { cmdDeferredCarry } from './planning/deferred-carry.mjs';
-import { cmdRiskCarry } from './planning/risk-carry.mjs';
-import { cmdRenumber } from './planning/renumber.mjs';
 
 function parseArgs(argv) {
   const words = [];
@@ -266,42 +229,59 @@ function parseArgs(argv) {
 // Handlers take the trailing positional words as a 4th argument; only
 // `recall` needs it (its query is free text, not a fixed subcommand), and
 // widening the signature beats special-casing one command in the dispatcher.
-/** @type {Record<string, (dir: string, sub: string, opts: any, rest: string[]) => void>} */
+//
+// Each arrow imports its command module when it runs, so a call loads one
+// module instead of all of them. The await sits inside the `try` at the foot of
+// this file, so a module that fails to load is still an ok:false `internal`.
+/** @type {Record<string, (dir: string, sub: string, opts: any, rest: string[]) => Promise<unknown>>} */
 const COMMANDS = {
-  status: (dir, _sub, _opts) => cmdStatus(dir),
-  cursor: (dir, sub, opts) => {
-    if (sub === 'get') return cmdCursorGet(dir);
-    if (sub === 'set') return cmdCursorSet(dir, opts);
+  status: async (dir, _sub, _opts) => (await import('./planning/status.mjs')).cmdStatus(dir),
+  cursor: async (dir, sub, opts) => {
+    if (sub === 'get') return (await import('./planning/cursor-get.mjs')).cmdCursorGet(dir);
+    if (sub === 'set') return (await import('./planning/cursor-set.mjs')).cmdCursorSet(dir, opts);
     return fail('usage', 'cursor <get|set>');
   },
-  'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
-  uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
-  reads: (dir, _sub, opts) => cmdReads(dir, opts),
-  audit: (dir, _sub, _opts) => cmdAudit(dir),
-  'criteria-coverage': (dir, _sub, _opts) => cmdCriteriaCoverage(dir),
-  'criteria-size': (dir, _sub, opts) => cmdCriteriaSize(dir, opts),
-  'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
-  'replay-check': (dir, _sub, opts) => cmdReplayCheck(dir, opts),
-  'plan-size': (dir, _sub, opts) => cmdPlanSize(dir, opts),
+  'phase-done': async (dir, _sub, opts) =>
+    (await import('./planning/phase-done.mjs')).cmdPhaseDone(dir, opts),
+  uat: async (dir, sub, opts) => (await import('./planning/uat.mjs')).cmdUat(dir, sub, opts),
+  reads: async (dir, _sub, opts) => (await import('./planning/reads.mjs')).cmdReads(dir, opts),
+  audit: async (dir, _sub, _opts) => (await import('./planning/audit.mjs')).cmdAudit(dir),
+  'criteria-coverage': async (dir, _sub, _opts) =>
+    (await import('./planning/criteria-coverage.mjs')).cmdCriteriaCoverage(dir),
+  'criteria-size': async (dir, _sub, opts) =>
+    (await import('./planning/criteria-size.mjs')).cmdCriteriaSize(dir, opts),
+  'plan-overlap': async (dir, _sub, opts) =>
+    (await import('./planning/plan-overlap.mjs')).cmdPlanOverlap(dir, opts),
+  'replay-check': async (dir, _sub, opts) =>
+    (await import('./planning/replay-check.mjs')).cmdReplayCheck(dir, opts),
+  'plan-size': async (dir, _sub, opts) =>
+    (await import('./planning/plan-size.mjs')).cmdPlanSize(dir, opts),
   // The read-back count (RBK-01). ONE word, never a two-word spelling, for the
   // reason the `adjudication` arm below states: `subcommandKey` consumes a
   // second word only for the `TWO_WORD` families.
-  'cite-count': (dir, _sub, opts) => cmdCiteCount(dir, opts),
-  'seed-reqs': (dir, _sub, opts) => cmdSeedReqs(dir, opts),
+  'cite-count': async (dir, _sub, opts) =>
+    (await import('./planning/cite-count.mjs')).cmdCiteCount(dir, opts),
+  'seed-reqs': async (dir, _sub, opts) =>
+    (await import('./planning/seed-reqs.mjs')).cmdSeedReqs(dir, opts),
   // Bare words are JOINED, never rejected: every workflow caller quotes, so
   // rejecting extras would turn a today-degraded interactive call into a hard
   // failure. tokenize() splits on non-alphanumerics, so the separator is
   // immaterial; `[].join(' ')` is '', which still trips the bad-args guard.
-  recall: (dir, _sub, opts, rest) => cmdRecall(dir, rest.join(' '), opts),
+  recall: async (dir, _sub, opts, rest) =>
+    (await import('./planning/recall.mjs')).cmdRecall(dir, rest.join(' '), opts),
   // The record a `/cad-task` run leaves (FST-01). ONE word, never a two-word
   // spelling, for the reason the `adjudication` arm below states:
   // `subcommandKey` consumes a second word only for the `TWO_WORD` families.
-  'task-record': (dir, _sub, opts) => cmdTaskRecord(dir, opts),
-  'lease-check': (dir, _sub, opts) => cmdLeaseCheck(dir, opts),
+  'task-record': async (dir, _sub, opts) =>
+    (await import('./planning/task-record.mjs')).cmdTaskRecord(dir, opts),
+  'lease-check': async (dir, _sub, opts) =>
+    (await import('./planning/lease-check.mjs')).cmdLeaseCheck(dir, opts),
   // Plan paths are positional words, as `recall`'s query is, so the
   // subcommand declares no flag of its own.
-  'test-checks': (_dir, _sub, _opts, rest) => cmdTestChecks(rest),
-  'test-evidence': (_dir, _sub, _opts, rest) => cmdTestEvidence(rest),
+  'test-checks': async (_dir, _sub, _opts, rest) =>
+    (await import('./planning/test-checks.mjs')).cmdTestChecks(rest),
+  'test-evidence': async (_dir, _sub, _opts, rest) =>
+    (await import('./planning/test-checks.mjs')).cmdTestEvidence(rest),
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the
   // cwd, which would report a different tree than the caller named (#42/#45) -
@@ -310,54 +290,68 @@ const COMMANDS = {
   // thing the predicate did, trim clause included: `--root ""` answered
   // `ok:true` about the cwd and `--root "   "` fell through to a `no-root`
   // ENOENT, one refusal vocabulary answering in two.
-  'detect-commands': (_dir, _sub, opts) =>
-    cmdDetectCommands(typeof opts.root === 'string' ? opts.root : process.cwd()),
+  'detect-commands': async (_dir, _sub, opts) =>
+    (await import('./planning/detect-commands.mjs'))
+      .cmdDetectCommands(typeof opts.root === 'string' ? opts.root : process.cwd()),
   // Same --root row, same refusal, same door. `--answered` carries the set a
   // config layer already holds, so the re-entrant ask reaches the same option
   // rule the first fire does; absent means nobody has answered.
-  'detect-surfaces': (_dir, _sub, opts) =>
-    cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd(),
-      'answered' in opts ? opts.answered : undefined),
-  trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
-  'risk-check': (dir, sub, opts) => cmdRiskCheck(dir, sub, opts),
+  'detect-surfaces': async (_dir, _sub, opts) =>
+    (await import('./planning/detect-surfaces.mjs'))
+      .cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd(),
+        'answered' in opts ? opts.answered : undefined),
+  trace: async (dir, sub, opts) => (await import('./planning/trace.mjs')).cmdTrace(dir, sub, opts),
+  'risk-check': async (dir, sub, opts) =>
+    (await import('./planning/risk-check.mjs')).cmdRiskCheck(dir, sub, opts),
   // The gate fire's per-finding rulings, beside the sibling REVIEW file. ONE
   // word, never a two-word spelling: `subcommandKey` consumes a second word only
   // for the `TWO_WORD` families, and one operation does not earn widening it.
-  adjudication: (dir, _sub, opts) => cmdAdjudication(dir, opts),
+  adjudication: async (dir, _sub, opts) =>
+    (await import('./planning/adjudication.mjs')).cmdAdjudication(dir, opts),
   // The risk_surface rulings OUT of the phase directory a milestone close is
   // about to delete (LND-02). ONE word, never a two-word spelling, for the
   // reason the `adjudication` arm above states: `subcommandKey` consumes a
   // second word only for the `TWO_WORD` families, one operation does not earn
   // widening it, and widening it would change how every existing spelling
   // resolves.
-  'risk-carry': (dir, _sub, opts) => cmdRiskCarry(dir, opts),
+  'risk-carry': async (dir, _sub, opts) =>
+    (await import('./planning/risk-carry.mjs')).cmdRiskCarry(dir, opts),
   // The DEFERRED gate's queue member, beside that same REVIEW file. TWO words,
   // unlike `adjudication` above: this is one of three operations on the queue,
   // which is the `risk-check run|status` precedent for widening `TWO_WORD`
   // rather than the single-operation `adjudication` one.
-  deferred: (dir, sub, opts) => {
-    if (sub === 'record') return cmdDeferredRecord(dir, opts);
-    if (sub === 'list') return cmdDeferredList(dir, opts);
-    if (sub === 'carry') return cmdDeferredCarry(dir, opts);
+  deferred: async (dir, sub, opts) => {
+    if (sub === 'record') {
+      return (await import('./planning/deferred-record.mjs')).cmdDeferredRecord(dir, opts);
+    }
+    if (sub === 'list') return (await import('./planning/deferred-list.mjs')).cmdDeferredList(dir, opts);
+    if (sub === 'carry') {
+      return (await import('./planning/deferred-carry.mjs')).cmdDeferredCarry(dir, opts);
+    }
     return fail('usage', 'deferred record|list|carry');
   },
   // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
   // queue, which sits beside the global config layer and not in any `.planning`.
-  capture: (dir, _sub, opts) => cmdCapture(dir, opts),
+  capture: async (dir, _sub, opts) => (await import('./planning/capture.mjs')).cmdCapture(dir, opts),
   // Same `--file` override, and STANDALONE beside `status` rather than a
   // drift kind inside it (D-07) - see cmdCaptureSections.
-  'capture-sections': (dir, _sub, opts) => cmdCaptureSections(dir, opts),
+  'capture-sections': async (dir, _sub, opts) =>
+    (await import('./planning/capture-sections.mjs')).cmdCaptureSections(dir, opts),
   // ONE WORD, not `capture check`: `subcommandKey` consumes a second word only
   // for the families in `TWO_WORD`, and one operation does not earn widening
   // that Set. Standalone for the same reason its sibling is, and reporting
   // rather than refusing - see cmdCaptureCheck.
-  'capture-check': (dir, _sub, opts) => cmdCaptureCheck(dir, opts),
+  'capture-check': async (dir, _sub, opts) =>
+    (await import('./planning/capture-check.mjs')).cmdCaptureCheck(dir, opts),
   // --root, never --dir, for the reason stated above cmdDebtHarvest: it scans
   // SOURCE and writes into `.planning`. Same declared row, same door.
-  'debt-harvest': (_dir, _sub, opts) =>
-    cmdDebtHarvest(typeof opts.root === 'string' ? opts.root : process.cwd()),
-  renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
-  'milestone-prune': (dir, _sub, opts) => cmdMilestonePrune(dir, opts),
+  'debt-harvest': async (_dir, _sub, opts) =>
+    (await import('./planning/debt-harvest.mjs'))
+      .cmdDebtHarvest(typeof opts.root === 'string' ? opts.root : process.cwd()),
+  renumber: async (dir, sub, opts) =>
+    (await import('./planning/renumber.mjs')).cmdRenumber(dir, sub, opts),
+  'milestone-prune': async (dir, _sub, opts) =>
+    (await import('./planning/milestone-prune.mjs')).cmdMilestonePrune(dir, opts),
 };
 
 try {
@@ -432,7 +426,7 @@ try {
       + ' rearm` or `--event deferral` instead. Nothing was written');
   }
   else if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
-  else handler(args.values['--dir'] || '.planning', sub, opts, words.slice(1));
+  else await handler(args.values['--dir'] || '.planning', sub, opts, words.slice(1));
 } catch (e) {
   fail('internal', e && e.message ? e.message : String(e));
 }
