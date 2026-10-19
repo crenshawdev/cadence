@@ -144,7 +144,7 @@ test('subcommandKey: the words a script was invoked with, resolved to its table 
   // the same key for a spelling it finds in a workflow, and an adopting
   // dispatch has to reach the same row for the same words.
   const ROWS = [
-    [['cursor', 'set'], 'cursor set', 'the six two-word families consume their second word'],
+    [['cursor', 'set'], 'cursor set', 'a two-word key the table declares consumes its second word'],
     [['deferred', 'record'], 'deferred record', 'the sixth family: the deferred queue takes three operations'],
     [['trace', 'append'], 'trace append', 'the same, on the family with the most rows'],
     [['uat', 'record'], 'uat record', 'the same'],
@@ -156,9 +156,10 @@ test('subcommandKey: the words a script was invoked with, resolved to its table 
     [[], '', 'no words at all is the bare form'],
     [['--root', 'x'], '', "the bare form's first token is a FLAG: reading it as a subcommand "
       + 'reported unknown-subcommand on correct prose like weight.mjs --root <path>'],
+    [['trace', 'bogus'], 'trace', 'a second word the table does not declare is not consumed'],
   ];
   for (const [words, key, why] of ROWS) {
-    assert.equal(subcommandKey(words), key, `${JSON.stringify(words)} - ${why}`);
+    assert.equal(subcommandKey(words, CONTRACTS['planning.mjs']), key, `${JSON.stringify(words)} - ${why}`);
   }
 });
 

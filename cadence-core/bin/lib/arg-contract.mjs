@@ -340,13 +340,6 @@ export function requireFlag(argv, flag, spec) {
   return r.value;
 }
 
-// Subcommands whose first word takes a second word (sub-subcommand). This set
-// and the expression below it were self-verify.mjs's, beside the prose lint
-// that resolves a spelling it finds in a workflow; they live HERE because an
-// adopting dispatch has to resolve the SAME key to find its row, and two
-// spellings of one rule is the drift ARG-06 exists to end (D-06).
-const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check', 'deferred']);
-
 /**
  * Resolve a script's leading positional WORDS to the subcommand KEY its table
  * is filed under.
@@ -354,21 +347,23 @@ const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check', 'd
  * The BARE form - no words at all, or a first word that is really a flag -
  * resolves to the `''` key, which is what stops a reader taking a first flag
  * for a subcommand: `weight.mjs --root <path>` reported `unknown-subcommand`
- * until that arm existed. A second word is consumed ONLY for the six
- * two-word families, so `status --dir` keeps resolving to `status` and leaves
- * `--dir` to be read as a flag.
+ * until that arm existed. A second word is consumed only when the script's
+ * table declares the two-word key, so `cursor set` resolves to `cursor set`
+ * while `recall some query` resolves to `recall`. Both planning.mjs and
+ * self-verify.mjs's prose lint resolve through here, so they reach the same row
+ * for the same words.
  *
- * It answers about SPELLING alone and never about membership: a key no table
- * declares comes back unchanged, and the caller decides whether an unknown
- * subcommand is a refusal (planning.mjs's `usage` line) or a report
+ * A key the table does not declare comes back as the first word, and the caller
+ * decides whether that is a refusal (planning.mjs's `usage` line) or a report
  * (self-verify.mjs's `unknown-subcommand` problem).
  * @param {string[]} words the positional words, subcommand first
+ * @param {Record<string, unknown>} table the script's `CONTRACTS` row
  * @returns {string} the table key, `''` for the bare form
  */
-export function subcommandKey(words) {
+export function subcommandKey(words, table) {
   const [w1, w2] = words || [];
   if (!w1 || w1.startsWith('-')) return '';
-  return TWO_WORD.has(w1) && w2 ? `${w1} ${w2}` : w1;
+  return w2 && table && Object.prototype.hasOwnProperty.call(table, `${w1} ${w2}`) ? `${w1} ${w2}` : w1;
 }
 
 /**
@@ -649,11 +644,7 @@ export const CONTRACTS = {
       '--max-bytes': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
     // THE READ-BACK COUNT (RBK-01): what the retrieval pass put in front of the
-    // planner, against what the produced plan cites. ONE WORD, never a two-word
-    // spelling: `subcommandKey` consumes a second word only for the families in
-    // `TWO_WORD`, and one operation does not earn widening that Set - the
-    // `adjudication` row below is the precedent, and `plan-overlap`,
-    // `lease-check` and `criteria-coverage` are the older ones.
+    // planner, against what the produced plan cites.
     //
     // `--payload` is a FILE and never inline JSON, the rule the `adjudication`
     // row states in full: the payload is a retrieval envelope carrying verbatim
@@ -691,11 +682,8 @@ export const CONTRACTS = {
     // `--plan-time` selects the PLAN-TIME arm (CEN-02): the same operation
     // asked before an executor runs, against the plan's declared lease and the
     // census registry, instead of after the fact against the staged set. A
-    // FLAG and never a `lease-check plan` second word, for the reason this
-    // file's header states and the `cite-count` row above repeats:
-    // `subcommandKey` consumes a second word only for the families in
-    // `TWO_WORD`, `lease-check` is one of the one-word precedents it names,
-    // and one operation does not earn widening that Set.
+    // FLAG, not a `lease-check plan` second word, because it is the same
+    // operation asked at a different time.
     //
     // `--plan` stays REQUIRED on both arms, and that is not an oversight of
     // the optional arm: both arms name a plan FILE on disk and neither can
@@ -729,10 +717,7 @@ export const CONTRACTS = {
     },
     // THE RECORD A `/cad-task` RUN LEAVES (FST-01): the fast path's own artifact
     // under `.planning/tasks/<slug>/`, written so the recall corpus and
-    // `/cad-why` can both reach it. ONE WORD, never a two-word spelling:
-    // `subcommandKey` consumes a second word only for the families in
-    // `TWO_WORD`, and one operation does not earn widening that Set - the
-    // `adjudication` row above is the precedent.
+    // `/cad-why` can both reach it.
     //
     // `--slug` is joined onto a directory path, so its grammar is a REFUSAL and
     // not a trim: one path segment or nothing written. The declaration cannot
@@ -818,10 +803,7 @@ export const CONTRACTS = {
       '--staged': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
     // THE ADJUDICATION RECORD a blocking or adjudicated gate fire leaves beside
-    // its sibling `REVIEW-<trigger>-<discriminator>.md`. ONE WORD, never `record
-    // write`: `subcommandKey` consumes a second word only for the families in
-    // `TWO_WORD`, and one operation does not earn widening that Set -
-    // `plan-overlap`, `lease-check` and `criteria-coverage` are the precedent.
+    // its sibling `REVIEW-<trigger>-<discriminator>.md`.
     //
     // `--payload` is a FILE and never inline JSON: the record's whole content is
     // verbatim reviewer text with arbitrary quoting, so one unescaped quote in a
@@ -868,8 +850,7 @@ export const CONTRACTS = {
     // and `--round` keeps a re-arm's member off round one's file.
     //
     // TWO WORDS, unlike `adjudication`: the queue takes three operations
-    // (`record`, then `list` and `carry`), which is the `risk-check run|status`
-    // precedent for widening `TWO_WORD` rather than the single-operation one.
+    // (`record`, then `list` and `carry`), the `risk-check run|status` shape.
     'deferred record': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--trigger': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -915,10 +896,6 @@ export const CONTRACTS = {
     // one the caller meant. It takes no other flag - the SET it copies is
     // derived from the phase directory's own contents, never named on the
     // command line, so no argument can widen it past the `risk_surface` trigger.
-    //
-    // ONE WORD, unlike `deferred carry`: `subcommandKey` consumes a second word
-    // only for the families in `TWO_WORD`, this is a single operation, and
-    // widening that Set would change how every existing spelling resolves.
     'risk-carry': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
@@ -1109,9 +1086,7 @@ export const CONTRACTS = {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // The health verdict over the same file, and the same `--file` override.
-    // ONE WORD, never `capture check`: `subcommandKey` consumes a second word
-    // only for the families in `TWO_WORD`, and one operation does not earn
-    // widening that Set. No flag names the BOUND, and that absence is the
+    // No flag names the BOUND, and that absence is the
     // point - the bound is `planning.max_capture_bullets` in the config layer,
     // so a flag here would be a second, un-layered way to set one and a run's
     // report would stop agreeing with the project's own configured number.

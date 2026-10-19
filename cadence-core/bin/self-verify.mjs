@@ -757,7 +757,7 @@ function run(root) {
       // bare form. Reading it as a subcommand reported `unknown-subcommand` on
       // correct prose like `weight.mjs --root <path>`.
       const bare = w1.startsWith('-');
-      const sub = subcommandKey([w1, w2]);
+      const sub = subcommandKey([w1, w2], contract);
       if (!contract[sub]) {
         problems.push({ kind: 'unknown-subcommand', file: rel,
           detail: `${script} ${bare ? '(bare form)' : sub}` });
