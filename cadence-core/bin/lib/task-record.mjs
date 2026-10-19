@@ -35,8 +35,9 @@
 // range rewrite a byte-identical file instead of accumulating one.
 'use strict';
 
-import { readdirSync, realpathSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { insideRoot } from './contained.mjs';
 
 /** The directory a task's artifacts live under, beside `phases/` (D-01). A
  * TRACKED tree: `.gitignore` withholds `CAPTURE.md` outright, and `phases/0/`
@@ -78,40 +79,6 @@ export function isTaskSlug(raw) {
   if (typeof raw !== 'string') return false;
   if (!raw || raw.length > MAX_SLUG_LENGTH) return false;
   return SLUG.test(raw);
-}
-
-/**
- * Does `p` RESOLVE inside `planningRoot`? The lister's own containment rule,
- * lifted out so the WRITER answers it too. Validating a slug stops lexical
- * traversal and nothing else: `tasks/<slug>` can already BE a symlink - git
- * carries symlinks, so a cloned repo ships one - and `mkdirSync(recursive)`
- * follows it without complaint, which put the record outside the tree the
- * reader would never have read it from. `atomicWrite` does not close that: it
- * `lstat`s its own TEMP path, so it refuses a symlinked destination FILE and
- * says nothing about a symlinked parent DIRECTORY.
- *
- * `realpathSync` on BOTH sides, and a `sep` on the prefix, so `.planning-old`
- * is not read as living inside `.planning`. An unresolvable path answers
- * `false` - the reader's arm, and the safe one for a writer: a path that
- * cannot be resolved has not been shown to be contained.
- *
- * @param {string} planningRoot
- * @param {string} p
- * @returns {boolean}
- */
-export function insideRoot(planningRoot, p) {
-  let root;
-  try {
-    root = realpathSync(planningRoot);
-  } catch {
-    root = planningRoot;
-  }
-  try {
-    const real = realpathSync(p);
-    return real === root || real.startsWith(root.endsWith(sep) ? root : root + sep);
-  } catch {
-    return false;
-  }
 }
 
 /**

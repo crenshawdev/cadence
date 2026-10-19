@@ -20,8 +20,9 @@
 // by a version it never published. The caller now states which project root the
 // answer has to belong to, and an answer from outside it is no answer.
 import { execFileSync } from 'node:child_process';
-import { resolve, sep } from 'node:path';
+import { resolve } from 'node:path';
 import { realpathSync } from 'node:fs';
+import { within } from './contained.mjs';
 
 /**
  * The path with its symlinks resolved, or the absolute path when it cannot be:
@@ -33,15 +34,6 @@ import { realpathSync } from 'node:fs';
  */
 function physical(p) {
   try { return realpathSync(resolve(p)); } catch { return resolve(p); }
-}
-
-/**
- * Is `top` the project root `root`, or a directory inside it? Segment-wise, so
- * `/a/bc` is not read as inside `/a/b`.
- * @param {string} top @param {string} root @returns {boolean}
- */
-function within(top, root) {
-  return top === root || top.startsWith(root.endsWith(sep) ? root : root + sep);
 }
 
 /**

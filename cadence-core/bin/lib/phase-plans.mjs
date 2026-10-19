@@ -29,8 +29,9 @@
 // which withholds the blocking plan review and the deep pass entirely.
 'use strict';
 
-import { lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { insideRoot } from './contained.mjs';
 import { parseCursor, readFrontmatterList } from './planning-files.mjs';
 
 // The byte bound a PLAN file is read under, matching `route.mjs`'s
@@ -213,20 +214,7 @@ export function phaseDirsIn(planningRoot) {
   // legitimately symlinked archive inside the root working while an escape is
   // skipped. Fails OPEN like every other arm here: a path that cannot be
   // resolved contributes nothing and throws nothing.
-  let root;
-  try {
-    root = realpathSync(planningRoot);
-  } catch {
-    root = planningRoot;
-  }
-  const inside = (/** @type {string} */ dir) => {
-    try {
-      const real = realpathSync(dir);
-      return real === root || real.startsWith(root.endsWith(sep) ? root : root + sep);
-    } catch {
-      return false;
-    }
-  };
+  const inside = (/** @type {string} */ dir) => insideRoot(planningRoot, dir);
   const groups = ['phases', ...entriesIn(planningRoot).filter((e) => ARCHIVE_DIR.test(e))];
   const found = [];
   for (const group of groups) {
