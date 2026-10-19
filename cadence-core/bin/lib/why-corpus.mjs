@@ -782,12 +782,46 @@ function markPresence(repoDir, rows) {
 }
 
 /**
+ * Many `<rev>:<path>` blobs read in one `git cat-file --batch` process, in the
+ * order asked. Each answer is the blob's text, or null where git reports the
+ * spec missing or the batch cannot run. The framing is `<oid> <type> <size>`,
+ * then exactly `<size>` bytes and a newline, so the content is cut by byte
+ * count and never by searching for the next header.
+ * @param {string} repoDir @param {string[]} specs @returns {(string|null)[]}
+ */
+function catBlobs(repoDir, specs) {
+  if (!specs.length) return [];
+  let buf;
+  try {
+    buf = execFileSync('git', ['-C', repoDir, 'cat-file', '--batch'],
+      { input: `${specs.join('\n')}\n`, maxBuffer: 256 * 1024 * 1024, stdio: ['pipe', 'pipe', 'ignore'] });
+  } catch {
+    return specs.map(() => null);
+  }
+  /** @type {(string|null)[]} */
+  const out = [];
+  let at = 0;
+  for (let i = 0; i < specs.length; i++) {
+    const nl = buf.indexOf(0x0a, at);
+    if (nl < 0) { out.push(null); continue; }
+    const header = buf.subarray(at, nl).toString('utf8');
+    at = nl + 1;
+    const m = /^[0-9a-f]+ [a-z]+ (\d+)$/.exec(header);
+    if (!m) { out.push(null); continue; } // `<spec> missing` carries no body
+    const size = Number(m[1]);
+    out.push(buf.subarray(at, at + size).toString('utf8'));
+    at += size + 1;
+  }
+  return out;
+}
+
+/**
  * The reverse commit-to-phase map, recovered from git history alone.
  *
- * ONE pass for the closes (`findPruneCommits`), then one `git show
- * <prune>^:<path>` per deleted phase summary - 79 of them in this repository,
- * measured at 76 ms total on 2026-08-23, which is what makes the eager form
- * D-05 chose cheaper than the lazy one it rejected.
+ * ONE pass for the closes (`findPruneCommits`), then every deleted phase
+ * summary read back in ONE `git cat-file --batch` (`catBlobs`). One `git show`
+ * per summary cost 99 ms of a 168 ms `/cad-why` run on this repository's 123
+ * summaries (2026-10-19); the batch reads them in about 5 ms.
  *
  * @param {string} repoDir
  * @returns {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[], prunes: PruneCommit[]}}
@@ -798,19 +832,22 @@ export function buildRecoveredIndex(repoDir) {
   const dirs = [];
   /** @type {IndexRow[]} */
   const rows = [];
+  const wanted = [];
   for (const prune of prunes) {
     if (!prune.parent) continue; // already named in `warnings` by the refusal
-    for (const { phase, path } of prune.phases) {
-      const dir = recoveredDir(prune, phase, path);
-      const out = git(repoDir, ['show', `${prune.parent}:${path}`]);
-      if (!out.ok) {
-        warnings.push(`${path} could not be recovered from ${prune.parent.slice(0, 8)}; its commits are not indexed`);
-        continue;
-      }
-      dirs.push(dir);
-      for (const row of parseCommitRows(out.stdout)) rows.push({ ...row, dir });
-    }
+    for (const { phase, path } of prune.phases) wanted.push({ prune, phase, path });
   }
+  const texts = catBlobs(repoDir, wanted.map(({ prune, path }) => `${prune.parent}:${path}`));
+  wanted.forEach(({ prune, phase, path }, i) => {
+    const text = texts[i];
+    if (text === null) {
+      warnings.push(`${path} could not be recovered from ${prune.parent.slice(0, 8)}; its commits are not indexed`);
+      return;
+    }
+    const dir = recoveredDir(prune, phase, path);
+    dirs.push(dir);
+    for (const row of parseCommitRows(text)) rows.push({ ...row, dir });
+  });
   markPresence(repoDir, rows);
   // `prunes` rides the index because the NAMED GAP below needs the same closes
   // - which milestone a gap sits under is read off them, and searching twice
