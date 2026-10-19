@@ -256,9 +256,7 @@ const COMMANDS = {
     (await import('./planning/replay-check.mjs')).cmdReplayCheck(dir, opts),
   'plan-size': async (dir, _sub, opts) =>
     (await import('./planning/plan-size.mjs')).cmdPlanSize(dir, opts),
-  // The read-back count (RBK-01). ONE word, never a two-word spelling, for the
-  // reason the `adjudication` arm below states: `subcommandKey` consumes a
-  // second word only for the `TWO_WORD` families.
+  // The read-back count (RBK-01).
   'cite-count': async (dir, _sub, opts) =>
     (await import('./planning/cite-count.mjs')).cmdCiteCount(dir, opts),
   'seed-reqs': async (dir, _sub, opts) =>
@@ -269,9 +267,7 @@ const COMMANDS = {
   // immaterial; `[].join(' ')` is '', which still trips the bad-args guard.
   recall: async (dir, _sub, opts, rest) =>
     (await import('./planning/recall.mjs')).cmdRecall(dir, rest.join(' '), opts),
-  // The record a `/cad-task` run leaves (FST-01). ONE word, never a two-word
-  // spelling, for the reason the `adjudication` arm below states:
-  // `subcommandKey` consumes a second word only for the `TWO_WORD` families.
+  // The record a `/cad-task` run leaves (FST-01).
   'task-record': async (dir, _sub, opts) =>
     (await import('./planning/task-record.mjs')).cmdTaskRecord(dir, opts),
   'lease-check': async (dir, _sub, opts) =>
@@ -303,23 +299,15 @@ const COMMANDS = {
   trace: async (dir, sub, opts) => (await import('./planning/trace.mjs')).cmdTrace(dir, sub, opts),
   'risk-check': async (dir, sub, opts) =>
     (await import('./planning/risk-check.mjs')).cmdRiskCheck(dir, sub, opts),
-  // The gate fire's per-finding rulings, beside the sibling REVIEW file. ONE
-  // word, never a two-word spelling: `subcommandKey` consumes a second word only
-  // for the `TWO_WORD` families, and one operation does not earn widening it.
+  // The gate fire's per-finding rulings, beside the sibling REVIEW file.
   adjudication: async (dir, _sub, opts) =>
     (await import('./planning/adjudication.mjs')).cmdAdjudication(dir, opts),
   // The risk_surface rulings OUT of the phase directory a milestone close is
-  // about to delete (LND-02). ONE word, never a two-word spelling, for the
-  // reason the `adjudication` arm above states: `subcommandKey` consumes a
-  // second word only for the `TWO_WORD` families, one operation does not earn
-  // widening it, and widening it would change how every existing spelling
-  // resolves.
+  // about to delete (LND-02).
   'risk-carry': async (dir, _sub, opts) =>
     (await import('./planning/risk-carry.mjs')).cmdRiskCarry(dir, opts),
-  // The DEFERRED gate's queue member, beside that same REVIEW file. TWO words,
-  // unlike `adjudication` above: this is one of three operations on the queue,
-  // which is the `risk-check run|status` precedent for widening `TWO_WORD`
-  // rather than the single-operation `adjudication` one.
+  // The DEFERRED gate's queue: three operations, so two words, the
+  // `risk-check run|status` shape.
   deferred: async (dir, sub, opts) => {
     if (sub === 'record') {
       return (await import('./planning/deferred-record.mjs')).cmdDeferredRecord(dir, opts);
@@ -337,10 +325,8 @@ const COMMANDS = {
   // drift kind inside it (D-07) - see cmdCaptureSections.
   'capture-sections': async (dir, _sub, opts) =>
     (await import('./planning/capture-sections.mjs')).cmdCaptureSections(dir, opts),
-  // ONE WORD, not `capture check`: `subcommandKey` consumes a second word only
-  // for the families in `TWO_WORD`, and one operation does not earn widening
-  // that Set. Standalone for the same reason its sibling is, and reporting
-  // rather than refusing - see cmdCaptureCheck.
+  // Standalone for the same reason its sibling is, and reporting rather than
+  // refusing - see cmdCaptureCheck.
   'capture-check': async (dir, _sub, opts) =>
     (await import('./planning/capture-check.mjs')).cmdCaptureCheck(dir, opts),
   // --root, never --dir, for the reason stated above cmdDebtHarvest: it scans
@@ -406,7 +392,7 @@ try {
   // planning/trace.mjs - that states it carries no runtime refusal keyed to an
   // event name, and planning/risk-check.mjs's `if (e.event === 'override')` arm
   // is the shipped precedent for the same knowledge living outside it.
-  const key = subcommandKey(words);
+  const key = subcommandKey(words, CONTRACTS['planning.mjs']);
   const args = evaluateRow(ARGV, CONTRACTS['planning.mjs'], key);
   const owed = evaluatePresence(ARGV, PRESENCE_RULES['planning.mjs'], key);
   const handler = COMMANDS[cmd];
