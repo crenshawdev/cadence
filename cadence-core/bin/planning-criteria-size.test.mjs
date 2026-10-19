@@ -10,24 +10,13 @@
 // a sibling that imports a fixture from here registers nothing twice.
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { makeTree, run } from './planning.test.mjs';
+import { makeTree, run, isEntryFile } from './planning.test.mjs';
 import { blockPlanTree } from './planning-plans.test.mjs';
 
-/** True iff this module is what node was told to run; realpath on both sides so
- * a symlinked checkout still matches (config-seams.test.mjs D-19). */
-function isEntryFile() {
-  const argv1 = process.argv[1];
-  if (typeof argv1 !== 'string' || argv1 === '') return false;
-  try {
-    return pathToFileURL(realpathSync(argv1)).href === pathToFileURL(realpathSync(fileURLToPath(import.meta.url))).href;
-  } catch { return false; }
-}
-
 /** `node:test`'s `test` when run directly, a no-op when imported (see header). */
-const test = isEntryFile() ? nodeTest : () => {};
+const test = isEntryFile(import.meta.url) ? nodeTest : () => {};
 
 // --- criteria-size: the criteria ceilings three workflows only stated --------
 // The prose said 3-7 and 2-5 and nothing counted either. Both grammars are

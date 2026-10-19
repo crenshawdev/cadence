@@ -7,24 +7,14 @@
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { PLANNING } from './planning.test.mjs';
+import { fileURLToPath } from 'node:url';
+import { PLANNING, isEntryFile } from './planning.test.mjs';
 import { parseTestChecks } from './planning/test-checks.mjs';
 
-/** True iff this module IS the entry file, so a sibling importing from here
- * registers nothing twice (the rule every test file in this directory keeps). */
-function isEntryFile() {
-  const argv1 = process.argv[1];
-  if (typeof argv1 !== 'string' || argv1 === '') return false;
-  try {
-    return pathToFileURL(realpathSync(argv1)).href
-      === pathToFileURL(realpathSync(fileURLToPath(import.meta.url))).href;
-  } catch { return false; }
-}
-const test = isEntryFile() ? nodeTest : () => {};
+const test = isEntryFile(import.meta.url) ? nodeTest : () => {};
 
 const MAP_HEAD = '| Criterion | Task | Command | Test file | Function | Expected | Unit and fakes | Break |\n'
   + '|---|---|---|---|---|---|---|---|\n';

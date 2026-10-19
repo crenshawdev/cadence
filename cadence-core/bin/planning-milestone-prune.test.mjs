@@ -10,24 +10,13 @@
 // a sibling that imports a fixture from here registers nothing twice.
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, existsSync, realpathSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { makeTree, run } from './planning.test.mjs';
+import { makeTree, run, isEntryFile } from './planning.test.mjs';
 import { archive } from './planning-recall.test.mjs';
 
-/** True iff this module is what node was told to run; realpath on both sides so
- * a symlinked checkout still matches (config-seams.test.mjs D-19). */
-function isEntryFile() {
-  const argv1 = process.argv[1];
-  if (typeof argv1 !== 'string' || argv1 === '') return false;
-  try {
-    return pathToFileURL(realpathSync(argv1)).href === pathToFileURL(realpathSync(fileURLToPath(import.meta.url))).href;
-  } catch { return false; }
-}
-
 /** `node:test`'s `test` when run directly, a no-op when imported (see header). */
-const test = isEntryFile() ? nodeTest : () => {};
+const test = isEntryFile(import.meta.url) ? nodeTest : () => {};
 
 // --- milestone-prune: the --label guard -----------------------------------------
 // The seam's transforms and its happy paths live in milestone-prune.test.mjs;

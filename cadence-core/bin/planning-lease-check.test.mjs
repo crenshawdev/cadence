@@ -11,24 +11,13 @@
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, renameSync, realpathSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, renameSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { PLANNING, seamSource, run } from './planning.test.mjs';
-
-/** True iff this module is what node was told to run; realpath on both sides so
- * a symlinked checkout still matches (config-seams.test.mjs D-19). */
-function isEntryFile() {
-  const argv1 = process.argv[1];
-  if (typeof argv1 !== 'string' || argv1 === '') return false;
-  try {
-    return pathToFileURL(realpathSync(argv1)).href === pathToFileURL(realpathSync(fileURLToPath(import.meta.url))).href;
-  } catch { return false; }
-}
+import { PLANNING, seamSource, run, isEntryFile } from './planning.test.mjs';
 
 /** `node:test`'s `test` when run directly, a no-op when imported (see header). */
-const test = isEntryFile() ? nodeTest : () => {};
+const test = isEntryFile(import.meta.url) ? nodeTest : () => {};
 
 // --- lease-check: the declared file lease, enforced (QW-03) ------------------
 
