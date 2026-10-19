@@ -75,9 +75,6 @@ import { parseArchiveRows } from './planning-files.mjs';
 import { RECORD_FILE, TASKS_DIR, taskRecordsIn } from './task-record.mjs';
 import { parseAdjudication, parseCommitRows, shaMatches } from './why-record.mjs';
 
-/** The three states `resolveCommit` answers in, and deliberately no fourth. */
-export const RESOLUTIONS = Object.freeze(['resolved', 'ambiguous', 'unresolved']);
-
 /**
  * Read one artifact under the planning root, refusing anything that is not a
  * regular file BEFORE opening it.
@@ -555,7 +552,7 @@ export function rangeMembers(repoDir, base, head) {
 // ---------------------------------------------------------------------------
 
 /** The pathspec a milestone close deletes when it prunes a phase directory. */
-export const PRUNED_SUMMARY = '.planning/phases/*/SUMMARY.md';
+const PRUNED_SUMMARY = '.planning/phases/*/SUMMARY.md';
 
 /** The record separator that lets `--name-only`'s path lines be told apart
  * from the next commit's header - `\x01`, matching `LOG_FORMAT`'s use of

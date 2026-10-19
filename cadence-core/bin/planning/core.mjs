@@ -31,7 +31,6 @@ import { parseUat, uatComplete } from '../lib/planning-files.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
-import { RUNG_ORDER } from '../lib/rung-agent.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { testSeamOpen } from '../lib/test-seam.mjs';
 
@@ -451,7 +450,7 @@ const DISPATCH_WINDOW_DEFAULTS = Object.freeze({
 // The schema row whose `values` array IS each named ladder, now that the grids
 // keyed on a routing level are gone and every one of these vocabularies has
 // exactly one statement in the repo. An EXPLICIT map rather than a default
-// branch: `routeLadder` answers three different callers, and a key that fell
+// branch: `routeLadder` answers two different callers, and a key that fell
 // through to whichever row was hardcoded would hand one caller another's
 // vocabulary - measured here as `risk-check` reading the gate ladder as its
 // surface list and refusing every configured answer as unrecognised.
@@ -473,9 +472,6 @@ const LADDER_ROWS = Object.freeze({
  * suggestion tells a user to set a review gate to and which surface tokens a
  * blocking gate's scope may name.
  *
- * `rung_order` is `RUNG_ORDER` from lib/rung-agent.mjs, the one statement of
- * the rung ladder the agent-file map is held against.
- *
  * A schema that cannot be read or parsed degrades to NO ladder, which makes the
  * gate arm omit `proposed`. That omission is the report; no ladder is
  * substituted from memory here.
@@ -485,7 +481,6 @@ const LADDER_ROWS = Object.freeze({
 function routeLadder(key) {
   const ok = (ladder) => (Array.isArray(ladder) && ladder.length
     && ladder.every((g) => typeof g === 'string' && g) ? [...ladder] : undefined);
-  if (key === 'rung_order') return ok(RUNG_ORDER);
   const row = Object.prototype.hasOwnProperty.call(LADDER_ROWS, key) ? LADDER_ROWS[key] : null;
   if (!row) return undefined;
   try {

@@ -35,7 +35,7 @@ import { gitInvocations, planningRoot } from './lib/git-segments.mjs';
 // '' rather than throwing, which matters most HERE: main()'s catch swallows
 // everything, so a throwing reader would make this hook stop guarding in
 // silence.
-let mergeLayers, GLOBAL_CONFIG, resolveProtectedBranches, readCurrentBranch;
+let mergeLayers, resolveProtectedBranches, readCurrentBranch;
 
 function decide(decision, reason) {
   process.stdout.write(JSON.stringify({
@@ -72,7 +72,7 @@ function commitDecision(root, cwd) {
   // mergeLayers warnings[]: taken off the call and ACTED ON below, not dropped.
   // A layer that failed to parse is exactly the layer whose protected_branches
   // and on_protected this function was about to decide with.
-  const { config, warnings } = mergeLayers(repoLayer);
+  const { config, warnings, tornLayers } = mergeLayers(repoLayer);
   const git = config.git || {};
 
   // Keyed on a config layer having failed to parse (D-17) and NOT on a
@@ -100,24 +100,10 @@ function commitDecision(root, cwd) {
   // the global arm on "would the global layer have decided anything here" - that
   // is unprovable by construction, since the layer could not be read.
   //
-  // ANCHORED on both ends, never a bare `includes(<path>)`. A mergeLayers
-  // warning is a FLAT STRING with no layer field, shaped `config layer <path>
-  // failed to parse...` or `config layer <path> top-level is not an object...`
-  // (lib/config-merge.mjs:55, :162), so a bare containment reads a GLOBAL-layer
-  // warning as a torn repo layer whenever the global path has the repo path as
-  // a prefix (`CADENCE_GLOBAL_CONFIG=<root>/.planning/config.json.global`) or as
-  // a suffix (`<elsewhere>/<root>/.planning/config.json`). Both layers ask now,
-  // so that conflation no longer changes the decision - but it would still put
-  // the WRONG path in the prompt, sending the user to fix a file that parsed
-  // fine. The path must be followed by the space that delimits it from the
-  // diagnosis. An empty GLOBAL_CONFIG contributes no prefix at all: `homedir()`
-  // throws where the uid has no passwd entry and config-merge degrades it to
-  // `''` (lib/config-merge.mjs:22-26), and `config layer  ` must never match a
-  // real path.
-  const tornPrefixes = [`config layer ${repoLayer} `];
-  if (GLOBAL_CONFIG) tornPrefixes.push(`config layer ${GLOBAL_CONFIG} `);
-  const torn = (warnings || []).filter(
-    (w) => typeof w === 'string' && tornPrefixes.some((p) => w.startsWith(p)));
+  // `tornLayers` names the layer files that could not be used, and every
+  // `warnings` entry is the message for one of them, so the first warning is
+  // the one to show.
+  const torn = tornLayers.length ? warnings : [];
   // One coercion for all four readers (lib/protected-branches.mjs), which
   // carries the #38 lone-string reasoning this callsite used to state inline.
   const protectedBranches = resolveProtectedBranches(git);
@@ -230,7 +216,7 @@ async function main() {
   }
 
   if (!verbs.includes('commit')) return;
-  ({ mergeLayers, GLOBAL_CONFIG } = await import('./lib/config-merge.mjs'));
+  ({ mergeLayers } = await import('./lib/config-merge.mjs'));
   ({ resolveProtectedBranches } = await import('./lib/protected-branches.mjs'));
   ({ readCurrentBranch } = await import('./lib/git-head.mjs'));
 

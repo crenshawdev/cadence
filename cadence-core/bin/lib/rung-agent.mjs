@@ -359,7 +359,7 @@ export function rungBody(skill) {
  * @param {string} text
  * @returns {string}
  */
-export function normalizeBody(text) {
+function normalizeBody(text) {
   return String(text === undefined || text === null ? '' : text).replace(/\s+/g, ' ').trim();
 }
 

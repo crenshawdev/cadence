@@ -54,7 +54,7 @@ function isUniversal(reach) {
 }
 
 /** The heading the reach rows live under. */
-export const ROWS_HEADING = '## Reach rows';
+const ROWS_HEADING = '## Reach rows';
 
 /**
  * @typedef {object} ReachRow

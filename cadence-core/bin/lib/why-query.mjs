@@ -76,20 +76,6 @@
 
 import { requireInt } from './require-int.mjs';
 
-/** The refusal reasons `parseQuery` names, each reached by exactly one
- * branch below so two different inputs cannot report the same reason for
- * different mistakes. */
-export const QUERY_REASONS = Object.freeze([
-  'empty-path', 'trailing-colon', 'negative-line', 'non-integer-line', 'zero-line',
-]);
-
-/** The outcomes `classifyResult` names. `ok` means the caller's own stdout is
- * the answer; the other three are stated results the caller emits instead of
- * letting a raw git byte, or a silently empty chain, reach its envelope. */
-export const RESULT_OUTCOMES = Object.freeze([
-  'ok', 'not-in-history', 'line-past-end', 'git-failed',
-]);
-
 /** Shared `--format` for both git arms: full sha, strict-ISO commit date,
  * subject, joined by the ASCII unit separator. One record per line - git's
  * own default framing for a `--format` string with no explicit terminator. */

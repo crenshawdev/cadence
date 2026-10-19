@@ -36,6 +36,7 @@ import {
   ROTATED_READS_FILE, inDispatchReads, joinReads,
 } from '../lib/read-trace.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
+import { RUNG_ORDER } from '../lib/rung-agent.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
 import { FAMILIES, ROTATED_TRACE_FILE, appendEvent, correlationId, renderTrace } from '../lib/trace.mjs';
@@ -351,16 +352,6 @@ function gateLadder() {
 }
 
 /**
- * The rung ladder `lib/rung-agent.mjs` states, on the same terms as the gate
- * one: R3 compares its target against the rung a config layer set, and an
- * absent ladder omits the target rather than substituting an order from memory.
- * @returns {string[]|undefined}
- */
-function rungLadder() {
-  return routeLadder('rung_order');
-}
-
-/**
  * The task count of the plan a `cad-executor` checkpoint names, or `null` when
  * the checkpoint maps to no readable plan - UNKNOWN, never under-ceiling
  * (D-09). Unknown is the common case and stays so: a `plan` that is a WORKER
@@ -441,8 +432,8 @@ function suggestResolution(dir, render, config) {
   set('workflow.max_plan_tasks',
     config?.workflow?.max_plan_tasks ?? SUGGEST_KEY_DEFAULTS['workflow.max_plan_tasks']);
   const gates = gateLadder();
-  const rungs = rungLadder();
-  return { values, ...(gates ? { gates } : {}), ...(rungs ? { rungs } : {}), checkpointTasks };
+  // R3 compares its target against the rung a config layer set.
+  return { values, ...(gates ? { gates } : {}), rungs: [...RUNG_ORDER], checkpointTasks };
 }
 
 // The grammar the SHARED `trace append|close` body judges its string flags by,
