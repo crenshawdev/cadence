@@ -1435,7 +1435,10 @@ export function renderTrace(planningRoot, phase) {
   /** @type {TraceRender} */
   const out = {
     file,
-    corr: wanted === null ? null : correlationId(planningRoot, phase),
+    // Refined from the phase's newest anchor during pass 1 below, which reads
+    // the same lines `correlationId` would; a record that cannot be read keeps
+    // the bare phase key, which is what `correlationId` answers for one.
+    corr: wanted,
     capped: false,
     counts: { routing: 0, provider: 0, lifecycle: 0, outcome: 0 },
     malformed: 0,
@@ -1527,6 +1530,8 @@ export function renderTrace(planningRoot, phase) {
 
   /** @type {any} the newest rotation marker in the record, or null for never */
   let rotated = null;
+  /** @type {any} the requested phase's newest anchor, or null for none */
+  let anchor = null;
 
   // PASS 1 - parse, scope, count. The accounting is a SECOND pass over the same
   // parsed objects because the repair between them needs to see events that come
@@ -1545,6 +1550,7 @@ export function renderTrace(planningRoot, phase) {
     // in line order is simply the last one seen.
     if (e.family === 'lifecycle' && e.event === ROTATION) rotated = e;
     if (wanted !== null && key(e.phase) !== wanted) continue;
+    if (e.family === 'lifecycle' && e.event === ANCHOR) anchor = e;
     out.events.push(e);
     if (Object.prototype.hasOwnProperty.call(out.counts, e.family)) out.counts[e.family]++;
   }
@@ -1556,6 +1562,8 @@ export function renderTrace(planningRoot, phase) {
   // in, and a field that pointed a reader at a path nobody read would be worse
   // than no field. Nothing opens it either way - no reader in the tree reads
   // the rotated generation.
+  if (anchor && typeof anchor.sha === 'string' && anchor.sha) out.corr = `${wanted}-${anchor.sha}`;
+
   if (rotated) out.rotated = { file: rotatedTracePath(planningRoot), ts: rotated.ts };
 
   // PASS 2 - the PRE-ANCHOR repair, at READ time only (D-01). /cad-plan's
