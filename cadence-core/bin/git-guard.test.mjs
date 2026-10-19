@@ -485,9 +485,10 @@ test('census: no gate value reaches the protected-branch guard (D-11)', () => {
   // The bypass the two rules above cannot see: importing the resolver and
   // handing it a config, so no gate name and no config path is ever spelled
   // here. The import set is pinned whole - a new dependency in this file is
-  // the rail moving, whatever it is for.
-  const imports = (GUARD_SRC.match(new RegExp("from '[^']+'", 'g')) || [])
-    .map((m) => m.slice(6, -1));
+  // the rail moving, whatever it is for. It counts the commit rail's
+  // `import('...')` loads as well as the static `from '...'` ones.
+  const imports = (GUARD_SRC.match(new RegExp("(?:from |import\\()'[^']+'", 'g')) || [])
+    .map((m) => m.slice(m.indexOf("'") + 1, -1));
   assert.deepEqual([...new Set(imports)].sort(), [
     './lib/config-merge.mjs',
     './lib/git-head.mjs',

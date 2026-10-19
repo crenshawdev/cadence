@@ -27,14 +27,15 @@
 import { existsSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { mergeLayers, GLOBAL_CONFIG } from './lib/config-merge.mjs';
 import { gitInvocations, planningRoot } from './lib/git-segments.mjs';
-import { resolveProtectedBranches } from './lib/protected-branches.mjs';
-// The current-branch reader lives in lib/ because three seams ask this same
-// question. It degrades to '' rather than throwing, which matters most HERE:
-// main()'s catch swallows everything, so a throwing reader would make this hook
-// stop guarding in silence.
-import { readCurrentBranch } from './lib/git-head.mjs';
+
+// The commit rail's modules. main() loads them only when the command commits,
+// because this hook runs on every Bash call. The current-branch reader lives in
+// lib/git-head.mjs because three seams ask this same question. It degrades to
+// '' rather than throwing, which matters most HERE: main()'s catch swallows
+// everything, so a throwing reader would make this hook stop guarding in
+// silence.
+let mergeLayers, GLOBAL_CONFIG, resolveProtectedBranches, readCurrentBranch;
 
 function decide(decision, reason) {
   process.stdout.write(JSON.stringify({
@@ -205,7 +206,7 @@ function commitFor(dirs, cwd, cwdRoot) {
 // and exiting right after a write can truncate it on a pipe (the same rule
 // lib/seam-io.mjs pins for the seam scripts). Plain returns let the stream
 // drain; the process exits 0 naturally, which is the hook contract.
-function main() {
+async function main() {
   const input = JSON.parse(readFileSync(0, 'utf8'));
   const command = String(input?.tool_input?.command || '');
   const cwd = input?.cwd || process.cwd();
@@ -228,6 +229,11 @@ function main() {
     return;
   }
 
+  if (!verbs.includes('commit')) return;
+  ({ mergeLayers, GLOBAL_CONFIG } = await import('./lib/config-merge.mjs'));
+  ({ resolveProtectedBranches } = await import('./lib/protected-branches.mjs'));
+  ({ readCurrentBranch } = await import('./lib/git-head.mjs'));
+
   // Each commit is judged in its own repository; across several in one
   // command a deny beats an ask, and the first reason of the winning kind is
   // the one shown.
@@ -240,4 +246,4 @@ function main() {
   if (pick) decide(pick.decision, pick.reason);
 }
 
-try { main(); } catch { /* never block on a guard failure */ }
+main().catch(() => { /* never block on a guard failure */ });

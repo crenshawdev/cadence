@@ -17,7 +17,6 @@
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { recordFromHook, appendRead } from './lib/read-trace.mjs';
 import { planningRoot } from './lib/git-segments.mjs';
 
 // The existence predicate `filesOf` runs its candidates through - the whole
@@ -36,6 +35,9 @@ try {
   const project = planningRoot(cwd, (dir, name) => existsSync(join(dir, name)));
   const root = project === null ? null : join(project, '.planning');
   if (root) {
+    // Loaded only inside a Cadence project, since this hook runs on every tool
+    // call in every session.
+    const { recordFromHook, appendRead } = await import('./lib/read-trace.mjs');
     // `root` is `<project>/.planning`; the tree paths are billed against is its
     // parent, and confinement to it is what keeps a path elsewhere on the
     // machine out of the record.

@@ -42,9 +42,8 @@
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { renderTrace, appendEvent } from './lib/trace.mjs';
-import { closeForStop } from './lib/subagent-trace.mjs';
 import { planningRoot } from './lib/git-segments.mjs';
+import { roleOfAgent } from './lib/rung-agent.mjs';
 
 // The ceiling on the ONE unbounded read this hook does. The stopped worker's
 // transcript is a file the host grows for as long as the worker runs, so it has
@@ -120,7 +119,12 @@ try {
   // directory is a Cadence project.
   const project = planningRoot(cwd, (dir, name) => existsSync(join(dir, name)));
   const root = project === null ? null : join(project, '.planning');
-  if (root) {
+  // A stop from anything that is not a Cadence role writes nothing, so it is
+  // turned away before the transcript is read or the trace modules load.
+  // closeForStop applies the same test as its first gate.
+  if (root && roleOfAgent(input?.agent_type)) {
+    const { renderTrace, appendEvent } = await import('./lib/trace.mjs');
+    const { closeForStop } = await import('./lib/subagent-trace.mjs');
     const evidence = { transcript: readTranscript(input?.agent_transcript_path) };
     // A LIST, appended in the order the rule gave it (D-08). One stop can owe
     // the record more than one event - a gate that withholds the close still
