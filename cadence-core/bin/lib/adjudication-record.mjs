@@ -57,6 +57,8 @@
 // is `resolveRange`'s in planning.mjs, and this follows it.
 'use strict';
 
+import { isPlainObject } from './text-util.mjs';
+
 /**
  * The severity vocabulary a finding may be RAISED at.
  *
@@ -192,18 +194,6 @@ const FIX_COMMIT = /^[0-9a-fA-F]{7,40}$/;
  */
 const OVERRIDE_MARKER = true;
 
-/**
- * A JSON object, as opposed to null, an array or a scalar.
- *
- * Declared as a TYPE PREDICATE rather than a plain boolean: `buildEntries`
- * takes `unknown`, and without the predicate the guard narrows nothing and
- * every field read past it is a TS2339 under this repo's `checkJs` CI
- * typecheck (measured).
- *
- * @param {unknown} v
- * @returns {v is Record<string, any>}
- */
-const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isText = (v) => typeof v === 'string' && v.trim() !== '';
 
 /**

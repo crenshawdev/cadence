@@ -37,6 +37,7 @@ import { join, resolve, sep, relative, isAbsolute } from 'node:path';
 // The join below needs a recorded `agent_type` stem back to the role a dispatch
 // event names. Those reverse lookups live beside RUNG_FILES in lib/rung-agent.mjs.
 import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
+import { sleep } from './text-util.mjs';
 
 export const READS_FILE = 'reads.jsonl';
 
@@ -462,11 +463,6 @@ export function recordFromHook(input, now, opts) {
  * in `hooks/hooks.json`.
  */
 const READS_ROTATE_WAIT_MS = 250;
-
-/** @param {number} ms */
-function sleep(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
 
 /**
  * How old the claim's sidecar has to be before the claim is read as ABANDONED

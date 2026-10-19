@@ -70,6 +70,7 @@
 import { readFileSync, readdirSync, existsSync, realpathSync, statSync } from 'node:fs';
 import { basename, join, relative, sep } from 'node:path';
 import { parseSkillsField } from './frontmatter.mjs';
+import { dirents } from './surface-weight.mjs';
 
 /** The three branches a reachable citation may name. */
 const BRANCHES = ['references', 'templates', 'workflows'];
@@ -87,20 +88,6 @@ const CITE_RE = /(?:\$\{CLAUDE_PLUGIN_ROOT\}\/)?(?:cadence-core\/)?\b(references
 /** `user-invocable: false` in a leading frontmatter block. */
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
 const NOT_INVOCABLE_RE = /^user-invocable:[ \t]*false[ \t]*$/m;
-
-/**
- * One directory's own children as dirents. A directory this process cannot
- * read is empty data, never a throw - and hides only its OWN children.
- * @param {string} dir
- * @returns {import('node:fs').Dirent[]}
- */
-function dirents(dir) {
-  try {
-    return readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-}
 
 /**
  * Yield every descendant file path under `dir`, one directory at a time.

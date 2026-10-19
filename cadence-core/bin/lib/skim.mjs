@@ -46,7 +46,7 @@ const REGEX_PRECEDING = new Set([
  * error direction keeps a comment, never eats code.
  * @param {string} s @param {number} i
  */
-function regexHere(s, i) {
+export function regexHere(s, i) {
   let j = i - 1;
   while (j >= 0 && /\s/.test(s[j])) j--;
   if (j < 0) return true;

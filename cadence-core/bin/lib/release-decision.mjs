@@ -15,6 +15,8 @@
 // absent version yields null rather than an invented one (the Phase-1
 // null-version lesson).
 
+import { escapeRe } from './text-util.mjs';
+
 /**
  * Fence-state scanner: an opening fence is three or more backticks or tildes
  * with up to three leading spaces, a closing fence is the same character at
@@ -473,9 +475,4 @@ function releaseSectionEmpty(text, version) {
     return false;
   }
   return true;
-}
-
-/** Escape a version string for safe use inside a RegExp. @param {string} s */
-function escapeRe(s) {
-  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
