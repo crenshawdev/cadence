@@ -29,8 +29,8 @@ const MARKER_HEAD = `${DEBT_TOKEN}:`;
 // trigger text and put it in the queue that way.
 const TRAILERS = [/\s*\*\/\s*$/, /\s*-->\s*$/, /\s*}}\s*$/];
 
-/** @param {string} s */
-function stripTrailer(s) {
+/** @param {string} s @returns {string} */
+export function stripTrailer(s) {
   let out = s;
   for (const re of TRAILERS) out = out.replace(re, '');
   return out.trim();
@@ -97,15 +97,16 @@ export function debtMarkersIn(text) {
  * for the last. The head is NOT spelled out here: this file is tracked source,
  * the harvest walks tracked source, and a literal token-plus-colon in a comment
  * is ingested as a real marker - which is what the note above `DEBT_TOKEN`
- * already promised and this doc comment was quietly breaking.
- * @param {string} line @returns {string[]}
+ * already promised and this doc comment was quietly breaking. lib/census-registry.mjs
+ * passes its own head.
+ * @param {string} line @param {string} [head] @returns {string[]}
  */
-function markerSegments(line) {
+export function markerSegments(line, head = MARKER_HEAD) {
   /** @type {number[]} */
   const heads = [];
-  for (let at = line.indexOf(MARKER_HEAD); at >= 0;
-    at = line.indexOf(MARKER_HEAD, at + MARKER_HEAD.length)) heads.push(at);
-  return heads.map((at, k) => line.slice(at + MARKER_HEAD.length,
+  for (let at = line.indexOf(head); at >= 0;
+    at = line.indexOf(head, at + head.length)) heads.push(at);
+  return heads.map((at, k) => line.slice(at + head.length,
     k + 1 < heads.length ? heads[k + 1] : line.length));
 }
 

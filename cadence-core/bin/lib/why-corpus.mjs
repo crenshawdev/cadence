@@ -67,7 +67,8 @@
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join } from 'node:path';
+import { within } from './contained.mjs';
 
 import { recordName } from './adjudication-record.mjs';
 import { phaseDirsIn } from './phase-plans.mjs';
@@ -120,7 +121,7 @@ export function readArtifact(file) {
     const err = /** @type {any} */ (e);
     return { text: null, absent: false, code: String((err && err.code) || 'ERESOLVE') };
   }
-  if (real !== realDir && !real.startsWith(realDir.endsWith(sep) ? realDir : realDir + sep)) {
+  if (!within(real, realDir)) {
     return { text: null, absent: false, code: 'EESCAPE' };
   }
   try {

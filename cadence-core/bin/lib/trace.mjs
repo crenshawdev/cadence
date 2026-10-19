@@ -89,6 +89,7 @@ import {
   readSync, renameSync, statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { sleep } from './text-util.mjs';
 
 /** The trace file's name inside a planning root. */
 export const TRACE_FILE = 'trace.jsonl';
@@ -619,11 +620,6 @@ const ROTATE_WAIT_MS = 250;
  * same safety.
  */
 const CLAIM_STALE_MS = 30_000;
-
-/** @param {number} ms */
-function sleep(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
 
 /**
  * Is the sibling that already exists a rotation IN FLIGHT, or a generation an

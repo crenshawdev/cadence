@@ -57,7 +57,7 @@ function isFile(f) {
  * @param {string} dir
  * @returns {import('node:fs').Dirent[]}
  */
-function dirents(dir) {
+export function dirents(dir) {
   try {
     return readdirSync(dir, { withFileTypes: true });
   } catch {

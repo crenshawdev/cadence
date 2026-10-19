@@ -44,20 +44,7 @@
 'use strict';
 
 import { findingIssue } from './adjudication-record.mjs';
-
-/**
- * A JSON object, as opposed to null, an array or a scalar.
- *
- * Declared as a TYPE PREDICATE rather than a plain boolean for the reason
- * lib/adjudication-record.mjs states about its own: `buildQueue` takes
- * `unknown`, and without the predicate the guard narrows to `object` and every
- * field read past it is a TS2339 under this repo's `checkJs` CI typecheck
- * (measured).
- *
- * @param {unknown} v
- * @returns {v is Record<string, any>}
- */
-const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+import { isPlainObject } from './text-util.mjs';
 
 /**
  * A queue member's filename, built the way `recordName` builds the record's -

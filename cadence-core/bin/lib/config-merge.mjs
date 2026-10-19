@@ -8,6 +8,8 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 import { stripGlobalOnly } from './global-only-keys.mjs';
+import { isPlainObject } from './text-util.mjs';
+export { isPlainObject };
 
 // User-global config layer. CADENCE_GLOBAL_CONFIG relocates it (and keeps
 // tests hermetic); otherwise ~/.claude/cadence/config.json.
@@ -83,11 +85,6 @@ export function deepMerge(base, over) {
     });
   }
   return merged;
-}
-
-/** @param {any} v */
-export function isPlainObject(v) {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
 /**

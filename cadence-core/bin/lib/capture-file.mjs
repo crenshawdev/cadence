@@ -73,6 +73,7 @@
 import { readFileSync, mkdirSync, existsSync, openSync, closeSync, statSync, unlinkSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { atomicWrite, sectionSpan, CAPTURE_WALK_SECTIONS } from './planning-files.mjs';
+import { sleep } from './text-util.mjs';
 
 /**
  * The kind a caller may ask for, and the heading it lands under. Not
@@ -223,11 +224,6 @@ const LOCK_POLL_MS = 5;
  * is against a machine suspended mid-write, not against a slow write.
  */
 const LOCK_STALE_MS = 120_000;
-
-/** Sleep synchronously, zero-dep: the seam is a one-shot process, not a server. */
-function sleep(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
 
 /**
  * Take `lockPath` by exclusive create: the first writer wins, every later one

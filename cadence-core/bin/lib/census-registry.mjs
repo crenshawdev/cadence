@@ -68,6 +68,7 @@
 // `lib/*.mjs`: they are modules prose never invokes.
 'use strict';
 
+import { markerSegments, stripTrailer } from './debt-markers.mjs';
 import { covers, intersects } from './lease-grammar.mjs';
 
 /**
@@ -369,7 +370,7 @@ export function censusMarkersIn(text) {
   const out = [];
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    for (const seg of markerBodies(lines[i])) {
+    for (const seg of markerSegments(lines[i], MARKER_HEAD)) {
       const parts = seg.split('|');
       const id = parts[0].trim();
       let asserts = null;
@@ -389,41 +390,6 @@ export function censusMarkersIn(text) {
     }
   }
   return out;
-}
-
-/**
- * One line's marker bodies, in order: everything after each marker head up to
- * the next one's head, or the end of the line for the last.
- *
- * Bounded at the next head rather than read to end of line, for the reason
- * `lib/debt-markers.mjs` records as reproduced rather than theorised: an
- * unbounded read lets a second marker's `asserts` overwrite the first's, and
- * one entry comes back carrying another census's claim. A wrong claim is a
- * wrong answer; a missing entry is only a gap.
- *
- * The head is not spelled out here for the same reason it is not spelled out
- * above.
- * @param {string} line @returns {string[]}
- */
-function markerBodies(line) {
-  /** @type {number[]} */
-  const heads = [];
-  for (let at = line.indexOf(MARKER_HEAD); at >= 0;
-    at = line.indexOf(MARKER_HEAD, at + MARKER_HEAD.length)) heads.push(at);
-  return heads.map((at, k) => line.slice(at + MARKER_HEAD.length,
-    k + 1 < heads.length ? heads[k + 1] : line.length));
-}
-
-// Trailing comment closers, stripped from the LAST field only: a marker in a
-// `/* ... */` or `<!-- ... -->` comment would otherwise carry `*/` into the
-// assertion text and report it that way.
-const TRAILERS = [/\s*\*\/\s*$/, /\s*-->\s*$/, /\s*}}\s*$/];
-
-/** @param {string} s @returns {string} */
-function stripTrailer(s) {
-  let out = s;
-  for (const re of TRAILERS) out = out.replace(re, '');
-  return out.trim();
 }
 
 /**

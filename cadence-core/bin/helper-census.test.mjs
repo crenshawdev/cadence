@@ -236,6 +236,40 @@ const HELPERS = [
       + 'module back would be a cycle, and adjudication-record.test.mjs '
       + 'asserts the pair agrees - but the TEST that reads them is one.',
   },
+  {
+    name: 'the RegExp escaper (escapeRe)',
+    home: 'lib/text-util.mjs',
+    re: new RegExp('function escapeRe\\(|const escapeRe[ ]= ', 'g'),
+    note: 'Import { escapeRe } from ./lib/text-util.mjs. It imports nothing, '
+      + 'so a module that must not touch the filesystem can use it too.',
+  },
+  {
+    name: 'the plain-object type predicate (isPlainObject)',
+    home: 'lib/text-util.mjs',
+    re: new RegExp('function isPlainObject\\(|const isPlainObject[ ]= ', 'g'),
+    note: 'Import { isPlainObject } from ./lib/text-util.mjs (lib/config-merge.mjs '
+      + 're-exports it). It is a type predicate, which the checkJs typecheck '
+      + 'needs to narrow an unknown.',
+  },
+  {
+    name: 'the synchronous sleep (sleep)',
+    home: 'lib/text-util.mjs',
+    re: new RegExp('Atomics\\.wait\\(new Int32Array', 'g'),
+    note: 'Import { sleep } from ./lib/text-util.mjs.',
+  },
+  {
+    name: "skim's regex-or-division heuristic (regexHere)",
+    home: 'lib/skim.mjs',
+    re: new RegExp('function regexHere\\(', 'g'),
+    note: 'Import { regexHere } from ./lib/skim.mjs. lib/refusal-hints.mjs scans '
+      + "skim's output, so the two must agree on where a literal starts.",
+  },
+  {
+    name: 'the never-throwing directory reader (dirents)',
+    home: 'lib/surface-weight.mjs',
+    re: new RegExp('function dirents\\(', 'g'),
+    note: 'Import { dirents } from ./lib/surface-weight.mjs.',
+  },
 ];
 
 const MODULES = everyModule(BIN);

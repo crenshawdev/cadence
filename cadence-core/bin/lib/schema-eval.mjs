@@ -38,6 +38,8 @@
 // on a value.
 'use strict';
 
+import { isPlainObject } from './text-util.mjs';
+
 /** The complete set of keywords this evaluator understands. */
 const IMPLEMENTED = new Set([
   'type', 'properties', 'required', 'additionalProperties',
@@ -46,11 +48,6 @@ const IMPLEMENTED = new Set([
 
 /** The `type` values this evaluator understands. */
 const TYPES = new Set(['object', 'array', 'string', 'integer', 'number', 'boolean', 'null']);
-
-/** @param {unknown} v @returns {boolean} */
-function isPlainObject(v) {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /** Length in Unicode code points. See the header. @param {string} s */
 function codePoints(s) {

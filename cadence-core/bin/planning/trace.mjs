@@ -31,6 +31,7 @@ import { CONTRACTS, evaluateFlag } from '../lib/arg-contract.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { unfixedFromEntries } from '../lib/filing-decision.mjs';
 import { atomicWrite, planTaskTitles } from '../lib/planning-files.mjs';
+import { planFileFor } from '../lib/phase-plans.mjs';
 import {
   READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
   ROTATED_READS_FILE, inDispatchReads, joinReads,
@@ -377,10 +378,7 @@ function checkpointPlanTasks(dir, event) {
   if (!plan) return null;
   const pdir = join(dir, 'phases', phase.raw);
   const { plans } = listPlanFiles(pdir);
-  // `PLAN.md` is plan 1 spelled bare - the same equivalence `listPlanFiles`'s
-  // own conforming set carries.
-  const file = plans.find((f) => f === `PLAN-${plan}.md`)
-    || (plan === '1' ? plans.find((f) => f === 'PLAN.md') : undefined);
+  const file = planFileFor(plans, plan);
   if (!file) return null;
   const text = read(join(pdir, file));
   if (text === null) return null;

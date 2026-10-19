@@ -844,16 +844,22 @@ test('a hermetic chain with nothing excluded prints a text with no such block', 
 });
 
 test('this repository: the exclusion reaches the rendered text with the count, the word merge and all three shas', () => {
-  // Measured 2026-08-23. Unlike the envelope assertion above this one IS a
-  // figure a later merge into main touching this path would move, because the
-  // block names at most three and counts the rest: that is the cap doing its
-  // job, and the assertion is here because the criterion is about what a reader
-  // of `text` sees, which the envelope cannot stand in for.
+  // The figures come from the envelope, not from a count measured once: every
+  // merge into main that touches this path adds an excluded merge, and a pull
+  // request's own merge commit adds one on CI. The three measured 2026-08-23
+  // must still be among them.
   const env = oneJsonLine(run(['cadence-core/bin/lib/release-decision.mjs', '--dir', REPO]).stdout);
-  assert.match(env.text, /^3 commit\(s\) also touched this path and are NOT listed above\./m);
-  assert.match(env.text, /3 of them are merges\./);
+  const n = env.excluded.length;
+  const merges = env.excluded.filter((e) => e.parentCount > 1).length;
+  assert.ok(n >= 3, `at least the three measured exclusions, got ${n}`);
+  assert.match(env.text, new RegExp(`^${n} commit\\(s\\) also touched this path and are NOT listed above\\.`, 'm'));
+  assert.match(env.text, new RegExp(`${merges} of them are merges\\.`));
+  const excluded = env.excluded.map((e) => e.sha.slice(0, 8));
   for (const named of ['b86fc25c', '051f0df1', '9237a539']) {
-    assert.ok(env.text.includes(named), `${named} is named in the text`);
+    assert.ok(excluded.includes(named), `${named} is still one of the excluded commits`);
+  }
+  for (const shown of excluded.slice(0, 3)) {
+    assert.ok(env.text.includes(shown), `${shown} is named in the text`);
   }
   assert.match(env.text, /git log --full-history -- cadence-core\/bin\/lib\/release-decision\.mjs$/m);
 });

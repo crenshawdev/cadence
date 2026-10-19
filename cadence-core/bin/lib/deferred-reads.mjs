@@ -136,6 +136,7 @@
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { escapeRe } from './text-util.mjs';
 
 /** The problem codes this rule files. */
 export const CODES = Object.freeze({
@@ -392,11 +393,6 @@ export function regionLabels(text) {
     labels.push(label && arm ? `${label}(${arm})` : (label ?? null));
   }
   return (i) => labels[i] ?? null;
-}
-
-/** @param {string} s @returns {string} */
-function escapeRe(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

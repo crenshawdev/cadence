@@ -106,7 +106,7 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import { skim } from './skim.mjs';
+import { regexHere, skim } from './skim.mjs';
 
 /** The problem codes this rule files. */
 export const CODES = Object.freeze({
@@ -172,42 +172,11 @@ const CALLEES = new Set(['emit', 'out', 'fail']);
 /** A JavaScript identifier character. */
 const ID = /[A-Za-z0-9_$]/;
 
-/** Words after which a `/` opens a regex literal rather than dividing. */
-const REGEX_PRECEDING = new Set([
-  'return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void',
-  'throw', 'case', 'do', 'else', 'yield', 'await',
-]);
-
 /** How much of a non-literal reason expression a detail carries. */
 const EXPR_MAX = 120;
 
 /** The detail text for an envelope that carries no `reason` key at all. */
 const NO_REASON = '(no reason key)';
-
-/**
- * Is the `/` at `i` a regex literal rather than a division operator?
- *
- * Deliberately `lib/skim.mjs`'s own heuristic, character for character: this
- * scan runs over skim's OUTPUT, so a disagreement about where a literal starts
- * is a disagreement about text one of the two has already rewritten. `)` and
- * `]` read as division, which misreads the rare `if (x) /re/.test(y)`; that
- * error direction over-reports a site, never hides one.
- * @param {string} s @param {number} i
- * @returns {boolean}
- */
-function regexHere(s, i) {
-  let j = i - 1;
-  while (j >= 0 && /\s/.test(s[j])) j -= 1;
-  if (j < 0) return true;
-  const c = s[j];
-  if (c === ')' || c === ']') return false;
-  if (ID.test(c)) {
-    let k = j;
-    while (k >= 0 && ID.test(s[k])) k -= 1;
-    return REGEX_PRECEDING.has(s.slice(k + 1, j + 1));
-  }
-  return true;
-}
 
 /**
  * The index just past the string, template or regex literal starting at `i`, or

@@ -7,11 +7,12 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { RISK_DIFF_MAX_BUFFER, fail, ok, resolveRange, riskRef } from './core.mjs';
+import { insideRoot } from '../lib/contained.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import {
-  MAX_SLUG_LENGTH, RECORD_FILE, TASKS_DIR, insideRoot, isTaskSlug, renderTaskRecord,
+  MAX_SLUG_LENGTH, RECORD_FILE, TASKS_DIR, isTaskSlug, renderTaskRecord,
 } from '../lib/task-record.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { appendEvent } from '../lib/trace.mjs';

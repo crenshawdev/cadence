@@ -128,7 +128,8 @@
 
 import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, isAbsolute, sep } from 'node:path';
+import { dirname, join, isAbsolute } from 'node:path';
+import { within } from './lib/contained.mjs';
 import { GLOBAL_CONFIG, layerIdentity, mergeLayers } from './lib/config-merge.mjs';
 import { rungFile, RUNG_FILES, RUNG_ORDER } from './lib/rung-agent.mjs';
 import { gateTriggers } from './lib/gate-agreement.mjs';
@@ -507,8 +508,7 @@ function declaredBodies(repoRoot, files) {
   } catch {
     root = repoRoot;
   }
-  const inside = (/** @type {string} */ real) =>
-    real === root || real.startsWith(root.endsWith(sep) ? root : root + sep);
+  const inside = (/** @type {string} */ real) => within(real, root);
   return files.map((rel) => {
     // Refused by SPELLING. `unread` and not a bare path: a file this declined
     // to open may hold the very evidence a discount would claim is absent.

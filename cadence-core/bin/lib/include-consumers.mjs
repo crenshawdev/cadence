@@ -87,6 +87,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { commandEagerSets } from './resident-weight.mjs';
+import { escapeRe } from './text-util.mjs';
 
 /** The problem codes this rule files. */
 export const CODES = Object.freeze({
@@ -109,11 +110,6 @@ const INCLUDE_PATH_RE = /^cadence-core\/(references|templates|workflows)\/([A-Za
 
 /** A line the host expands as an include - dropped from every scan text. */
 const INCLUDE_LINE_RE = /^@\$\{CLAUDE_PLUGIN_ROOT\}\//;
-
-/** @param {string} s @returns {string} */
-function escapeRe(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /**
  * Read one file, or null when it is absent, is not a file, or cannot be read.
