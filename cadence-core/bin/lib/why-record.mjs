@@ -57,7 +57,7 @@ import { RULINGS } from './adjudication-record.mjs';
 import { covers } from './lease-grammar.mjs';
 
 /** The heading whose table carries the commit-to-plan-task edge (D-08). */
-export const COMMITS_HEADING = '## Commits';
+const COMMITS_HEADING = '## Commits';
 
 /** A commit cell as an auditor can spend it: `git show <cell>`. */
 const HEX = /^[0-9a-fA-F]+$/;
@@ -227,13 +227,13 @@ export function parseCommitRows(text) {
 const DECISION_TOKEN = /\bD-\d+(?:\.\d+)?\b/g;
 
 /** The plan section whose cites are plan-scoped rather than task-scoped. */
-export const PLAN_CONTEXT_HEADING = '## Context';
+const PLAN_CONTEXT_HEADING = '## Context';
 
 /**
  * Every distinct `D-NN` token in `s`, in first-occurrence order.
  * @param {string} s @returns {string[]}
  */
-export function decisionTokens(s) {
+function decisionTokens(s) {
   const seen = new Set();
   for (const m of String(s || '').matchAll(DECISION_TOKEN)) seen.add(m[0]);
   return [...seen];
@@ -276,7 +276,7 @@ export function planTaskBodies(text) {
 }
 
 /** The second decision section, phase-local by construction (see the header). */
-export const PHASE_DECISIONS_HEADING = '## Decisions';
+const PHASE_DECISIONS_HEADING = '## Decisions';
 /** A decision bullet, as `parseContextDecisions` reads one. */
 const DECISION_BULLET = /^- (D-\d+(?:\.\d+)?)\b/;
 
@@ -379,7 +379,7 @@ function quote(ids, decisions) {
 // ---------------------------------------------------------------------------
 
 /** The section whose bullets are deviations and nothing else. */
-export const DEVIATIONS_HEADING = '## Deviations';
+const DEVIATIONS_HEADING = '## Deviations';
 
 /**
  * The sentence every entry with a resolved phase carries beside its deviation

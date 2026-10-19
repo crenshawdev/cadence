@@ -48,13 +48,6 @@ import { buildEntries } from './adjudication-record.mjs';
 export const HALTING_SEVERITIES = Object.freeze(['blocker', 'high']);
 
 /**
- * The rulings that mean the adjudicator did NOT let the finding stand.
- * `RULINGS` in lib/adjudication-record.mjs has three values and these are the
- * two that are not `survived`; the name for the pair is that file's own word.
- */
-export const NON_SURVIVOR_RULINGS = Object.freeze(['downgraded', 'refuted']);
-
-/**
  * What a `fix_commit` has to LOOK like before this module reads it as work
  * that is already committed: an abbreviated id through a full one, the range
  * an auditor can hand to `git show`.

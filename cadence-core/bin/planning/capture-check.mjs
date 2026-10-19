@@ -104,7 +104,7 @@ function report(health, bound) {
  * it too, and `mergeLayers` applies no defaults, which is the same arrangement
  * `memoryBackend`'s `?? 'builtin'` and the dispatch-window ceilings live under.
  */
-export const DEFAULT_MAX_CAPTURE_BULLETS = 40;
+const DEFAULT_MAX_CAPTURE_BULLETS = 40;
 
 /**
  * A bound this report can compare against. `config.mjs` validates the type at
