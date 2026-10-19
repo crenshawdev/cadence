@@ -48,29 +48,17 @@
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+import { isEntryFile } from './planning.test.mjs';
 
 const BIN = dirname(fileURLToPath(import.meta.url));
 const CONFIG = join(BIN, 'config.mjs');
 
-/**
- * True iff this module is what node was told to run. `realpathSync` on both
- * sides so a symlinked checkout - the shape REV-01's own no-op bug came from -
- * still matches; an argv[1] that no longer exists just answers false.
- */
-function isEntryFile() {
-  const argv1 = process.argv[1];
-  if (typeof argv1 !== 'string' || argv1 === '') return false;
-  try {
-    return pathToFileURL(realpathSync(argv1)).href === pathToFileURL(realpathSync(fileURLToPath(import.meta.url))).href;
-  } catch { return false; }
-}
-
 /** `node:test`'s `test` when run directly, a no-op when imported (see header). */
-const test = isEntryFile() ? nodeTest : () => {};
+const test = isEntryFile(import.meta.url) ? nodeTest : () => {};
 
 // The dev's git config (commit.gpgsign, init.defaultBranch, hooks) must never
 // reach a fixture repo - git-guard.test.mjs / git-publish.test.mjs discipline.

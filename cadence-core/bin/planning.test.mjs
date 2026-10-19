@@ -26,13 +26,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { renumberTree } from './planning-renumber.test.mjs';
 import { leaseRepo, leaseCheck, stage } from './planning-lease-check.test.mjs';
 
-/** True iff this module is what node was told to run; realpath on both sides so
- * a symlinked checkout still matches (config-seams.test.mjs D-19). */
-function isEntryFile() {
+/** True iff the module at `url` is what node was told to run; realpath on both
+ * sides so a symlinked checkout still matches. Every test file passes its own
+ * `import.meta.url` (config-seams.test.mjs D-19). */
+export function isEntryFile(url = import.meta.url) {
   const argv1 = process.argv[1];
   if (typeof argv1 !== 'string' || argv1 === '') return false;
   try {
-    return pathToFileURL(realpathSync(argv1)).href === pathToFileURL(realpathSync(fileURLToPath(import.meta.url))).href;
+    return pathToFileURL(realpathSync(argv1)).href === pathToFileURL(realpathSync(fileURLToPath(url))).href;
   } catch { return false; }
 }
 
