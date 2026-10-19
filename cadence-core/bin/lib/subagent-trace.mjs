@@ -270,9 +270,9 @@
 // `lib/trace.mjs`'s `millis` reads the instants it sorts by.
 'use strict';
 
-import { roleOfAgent, rungOfAgent } from './read-trace.mjs';
+import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
 import { WORKER_CACHE } from './trace.mjs';
-import { terminalOf, cacheOf, effortOf, STOP_STATE } from './subagent-transcript.mjs';
+import { terminalOf, cacheOf, effortOf, transcriptEntries, STOP_STATE } from './subagent-transcript.mjs';
 
 /**
  * The payload's `agent_id`, or null when it carries none this rule can use.
@@ -498,8 +498,9 @@ export function closeForStop(payload, render, evidence) {
   // test and the fact's identity source in the same row; `mine` is gate 2b's
   // count and the fact's identity source everywhere else.
   const id = agentIdOf(payload);
-  const cache = cacheOf(transcript);
-  const stopped = terminalOf(transcript);
+  const entries = transcriptEntries(transcript);
+  const cache = cacheOf(entries);
+  const stopped = terminalOf(entries);
   // WHAT THE WORKER RAN AT, beside WHAT IT WAS DISPATCHED UNDER - the pair the
   // whole record exists to let a reader compare, and the pair that rides every
   // write below (D-02). The effort is read off the WORKER's own transcript and
@@ -520,7 +521,7 @@ export function closeForStop(payload, render, evidence) {
   // `ROLE_OF_STEM` and `RUNG_OF_STEM` are two columns of that one table, so a
   // resolved role means a resolved rung: there is no second arm here for a
   // rung that could not be found.
-  const effort = effortOf(transcript);
+  const effort = effortOf(entries);
   const ran = effort ? { effort, rung: rungOfAgent(payload && payload.agent_type) } : {};
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
   // THE RUN IN FLIGHT, named ONCE and before either gate reads it. Both gate

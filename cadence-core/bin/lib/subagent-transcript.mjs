@@ -158,6 +158,21 @@ function* assistantEntries(text) {
 }
 
 /** The two `message.usage` fields `cacheOf` sums, in the host's own spelling. */
+/**
+ * The transcript's assistant entries, parsed once, so a caller asking all three
+ * questions below walks the file one time instead of three. Each of them takes
+ * either this array or the raw text.
+ * @param {unknown} text @returns {any[]}
+ */
+export function transcriptEntries(text) {
+  return [...assistantEntries(text)];
+}
+
+/** @param {unknown} input transcript text, or what `transcriptEntries` returned */
+function entriesOf(input) {
+  return Array.isArray(input) ? input : assistantEntries(input);
+}
+
 const CACHE_FIELDS = ['cache_creation_input_tokens', 'cache_read_input_tokens'];
 
 /**
@@ -186,7 +201,7 @@ export function cacheOf(text) {
   // the traffic that actually happened, on the one number TRC-05 exists to make
   // measurable.
   const billed = new Set();
-  for (const entry of assistantEntries(text)) {
+  for (const entry of entriesOf(text)) {
     const message = entry.message && typeof entry.message === 'object'
       ? entry.message : null;
     const usage = message ? message.usage : null;
@@ -227,11 +242,13 @@ export function cacheOf(text) {
  *   entry that carried no readable timestamp.
  */
 export function terminalOf(text) {
-  if (typeof text !== 'string' || !text) return { state: STOP_STATE.UNKNOWN, ts: null };
+  if (!Array.isArray(text) && (typeof text !== 'string' || !text)) {
+    return { state: STOP_STATE.UNKNOWN, ts: null };
+  }
 
   /** @type {any} */
   let last = null;
-  for (const entry of assistantEntries(text)) last = entry;
+  for (const entry of entriesOf(text)) last = entry;
   // No assistant line at all: a user-only transcript, an unparseable file, or a
   // layout this rule does not recognize. Nothing to decide on.
   if (!last) return { state: STOP_STATE.UNKNOWN, ts: null };
@@ -275,7 +292,7 @@ export function terminalOf(text) {
 export function effortOf(text) {
   /** @type {string|null} */
   let agreed = null;
-  for (const entry of assistantEntries(text)) {
+  for (const entry of entriesOf(text)) {
     const v = entry.effort;
     // Not a non-empty string: the line reported nothing readable, which is a
     // missing value and not an ambiguity. Skipped, exactly as `cacheOf` skips an

@@ -1238,8 +1238,10 @@ export { roleOfAgent, rungOfAgent };
  * @param {any[]} brackets paired dispatch rows, each `{role, ts, end, ...}`
  */
 export function joinReads(records, brackets) {
-  /** @type {{role: string, a: number, b: number, row: any}[]} */
-  const spans = [];
+  // Grouped by role up front, so each record is tested only against its own
+  // role's brackets.
+  /** @type {Map<string, {a: number, b: number, row: any}[]>} */
+  const spansByRole = new Map();
   for (const b of Array.isArray(brackets) ? brackets : []) {
     if (!b || typeof b !== 'object') continue;
     const role = typeof b.role === 'string' ? b.role : '';
@@ -1249,7 +1251,8 @@ export function joinReads(records, brackets) {
     // dropped rather than widened to infinity, which would swallow every read
     // of that role into one confident answer.
     if (!role || !Number.isFinite(a) || !Number.isFinite(z)) continue;
-    spans.push({ role, a, b: z, row: b });
+    if (!spansByRole.has(role)) spansByRole.set(role, []);
+    spansByRole.get(role).push({ a, b: z, row: b });
   }
 
   const counts = { joined: 0, ambiguous: 0, unjoined: 0, floor: 0, coordinator: 0, unresolved: 0 };
@@ -1271,16 +1274,16 @@ export function joinReads(records, brackets) {
     const files = Array.isArray(r.files)
       ? r.files.filter((f) => typeof f === 'string' && f)
       : [];
+    const role = roleOfAgent(agent);
     /** @param {string} status @param {any} [bracket] */
     const push = (status, bracket = null) => {
       counts[status]++;
-      rows.push({ ts: r.ts ?? null, agent, agent_id: agentId, role: roleOfAgent(agent), status, bracket, files });
+      rows.push({ ts: r.ts ?? null, agent, agent_id: agentId, role, status, bracket, files });
     };
 
     if (agent === null) { push('unresolved'); continue; }
     if (agent === 'coordinator') { push('coordinator'); continue; }
     if (HOST_AGENT_TYPES.includes(agent)) { push('floor'); continue; }
-    const role = roleOfAgent(agent);
     // `unknown-agent` lands here: the writer uses it when a call carried an
     // `agent_id` and no `agent_type`, so the read IS a subagent's and its role
     // is simply not knowable. Reporting it unjoined would read as "no bracket
@@ -1289,7 +1292,7 @@ export function joinReads(records, brackets) {
 
     const t = Date.parse(r.ts);
     if (!Number.isFinite(t)) { push('unresolved'); continue; }
-    const hits = spans.filter((s) => s.role === role && t >= s.a && t <= s.b);
+    const hits = (spansByRole.get(role) || []).filter((s) => t >= s.a && t <= s.b);
     if (hits.length === 1) push('joined', hits[0].row);
     else if (hits.length > 1) push('ambiguous');
     else push('unjoined');
