@@ -1,13 +1,13 @@
-# sentinel fast check, on every pull request.
+# sentinel fast check, on every pull request and every push to main.
 #
 # Copy this file into .github/workflows/ (GitHub) or .forgejo/workflows/
 # (Forgejo) in the repo under audit. It expects sentinel as a git submodule at
 # the path in SENTINEL_DIR.
 #
-# The mechanical job runs on both GitHub and Forgejo. The security-review job
-# runs on GitHub only, because it posts its review as a pull request comment
-# through the GitHub API, and a job skipped by its `if:` never downloads its
-# actions.
+# The mechanical job runs on both GitHub and Forgejo, on pull requests and on
+# pushes to main. The security-review job runs on GitHub pull requests only,
+# because it posts its review as a pull request comment through the GitHub
+# API, and a job skipped by its `if:` never downloads its actions.
 #
 # On a public repo, set the repository variable SENTINEL_REVIEW_AGE_RECIPIENT
 # to your age public key. The review is then encrypted and uploaded as the
@@ -18,6 +18,9 @@ name: sentinel-fast
 
 on:
   pull_request:
+  # A push straight to main gets the mechanical checks too.
+  push:
+    branches: [main]
 
 env:
   SENTINEL_DIR: .sentinel
@@ -32,19 +35,23 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
+          # gitleaks reads every commit, so fetch the whole history.
+          fetch-depth: 0
           # Builds run the pull request's code; keep the token out of .git/config.
           persist-credentials: false
-      - name: Install gating tools
+      - name: Install check tools
         run: '"$SENTINEL_DIR/ci/install-tools.sh"'
       - name: Mechanical checks
         run: '"$SENTINEL_DIR/mechanical/check.sh" .'
 
   security-review:
-    # Dependabot's pull requests get no Actions secrets, so the review could
-    # never run on them; their dependency changes go through the mechanical
-    # job's dependency checks instead.
-    if: github.server_url == 'https://github.com' && github.event.pull_request.user.login != 'dependabot[bot]'
-    needs: mechanical
+    # Pull requests only: the review is posted to one. Dependabot's pull
+    # requests get no Actions secrets, so the review could never run on them;
+    # their dependency changes go through the mechanical job's dependency
+    # checks instead. There is no `needs: mechanical`, so a failing gate, such
+    # as a new advisory against a dependency already in use, does not skip the
+    # review.
+    if: github.event_name == 'pull_request' && github.server_url == 'https://github.com' && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
