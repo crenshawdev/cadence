@@ -937,17 +937,25 @@ const CONSULT_SCHEMA = {
   },
 };
 
-// Deep-copy a JSON schema with every `additionalProperties` key removed.
-// OpenAI strict mode requires it; Gemini's OpenAPI-subset responseSchema
-// rejects it. One schema, two dialects.
+// Deep-copy a JSON schema into Gemini's dialect: every key in GEMINI_STRIPPED
+// removed, at every depth. OpenAI strict mode requires `additionalProperties`;
+// Gemini's OpenAPI-subset responseSchema rejects it. Gemini takes `maxItems`
+// on a small array, but on an array of objects it refuses a large bound with a
+// bare 400 "Request contains an invalid argument": FINDING_SCHEMA's 100 was
+// refused on gemini-3.5-flash-lite and gemini-3.1-pro-preview, and on
+// flash-lite 50 was refused and 20 passed, with or without the string bounds
+// (measured 2026-10-23). The cap still holds for Gemini: validateFindings
+// refuses a reply past MAX_FINDINGS. One schema, two dialects.
+const GEMINI_STRIPPED = new Set(['additionalProperties', 'maxItems']);
+
 /** @param {any} node @returns {any} */
-export function stripAdditionalProperties(node) {
-  if (Array.isArray(node)) return node.map(stripAdditionalProperties);
+export function stripForGemini(node) {
+  if (Array.isArray(node)) return node.map(stripForGemini);
   if (node && typeof node === 'object') {
     const out = {};
     for (const [k, v] of Object.entries(node)) {
-      if (k === 'additionalProperties') continue;
-      out[k] = stripAdditionalProperties(v);
+      if (GEMINI_STRIPPED.has(k)) continue;
+      out[k] = stripForGemini(v);
     }
     return out;
   }
@@ -1110,11 +1118,12 @@ export const ADAPTERS = {
       const generationConfig = {
         responseMimeType: 'application/json',
         // Gemini responseSchema is an OpenAPI-3.0 subset that rejects the
-        // `additionalProperties` keyword (which OpenAI strict mode requires),
-        // so strip it for Gemini only. thinkingLevel is the Gemini 3.x effort
+        // `additionalProperties` keyword (which OpenAI strict mode requires)
+        // and the findings array's `maxItems`, so strip both for Gemini only
+        // (stripForGemini says why). thinkingLevel is the Gemini 3.x effort
         // dial (minimal|low|medium|high); omitted when no effort is set, and
         // the shared enum's `xhigh` goes as `high`, the dial's top.
-        responseSchema: stripAdditionalProperties(schema),
+        responseSchema: stripForGemini(schema),
       };
       if (effort) generationConfig.thinkingConfig = { thinkingLevel: effort === 'xhigh' ? 'high' : effort };
       const body = {

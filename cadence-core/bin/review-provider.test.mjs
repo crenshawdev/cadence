@@ -23,7 +23,7 @@ import { tmpdir, homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  parseArgs, parseEnvFile, stripAdditionalProperties,
+  parseArgs, parseEnvFile, stripForGemini,
   validateFindings, validateConsult, classify, ADAPTERS,
   readModelHints, detectEnvelope, resolveTimeoutMs,
   resolveMaxPromptTokens, estimatePromptTokens,
@@ -182,18 +182,20 @@ test('parseEnvFile quirks: = in values, asymmetric quotes, inline comments kept'
   assert.equal(parsed.TRAILING, 'value # not a comment');
 });
 
-test('stripAdditionalProperties: removes the key at every depth, nothing else', () => {
+test('stripForGemini: removes additionalProperties and maxItems at every depth, nothing else', () => {
   const schema = {
     type: 'object', additionalProperties: false,
-    properties: { list: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['x'] } } },
+    properties: { list: { type: 'array', maxItems: 100, items: { type: 'object', additionalProperties: false, required: ['x'] } } },
   };
-  const stripped = stripAdditionalProperties(schema);
+  const stripped = stripForGemini(schema);
   assert.equal('additionalProperties' in stripped, false);
   assert.equal('additionalProperties' in stripped.properties.list.items, false);
+  assert.equal('maxItems' in stripped.properties.list, false);
   assert.deepEqual(stripped.properties.list.items.required, ['x']);
   assert.equal('additionalProperties' in schema, true); // deep copy, input untouched
+  assert.equal(schema.properties.list.maxItems, 100);
   // Array nodes (anyOf/oneOf lists) recurse element-wise, order preserved.
-  const arr = stripAdditionalProperties([
+  const arr = stripForGemini([
     { type: 'object', additionalProperties: false, required: ['a'] },
     'scalar',
   ]);
@@ -209,7 +211,7 @@ function keysDeep(node, out = new Set()) {
   return out;
 }
 
-test('FINDING_SCHEMA: the bounds are stated on the wire, in every dialect (RVP-02)', () => {
+test('FINDING_SCHEMA: the bounds are stated on the wire, in every dialect that takes them (RVP-02)', () => {
   // The settled numbers, pinned literally exactly once - everything else in
   // this file reads them back off the schema. Derived from what the tree has
   // produced (file 39, claim 159, failure_scenario 376 chars in the one
@@ -246,10 +248,12 @@ test('FINDING_SCHEMA: the bounds are stated on the wire, in every dialect (RVP-0
   assert.equal(sent.properties.findings.items.properties.claim.minLength, 1);
   assert.equal(sent.properties.findings.items.properties.claim.maxLength, 2000);
 
-  // Gemini responseSchema: the same four keywords, and additionalProperties
-  // stripped at every depth - the ONLY thing that adapter removes.
+  // Gemini responseSchema: three of the four keywords. maxItems and
+  // additionalProperties are stripped at every depth - the ONLY things that
+  // adapter removes, because Gemini 400s on each (stripForGemini says why).
+  // validateFindings holds the findings cap there instead.
   const gem = ADAPTERS.gemini.structuredRequest(args).body.generationConfig.responseSchema;
-  assert.equal(gem.properties.findings.maxItems, 100);
+  assert.equal(keysDeep(gem).has('maxItems'), false);
   assert.equal(gem.properties.findings.items.properties.line.minimum, 1);
   assert.equal(gem.properties.findings.items.properties.file.minLength, 1);
   assert.equal(gem.properties.findings.items.properties.file.maxLength, 1024);
@@ -262,10 +266,12 @@ test('FINDING_SCHEMA: the bounds are stated on the wire, in every dialect (RVP-0
     assert.ok(sys.includes(kw), `${kw} must reach DeepSeek in-prompt`);
   }
 
-  // The carve-out stays a carve-out: one key removed, the bounds untouched.
-  const stripped = stripAdditionalProperties(FINDING_SCHEMA);
-  assert.equal(keysDeep(stripped).has('additionalProperties'), false);
-  for (const kw of ['minimum', 'minLength', 'maxLength', 'maxItems']) {
+  // The carve-out stays a carve-out: two keys removed, the other bounds untouched.
+  const stripped = stripForGemini(FINDING_SCHEMA);
+  for (const kw of ['additionalProperties', 'maxItems']) {
+    assert.equal(keysDeep(stripped).has(kw), false, `${kw} must not reach Gemini`);
+  }
+  for (const kw of ['minimum', 'minLength', 'maxLength']) {
     assert.equal(keysDeep(stripped).has(kw), true, `${kw} must survive the strip`);
   }
 });
