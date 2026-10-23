@@ -13,8 +13,8 @@ permissions:
 jobs:
   guard:
     # A tag is a movable pointer, and the `protect-release-tags` ruleset
-    # (id 19145547) carries only `deletion` and `non_fast_forward` - neither of
-    # which says WHERE a new tag may point. `test.yml` fires on `push` to main
+    # (id 19145547) carries `deletion`, `update` and `non_fast_forward` - none
+    # of which says WHERE a new tag may point. `test.yml` fires on `push` to main
     # and on `pull_request`, never on tags. So until this job existed,
     # `git tag v9.9.9 <any-sha> && git push origin v9.9.9` published an official
     # release from a commit no CI had ever seen. Two conditions, both required:
