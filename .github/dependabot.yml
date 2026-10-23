@@ -1,10 +1,24 @@
+# Dependabot version updates, from sentinel's ci/dependabot.yml, trimmed to the
+# ecosystems Cadence has. Security updates do not come from this file: they
+# are a repository setting. Each ecosystem waits seven days before taking a new
+# version, so a release that turns out to be bad has a week to be pulled first.
 version: 2
 updates:
+  # The action pins in the workflows, SHA and version comment together.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
-        patterns:
-          - "*"
+        patterns: ["*"]
+  # The .sentinel pin, so a kit change arrives as a pull request that runs the
+  # new kit's checks before it is merged.
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

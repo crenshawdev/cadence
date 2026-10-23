@@ -52,8 +52,23 @@ jobs:
       - run: node cadence-core/bin/test.mjs
       - run: node cadence-core/bin/self-verify.mjs
 
+  audited:
+    # The last audit has to cover this commit. stamp-age.sh reads the commit
+    # SENTINEL.md names and fails when any file but SENTINEL.md changed since,
+    # or when there is no SENTINEL.md at all.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          # The audited commit has to be in the history.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: The last audit covers this release
+        run: .sentinel/stamp-age.sh .
+
   publish:
-    needs: guard
+    needs: [guard, audited]
     runs-on: ubuntu-latest
     permissions:
       # Scoped to this job alone; the workflow default above stays read-only.
