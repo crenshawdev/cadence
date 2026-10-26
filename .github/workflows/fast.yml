@@ -64,10 +64,11 @@ env:
 # A newer push to the same pull request cancels the review of the older one,
 # so two pushes a minute apart do not pay for two reviews. Runs on main queue
 # instead, so none is lost, and so do reviews started by hand, one queue per
-# pull request.
+# pull request. Marking a draft ready queues too: it is the same commit, and
+# a cancelled mechanical check on it would block the merge.
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.pr || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'ready_for_review' }}
 
 permissions:
   contents: read
