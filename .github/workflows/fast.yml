@@ -19,24 +19,16 @@
 #
 #   gh workflow run fast.yml -f pr=<pull request number>
 #
-# That run reads the fork's code and never runs it, so the API key never meets
-# code the fork controls, and only a run started from the default branch can
-# review.
+# or `.sentinel/ci/review-pr.sh <pull request number>`, which starts that run,
+# waits for it and prints the review. That run reads the fork's code and
+# never runs it, so the API key never meets code the fork controls, and only
+# a run started from the default branch can review.
 #
 # A fork's pull request runs the fork's copy of the workflows, so it can add a
-# job named security-review of its own. To keep that from passing the check,
-# set up a GitHub App of yours with write access to checks: its client ID as
-# the repository variable SENTINEL_APP_CLIENT_ID, its private key as the
-# secret SENTINEL_APP_PRIVATE_KEY in an environment named
-# sentinel-review-app that only the default branch can deploy to, and the
-# kit's ci/review-mark.yml copied next to this file. Then require the check
-# from that app in the ruleset. The check is posted as the app only from
-# runs on the default branch: review-mark.yml once this repository's own
-# pull request has passed its review, and review-pr here. No run a pull
-# request can edit ever holds the key. Without the variable the review job
-# posts the check as GitHub Actions. A Dependabot pull request is marked by
-# the same command as a fork's, which reviews nothing and costs nothing for
-# one.
+# job named security-review of its own and show the check green without a
+# review. Only someone with write access can merge or turn on auto-merge, so
+# nothing merges it on its own: read the review from the hand-started run
+# before merging a fork's pull request, and never auto-merge one.
 #
 # On a public repo, set the repository variable SENTINEL_REVIEW_AGE_RECIPIENT
 # to your age public key. The review is then encrypted and uploaded as the
@@ -101,7 +93,9 @@ jobs:
     # dependabot job marks them. There is no `needs: mechanical`, so a failing
     # gate, such as a new advisory against a dependency already in use, does
     # not skip the review.
-    if: github.event_name == 'pull_request' && github.server_url == 'https://github.com' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
+    # Aimed at the default branch only, so a review that passed was a review
+    # against it, and a retarget runs no new review.
+    if: github.event_name == 'pull_request' && github.server_url == 'https://github.com' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' && github.base_ref == github.event.repository.default_branch
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -128,6 +122,15 @@ jobs:
       - name: Install age
         if: vars.SENTINEL_REVIEW_AGE_RECIPIENT != ''
         run: sudo apt-get update -q && sudo apt-get install -y -q age
+      # The reviewer judges the change against the base branch's threat
+      # model, not one the pull request rewrote. The diff still shows any
+      # change to it.
+      - name: Use the base branch's threat model
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          rm -f THREAT-MODEL.md
+          git show "origin/$BASE_REF:THREAT-MODEL.md" > THREAT-MODEL.md 2>/dev/null || rm -f THREAT-MODEL.md
       - name: Review the diff
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -153,11 +156,7 @@ jobs:
       # The required check. It is posted only after a review passed: a failed
       # check of the same name would keep blocking the commit after a later
       # pass. Its external_id names this run, which read-review.sh reads.
-      # With the review app set up, review-mark.yml posts it as the app from
-      # the default branch instead, since this run's workflow is the pull
-      # request's own and must never hold the app's key.
       - name: Mark the commit reviewed
-        if: vars.SENTINEL_APP_CLIENT_ID == ''
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.pull_request.head.sha }}
@@ -171,12 +170,9 @@ jobs:
   dependabot:
     # Dependabot's pull requests get no Actions secrets, so they are not
     # reviewed; their dependency changes go through the mechanical job's
-    # checks. The required check is marked skipped as GitHub Actions, which
-    # lets them merge where the ruleset requires it from GitHub Actions.
-    # Where it requires the review app, this mark does not count: the app's
-    # key is never handed to a run whose workflow Dependabot may have just
-    # rewritten, and review-pr marks the pull request instead. The run has to
-    # be Dependabot's own: a push to its branch by anyone else goes unmarked.
+    # checks. The required check is marked skipped, so they still merge, and
+    # auto-merge still works for them. The run has to be Dependabot's own: a
+    # push to its branch by anyone else goes unmarked.
     # The actor test only narrows the author test, so zizmor's spoofing
     # concern cannot widen who gets through.
     if: github.event_name == 'pull_request' && github.server_url == 'https://github.com' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]' # zizmor: ignore[bot-conditions]
@@ -200,14 +196,9 @@ jobs:
     # branch, never from the pull request, and the pull request's code is
     # only read: nothing in it runs, and its submodules are not fetched.
     if: github.event_name == 'workflow_dispatch' && github.server_url == 'https://github.com' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    # The review app's key lives in this environment, which only the default
-    # branch can use.
-    environment: sentinel-review-app
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      # actions: read to see who started each run for a Dependabot commit.
-      actions: read
       contents: read
       pull-requests: write
       checks: write
@@ -251,34 +242,17 @@ jobs:
           fi
           echo "base=$base" >> "$GITHUB_OUTPUT"
           echo "sha=$(git -C pr rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          # Opened by Dependabot, the head still the commit checked out, and
-          # every pull request run for that commit started and run by
-          # Dependabot: marked, not reviewed. A commit's author is only the
-          # email it claims, but a run's actor is whoever pushed, so a commit
-          # anyone else pushed is reviewed. No runs at all is reviewed too.
-          sha=$(git -C pr rev-parse HEAD)
-          author=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '"\(.user.login) \(.head.sha)"')
-          actors=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&event=pull_request" \
-              --jq '[.workflow_runs[] | "\(.actor.login) \(.triggering_actor.login)"] | unique | join(",")')
-          if [[ $author == "dependabot[bot] $sha" && $actors == "dependabot[bot] dependabot[bot]" ]]; then
-              echo "dependabot=true" >> "$GITHUB_OUTPUT"
-          else
-              echo "dependabot=false" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: steps.pr.outputs.dependabot != 'true'
         with:
           node-version: 22
       - name: Install Claude Code
-        if: steps.pr.outputs.dependabot != 'true'
         run: npm install -g @anthropic-ai/claude-code@2.1.300 # zizmor: ignore[adhoc-packages]
       - name: Install age
-        if: steps.pr.outputs.dependabot != 'true' && vars.SENTINEL_REVIEW_AGE_RECIPIENT != ''
+        if: vars.SENTINEL_REVIEW_AGE_RECIPIENT != ''
         run: sudo apt-get update -q && sudo apt-get install -y -q age
       # The script is main's; its working directory is the pull request's
       # tree, so the reviewer reads that tree and nothing outside it.
       - name: Review the diff
-        if: steps.pr.outputs.dependabot != 'true'
         working-directory: pr
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -286,32 +260,20 @@ jobs:
           SENTINEL_REVIEW_AGE_RECIPIENT: ${{ vars.SENTINEL_REVIEW_AGE_RECIPIENT }}
         run: '"$GITHUB_WORKSPACE/$SENTINEL_DIR/ci/security-review.sh" "origin/$BASE_REF"'
       - name: Upload the encrypted review
-        if: ${{ !cancelled() && steps.pr.outputs.dependabot != 'true' && hashFiles('pr/security-review.md.age') != '' }}
+        if: ${{ !cancelled() && hashFiles('pr/security-review.md.age') != '' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: security-review
           path: pr/security-review.md.age
           retention-days: 14
       - name: Post the review
-        if: steps.pr.outputs.dependabot != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ inputs.pr }}
         run: gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body-file pr/security-review.md --edit-last --create-if-none
-      # As the review app when one is set up, so a fork's own job named
-      # security-review cannot stand in for this check.
-      - name: Get the review app's token
-        id: app
-        if: vars.SENTINEL_APP_CLIENT_ID != ''
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ vars.SENTINEL_APP_CLIENT_ID }}
-          private-key: ${{ secrets.SENTINEL_APP_PRIVATE_KEY }}
-          permission-checks: write
       - name: Mark the commit reviewed
-        if: steps.pr.outputs.dependabot != 'true'
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.pr.outputs.sha }}
         run: >-
           gh api "repos/$GITHUB_REPOSITORY/check-runs" --silent
@@ -319,13 +281,3 @@ jobs:
           -f external_id="$GITHUB_RUN_ID"
           -f "output[title]=Reviewed"
           -f "output[summary]=Reviewed by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-      - name: Mark the commit not reviewed
-        if: steps.pr.outputs.dependabot == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
-          SHA: ${{ steps.pr.outputs.sha }}
-        run: >-
-          gh api "repos/$GITHUB_REPOSITORY/check-runs" --silent
-          -f name=security-review -f head_sha="$SHA" -f status=completed -f conclusion=skipped
-          -f "output[title]=Not reviewed"
-          -f "output[summary]=Dependabot pull requests are not reviewed; the mechanical job checks their dependencies."
