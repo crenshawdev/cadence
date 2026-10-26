@@ -13,9 +13,10 @@
 #
 # The required `security-review` check is posted by the review jobs once a
 # review has passed. A pull request from this repository is reviewed by
-# itself. A pull request from a fork gets no Actions secrets, so it is not
-# reviewed until someone with write access reviews it from main's copy of
-# this workflow:
+# itself once it is not a draft, so push to a draft while iterating and
+# mark it ready for one review. A pull request from a fork gets no Actions
+# secrets, so it is not reviewed until someone with write access reviews it
+# from main's copy of this workflow:
 #
 #   gh workflow run fast.yml -f pr=<pull request number>
 #
@@ -38,7 +39,10 @@
 name: sentinel-fast
 
 on:
+  # ready_for_review too: a draft pull request gets the mechanical checks on
+  # every push and no review, which runs once it is marked ready.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   # A push straight to main gets the mechanical checks too.
   push:
     branches: [main]
@@ -95,7 +99,9 @@ jobs:
     # not skip the review.
     # Aimed at the default branch only, so a review that passed was a review
     # against it, and a retarget runs no new review.
-    if: github.event_name == 'pull_request' && github.server_url == 'https://github.com' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' && github.base_ref == github.event.repository.default_branch
+    # Not on a draft, so pushes while iterating cost no review; GitHub does
+    # not merge a draft, and marking it ready runs the review.
+    if: github.event_name == 'pull_request' && github.server_url == 'https://github.com' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' && github.base_ref == github.event.repository.default_branch && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
