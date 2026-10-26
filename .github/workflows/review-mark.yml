@@ -1,0 +1,86 @@
+# sentinel review mark: posts the required security-review check as the
+# repo's review app once fast.yml's review job has passed on a pull request
+# from this repository.
+#
+# Copy this file into .github/workflows/ next to fast.yml when the review app
+# is set up (see fast.yml's header). A workflow_run runs the default branch's
+# copy of this file, never a pull request's, and the app's key sits in the
+# sentinel-review-app environment, which only the default branch can use, so
+# no workflow a pull request can edit ever holds the key. Nothing from the
+# pull request is checked out or run here.
+name: sentinel-review-mark
+
+on:
+  # Runs main's copy only and checks out nothing, so the pull request's code
+  # never runs beside the key.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [sentinel-fast]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  mark:
+    # A pull request from this repository, run by fast.yml itself. A fork's
+    # pull request is reviewed and marked by fast.yml's review-pr instead.
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.path == '.github/workflows/fast.yml' && github.event.workflow_run.head_repository.full_name == github.repository && vars.SENTINEL_APP_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    environment: sentinel-review-app
+    permissions:
+      actions: read
+    steps:
+      # The review job of that run has to have passed, and the pull request's
+      # fast.yml and .sentinel pin have to be the default branch's, so the
+      # review that passed is the default branch's review. Skipped (a
+      # Dependabot pull request), cancelled (a newer push), failed, a pull
+      # request that changes either one, or one aimed at another branch marks
+      # nothing; that one is reviewed with gh workflow run fast.yml -f pr=<n>.
+      - name: Check the review passed
+        id: review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.event.workflow_run.id }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          MAIN: ${{ github.event.repository.default_branch }}
+        run: |
+          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/jobs" \
+              --jq '[.jobs[] | select(.name == "review") | .conclusion][0] // "none"')
+          # The blob of fast.yml, and the commit (or tree) .sentinel points at.
+          pinned() {
+              printf '%s ' "$(gh api "repos/$GITHUB_REPOSITORY/contents/.github/workflows/fast.yml?ref=$1" --jq .sha || echo missing)"
+              gh api "repos/$GITHUB_REPOSITORY/git/trees/$1" --jq '[.tree[] | select(.path == ".sentinel") | .sha][0] // "missing"' || echo missing
+          }
+          ours=$(pinned "$MAIN")
+          theirs=$(pinned "$SHA")
+          same=$([[ $ours == "$theirs" ]] && echo true || echo false)
+          [[ $same == true ]] || echo "fast.yml or .sentinel differs from $MAIN's ($theirs against $ours), so this review is not the default branch's"
+          # Reviewed against the default branch only: a review against
+          # another base would still mark the commit after a retarget.
+          bases=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq '[.pull_requests[].base.ref] | unique | join(",")')
+          if [[ $bases != "$MAIN" ]]; then
+              echo "the pull request's base is '$bases', not $MAIN, so nothing is marked"
+              same=false
+          fi
+          echo "review job: $conclusion"
+          echo "passed=$([[ $conclusion == success && $same == true ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Get the review app's token
+        id: app
+        if: steps.review.outputs.passed == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.SENTINEL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SENTINEL_APP_PRIVATE_KEY }}
+          permission-checks: write
+      # Its external_id names the fast.yml run, which read-review.sh reads.
+      - name: Mark the commit reviewed
+        if: steps.review.outputs.passed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN: ${{ github.event.workflow_run.id }}
+        run: >-
+          gh api "repos/$GITHUB_REPOSITORY/check-runs" --silent
+          -f name=security-review -f head_sha="$SHA" -f status=completed -f conclusion=success
+          -f external_id="$RUN"
+          -f "output[title]=Reviewed"
+          -f "output[summary]=Reviewed by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$RUN"
