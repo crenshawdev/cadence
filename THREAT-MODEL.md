@@ -1,222 +1,289 @@
 # Threat model: Cadence
 
-Version or commit this describes: v3.9.0, commit `f50587ba`
-Last reviewed: 2026-10-17
+Cadence is a Claude Code plugin (`.claude-plugin/plugin.json`, name `cadence`; the manifest's `version` field still reads `3.9.0` at this commit). It has two halves, and both are tool behaviour:
 
-Cadence is a Claude Code plugin with two halves. The first is prose: the skills in `skills/`, the workflows and references in `cadence-core/`, and the agent definitions in `agents/`, which the model follows. The second is code: zero-dependency Node scripts in `cadence-core/bin/` that the model runs through its Bash tool (the seams), plus three hooks registered in `hooks/hooks.json`. The scripts do the deterministic parts and the model does the rest, with whatever tools the skill grants it. So most of what Cadence does is the model acting on its prose, and this file covers both what the code does and what the prose tells the model to do.
+- Prose the model follows: 34 skills in `skills/*/SKILL.md` (28 user-invocable, 6 role contracts marked `user-invocable: false`), 30 agent definitions in `agents/*.md` (six roles, five effort rungs each), and the workflows, references and templates in `cadence-core/{workflows,references,templates}`. What this prose tells the model to run, edit, send or grant is Cadence's behaviour even though no Cadence code enforces it.
+- Code: 129 zero-dependency Node scripts in `cadence-core/bin/*.mjs`, `cadence-core/bin/lib/*.mjs` and `cadence-core/bin/planning/*.mjs` (excluding `*.test.mjs`). The model runs them through the Bash tool as "seams"; three of them are hooks registered in `hooks/hooks.json`. `cadence-core/bin/test.mjs`, `self-verify.mjs` and `weight.mjs` are maintainer tools that no prose invokes. The suite (115 `cadence-core/bin/*.test.mjs` files and 14 files under `cadence-core/bin/fixtures/`) ships in the plugin tree but is not runtime.
+
+Conventions used below. "Code-enforced" means a Node script refuses or decides. "Prose-only" means the only control is an instruction to the model. A claim that was not confirmed against code, a run, or the host carries a VERIFY mark in square brackets naming what to check. Facts about GitHub repository settings were checked by the maintainer's session on 2026-10-23 with the GitHub API and are labelled as such; the code cannot show them. Two claims below were confirmed by running the shipped scripts in a scratch directory on 2026-10-23 and say so.
+
+Version or commit this describes: v3.9.1 in progress, commit `f480f515`
+Last reviewed: 2026-10-23
 
 ## What this tool reads
 
-Files and directories:
+### Files and directories (code)
 
-- The project tree the session runs in: source, tests and manifests. `detect-commands` reads manifests one directory deep only (`package.json`, `pyproject.toml`, ESLint flat configs, `go.mod` and the like) and never walks into nested packages.
-- `<project>/.planning/`: `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md`, `config.json`, `CAPTURE.md`, `DECLINED.md`, `phases/<N>/` (`PLAN.md`, `CONTEXT.md`, `SUMMARY.md`, `UAT.md`), `trace.jsonl` and `reads.jsonl` with their rotated `.1` generations.
-- The project's git data, through `git log`, `rev-list`, `cat-file --batch-check`, `diff`, `ls-files`, `status`, `merge-base` and `remote get-url`.
-- The user-global config: `~/.claude/cadence/config.json`, or the file `$CADENCE_GLOBAL_CONFIG` names.
-- The provider key file, only during a provider call: `${XDG_CONFIG_HOME:-~/.config}/cadence/providers.env`, or the file `review.key_file` names in the user-global layer.
-- Claude Code settings, to learn `worktree.baseRef` before parallel worktree runs (`bin/worktree-base.mjs`): `<root>/.claude/settings.local.json`, `<root>/.claude/settings.json`, `~/.claude/settings.json` (or `$CADENCE_USER_SETTINGS`) and the platform's `managed-settings.json` (or `$CADENCE_MANAGED_SETTINGS`).
-- A stopped subagent's own transcript, `~/.claude/projects/<project>/<session>/subagents/agent-<id>.jsonl`, at the path the SubagentStop payload gives in `agent_transcript_path`. `subagent-trace.mjs` never falls back to `transcript_path` and refuses a file over 8 MiB.
-- The plugin's own files under `${CLAUDE_PLUGIN_ROOT}`: `cadence-core/config.schema.json`, `.claude-plugin/plugin.json`, references and templates.
+`<root>` below is the nearest directory at or above the working directory that holds `.planning/` (the walk is `planningRoot` in `cadence-core/bin/lib/git-segments.mjs:161-187`; it stops at the first directory holding `.git`). Seams that take `--dir` read `<dir>/.planning/...`; `review-provider.mjs` and `config.mjs` default to `.planning/config.json` relative to the process cwd.
 
-Environment variables: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `XDG_CONFIG_HOME`, `PATH`, `PATHEXT`, `GIT_DIR`, `GIT_WORK_TREE`, and the overrides `CADENCE_GLOBAL_CONFIG`, `CADENCE_USER_SETTINGS`, `CADENCE_MANAGED_SETTINGS`, `CADENCE_CONFIG_SCHEMA`, `CADENCE_PLUGIN_MANIFEST`, `CADENCE_TEST_SEAM`, `CADENCE_DETECT_REACHABLE` and `CADENCE_DEFERRED_READS`.
+- Config layers, merged by `cadence-core/bin/lib/config-merge.mjs`:
+  - Repo layer: `<root>/.planning/config.json`. It is committed in a normal Cadence project and arrives with a clone.
+  - User-global layer: `$CADENCE_GLOBAL_CONFIG` when set, else `~/.claude/cadence/config.json` (`config-merge.mjs:25-29`). When `homedir()` throws, the global layer is `''` and treated as absent.
+  - `cadence-core/bin/lib/repo-auto-close.mjs` reads both files again with a raw `JSON.parse` for the `git.auto_close` decision.
+- Planning files under `<root>/.planning/`: `PROJECT.md`, `ROADMAP.md`, `REQUIREMENTS.md`, `STATE.md`, `CAPTURE.md`, `ARCHIVE.md`, `DECLINED.md`, `FILED.md`, `trace.jsonl` and `trace.1.jsonl`, `reads.jsonl` and `reads.1.jsonl`, `phases/<N>/{PLAN*.md, CONTEXT.md, SUMMARY.md, UAT.md, REVIEW-*.md, ADJUDICATION-*.json, DEFERRED-*.json, FINDINGS.json, reports/plan-<k>*.md}`, `deferred/<N>/`, `risk-carry/<N>/`, `tasks/<slug>/RECORD.md`, `_archive-<label>/<N>/`. Most reads go through `read()` in `cadence-core/bin/planning/core.mjs:51` (`readFileSync`, follows symlinks, no size cap) or `readText()` in `cadence-core/bin/lib/seam-input.mjs`. Some readers `lstat` first and refuse a symlink (`lib/phase-plans.mjs`, `planning/adjudication.mjs`, `planning/deferred-record.mjs`, `planning/debt-harvest.mjs`, `planning/risk-carry.mjs`, `planning/milestone-prune.mjs`) or refuse a path whose realpath leaves the planning root (`lib/task-record.mjs` through `lib/contained.mjs` `insideRoot`).
+- Project tree outside `.planning/`:
+  - `route.mjs resolve` reads the bodies of the files a PLAN's `files:` list declares (`declaredBodies`, `cadence-core/bin/route.mjs`), at most 512 KiB each (`MAX_BODY_BYTES`, `route.mjs:285`), refusing absolute paths, `..` segments, non-regular files and any path whose realpath leaves the repository.
+  - `planning.mjs detect-commands --root <root>` lists `<root>` one level deep and reads `package.json`, `pyproject.toml`, and the presence of `Cargo.toml`, `go.mod`, `eslint.config.{js,mjs,cjs,ts}`, `.eslintrc*`, `tsconfig.json`, `tsconfig.ci.json`, and `<root>/node_modules/.bin/{eslint,tsc}` (`cadence-core/bin/planning/detect-commands.mjs`).
+  - `planning.mjs detect-surfaces` lists directories two levels deep and reads only the dependency manifests it recognizes (`SCAN_MANIFESTS`, parsed for dependency names), never source text.
+  - `planning.mjs debt-harvest` reads every file `git ls-files -z` lists (listing buffer 64 MiB), skipping any file over 1 MiB (`DEBT_MAX_FILE_BYTES`, `planning/debt-harvest.mjs:28`, `:85`), looking for `CADENCE-DEBT` markers.
+  - `lib/phase-plans.mjs`, which reads PLAN files for `route.mjs`'s risk floor, refuses a non-regular entry (checked with `lstat`) and any file over 512 KiB (`MAX_PLAN_BYTES`, `lib/phase-plans.mjs:40`, `:128-138`). Other readers of PLAN files (for example `test-checks` and the model's own Read) apply no size bound.
+  - `planning.mjs trace ignore` reads `<root>/.gitignore`.
+  - `release-bump.mjs bump --dir <d>` reads `<d>/.claude-plugin/plugin.json`, `<d>/.claude-plugin/marketplace.json` and `<d>/CHANGELOG.md`.
+  - `skim.mjs <file>` reads any path it is given and prints it with comments removed.
+  - Any `--payload <file>`, `--*-file <file>` (`lib/text-flag-file.mjs`), `--label-file`, `--text-file` path, and stdin for `review-provider.mjs` and several `planning.mjs` subcommands (`readJsonPayload`, `planning/core.mjs:232`). None of these reads has a size cap.
+- Git data, through `git` subprocesses (argv, never a shell). Subcommands in code: `rev-parse` (`--abbrev-ref HEAD`, `--show-toplevel`, `--git-dir`, `--git-common-dir`, `--verify <ref>^{commit}`, `--verify --quiet refs/heads/<b>`), `remote`, `remote get-url origin`, `log` (several formats, `-L`, `--follow`, `--full-history`, `--diff-filter=D`), `diff` (`--no-ext-diff --no-textconv` in `risk-check`; `--name-only`; `--cached --name-status -z -M` in `lease-check`), `write-tree`, `cat-file -e/--batch/--batch-check`, `rev-list`, `show`, `ls-tree`, `ls-files` (`-z`, `--error-unmatch`), `check-ignore --no-index -v`, `status --porcelain --ignored`, `branch --merged <base>`, `tag --list`, `merge-base --is-ancestor`.
+- Claude Code settings, read-only, by `cadence-core/bin/worktree-base.mjs` for `worktree.baseRef` alone: the managed policy file (`/etc/claude-code/managed-settings.json` on Linux, the macOS and Windows paths in `worktree-base.mjs:67-73`, or `$CADENCE_MANAGED_SETTINGS`), `<main checkout>/.claude/settings.local.json`, `<main checkout>/.claude/settings.json`, and `~/.claude/settings.json` (or `$CADENCE_USER_SETTINGS`).
+- Transcripts under `~/.claude/projects`: only the `SubagentStop` hook reads one. `cadence-core/bin/subagent-trace.mjs` reads the file named by the payload's `agent_transcript_path` (the stopped worker's own transcript, `~/.claude/projects/<project>/<session>/subagents/agent-<id>.jsonl` per the comment in `lib/subagent-transcript.mjs`), only when it is at most 8 MiB (`MAX_TRANSCRIPT_BYTES`, `subagent-trace.mjs:61`), and only when the payload's `agent_type` maps to a Cadence role. It never falls back to the session `transcript_path`. It extracts four things: the last assistant line's `stop_reason` and `timestamp`, the summed `cache_creation_input_tokens` and `cache_read_input_tokens` (numbers only), and the top-level `effort` string when every line agrees (`lib/subagent-transcript.mjs`).
+- Provider key file, by `cadence-core/bin/review-provider.mjs:247-284` only when the key is not in the environment: `--key-file <path>` (a leading `~` is expanded), else `$XDG_CONFIG_HOME/cadence/providers.env`, else `~/.config/cadence/providers.env`. It is parsed as `KEY=VALUE` lines and only `OPENAI_API_KEY`, `GEMINI_API_KEY` or `DEEPSEEK_API_KEY` is taken.
+- The plugin's own files, relative to the script: `cadence-core/config.schema.json` (`config.mjs`, `route.mjs`), `.claude-plugin/plugin.json` (`route.mjs` for the agent-type prefix, `planning/core.mjs` for the version), `cadence-core/references/model-hints.json` (`review-provider.mjs detect-models`).
+- Other tools' state: `tea login list --output json` stdout (tea's own login config, parsed for `name`, `url`, `ssh_host`, `user` in `bin/forge.mjs`, `bin/issue-check.mjs`, `bin/issue-filing.mjs`). PATH directories are probed with `accessSync` by `cadence-core/bin/lib/on-path.mjs`.
 
-Streams and arguments:
+### Files the prose tells the model to read
 
-- Each hook reads the hook JSON on stdin: `cwd`, `tool_input.command`, the tool response, and for SubagentStop `agent_transcript_path`.
-- Each seam reads its CLI arguments, checked against its row in `lib/arg-contract.mjs`. Free text goes in a payload file, or stdin for `review-provider.mjs --payload -`, and never in an inline flag.
+The model reads whatever the workflows name: the plugin's own templates under `cadence-core/templates/` and references under `cadence-core/references/`, `CLAUDE.md` of the project (the executor contract makes its directives "hard constraints" that win over the plan, `skills/cad-executor-contract/SKILL.md`), every planning file above, source files a plan names, `git log`/`git diff` output, `references/reviewer-brief.md`, forge CLI output (`gh pr view`, `glab mr view`, `tea pr list`), and the JSON each seam prints.
 
-Network reads:
+### Environment variables (code; complete list from `process.env`)
 
-- Responses from `https://api.openai.com`, `https://generativelanguage.googleapis.com` and `https://api.deepseek.com`, in `bin/review-provider.mjs` only.
-- Output from the user's own `gh`, `glab` and `tea`: the title-scoped issue lookup before filing, issue state at land time, and `tea login list` on the Forgejo arm.
+- `CADENCE_GLOBAL_CONFIG` - relocates the user-global layer. Honoured in production with no gate (`config-merge.mjs:29`). It decides which file counts as the user-global half of `git.auto_close`, `review.reviewers`, and the three global-only keys.
+- `CADENCE_TEST_SEAM` - when exactly `1`, admits `CADENCE_CONFIG_SCHEMA` (schema path, `config.mjs:46`, `route.mjs:168`), `CADENCE_PLUGIN_MANIFEST` (`route.mjs:177`, `planning/core.mjs:171`) and `CADENCE_DETECT_REACHABLE` (`detect-commands.mjs:163`). Without the sentinel those three are ignored (`lib/test-seam.mjs`).
+- `CADENCE_MANAGED_SETTINGS`, `CADENCE_USER_SETTINGS` - relocate two settings layers for `worktree-base.mjs`; not gated; they change only the advisory `parallelSafe` answer.
+- `CADENCE_DEFERRED_READS` - `self-verify.mjs` only (maintainer tool).
+- `OPENAI_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY` - provider keys, env first (`review-provider.mjs:277`).
+- `XDG_CONFIG_HOME`, and `HOME` through `os.homedir()`.
+- `PATH`, `PATHEXT` - `lib/on-path.mjs`; every child process is also found through PATH (see What it executes).
+- `GIT_DIR`, `GIT_WORK_TREE` - presence makes `renumber` refuse its `rmSync` fallback (`planning/renumber.mjs:70`).
+- Inherited by every child process without filtering: the whole environment, including forge tokens (`GH_TOKEN`, `GITLAB_TOKEN` and the like) that `gh`/`glab`/`tea` read themselves, and `GIT_*` variables.
+- Prose uses `CLAUDE_PLUGIN_ROOT` (every seam invocation and `hooks/hooks.json`) and `TMPDIR` (scratch directories, `references/conventions.md`).
 
-Other users, projects and tools: nothing owned by another user. Transcripts under `~/.claude/projects` belong to the same user but are Claude Code's files, and only the stopped worker's own file is read. The user-global config applies to every repository on the machine.
+### CLI arguments and stdin
+
+Every seam takes flags whose value grammar is declared in `cadence-core/bin/lib/arg-contract.mjs` (`CONTRACTS`) and read through `evaluateFlag`/`requireFlag`; `lib/seam-input.mjs` refuses a missing, empty or `--`-leading value. Hooks read one JSON object from stdin (fd 0). `land-cleanup.mjs gate` reads `{findings, unruled}` JSON from stdin. `review-provider.mjs` reads `{instruction, artifact}` or `{situation}` from `--payload <file>` or stdin.
+
+### Network endpoints
+
+- Code, `review-provider.mjs` only, over `node:https` with hardcoded bases (`review-provider.mjs:1066`, `:1115`, `:1181`):
+  - `https://api.openai.com`: `POST /v1/responses`, `GET /v1/models`.
+  - `https://generativelanguage.googleapis.com`: `POST /v1beta/models/<model>:generateContent`, `GET /v1beta/models`. The model id is interpolated into the URL path (`:1134`).
+  - `https://api.deepseek.com`: `POST /chat/completions`, `GET /models`.
+  - No environment variable, flag or config key changes the destination; the only override is `__setTransportForTests`, reachable by importing the module (`review-provider.mjs:687-702`).
+- Code, through forge CLIs that reach their own configured hosts: `gh issue list`, `gh issue create`, `gh repo create`; `glab issue list`, `glab issue create`, `glab repo create`; `tea issues list`, `tea issues <n>`, `tea issues create`, `tea repos create` (`lib/issue-decision.mjs` `HOST_TABLE`, `lib/filing-decision.mjs` `FILING_TABLE`, `lib/forge-decision.mjs` `CREATE_TABLE`).
+- Code, through git: `git push` in `git-publish.mjs publish` to the configured remote.
+- Prose: `gh pr view/create/merge`, `glab mr view/create/merge`, `tea pr list/create/merge`, `tea pr <index>`, `git push`, `git pull`, `git fetch` in `/cad-land` and its references; the context7 MCP tools (`mcp__context7__resolve-library-id`, `mcp__context7__query-docs`) granted by `skills/cad-decision-review/SKILL.md`; the optional `/cad-new-project` research agent, told to verify versions "against current docs" (`cadence-core/workflows/new-project.md` step `research`) [VERIFY which web tools that host agent has]; every subagent dispatch is a Claude Code model call.
+
+### Data owned by other users, projects or tools
+
+- Other projects: a seam runs against whatever `--dir`, `--root` or `--file` names. `review-provider.mjs` reads `.planning/config.json` relative to its own cwd.
+- Claude Code's own data: the settings files above and the stopped worker's transcript.
+- Forge CLIs' credential stores and tea's login list, read through the CLIs.
+- Nothing reads files owned by another OS user beyond what the user's own permissions allow.
 
 ## What it writes
 
-Inside the project:
+No Cadence code sets a file mode. Every file is created with Node's default (`0o666` masked by the umask, so `0644` under the usual `022`, world-readable) and every directory with `0o777` masked by the umask. That includes the user-global config and everything under `.planning/`. Prose scratch directories come from `mktemp -d`, which creates them `0700`.
 
-- `.planning/`: every planning document, `config.json`, `CAPTURE.md`, `DECLINED.md`, `trace.jsonl` (1 MiB cap, rotated to `trace.1.jsonl`), `reads.jsonl` (8 MiB cap, rotated to `reads.1.jsonl`) and the claim and temp files their rotations use. Whole-file writes go through `atomicWrite` (temp file plus rename) and records through `appendFileSync`. The trace and reads writers `lstat` first and refuse a symlinked target.
-- Source and tests, edited by executor agents with one commit per task.
-- `.gitignore`: `/cad-new-project` and `/cad-adopt` append `.planning/trace.jsonl` if it is absent. [VERIFY whether `reads.jsonl` is also kept out of git in a user's repository.]
-- Git: commits, branches, `git mv` and `git rm` during phase renumbering, reverts from `/cad-undo`, deletion of merged local branches (`git-publish.mjs reap`, `land-cleanup`), and a tag at `/cad-land` when the user picks that arm.
+### How code writes
 
-Outside the project:
+- `atomicWrite` (`cadence-core/bin/lib/planning-files.mjs:2893-2905`): writes `<file>.<pid>.<n>.tmp` in the same directory, then `renameSync` over the target. It refuses when the temp path is a symlink. It does not check the target (a symlinked target is replaced by a regular file, not followed) or the parent directory (a symlinked parent is followed). No lock, no fsync.
+- Append-only records (`lib/trace.mjs` `appendEvent`, `lib/read-trace.mjs` `appendRead`): `lstat` first and refuse a symlinked record (`symlinked-trace`, `symlinked-reads`), then `appendFileSync`. Size bounds rotate instead of refusing: `.planning/trace.jsonl` at 1 MiB (`MAX_TRACE_BYTES`, `lib/trace.mjs:153`) into `trace.1.jsonl`, `.planning/reads.jsonl` at 8 MiB (`MAX_READS_BYTES`, `lib/read-trace.mjs:50`) into `reads.1.jsonl`, each with a `.claim` sidecar and `*.rotate.*`/`*.evict.*` temps written with flag `wx`. A single line that cannot fit is refused (`oversized-event`, `oversized-record`).
+- `withPlanningFileLock` (`lib/capture-file.mjs`): a `<file>.lock` sibling created with `wx`, waited on for 2 s, broken after 120 s; used for `CAPTURE.md`, `DECLINED.md`/`FILED.md` and `ARCHIVE.md`.
 
-- `~/.claude/cadence/config.json` (or `$CADENCE_GLOBAL_CONFIG`), written by `config.mjs set --global` and the setup interviews.
-- `CAPTURE.md` beside that config, from `/cad-capture --cadence`.
-- The `worktree.baseRef` key, merged into `.claude/settings.json` or `~/.claude/settings.json`, only after the user picks the file at `/cad-config`.
-- Scratch directories from `mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX"`.
-- Git worktrees for parallel executors, through Claude Code's worktree isolation. [VERIFY where they are created.]
+### Paths written inside the project (code)
 
-On the forge, through the user's own CLI: `repo create --private` once at `/cad-new-project`, `issue create` for a review finding the user accepted, and PR or MR create and merge at `/cad-land`.
+- `.planning/config.json` (and any `--file` path): `config.mjs set`/`unset`.
+- `.planning/STATE.md`: `planning.mjs cursor set`, `renumber`.
+- `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md`: `phase-done`, `renumber`, `milestone-prune`, `seed-reqs`.
+- `.planning/ARCHIVE.md`: `milestone-prune`.
+- `.planning/CAPTURE.md` (or the `--file` path `capture` is given): `capture`, `debt-harvest`.
+- `.planning/DECLINED.md`, `.planning/FILED.md`: `issue-filing.mjs file` (it creates `.planning/` if absent).
+- `.planning/phases/<N>/UAT.md`, `FINDINGS.json`: `uat`.
+- `.planning/{phases,deferred}/<N>/ADJUDICATION-<trigger>-<disc>[-rN].json`, `DEFERRED-<trigger>-<disc>[-rN].json`, and the same under `tasks/<slug>/`: `adjudication`, `deferred record`. Filename tokens must match `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$` (`RECORD_TOKEN`, `planning/core.mjs`).
+- `.planning/tasks/<slug>/RECORD.md`: `task-record` (refuses when the record directory resolves outside the planning root).
+- `.planning/phases/<N>/reports/plan-<k>.md` first line: `test-checks`/`test-evidence` rewrites it to `PLAN CHECKPOINT: blocked`.
+- `.planning/risk-carry/<N>/` (copies), `.planning/deferred/<N>/` (moves), `.planning/_archive-<label>/<N>/` (moves): `risk-carry`, `deferred-carry`, `milestone-prune --mode archive`. Each refuses a symlinked root or destination.
+- Deletions: `milestone-prune --mode delete` runs `rmSync(.planning/phases/<N>, {recursive: true})` for every checked phase (`planning/milestone-prune.mjs:248`), untracked contents included. `renumber remove` runs `git rm -r -q .planning/phases/<N>` and, only when no repository sits at, above or inside the target and neither `GIT_DIR` nor `GIT_WORK_TREE` is set, falls back to `rmSync` (`planning/renumber.mjs:433-459`). `renumber` moves phase directories with `git mv`, falling back to `renameSync`.
+- `<root>/.gitignore`: `trace ignore` appends the lines for `.planning/trace.jsonl`, `trace.1.jsonl`, `reads.jsonl`, `reads.1.jsonl` and their claim and temp files when absent; `--check` writes nothing.
+- `<d>/.claude-plugin/plugin.json`, `<d>/.claude-plugin/marketplace.json` (only where a `version` field exists) and `<d>/CHANGELOG.md`: `release-bump.mjs bump`.
 
-File modes: no script sets one. Every file Cadence creates gets the process umask, which is `0644` under the usual `022`, and that includes the user-global config and everything under `.planning/`. Cadence never creates `providers.env`, and it never checks that file's mode, even though the header of `review-provider.mjs` calls it a 600-perm file.
+### Paths written outside the project (code)
 
-Output:
+- The user-global config `~/.claude/cadence/config.json` (or `$CADENCE_GLOBAL_CONFIG`): `config.mjs set --global` creates the directory and file; `unset --global` edits it.
+- `$TMPDIR/cad-test-global-*/`: `test.mjs` only.
+- `.planning/` of the worktree when a hook runs inside a Claude Code worktree whose checkout carries `.planning/`.
+- Git worktrees for parallel executors are created by Claude Code's worktree isolation, not by Cadence (no `git worktree add` exists in `cadence-core/bin`, per `references/seam-spawn-agent.md`). The maintainer observed on 2026-10-21 that Claude Code creates each at `<repo>/.claude/worktrees/agent-<id>` on a branch named `worktree-agent-<id>`. The prose names the worktree branch `cadence/phase-<N>-plan-<k>` (`references/execute-parallel.md` step 1, `workflows/execute.md`) and has the worktree executor halt when `git branch --show-current` is not its assigned branch (`references/worktree-executor.md`). [VERIFY which branch name a parallel executor actually sees and what the orchestrator merges and deletes.]
 
-- Every seam prints exactly one JSON line on stdout (`lib/seam-io.mjs`), and the model reads it, so it lands in Claude Code's context and goes wherever the session goes.
-- `forge.mjs`, `issue-filing.mjs` and `issue-check.mjs` discard their children's stderr at the spawn and never put a byte of a child's output on their envelope.
-- `git-guard.mjs` prints one permission-decision object, which Claude Code reads.
+### Paths the prose tells the model to write
+
+- Planning documents written with the Write/Edit tools: `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `phases/<N>/{CONTEXT.md, PLAN*.md, SUMMARY.md, REVIEW-*.md}`, `reports/plan-<k>.md` (executor), `research/RESEARCH.md`, debug and spike files, and the project's source code (executor, debug, coverage, task).
+- Scratch: `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")"` per run, holding diffs (`artifact.txt`), composed provider payloads (`payload.json`), run tokens and redirected bulk output (`references/conventions.md`, `references/review-cross-model.md`). The prose leaves them for the OS to reap and never deletes them.
+- Claude Code settings: on the user's explicit accept, `/cad-config` merges `"worktree": {"baseRef": "head"}` into `<root>/.claude/settings.json` or `~/.claude/settings.json`, never a managed file (`cadence-core/workflows/config.md`, "Worktree base ref").
+- `~/.claude/cadence/CAPTURE.md` (or the directory of `$CADENCE_GLOBAL_CONFIG`): `/cad-capture --cadence`, carrying the user's sentence plus `host:` set to the repository's `origin` URL as `git remote get-url origin` prints it (`skills/cad-capture/SKILL.md` step 4). No redaction is applied.
+- Deletion of `.planning/risk-carry/` by `/cad-land` step 4 after a confirmed merge.
+
+### Git writes
+
+- Code: `git push --set-upstream -- <remote> refs/heads/<b>:refs/heads/<b>` and `git branch -D -- <b>` (`git-publish.mjs`, argv from `lib/publish-decision.mjs:158`, `:217`); `git mv`, `git rm -r -q` (`renumber`); `git remote add origin <url>` after a forge create (`forge.mjs:529`); `git write-tree` (writes a tree object, moves no ref).
+- Prose: `git init` (`/cad-new-project`); `git add <specific files>` and `git commit` per task (executor contract forbids `git add -A` and `git add .`); docs commits of `.planning/` files when `planning.commit_docs` is true (the default in `cadence-core/templates/config.json`); `git checkout -b <integration branch>`; `git stash push --staged` (`workflows/execute.md:149`); sequential `git merge <worktree branch>` then worktree removal and branch deletion (`references/execute-parallel.md` steps 3-4); `git revert --no-edit` or `--no-commit` over hashes from a phase SUMMARY (`workflows/undo.md`); WIP commit (`/cad-pause`); `git checkout <base>`, `git pull`, `git tag -a <version> -F <path>` (`/cad-land` step 4); `git push` of a branch or tag when the user chose it (`/cad-land` 3a); `git checkout -- <file>` in worktree mode.
+
+### Forge writes
+
+- Code: `gh repo create <owner>/<name> --private`, `glab repo create <owner>/<name> --private --remoteName origin`, `tea repos create --name <n> [--owner <org>] --login <l> --private` (`forge.mjs create`, only with `--confirmed`); `gh issue create`, `glab issue create -y`, `tea issues create` carrying an issue title (`[cadence <16-hex fingerprint>] <claim>`, at most 200 characters) and a body built from the finding's file, line, severity, voice, ruling, claim and failure scenario (`lib/filing-decision.mjs:350-404`, `issue-filing.mjs file`). No redaction is applied to title or body.
+- Prose: `gh pr create --base <base> --head <branch> --fill`, `gh pr merge <branch> --merge --delete-branch`, `glab mr create --source-branch <b> --target-branch <base> --fill`, `glab mr merge <b> --yes --remove-source-branch --auto-merge=false`, `tea pr create --base <base> --head <b>`, `tea pr merge --style merge <index>` (`skills/cad-land/SKILL.md` 3a and 3b).
+
+### stdout and stderr
+
+- Every seam prints exactly one JSON object on stdout and sets the exit code from `ok` (`lib/seam-io.mjs`). The model reads it through the Bash tool result, so it enters Claude Code's context. Envelopes carry warnings and details that can include file paths, git error text (passed through `redactUrl`), commit subjects (`why.mjs`), planning text (`recall`), provider findings and consult angles (`review-provider.mjs`), and repository slugs. `forge.mjs`, `issue-check.mjs` and `issue-filing.mjs` discard child stderr at the spawn and put no child stdout on an envelope.
+- `git-guard.mjs` prints one `hookSpecificOutput` permission decision on stdout, or nothing; Claude Code reads it and shows the reason at the prompt.
 - `read-trace.mjs` and `subagent-trace.mjs` print nothing on any stream and always exit 0.
+- `test.mjs` inherits the terminal.
 
 ## What it executes
 
-Programs started by the scripts. Every one goes through `execFileSync` or `spawnSync` with an argv array and is found on `PATH`. No script uses `shell: true` or `execSync`.
+### External programs
 
-- `git`, from many seams.
-- `gh`, `glab` and `tea`, from `forge.mjs`, `issue-filing.mjs` and `issue-check.mjs`, after `lib/on-path.mjs` confirms the name resolves.
-- `node` (`process.execPath`), from `test.mjs`.
+All child processes are started with `execFileSync` or `spawnSync` and an argv array; no call passes `shell: true` and no code builds a shell string. Every binary is a bare name resolved through `PATH`, except `test.mjs`, which spawns `process.execPath`.
 
-Programs the prose tells the model to run through Bash:
+- `git`: every file listed under git data and git writes above.
+- `gh`, `glab`, `tea`: `bin/forge.mjs`, `bin/issue-check.mjs`, `bin/issue-filing.mjs`. Presence is checked first with `lib/on-path.mjs` (PATH plus `PATHEXT`, `accessSync` for execute). Calls carry explicit timeouts with `killSignal: 'SIGKILL'`: issue-check 10 s per call and 10 s for the whole resolve loop, at most 5 per-issue resolves; forge create 60 s, git and `tea login list` 10 s; issue-filing lookup 30 s, create 60 s, login 10 s. `git-publish`, `land-cleanup` and the planning seams set no timeout on git.
+- The Bash tool runs everything else the prose prescribes (next sections).
 
-- The seams themselves, as `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/<seam>.mjs" ...`.
-- `workflow.test_command` and `workflow.lint_command`, honoured from the user-global layer only.
-- Detected lint and typecheck commands. `eslint` and `tsc` run from `<root>/node_modules/.bin`, which is repository-controlled code; others resolve off `PATH`; no arm runs `npx`.
-- The project's test runner at `/cad-execute`, `/cad-task` and `/cad-coverage`, experiment code at `/cad-spike`, and reproductions at `/cad-debug`.
-- Forge merge commands at `/cad-land`: `gh pr merge <branch> --merge --delete-branch`, `glab mr merge <branch> --yes --remove-source-branch --auto-merge=false`, and `tea pr merge --style merge <index>`.
+### Hooks installed into Claude Code (`hooks/hooks.json`)
 
-Every `/cad-*` command except `/cad-help` lists `Bash` in `allowed-tools` with no command pattern, so inside a Cadence command the model runs shell commands without a permission prompt. The README's "Why every command keeps Bash open" section gives the reasons.
+- `PreToolUse`, matcher `Bash`, `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-guard.mjs"`, timeout 10 s. Reads `tool_input.command` and `cwd` from stdin. Acts only when `planningRoot(cwd)` finds a `.planning/` before a `.git`. It splits the command on `;`, newline, `|`, `||`, `&&`, `&` and counts a segment only when its first word is `git` or ends in `/git`; the verb is the first non-flag word after skipping `-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace`, `--exec-path`, `--config-env` and their arguments (`lib/git-segments.mjs:89-113`). Decisions:
+  - Any `push` verb: `permissionDecision: "ask"`, unconditionally (`git-guard.mjs:212`).
+  - Any `commit` verb: loads both config layers; on a branch in `git.protected_branches` (default `main`, `master`) answers `ask` (default), `deny` when `git.on_protected` is `refuse` or `deny`, nothing when `allow`; a torn config layer turns any commit into `ask` but never removes an existing `deny`. A literal `-C <path>` is followed and that repository is judged only if it is a Cadence project.
+  - Everything else: no output.
+  - Early return: outside a Cadence project; a segment whose command word is not `git` (`bash -c "git push"`, `$(git push)`, `sudo git push`, `env -S ...`, `ssh host git push`); `git -C "a b" push` (quotes are not tracked). `references/git-publish.md` rail 3 lists these shapes as not seen by design.
+  - Failure: any thrown error is caught and the hook exits 0 with no output (`git-guard.mjs:235`), so a broken guard produces no decision and Claude Code's ordinary permission flow applies. [VERIFY how Claude Code treats a hook that exceeds its 10 s timeout, and whether an `ask` decision prompts under `bypassPermissions` mode.]
+  - Confirmed by running the shipped hook on 2026-10-23 in a scratch repository whose `.planning/` is untracked: `git push origin main` with `cwd` at the repository root answered `ask`; the same command with `cwd` at `<repo>/.claude/worktrees/agent-x` (a linked worktree, the layout Claude Code uses for subagent worktrees per the maintainer's 2026-10-21 observation) produced no output, because the walk stops at the worktree's `.git` file before reaching a `.planning/`. `bash -c 'git push'` also produced no output.
+- `PostToolUse`, matcher `Read|Grep|Glob|Bash|NotebookRead|mcp__excerpt__excerpt_read|mcp__excerpt__excerpt_search`, `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/read-trace.mjs"`, timeout 5 s. Inside a Cadence project only, appends one record to `.planning/reads.jsonl`: timestamp, tool, the agent (`agent_type`, else `unknown-agent` when an `agent_id` is present, else `coordinator`), `agent_id`, `tool_use_id`, the `target` (Read/NotebookRead `file_path`, Glob/Grep `path`, excerpt `path`; for Bash the program name only, matching `^[A-Za-z0-9._+-]{1,64}$`), up to 12 in-repo file paths named on a Bash command line that exist as regular files (`filesOf`, `lib/read-trace.mjs`), the response size, and for a failed call the first line of its text passed through `redactCause` and capped at 200 characters. Grep patterns and Bash arguments are never recorded. Read, Glob and Grep targets are recorded as given, including absolute paths outside the project; only the Bash `files` list is confined to the project. Always exits 0 with no output.
+- `SubagentStop`, no matcher, `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/subagent-trace.mjs"`, timeout 10 s. Inside a Cadence project and only when `agent_type` maps to a Cadence role (`roleOfAgent`, `lib/rung-agent.mjs`), renders `.planning/trace.jsonl`, reads the worker transcript as described under reads, and appends the lifecycle close and cache events `lib/subagent-trace.mjs closeForStop` returns. Always exits 0 with no output.
+- `lib/hook-events.mjs` and `self-verify.mjs` check that the registered event names are known; they do not run at hook time.
+- The plugin manifest declares no MCP servers.
 
-Hooks:
+### Commands the prose tells the model to run
 
-- PreToolUse on `Bash` runs `git-guard.mjs`. It asks on every `git push`. For `git commit` on a protected branch it asks, refuses or allows according to `git.on_protected` (default `ask`).
-- PostToolUse on `Read|Grep|Glob|Bash|NotebookRead|mcp__excerpt__excerpt_read|mcp__excerpt__excerpt_search` runs `read-trace.mjs`.
-- SubagentStop, with no matcher, runs `subagent-trace.mjs`.
-- All three fire in every session where the plugin is enabled. They act only when a `.planning/` directory exists between the hook's `cwd` and the repository root, and they exit 0 on any internal error.
+- Seams: `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/<script>.mjs" <sub> ...` throughout.
+- Test and lint: the executor runs each task's `Verify:` command from the PLAN file before committing (`skills/cad-executor-contract/SKILL.md` process step 2); runs `workflow.lint_command` when set in the user-global layer, else `planning.mjs detect-commands` and the `lint` and `typecheck` commands it returns (step 3); and runs the full suite once per dispatch: `workflow.test_command` when set in the user-global layer, else "the suite the project's own manifest names - the `package.json` script, the `pyproject.toml` runner, the Makefile target". `references/execute-parallel.md` step 5, `workflows/task.md` and `workflows/coverage.md` run `workflow.test_command` the same way. `detect-commands` returns only fixed strings: `npm run lint`, `npm run typecheck`/`type-check`, `cargo clippy --all-targets -- -D warnings`, `cargo check --all-targets`, `ruff check .`, `mypy .`, `go vet ./...`, `go build ./...`, `eslint .`, `tsc --noEmit`, `tsc -p tsconfig.ci.json`, with `eslint`/`tsc` rewritten to `node_modules/.bin/<tool>` when the project carries that binary, and never `npx` (`detect-commands.mjs:112-181`). Each of these runs code the repository controls: npm scripts, Cargo build scripts and proc macros, eslint configuration files, and binaries under the repository's own `node_modules/.bin`.
+- Experiments and reproductions: `/cad-spike` builds and runs throwaway code in `.planning/spikes/<slug>/` or a temp directory (`workflows/spike.md` step 4); `/cad-debug` runs and re-runs the reproduction it records (`workflows/debug.md`).
+- Git, forge and merge commands: listed under git writes and forge writes above. The parallel path merges worktree branches with `git merge {branch}` and stops on conflict.
+- Provider calls: the composition block in `references/review-cross-model.md` (`mktemp -d`, a refusal of any scratch path outside `[A-Za-z0-9._/-]`, `git diff <base_ref>..<head_ref> > "$D/artifact.txt"`, a `node -e` composer that writes `payload.json`), then `review-provider.mjs review --provider <p> --model <id> --effort <e> --trigger <t> --payload <path> [--key-file <path>]` with an explicit Bash timeout of at least `review.request_timeout_ms`.
+- Skill pre-approval: 27 of the 28 user-invocable skills list a bare `Bash` (no command pattern) in `allowed-tools`: cad-adopt, cad-audit, cad-capture, cad-config, cad-context, cad-coverage, cad-debug, cad-decision-review, cad-docs-verify, cad-execute, cad-health, cad-land, cad-milestone, cad-minimalism-review, cad-new-project, cad-pause, cad-phase, cad-plan-review, cad-plan, cad-progress, cad-report, cad-spike, cad-suggest, cad-task, cad-undo, cad-verify, cad-why. `cad-help` lists only `Read`. Most also list `Write`, `Edit`, `Task`; `cad-milestone`, `cad-progress` and `cad-suggest` list `SlashCommand`; `cad-decision-review` lists the two context7 MCP tools. `README.md` states that these lists pre-approve the tools except under managed `allowManagedPermissionRulesOnly` on Claude Code 2.1.284 and later, and gives the maintainer's reasons in its "Why every command keeps Bash open" section. [VERIFY on the host versions users run that a skill's bare `Bash` grant runs every Bash command without a permission prompt for the rest of the skill, and whether the grant reaches subagents the skill dispatches.] No skill sets `disable-model-invocation`, so the model can invoke `/cad-land`, `/cad-undo`, `/cad-milestone` or `/cad-pause` on its own.
+- Agents: executor rungs have `Read, Write, Edit, Bash, Grep, Glob, LSP` and the two `mcp__excerpt__*` tools; planner rungs `Read, Write, Edit, Bash, Glob, Grep` and excerpt; verifier rungs `Read, Write, Bash, Grep, Glob` and excerpt with `Edit, MultiEdit` disallowed; reviewer, plan-checker and assumptions-analyzer rungs `Read, Bash, Glob, Grep` and excerpt with `Write, Edit, MultiEdit` disallowed. Every agent has `maxTurns: 200`. The "read-only" roles hold an unrestricted Bash, so nothing stops them writing through the shell. `mcp__excerpt__*` is a third-party MCP server Cadence does not ship. [VERIFY what the excerpt server can read.]
 
-`git-guard.mjs` is a rail, not a security boundary. It sees only segments whose command word is `git`, so `bash -c "git push"`, `sh -c`, `eval`, `$(...)` and other wrappers pass it unseen; `cadence-core/references/git-publish.md` rail 3 lists what it misses. `git-publish.mjs publish` pushes as a subprocess, which the hook never sees, and that is deliberate.
+### Commands, queries and prompts built from data
 
-Commands and prompts built from data:
-
-- Argv built from data: branch names, which are checked for a safe name and a non-protected branch before a push; remote names, which must be a configured bare name; and the repository slug, which must pass the slug grammar. Issue titles and bodies are built from finding text and passed to the CLI by file.
-- Prompts built from data: every agent dispatch carries planning documents, source and diffs; the cross-model `review` payload is the instruction plus the plan or diff; the `consult` payload is a description of the dead end.
-- No SQL and no FTS. `/cad-why` ranks with an in-process BM25 (`lib/bm25.mjs`).
+- Git argv from config and flags (code):
+  - `issue-check.mjs:258-259` builds `git log <base>..HEAD --format=%B` where `base` is `--base`, else `git.base_branch` from the merged config, else the first protected branch. Nothing validates it. A value beginning with `-` is parsed by git as an option. Confirmed by running the shipped seam on 2026-10-23 in a scratch repository whose committed `.planning/config.json` set `git.forge_provider: "github"`, `git.forge_repo: "owner/name"` and `git.base_branch: "--output=<path>"`: `issue-check.mjs check --dir .` wrote the repository's commit messages to the file `<path>..HEAD` and returned `ok:true`. `/cad-land` step 1 runs this seam on every land.
+  - `land-cleanup.mjs:193-194` passes the same unvalidated `base` to `git branch --merged <base>`; `--merged` consumes the next argument as a commit, and `git branch --merged --unset-upstream` and `git branch --merged -d side` both failed with `malformed object name` in a scratch run, so no option reaches `git branch` there.
+  - Refs a caller names to `risk-check`, `task-record` and `adjudication` are refused when they begin with `-` (`riskRef`, `planning/core.mjs:505-510`) and resolved to commit ids with `rev-parse --verify <ref>^{commit}` before use; `why-corpus.rangeMembers` requires commit-id shape; test-checks requires 7-40 hex. Pathspecs follow `--`.
+  - `git-publish` builds its argv only from a branch matching `^[A-Za-z0-9][A-Za-z0-9._\/-]*$` and a remote matching `^[A-Za-z0-9][A-Za-z0-9._-]*$` that `git remote` lists, behind `--` (`lib/publish-decision.mjs:23`, `:28`).
+- Forge argv from config and findings (code): the `--repo` selector is `git.forge_repo`, validated as a slug only at the `config.mjs` write face (`isForgeSlug`, segments `^[A-Za-z0-9_.][A-Za-z0-9._-]*$`, no `.`/`..`, at most 200 characters); the seams that read it (`issue-check`, `issue-filing`) do not re-validate a value written by hand. Issue titles and bodies are argv elements, never shell.
+- Shell lines the model composes from data (prose-only controls):
+  - A PLAN's `Verify:` command, from a file that is committed and can arrive with a clone, executed by the executor.
+  - `git revert` over hashes read out of `.planning/phases/<N>/SUMMARY.md` (the "manifest"), shown to the user and confirmed before running (`workflows/undo.md` steps 1 and 3).
+  - `git checkout <base>`, `gh pr create --base <base> --head <branch>`, with `<base>` from `$ARGUMENTS` or `git.base_branch`.
+  - `config.mjs set 'review.providers.<name>.tiers.flagship=<id>' ...` where `<id>` is a model id returned by the provider's `/models` endpoint (`workflows/config-review.md` step 4); ids are not validated for length or characters.
+  - Caller-derived text goes to seams as a file path (`--<field>-file`, `git tag -a <version> -F <path>`), never inline (`references/conventions.md`, "Caller-derived text"); `lib/text-transport.mjs` registers `--flag "..."` sites and `self-verify.mjs` reports unregistered ones. Positional `key=value` pairs are not flags and are not in that register. [VERIFY whether any check covers the `config.mjs set` model-id line.]
+- No SQL or FTS. `planning.mjs recall` builds a BM25 query from the words after `recall` over `.planning/` text (`lib/bm25.mjs`).
+- Prompts built from data: every subagent prompt names files the worker then reads (`CLAUDE.md`, `.planning/PROJECT.md`, `CONTEXT.md`, the PLAN); reviewer payloads are `references/reviewer-brief.md` plus the trigger's sentence plus a diff or a file; consult payloads are a model-written description of the dead end; fix dispatches carry adjudicated findings; recall, `why` and report output feed planning and review. No prose tells any agent to treat repository, planning, transcript, forge or provider text as data rather than instructions.
 
 ## What it must never touch
 
-- A provider key goes only to its own provider's host, as that request's credential. It never goes into a config file, `trace.jsonl`, `reads.jsonl`, stdout, an error message or an issue.
-- A repository's committed `.planning/config.json` must never, on its own:
-  - set `workflow.test_command`, `workflow.lint_command` or `review.key_file`;
-  - enable a cross-model provider;
-  - authorize the unattended `git.auto_close` push and merge.
-- No push without the user's answer at the prompt. The one exception is the `git.auto_close` arm, which both config layers must authorize.
-- No unattended merge while a blocker or high finding is still unfixed.
-- A declined finding is never filed remotely. It goes to `.planning/DECLINED.md` only.
-- `/cad-capture --cadence` never commits, and never quotes a diff, file contents or a path from the user's tree.
-- Never write into `${CLAUDE_PLUGIN_ROOT}`, or anywhere outside the places listed under "What it writes".
-- No telemetry, and no network traffic Cadence starts itself apart from the three provider hosts. Forge and push traffic goes through the user's own `git`, `gh`, `glab` and `tea`.
-- Never read `~/.ssh`, credential stores, other users' files, or another project's `.planning/`.
-- Never approve a permission prompt on the user's behalf, and never weaken Claude Code's permission settings. The one settings write is `worktree.baseRef`, after the user picks the file.
+Each rule below names what enforces it.
+
+- Provider keys are never logged, never written to config and never put on a command line. Code: `review-provider.mjs` has no `--key` flag, resolves the key itself, puts it only in the `authorization` or `x-goog-api-key` header to its own provider's hardcoded host, and never prints it; the `no-key` detail names only where it looked. `review.key_file` is honoured from the user-global layer only and stripped from the repo layer (`lib/global-only-keys.mjs:36-40`, applied in `mergeLayers`). Prose: "Never pass a key itself" (`references/seam-review-provider.md`).
+- A cloned repository must not choose what Cadence runs or where a key is read from. Code: `workflow.test_command`, `workflow.lint_command` and `review.key_file` are stripped from the repo layer at the merge, including a `null` value and a non-object ancestor (`stripGlobalOnly`). Not covered: when `workflow.test_command` and `workflow.lint_command` are unset, the executor runs the repository's own manifest scripts and `detect-commands` output, which execute repository code; a PLAN's `Verify:` command is repository content.
+- A cloned repository must not turn on an unattended push or merge. Code: `git.auto_close` authorizes only when the repo layer and a separate user-global file both hold an explicit `true` (`lib/repo-auto-close.mjs:297-305`); a torn or non-object file reads as not opted in; one file resolving as both layers authorizes nothing. `git-publish.mjs publish` refuses without it, refuses a protected or unsafe branch, an unconfigured or non-bare remote, and any torn config layer. Prose-only: the GitLab arm consults `git-publish.mjs authorized` before `glab mr create`; `gh pr merge`, `glab mr merge` and `tea pr merge` run through Bash with no seam in the path.
+- A cloned repository must not add a cross-model provider. Code, detection rather than prevention: `route.mjs resolve` keeps `openai`/`gemini`/`deepseek` in a trigger's reviewer set only when the user-global layer's own `review.reviewers` names it and a model id exists at the trigger's tier (`route.mjs:359`, `:1282`). `review-provider.mjs` itself does not check either; the prose decides which providers to call from the resolve output.
+- No push without consent. Code: git-guard asks on every Bash `git push` the segment reader sees inside a Cadence project. Not covered by code: wrapped or substituted pushes, pushes from a worktree or cwd without a reachable `.planning/`, forge CLIs that push themselves (`glab mr create`), and `gh`/`glab`/`tea` merges. Prose: "No workflow pushes, ever" and "never auto-push a tag" (`references/git-publish.md`, `skills/cad-land/SKILL.md`); the executor contract says "Never push, never force-push".
+- No commit to a protected branch without asking. Code: git-guard's commit rail, with the limits above. A repo layer can set `git.on_protected: "allow"` or `git.protected_branches: []` and switch it off; both keys are repo-settable.
+- Network only to the three provider hosts, the forge CLIs' hosts and the git remote. Code for `review-provider.mjs` (hardcoded bases, no redirect surface); no Cadence code sends telemetry or checks for updates; nothing restricts what the model runs through Bash.
+- Credential stores and other users' files: no Cadence code reads `~/.ssh`, a keyring, the forge CLIs' credential files or another user's files, apart from the provider key file. No shipped prose forbids the model from reading them, and nothing enforces it; seams read any project a `--dir`, `--root` or `--file` names.
+- `/cad-capture --cadence` never commits, never transmits, and quotes no diff, file contents or path from the user's tree (prose only, `skills/cad-capture/SKILL.md` step 4); the line it writes does carry the `origin` URL unredacted.
+- No writes into `${CLAUDE_PLUGIN_ROOT}`. Prose only (`skills/cad-capture/SKILL.md`: "Never `${CLAUDE_PLUGIN_ROOT}`"). No code writes relative to its own directory; a seam run with `--dir` or cwd pointed at the plugin tree would write there.
+- No permission approvals and no silent settings edits. Code: `worktree-base.mjs` only reads settings. Prose: `/cad-config` writes `worktree.baseRef` only after the user accepts, after reading the file, and never into a managed-policy file. No Cadence prose or code writes `permissions` rules.
+- Worktree executors never run `git stash`, `git clean`, `git reset --hard`, `git restore .`, `git merge`, `git rebase` or `git fetch` (prose only, `references/worktree-executor.md`).
+- Package installs are never retried or substituted (prose only, executor contract `<deviation_rules>`).
+- A declined finding never reaches the tracker. Code: `issue-filing.mjs file` writes declines to `.planning/DECLINED.md` only and the decline set is read from that file.
+- The land-time tracker report never writes. Code: no argv in `HOST_TABLE` closes, reopens, comments on or edits an issue.
+- A forge repository is never created without the user's answer and never public. Code: `forge.mjs create` refuses without `--confirmed` and pins `--private` in every row; that `--confirmed` follows a real question is prose plus `prose-agreement.test.mjs`.
+- Hooks never block work and never speak on the recording paths. Code: every hook catches all errors and exits 0.
+- Data that must not leave the machine: the key file and keys (above); `.planning/trace.jsonl`, `reads.jsonl`, their rotations and claim files (kept out of git by the `trace ignore` lines Cadence writes, not by any refusal to commit them); the raw planning queue `CAPTURE.md` and triage working copies in Cadence's own repository (`.gitignore`). In a user project `CAPTURE.md`, `DECLINED.md`, `FILED.md` and the `REVIEW-*`/`ADJUDICATION-*` records are committed by the docs commits when `planning.commit_docs` is true; nothing keeps them local.
 
 ## Who runs it and with what privileges
 
-- The interactive user, inside their own Claude Code session. There is no service user, no root, no daemon and no timer.
-- Seams run when the model calls them, and hooks run when Claude Code fires the event.
-- Commands start when the user types a `/cad-*` command. `/cad-milestone` into `/cad-land` can chain unattended.
-- That user can already do everything Claude Code can do as them, and Cadence adds no privilege. What it changes is how much happens without a prompt: the open Bash grant, the unattended merge chain, and hooks that run on every matching tool call.
-- So a finding is a real escalation when repository content, a forge response or a provider response can cause an action the user did not authorize, or when it slips data past one of the rules above. The actions that count are a push, a merge, an issue, a network call, a key read and a command run.
+- The interactive user, as their own OS user, inside Claude Code. There is no service user, daemon, timer or login item. Seams run as the user through the Bash tool; hooks run as the user, spawned by Claude Code; subagents run as the user with the tool lists above.
+- Triggers:
+  - The `PreToolUse` and `PostToolUse` hooks start a `node` process on every matching tool call in every Claude Code session where the plugin is enabled, including sessions in non-Cadence directories, where they return early. The `SubagentStop` hook runs on every subagent stop.
+  - Slash commands the user types, and skills the model invokes on its own (none sets `disable-model-invocation`).
+  - Review triggers fire inside workflows per their gate: `risk_surface` defaults to `blocking`, `plan` to `advisory`, `diff` and `phase_diff` to `off` (`cadence-core/config.schema.json`). A fired cross-model review calls a provider with no per-call prompt once the user has configured that provider globally. A consult is always offered and waits for a yes (`references/consult.md`).
+  - Parallel execution dispatches up to `parallelization.max_concurrent_agents` executors at once (default 3, minimum 1, no maximum, repo-settable).
+- What chains unattended:
+  - With `git.auto_close` true in both layers: `/cad-milestone` step 7 invokes `/cad-land` through `SlashCommand`, which runs the deferred-queue check, `git-publish.mjs authorized`, `land-cleanup.mjs gate` over the adjudication records, `git-publish.mjs publish`, `gh pr create --fill` (or the GitLab or Forgejo equivalent), the platform merge with source-branch deletion, `git checkout <base>`, `git pull`, `git tag -a` (local), the reap and the deletion of `.planning/risk-carry/`. The chain halts on a surviving blocker/high `risk_surface` finding, an unruled `REVIEW-risk_surface*.md`, an unreadable gate payload, or any deferred queue member. Tag pushes still ask.
+  - Without it, `/cad-execute` still runs plans, commits per task, runs lint/typecheck/test commands, merges worktree branches, fires reviews and calls configured providers without a prompt per action, subject to the host's permission mode and the skill's `allowed-tools`.
+- What the user could already do without Cadence: everything above. Running a shell, pushing, calling providers with their own keys and running a repository's scripts are all within the user's own authority. A finding is a real escalation when content the user did not author or approve causes one of these actions without the user seeing or approving it, or when Cadence removes a prompt the host would otherwise show. The sources of such content are a cloned repository (`.planning/` files, `CLAUDE.md`, PLAN files, manifests, commit messages, `.gitattributes`), tool output and web content in the conversation, provider responses, forge CLI output, and git remote messages. Environment control is not an escalation path: whoever can set the user's environment can already run code through `NODE_OPTIONS`, `PATH` or `GIT_*` (`lib/test-seam.mjs` states that the test sentinel is not a privilege boundary for the same reason).
 
 ## What the worst outcome looks like
 
-The worst case is a malicious change shipped in a Cadence release. Every user who updates then runs that code as themselves:
-
-- on every Bash, Read, Grep and Glob call and every subagent stop, in every Cadence project;
-- with their provider keys, their `gh`, `glab` and `tea` logins, and their push rights.
-
-`release.yml` publishes only a tag whose commit is on `main` and passes the suite. [VERIFY who can push to `main` on `crenshawdev/cadence`, and what branch protection requires.]
-
-Next is prompt injection. Text that steers the model can arrive in a cloned repository's files, its `.planning/` documents, commit messages, issue titles, or a cross-model reviewer's findings. Inside a Cadence command, Bash is granted without a prompt, so that text could get the model to:
-
-- run any command, including `curl` out with data;
-- edit files outside the task;
-- push through a shell wrapper the guard cannot see;
-- reach the unattended merge.
-
-No agent contract or workflow tells the model to treat repository text, reviewer findings or forge output as data rather than instructions.
-
-The leaks that would hurt most:
-
-- Code or a secret in a diff going to OpenAI, Gemini or DeepSeek. Redaction works by shape, so a bare key with nothing naming it goes out as written.
-- A security finding filed as an issue on a public tracker before it is fixed. `issueBody` in `lib/filing-decision.mjs` puts the finding's claim and failure scenario in the body with whitespace collapsed and no redaction.
-- A provider key appearing in an error, the trace or a transcript.
-
-Data loss can come from `/cad-phase` renumbering, milestone pruning and `/cad-undo`, which move, delete or revert planning directories and commits, and from `reap` and `land-cleanup`, which delete local branches.
-
-What the user would not notice:
-
-- The hooks writing, which is silent by design.
-- An unattended merge chain running.
-- A reviewer finding carrying injected instructions.
-- Planning records created world-readable under the default umask.
-- A repository's config setting `git.on_protected` to `allow`, which silences the protected-branch guard for that repository.
+- Release supply chain. Users install with `/plugin marketplace add https://github.com/crenshawdev/cadence.git` and `/plugin install cadence@cadence`, and update with `/plugin update cadence@cadence` (`README.md`). The marketplace entry's source is `./` (`.claude-plugin/marketplace.json`). A malicious commit that reaches what users install runs as every user, on every Bash, Read, Grep, Glob and NotebookRead call and every subagent stop, through the three hooks, in every session, before any project check, with the user's provider keys, forge CLI logins and push rights in reach. [VERIFY which ref `/plugin install` and `/plugin update` fetch: the default branch head, a tag, or a GitHub release.] Controls, checked by the maintainer with the GitHub API on 2026-10-23: `crenshawdev/cadence` is public; ruleset `protect-default-branch` blocks deletion and non-fast-forward pushes, requires signed commits, a pull request and 17 status checks (node-test on Node 22 and 24 across six groups, self-verify, typecheck, mechanical, security-review, plugin-validate), with a bypass for the repository admin role in pull-request mode only; ruleset `protect-release-tags` (every tag) blocks deletion, update and non-fast-forward; pull request creation is limited to collaborators; secret scanning, push protection, Dependabot alerts and security updates are on; the `ANTHROPIC_API_KEY` Actions secret and the `SENTINEL_REVIEW_AGE_RECIPIENT` variable are set, so `fast.yml`'s review is encrypted and the comment shows only counts. Read in `.github/workflows/release.yml`: a `v*` tag push runs `guard` (the tagged commit must be reachable from `origin/main`, then `node cadence-core/bin/test.mjs` and `node cadence-core/bin/self-verify.mjs` on that SHA), `audited` (`.sentinel/stamp-age.sh .`, which needs a `SENTINEL.md` covering the commit), then `publish` (tag equals `.claude-plugin/plugin.json` version, notes sliced from `CHANGELOG.md`, `gh release create --verify-tag`, `contents: write` scoped to that job). These gates protect the GitHub release object; if installs track the default branch, they do not gate what users receive. Other CI facts that touch the supply chain: `test.yml`'s `plugin-validate` job installs `@anthropic-ai/claude-code` unpinned and `typecheck` installs `typescript` and `@types/node` unpinned, both with a read-only token; `fast.yml`'s `security-review` job runs the pull request's own copy of the workflow and of the `.sentinel` submodule pointer with `ANTHROPIC_API_KEY` and `pull-requests: write`, which is why pull request creation is limited to collaborators; `.github/dependabot.yml` updates GitHub Actions pins and the submodule with a 7-day cooldown.
+- Prompt injection while Bash is open. A cloned repository, a web page, or a provider or forge response can carry instructions into the model's context, and the skills pre-approve unrestricted Bash. Concrete paths in shipped prose: the executor runs the PLAN's `Verify:` command and the repository's manifest test, lint and typecheck scripts; it treats the project `CLAUDE.md` as hard constraints; fix dispatches act on findings written by reviewers, including third-party models; `recall`, `why` and `report` replay planning and git text into context. The worst result is arbitrary command execution as the user without a prompt, followed by an unattended push or merge where `git.auto_close` is on. git-guard is not a boundary against this: it reads only the command word.
+- Repository-config-driven file write. A committed `.planning/config.json` with `git.base_branch` set to `--output=<path>` makes `/cad-land` step 1 write the repository's commit messages to `<path>..HEAD`, creating or truncating that file, with no prompt and an `ok:true` envelope (confirmed in a scratch run; see What it executes).
+- Leaks of code or secrets:
+  - To third-party model providers: every fired cross-model review sends a git diff, a staged diff or a whole file, and a consult sends a model-written situation, to OpenAI, Google or DeepSeek, once the user has enabled that provider in the user-global layer, for every repository on the machine that does not narrow its own `review.reviewers`. The outbound fence (`fence()`, `review-provider.mjs:480`, composing `redactUrl` and `redactCredentials` from `lib/redact-url.mjs`) removes URL userinfo, `authorization: Bearer|Basic` values and credential-named `name=value`/`"name": "value"` pairs by shape. A bare token with no credential-shaped name beside it is sent. A repo layer can raise `review.max_prompt_tokens` with no upper bound and choose the model id at each tier.
+  - To a public tracker: an accepted finding becomes an issue on `git.forge_repo`, a key only the repository's own committed config can set (`repo_only`). The title and body carry the reviewer's claim, failure scenario and `file:line` with no redaction, and the ask (`references/triage-gate.md`, "Say plainly what each answer does") names "the tracker" without naming the repository or its visibility. On a public repository, or a clone whose config points at the upstream, an unfixed security finding becomes public.
+  - Through the repository itself: `REVIEW-*.md`, `ADJUDICATION-*.json`, `FINDINGS.json`, `CAPTURE.md`, `DECLINED.md` and `FILED.md` under `.planning/` are committed by docs commits when `planning.commit_docs` is true and published with the branch by any push, including the unattended `git-publish.mjs publish` and `gh pr create --fill`.
+  - To local files: `~/.claude/cadence/CAPTURE.md` receives the `origin` URL unredacted; `.planning/reads.jsonl` records absolute paths of files read outside the project; `$TMPDIR/cad-*` directories keep full diffs and payloads until the OS reaps them.
+- Data loss: `milestone-prune --mode delete` removes `.planning/phases/<N>/` recursively, untracked files included; `renumber remove` removes a phase directory through `git rm -r` or, outside any repository, `rmSync`; `/cad-undo` reverts commits whose hashes come from a SUMMARY that can arrive with a clone (the user sees and confirms the list); `gh pr merge --delete-branch`, `glab mr merge --remove-source-branch` and `git-publish.mjs reap` delete branches; worktree removal and branch deletion follow each parallel merge; `atomicWrite` replaces a symlinked planning file with a regular file; the `git log --output` write above truncates an existing `<path>..HEAD`.
+- What the user would not notice: planning records and the user-global config created world-readable under the default umask; the hooks never print; provider calls inside a gate print one line at most; the `git log --output` write; git-guard's silence in worktrees and on wrapped commands; files read into `.planning/reads.jsonl`; transcript reads by the `SubagentStop` hook; a repo layer that sets `review.triggers.risk_surface.gate: "off"`, `git.on_protected: "allow"`, `git.protected_branches: []`, `git.issue_check: false`, `memory.backend: "none"` or `review.triggers.risk_surface.waive_routing_floor` (each repo-settable; `route.mjs` names a waiver in its `reason` but a gate set to `off` is an ordinary configured value).
 
 ## Trust boundaries (where untrusted data enters)
 
-Hook stdin. Claude Code itself is trusted, but the tool response carries whatever the tool returned, including web pages and file contents. The hooks guard it like this:
+For each boundary: where it enters, then what validation, bound or escaping happens, by file.
 
-- `read-trace.mjs` records paths only: in-repo files that exist, at most 12 per Bash call. For Bash it keeps `argv[0]` and nothing else, and for Grep its scope, never its pattern. Error text is cut to the first line, credential-shaped spans are redacted (`redactCause`), and the result is capped at 200 characters.
-- `subagent-trace.mjs` reads only `agent_transcript_path`, refuses a file over 8 MiB, and answers `unknown` on any shape it does not recognize.
-
-Project files and `.planning/` from a clone. They are read by the model and by the seams.
-
-- `lib/global-only-keys.mjs` strips the three global-only keys from the repository layer, including the case where a non-object ancestor would replace them.
-- `route.mjs` drops a cross-model reviewer the user-global `review.reviewers` does not name.
-- `git-publish.mjs` requires `git.auto_close` in both layers.
-- [VERIFY what size bounds the planning-file parsers in `lib/planning-files.mjs` put on what they read.]
-
-Manifests read by `detect-commands`. They are read one directory deep, an arm is offered only when its tool resolves, and `npx` is never used. A repository's `node_modules/.bin` is still that repository's code.
-
-Git data: commit messages, branch names and remote URLs. `lib/redact-url.mjs` redacts credentials in URLs before they reach any output. Branch and remote names are validated before a push, and the origin slug goes through the slug grammar before it is offered as a default.
-
-Provider responses. Output is schema-enforced (OpenAI `json_schema`, Gemini `responseSchema`; DeepSeek uses `json_object` with the schema in the prompt) and checked for shape on return. Size limits:
-
-| Limit | Value |
-|---|---|
-| Response | 4 MiB |
-| Findings | 100 |
-| File field | 1,024 characters |
-| Text field | 2,000 characters |
-| HTTP error body | 1,024 bytes, redacted |
-
-The finding text then enters the main model's context with no fence around it.
-
-Forge responses. Only the lookup's stdout is parsed, and only into fixed phrases and integers. Stderr is discarded at the spawn. `tea login list` is parsed into a decision and never echoed.
-
-Seam payloads. Free text arrives in a file, and flags are checked against `lib/arg-contract.mjs`. Outbound provider payloads pass `fence()` (`redactUrl` plus `redactCredentials`) and are refused, not truncated, over `review.max_prompt_tokens` (default 120000, estimated as chars/4).
-
-Environment. The `CADENCE_*` overrides redirect config, settings and schema reads, but whoever sets the environment already acts as the user.
-
-Data trusted because it is Cadence's own earlier output:
-
-- `trace.jsonl` and `reads.jsonl`, read back by `/cad-report`, `/cad-suggest` and routing.
-- The `STATE.md` cursor.
-- `DECLINED.md`, the decline set.
-- The `SUMMARY.md` commit manifest that `/cad-undo` reverts from.
-
-In a cloned repository these files arrive from someone else. [VERIFY whether `/cad-undo` checks the manifest's commits against the phase's own history before reverting.]
+- Hook stdin (from Claude Code; the `tool_input.command` it carries was written by the model, which may be acting on injected text).
+  - `git-guard.mjs`: `JSON.parse` of all of stdin, no size cap; command coerced to a string; the reader is linear and total (`lib/git-segments.mjs`); `-C` values containing `$`, a backtick, a quote other than one matching outer pair, `\` or a leading `~` are not followed (`literalDir`, `git-guard.mjs:157-162`).
+  - `read-trace.mjs`: records only fields from `RECORDED_TOOLS`; Bash program names must match `^[A-Za-z0-9._+-]{1,64}$`; Bash file tokens must match `^[A-Za-z0-9._\/@+-]{1,256}$`, resolve inside the project and exist as regular files, at most 12; error text is one line, credential-shaped values masked by `redactCause`, at most 200 characters; Read/Glob/Grep targets, `agent_type`, `agent_id` and `tool_use_id` are recorded as given with no length cap (bounded by the 8 MiB record and its oversized-line refusal).
+  - `subagent-trace.mjs`: transcript path used as given, file at most 8 MiB; transcript lines parsed individually, unparseable lines skipped; only numbers that are non-negative safe integers are summed; `timestamp` and `effort` strings are copied verbatim with no length cap into `trace.jsonl` (bounded by the 1 MiB record).
+- Transcripts under `~/.claude/projects` are untrusted (they carry tool output and web content). Only the `SubagentStop` hook reads one, and only the four fields above leave it. No other code reads a transcript.
+- Cloned-repository files and `.planning/`:
+  - Repo config layer: `mergeLayers` merges with `Object.defineProperty`, so a `__proto__` key lands as an inert own key (`config-merge.mjs:77-88`); global-only keys are stripped; a torn or non-object layer is skipped and reported in `warnings`/`tornLayers`; no type or grammar validation happens at read time - `config.mjs set`/`check`/`validate` validate types, enums, `min`/`max` and the `forge_slug`/`forge_host` grammars only on the write face. `route.mjs` checks gates, tiers and efforts against each key's schema `values` and drops unknown ones with a warning; model names must be one of `opus`, `sonnet`, `haiku`, `fable` (`HOST_MODELS`, `route.mjs:222`) or no model parameter is sent; `review-provider.mjs` clamps `review.request_timeout_ms` to 600000 and falls back to defaults for unusable values. `git.base_branch` is not validated anywhere (see the `git log --output` write).
+  - Repo-settable security-relevant keys (no `src: "global"`): `git.on_protected`, `git.protected_branches`, `git.base_branch`, `git.auto_close` (repo half), `git.issue_check`, `git.forge_provider`, `git.forge_repo` (repo-only), `git.forge_host`, `review.reviewers` (narrow only), `review.triggers.*.{gate,tier,effort,surfaces,waive_routing_floor}`, `review.providers.*.tiers.*`, `review.max_prompt_tokens`, `review.request_timeout_ms`, `review.consult.enabled`, `roles.*`/`model.*`, `workflow.research`, `workflow.verifier`, `parallelization.*`, `memory.backend`, `planning.commit_docs`.
+  - Planning markdown and JSON: parsed by grammars in `lib/planning-files.mjs`, `lib/phase-plans.mjs` and others; values reaching filenames are validated (`RECORD_TOKEN`; `isTaskSlug`; `milestone-prune --label` refuses `|`, CR, LF and any label resolving outside the planning root, `planning/milestone-prune.mjs:61`, `:75`); the risk floor's PLAN reads are capped at 512 KiB and refuse non-regular entries (`lib/phase-plans.mjs`); declared `files:` bodies are confined and capped at 512 KiB (`route.mjs`); phase directories are matched by `PHASE_DIR_NAME`; most reads have no size cap and follow symlinks except where `lstat` guards are listed under reads.
+  - Project manifests (`detect-commands`): parsed for script names only; returned commands are fixed literals and no repository text is interpolated, but the commands run repository code.
+  - `.gitattributes`: `risk-check` passes `--no-ext-diff --no-textconv` so a repository diff driver cannot hide a diff from the risk scan; other `git diff`/`git show` reads do not pass these flags.
+  - Planning text, PLAN commands, `CLAUDE.md`, commit messages: no code-level control; they reach the model as instructions or as data with no marking.
+- Manifests of the plugin itself (`config.schema.json`, `.claude-plugin/plugin.json`, `references/model-hints.json`): trusted as shipped; the schema is fatal when unreadable; overrides need `CADENCE_TEST_SEAM=1`.
+- Git data: commit subjects and bodies (`why.mjs`, `issue-check` issue-number scan, `task-record`), refs and paths. Ref arguments are guarded as listed under What it executes. `scanIssueRefs` extracts `#<digits>` only and `normalizeNumber` refuses numbers beyond the safe-integer range. Git error messages reaching envelopes pass through `redactUrl` (`git-publish.mjs:212`, `:268`, `:346`; `planning/core.mjs` `gitLine`); `redactUrl` covers URL userinfo only, so other text from a remote (`remote:` lines on a failed push) reaches the model.
+- Provider responses (`review-provider.mjs`):
+  - Size: the body is counted in bytes and the request destroyed past 4 MiB (`MAX_RESPONSE_BYTES`, `:335`), reason `over-response`; timeout default 540000 ms, clamped to at most 600000 ms.
+  - Error bodies: an `http` failure carries `detail.body` as a string from `bodyExcerpt`, sanitized over the first 4096 bytes and cut to 1024 bytes (`MAX_HTTP_BODY_BYTES`, `:353`).
+  - Findings: requested with `FINDING_SCHEMA` (strict `json_schema` on OpenAI; `responseSchema` on Gemini with `additionalProperties` and `maxItems` removed by `stripForGemini`, `:949`; schema injected into the system prompt on DeepSeek's `json_object` mode). Every response is checked locally by `validateFindings` (`:1262`): only the `findings` key; at most 100 findings (`MAX_FINDINGS`); each finding exactly `file`, `line`, `severity`, `claim`, `failure_scenario`; `file` 1-1024 code points; `claim` and `failure_scenario` 1-2000 code points; `line` an integer of at least 1; `severity` one of `blocker`, `high`, `medium`, `low`. The cap holds for Gemini through this local check.
+  - Consult angles: `validateConsult` (`:1290`) checks only that `angles` is an array of objects with three string fields; there is no count or length bound below the 4 MiB response cap.
+  - Usage: counts kept only when finite and non-negative; `usage_raw` kept only when its JSON is at most 2048 characters and the fence finds nothing credential-shaped in it (`MAX_USAGE_RAW_CHARS`, `:989`).
+  - Model ids from `detect-models`: filtered by `references/model-hints.json` exclusions and classified; no length or character validation before the prose writes them into a single-quoted shell line.
+  - Findings then become adjudication records (`lib/adjudication-record.mjs`: `file` at most 1024, `claim`/`failure_scenario` at most 2000 characters), issue bodies (no redaction) and fix instructions to an executor (no control).
+- Forge CLI output: `tea login list` JSON is held in memory and parsed for four string fields [VERIFY whether tea's JSON output includes each login's token] and a record whose `name` is empty or starts with `-` is skipped (`forge.mjs:239-254`); issue lists must be JSON arrays whose every row carries a readable number and state, and a page that fills its limit (`gh` 200, `glab` 100, `tea` 50) is treated as incomplete (`lib/issue-decision.mjs` `normalizeList`); filing lookups are parsed for fingerprints only. No forge stdout or stderr is copied onto an envelope. In prose, `gh pr view`, `glab mr view` and `tea pr list` output reaches the model unfiltered, and `--fill` copies commit messages into a public PR body.
+- Seam payloads and flags (`lib/arg-contract.mjs`): every declared flag's value is checked against its row's type (`int`, `phase`, enum, path, boolean) and disposition (`refuse` or `fallback`); `--dir` refuses an empty or flag-shaped value on the mutating and advisory seams; undeclared flags are not refused at runtime. JSON payloads (`readJsonPayload`, `land-cleanup gate`, `review-provider`, `issue-filing`) are parsed whole with no size cap; `land-cleanup gate` names each unreadable state (`stdin-unreadable`, `stdin-empty`, `malformed-json`, `not-a-findings-payload`) and halts on each under `git.auto_close`, and fails a non-list `unruled` closed. `review-provider.mjs` refuses non-string payload fields and payloads over `review.max_prompt_tokens` estimated tokens (chars/4, default 120000) before any request.
+- Environment overrides: listed under reads. `CADENCE_GLOBAL_CONFIG`, `CADENCE_MANAGED_SETTINGS` and `CADENCE_USER_SETTINGS` are honoured ungated; the schema, manifest and reachability overrides need `CADENCE_TEST_SEAM=1`. `TMPDIR` is used by prose `mktemp` calls; the composer refuses a scratch path holding characters outside `[A-Za-z0-9._/-]` (`references/review-cross-model.md`).
+- Data trusted because it is Cadence's own earlier output:
+  - `.planning/trace.jsonl`: parsed line by line, read at most 1 MiB (`readLines`, `lib/trace.mjs:365`), used by `renderTrace`, the `SubagentStop` close, `correlationId`, `/cad-report`, `/cad-suggest` and `risk-check status`; nothing authenticates a line, and the file is local but writable by any process the user runs.
+  - `.planning/reads.jsonl`: summarized by `planning.mjs reads`, `trace` and `/cad-report`; read whole with no read-side size cap (`readReadsRecords`, `planning/core.mjs:401`), so the 8 MiB bound holds only for files Cadence's own writer produced.
+  - The STATE cursor (`STATE.md`): parsed by `lib/state-cursor.mjs`; decides the default phase for `route.mjs` floors and trace keys.
+  - `DECLINED.md` and `FILED.md`: their fingerprints suppress future asks and filings; a committed row from a clone suppresses a finding on this machine.
+  - The SUMMARY commit manifest for `/cad-undo`: hashes are shown and confirmed by the user before `git revert`; no code checks they belong to the phase.
+  - `ADJUDICATION-*.json` and `DEFERRED-*.json`: drive `land-cleanup gate` and the deferred-queue stop. `unfixedFromEntries` (`lib/filing-decision.mjs`) halts only on an entry ruled `survived` at `blocker` or `high` with no usable `fix_commit` and no `overridden: true`; nothing re-derives a ruling, a severity or a fix commit from the review or the code, so the gate is exactly as trustworthy as the records on disk.
+  - Executor reports `reports/plan-<k>.md`: their first line decides replay (`replay-check`).
 
 ## Secrets that may pass through
 
-Secrets that can appear in the data:
-
-- API keys pasted into a chat.
-- Credentials in source files and diffs.
-- Tokens in git remote URLs.
-- Tokens in `gh`, `glab` or `tea` output.
-- Keys in the environment.
-
-Where they can end up:
-
-- The provider payload, after shape-based redaction.
-- Issue bodies, with no redaction.
-- Planning documents and commits the model writes.
-- Seam stdout, and so Claude Code's context and transcripts.
-- Not `reads.jsonl`, which holds paths and redacted error causes only.
-- Not `trace.jsonl` for provider keys: `review-provider.mjs` resolves a key lazily, never logs it, and redacts HTTP error bodies before they reach the envelope.
-
-What Cadence holds itself:
-
-- Nothing at rest. A provider key is read per call, from the environment first and `providers.env` second, and is not stored.
-- `providers.env` is created and owned by the user; Cadence never checks its mode.
-- Forge credentials stay inside the user's `gh`, `glab` and `tea`.
+- Secrets that can appear in handled data: provider API keys in the environment or `providers.env`; forge tokens in the environment or the CLIs' stores (Cadence never reads them, the CLIs do); credentials embedded in git remote URLs; secrets in repository files, diffs and commit messages; secrets pasted into the conversation or present in tool output, which then appear in subagent transcripts; secrets a provider or proxy echoes in an error body.
+- Where they can end up:
+  - Provider requests: the diff or file under review after the shape-based fence; a bare token passes.
+  - Claude Code context: seam envelopes (git errors after `redactUrl`; provider error excerpts after both redactors; findings verbatim), `recall` snippets, `why` chains, and anything the model reads.
+  - Subagent dispatches: the claude-subagent reviewer and every other worker read repository files directly; no fence applies there.
+  - Committed planning records: `REVIEW-*.md`, `ADJUDICATION-*.json`, `FINDINGS.json` store reviewer text verbatim (`references/risk-surface.md`), so a finding quoting a secret is committed and pushed with the branch.
+  - Forge issues: titles and bodies built from findings with no redaction.
+  - Local records: `.planning/trace.jsonl` holds whatever `trace append --detail` is given, with no per-field cap or redaction, and provider events whose `detail` is cut to 200 characters; `.planning/reads.jsonl` holds paths and a 200-character, `redactCause`-masked error line; `~/.claude/cadence/CAPTURE.md` holds an `origin` URL unredacted; `$TMPDIR/cad-*` scratch holds whole diffs and payloads.
+  - Hook output: none; `read-trace` and `subagent-trace` print nothing, and `git-guard` prints only its own reason strings.
+- Redaction, by shape and by site: `lib/redact-url.mjs` `redactUrl` (URL and scp userinfo, including a cut span at end of input) and `redactCredentials` (`authorization`/`Bearer`/`Basic` values, credential-named pairs in snake, kebab, dotted and camel case). Applied to: the outbound provider payload and `usage_raw` (`fence`), provider error excerpts (`bodyExcerpt`), git error messages on envelopes (`redactUrl` only), seam `internal` details (`redactUrl` only). `lib/read-trace.mjs` `redactCause` masks `bearer <x>` and `<name>=<value>` where the name contains `token|password|passwd|secret|key|api`. Nothing redacts issue bodies, committed review records, trace `detail` text, subagent prompts or the `--cadence` capture line.
+- Secrets Cadence itself holds: none at rest. It reads a provider key per call from the environment or from a user-created `providers.env` and keeps it in memory for that one request. Cadence never creates `providers.env`, never sets or checks its mode, and no shipped prose tells the user to restrict it; the header comment in `review-provider.mjs:22` calls it "a shared 600-perm env file", which nothing enforces. `review.key_file` stores only a path, in the user-global config, written with the default file mode. [VERIFY the mode users' `providers.env` files actually have.]
