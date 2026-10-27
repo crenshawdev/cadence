@@ -198,10 +198,12 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
   // lib/base-ref.mjs). A refusal is ADVICE to skip, the field set the
   // `on_land_cleanup` off arm returns, so /cad-land runs no checkout - and it
   // wins over --merged true, which would otherwise read as returnToBase (D-01).
+  // `baseRefused` is how /cad-land step 1, which asks this seam before any git
+  // command spells the base, tells this skip from the `on_land_cleanup` off one.
   const refused = refuseBase(dir, base);
   if (refused) {
     return emit({ ok: true, action: 'skip', returnToBase: false, pull: false, reap: false,
-      branch: null, reason: `${refused}: leave HEAD and the integration branch in place`,
+      baseRefused: true, branch: null, reason: `${refused}: leave HEAD and the integration branch in place`,
       base, warnings });
   }
   const mergedList = readMergedBranches(dir, base);

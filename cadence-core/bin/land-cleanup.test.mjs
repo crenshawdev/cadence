@@ -182,6 +182,20 @@ for (const [label, gitConfig, extra, named] of [
   }
 }
 
+// A refusal says so in a field of its own: /cad-land step 1 asks this seam about
+// the base BEFORE any git command spells it, and `on_land_cleanup: false` is a
+// skip too, so the field is what tells the two apart (a refused base withholds
+// every git command that takes the base; a switched-off cleanup withholds none).
+test('cleanup: a refused base carries baseRefused:true, a switched-off cleanup does not', () => {
+  const refused = seam(['cleanup', '--dir', gitFixture({ base_branch: '--output=x' }), '--merged', 'true']);
+  assert.equal(refused.baseRefused, true, JSON.stringify(refused));
+  const off = seam(['cleanup', '--dir', gitFixture({ base_branch: 'main', on_land_cleanup: false }), '--merged', 'true']);
+  assert.equal(off.action, 'skip', JSON.stringify(off));
+  assert.notEqual(off.baseRefused, true, JSON.stringify(off));
+  const fine = seam(['cleanup', '--dir', gitFixture({ base_branch: 'main' }), '--merged', 'true']);
+  assert.notEqual(fine.baseRefused, true, JSON.stringify(fine));
+});
+
 // A base that exists ONLY as origin/<base> is usable: step 4 now asks this seam
 // before `git checkout <base>`, and that checkout creates the local branch from
 // origin/<base>, so refusing it as unresolvable skips a land that used to finish.

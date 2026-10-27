@@ -27,12 +27,28 @@ Read every config key this run needs in ONE `config.mjs get` up front
 git.on_land_cleanup git.create_tag` - and reuse the values across the steps
 below rather than re-reading per step. Step 3 asks a seam, not this read.
 
-1. **Report git state.** Current branch; the base = `$ARGUMENTS`, else
+1. **Report git state - base first.** The base = `$ARGUMENTS`, else
    `git.base_branch`, else the first `git.protected_branches` entry that
-   exists here (references/git-guard.md's fallback); commits ahead of base; unpushed commits; uncommitted/untracked
-   changes; and the remote host detected from the origin URL (gitlab -> MR,
-   github -> PR, any other host where `tea` holds a login -> Forgejo/Gitea PR
-   via `tea`, else local only). Show this plainly before doing anything.
+   exists here (references/git-guard.md's fallback). It comes from an argument
+   or a committed config, and a base shaped like `--output=<path>` is read by
+   git as an option that writes that file, so ask the seam about it BEFORE any
+   git command is given it - the commits-ahead count and the tracker call
+   below included:
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" cleanup --base <base>`
+   On `baseRefused:true` the base is refused: run NO git command that takes it,
+   print the envelope's `reason` as the base line, and skip the commits-ahead
+   count and the tracker call. A refused `$ARGUMENTS` or `git.base_branch` ends
+   the search; in the protected-branches fallback the seam's answer IS the
+   "exists here" test, so ask it for each entry in order rather than probing
+   with git, and take the first it does not refuse. A `skip` without
+   `baseRefused` is the `on_land_cleanup` switch, not a refusal: the base is
+   usable.
+
+   **Then report:** current branch; commits ahead of base; unpushed commits;
+   uncommitted/untracked changes; and the remote host detected from the origin
+   URL (gitlab -> MR, github -> PR, any other host where `tea` holds a login ->
+   Forgejo/Gitea PR via `tea`, else local only). Show this plainly before doing
+   anything.
 
    **Then the tracker, in the same report.** Run it here, before any publish
    ask, on both step-3 arms:
