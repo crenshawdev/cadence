@@ -271,6 +271,29 @@ test('a provider WITH a model id at that tier is the resolved reviewer', () => {
   assert.deepEqual(resolve('cad-reviewer', wrong, [], { global: g }).reviewers.plan, ['claude-subagent']);
 });
 
+test('a configured tier id that is not a model id drops the provider and says so (D-17)', () => {
+  // A hand-edited or cloned config can carry what `config.mjs set` would have
+  // refused, so the read face treats it as no model - and says it was MALFORMED,
+  // which is not the same cause as "nothing configured".
+  const g = globalNaming(['openai']);
+  const bad = rawCfg({
+    review: { reviewers: ['openai'], providers: { openai: { tiers: { cheap: 'gpt 5' } } } },
+  }, 'reviewers-malformed-id.json');
+  const r = resolve('cad-reviewer', bad, [], { global: g });
+  assert.deepEqual(r.reviewers.plan, ['claude-subagent']);
+  const plan = r.warnings.find((w) => w.startsWith('plan:'));
+  assert.ok(plan, JSON.stringify(r.warnings));
+  assert.match(plan, /review\.providers\.openai\.tiers\.cheap/);
+  assert.match(plan, /"gpt 5"/);
+  assert.match(plan, /not a model id/);
+  assert.doesNotMatch(plan, /has no model id/);
+  // The same layer with a conforming id keeps the provider.
+  const good = rawCfg({
+    review: { reviewers: ['openai'], providers: { openai: { tiers: { cheap: 'gpt-5' } } } },
+  }, 'reviewers-conforming-id.json');
+  assert.deepEqual(resolve('cad-reviewer', good, [], { global: g }).reviewers.plan, ['openai']);
+});
+
 test('a config-set tier wins over the schema default for the availability test (D-04)', () => {
   // The tier a LAYER set is a user assertion and the schema default is the
   // fallback, so a trigger the layer moved is placed where the layer says and
