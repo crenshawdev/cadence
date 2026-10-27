@@ -160,6 +160,20 @@ const HELPERS = [
       + 'for risk-check.',
   },
   {
+    name: 'the failure-text redact-and-cap (redactAndCap)',
+    home: 'lib/redact-url.mjs',
+    // The cap arithmetic's distinguishing line: the room left for the head once
+    // the truncation marker is counted INSIDE the cap. Matching the body is what
+    // makes a paste-back under a new name fail here, and review-provider.mjs's
+    // `bodyExcerpt` is a one-line delegate that holds none of it.
+    re: new RegExp('const room = MAX_[A-Z_]+ - Buffer\\.byteLength\\(TRUNCATED\\);', 'g'),
+    note: 'Import { redactAndCap } from ./lib/redact-url.mjs. Failure text from '
+      + 'outside the process (a provider body, git\'s push error) reaches an '
+      + 'envelope through it: redactUrl, then redactCredentials, then one '
+      + '1024-byte cap with the marker inside it. A second copy is how one '
+      + 'envelope keeps leaking a credential shape the other stopped.',
+  },
+  {
     name: 'the rotated-report name grammar (rotatedSource / isReportName)',
     home: 'lib/report-rotation.mjs',
     // The pattern SOURCE, not either exported name: `rotationTarget` scans a

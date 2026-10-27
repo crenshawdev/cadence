@@ -48,7 +48,7 @@
 //     request and degrades to {ok:false, reason:"over-response"} rather than
 //     being concatenated whole into memory. The `http` failure envelope's
 //     `detail.body` is ALWAYS a string on the same reasoning: sanitized through
-//     both lib/redact-url.mjs exports and capped at `MAX_HTTP_BODY_BYTES`, never
+//     both lib/redact-url.mjs exports and capped at 1024 bytes by `redactAndCap`, never
 //     the whole body and never a parsed object for a small one.
 //
 // Usage:
@@ -100,7 +100,7 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { measure } from './lib/surface-weight.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
-import { redactUrl, redactCredentials, REDACTION_MARK } from './lib/redact-url.mjs';
+import { redactUrl, redactCredentials, redactAndCap, REDACTION_MARK } from './lib/redact-url.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -339,27 +339,6 @@ const MAX_RESPONSE_BYTES = 4194304;
 // on its message: a diagnostic string that decides control flow is a parser, and
 // the message is free text nobody promised to keep.
 const OVER_RESPONSE = Symbol('cadence-over-response');
-
-// The HTTP failure envelope's body excerpt (RVP-01, D-04). ONE shape always - a
-// capped, sanitized STRING - never a parsed object for a small body and a string
-// for a large one, which would make every consumer branch on `typeof
-// detail.body`.
-//
-// 1024 bytes, measured rather than round: the largest real OpenAI error body in
-// this seam's own fixtures is 155 bytes (`model_not_found`) and a documented
-// invalid-schema rejection runs about 226, so the whole diagnostic
-// workflows/config-review.md reads this envelope FOR fits with more than 4x
-// headroom, while a proxy HTML error page is bounded to a readable head.
-const MAX_HTTP_BODY_BYTES = 1024;
-
-// Appended in place of what was cut, so a reader can tell an excerpt from a
-// whole body. Inside the cap, not added to it.
-const TRUNCATED = ' ...[truncated]';
-
-// How much of the raw body the sanitizers ever see. A COST bound, not a privacy
-// one - see `bodyExcerpt` for the measurement that forces it and for why the
-// window's edge cannot reach the excerpt.
-const SANITIZE_WINDOW_BYTES = MAX_HTTP_BODY_BYTES * 4;
 
 // Pure so the unit tests can exercise it without touching config or the network.
 // Anything unusable - absent, non-numeric, non-integer, zero, negative - falls
@@ -801,66 +780,17 @@ const HTTP_HINT = 'the provider refused the request: 401 or 403 means the key, '
 /**
  * The `body` of every `http` failure envelope: a sanitized, capped STRING.
  *
- * Sanitize BEFORE the excerpt is cut, never after. Cutting first can slice a
- * credential in half and leave its prefix in the envelope, which is a leak
- * wearing a cap. Two sanitizers because neither covers the other: `redactUrl`
- * takes credentials in URL position, `redactCredentials` takes the
- * `authorization: Bearer ...` and `<name>=<value>` spans a misconfigured gateway
- * echoes back.
- *
- * The WINDOW is a cost bound, and it is not optional. Measured 2026-08-17 on
- * this box: `redactUrl` is quadratic in its input (78ms at 10KB, 337ms at 20KB,
- * 5.1s at 80KB) because its scheme-less rule scans forward from every offset,
- * and `MAX_RESPONSE_BYTES` above lets a body reach 4 MiB - which extrapolates to
- * roughly four HOURS of CPU for one failure envelope. Sanitizing a bounded
- * window instead keeps the worst case in the tens of milliseconds. Fixing the
- * quadratic in `redactUrl` itself is the better repair and is not this plan's:
- * its four other callers hand it a git error message, so the cost only became
- * reachable here.
- *
- * The window's own edge is handled where it is CREATED, not here. Cutting a
- * prefix can leave a credential's opening quote inside the window and its
- * closing quote outside, so `redactCredentials` matches an unterminated quoted
- * value to end-of-input - see rule 4's VALUE alternatives in lib/redact-url.mjs.
- * The earlier reasoning on this line was that the cap discards anything near the
- * edge unless sanitizing shrank the window below the cap, in which case the
- * trailing token is dropped at the last whitespace. That arm is gated on
- * `clean <= room`, so a body that is almost entirely credential spans could
- * shrink to JUST PAST the cap, skip the safeguard, and carry 73 bytes of a value
- * into the envelope. Both regression fixtures are in the test file; the
- * whitespace arm below stays as a second line of defence, not the guarantee.
- *
- * The cut is by BYTES, and the head is trimmed back if slicing landed
- * mid-code-point, so the returned string never exceeds the cap however the body
- * was encoded.
- * EXPORTED for its own unit test and nothing else (D-09). The two
- * `fail('http', ...)` sites below are still its only callers in the tree; the
- * export exists because the leak class it guards - a credential cut by the
- * window edge - is reachable at unit level with one string, while reaching it
- * through `runFaked` costs a fake transport and a body tuned to a compression
- * ratio. Plain `export function`, matching every other pure helper here with
- * test value (`resolveTimeoutMs`, `validateFindings`, `estimatePromptTokens`);
- * the `__setTransportForTests` spelling is for the transport seam, which is a
- * replaceable module-private REFERENCE rather than a function to call.
+ * A delegate to `redactAndCap` in lib/redact-url.mjs, where the whole design
+ * record now lives (sanitize BEFORE the cut, the bounded window and why, the
+ * byte cap and the code-point-safe trim). It keeps its name and its export
+ * because review-provider.test.mjs reads it off the namespace import and its
+ * re-watch recipes depend on the name. The two `fail('http', ...)` sites below
+ * are its only callers in this file; git-publish.mjs's push-failed detail
+ * shares the same helper (D-13).
  * @param {unknown} raw @returns {string}
  */
 export function bodyExcerpt(raw) {
-  const full = raw == null ? '' : String(raw);
-  const buf = Buffer.from(full, 'utf8');
-  const windowed = buf.length > SANITIZE_WINDOW_BYTES;
-  let clean = redactCredentials(redactUrl(
-    windowed ? buf.subarray(0, SANITIZE_WINDOW_BYTES).toString('utf8') : full));
-  const room = MAX_HTTP_BODY_BYTES - Buffer.byteLength(TRUNCATED);
-  if (windowed && Buffer.byteLength(clean) <= room) {
-    const lastSpace = clean.search(/\s\S*$/);
-    clean = lastSpace >= 0 ? clean.slice(0, lastSpace) : '';
-  }
-  if (!windowed && Buffer.byteLength(clean) <= MAX_HTTP_BODY_BYTES) return clean;
-  let head = Buffer.from(clean, 'utf8').subarray(0, room).toString('utf8');
-  // A partial code point re-encodes as U+FFFD, which is wider than the bytes it
-  // replaced; drop characters until it fits rather than trusting the slice.
-  while (Buffer.byteLength(head) > room) head = head.slice(0, -1);
-  return head + TRUNCATED;
+  return redactAndCap(raw);
 }
 
 // ---------------------------------------------------------------------------
