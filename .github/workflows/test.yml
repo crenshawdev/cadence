@@ -52,26 +52,31 @@ jobs:
 
   typecheck:
     # Honor the @ts-check pragmas. The repo has no package.json; typescript +
-    # @types/node are installed ephemerally for this job only (tsconfig.ci.json).
+    # @types/node are installed ephemerally for this job only (tsconfig.ci.json),
+    # pinned to exact versions that move by hand: .github/dependabot.yml carries
+    # no npm ecosystem and there is no manifest for it to read.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
-      - run: npm install --no-save --no-package-lock typescript @types/node
+      - run: npm install --no-save --no-package-lock typescript@7.0.2 @types/node@26.6.5
       - run: npx tsc -p tsconfig.ci.json
 
   plugin-validate:
     # The host's own validator over both manifests, strict, so a check Claude
     # Code tightens fails here before it fails someone's install. The CLI is
-    # unpinned on purpose: the job exists to meet the next validator first.
+    # pinned to the version fast.yml uses; the pin moves by hand, since
+    # .github/dependabot.yml carries no npm ecosystem and the repository has no
+    # package.json. An unpinned global install has no lockfile, which is what
+    # zizmor's adhoc-packages audit looks for.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
-      - run: npm install -g @anthropic-ai/claude-code
+      - run: npm install -g @anthropic-ai/claude-code@2.1.300 # zizmor: ignore[adhoc-packages]
       - run: claude plugin validate --strict .
       - run: claude plugin validate --strict .claude-plugin/plugin.json
