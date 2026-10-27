@@ -911,6 +911,25 @@ test('a relative target that climbs out of the project is outside', () => {
   assert.equal(classified('Glob', { path: '..' }).target, 'outside');
 });
 
+test('a home-relative target outside the project is outside, not the cwd-relative path', () => {
+  // Claude Code expands a leading `~/` for Glob and Grep, so the target names
+  // the home directory, not a `~` directory under the cwd.
+  assert.equal(classified('Grep', { path: '~/clients/acme', pattern: 'x' }).target, 'outside');
+  assert.equal(classified('Glob', { path: '~' }).target, 'outside');
+  assert.equal(classified('Read', { file_path: '~/clients/acme/notes.md' }).target, 'outside');
+});
+
+test('a home-relative target that expands into the project is recorded as given', () => {
+  const root = tmp();
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  process.env.HOME = root; process.env.USERPROFILE = root;
+  try {
+    assert.equal(classified('Grep', { path: '~/src', pattern: 'x' }, { root }).target, '~/src');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
 test('a prefix match is on the separator, so a sibling directory is not inside', () => {
   const root = tmp();
   assert.equal(classified('Read', { file_path: root + '-sibling/a.md' }, { root }).target, 'outside');

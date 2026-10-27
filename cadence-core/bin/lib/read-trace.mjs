@@ -42,6 +42,7 @@ import {
   statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
+import { homedir } from 'node:os';
 // The join below needs a recorded `agent_type` stem back to the role a dispatch
 // event names. Those reverse lookups live beside RUNG_FILES in lib/rung-agent.mjs.
 import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
@@ -389,7 +390,8 @@ export function redactCause(line) {
 /**
  * A path target as the record should carry it. Pure and lexical, like `filesOf`:
  * resolve a relative target against the call's cwd, prefix-match on the
- * separator, no realpath and no stat. Inside the project root: as given. Inside
+ * separator, no realpath and no stat; a leading `~` is the home directory.
+ * Inside the project root: as given. Inside
  * the plugin root: `${CLAUDE_PLUGIN_ROOT}/<relative path>`. Anything else:
  * `outside`. The project test runs first, so a plugin root lying inside the
  * project records as given. Null stays null; with no `opts.root` the target is
@@ -405,7 +407,13 @@ function classifyTarget(target, input, opts) {
   const cwd = (opts && opts.cwd) || (input && input.cwd);
   const base = typeof cwd === 'string' && cwd ? cwd : root;
   let abs;
-  try { abs = resolve(base, target); } catch { return 'outside'; }
+  // A leading `~` is the HOME directory, which the host expands for Glob and
+  // Grep; resolved against the cwd it would read as a project directory named
+  // `~`, so a path under another project would be recorded as given. Expanded
+  // here instead, then judged by the same two roots as any other path.
+  try {
+    abs = target === '~' || target.startsWith('~/') ? resolve(homedir(), target.slice(2)) : resolve(base, target);
+  } catch { return 'outside'; }
   const within = (dir) => abs === dir || abs.startsWith(dir + sep);
   if (within(root)) return target;
   const plugin = opts && typeof opts.pluginRoot === 'string' && opts.pluginRoot ? opts.pluginRoot : null;
