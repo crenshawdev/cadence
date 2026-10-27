@@ -8,6 +8,7 @@
 // holds precisely to prove nothing reads it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 import {
   DECLINE_LABEL, FILING_TABLE, FINGERPRINT_CHARS, LOOKUP_CHUNK, fingerprint,
@@ -16,6 +17,7 @@ import {
   unfixedFindings, unfixedFromEntries, usableFixCommit,
 } from './lib/filing-decision.mjs';
 import { PROVIDER_TABLE } from './lib/forge-decision.mjs';
+import { REDACTION_MARK } from './lib/redact-url.mjs';
 
 /** One finding, at the raised severity the case cares about. */
 const finding = (file, line, severity, claim) => ({
@@ -720,6 +722,38 @@ test('a claim with newlines becomes one line', () => {
 test('a title carrying no token, or a non-string, recovers null', () => {
   for (const t of ['plain title', '[cadence zzzz] x', `[cadence ${'a'.repeat(15)}] x`, null, 42, undefined]) {
     assert.equal(fingerprintInTitle(t), null, JSON.stringify(t));
+  }
+});
+
+test('a credential in the claim or failure scenario reaches neither title nor body (D-04)', () => {
+  const f = {
+    file: 'src/a.mjs', line: 3, severity: 'low', voice: 'sonnet',
+    claim: 'the client dials https://u:SECRET1@host/x and sends api_key=SECRET2',
+    failure_scenario: 'a replay of Authorization: Bearer SECRET3 reads the vault',
+  };
+  const title = issueTitle(f);
+  const body = issueBody(f);
+  for (const secret of ['SECRET1', 'SECRET2', 'SECRET3']) {
+    assert.ok(!title.includes(secret), `title leaked ${secret}: ${title}`);
+    assert.ok(!body.includes(secret), `body leaked ${secret}: ${body}`);
+  }
+  assert.ok(title.includes(REDACTION_MARK), title);
+  assert.ok(body.includes(REDACTION_MARK), body);
+  // The prefix stays byte-exact for the forge's title lookup, and the digest
+  // is still over the RAW (file, claim) so existing FILED/DECLINED rows match.
+  assert.equal(fingerprintInTitle(title), fingerprint(f));
+  const raw = createHash('sha256').update(`${f.file}\0${f.claim}`).digest('hex').slice(0, 16);
+  assert.equal(fingerprint(f), raw);
+});
+
+test('a credential in the file, voice or ruling does not reach the body (D-04)', () => {
+  const f = {
+    file: 'src/a.mjs?token=SECRET4', line: 3, severity: 'low', claim: 'c',
+    voice: 'password=SECRET5', ruling: 'api_key=SECRET6', failure_scenario: 'x',
+  };
+  const body = issueBody(f);
+  for (const secret of ['SECRET4', 'SECRET5', 'SECRET6']) {
+    assert.ok(!body.includes(secret), `body leaked ${secret}: ${body}`);
   }
 });
 

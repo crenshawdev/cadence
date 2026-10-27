@@ -404,6 +404,24 @@ test('a decline written by `file` is what the next `unfixed` reads back', () => 
   assert.deepEqual(envelope.findings, []);
 });
 
+test('a credential in a finding reaches no create argv, no FILED.md row and no DECLINED.md row (D-04)', () => {
+  const leaky = (file, n) => ({
+    file, line: 1, severity: 'low',
+    claim: `dials https://u:SECRET1${n}@host/x with api_key=SECRET2${n}`,
+    failure_scenario: `replays Authorization: Bearer SECRET3${n}`,
+  });
+  const a = leaky('src/acc.mjs', 'A');
+  const d = leaky('src/dec.mjs', 'D');
+  const { status, dir, calls } = run(['file', '--payload', dispositions([[a, 'accept'], [d, 'decline']])]);
+  assert.equal(status, 0);
+  const creates = createCalls(calls);
+  assert.equal(creates.length, 1, calls.join('\n'));
+  const all = [creates.join('\n'), filedText(dir), declinedText(dir)].join('\n');
+  assert.ok(!/SECRET\d[AD]/.test(all), all);
+  assert.ok(filedText(dir).includes(`${fingerprint(a)}: `), 'filed row fingerprint is the unredacted one');
+  assert.ok(declinedText(dir).includes(`${fingerprint(d)}: `), 'declined row fingerprint is the unredacted one');
+});
+
 test('every create supplies a body, on every entry', () => {
   // gh PROMPTS for one when it is absent, which hangs the child inside a step.
   const payload = dispositions([[FIVE[0], 'accept'], [FIVE[1], 'decline']]);
