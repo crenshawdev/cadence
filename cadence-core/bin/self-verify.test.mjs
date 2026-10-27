@@ -2646,3 +2646,44 @@ test("check 26: the git arm does not run the target repo's core.fsmonitor", () =
   limitProblems(root);
   assert.equal(existsSync(sentinel), false, 'self-verify ran the repo-configured fsmonitor hook');
 });
+
+// --- check 27: a preloaded contract carries the data-not-instructions sentence (D-08) ---
+
+import { DATA_RULE } from './lib/data-rule.mjs';
+
+const WITH_RULE = `---\nname: c\ndescription: d\nuser-invocable: false\n---\ncontract prose\n- ${DATA_RULE}\n`;
+const DATA_RULE_KIND = 'contract-lacks-data-rule';
+
+function dataRuleFixture(skillText, agentCount = 1) {
+  const agents = {};
+  for (let i = 0; i < agentCount; i++) {
+    agents[`a${i}.md`] = '---\nname: t' + i + '\ntools: Read\nskills:\n  - cad-t-contract\n---\nFollow it.\n';
+  }
+  const budgets = { 'skills/cad-t-contract/SKILL.md': 10000 };
+  for (const a of Object.keys(agents)) budgets[`agents/${a}`] = 10000;
+  return fixtureWith({ agents, skills: { 'cad-t-contract': skillText }, budgets });
+}
+
+test('check 27: a preloaded contract carrying the sentence files no data-rule problem', () => {
+  const p = run(['--root', dataRuleFixture(WITH_RULE)]).problems;
+  assert.ok(!p.some((x) => x.kind === DATA_RULE_KIND), JSON.stringify(p));
+});
+
+test('check 27: the sentence removed files exactly one problem naming the contract, however many rungs preload it', () => {
+  const without = WITH_RULE.replace(`- ${DATA_RULE}\n`, '');
+  const p = run(['--root', dataRuleFixture(without, 3)]).problems.filter((x) => x.kind === DATA_RULE_KIND);
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, 'skills/cad-t-contract/SKILL.md');
+});
+
+test('check 27: the sentence rewrapped across lines still counts', () => {
+  const wrapped = WITH_RULE.replace(DATA_RULE, DATA_RULE.replace(/ (?=data to work on)/, '\n'));
+  const p = run(['--root', dataRuleFixture(wrapped)]).problems;
+  assert.ok(!p.some((x) => x.kind === DATA_RULE_KIND), JSON.stringify(p));
+});
+
+test('check 27: the live tree files no data-rule problem and `checked` names the check', () => {
+  const r = run([]);
+  assert.ok(!r.problems.some((x) => x.kind === DATA_RULE_KIND), JSON.stringify(r.problems));
+  assert.match(r.checked, /\bdata-rule\b/);
+});
