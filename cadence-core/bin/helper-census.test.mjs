@@ -145,6 +145,21 @@ const HELPERS = [
       + 'PATHEXT arm, which is the only reason npm/npx/tsc resolve on win32.',
   },
   {
+    name: 'the land-seam base check (refuseBase)',
+    home: 'lib/base-ref.mjs',
+    // The commit-peeled base as the verify spawn builds it. planning/core.mjs's
+    // resolveRef peels a caller's `ref` and git-publish.mjs verifies a branch
+    // under refs/heads, and riskRef's dash test is a different contract, so
+    // none of them matches.
+    re: new RegExp('[$][{]base[}][\\^][{]commit[}]', 'g'),
+    note: 'Import { refuseBase } from ./lib/base-ref.mjs. issue-check and '
+      + 'land-cleanup both spend a RESOLVED base in a git argv, and a base '
+      + 'that begins with - is an option to git rather than a ref. A second '
+      + 'copy is how one seam keeps refusing it after the other stops. Not '
+      + "planning/core.mjs's riskRef / resolveRef, which check a caller's refs "
+      + 'for risk-check.',
+  },
+  {
     name: 'the rotated-report name grammar (rotatedSource / isReportName)',
     home: 'lib/report-rotation.mjs',
     // The pattern SOURCE, not either exported name: `rotationTarget` scans a

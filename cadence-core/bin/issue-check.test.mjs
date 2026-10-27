@@ -136,6 +136,17 @@ function repo({ originUrl, commits = [], gitConfig = {}, forge }) {
   return dir;
 }
 
+/** `repo()` with HEAD pointing at a branch that does not exist, so `main`
+ *  still resolves to a commit while `git log main..HEAD` fails. */
+function repoWithBrokenHead(opts) {
+  const dir = repo(opts);
+  execFileSync('git', ['-C', dir, 'symbolic-ref', 'HEAD', 'refs/heads/no-such-branch'], {
+    stdio: 'ignore',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+  });
+  return dir;
+}
+
 /** A directory holding ONLY a symlink to the real `git`. A case about an
  *  ABSENT forge CLI cannot inherit the dev box's PATH - `gh` and `tea` are
  *  installed at /usr/bin here - so `bare: true` builds the child's PATH out of
@@ -323,6 +334,50 @@ test('a forge CLI that never returns is killed at the bound and the land continu
   assert.ok(elapsed < 5000, `the whole invocation must finish well inside the land: ${elapsed}ms`);
 });
 
+// --- a flag-shaped or unresolvable base never reaches git (phase 1 D-01, D-10) ---
+
+test('a committed git.base_branch shaped like a flag skips, and writes no file', () => {
+  // `--output=<path>` in `git log <base>..HEAD` makes git WRITE <path>..HEAD, so
+  // the assertion is on the filesystem: the unfixed seam leaves that file behind.
+  const out = join(mkdtempSync(join(tmpdir(), 'cad-ic-out-')), 'victim');
+  const base = `--output=${out}`;
+  const dir = repo({
+    originUrl: GH_REPO, commits: COMMITS,
+    gitConfig: { forge_provider: 'github', forge_repo: 'owner/name', base_branch: base },
+  });
+  const { status, envelope: r } = seamRun(['check', '--dir', dir], { stubs: { gh: { body: GH_BODY } } });
+  assert.equal(status, 0);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.action, 'skip', JSON.stringify(r));
+  assert.ok(r.reason.includes(JSON.stringify(base)), r.reason);
+  assert.match(r.reason, /begins with "-"/, r.reason);
+  assert.equal(r.detail, null);
+  assert.equal(existsSync(out), false, `${out} was written`);
+  assert.equal(existsSync(`${out}..HEAD`), false, `${out}..HEAD was written`);
+});
+
+test('a committed git.base_branch naming no commit skips, naming the base', () => {
+  const dir = repo({
+    originUrl: GH_REPO, commits: COMMITS,
+    gitConfig: { forge_provider: 'github', forge_repo: 'owner/name', base_branch: 'no-such-branch' },
+  });
+  const r = seam(['check', '--dir', dir], { stubs: { gh: { body: GH_BODY } } });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.action, 'skip', JSON.stringify(r));
+  assert.match(r.reason, /base "no-such-branch" names no commit/, r.reason);
+});
+
+test('a base carrying a newline is JSON-quoted, so the reason stays one line', () => {
+  const dir = repo({
+    originUrl: GH_REPO, commits: COMMITS,
+    gitConfig: { forge_provider: 'github', forge_repo: 'owner/name', base_branch: 'x\nforged line' },
+  });
+  const r = seam(['check', '--dir', dir], { stubs: { gh: { body: GH_BODY } } });
+  assert.equal(r.action, 'skip', JSON.stringify(r));
+  assert.ok(!r.reason.includes('\n'), r.reason);
+  assert.ok(r.reason.includes('"x\\nforged line"'), r.reason);
+});
+
 test('unknown subcommand: usage', () => {
   const r = seam(['frobnicate']);
   assert.equal(r.ok, false);
@@ -386,9 +441,15 @@ const DEGRADATIONS = [
     args: ['check', '--dir', repo({ originUrl: GH_REPO, commits: COMMITS }), '--base', 'main'],
     opts: { stubs: { gh: { body: '[{"id":42,"status":"OPEN"}]' } } },
   })],
-  // The ref scan itself: a --base this repo does not have.
-  ['the ref scan fails', /could not be read/, () => ({
+  // A --base this repo does not have is refused before any git log runs (phase 1
+  // D-01, D-10): the base check answers first and names the base.
+  ['the base names no commit', /base "no-such-ref" names no commit/, () => ({
     args: ['check', '--dir', repo({ originUrl: GH_REPO, commits: COMMITS }), '--base', 'no-such-ref'],
+    opts: { stubs: ALL_STUBS },
+  })],
+  // The ref scan itself: a base that DOES resolve, over a HEAD git cannot read.
+  ['the ref scan fails', /could not be read/, () => ({
+    args: ['check', '--dir', repoWithBrokenHead({ originUrl: GH_REPO, commits: COMMITS }), '--base', 'main'],
     opts: { stubs: ALL_STUBS },
   })],
 ];
