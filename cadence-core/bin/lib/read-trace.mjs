@@ -23,6 +23,14 @@
 // a Grep call records its search SCOPE and never its pattern. Cost accounting
 // needs the target and the count; it has never needed the payload.
 //
+// WHERE A PATH TARGET POINTS (phase 1 D-07). When the hook passes `opts.root`,
+// each path target is classified lexically, the way `filesOf` confines a Bash
+// token: a target inside the project is recorded as given, one inside the
+// plugin (`opts.pluginRoot`) relative to the plugin as `${CLAUDE_PLUGIN_ROOT}/...`,
+// and any other is recorded as the single word `outside`, so a home directory
+// or another project's path never lands in a record /cad-report prints. A caller
+// passing no `root` gets the record it always got.
+//
 // NEVER throws, never speaks, always exits 0 at the seam. This runs as a
 // PostToolUse hook on every tool call: a recorder that can fail a tool call is
 // worse than no recorder, the same contract lib/trace.mjs states for the same
@@ -299,10 +307,12 @@ export function filesOf(cmd, opts) {
  * not a read. Pure: no I/O, so the whole rule is testable without a hook.
  * @param {any} input the parsed hook JSON
  * @param {string} [now] ISO timestamp, injectable for tests
- * @param {{root?: string, cwd?: string, isFile?: (p: string) => boolean}} [opts]
- *   the project root and existence predicate `filesOf` needs. Omitted - the
- *   shape every existing caller and test uses - no `files` field is added and
- *   the record is exactly what it was.
+ * @param {{root?: string, cwd?: string, isFile?: (p: string) => boolean, pluginRoot?: string}} [opts]
+ *   the project root and existence predicate `filesOf` needs, and the plugin
+ *   root that tells a plugin file from any other path outside the project (see
+ *   `classifyTarget`). Omitted - the shape every existing caller and test uses -
+ *   no `files` field is added, no path target is reclassified, and the record is
+ *   exactly what it was.
  */
 /**
  * Whether a `tool_response` reports failure, or `null` when it does not say.
@@ -376,6 +386,36 @@ export function redactCause(line) {
       '$1=<redacted>');
 }
 
+/**
+ * A path target as the record should carry it. Pure and lexical, like `filesOf`:
+ * resolve a relative target against the call's cwd, prefix-match on the
+ * separator, no realpath and no stat. Inside the project root: as given. Inside
+ * the plugin root: `${CLAUDE_PLUGIN_ROOT}/<relative path>`. Anything else:
+ * `outside`. The project test runs first, so a plugin root lying inside the
+ * project records as given. Null stays null; with no `opts.root` the target is
+ * returned untouched.
+ * @param {unknown} target
+ * @param {any} input the parsed hook JSON
+ * @param {{root?: string, cwd?: string, pluginRoot?: string}} [opts]
+ * @returns {any}
+ */
+function classifyTarget(target, input, opts) {
+  const root = opts && typeof opts.root === 'string' && opts.root ? opts.root : null;
+  if (!root || typeof target !== 'string' || !target) return target;
+  const cwd = (opts && opts.cwd) || (input && input.cwd);
+  const base = typeof cwd === 'string' && cwd ? cwd : root;
+  let abs;
+  try { abs = resolve(base, target); } catch { return 'outside'; }
+  const within = (dir) => abs === dir || abs.startsWith(dir + sep);
+  if (within(root)) return target;
+  const plugin = opts && typeof opts.pluginRoot === 'string' && opts.pluginRoot ? opts.pluginRoot : null;
+  if (plugin && within(plugin)) {
+    const rel = relative(plugin, abs).split(sep).join('/');
+    return rel ? '${CLAUDE_PLUGIN_ROOT}/' + rel : '${CLAUDE_PLUGIN_ROOT}';
+  }
+  return 'outside';
+}
+
 export function recordFromHook(input, now, opts) {
   if (!input || typeof input !== 'object') return null;
   const tool = input.tool_name;
@@ -421,6 +461,8 @@ export function recordFromHook(input, now, opts) {
     const files = filesOf(ti.command, { ...(opts || {}), cwd: (opts && opts.cwd) || input.cwd });
     if (files.length) rec.files = files;
   }
+
+  if (tool !== 'Bash') rec.target = classifyTarget(rec.target, input, opts);
 
   // Opportunistic: `tool_response` is not documented for PostToolUse. If the
   // host does send one, its size is the only exact byte figure available and

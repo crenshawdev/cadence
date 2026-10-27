@@ -138,7 +138,7 @@ Context7 and excerpt are used when they're installed and skipped when they're no
 ### The two hooks that watch
 
 - `subagent-trace` reads the stopped subagent's own transcript, the file the host keeps for that agent, to price the dispatch in `.planning/trace.jsonl`.
-- `read-trace` logs the path of each project file a tool call opens to `.planning/reads.jsonl`. Paths only, never contents, and a path outside the project is never recorded.
+- `read-trace` logs the path of each project file a tool call opens to `.planning/reads.jsonl`. Paths only, never contents. A file inside the plugin is recorded relative to the plugin, and any other path outside the project is recorded only as `outside`.
 
 ### Outside the project
 

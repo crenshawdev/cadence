@@ -15,7 +15,7 @@ import {
   appendFileSync, readdirSync, linkSync, utimesSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   recordFromHook, appendRead, programOf, readsPath, filesOf,
   RECORDED_TOOLS, MAX_READS_BYTES, MAX_FILES_PER_CALL,
@@ -868,6 +868,96 @@ test('a Bash call naming no in-repo file carries no files field at all', () => {
   }, TS, { root, isFile });
   assert.equal(r.target, 'git');
   assert.ok(!Object.prototype.hasOwnProperty.call(r, 'files'));
+});
+
+// --- where a path target points: project, plugin or outside (phase 1 D-07) --
+//
+// With the hook's options a target is classified LEXICALLY, the way `filesOf`
+// confines a Bash token: resolve against the cwd, prefix match on the
+// separator, no realpath and no stat. Inside the project it is recorded as
+// given; inside the plugin it is recorded relative to the plugin; anywhere else
+// the whole target is replaced by `outside`, so a home directory or another
+// project's path never reaches a record /cad-report prints.
+
+const PLUGIN = join(tmp(), 'plugin');
+const PLUGIN_REL = '${CLAUDE_PLUGIN_ROOT}';
+
+function classified(tool, ti, over = {}) {
+  const root = over.root || tmp();
+  const opts = { root, cwd: root, isFile, pluginRoot: PLUGIN, ...over };
+  return recordFromHook({ tool_name: tool, tool_input: ti, cwd: opts.cwd }, TS, opts);
+}
+
+test('a Read outside the project and the plugin records `outside`, not the path', () => {
+  assert.equal(classified('Read', { file_path: '/etc/hosts' }).target, 'outside');
+});
+
+test('a Read inside the plugin records the path relative to the plugin', () => {
+  const r = classified('Read', { file_path: join(PLUGIN, 'cadence-core', 'references', 'x.md') });
+  assert.equal(r.target, PLUGIN_REL + '/cadence-core/references/x.md');
+});
+
+test('a project target is recorded as given, absolute or relative', () => {
+  const root = tmp();
+  const abs = join(root, 'src', 'a.js');
+  assert.equal(classified('Read', { file_path: abs }, { root }).target, abs);
+  assert.equal(classified('Grep', { path: 'src', pattern: 'x' }, { root }).target, 'src');
+  assert.equal(classified('mcp__excerpt__excerpt_read', { path: abs }, { root }).target, abs);
+  assert.equal(classified('mcp__excerpt__excerpt_search', { path: 'src' }, { root }).target, 'src');
+});
+
+test('a relative target that climbs out of the project is outside', () => {
+  assert.equal(classified('Read', { file_path: '../../etc/passwd' }).target, 'outside');
+  assert.equal(classified('Glob', { path: '..' }).target, 'outside');
+});
+
+test('a prefix match is on the separator, so a sibling directory is not inside', () => {
+  const root = tmp();
+  assert.equal(classified('Read', { file_path: root + '-sibling/a.md' }, { root }).target, 'outside');
+  assert.equal(classified('Read', { file_path: PLUGIN + '-sibling/a.md' }).target, 'outside');
+});
+
+test('a Glob with no path records null, and a plugin root inside the project records as given', () => {
+  assert.equal(classified('Glob', { pattern: '*.md' }).target, null);
+  const root = tmp();
+  const inner = join(root, 'vendor', 'plugin');
+  const file = join(inner, 'a.md');
+  assert.equal(classified('Read', { file_path: file }, { root, pluginRoot: inner }).target, file);
+});
+
+test('Bash keeps its program as the target under the hook options', () => {
+  const r = classified('Bash', { command: 'cat /etc/hosts' });
+  assert.equal(r.target, 'cat');
+});
+
+test('with no root in the options a target is recorded exactly as before', () => {
+  assert.equal(recordFromHook({ tool_name: 'Read', tool_input: { file_path: '/etc/hosts' } }, TS,
+    { isFile, pluginRoot: PLUGIN }).target, '/etc/hosts');
+  assert.equal(recordFromHook({ tool_name: 'Read', tool_input: { file_path: '/etc/hosts' } }, TS).target,
+    '/etc/hosts');
+});
+
+// The hook itself: a PostToolUse payload whose cwd is a fixture project.
+const HOOK = join(dirname(fileURLToPath(import.meta.url)), 'read-trace.mjs');
+const REAL_PLUGIN = resolve(dirname(HOOK), '..', '..');
+
+function hookRecords(file_path) {
+  const project = tmp();
+  mkdirSync(join(project, '.planning'), { recursive: true });
+  execFileSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ tool_name: 'Read', tool_input: { file_path }, cwd: project }),
+  });
+  return readFileSync(join(project, '.planning', 'reads.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+}
+
+test('the hook records `outside` for a path outside both roots', () => {
+  const [rec] = hookRecords('/etc/hosts');
+  assert.equal(rec.target, 'outside');
+});
+
+test('the hook records a plugin file relative to the plugin it lives in', () => {
+  const [rec] = hookRecords(join(REAL_PLUGIN, 'cadence-core', 'bin', 'read-trace.mjs'));
+  assert.equal(rec.target, PLUGIN_REL + '/cadence-core/bin/read-trace.mjs');
 });
 
 // --- the two redundancies stay unpooled ------------------------------------
