@@ -87,6 +87,53 @@ test('walk-up stops at a repo root without .planning (still not policed)', () =>
 
 // --- Rail 3: never auto-push. -----------------------------------------------
 
+// A linked worktree's and a submodule's `.git` is a FILE. The push rail walks
+// past it to the owning project (phase 1 D-02, D-03); an independent clone's
+// `.git` is a DIRECTORY and still ends the walk. `project()` creates its
+// `.planning/` after the commit, so it is untracked and no checkout of the
+// project carries it - the walk has to climb to find it.
+
+test('git push from a linked worktree beneath the project asks', () => {
+  const dir = project('main');
+  const wt = join(dir, '.claude', 'worktrees', 'agent-x');
+  git(['-C', dir, 'worktree', 'add', '-q', '-b', 'agent-x', wt]);
+  const d = guard('git push origin x', wt);
+  assert.notEqual(d, null);
+  assert.equal(d.permissionDecision, 'ask');
+  assert.match(d.permissionDecisionReason, /cad-land/);
+});
+
+test('git push from a submodule beneath the project asks', () => {
+  const dir = project('main');
+  const sub = mkdtempSync(join(tmpdir(), 'cad-guard-sub-'));
+  git(['-C', sub, 'init', '-q', '-b', 'main']);
+  writeFileSync(join(sub, 's.txt'), 's');
+  git(['-C', sub, 'add', '.']);
+  git(['-C', sub, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'init']);
+  // git 2.38.1+ refuses a local-path submodule clone unless the file transport
+  // is allowed for this one call.
+  git(['-C', dir, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'vendor/sub']);
+  const d = guard('git push origin x', join(dir, 'vendor', 'sub'));
+  assert.notEqual(d, null);
+  assert.equal(d.permissionDecision, 'ask');
+});
+
+test('a worktree created OUTSIDE the project stays unguarded (D-03)', () => {
+  const dir = project('main');
+  const wt = join(mkdtempSync(join(tmpdir(), 'cad-guard-away-')), 'wt');
+  git(['-C', dir, 'worktree', 'add', '-q', '-b', 'away', wt]);
+  assert.equal(guard('git push origin x', wt), null);
+});
+
+test('a commit from a linked worktree is judged exactly as before: silent', () => {
+  // The commit rail keeps its own lookup, so it does not start judging worktree
+  // commits even on a branch the project lists as protected.
+  const dir = project('main', { git: { protected_branches: ['agent-x'] } });
+  const wt = join(dir, '.claude', 'worktrees', 'agent-x');
+  git(['-C', dir, 'worktree', 'add', '-q', '-b', 'agent-x', wt]);
+  assert.equal(guard('git commit -m x', wt), null);
+});
+
 test('git push always asks (publishing is /cad-land\'s call)', () => {
   const d = guard('git push origin feature', project('feature'));
   assert.equal(d.hookEventName, 'PreToolUse'); // the harness routes on this

@@ -6,7 +6,12 @@
 //
 // Scope: acts ONLY inside a Cadence project (a .planning/ dir in the hook's
 // cwd or an ancestor, up to the repo root). Everywhere else it stays silent -
-// this plugin must not police unrelated repos.
+// this plugin must not police unrelated repos. The PUSH rail's walk also passes
+// over a `.git` FILE (a linked worktree's or a submodule's) and keeps climbing
+// to the owning project, so a push from a worktree or submodule BENEATH the
+// project asks; an independent clone's `.git` DIRECTORY still ends the walk and
+// stays silent, and a worktree made outside the project tree stays unguarded.
+// The commit rail keeps the plain walk and does not judge worktree commits.
 //
 // Rails:
 //   git push          -> permissionDecision "ask" - publishing is /cad-land's
@@ -24,7 +29,7 @@
 // error exits 0 silently - a broken guard must never block normal work.
 'use strict';
 
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitInvocations, planningRoot } from './lib/git-segments.mjs';
@@ -150,6 +155,14 @@ function commitDecision(root, cwd) {
 
 const has = (dir, name) => existsSync(join(dir, name));
 
+/** The push rail's probe: `.git` counts as present only when it is a DIRECTORY.
+ * A linked worktree's or a submodule's `.git` is a file, so the walk climbs on
+ * to the project that owns it; a nested clone's is a directory and ends it. */
+const hasForPush = (dir, name) => {
+  if (name !== '.git') return has(dir, name);
+  try { return statSync(join(dir, name)).isDirectory(); } catch { return false; }
+};
+
 // A `-C` argument as a path, or null when this reader cannot know it: empty, a
 // variable or a substitution (`$`, a backtick), a `~`, or quoting it cannot
 // strip as one matching pair around the whole word. The command text arrives
@@ -209,7 +222,10 @@ async function main() {
   // exemption of any kind lives here (rail 3). cad-land's sanctioned unattended
   // publish runs through the git-publish seam as a subprocess argv push, which
   // is not a Bash tool call, so this hook never sees it.
-  if (root && verbs.includes('push')) {
+  // The push rail has its own lookup (hasForPush): a worktree or submodule
+  // beneath the project is the project's, while `root` above stays the plain
+  // walk the commit rail judges by.
+  if (verbs.includes('push') && planningRoot(cwd, hasForPush)) {
     decide('ask', 'Cadence rail: workflows never push - publishing is /cad-land\'s ' +
       'call (references/git-publish.md rail 3). Approve only if you are deliberately publishing.');
     return;
