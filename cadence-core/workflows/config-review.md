@@ -47,7 +47,8 @@ serial.
   unlikely to differ.
 - `ok:true`: continue with `models[]` - each entry is `{id, tier, high_effort}`
   where `tier` is `flagship|balanced|cheap` for known ids or `null` for unknown
-  ones (unknowns are still selectable; the user places them).
+  ones (unknowns are still selectable; the user places them). Relay the
+  envelope's `warnings[]` to the user.
 
 ### 3. Assign
 

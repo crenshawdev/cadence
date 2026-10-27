@@ -45,7 +45,8 @@ The hard rules (DESIGN §6), in order of importance:
    with `{situation}` on stdin - a tight description of the dead-end: the goal,
    what was tried, the exact failing signal. Read the one JSON line.
    - `ok:false` -> report `reason` and continue without a consult (never block).
-   - `ok:true` -> `angles[]`, each `{hypothesis, rationale, how_to_check}`.
+   - `ok:true` -> `angles[]`, each `{hypothesis, rationale, how_to_check}`. Relay
+     the envelope's `warnings[]` to the user.
 5. **Ground, then hand to the user.** For each angle, the main model checks it
    against the real code/state - confirm plausible, kill what the code already
    rules out - and presents the surviving angles as options to try. The user

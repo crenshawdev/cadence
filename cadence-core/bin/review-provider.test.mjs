@@ -18,7 +18,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -2357,3 +2357,79 @@ test('consult bound: a reply of 11 angles answers bad-shape, never a truncated l
   assert.equal(ok10.envelope.ok, true, ok10.line);
   assert.equal(ok10.envelope.angles.length, 10);
 });
+
+// --- the key file: a group- or world-readable providers.env warns (D-15) --------
+
+/** A providers.env under a fresh XDG_CONFIG_HOME holding the openai key, at `mode`. */
+function keyFileAt(mode) {
+  const xdg = mkdtempSync(join(tmpdir(), 'cad-keymode-'));
+  mkdirSync(join(xdg, 'cadence'));
+  const file = join(xdg, 'cadence', 'providers.env');
+  writeFileSync(file, 'OPENAI_API_KEY=test-not-a-real-key\n');
+  chmodSync(file, mode);
+  return { xdg, file };
+}
+
+const KEY_MODE_CASES = [
+  ['review', REVIEW_ARGS, { status: 200, body: FENCE_OK_BODY }],
+  ['consult', ['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+    '--payload', FAULT_PAYLOAD_CONSULT],
+  { status: 200, body: JSON.stringify({ output_text: JSON.stringify({ angles: [] }) }) }],
+  ['detect-models', ['detect-models', '--provider', 'openai'],
+    { status: 200, body: JSON.stringify({ data: [{ id: 'gpt-6-astra' }] }) }],
+];
+
+test('key file: a 0644 providers.env warns on review, consult and detect-models, and still works',
+  { skip: process.platform === 'win32' }, async () => {
+    const { xdg, file } = keyFileAt(0o644);
+    for (const [cmd, argv, wire] of KEY_MODE_CASES) {
+      const r = await runFaked(argv, wire, { OPENAI_API_KEY: '', XDG_CONFIG_HOME: xdg });
+      assert.equal(r.envelope.ok, true, `${cmd}: ${r.line}`);
+      assert.ok(Array.isArray(r.envelope.warnings), `${cmd}: ${r.line}`);
+      assert.equal(r.envelope.warnings.length, 1, `${cmd}: ${r.line}`);
+      assert.ok(r.envelope.warnings[0].includes(file), `${cmd} names the file: ${r.envelope.warnings[0]}`);
+      assert.match(r.envelope.warnings[0], /0644/);
+      assert.match(r.envelope.warnings[0], /chmod 600/);
+      assert.equal(r.seen.length, 1, `${cmd}: warned, never refused`);
+    }
+  });
+
+test('key file: a world-readable-only 0604 file also warns',
+  { skip: process.platform === 'win32' }, async () => {
+    const { xdg } = keyFileAt(0o604);
+    const r = await runFaked(REVIEW_ARGS, { status: 200, body: FENCE_OK_BODY },
+      { OPENAI_API_KEY: '', XDG_CONFIG_HOME: xdg });
+    assert.equal(r.envelope.ok, true, r.line);
+    assert.equal(r.envelope.warnings.length, 1);
+  });
+
+test('key file: a 0600 providers.env adds no warning anywhere',
+  { skip: process.platform === 'win32' }, async () => {
+    const { xdg } = keyFileAt(0o600);
+    for (const [cmd, argv, wire] of KEY_MODE_CASES) {
+      const r = await runFaked(argv, wire, { OPENAI_API_KEY: '', XDG_CONFIG_HOME: xdg });
+      assert.equal(r.envelope.ok, true, `${cmd}: ${r.line}`);
+      assert.equal('warnings' in r.envelope, false, `${cmd}: ${r.line}`);
+    }
+  });
+
+test('key file: a key from the environment never warns, whatever the file mode',
+  { skip: process.platform === 'win32' }, async () => {
+    const { xdg } = keyFileAt(0o644);
+    for (const [cmd, argv, wire] of KEY_MODE_CASES) {
+      const r = await runFaked(argv, wire, { OPENAI_API_KEY: 'env-not-a-real-key', XDG_CONFIG_HOME: xdg });
+      assert.equal(r.envelope.ok, true, `${cmd}: ${r.line}`);
+      assert.equal('warnings' in r.envelope, false, `${cmd}: ${r.line}`);
+    }
+  });
+
+test('key file: detect-models keeps its own warnings beside the mode warning',
+  { skip: process.platform === 'win32' }, async () => {
+    const { xdg, file } = keyFileAt(0o644);
+    const r = await runFaked(['detect-models', '--provider', 'openai'],
+      { status: 200, body: JSON.stringify({ data: [{ id: 'gpt-6-astra' }, { id: 'a b' }] }) },
+      { OPENAI_API_KEY: '', XDG_CONFIG_HOME: xdg });
+    assert.equal(r.envelope.warnings.length, 2, r.line);
+    assert.ok(r.envelope.warnings.some((w) => w.includes(file)));
+    assert.ok(r.envelope.warnings.some((w) => w.includes('"a b"')));
+  });

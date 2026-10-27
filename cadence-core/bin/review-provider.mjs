@@ -19,7 +19,8 @@
 //     injects the schema into the prompt instead. Either way we assert the
 //     shape on return, so an unenforced or schema-ignoring model degrades to a
 //     structured bad-shape, never bad data.
-//   - Keys resolve env-first, then a shared 600-perm env file. Lazy, never
+//   - Keys resolve env-first, then a shared env file whose mode is checked
+//     (a group- or world-readable file warns on the envelope, never refuses). Lazy, never
 //     logged. A missing key is not fatal: we emit {ok:false, reason:"no-key"}
 //     so the caller falls back to claude-subagent.
 //   - Any failure (offline, bad key, http error, bad shape) degrades to a
@@ -273,15 +274,30 @@ export function parseEnvFile(text) {
   return out;
 }
 
+// A key taken from the file whose group or other read bits are set is a key
+// other local users can read: said on the envelope, never refused (D-15). Only
+// a key that CAME from the file is checked - an env-supplied key never reaches
+// here - and win32 has no such mode bits. A stat failure adds nothing: the read
+// above it already succeeded.
+/** @param {string} file @returns {string[]} */
+function keyFileWarnings(file) {
+  if (process.platform === 'win32') return [];
+  try {
+    const mode = fs.statSync(file).mode & 0o777;
+    if (!(mode & 0o044)) return [];
+    return [`${file} is mode ${mode.toString(8).padStart(4, '0')}, readable by other users and it holds an API key - restrict it to its owner: chmod 600 ${file}`];
+  } catch { return []; }
+}
+
 function resolveKey(provider, keyFile) {
   const name = ENV_VAR[provider];
-  if (process.env[name]) return { key: process.env[name], source: 'env' };
+  if (process.env[name]) return { key: process.env[name], source: 'env', warnings: [] };
   const file = providersEnvPath(keyFile);
   try {
     const parsed = parseEnvFile(fs.readFileSync(file, 'utf8'));
-    if (parsed[name]) return { key: parsed[name], source: 'file' };
+    if (parsed[name]) return { key: parsed[name], source: 'file', warnings: keyFileWarnings(file) };
   } catch { /* file absent/unreadable -> treated as no-key below */ }
-  return { key: null, where: `env $${name} or ${file}` };
+  return { key: null, where: `env $${name} or ${file}`, warnings: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -1269,10 +1285,10 @@ function resolveProvider(opts, cmdName) {
   if (!isModelId(opts.model)) fail('bad-args',
     `${cmdName} --model ${JSON.stringify(opts.model)} is not a model id`,
     'pass --model with an id this provider serves - `review-provider.mjs detect-models --provider <name>` lists them');
-  const { key, where } = resolveKey(provider, opts['key-file']);
+  const { key, where, warnings } = resolveKey(provider, opts['key-file']);
   if (!key) fail('no-key', `set ${where}`,
     'write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config');
-  return { provider, adapter, key };
+  return { provider, adapter, key, warnings };
 }
 
 // Run a structured-output request through the transport, extract, and parse.
@@ -1331,7 +1347,7 @@ async function cmdReview(opts) {
   const meta = beginProviderCall('review',
     { provider: opts.provider, model: opts.model, effort: opts.effort,
       trigger: opts.trigger });
-  const { provider, adapter, key } = resolveProvider(opts, 'review');
+  const { provider, adapter, key, warnings } = resolveProvider(opts, 'review');
   const payload = await readPayload(opts);
   if (!payload || typeof payload.instruction !== 'string' || typeof payload.artifact !== 'string') {
     fail('bad-payload', 'payload needs {instruction, artifact}, both strings',
@@ -1364,13 +1380,14 @@ async function cmdReview(opts) {
   // artifact. references/review-triggers.md reads `{ok:false}` reasons; this is
   // an additive key on the `ok` side and no existing arm moves without it.
   ok({ provider, model: opts.model, findings: parsed.findings,
-    ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}) });
+    ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}),
+    ...(warnings.length ? { warnings } : {}) });
 }
 
 async function cmdConsult(opts) {
   const meta = beginProviderCall('consult',
     { provider: opts.provider, model: opts.model, effort: opts.effort });
-  const { provider, adapter, key } = resolveProvider(opts, 'consult');
+  const { provider, adapter, key, warnings } = resolveProvider(opts, 'consult');
   const payload = await readPayload(opts);
   if (!payload || typeof payload.situation !== 'string') {
     fail('bad-payload', 'payload needs {situation}, a string',
@@ -1398,7 +1415,8 @@ async function cmdConsult(opts) {
   }
   traceProvider(meta, 'ok');
   ok({ provider, model: opts.model, angles: parsed.angles,
-    ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}) });
+    ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}),
+    ...(warnings.length ? { warnings } : {}) });
 }
 
 async function cmdDetect(opts) {
@@ -1412,7 +1430,7 @@ async function cmdDetect(opts) {
   if (!adapter) fail('bad-provider', `unknown provider: ${provider}`,
     `pass --provider as one of: ${Object.keys(ADAPTERS).join(', ')}`);
 
-  const { key, where } = resolveKey(provider, opts['key-file']);
+  const { key, where, warnings: keyWarnings } = resolveKey(provider, opts['key-file']);
   if (!key) fail('no-key', `set ${where}`,
     'write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config');
 
@@ -1430,7 +1448,9 @@ async function cmdDetect(opts) {
   }
   const ids = adapter.extractModels(res.json);
   traceProvider(meta, 'ok');
-  ok(detectEnvelope(provider, ids));
+  const env = detectEnvelope(provider, ids);
+  const warnings = [...keyWarnings, ...(env.warnings || [])];
+  ok(warnings.length ? { ...env, warnings } : env);
 }
 
 // Load references/model-hints.json, distinguishing a legitimately-absent
