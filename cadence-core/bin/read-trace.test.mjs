@@ -930,6 +930,33 @@ test('a home-relative target that expands into the project is recorded as given'
   }
 });
 
+test('a failed call whose target is outside records no cause that could carry the path', () => {
+  const r = classified('mcp__excerpt__excerpt_read', { path: '/home/john/clients/acme/notes.md' }, {});
+  assert.equal(r.target, 'outside');
+  const failed = recordFromHook({
+    tool_name: 'mcp__excerpt__excerpt_read',
+    tool_input: { path: '/home/john/clients/acme/notes.md' },
+    tool_response: { isError: true, content: [{ text: '/home/john/clients/acme/notes.md: declined' }] },
+    cwd: tmp(),
+  }, TS, { root: tmp(), cwd: tmp(), isFile, pluginRoot: PLUGIN });
+  assert.equal(failed.target, 'outside');
+  assert.equal(failed.is_error, true);
+  assert.equal(JSON.stringify(failed).includes('clients'), false);
+});
+
+test('a failed call inside the project keeps its cause', () => {
+  const root = tmp();
+  const file = join(root, 'a.md');
+  const failed = recordFromHook({
+    tool_name: 'mcp__excerpt__excerpt_read',
+    tool_input: { path: file },
+    tool_response: { isError: true, content: [{ text: file + ': declined' }] },
+    cwd: root,
+  }, TS, { root, cwd: root, isFile, pluginRoot: PLUGIN });
+  assert.equal(failed.target, file);
+  assert.equal(failed.error, file + ': declined');
+});
+
 test('a prefix match is on the separator, so a sibling directory is not inside', () => {
   const root = tmp();
   assert.equal(classified('Read', { file_path: root + '-sibling/a.md' }, { root }).target, 'outside');

@@ -470,6 +470,7 @@ export function recordFromHook(input, now, opts) {
     if (files.length) rec.files = files;
   }
 
+  const target = rec.target;
   if (tool !== 'Bash') rec.target = classifyTarget(rec.target, input, opts);
 
   // Opportunistic: `tool_response` is not documented for PostToolUse. If the
@@ -489,8 +490,11 @@ export function recordFromHook(input, now, opts) {
     // is the invented figure `bytes` above already refuses to make.
     if (failed === true) {
       rec.is_error = true;
+      // Not for a target that was hidden: the cause is `<path>: <reason>`, so
+      // keeping it would put the absolute path `target: 'outside'` withholds
+      // back into the same record. `is_error` still says the call failed.
       const text = errorTextOf(resp);
-      if (text) rec.error = text;
+      if (text && !(rec.target === 'outside' && target !== 'outside')) rec.error = text;
     } else if (failed === false) {
       rec.is_error = false;
     }
