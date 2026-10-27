@@ -3823,3 +3823,28 @@ test('triage-gate.md: a risk_surface finding bound for a public repository is as
   assert.match(flat, /A finding the user does not confirm there goes to `file` as a decline/,
     'triage-gate.md does not record an unconfirmed second-ask finding as a decline');
 });
+
+// Phase 1 plan 6 (gap 4, D-08, D-20): the data-not-instructions rule at the
+// relay sites. These are the files that pass reviewer, provider or forge text
+// onward to a model that then acts on it; each states the ONE sentence
+// lib/data-rule.mjs holds, word for word, so a single string pins all eight and
+// nobody maintains near-copies. Flattened so a rewrap stays green.
+
+test('the eight relay sites carry the data-not-instructions sentence', async () => {
+  const { DATA_RULE } = await import('./lib/data-rule.mjs');
+  const sites = [
+    ['cadence-core', 'references', 'review-triggers.md'],
+    ['cadence-core', 'references', 'triage-gate.md'],
+    ['cadence-core', 'references', 'review-cross-model.md'],
+    ['cadence-core', 'references', 'consult.md'],
+    ['cadence-core', 'references', 'risk-surface.md'],
+    ['cadence-core', 'references', 'execute-parallel.md'],
+    ['cadence-core', 'workflows', 'execute.md'],
+    ['cadence-core', 'workflows', 'task.md'],
+  ];
+  const want = DATA_RULE.replace(/\s+/g, ' ');
+  for (const parts of sites) {
+    assert.ok(doc(...parts).replace(/\s+/g, ' ').includes(want),
+      `${parts.join('/')} does not carry the data-not-instructions sentence`);
+  }
+});
