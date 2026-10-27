@@ -249,8 +249,16 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    (skip it after an open-PR-only or leave-local land; when that PR merges
    later outside this session, this cleanup - pull, tag, reap - is the piece
    to come back for). The auto_close merge
-   lands on the platform, so the LOCAL base is stale - pull FIRST:
-   `git checkout <base>` then `git pull`.
+   lands on the platform, so the LOCAL base is stale - pull FIRST, but ask the
+   seam about the base before git sees it (a base from a committed config reaches
+   git through this prose):
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" cleanup --base <base>`
+   with the base step 1 resolved, plus `--merged true` in the auto_close path.
+   `--base` is required: without it the seam resolves its own base, which can
+   differ from this land's. On `action:"skip"` or `returnToBase:false` run no
+   checkout, no pull, no tag and no reap: leave HEAD and the branch in place and
+   report the envelope's reason. Otherwise run `git checkout` on the `base` the
+   envelope names, then `git pull`.
 
    **Release tag on the pulled base (tag-after-merge), before the reap.** When
    `git.create_tag` is true and the shipped version - the manifest's `version`
@@ -267,7 +275,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    is false or the tag already exists.
 
    Then compute the reap decision against the now-current base:
-   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" cleanup`.
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" cleanup --base <base>`.
    In the auto_close path append `--merged true` (step 3b confirmed the PR/MR
    MERGED) so the reap never hinges on local-base freshness; a manual land
    omits it and the seam falls back to `git branch --merged <base>`. Relay its
