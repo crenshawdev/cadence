@@ -231,6 +231,30 @@ test('redactCredentials: the JSON pair spelling, and the bare form-body one', ()
   }
 });
 
+test('redactCredentials: GitHub\'s `Authorization: token` header, and separator-less credential names', () => {
+  // The PAT form `gh` and curl users write; neither `bearer` nor `basic`.
+  for (const line of ['Authorization: token ghp_SECRET1234', 'authorization=token ghp_SECRET1234']) {
+    assert.equal(redactCredentials(line), '<redacted>', line);
+  }
+  const quoted = redactCredentials('curl -H "Authorization: token ghp_SECRET1234" https://api.github.com');
+  assert.equal(quoted.includes('ghp_SECRET1234'), false, quoted);
+  assert.ok(quoted.includes('https://api.github.com'), quoted);
+
+  // Env names with no `_` before the credential word, and `PWD`/`PASS` forms.
+  for (const line of ['PGPASSWORD=hunter2SECRET', 'MYSQL_PWD=hunter2SECRET', 'DB_PASS=hunter2SECRET',
+    'MYSQLPASSWORD=hunter2SECRET', 'GITHUBTOKEN=hunter2SECRET']) {
+    const out = redactCredentials(line);
+    assert.equal(out.includes('hunter2SECRET'), false, `${line} -> ${out}`);
+  }
+
+  // What must survive: the word `token` after prose, a bare `pass` / `pwd`, a
+  // shell's own PWD, and a name that only ends in the word mid-token.
+  for (const keep of ['the token expired at 12:00', 'tests pass: 3', 'pwd: /home/u', 'OLDPWD=/tmp/x',
+    'BYPASS=1', 'PWD=/code/cadence', 'monkey=1']) {
+    assert.equal(redactCredentials(keep), keep, keep);
+  }
+});
+
 test('redactCredentials: a bare credential WORD is not a credential shape', () => {
   // The boundary that keeps this from eating the diagnostic the excerpt exists
   // for: no separator, no value, nothing to redact.

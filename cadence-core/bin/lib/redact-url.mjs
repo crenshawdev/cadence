@@ -230,7 +230,12 @@ export function redactUrl(s) {
 //    the header name pointing at a hole. The scheme word is consumed TOO - an
 //    excerpt that still reads `Bearer <redacted>` has told a reader nothing the
 //    name did not, and AC2 asks for the lead-in gone.
-const AUTH_SCHEME = /(?:authorization\s*[:=]\s*)?(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]+/gi;
+//    `token` is a scheme word too (GitHub's PAT header, `Authorization: token
+//    ghp_x`), but only BEHIND its header name: bare, `token` is the ordinary
+//    English word and `the token expired` must survive.
+const AUTH_SCHEME = new RegExp(
+  '(?:authorization\\s*[:=]\\s*)?(?:bearer|basic)\\s+[A-Za-z0-9._~+/=-]+'
+  + '|authorization\\s*[:=]\\s*token\\s+[A-Za-z0-9._~+/=-]+', 'gi');
 
 // 4. A credential-shaped NAME=VALUE pair, in the four spellings a body actually
 //    carries it: `key=v` in a query string, `key: v` in a header dump,
@@ -248,8 +253,12 @@ const AUTH_SCHEME = /(?:authorization\s*[:=]\s*)?(?:bearer|basic)\s+[A-Za-z0-9._
 //    repetition is bounded at four rather than left open: an unbounded nested
 //    quantifier backtracks quadratically on a long separator run, and this runs
 //    against a provider-controlled body up to the response ceiling.
-const CRED_NAME = '(?:[A-Za-z0-9]+[_.-]){0,4}'
-  + '(?:api[_.-]?key|access[_.-]?token|refresh[_.-]?token|passwd|password|secret|token|key)';
+//
+//    `pass` and `pwd` (`DB_PASS`, `MYSQL_PWD`) are credential names only BEHIND
+//    a prefix: bare, `pass: 3` is a test count and `pwd: /home/u` a shell line.
+const CRED_NAME = '(?:(?:[A-Za-z0-9]+[_.-]){0,4}'
+  + '(?:api[_.-]?key|access[_.-]?token|refresh[_.-]?token|passwd|password|secret|token|key)'
+  + '|(?:[A-Za-z0-9]+[_.-]){1,4}(?:pass|pwd))';
 //    The VALUE is five alternatives, not one class. A quoted value runs to its
 //    closing quote so a secret containing a space (`"password": "hunter2 xyz"`)
 //    goes whole - the bare class stops at the first space and left the tail in
@@ -283,6 +292,16 @@ const CRED_PAIR_CAMEL = new RegExp(
   `(?<![A-Za-z0-9_.-])["']?[a-z][A-Za-z0-9]{0,30}(?:Key|Token|Secret|Passwd|Password)["']?`
   + `\\s*[:=]\\s*${CRED_VALUE}`, 'g');
 
+// 6. The same pair in upper case with NO separator before the credential word:
+//    `PGPASSWORD`, `MYSQLPASSWORD`, `GITHUBTOKEN`. Rule 4 needs a `_`, `-` or
+//    `.` boundary and rule 5 needs a lower-case start, so both pass these. Case
+//    is the discriminator again (no `i`), and the word list is short on purpose:
+//    `KEY`, `PASS` and `PWD` are left out because `MONKEY`, `BYPASS` and
+//    `OLDPWD` end in them and a mid-word hit would eat a name that is not one.
+const CRED_PAIR_UPPER = new RegExp(
+  `(?<![A-Za-z0-9_.-])["']?[A-Z][A-Z0-9]{0,30}(?:PASSWORD|PASSWD|SECRET|TOKEN)["']?`
+  + `\\s*[:=]\\s*${CRED_VALUE}`, 'g');
+
 /**
  * `s` with every credential-shaped span replaced by `<redacted>` - the NAME, the
  * separator and the value together, never the value alone. Everything else is
@@ -297,7 +316,8 @@ export function redactCredentials(s) {
   return String(s)
     .replace(AUTH_SCHEME, MARK)
     .replace(CRED_PAIR, MARK)
-    .replace(CRED_PAIR_CAMEL, MARK);
+    .replace(CRED_PAIR_CAMEL, MARK)
+    .replace(CRED_PAIR_UPPER, MARK);
 }
 
 // ---------------------------------------------------------------------------
