@@ -1999,3 +1999,26 @@ test('set: the gemini and deepseek tier keys refuse a malformed id the same way'
     assert.equal(readFileSync(file, 'utf8'), '{}', key);
   }
 });
+
+test('get: a malformed tier id in a layer comes back null with a warning naming the key', () => {
+  const repo = join(dir, 'mid-get-repo.json');
+  writeFileSync(repo, JSON.stringify({ review: { providers: {
+    openai: { tiers: { flagship: 'gpt-5 $(touch x)', balanced: 'gpt-5.1' } },
+  } } }));
+  const gp = join(dir, 'no-global-mid-get.json');
+  const bad = 'review.providers.openai.tiers.flagship';
+  const good = 'review.providers.openai.tiers.balanced';
+  const r = run(['get', '--file', repo, bad, good], gp);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.values[bad], null);
+  assert.equal(r.values[good], 'gpt-5.1');
+  const named = (r.warnings || []).filter((w) => w.includes(bad));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.match(named[0], /not a model id/);
+  assert.equal((r.warnings || []).some((w) => w.includes(good)), false);
+  // A conforming value alone: no warning at all, and null stays null.
+  const clean = run(['get', '--file', repo, good, 'review.providers.gemini.tiers.cheap'], gp);
+  assert.equal(clean.values[good], 'gpt-5.1');
+  assert.equal(clean.values['review.providers.gemini.tiers.cheap'], null);
+  assert.equal((clean.warnings || []).some((w) => /model id/.test(w)), false);
+});

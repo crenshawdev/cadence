@@ -492,6 +492,15 @@ function get(file, keys, asGlobal) {
     // would inherit the hole, and this is the read the hole is spent through.
     const spec = Object.hasOwn(SCHEMA, k) ? SCHEMA[k] : undefined;
     values[k] = layered[k] !== undefined ? layered[k] : spec && spec.default;
+    // A tier id is pasted into a `review-provider.mjs --model` line by prose that
+    // reads it HERE, and a hand-edited or cloned layer never went through `set`'s
+    // grammar. A stored value that is not a model id answers null - the "non-null
+    // model id" gate those workflows already hold then drops it - and the key is
+    // named so a wrongly refused id is visible rather than silent (D-17).
+    if (spec && spec.grammar === 'model_id' && checkGrammar(spec, values[k]) !== null) {
+      allWarnings.push(`${k}: the stored value is not a model id and was read as null`);
+      values[k] = null;
+    }
     // The twelve `review.triggers.<t>.{gate,tier,effort}` keys used to answer
     // with a warning here saying "no layer pins this, so the stakes level
     // decides it". That sentence went with the level: those rows carry real
