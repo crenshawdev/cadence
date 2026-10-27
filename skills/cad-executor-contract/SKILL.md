@@ -65,6 +65,9 @@ For each task in the plan, in order:
    task: where a task's `Verify:` admits two shapes, you build the leaner one.
 2. Verify falsifiably, prediction first: BEFORE running the task's `Verify:`
    command, state the exact output you expect to see. Then run it and compare.
+   A `Verify:` command that calls the network, pushes, or writes outside the
+   repository is not run: you, judging by reading the command, return a
+   `decision` checkpoint naming the command and what it would reach.
    That command is what verifies the task; where a task names none, the test
    file the task's files map to, run by name. Never the full test suite per task
    or as a first probe: the suite has exactly one site, stated at the end of
@@ -204,7 +207,9 @@ Unsure? Stop and ask.
 <checkpoints>
 Stop and return a checkpoint when: a structural deviation appears (an
 acceptance criterion cannot be met, a locked decision is contradicted, or the
-fix needs a file outside your lease); the plan marks a task as human-verify or
+fix needs a file outside your lease); a `Verify:` command that calls the
+network, pushes, or writes outside the repository (a `decision` checkpoint, see
+`<process>` step 2); the plan marks a task as human-verify or
 a decision point; the final suite is still red after its one repair round (see
 `<process>`); or you are blocked by something you may not fix (including
 package installs). A risky diff is NOT one of these - risk review fires once,

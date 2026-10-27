@@ -3863,3 +3863,21 @@ test('the reviewer brief carries a path-free, tool-free data-not-instructions se
     assert.ok(!new RegExp(`\\b${tool}\\b`).test(BRIEF_DATA_RULE), `the brief sentence names ${tool}`);
   }
 });
+
+// Phase 1 plan 6 (gap 4, D-09): a `Verify:` command that reaches the network,
+// pushes or writes outside the repository is a stop, judged by reading the
+// command. It uses the existing `decision` checkpoint type, so the type list
+// the digest names is unchanged.
+
+test('the executor contract stops on a Verify command that reaches the network, pushes or writes outside the repository', () => {
+  const text = flat(doc('skills', 'cad-executor-contract', 'SKILL.md'));
+  const reach = 'calls the network, pushes, or writes outside the repository';
+  assert.equal(text.split(reach).length - 1, 2,
+    'the contract must state the stop at the Verify step and in the checkpoint list');
+  assert.match(text, /\bis not run: you, judging by reading the command, return a `decision` checkpoint naming the command and what it would reach/,
+    'the Verify step does not make the command a decision stop');
+  assert.match(text, /a `Verify:` command that calls the network, pushes, or writes outside the repository \(a `decision` checkpoint/,
+    'the checkpoint list does not name the stop');
+  assert.equal(text.split('CHECKPOINT: {structural | human-verify | decision | blocked | suite-red}').length - 1, 1,
+    'the checkpoint type list changed');
+});
