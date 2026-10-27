@@ -3801,3 +3801,25 @@ test('triage-gate.md: the ask face makes one visibility read and the question na
   assert.match(flat, /an unreadable visibility \(`visibility_read` false\) is shown as public/,
     'triage-gate.md does not say an unreadable visibility is shown as public');
 });
+
+// Phase 1 plan 3 (gap 3, D-06): the one exception to triage-gate's single ask.
+//
+// A security finding is the one kind whose issue body can hand an attacker the
+// hole, so a `risk_surface` finding bound for a public (or not-read) repository
+// is asked a second time. The prose has to state the exception AND its limits
+// (a plan or diff review keeps the single ask; so does a private or internal
+// repository) AND what a "no" at the second ask does - the file admits only two
+// dispositions, so it is a decline. Flattened so a rewrap stays green.
+
+test('triage-gate.md: a risk_surface finding bound for a public repository is asked a second time', () => {
+  const flat = doc('cadence-core', 'references', 'triage-gate.md').replace(/\s+/g, ' ');
+
+  assert.match(flat, /[Ww]hen the fire is a `risk_surface` review and the `unfixed` envelope reports a public visibility or a `visibility_read` of false, every finding the user accepted at the first ask is asked a second time/,
+    'triage-gate.md does not state the second ask for a risk_surface finding on a public or unreadable repository');
+  assert.match(flat, /naming the repository and that the issue will be public/,
+    'triage-gate.md\'s second ask does not name the repository and that the issue will be public');
+  assert.match(flat, /A finding from a plan or diff review gets the single ask whatever the visibility, and so does any finding bound for a private or internal repository/,
+    'triage-gate.md does not keep the single ask for a plan or diff review, or for a private or internal repository');
+  assert.match(flat, /A finding the user does not confirm there goes to `file` as a decline/,
+    'triage-gate.md does not record an unconfirmed second-ask finding as a decline');
+});

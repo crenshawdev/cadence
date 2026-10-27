@@ -323,6 +323,17 @@ above and does not restate here. Fifteen findings are not fifteen prompts: the
 friction of asking per finding is exactly what made the old silent-write path
 attractive, and it is the thing this replaces.
 
+**One exception: a `risk_surface` finding bound for a public repository is asked
+a second time.** When the fire is a `risk_surface` review and the `unfixed`
+envelope reports a public visibility or a `visibility_read` of false, every
+finding the user accepted at the first ask is asked a second time, before the
+`file` call, naming the repository and that the issue will be public. A finding
+the user does not confirm there goes to `file` as a decline - the same
+disposition as a finding not named at the first ask - so it reaches no tracker
+and is not asked again. A finding from a plan or diff review gets the single ask
+whatever the visibility, and so does any finding bound for a private or internal
+repository.
+
 **Say plainly what each answer does**, in the question itself:
 
 - a finding the user NAMES becomes an issue on the tracker, and the question
