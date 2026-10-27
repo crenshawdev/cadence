@@ -559,10 +559,10 @@ test('roleOfAgent and rungOfAgent live here, read-trace re-exports them, and the
 // through a contract skill, a rung file, the reviewer brief or the PLAN template.
 // Each digest was taken from `git show v3.8.6:<path> | sha256sum`, not from the
 // working tree, so the expected value comes from the release - EXCEPT the six
-// role contracts under skills/, which were re-pinned from their new bytes when
-// phase 1 of v3.9.1 added the one data-not-instructions sentence (D-08,
-// lib/data-rule.mjs). That is a deliberate change, approved with the phase, as
-// phase 3's re-pin of contract digests was.
+// role contracts under skills/ and reviewer-brief.md, which were re-pinned from
+// their new bytes when phase 1 of v3.9.1 added the data-not-instructions
+// sentence (D-08, D-20, lib/data-rule.mjs). That is a deliberate change,
+// approved with the phase, as phase 3's re-pin of contract digests was.
 
 const CONTRACT_SURFACE_DIGESTS = {
   'agents/cad-assumptions-analyzer-high.md': 'b6859e429e56c8d11c91631584c4eb7b60e43c3e1660d5704255cb8630c46568',
@@ -595,7 +595,7 @@ const CONTRACT_SURFACE_DIGESTS = {
   'agents/cad-verifier-medium.md': 'de9b3cd88a901e313d17add259a4ee0fee20f730d09d8379f210b8e4b7e9d46d',
   'agents/cad-verifier-xhigh.md': '28b870f5382fed9352af937c45fddcf1e328543a22d689f4c2f1ae0e4a398cac',
   'agents/cad-verifier.md': 'be71c3f4fa00a3af1fc2acf8e7fd9b2eb465da457fc3dec841e6d95589921299',
-  'cadence-core/references/reviewer-brief.md': '85bf804814bf313af230fffc75337601cd5ab01e23d7d28c05d4bc8d0c116e6f',
+  'cadence-core/references/reviewer-brief.md': 'b20044897eba676b7de39bc1cd30e0960c9558cf70191d53b5fbc2798361e887',
   'cadence-core/templates/PLAN.md': 'f20e93597ac87e8a682d0ba7323f8d20b179db6f8c161c6efce08d2638f9574f',
   'skills/cad-assumptions-analyzer-contract/SKILL.md': '56bfac966b5c5cf9b1c4d80016f479043bd7cc2e1c80e5970227aea0008d1063',
   'skills/cad-executor-contract/SKILL.md': 'd9a56735696edf064a6fc2580d90f2ae3d42c7139b33dc1df2dcfa6f54ffcf5a',

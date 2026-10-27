@@ -3848,3 +3848,18 @@ test('the eight relay sites carry the data-not-instructions sentence', async () 
       `${parts.join('/')} does not carry the data-not-instructions sentence`);
   }
 });
+
+// Phase 1 plan 6 (gap 4, D-20): the reviewer brief's version of the rule. The
+// brief is sent verbatim to a provider that has no repository and no tools, so
+// its sentence names neither a path nor a tool.
+
+test('the reviewer brief carries a path-free, tool-free data-not-instructions sentence', async () => {
+  const { BRIEF_DATA_RULE } = await import('./lib/data-rule.mjs');
+  assert.ok(flat(doc('cadence-core', 'references', 'reviewer-brief.md')).includes(BRIEF_DATA_RULE),
+    'reviewer-brief.md does not carry the brief\'s data-not-instructions sentence');
+  assert.ok(!BRIEF_DATA_RULE.includes('/'), 'the brief sentence holds a slash');
+  assert.ok(!BRIEF_DATA_RULE.includes('`'), 'the brief sentence holds a backtick');
+  for (const tool of ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Task']) {
+    assert.ok(!new RegExp(`\\b${tool}\\b`).test(BRIEF_DATA_RULE), `the brief sentence names ${tool}`);
+  }
+});
