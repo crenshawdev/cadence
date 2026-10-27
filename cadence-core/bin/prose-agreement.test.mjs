@@ -3881,3 +3881,15 @@ test('the executor contract stops on a Verify command that reaches the network, 
   assert.equal(text.split('CHECKPOINT: {structural | human-verify | decision | blocked | suite-red}').length - 1, 1,
     'the checkpoint type list changed');
 });
+
+// Phase 1 plan 7 (gap 6, D-22): /cad-undo rolls a phase's commits back and
+// resets its status, so the model must not be able to invoke it on its own.
+// Only the user types it; no skill or SlashCommand route reaches it.
+
+test('cad-undo sets disable-model-invocation: true in its frontmatter', () => {
+  const text = doc('skills', 'cad-undo', 'SKILL.md');
+  const front = text.match(/^---\n([\s\S]*?)\n---/);
+  assert.ok(front, 'skills/cad-undo/SKILL.md has no frontmatter block');
+  assert.match(front[1], /^disable-model-invocation:[ \t]*true[ \t]*$/m,
+    'cad-undo does not set disable-model-invocation: true');
+});

@@ -2,6 +2,7 @@
 name: cad-undo
 description: "Safely undo a phase - roll back its commits from the SUMMARY manifest, revert (or --no-commit to re-do), and reset the phase status"
 argument-hint: "<phase N> [--no-commit]"
+disable-model-invocation: true
 allowed-tools:
   - Read
   - Edit
