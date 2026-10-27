@@ -526,19 +526,44 @@ test('publish: a PATH-shaped remote carrying userinfo fails without leaking it',
   assert.ok(d.detail.includes('/nonexistent/'), d.detail);
 });
 
-test('source: every git-publish failure detail goes through redactUrl', () => {
+test('publish: a credential-named pair in a path-shaped remote is redacted and the detail capped at 1024 bytes', () => {
+  // D-13, gap 13. `redactUrl` reads URL POSITION only, so a `token=<value>` pair
+  // in a path-shaped origin passed through it untouched and git's push error
+  // carried the value into the envelope - and uncapped, since the remote path
+  // is the caller's. The space after the pair ends its value, so the long tail
+  // is what the cap has to cut (a pair running to the tail would be redacted
+  // down to under the cap, and the cap would go unexercised).
+  const tail = Array.from({ length: 6 }, () => 'p'.repeat(200)).join('/');
+  const fx = leakyOrigin(`/nonexistent/token=${LEAK_SECRET} dir/${tail}/r.git`);
+  const d = seam(['publish', '--dir', fx.root], fx.globalFile);
+  assert.equal(d.ok, false, JSON.stringify(d));
+  assert.equal(d.reason, 'push-failed', JSON.stringify(d));
+  assert.equal(d.detail.includes(LEAK_SECRET), false, `the secret survived: ${d.detail}`);
+  assert.ok(d.detail.includes('/nonexistent/'), `the remote was lost too: ${d.detail}`);
+  assert.ok(Buffer.byteLength(d.detail) <= 1024, `${Buffer.byteLength(d.detail)} bytes`);
+  assert.ok(d.detail.endsWith(' ...[truncated]'), d.detail.slice(-40));
+});
+
+test('source: push-failed goes through redactAndCap, the other details through redactUrl', () => {
   // The census, so a FOURTH site added to this file fails here rather than
   // shipping a credential: three of EXP-01's four sites live in git-publish.mjs
   // (push-failed, reap-failed, and the dispatch-level internal catch), and each
   // is named so a rename cannot quietly drop one. The fourth site is
   // planning.mjs's no-staged-set, censused by planning.test.mjs beside its own
   // end-to-end arm - one census per file, so the two cannot drift apart.
+  //
+  // The split is D-13: push-failed carries git's push error, whose remote is the
+  // caller's, so it goes through the shared redact-and-cap helper; reap-failed
+  // and internal keep redactUrl only.
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
+  const CAPPED = /redactAndCap\(e && e\.message \? e\.message : String\(e\)\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const pub = readFileSync(join(BIN, 'git-publish.mjs'), 'utf8');
   assert.equal((pub.match(IDIOM) || []).length, 3, 'git-publish.mjs gained or lost a detail site');
-  assert.equal((pub.match(WRAPPED) || []).length, 3, 'a git-publish.mjs detail site is unredacted');
-  for (const reason of ['push-failed', 'reap-failed', 'internal']) {
+  assert.equal((pub.match(CAPPED) || []).length, 1, 'push-failed is not the one capped site');
+  assert.equal((pub.match(WRAPPED) || []).length, 2, 'a git-publish.mjs detail site is unredacted');
+  assert.match(pub, /reason: 'push-failed'[\s\S]{0,120}?detail: redactAndCap\(/, 'push-failed');
+  for (const reason of ['reap-failed', 'internal']) {
     assert.match(pub, new RegExp(`reason: '${reason}'[\\s\\S]{0,120}?detail: redactUrl\\(`), reason);
   }
 });
