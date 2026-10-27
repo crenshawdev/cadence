@@ -677,6 +677,18 @@ export function normalizeLookup(text, limit, numberKey) {
  * stranger's tracker WRITTEN to. `gh` and `glab` are not multi-account-
  * ambiguous the way tea's `--repo` is.
  *
+ * THE VISIBILITY QUERY IS A STATED FACT PER ROW TOO (CONTEXT D-05). `visibility`
+ * builds the read-only argv that asks the forge whether the configured
+ * repository is public, private or internal, or is `null` where the CLI offers
+ * no such query - and `normalizeVisibility` below turns what it printed into
+ * one of three fixed words. `visibilityMeasured` is the lookup's flag again:
+ * true only after that exact argv was run against a live repository of each
+ * setting. Only github's has been (gh 2.45.0 against `crenshawdev/cadence`,
+ * 2026-10-26, which answered `{"visibility":"PUBLIC"}`). gitlab's is taken from
+ * glab's own `repo view` documentation and forgejo's is absent, and both read
+ * as public until a live run says otherwise - the safe direction, because the
+ * question that follows is asked harder for a public repository, not softer.
+ *
  * WHETHER `DECLINE_LABEL` MUST ALREADY EXIST ON THE INSTANCE IS NOT SETTLED
  * HERE. A forge may refuse a label it does not hold rather than creating it on
  * the create call, and that answer is unobtainable without a live create
@@ -690,6 +702,18 @@ export const FILING_TABLE = Object.freeze({
     limit: 50,
     numberKey: 'index',
     lookupMeasured: true,
+    visibilityMeasured: false,
+    /** NO QUERY. tea 's own documentation (docs/CLI.md, read 2026-10-26) lists
+     *  `repos`' printable fields as description, forks, id, name, owner, stars,
+     *  ssh, updated, url, permission and type - no visibility - and offers no
+     *  command that views one repository. `repos search --private true|false`
+     *  filters on it but answers "no row" for both "not that kind" and "no such
+     *  name", which is not a reading. So this row is unreadable and the ask
+     *  face shows public (D-05), the safe direction. If a later tea adds a
+     *  field or a view command, the argv goes here and the flag flips only
+     *  after a live run against a public and a private repository.
+     *  @type {null} */
+    visibility: null,
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @param {string} login @returns {string[]} */
@@ -719,6 +743,12 @@ export const FILING_TABLE = Object.freeze({
     limit: 200,
     numberKey: 'number',
     lookupMeasured: true,
+    visibilityMeasured: true,
+    /** MEASURED 2026-10-26 on gh 2.45.0 against `crenshawdev/cadence`, which
+     *  answered `{"visibility":"PUBLIC"}`. gh's `visibility` is upper case
+     *  (PUBLIC, PRIVATE, INTERNAL); `normalizeVisibility` folds the case.
+     *  @param {string} slug @returns {string[]} */
+    visibility: (slug) => ['repo', 'view', slug, '--json', 'visibility'],
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @returns {string[]} */
@@ -742,6 +772,14 @@ export const FILING_TABLE = Object.freeze({
     limit: 100,
     numberKey: 'iid',
     lookupMeasured: false,
+    visibilityMeasured: false,
+    /** NOT MEASURED - no glab here. `glab repo view <repo> --output json` is
+     *  documented ("Format output as: text, json") and prints the project
+     *  object, whose `visibility` is `public`, `internal` or `private` in the
+     *  GitLab API. Whether glab's JSON keeps that key is the open question;
+     *  if it does not, the answer is unparseable and reads as public.
+     *  @param {string} slug @returns {string[]} */
+    visibility: (slug) => ['repo', 'view', slug, '--output', 'json'],
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @returns {string[]} */
@@ -769,3 +807,31 @@ export const FILING_TABLE = Object.freeze({
       '--output', 'json', '--per-page', String(limit)],
   }),
 });
+
+/** The three words a repository's visibility is reported in, and no others. */
+const VISIBILITY_WORDS = Object.freeze(['public', 'private', 'internal']);
+
+/**
+ * One visibility query's stdout -> `{visibility, read}`. Total, and the answer
+ * is always one of the three fixed words (CONTEXT D-05).
+ *
+ * `read` says whether the word came off the forge. Anything that is not a JSON
+ * object holding a `visibility` string naming one of the three - an unparseable
+ * stdout, a missing key, an unknown word - is `public` with `read: false`, the
+ * direction that asks harder rather than softer. A nonzero exit or a timeout
+ * never reaches here; the caller answers those with the same pair. gh spells
+ * the word in upper case and GitLab in lower, so the case is folded.
+ *
+ * @param {unknown} stdout
+ * @returns {{visibility: 'public'|'private'|'internal', read: boolean}}
+ */
+export function normalizeVisibility(stdout) {
+  let value = null;
+  try { value = JSON.parse(String(stdout)); } catch { value = null; }
+  const raw = value && typeof value === 'object' ? /** @type {any} */ (value).visibility : null;
+  const word = typeof raw === 'string' ? raw.toLowerCase() : '';
+  const hit = VISIBILITY_WORDS.find((w) => w === word);
+  return hit
+    ? { visibility: /** @type {'public'|'private'|'internal'} */ (hit), read: true }
+    : { visibility: 'public', read: false };
+}

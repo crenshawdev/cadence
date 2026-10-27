@@ -68,7 +68,8 @@ const GITLAB = { forge_provider: 'gitlab', forge_repo: 'acme/widget' };
  * nothing while still exiting zero.
  */
 function stubBin(dir, name,
-  { listBody = '[]', loginBody = '[]', failAt = 0, listFails = false, createLog }) {
+  { listBody = '[]', loginBody = '[]', failAt = 0, listFails = false, createLog,
+    visBody = '{"visibility":"PUBLIC"}', visFails = false }) {
   const q = (text) => `'${String(text).replace(/'/g, `'\\''`)}'`;
   const script = ['#!/bin/sh',
     // ONE log line per invocation whatever the argv holds: an issue BODY carries
@@ -78,6 +79,8 @@ function stubBin(dir, name,
     `if [ "$1" = "login" ]; then echo ${q(loginBody)}; exit 0; fi`,
     'case "$2" in',
     `  list) ${listFails ? 'exit 1' : `echo ${q(listBody)}; exit 0`} ;;`,
+    // The read-only visibility query (`repo view <slug> --json visibility`).
+    `  view) ${visFails ? 'exit 1' : `echo ${q(visBody)}; exit 0`} ;;`,
     '  create)',
     `    echo x >> ${q(createLog)}`,
     `    n=$(wc -l < ${q(createLog)})`,
@@ -207,18 +210,83 @@ const createCalls = (calls) => calls.filter((c) => / create /.test(` ${c} `));
 
 // --- unfixed: ONE lookup per fire, whatever the finding count ----------------
 
-test('a five-finding fire spawns NO forge child at all', () => {
-  // Criterion 11's falsifiable form, counted off the stub's own log. The ask
-  // used to cost one `issue list`; the decline set is a local file now, so the
-  // honest count is zero rather than one.
+const viewCalls = (calls) => calls.filter((c) => / repo view /.test(` ${c} `));
+
+test('a five-finding fire spawns ONE visibility read and no list or create (D-05)', () => {
+  // Criterion 11's falsifiable form, counted off the stub's own log. The decline
+  // set is a local file, so the ask costs no list; the one forge call it makes
+  // is the read-only visibility query that tells the user where the issue goes.
   const payload = payloadFile(payloadFor(FIVE.map((f) => [f, 'survived'])));
   const { status, envelope, calls } = run(['unfixed', '--payload', payload]);
   assert.equal(status, 0);
   assert.equal(envelope.ok, true);
   assert.equal(envelope.raised, 5);
   assert.equal(envelope.findings.length, 5);
+  assert.equal(calls.length, 1, calls.join('\n'));
+  assert.equal(viewCalls(calls).length, 1, calls.join('\n'));
   assert.equal(listCalls(calls).length, 0, calls.join('\n'));
   assert.equal(createCalls(calls).length, 0, calls.join('\n'));
+});
+
+test('unfixed reports the visibility the forge answered, read from `repo view` (D-05)', () => {
+  const payload = payloadFile(payloadFor([[FIVE[0], 'survived']]));
+  const cases = [
+    ['{"visibility":"PUBLIC"}', 'public'],
+    ['{"visibility":"PRIVATE"}', 'private'],
+    ['{"visibility":"INTERNAL"}', 'internal'],
+  ];
+  for (const [visBody, word] of cases) {
+    const { envelope, calls } = run(['unfixed', '--payload', payload], { stub: { visBody } });
+    assert.equal(envelope.visibility, word, visBody);
+    assert.equal(envelope.visibility_read, true, visBody);
+    assert.equal(calls[0].trim(), 'gh repo view acme/widget --json visibility');
+  }
+});
+
+test('a visibility that could not be read is public and marked not read (D-05)', () => {
+  const payload = payloadFile(payloadFor([[FIVE[0], 'survived']]));
+  const unreadable = [
+    { visFails: true },
+    { visBody: 'not json at all' },
+    { visBody: '{"visibility":"secret"}' },
+    { visBody: '{"other":"PRIVATE"}' },
+    { visBody: 'null' },
+  ];
+  for (const stub of unreadable) {
+    const { envelope } = run(['unfixed', '--payload', payload], { stub });
+    assert.equal(envelope.ok, true, JSON.stringify(stub));
+    assert.equal(envelope.visibility, 'public', JSON.stringify(stub));
+    assert.equal(envelope.visibility_read, false, JSON.stringify(stub));
+  }
+});
+
+test('the CLI\'s own bytes never ride the unfixed envelope (D-05)', () => {
+  const payload = payloadFile(payloadFor([[FIVE[0], 'survived']]));
+  const { envelope } = run(['unfixed', '--payload', payload],
+    { stub: { visBody: '{"visibility":"PRIVATE","note":"LEAKME"}' } });
+  assert.ok(!JSON.stringify(envelope).includes('LEAKME'), JSON.stringify(envelope));
+});
+
+test('the gitlab row reads `repo view --output json` and folds the lower-case word (D-05)', () => {
+  const payload = payloadFile(payloadFor([[FIVE[0], 'survived']]));
+  const { envelope, calls } = run(['unfixed', '--payload', payload], {
+    git: GITLAB, bins: ['glab'], stub: { visBody: '{"visibility":"internal"}' },
+  });
+  assert.equal(envelope.visibility, 'internal');
+  assert.equal(envelope.visibility_read, true);
+  assert.equal(calls[0].trim(), 'glab repo view acme/widget --output json');
+});
+
+test('a forge whose row has no visibility query reads as public, not read, spawning nothing (D-05)', () => {
+  const payload = payloadFile(payloadFor([[FIVE[0], 'survived']]));
+  const { envelope, calls } = run(['unfixed', '--payload', payload], {
+    git: FORGEJO, bins: ['tea'],
+    stub: { loginBody: '[{"name":"example","url":"https://git.example.test"}]' },
+  });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.equal(envelope.visibility, 'public');
+  assert.equal(envelope.visibility_read, false);
+  assert.equal(viewCalls(calls).length, 0, calls.join('\n'));
 });
 
 test('the decline set is read even where no forge CLI resolves', () => {

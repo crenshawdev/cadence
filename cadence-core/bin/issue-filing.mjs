@@ -65,7 +65,7 @@ import { teaLoginNameForHost } from './lib/issue-decision.mjs';
 import { PROVIDER_TABLE, missingForgeKeys } from './lib/forge-decision.mjs';
 import {
   FILING_TABLE, LOOKUP_CHUNK, fingerprint, issueBody, issueTitle, normalizeLookup,
-  unfixedFindings,
+  normalizeVisibility, unfixedFindings,
 } from './lib/filing-decision.mjs';
 
 /** The bound on the login probe. Local config read on every arm that needs it. */
@@ -78,6 +78,11 @@ const LOGIN_TIMEOUT_MS = 10000;
  * this seam has an arm for. Giving up on a create that the forge may already
  * have committed costs the ambiguity `run`'s own header states. */
 const LOOKUP_TIMEOUT_MS = 30000;
+
+/** The bound on the one visibility read the ask face makes. A read like the
+ * lookup, bounded the same way: the ask can wait on nothing, and an answer that
+ * did not come is the same as one that could not be read (CONTEXT D-05). */
+const VISIBILITY_TIMEOUT_MS = 30000;
 
 /** The bound on one create. Longer than the lookup because a create WRITES, and
  * a forge that is slow to accept one is not the same failure as a forge that is
@@ -403,6 +408,19 @@ function cmdUnfixed(dir, payloadFile) {
     return;
   }
 
+  // THE ONE FORGE CALL THIS FACE MAKES (CONTEXT D-05): where the issue would go
+  // and who could read it, asked of the forge itself. Read-only, once per call,
+  // never per finding. Only the fixed vocabulary and whether it was read ride
+  // the envelope - the CLI's own bytes do not (the no-third-party-output rule).
+  // A row with no query, a nonzero exit, a kill on the timeout and stdout
+  // `normalizeVisibility` cannot read all answer public, not read.
+  const asked = forge.row.visibility
+    ? run(forge.bin, forge.row.visibility(forge.repo, forge.login),
+      { cwd: dir, timeout: VISIBILITY_TIMEOUT_MS })
+    : { ok: false, stdout: '' };
+  const { visibility, read: visibilityRead } = asked.ok
+    ? normalizeVisibility(asked.stdout) : { visibility: 'public', read: false };
+
   // The disposition rides BESIDE the finding and the fingerprint does too:
   // `findingIssue` in lib/adjudication-record.mjs refuses any key outside
   // `FINDING_KEYS`, so a fingerprint written INTO a finding would make every
@@ -426,6 +444,7 @@ function cmdUnfixed(dir, payloadFile) {
   // repointed at the module's answer, because a figure that changed what it
   // counted while keeping its name is worse than one that reads zero.
   emit({ ok: true, provider: forge.provider, repo: forge.repo,
+    visibility, visibility_read: visibilityRead,
     raised: selected.findings.length,
     already_fixed: 0,
     already_declined: selected.findings.length - findings.length,
