@@ -3893,3 +3893,16 @@ test('cad-undo sets disable-model-invocation: true in its frontmatter', () => {
   assert.match(front[1], /^disable-model-invocation:[ \t]*true[ \t]*$/m,
     'cad-undo does not set disable-model-invocation: true');
 });
+
+// Phase 1 plan 6 (gap 4, D-04): triage-gate.md's lead-in to the data rule used
+// to say a finding's text reaches the tracker "unchanged". Plan 3 redacts every
+// finding-derived span of the issue title and body, so the lead-in has to say
+// what the tracker gets.
+
+test('triage-gate.md does not say a finding reaches the tracker unchanged', () => {
+  const text = flat(doc('cadence-core', 'references', 'triage-gate.md'));
+  assert.ok(!/reaches the user and the tracker unchanged/.test(text),
+    'triage-gate.md still says a finding\'s text reaches the tracker unchanged');
+  assert.match(text, /A finding's text reaches the user as raised, and the tracker with any credential replaced by `<redacted>`:/,
+    'triage-gate.md does not say the tracker gets the finding with credentials redacted');
+});
