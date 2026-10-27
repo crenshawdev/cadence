@@ -182,6 +182,29 @@ for (const [label, gitConfig, extra, named] of [
   }
 }
 
+// A base that exists ONLY as origin/<base> is usable: step 4 now asks this seam
+// before `git checkout <base>`, and that checkout creates the local branch from
+// origin/<base>, so refusing it as unresolvable skips a land that used to finish.
+test('cleanup does not refuse a base that resolves only as origin/<base>', () => {
+  const dir = gitFixture({ base_branch: 'trunk' });
+  const sha = execFileSync('git', ['-C', dir, 'rev-parse', 'main'], { encoding: 'utf8' }).trim();
+  execFileSync('git', ['-C', dir, 'update-ref', 'refs/remotes/origin/trunk', sha]);
+  const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.action, 'cleanup', JSON.stringify(r));
+  assert.equal(r.returnToBase, true, JSON.stringify(r));
+  assert.equal(r.base, 'trunk');
+});
+
+test('cleanup still refuses a flag-shaped base even when origin/<base> exists', () => {
+  const dir = gitFixture({ base_branch: '--output=x' });
+  const sha = execFileSync('git', ['-C', dir, 'rev-parse', 'main'], { encoding: 'utf8' }).trim();
+  execFileSync('git', ['-C', dir, 'update-ref', 'refs/remotes/origin/--output=x', sha]);
+  const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true']);
+  assert.equal(r.action, 'skip', JSON.stringify(r));
+  assert.equal(r.returnToBase, false);
+});
+
 // --- gate -------------------------------------------------------------------
 
 test('gate with a blocker on stdin + git.auto_close=true: halt', () => {

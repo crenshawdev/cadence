@@ -6,7 +6,10 @@
 // ref: `--output=<path>` in `git log <base>..HEAD` writes a file.
 //
 // It refuses a base that begins with `-` WITHOUT spawning anything, and
-// otherwise requires that the base names a commit here. It answers with the
+// otherwise requires that the base names a commit here - locally, or as
+// `origin/<base>` alone: /cad-land step 4's `git checkout <base>` creates the
+// local branch from origin/<base>, so a remote-only base is one a land that
+// finished before this check existed still finishes. It answers with the
 // reason fragment the caller puts in an `action:"skip"` envelope, or null when
 // the base is usable. The base is JSON-quoted in that fragment because the
 // caller's reason is printed verbatim by /cad-land and the value is committed
@@ -31,12 +34,16 @@ export function refuseBase(dir, base, timeout) {
   if (typeof base === 'string' && base.startsWith('-')) {
     return `base ${named} begins with "-" and would be read by git as an option`;
   }
+  // `--quiet` keeps a miss silent; the first candidate that names a commit wins.
   let usable = false;
-  try {
-    const r = spawnSync('git', ['-C', dir, 'rev-parse', '--verify', '--quiet', `${base}^{commit}`], {
-      stdio: 'ignore', killSignal: 'SIGKILL', ...(timeout ? { timeout } : {}),
-    });
-    usable = r.status === 0;
-  } catch { /* unusable */ }
+  for (const ref of [base, `refs/remotes/origin/${base}`]) {
+    try {
+      const r = spawnSync('git', ['-C', dir, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
+        stdio: 'ignore', killSignal: 'SIGKILL', ...(timeout ? { timeout } : {}),
+      });
+      usable = r.status === 0;
+    } catch { /* unusable */ }
+    if (usable) break;
+  }
   return usable ? null : `base ${named} names no commit in this repository`;
 }
