@@ -554,11 +554,15 @@ test('roleOfAgent and rungOfAgent live here, read-trace re-exports them, and the
   }
 });
 
-// --- the contract surfaces stay at their 3.8.6 bytes -------------------------
+// --- the contract surfaces stay at their pinned bytes ------------------------
 // Switch text reaches an agent only through what an orchestrator composes, never
 // through a contract skill, a rung file, the reviewer brief or the PLAN template.
 // Each digest was taken from `git show v3.8.6:<path> | sha256sum`, not from the
-// working tree, so the expected value comes from the release.
+// working tree, so the expected value comes from the release - EXCEPT the six
+// role contracts under skills/, which were re-pinned from their new bytes when
+// phase 1 of v3.9.1 added the one data-not-instructions sentence (D-08,
+// lib/data-rule.mjs). That is a deliberate change, approved with the phase, as
+// phase 3's re-pin of contract digests was.
 
 const CONTRACT_SURFACE_DIGESTS = {
   'agents/cad-assumptions-analyzer-high.md': 'b6859e429e56c8d11c91631584c4eb7b60e43c3e1660d5704255cb8630c46568',
@@ -593,12 +597,12 @@ const CONTRACT_SURFACE_DIGESTS = {
   'agents/cad-verifier.md': 'be71c3f4fa00a3af1fc2acf8e7fd9b2eb465da457fc3dec841e6d95589921299',
   'cadence-core/references/reviewer-brief.md': '85bf804814bf313af230fffc75337601cd5ab01e23d7d28c05d4bc8d0c116e6f',
   'cadence-core/templates/PLAN.md': 'f20e93597ac87e8a682d0ba7323f8d20b179db6f8c161c6efce08d2638f9574f',
-  'skills/cad-assumptions-analyzer-contract/SKILL.md': '1c5f3b0b38fb266aac941e99ca58d0547d5f975b0f1f6feaf549cd671ee073c3',
-  'skills/cad-executor-contract/SKILL.md': '2a1632e752abdc7cbc4056782e9a3e17a5bf6fbec8510354210e5f4903827225',
-  'skills/cad-plan-checker-contract/SKILL.md': 'cda2faa4a6f6b96e395f8e21e887365f35835aaa41a7b77651f1b878b91e1504',
-  'skills/cad-planner-contract/SKILL.md': '0d2eeb8457ca8c58be91091365a57f18fcf2b07995fb2d37ed04c5818a0eeb04',
-  'skills/cad-reviewer-contract/SKILL.md': 'c42a962077b4c7df8b1507d1462db9657d2f4ceda39d22402925b50bbc920d01',
-  'skills/cad-verifier-contract/SKILL.md': '289b2dc849576496c54d5f4e180e08c2829bc60634bbdbc097f6bd7fb2afe577',
+  'skills/cad-assumptions-analyzer-contract/SKILL.md': '56bfac966b5c5cf9b1c4d80016f479043bd7cc2e1c80e5970227aea0008d1063',
+  'skills/cad-executor-contract/SKILL.md': 'd9a56735696edf064a6fc2580d90f2ae3d42c7139b33dc1df2dcfa6f54ffcf5a',
+  'skills/cad-plan-checker-contract/SKILL.md': '6a55aaeb5f99379a48d2b958cf9b84ec393886424fb3168283d145b18d72fca8',
+  'skills/cad-planner-contract/SKILL.md': '202070872a51d79b61ac88dfc8af74c94a0cc6078f5670b9473aaf55c806af59',
+  'skills/cad-reviewer-contract/SKILL.md': 'ce749e7031ab42dd05bb9211aeeb7c812e145a1f82eeec000b525211d7677c92',
+  'skills/cad-verifier-contract/SKILL.md': '7101cc676e4d6740d09389259a28708d88edbaf8e96461c5452d63c33717315b',
 };
 
 test('a switch\'s text written into a contract surface changes its 3.8.6 digest', () => {
