@@ -3775,3 +3775,29 @@ test('RSK-10: a plan that landed no commits records the skip rather than a clean
       + `(${end}), so the arm cannot be evaluated: ${when}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1 plan 3 (gap 3, D-05): triage-gate's ask face reads the forge once.
+//
+// The ask face used to spawn no forge child. `issue-filing.mjs unfixed` now
+// makes one read-only visibility call, and puts the repository and what it
+// read on the envelope. The prose has to say both halves: the face's new
+// behaviour (or a reader trusts the old "no forge child" rule), and that the
+// question carries the repository and its visibility with an unreadable one
+// shown as public (or the user is asked about an issue without being told where
+// it will land). The text is flattened so a rewrap that changed no fact stays
+// green.
+
+test('triage-gate.md: the ask face makes one visibility read and the question names the repository', () => {
+  const flat = doc('cadence-core', 'references', 'triage-gate.md').replace(/\s+/g, ' ');
+
+  assert.doesNotMatch(flat, /it spawns no forge child/,
+    'triage-gate.md still says the ask face spawns no forge child; `unfixed` now makes one '
+    + 'read-only visibility call (D-05)');
+  assert.match(flat, /THE ASK FACE reads `\.planning\/DECLINED\.md` and makes one read-only visibility read of the configured repository - no list, no create, no page/,
+    'triage-gate.md does not state the ask face\'s one read-only visibility read');
+  assert.match(flat, /the question names the target repository \(the envelope\'s `repo`\) and its visibility \(`visibility`\)/,
+    'triage-gate.md does not say the question names the repository and its visibility');
+  assert.match(flat, /an unreadable visibility \(`visibility_read` false\) is shown as public/,
+    'triage-gate.md does not say an unreadable visibility is shown as public');
+});

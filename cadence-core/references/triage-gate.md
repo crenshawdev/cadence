@@ -302,9 +302,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-filing.mjs" unfixed --payload
 
 `<path>` is THE SAME composed payload file the adjudication record was written
 from - the `{voices: [...]}` object, not the rendered findings. THE ASK FACE
-reads `.planning/DECLINED.md` and nothing else: it spawns no forge child and has
-no page to fill, whatever the finding count. The one lookup this gate makes
-belongs to the `file` call below, which is where it is stated. What comes back
+reads `.planning/DECLINED.md` and makes one read-only visibility read of the
+configured repository - no list, no create, no page to fill, whatever the
+finding count. The one lookup that searches the tracker belongs to the `file`
+call below, which is where it is stated. What comes back
 is exactly the same set on all three arms that reach here: the `blocking` arm's
 below-blocker/high remainder, the `adjudicated` arm's non-survivors, and any
 `recorded not fixed` disposition. THREE things are held back, and one case that
@@ -324,7 +325,10 @@ attractive, and it is the thing this replaces.
 
 **Say plainly what each answer does**, in the question itself:
 
-- a finding the user NAMES becomes an issue on the tracker;
+- a finding the user NAMES becomes an issue on the tracker, and the question
+  names the target repository (the envelope's `repo`) and its visibility
+  (`visibility`); an unreadable visibility (`visibility_read` false) is shown
+  as public;
 - a finding the user does NOT name is written to `.planning/DECLINED.md`, which
   is what stops a later fire asking the same question forever, and it never
   reaches the tracker in any form;
