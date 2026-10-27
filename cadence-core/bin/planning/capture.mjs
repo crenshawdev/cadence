@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fail, ok } from './core.mjs';
 import { CAPTURE_KINDS, appendCapture } from '../lib/capture-file.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
+import { redactUrl } from '../lib/redact-url.mjs';
 
 // ---------------------------------------------------------------------------
 // capture - one bullet into `.planning/CAPTURE.md`, under the heading its kind
@@ -105,6 +106,14 @@ function cmdCapture(dir, opts) {
       + ' captured');
   }
   const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
+  // `--file` is `/cad-capture --cadence`'s arm alone (lib/arg-contract.mjs), and
+  // its entry carries `host: <origin URL>` built from `git remote get-url
+  // origin`, whose userinfo can be a credential (gap 7, D-14). The strip is
+  // here, once, rather than in the prose that builds the line. It is
+  // `redactUrl`'s URL-position rule, so `ssh://git@host` becomes
+  // `ssh://<redacted>@host` - over-redacted, accepted (D-14). The project arm
+  // (no `--file`) is the user's own queue and writes the text unchanged.
+  if (typeof opts.file === 'string') text = redactUrl(text);
   const res = appendCapture(file, kind, text, phase);
   if (res.ok === false) {
     return fail(res.reason, res.detail,

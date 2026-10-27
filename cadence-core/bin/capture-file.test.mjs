@@ -397,3 +397,39 @@ test('capture: a VALUELESS --text-file is bad-args, never the literal "true"', (
   assert.equal(r.reason, 'bad-args');
   assert.equal(readBack(file), THREE);
 });
+
+// ---------------------------------------------------------------------------
+// Gap 7 (D-14): the `--cadence` entry carries `host: <origin URL>`, and an origin
+// URL can carry userinfo. The strip is in the seam on its `--file` arm alone.
+// ---------------------------------------------------------------------------
+
+const CRED_ENTRY = 'x (host: https://u:SECRET@github.com/a/b.git, command: /cad-plan)';
+
+test('capture --file: URL credentials never reach the entry, from --text-file or --text', () => {
+  for (const via of ['text-file', 'text']) {
+    const file = fixture(THREE);
+    const args = ['--kind', 'note', '--file', file];
+    if (via === 'text') args.push('--text', CRED_ENTRY);
+    else {
+      const src = join(dirname(file), 'item.txt');
+      writeFileSync(src, CRED_ENTRY);
+      args.push('--text-file', src);
+    }
+    const r = capture(args);
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const body = readBack(file);
+    assert.equal(body.includes('SECRET'), false, `${via}: the credential survived: ${body}`);
+    assert.ok(body.includes('<redacted>'), `${via}: no redaction mark: ${body}`);
+    assert.ok(body.includes('github.com/a/b.git'), `${via}: the host was lost too: ${body}`);
+  }
+});
+
+test('capture without --file: the project arm writes the same text unchanged', () => {
+  const dir = dirname(fixture(THREE));
+  const src = join(dir, 'item.txt');
+  writeFileSync(src, CRED_ENTRY);
+  const r = capture(['--kind', 'note', '--text-file', src, '--dir', dir]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.ok(r.bullet.endsWith(` ${CRED_ENTRY}`), r.bullet);
+  assert.ok(readBack(join(dir, 'CAPTURE.md')).includes(`${CRED_ENTRY}\n`));
+});
