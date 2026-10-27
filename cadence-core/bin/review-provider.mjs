@@ -1062,7 +1062,10 @@ export const ADAPTERS = {
         contents: [{ role: 'user', parts: [{ text: user }] }],
         generationConfig,
       };
-      return { path: `/v1beta/models/${model}:generateContent`, method: 'POST', body };
+      // The model segment only is percent-encoded: the id is operator-supplied
+      // and `/`, `?` and `#` would otherwise redirect the request inside the
+      // host. The `:generateContent` suffix stays raw, it is the method (D-19).
+      return { path: `/v1beta/models/${encodeURIComponent(model)}:generateContent`, method: 'POST', body };
     },
     extractText(json) {
       const parts = json?.candidates?.[0]?.content?.parts;

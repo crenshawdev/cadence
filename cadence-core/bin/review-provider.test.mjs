@@ -2292,3 +2292,14 @@ test('model id: detectEnvelope drops a non-conforming id and names each in warni
   assert.equal('warnings' in clean, false);
   assert.deepEqual(clean.models, [{ id: 'gpt-6-astra', tier: null, high_effort: null }]);
 });
+
+// --- Gemini: the model segment of the request path is percent-encoded (D-19) ---
+
+test('gemini path: the model segment is percent-encoded, the :generateContent suffix is not', () => {
+  const args = { effort: null, system: 's', user: 'u', schema: FINDING_SCHEMA, schemaName: 'x' };
+  assert.equal(ADAPTERS.gemini.structuredRequest({ ...args, model: 'a/b?c#d' }).path,
+    '/v1beta/models/a%2Fb%3Fc%23d:generateContent');
+  // A conforming id's path is byte-identical to what it was before the encoding.
+  assert.equal(ADAPTERS.gemini.structuredRequest({ ...args, model: 'gemini-3.1-pro-preview' }).path,
+    '/v1beta/models/gemini-3.1-pro-preview:generateContent');
+});
