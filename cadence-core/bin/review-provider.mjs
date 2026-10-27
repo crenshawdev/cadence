@@ -847,6 +847,10 @@ export const FINDING_SCHEMA = {
 // "the primary engineer is stuck - what would you try?" It returns angles to
 // investigate, never a decision. Decision-support only; the main model grounds
 // each angle and the user decides (DESIGN §6).
+// Consult's bounds (D-16): a reply is refused past them, never truncated. Gemini
+// drops `maxItems` through stripForGemini and keeps `maxLength`.
+const MAX_ANGLES = 10;
+const CONSULT_KEYS = ['hypothesis', 'rationale', 'how_to_check'];
 const CONSULT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -854,14 +858,15 @@ const CONSULT_SCHEMA = {
   properties: {
     angles: {
       type: 'array',
+      maxItems: MAX_ANGLES,
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['hypothesis', 'rationale', 'how_to_check'],
+        required: CONSULT_KEYS,
         properties: {
-          hypothesis: { type: 'string' },
-          rationale: { type: 'string' },
-          how_to_check: { type: 'string' },
+          hypothesis: { type: 'string', maxLength: MAX_TEXT_CHARS },
+          rationale: { type: 'string', maxLength: MAX_TEXT_CHARS },
+          how_to_check: { type: 'string', maxLength: MAX_TEXT_CHARS },
         },
       },
     },
@@ -1223,10 +1228,15 @@ export function validateFindings(obj) {
 /** @param {any} obj @returns {string|null} null when valid, else the defect */
 export function validateConsult(obj) {
   if (!obj || !Array.isArray(obj.angles)) return 'missing angles[]';
+  if (obj.angles.length > MAX_ANGLES) {
+    return `angles[] holds at most ${MAX_ANGLES} entries, got ${obj.angles.length}`;
+  }
   for (const a of obj.angles) {
     if (!a || typeof a !== 'object') return 'angle not an object';
-    for (const k of ['hypothesis', 'rationale', 'how_to_check']) {
+    for (const k of CONSULT_KEYS) {
       if (typeof a[k] !== 'string') return `angle.${k} must be a string`;
+      const n = codePoints(a[k]);
+      if (n > MAX_TEXT_CHARS) return `angle.${k} is at most ${MAX_TEXT_CHARS} characters, got ${n}`;
     }
   }
   return null;

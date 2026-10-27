@@ -2303,3 +2303,57 @@ test('gemini path: the model segment is percent-encoded, the :generateContent su
   assert.equal(ADAPTERS.gemini.structuredRequest({ ...args, model: 'gemini-3.1-pro-preview' }).path,
     '/v1beta/models/gemini-3.1-pro-preview:generateContent');
 });
+
+// --- consult: angles are bounded at 10, every field at 2000 code points (D-16) ---
+
+/** @param {number} n @param {(i:number)=>string} [text] */
+function consultAngles(n, text = () => 'x') {
+  return Array.from({ length: n }, (_, i) => ({
+    hypothesis: text(i), rationale: text(i), how_to_check: text(i),
+  }));
+}
+
+test('consult bound: validateConsult accepts 10 angles of 2000 code points, refuses 11 and 2001', () => {
+  assert.equal(validateConsult({ angles: consultAngles(10, () => 'y'.repeat(2000)) }), null);
+  assert.match(validateConsult({ angles: consultAngles(11) }), /10/);
+  assert.match(validateConsult({ angles: [{ ...consultAngles(1)[0], rationale: 'y'.repeat(2001) }] }),
+    /rationale.*2000/);
+  // A non-BMP character is one code point, not two UTF-16 units.
+  const astral = '\u{1F600}'.repeat(2000);
+  assert.equal(astral.length, 4000);
+  assert.equal(validateConsult({ angles: [{ ...consultAngles(1)[0], hypothesis: astral }] }), null);
+  assert.match(validateConsult({ angles: [{ ...consultAngles(1)[0], how_to_check: astral + 'z' }] }),
+    /how_to_check.*2000/);
+});
+
+test('consult bound: the bounds ride the schema sent to openai, gemini loses only maxItems', async () => {
+  const args = ['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+    '--payload', FAULT_PAYLOAD_CONSULT];
+  const o = await runFaked(args, { status: 200, body: '{}' });
+  const oAngles = JSON.parse(o.seen[0].body).text.format.schema.properties.angles;
+  assert.equal(oAngles.maxItems, 10);
+  for (const k of ['hypothesis', 'rationale', 'how_to_check']) {
+    assert.equal(oAngles.items.properties[k].maxLength, 2000, k);
+  }
+  const g = await runFaked(['consult', '--provider', 'gemini', '--model', 'gemini-fault-fixture',
+    '--payload', FAULT_PAYLOAD_CONSULT], { status: 200, body: '{}' }, { GEMINI_API_KEY: 'test-not-a-real-key' });
+  const gAngles = JSON.parse(g.seen[0].body).generationConfig.responseSchema.properties.angles;
+  assert.equal('maxItems' in gAngles, false);
+  for (const k of ['hypothesis', 'rationale', 'how_to_check']) {
+    assert.equal(gAngles.items.properties[k].maxLength, 2000, k);
+  }
+});
+
+test('consult bound: a reply of 11 angles answers bad-shape, never a truncated list', async () => {
+  const body = JSON.stringify({ output_text: JSON.stringify({ angles: consultAngles(11) }) });
+  const r = await runFaked(['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+    '--payload', FAULT_PAYLOAD_CONSULT], { status: 200, body });
+  assert.equal(r.envelope.ok, false, r.line);
+  assert.equal(r.envelope.reason, 'bad-shape');
+  assert.equal('angles' in r.envelope, false);
+  const fine = JSON.stringify({ output_text: JSON.stringify({ angles: consultAngles(10) }) });
+  const ok10 = await runFaked(['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+    '--payload', FAULT_PAYLOAD_CONSULT], { status: 200, body: fine });
+  assert.equal(ok10.envelope.ok, true, ok10.line);
+  assert.equal(ok10.envelope.angles.length, 10);
+});
