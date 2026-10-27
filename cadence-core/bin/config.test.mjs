@@ -1940,3 +1940,62 @@ test('unset walks OWN properties only, and still reaches a literal __proto__ key
   assert.deepEqual(r.removed, ['__proto__']);
   assert.equal(readFileSync(held, 'utf8').includes('__proto__'), false);
 });
+
+// --- model ids: the nine tier keys carry the model_id grammar (D-17, D-18) ---
+//
+// The id is later interpolated into a `config.mjs set '<key>=<id>'` line and a
+// request path, so the write face is where a quote, a space or a `/` can still
+// be refused with the user there to retype it.
+const TIER_KEY = 'review.providers.openai.tiers.cheap';
+const modelIdFile = (name) => {
+  const file = join(dir, name);
+  writeFileSync(file, '{}');
+  return file;
+};
+
+test('set: a malformed model id on a tier key is refused, the file untouched', () => {
+  const refused = {
+    space: 'gpt 5', 'double quote': 'gpt"5', 'single quote': "gpt'5", slash: 'a/b',
+    question: 'gpt?5', hash: 'gpt#5', dollar: 'gpt$5', backtick: 'gpt`5',
+    'leading dash': '-gpt-5', '129 characters': 'a'.repeat(129),
+  };
+  for (const [label, id] of Object.entries(refused)) {
+    const file = modelIdFile(`mid-refuse-${label.replace(/\W/g, '-')}.json`);
+    const r = run(['set', '--file', file, `${TIER_KEY}=${JSON.stringify(id)}`],
+      join(dir, 'no-global-mid.json'));
+    assert.equal(r.ok, false, `${label} must be refused: ${JSON.stringify(r)}`);
+    assert.equal(r.reason, 'invalid', label);
+    assert.match(JSON.stringify(r), /model id/, `${label}: the refusal says what is wrong`);
+    assert.equal(readFileSync(file, 'utf8'), '{}', `${label}: the file is untouched`);
+  }
+});
+
+test('set: a conforming model id is written, a 128-character one included', () => {
+  const ids = ['gpt-6-astra', 'gemini-3.1-pro-preview', 'deepseek-v4-pro',
+    'ft:gpt-4o-mini-2024-07-18:acme:support-bot:9AbCdEfG', 'a'.repeat(128)];
+  for (const [i, id] of ids.entries()) {
+    const file = modelIdFile(`mid-accept-${i}.json`);
+    const r = run(['set', '--file', file, `${TIER_KEY}=${JSON.stringify(id)}`],
+      join(dir, 'no-global-mid.json'));
+    assert.equal(r.ok, true, `${id}: ${JSON.stringify(r)}`);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).review.providers.openai.tiers.cheap, id);
+  }
+});
+
+test('set: clearing a tier with null still writes', () => {
+  const file = modelIdFile('mid-null.json');
+  const r = run(['set', '--file', file, `${TIER_KEY}=null`], join(dir, 'no-global-mid.json'));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).review.providers.openai.tiers.cheap, null);
+});
+
+test('set: the gemini and deepseek tier keys refuse a malformed id the same way', () => {
+  for (const key of ['review.providers.gemini.tiers.flagship', 'review.providers.deepseek.tiers.balanced']) {
+    const file = modelIdFile(`mid-${key.split('.')[2]}.json`);
+    const r = run(['set', '--file', file, `${key}=${JSON.stringify("x'y")}`],
+      join(dir, 'no-global-mid.json'));
+    assert.equal(r.ok, false, key);
+    assert.equal(r.reason, 'invalid', key);
+    assert.equal(readFileSync(file, 'utf8'), '{}', key);
+  }
+});

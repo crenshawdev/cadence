@@ -32,6 +32,7 @@ import { DONE, emit } from './lib/seam-io.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { isForgeSlug, splitForgeHost } from './lib/forge-decision.mjs';
+import { isModelId } from './lib/model-id.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // SCHEMA is loaded lazily, inside the dispatch try block below, so a missing
@@ -108,9 +109,11 @@ function checkType(spec, v) {
 // still there to retype it, which is why the check lives at `checkValue` (the
 // one point `set`, `check` and `validate` all reach) and not at each reader.
 //
-// The predicates are IMPORTED from lib/forge-decision.mjs, never restated:
+// The predicates are IMPORTED, never restated: from lib/forge-decision.mjs,
 // `isForgeSlug` is already the one answer to "what may a repository selector
-// be" and `splitForgeHost` the one answer for an instance address, and a second
+// be" and `splitForgeHost` the one answer for an instance address; from
+// lib/model-id.mjs, `isModelId` is the one answer to "what may a provider
+// model id be", shared with route.mjs and review-provider.mjs. A second
 // spelling here is how a rule comes to be enforced in two strengths.
 //
 // Each entry carries its own sentence because the two keys refuse for different
@@ -127,6 +130,11 @@ const GRAMMARS = Object.freeze({
     error: 'expected a hostname, optionally followed by `:<port>` - dot-separated '
       + 'labels of letters, digits and `-` where no label starts or ends with `-`, '
       + 'and a port of 1-65535 in decimal with no leading zero',
+  }),
+  model_id: Object.freeze({
+    ok: (v) => isModelId(v),
+    error: 'expected a model id - 1 to 128 characters of letters, digits, `.`, `_`, `:` '
+      + 'and `-`, starting with a letter or digit; no quotes, spaces, `/`, `?`, `#`, `$` or backticks',
   }),
 });
 
