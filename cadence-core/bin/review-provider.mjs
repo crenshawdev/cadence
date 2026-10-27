@@ -1467,8 +1467,16 @@ export function classify(provider, ids, hintsFile) {
 /** @param {string} provider @param {string[]} ids @param {string} [hintsFile] */
 export function detectEnvelope(provider, ids, hintsFile) {
   const { warning } = readModelHints(hintsFile);
-  const models = classify(provider, ids, hintsFile);
-  return warning ? { provider, models, warnings: [warning] } : { provider, models };
+  // A non-conforming id is dropped before classify and NAMED: the config-review
+  // workflow writes surviving ids into a single-quoted `config.mjs set` line,
+  // where a quote or a space must never arrive, and a wrongly refused id has to
+  // be visible rather than silent (D-17).
+  const kept = ids.filter(isModelId);
+  const warnings = ids.filter((id) => !isModelId(id))
+    .map((id) => `dropped ${JSON.stringify(id)}: not a model id`);
+  if (warning) warnings.push(warning);
+  const models = classify(provider, kept, hintsFile);
+  return warnings.length ? { provider, models, warnings } : { provider, models };
 }
 
 // ---------------------------------------------------------------------------

@@ -2272,3 +2272,23 @@ test('model id: a conforming --model still reaches the transport', async () => {
   const r = await runFaked(REVIEW_ARGS, { status: 200, body: JSON.stringify({}) });
   assert.equal(r.seen.length, 1);
 });
+
+test('model id: detectEnvelope drops a non-conforming id and names each in warnings[]', () => {
+  const env = detectEnvelope('openai', ['gpt-6-astra', "x'y", 'a b', 'm/n']);
+  assert.deepEqual(env.models.map((m) => m.id), ['gpt-6-astra']);
+  assert.equal(env.warnings.length, 3);
+  for (const id of ["x'y", 'a b', 'm/n']) {
+    assert.ok(env.warnings.some((w) => w.includes(JSON.stringify(id))), `${id}: ${env.warnings}`);
+  }
+  // A hints file that fails to parse adds its own warning beside them.
+  const broken = join(dir, 'hints-broken-mid.json');
+  writeFileSync(broken, '{ not json');
+  const both = detectEnvelope('openai', ['gpt-6-astra', 'a b'], broken);
+  assert.equal(both.warnings.length, 2);
+  assert.ok(both.warnings.some((w) => /hints-broken-mid\.json/.test(w)));
+  assert.ok(both.warnings.some((w) => w.includes('"a b"')));
+  // Only conforming ids: the envelope keeps its present shape, no warnings key.
+  const clean = detectEnvelope('openai', ['gpt-6-astra']);
+  assert.equal('warnings' in clean, false);
+  assert.deepEqual(clean.models, [{ id: 'gpt-6-astra', tier: null, high_effort: null }]);
+});
