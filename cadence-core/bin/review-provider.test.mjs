@@ -2241,3 +2241,34 @@ test('RVP-02: local validation refuses exactly what the canonical schema refuses
       `${c.name}: the diagnostic must name the offending field, got: ${r.envelope.detail}`);
   }
 });
+
+// --- model ids: --model and detect-models hold the shared predicate (D-17) ---
+
+test('model id: review and consult refuse a malformed --model as bad-args before any key or request', async () => {
+  const nokeyEnv = { OPENAI_API_KEY: '' };
+  for (const cmd of ['review', 'consult']) {
+    const payload = cmd === 'review' ? FAULT_PAYLOAD : FAULT_PAYLOAD_CONSULT;
+    for (const model of ['gpt 5', 'a/b']) {
+      // With a key in the environment: the refusal is not a transport outcome.
+      const keyed = await runFaked([cmd, '--provider', 'openai', '--model', model,
+        '--payload', payload], { status: 200, body: '{}' });
+      assert.equal(keyed.envelope.ok, false, `${cmd} ${model}: ${keyed.line}`);
+      assert.equal(keyed.envelope.reason, 'bad-args', `${cmd} ${model}: ${keyed.line}`);
+      assert.match(keyed.envelope.detail, /not a model id/);
+      assert.match(keyed.envelope.detail, new RegExp(JSON.stringify(model).replace(/\//g, '\\/')));
+      assert.match(keyed.envelope.hint, /detect-models/);
+      assert.equal(keyed.seen.length, 0, `${cmd} ${model}: no request was made`);
+      // With no key anywhere: the SAME answer, so the refusal precedes the key.
+      const keyless = await runFaked([cmd, '--provider', 'openai', '--model', model,
+        '--key-file', ABSENT_KEY_FILE, '--payload', payload],
+      { status: 200, body: '{}' }, nokeyEnv);
+      assert.equal(keyless.envelope.reason, 'bad-args', `${cmd} ${model} keyless: ${keyless.line}`);
+      assert.equal(keyless.seen.length, 0);
+    }
+  }
+});
+
+test('model id: a conforming --model still reaches the transport', async () => {
+  const r = await runFaked(REVIEW_ARGS, { status: 200, body: JSON.stringify({}) });
+  assert.equal(r.seen.length, 1);
+});

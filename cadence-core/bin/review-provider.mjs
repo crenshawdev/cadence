@@ -102,6 +102,7 @@ import { appendEvent } from './lib/trace.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
 import { redactUrl, redactCredentials, redactAndCap, REDACTION_MARK } from './lib/redact-url.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
+import { isModelId } from './lib/model-id.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1249,6 +1250,11 @@ function resolveProvider(opts, cmdName) {
   if (!adapter) fail('bad-provider', `unknown provider: ${provider}`,
     `pass --provider as one of: ${Object.keys(ADAPTERS).join(', ')}`);
   if (!opts.model) fail('bad-args', `${cmdName} needs --model`,
+    'pass --model with an id this provider serves - `review-provider.mjs detect-models --provider <name>` lists them');
+  // Before the key is read and before any request: the id lands in a request
+  // path and a command line, so a malformed one is a malformed CALL (D-17).
+  if (!isModelId(opts.model)) fail('bad-args',
+    `${cmdName} --model ${JSON.stringify(opts.model)} is not a model id`,
     'pass --model with an id this provider serves - `review-provider.mjs detect-models --provider <name>` lists them');
   const { key, where } = resolveKey(provider, opts['key-file']);
   if (!key) fail('no-key', `set ${where}`,
