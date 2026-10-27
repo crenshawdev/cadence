@@ -35,15 +35,13 @@ export function refuseBase(dir, base, timeout) {
     return `base ${named} begins with "-" and would be read by git as an option`;
   }
   // `--quiet` keeps a miss silent; the first candidate that names a commit wins.
-  let usable = false;
-  for (const ref of [base, `refs/remotes/origin/${base}`]) {
+  const names = (base) => {
     try {
-      const r = spawnSync('git', ['-C', dir, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
+      return spawnSync('git', ['-C', dir, 'rev-parse', '--verify', '--quiet', `${base}^{commit}`], {
         stdio: 'ignore', killSignal: 'SIGKILL', ...(timeout ? { timeout } : {}),
-      });
-      usable = r.status === 0;
-    } catch { /* unusable */ }
-    if (usable) break;
-  }
+      }).status === 0;
+    } catch { return false; }
+  };
+  const usable = names(base) || names(`refs/remotes/origin/${base}`);
   return usable ? null : `base ${named} names no commit in this repository`;
 }
