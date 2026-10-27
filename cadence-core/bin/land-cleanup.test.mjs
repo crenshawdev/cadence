@@ -101,7 +101,10 @@ test('cleanup --merged true forced but branch not in merged list (deleted at mer
   // The GitHub auto_close path: gh pr merge --delete-branch removes the branch,
   // so `git branch --merged` no longer lists it and the reap target resolves
   // null, yet the seam forces --merged true. Reap must not fire on a null branch.
-  const dir = fixture({ base_branch: 'main' });
+  const dir = gitFixture({ base_branch: 'main' });
+  // `main` names a commit only in a real repository, so the fixture is one; the
+  // merge-time branch deletion is then done for real.
+  execFileSync('git', ['-C', dir, 'branch', '-D', 'cadence/v1.1.0-rc.2'], { stdio: 'ignore' });
   const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true']);
   assert.equal(r.action, 'cleanup');
   assert.equal(r.reap, false);
@@ -111,7 +114,7 @@ test('cleanup --merged true forced but branch not in merged list (deleted at mer
 });
 
 test('cleanup --merged false: cleanup but reap false (never reap an unmerged branch)', () => {
-  const dir = fixture({ base_branch: 'main' });
+  const dir = gitFixture({ base_branch: 'main' });
   const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'false']);
   assert.equal(r.action, 'cleanup');
   assert.equal(r.reap, false);
@@ -153,6 +156,31 @@ test('cleanup with git.on_land_cleanup=false: skip, all flags false', () => {
   assert.equal(r.returnToBase, false);
   assert.equal(r.reap, false);
 });
+
+// A base that begins with `-` or names no commit is advice to skip, never a
+// cleanup (phase 1 D-01): /cad-land branches on `action` and `returnToBase`,
+// and a forced --merged true must not turn a refused base into a checkout.
+// The assertions are on the envelope, not a written file (D-12):
+// `git branch --merged --output=x` already fails without writing.
+for (const [label, gitConfig, extra, named] of [
+  ['git.base_branch shaped like a flag', { base_branch: '--output=x' }, [], '--output=x'],
+  ['--base shaped like a flag falls to git.base_branch, which names no commit', { base_branch: 'no-such-branch' }, ['--base', '--output=x'], 'no-such-branch'],
+  ['--base naming no commit', { base_branch: 'main' }, ['--base', 'no-such-branch'], 'no-such-branch'],
+]) {
+  for (const merged of [[], ['--merged', 'true']]) {
+    test(`cleanup refuses a bad base as a skip: ${label}${merged.length ? ' (--merged true)' : ''}`, () => {
+      const dir = gitFixture(gitConfig);
+      const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', ...extra, ...merged]);
+      assert.equal(r.ok, true, JSON.stringify(r));
+      assert.equal(r.action, 'skip', JSON.stringify(r));
+      assert.equal(r.returnToBase, false);
+      assert.equal(r.pull, false);
+      assert.equal(r.reap, false);
+      assert.equal(r.base, named);
+      assert.ok(r.reason.includes(JSON.stringify(named)), r.reason);
+    });
+  }
+}
 
 // --- gate -------------------------------------------------------------------
 

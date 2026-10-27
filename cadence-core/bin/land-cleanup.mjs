@@ -7,7 +7,9 @@
 // git-guard.mjs it only advises: it NEVER runs `checkout`, `pull`, or
 // `branch -D` - that is cad-land prose's job, gated by this advice. One JSON
 // line on stdout (seam convention, lib/seam-io.mjs): every piece of ADVICE is
-// ok:true and exits 0, and the only ok:false/exit-1 shapes are a malformed
+// ok:true and exits 0 - a refused base (one that begins with `-` or names no
+// commit, lib/base-ref.mjs) is advice to skip, with returnToBase false even
+// under --merged true - and the only ok:false/exit-1 shapes are a malformed
 // CALL - a bad subcommand, or an empty or valueless --dir. The tested logic
 // lives in lib/close-decision.mjs; this wraps it with config + git-read I/O.
 //
@@ -72,6 +74,7 @@ import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-de
 // the second definition criterion 1 forbids.
 import { unfixedFromEntries } from './lib/filing-decision.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
+import { refuseBase } from './lib/base-ref.mjs';
 // The file reader this file used to define for itself; its ''-on-failure
 // contract lives in lib/seam-input.mjs. `readFileSync` stays imported above for
 // readFindings' fd-0 stdin read, which is a different question from "read this
@@ -191,6 +194,16 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
   // dropped here for ['main','master'] while git-guard already honored it.
   const protectedBranches = resolveProtectedBranches(git);
   const base = baseArg !== undefined ? baseArg : (git.base_branch || protectedBranches[0]);
+  // The RESOLVED base is checked before any git read spends it (phase 1 D-10,
+  // lib/base-ref.mjs). A refusal is ADVICE to skip, the field set the
+  // `on_land_cleanup` off arm returns, so /cad-land runs no checkout - and it
+  // wins over --merged true, which would otherwise read as returnToBase (D-01).
+  const refused = refuseBase(dir, base);
+  if (refused) {
+    return emit({ ok: true, action: 'skip', returnToBase: false, pull: false, reap: false,
+      branch: null, reason: `${refused}: leave HEAD and the integration branch in place`,
+      base, warnings });
+  }
   const mergedList = readMergedBranches(dir, base);
   const derived = branchArg !== undefined ? branchArg
     : integrationBranchName(
