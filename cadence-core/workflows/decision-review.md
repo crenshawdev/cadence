@@ -88,7 +88,8 @@ does, from `review.reviewers[]`:
   ```
   with `{instruction, artifact}` on stdin. Read the one JSON line; `ok:false`
   drops that reviewer (name the reason, same degradation rule as
-  review-triggers.md step 4) and single-model continues.
+  review-triggers.md step 4) and single-model continues. Relay the envelope's
+  `warnings[]` to the user.
 
 When the resolved set has more than one reviewer (claude-subagent plus a
 surviving cross-model provider, or several), dispatch them CONCURRENTLY in one

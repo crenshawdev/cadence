@@ -2433,3 +2433,25 @@ test('key file: detect-models keeps its own warnings beside the mode warning',
     assert.ok(r.envelope.warnings.some((w) => w.includes(file)));
     assert.ok(r.envelope.warnings.some((w) => w.includes('"a b"')));
   });
+
+// Phase 1 plan 5 (gap 5, D-15): the key-file mode warning rides the envelope's
+// `warnings[]`, so every prose that runs `review-provider.mjs` has to tell the
+// model to relay it. decision-review.md's cross-model arm read the envelope and
+// dropped it; its only relay was for `route.mjs resolve`.
+test('prose that runs review-provider.mjs relays the envelope\'s warnings[]', () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'cadence-core');
+  const sites = [
+    ['references', 'review-cross-model.md', 'review-provider.mjs" review'],
+    ['references', 'consult.md', 'review-provider.mjs" consult'],
+    ['workflows', 'config-review.md', 'review-provider.mjs" detect-models'],
+    ['workflows', 'decision-review.md', 'review-provider.mjs" review'],
+  ];
+  for (const [dir, file, call] of sites) {
+    const text = readFileSync(join(root, dir, file), 'utf8').replace(/\s+/g, ' ');
+    const from = text.indexOf(call);
+    assert.ok(from >= 0, `${file} no longer runs ${call}`);
+    // The relay sits within the next paragraph's worth of prose after the call.
+    assert.match(text.slice(from, from + 2000), /[Rr]elay (?:the |an )?envelope's `warnings\[\]`/,
+      `${file} does not relay the envelope's warnings[] after ${call}`);
+  }
+});
