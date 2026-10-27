@@ -757,6 +757,25 @@ test('a credential in the file, voice or ruling does not reach the body (D-04)',
   }
 });
 
+test('a field that ends in a file:line citation or an `x:y` shape is not read as a cut credential', () => {
+  // The end-of-input CUT rules in redactUrl are for a sliced excerpt. A finding
+  // field is whole, so its trailing `src/a.mjs:42` is a citation, not a secret.
+  const f = {
+    file: 'C:\\x\\a.mjs', line: 3, severity: 'low',
+    claim: 'the null check is missing at src/a.mjs:42',
+    failure_scenario: 'the handler returns {ok:false}',
+  };
+  const title = issueTitle(f);
+  const body = issueBody(f);
+  assert.ok(title.endsWith('missing at src/a.mjs:42'), title);
+  assert.ok(body.includes('**Claim.** the null check is missing at src/a.mjs:42'), body);
+  assert.ok(body.includes('returns {ok:false}'), body);
+  assert.ok(body.includes('C:\\x\\a.mjs:3'), body);
+  assert.ok(!title.includes(REDACTION_MARK) && !body.includes(REDACTION_MARK), `${title}\n${body}`);
+  // A real userinfo URL that ends the field is still redacted.
+  assert.ok(!issueTitle({ ...f, claim: 'dials https://u:SECRET9@host' }).includes('SECRET9'));
+});
+
 test('the body names the finding and never a CLI response', () => {
   const f = { ...finding('src/a.mjs', 12, 'medium', 'the retry loop is capped'), voice: 'sonnet', ruling: 'downgraded' };
   const body = issueBody(f);

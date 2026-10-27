@@ -343,8 +343,14 @@ const flatten = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
  * body (CONTEXT D-04) - a finding is third-party text that can quote a secret
  * out of the code it was raised on, and the title lands in `FILED.md` and
  * `DECLINED.md`, which are committed. Flatten FIRST so a credential split by a
- * newline is one span when it is read. */
-const clean = (v) => redactCredentials(redactUrl(flatten(v)));
+ * newline is one span when it is read.
+ *
+ * `redactUrl` reads the end of its input as a possible cut (rules 1b and 2b are
+ * built for a sliced excerpt), so a trailing `src/a.mjs:42` or `{ok:false}`
+ * would go as a `user:secret` fragment. A finding field is whole, not a window,
+ * so a space is added behind it: the last segment is then empty and the CUT
+ * rules match nothing. Only a span that carries its `@` is userinfo here. */
+const clean = (v) => redactCredentials(redactUrl(`${flatten(v)} `)).trim();
 
 /**
  * The issue TITLE for a finding: the fingerprint token, then the claim.
