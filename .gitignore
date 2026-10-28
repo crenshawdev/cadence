@@ -57,7 +57,3 @@ scratch/
 # Mod declarations the host writes beside any mod it loads from a plugin folder
 # (a checkout loaded with --plugin-dir)
 /.claude-plugin/types/
-
-# Security audit output — holds unfixed vulnerability findings, never committed
-audit/
-CLAUDE-SECURITY-*/
