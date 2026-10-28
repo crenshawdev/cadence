@@ -1377,16 +1377,6 @@ export const CONTRACTS = {
       '--no-numbers': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
   },
-  // test.mjs takes GROUP NAMES as positional arguments, never subcommands, so
-  // the bare form is the only form and `--list` is its one flag.
-  'test.mjs': {
-    '*': {
-      '--list': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
-    },
-    '': {
-      '--list': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
-    },
-  },
   // why.mjs takes a QUERY (`<path>[:<line>]`) as its positional argument,
   // never a subcommand, so the bare row carries the whole flag set - the
   // skim.mjs precedent. `--dir` is the repository root and lives on `'*'`
