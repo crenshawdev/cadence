@@ -131,9 +131,9 @@ Every forge write goes through your own `tea`, `gh` or `glab`, signed in as you:
 - `issue create`, with an `issue list` first to find a duplicate, when you send a review finding to the tracker instead of fixing it now;
 - PR or MR create and merge at `/cad-land`, when you pick that arm, or unattended when `git.auto_close` is true in both the repository's config and your user-global config.
 
-### Optional MCP tools
+### Optional MCP tool
 
-Context7 and excerpt are used when they're installed and skipped when they're not, and Cadence installs neither. Without Context7, `/cad-decision-review` checks library and API claims against the installed package source, the lockfile or vendored docs, and lists every claim it couldn't check. Without excerpt, every agent reads and searches with the built-in Read and Grep.
+Context7 is used when it's installed and skipped when it's not, and Cadence doesn't install it. Without Context7, `/cad-decision-review` checks library and API claims against the installed package source, the lockfile or vendored docs, and lists every claim it couldn't check.
 
 ### The two hooks that watch
 

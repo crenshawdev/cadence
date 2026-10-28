@@ -1,7 +1,7 @@
 ---
 name: cad-planner
 description: The `high` rung of `cad-planner` (phase plan authoring); `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
+tools: Read, Write, Edit, Bash, Glob, Grep
 color: green
 effort: high
 maxTurns: 200

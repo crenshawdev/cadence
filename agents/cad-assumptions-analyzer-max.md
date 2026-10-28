@@ -1,7 +1,7 @@
 ---
 name: cad-assumptions-analyzer-max
 description: The `max` rung of `cad-assumptions-analyzer`; `bin/route.mjs` picks it, not the user.
-tools: Read, Bash, Grep, Glob, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
+tools: Read, Bash, Grep, Glob
 disallowedTools: Write, Edit, MultiEdit
 color: cyan
 effort: max
