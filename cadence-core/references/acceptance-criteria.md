@@ -14,7 +14,7 @@ One function in `cadence-core/bin/lib/planning-files.mjs` implements it:
 `{criteria: Array<{id, text}>|null, issues: Issue[], declaresIds}`. Its only
 consumer is `planning.mjs criteria-coverage`, whose contract is stated below.
 Every claim here is pinned by a row in the `CRITERION_ROWS` or `DECLARES_ROWS`
-table in `cadence-core/bin/planning-files.test.mjs` - one `test()` per row.
+table in `planning-files.test.mjs` (cadence-tests repository) - one `test()` per row.
 
 ## The canonical criterion
 

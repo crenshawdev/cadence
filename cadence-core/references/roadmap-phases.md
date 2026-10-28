@@ -10,7 +10,7 @@ either direction.
 Two functions in `cadence-core/bin/lib/planning-files.mjs` implement it:
 `parseRoadmapPhases` (the canonical entry, unchanged) and `classifyPhaseList`
 (the classifier over the section). Every claim below is pinned by a row in the
-`PHASE_LIST_ROWS` table in `cadence-core/bin/planning-files.test.mjs`.
+`PHASE_LIST_ROWS` table in `planning-files.test.mjs` (cadence-tests repository).
 
 ## The canonical entry, unchanged
 

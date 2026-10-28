@@ -48,7 +48,7 @@ Resolve the phase:
   directory, any one plan without a report, a first line reading `PLAN PARTIAL`
   or `PLAN CHECKPOINT: <type>`, a `PLAN COMPLETE` quoted inside a report body
   rather than on its first line, and a rotated `plan-<k>.<n>.md` sibling are each
-  a case `cadence-core/bin/planning-replay-check.test.mjs` pins against a real
+  a case `planning-replay-check.test.mjs` (cadence-tests repository) pins against a real
   fixture directory. Restating the rule here is how the two come to disagree, and
   only one of them is tested.
   `ok:false` -> relay its `reason` and `hint` and stop.

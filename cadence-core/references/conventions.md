@@ -128,7 +128,7 @@ rest. Read only the keys you need. Unknown keys are ignored, never fatal.
   its own, so adopting it adds nothing to a seam's published list.
 - The DECLARATION is what refuses. An adopting bin runs its resolved row at the
   door of its dispatch rather than restating the rule at each handler, and
-  `cadence-core/bin/arg-contract-adoption.test.mjs` walks the whole table
+  `arg-contract-adoption.test.mjs` (cadence-tests repository) walks the whole table
   against the shipped binaries, so a row declaring a refusal nothing carries out
   reddens there. That census is what the gap needed: 98 rows were declared for
   one script and two of them were read, so a valueless flag wrote the boolean

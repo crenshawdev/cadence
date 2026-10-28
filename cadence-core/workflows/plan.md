@@ -388,7 +388,7 @@ which is why the executor needs the declaration before it starts rather than
 after.
 
 Say the missing files out loud, each beside the census it holds - "PLAN-2.md
-does not declare cadence-core/bin/trace.test.mjs, which holds the count of the
+does not declare tests/trace.test.mjs (cadence-tests repository), which holds the count of the
 four refusing trace flags' sentences".
 </step>
 
