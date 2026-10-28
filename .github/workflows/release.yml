@@ -44,6 +44,23 @@ jobs:
           fi
           echo "${SHA} is on main"
 
+      # The same condition for the suite itself. The `tests` pin is a gitlink,
+      # so a diff shows only two SHAs, and GitHub keeps an unmerged pull
+      # request's commits fetchable from the upstream URL, which lets a pin name
+      # a suite that never landed on cadence-tests' main (any SHA can be made
+      # green in a fork). Read the pin from the tagged commit's tree and require
+      # it to be reachable from cadence-tests' main, as the tag is from ours.
+      - name: The pinned tests commit is reachable from cadence-tests main
+        run: |
+          set -euo pipefail
+          PIN="$(git rev-parse "${GITHUB_SHA}:tests")"
+          git -C tests fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
+          if ! git -C tests merge-base --is-ancestor "$PIN" refs/remotes/origin/main; then
+            echo "::error::tests is pinned to ${PIN}, which is not reachable from cadence-tests main - a release must run a suite that landed on main"
+            exit 1
+          fi
+          echo "${PIN} is on cadence-tests main"
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
