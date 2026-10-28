@@ -24,11 +24,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # fetch-depth: 0 for two reasons: the reachability test below walks
-      # history, and `why-record.test.mjs` reads this repository's own log as
-      # its fixture corpus and fails 23 arms on a depth-1 checkout.
+      # history, and `why-record.test.mjs` reads this repository's own log (not
+      # the tests repository's) as its fixture corpus and fails 23 arms on a
+      # depth-1 checkout. `submodules: true` fetches the cadence-tests
+      # repository at tests/, where the suite lives.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          submodules: true
 
       - name: The tagged commit is reachable from main
         run: |
@@ -46,10 +49,11 @@ jobs:
           node-version: '22'
 
       # The zero-dep gates, run against the tagged SHA itself rather than
-      # trusted from whatever `test.yml` did on some other commit. `typecheck`
+      # trusted from whatever `test.yml` did on some other commit. The suite
+      # comes from the tests submodule pinned at that SHA. `typecheck`
       # is deliberately not duplicated here: it needs an ephemeral `npm install`
       # and so is the one arm of test.yml this gate does not reproduce.
-      - run: node cadence-core/bin/test.mjs
+      - run: node tests/test.mjs
       - run: node cadence-core/bin/self-verify.mjs
 
   publish:
