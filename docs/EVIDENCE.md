@@ -5,7 +5,7 @@ does not carry the numbers.
 
 That is a deliberate reversal of what it used to be. Until v2.7.0 it published
 about two hundred measured figures across six tables, each asserted against the
-live tree by `cadence-core/bin/prose-agreement.test.mjs`. The assertions worked
+live tree by `prose-agreement.test.mjs`, in the cadence-tests repository. The assertions worked
 exactly as designed and the design was wrong: one byte changed in any of 99
 measured surfaces could move a directory subtotal, a grand total, a
 twelve-largest ranking, a command's eager-and-reachable pair and a dispatch row
@@ -89,7 +89,7 @@ directory — `atmos`, `burnrate`, `hindsight`, `jcrenshaw.dev`, `placer`,
 `reflex`, `tempest`, `weathervane` — only Cadence had one. That is no longer
 true. `verbatim`, a Rust archive tool with no Cadence history, was taken from
 init through a verified phase 1 and on into phase 2, and its two-phase record is
-committed in this repo at `cadence-core/bin/fixtures/verbatim.trace.jsonl` —
+committed in the cadence-tests repository at `fixtures/verbatim.trace.jsonl` there —
 byte-for-byte and unredacted, as the calibration input the trace readers are
 pinned against. It is a TEST fixture rather than published evidence, and it is
 unredacted for the same reason it is useful: the figures in it are the measured
