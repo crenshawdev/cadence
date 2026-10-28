@@ -46,8 +46,9 @@
 // byte length of the emitted `text` at the shipped default: 548 paths rendered,
 // median 5,569 B, and 63 of them (11.5%) at or over 10,000 B. The worst are
 // `design-notes/sweep-2026-08-10-context-weight.md` at 30,825 B,
-// `cadence-core/bin/why-record.test.mjs` at 29,378 B (6 of 6 entries shown, 1
-// excluded - so those are join bytes, not the exclusion block) and `.gitignore`
+// `why-record.test.mjs` at 29,378 B (a path then in `cadence-core/bin`, since
+// moved to the cadence-tests repository; 6 of 6 entries shown, 1 excluded - so
+// those are join bytes, not the exclusion block) and `.gitignore`
 // at 28,888 B. Lowering the cap does not fix that tail: holding
 // `why-record.test.mjs` under the line takes one or two entries, which hides
 // the history a reader asked for. Relocating the bytes the way

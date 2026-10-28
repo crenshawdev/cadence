@@ -892,7 +892,8 @@ export const CAPTURE_WALK_SECTIONS = Object.freeze(['Todos', 'Seeds', 'Notes']);
  * The prose home of this grammar is `cadence-core/references/capture-grammar.md`
  * (the same way `parseRoadmapPhases` points at `references/roadmap-phases.md`),
  * and every shape it states - admitted and out-of-grammar - is pinned by a row
- * in the `CAPTURE_TAG_ROWS` table in `cadence-core/bin/planning-files.test.mjs`.
+ * in the `CAPTURE_TAG_ROWS` table in `planning-files.test.mjs`, in the
+ * cadence-tests repository.
  */
 const CAPTURE_PHASE_TAG = /^\((?:v\d+(?:\.\d+)*\s)?phase (\d+(?:\.\d+)?)(?:,[^)]*)?\)\s*/;
 
