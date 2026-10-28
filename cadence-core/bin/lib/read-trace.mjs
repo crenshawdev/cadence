@@ -58,18 +58,8 @@ export const READS_FILE = 'reads.jsonl';
  */
 export const MAX_READS_BYTES = 8388608;
 
-/**
- * The tools whose calls are worth billing. Anything else is not a read.
- *
- * The two `mcp__excerpt__*` entries are named the same way the rung agents name
- * them on their `tools:` lines: a user without excerpt never emits one, so the
- * entry costs them nothing, and a user with it gets the read counted in the
- * same denominator as `Read` and `Bash` instead of vanishing. Without them a
- * dispatch that reads entirely through excerpt records ZERO reads, which is
- * indistinguishable from a dispatch that read nothing.
- */
-export const RECORDED_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead',
-  'mcp__excerpt__excerpt_read', 'mcp__excerpt__excerpt_search'];
+/** The tools whose calls are worth billing. Anything else is not a read. */
+export const RECORDED_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead'];
 
 /** The longest error text a record may carry. A cause, never a payload. */
 export const MAX_ERROR_TEXT = 200;
@@ -335,10 +325,9 @@ export function errorFlagOf(resp) {
 /**
  * The FIRST LINE of a failed response's text, capped at `MAX_ERROR_TEXT`.
  *
- * One line and a cap, deliberately. The cause is what makes a refusal legible -
- * excerpt writes `<path>: <reason>` - while the rest of a failure is a payload
- * this file has never stored (`:24` - it needs the target and the count, never
- * the payload). A stack trace or a dumped file body in `reads.jsonl` would put
+ * One line and a cap, deliberately. The cause is what makes a refusal legible,
+ * while the rest of a failure is a payload this file has never stored (`:24` -
+ * it needs the target and the count, never the payload). A stack trace or a dumped file body in `reads.jsonl` would put
  * bytes nobody reviewed into a record that /cad-report prints.
  * @param {any} resp
  * @returns {string|null}
@@ -452,14 +441,6 @@ export function recordFromHook(input, now, opts) {
     // SCOPE only. The pattern is the field that can carry a secret.
     rec.target = ti.path ?? null;
     if (ti.output_mode) rec.mode = ti.output_mode;
-  } else if (tool === 'mcp__excerpt__excerpt_read') {
-    rec.target = ti.path ?? ti.file_path ?? null;
-    if (Number.isFinite(ti.offset)) rec.offset = ti.offset;
-    if (Number.isFinite(ti.limit)) rec.limit = ti.limit;
-  } else if (tool === 'mcp__excerpt__excerpt_search') {
-    // SCOPE only, exactly as `Grep` above: the pattern is the field that can
-    // carry a secret, and an excerpt search takes the same kind of pattern.
-    rec.target = ti.path ?? null;
   } else if (tool === 'Bash') {
     // `target` stays the PROGRAM, unchanged: it is what `byTool`/`topTargets`
     // have always counted and what every record on disk already carries.
