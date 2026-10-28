@@ -26,12 +26,13 @@ jobs:
       # fetch-depth: 0 for two reasons: the reachability test below walks
       # history, and `why-record.test.mjs` reads this repository's own log (not
       # the tests repository's) as its fixture corpus and fails 23 arms on a
-      # depth-1 checkout. `submodules: true` fetches the cadence-tests
-      # repository at tests/, where the suite lives.
+      # depth-1 checkout. The step after it fetches the cadence-tests
+      # repository at tests/, where the suite lives, with `--checkout` because
+      # `.gitmodules` marks it `update = none` (see test.yml).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          submodules: true
+      - run: git submodule update --init --checkout tests
 
       - name: The tagged commit is reachable from main
         run: |
