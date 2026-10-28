@@ -15,9 +15,10 @@ concurrency:
 jobs:
   node-test:
     # One job per GROUP, so a red arm names the seam that broke and the arms
-    # run in parallel. The groups are declared in cadence-core/bin/test.mjs;
-    # anything it does not name lands in `other`, which is in this matrix, so a
-    # new test file is never silently unrun.
+    # run in parallel. The groups are declared in test.mjs in the cadence-tests
+    # repository, mounted at tests/; anything it does not name lands in
+    # `other`, which is in this matrix, so a new test file is never silently
+    # unrun.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -26,18 +27,22 @@ jobs:
         group: [routing, git, planning, prose, review, other]
     steps:
       # fetch-depth: 0, not the default shallow depth-1. `why-record.test.mjs`
-      # (the `other` group) reads THIS repository's own history as its fixture
-      # corpus - archived SUMMARY tables joined to the commits they name - so a
-      # depth-1 checkout fails 23 of its arms with `invalid object name <sha>^`.
-      # The other jobs below walk no history and keep the shallow default.
+      # (the `other` group) reads THIS repository's own history, not the tests
+      # repository's, as its fixture corpus - archived SUMMARY tables joined to
+      # the commits they name - so a depth-1 checkout fails 23 of its arms with
+      # `invalid object name <sha>^`. `submodules: true` fetches the tests
+      # submodule; only this job needs it. The other jobs below walk no history,
+      # keep the shallow default and check out no submodule, so they see the
+      # tree a GitHub install receives.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          submodules: true
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
       # Zero-dep repo: no install step, the built-in runner is the framework.
-      - run: node cadence-core/bin/test.mjs ${{ matrix.group }}
+      - run: node tests/test.mjs ${{ matrix.group }}
 
   self-verify:
     # The prose<->code drift linter: every config key, script invocation, and
