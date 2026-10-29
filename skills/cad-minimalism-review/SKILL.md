@@ -4,7 +4,6 @@ description: "Ranked delete-list over code that works and should not exist - rei
 argument-hint: "[path | directory | phase number]"
 allowed-tools:
   - Read
-  - Bash
   - Glob
   - Grep
   - Task

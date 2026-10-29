@@ -4,7 +4,6 @@ description: "Render a phase's run record as a receipts narrative - what each di
 argument-hint: "[phase] [--all]"
 allowed-tools:
   - Read
-  - Bash
   - Grep
   - Glob
 ---

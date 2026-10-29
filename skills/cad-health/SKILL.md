@@ -4,7 +4,6 @@ description: "Planning-health check - .planning's core docs present, the STATE c
 argument-hint: ""
 allowed-tools:
   - Read
-  - Bash
   - Grep
   - Glob
   - AskUserQuestion

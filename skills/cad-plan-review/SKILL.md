@@ -4,7 +4,6 @@ description: "On-demand adversarial plan review of a phase PLAN.md before code -
 argument-hint: "[phase number | path/to/PLAN.md]"
 allowed-tools:
   - Read
-  - Bash
   - Glob
   - Grep
   - Task

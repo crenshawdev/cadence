@@ -5,7 +5,6 @@ argument-hint: "[--stats|--trace]"
 allowed-tools:
   - Read
   - Write
-  - Bash
   - Grep
   - Glob
   - AskUserQuestion

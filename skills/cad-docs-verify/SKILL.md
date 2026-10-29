@@ -4,7 +4,6 @@ description: "Verify docs claims against the live codebase - paths, commands, sy
 argument-hint: "[path or glob | defaults to README + docs/]"
 allowed-tools:
   - Read
-  - Bash
   - Grep
   - Glob
   - AskUserQuestion

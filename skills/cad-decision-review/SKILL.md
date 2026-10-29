@@ -4,7 +4,6 @@ description: "Adversarial refute-then-adjudicate pass over one load-bearing deci
 argument-hint: "[path/to/decision doc]"
 allowed-tools:
   - Read
-  - Bash
   - Glob
   - Grep
   - Task

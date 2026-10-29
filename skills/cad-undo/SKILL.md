@@ -6,7 +6,6 @@ disable-model-invocation: true
 allowed-tools:
   - Read
   - Edit
-  - Bash
   - Grep
   - Glob
   - AskUserQuestion
