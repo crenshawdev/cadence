@@ -26,13 +26,22 @@ jobs:
       # fetch-depth: 0 for two reasons: the reachability test below walks
       # history, and `why-record.test.mjs` reads this repository's own log (not
       # the tests repository's) as its fixture corpus and fails 23 arms on a
-      # depth-1 checkout. The step after it fetches the cadence-tests
-      # repository at tests/, where the suite lives, with `--checkout` because
-      # `.gitmodules` marks it `update = none` (see test.yml).
+      # depth-1 checkout. The step after it clones the cadence-tests repository
+      # into tests/, where the suite runs from, at the commit .github/tests-pin
+      # names (a plain clone, not a submodule - see test.yml).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - run: git submodule update --init --checkout tests
+      - name: Clone the suite at the pinned commit
+        run: |
+          set -euo pipefail
+          PIN="$(cat .github/tests-pin)"
+          if ! [[ "$PIN" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::.github/tests-pin must hold one full 40-character commit SHA"
+            exit 1
+          fi
+          git clone --quiet https://github.com/crenshawdev/cadence-tests tests
+          git -C tests checkout --quiet --detach "$PIN"
 
       - name: The tagged commit is reachable from main
         run: |
@@ -45,16 +54,17 @@ jobs:
           fi
           echo "${SHA} is on main"
 
-      # The same condition for the suite itself. The `tests` pin is a gitlink,
-      # so a diff shows only two SHAs, and GitHub keeps an unmerged pull
-      # request's commits fetchable from the upstream URL, which lets a pin name
-      # a suite that never landed on cadence-tests' main (any SHA can be made
-      # green in a fork). Read the pin from the tagged commit's tree and require
-      # it to be reachable from cadence-tests' main, as the tag is from ours.
+      # The same condition for the suite itself. The pin is one SHA in
+      # .github/tests-pin, so a diff shows only two SHAs, and nothing about a
+      # SHA says which branch it came from, which lets a pin name a suite that
+      # never landed on cadence-tests' main (any SHA can be made green in a
+      # fork or on a side branch). Read the pin from the tagged commit's tree
+      # and require it to be reachable from cadence-tests' main, as the tag is
+      # from ours.
       - name: The pinned tests commit is reachable from cadence-tests main
         run: |
           set -euo pipefail
-          PIN="$(git rev-parse "${GITHUB_SHA}:tests")"
+          PIN="$(git show "${GITHUB_SHA}:.github/tests-pin")"
           git -C tests fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
           if ! git -C tests merge-base --is-ancestor "$PIN" refs/remotes/origin/main; then
             echo "::error::tests is pinned to ${PIN}, which is not reachable from cadence-tests main - a release must run a suite that landed on main"
@@ -68,7 +78,7 @@ jobs:
 
       # The zero-dep gates, run against the tagged SHA itself rather than
       # trusted from whatever `test.yml` did on some other commit. The suite
-      # comes from the tests submodule pinned at that SHA. `typecheck`
+      # is the cadence-tests commit that SHA's .github/tests-pin names. `typecheck`
       # is deliberately not duplicated here: it needs an ephemeral `npm install`
       # and so is the one arm of test.yml this gate does not reproduce.
       - run: node tests/test.mjs
