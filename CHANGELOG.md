@@ -7,6 +7,29 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.9.3] - 2026-10-29
+
+Commands no longer pre-approve shell commands, and git-guard's code now shows it
+can only ask or deny, the two findings the plugin directory held 3.9.2 for.
+
+### Changed
+
+- **No command pre-approves `Bash` anymore.** Every command except
+  `/cad-help` listed `Bash` in `allowed-tools` with no command pattern, so a
+  shell command ran without asking while the command was active. The entry is
+  gone from all 27, and each shell command a workflow runs now goes through
+  your permission mode and your `permissions.allow` rules. In a mode that
+  asks, Cadence's commands ask, and the unattended `/cad-milestone` into
+  `/cad-land` chain stops at the first command your settings don't approve.
+  The README's "Shell commands" section lists what the workflows run.
+
+### Fixed
+
+- **git-guard's code shows it only asks or denies.** It never approved a call,
+  but it passed its decision through a variable, so the plugin directory's scan
+  couldn't rule out an approval. The two decisions are now literals, and the
+  hook behaves as before.
+
 ## [3.9.2] - 2026-10-29
 
 The test suite is no longer a submodule, which the plugin directory requires
@@ -3094,6 +3117,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.9.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.3
 [3.9.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.2
 [3.9.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.1
 [3.8.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.4
