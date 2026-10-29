@@ -5,6 +5,19 @@ All notable changes to Cadence are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
+## [Unreleased]
+
+### Changed
+
+- **The test suite is no longer a submodule.** The plugin directory refuses a
+  submodule set to `update = none`, and without that setting a plugin install
+  pulls the suite, fake keys included, into the user's plugin cache. The suite
+  stays in [cadence-tests](https://github.com/crenshawdev/cadence-tests). CI
+  and the release guard clone it into `tests/` at the commit
+  `.github/tests-pin` names, and CONTRIBUTING.md has the two commands that set
+  up the same clone locally. A plugin install gets no submodule and no test
+  file.
+
 ## [3.9.1] - 2026-10-29
 
 Fourteen security fixes from a fresh threat-model trace, and the test suite

@@ -57,3 +57,7 @@ scratch/
 # Mod declarations the host writes beside any mod it loads from a plugin folder
 # (a checkout loaded with --plugin-dir)
 /.claude-plugin/types/
+
+# The test suite: a clone of the cadence-tests repository at the commit
+# .github/tests-pin names (CONTRIBUTING.md)
+/tests/
