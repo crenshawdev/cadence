@@ -7,6 +7,11 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.9.2] - 2026-10-29
+
+The test suite is no longer a submodule, which the plugin directory requires
+before it will scan the repository.
+
 ### Changed
 
 - **The test suite is no longer a submodule.** The plugin directory refuses a
@@ -3089,6 +3094,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.9.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.2
 [3.9.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.1
 [3.8.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.4
 [3.8.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.3
