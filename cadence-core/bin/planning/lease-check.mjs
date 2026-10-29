@@ -11,6 +11,7 @@
 'use strict';
 
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join, relative, resolve as resolvePath, sep } from 'node:path';
 import { fail, phaseSpellingCollision, ok, read } from './core.mjs';
 import { CENSUSES, censusesAtRisk } from '../lib/census-registry.mjs';
@@ -197,6 +198,30 @@ function parseStagedNameStatus(out) {
   return { entries, unrepresentable };
 }
 
+/**
+ * Whether the project root is Cadence's own repository: its
+ * `.claude-plugin/plugin.json` parses and names `cadence`. An absent,
+ * unreadable or unparsable manifest, or any other name, is false.
+ *
+ * `CENSUSES` holds Cadence's own hand-maintained counts, and D-07 put thirteen
+ * of its holders under `tests/`, a common path in user projects. Applying the
+ * table everywhere would refuse a user's `tests/trace.test.mjs` as a census
+ * file, as the `weight-budgets` row's `agents/` and `skills/` subjects already
+ * reached user paths the same way. The check lives here and not in
+ * `lib/census-registry.mjs`, which is pure and leaves file reads to its caller.
+ *
+ * @param {string} root
+ * @returns {boolean}
+ */
+function censusesApply(root) {
+  try {
+    const manifest = JSON.parse(readFileSync(join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
+    return !!manifest && manifest.name === 'cadence';
+  } catch {
+    return false;
+  }
+}
+
 function cmdLeaseCheck(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) {
@@ -220,6 +245,10 @@ function cmdLeaseCheck(dir, opts) {
   }
   const n = parsedPhase.value;
   const k = parsedPlan.value;
+  // The project root is the parent of the planning directory, on both arms, so
+  // the plan-time arm still spawns no git. The census table is Cadence's own
+  // and applies only when that root is Cadence's repository (D-20).
+  const applyCensuses = censusesApply(resolvePath(dir, '..'));
 
   // `k` is the number in PLAN-<k>.md, and 1 for a bare PLAN.md - the same
   // convention the executor's report path follows.
@@ -319,7 +348,9 @@ function cmdLeaseCheck(dir, opts) {
           + ' measured against nothing - then re-run this check',
       });
     }
-    const atRisk = censusesAtRisk(declared);
+    // The census table is Cadence's own: in another project's root it applies
+    // to nothing, and a readable lease answers ok:true (D-20).
+    const atRisk = applyCensuses ? censusesAtRisk(declared) : [];
     // A clean lease is a PASS and not a silence: the caller needs to be able to
     // tell "the check ran and found nothing" from "the check never ran".
     if (!atRisk.length) return ok(base);
@@ -449,7 +480,9 @@ function cmdLeaseCheck(dir, opts) {
   // to leave a census red with no plan naming the file that would re-pin it.
   // The remedy differs too - amend the lease AND re-pin in the same commit -
   // and a caller cannot act on a difference the envelope does not carry.
-  const holders = new Map(CENSUSES.map((e) => [e.holder, e]));
+  // Cadence's own table again: another project's `tests/trace.test.mjs` is
+  // refused as plain `undeclared-files` and appends no `census_undeclared`.
+  const holders = new Map((applyCensuses ? CENSUSES : []).map((e) => [e.holder, e]));
   const censusFiles = undeclared.filter((p) => holders.has(p));
 
   if (undeclared.length) {

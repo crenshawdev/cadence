@@ -2,10 +2,12 @@
 // read-trace.mjs - the PostToolUse hook that records what a dispatch OPENED.
 //
 // The disk half of lib/read-trace.mjs: resolve the Cadence project from the
-// hook's cwd, shape the payload, append one line. The rule - which tools count,
-// what may be recorded, and the guarded append - lives in the lib and is tested
-// there without a hook, the same split lib/deferred-reads.mjs and
-// lib/merge-warnings.mjs already use.
+// hook's cwd, shape the payload, append one line. It also hands the lib the
+// plugin's own root, so a path target is recorded as project, plugin-relative
+// or `outside` and never as an absolute path elsewhere on the machine. The
+// rule - which tools count, what may be recorded, and the guarded append -
+// lives in the lib and is tested there without a hook, the same split
+// lib/deferred-reads.mjs and lib/merge-warnings.mjs already use.
 //
 // Contract: stdin carries the hook JSON; this hook emits NOTHING on any stream
 // and exits 0 unconditionally. PostToolUse runs after the tool has already
@@ -16,7 +18,8 @@
 'use strict';
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { planningRoot } from './lib/git-segments.mjs';
 
 // The existence predicate `filesOf` runs its candidates through - the whole
@@ -41,7 +44,12 @@ try {
     // `root` is `<project>/.planning`; the tree paths are billed against is its
     // parent, and confinement to it is what keeps a path elsewhere on the
     // machine out of the record.
-    const rec = recordFromHook(input, undefined, { root: dirname(root), cwd, isFile });
+    // `pluginRoot` is this plugin's own directory, found from this file's
+    // location (two above cadence-core/bin) and never from an environment
+    // variable: it is what tells a plugin file from any other path outside the
+    // project, which is recorded only as `outside`.
+    const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const rec = recordFromHook(input, undefined, { root: dirname(root), cwd, isFile, pluginRoot });
     if (rec) appendRead(root, rec);
   }
 } catch {

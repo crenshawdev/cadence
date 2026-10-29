@@ -19,7 +19,8 @@
 //     injects the schema into the prompt instead. Either way we assert the
 //     shape on return, so an unenforced or schema-ignoring model degrades to a
 //     structured bad-shape, never bad data.
-//   - Keys resolve env-first, then a shared 600-perm env file. Lazy, never
+//   - Keys resolve env-first, then a shared env file whose mode is checked
+//     (a group- or world-readable file warns on the envelope, never refuses). Lazy, never
 //     logged. A missing key is not fatal: we emit {ok:false, reason:"no-key"}
 //     so the caller falls back to claude-subagent.
 //   - Any failure (offline, bad key, http error, bad shape) degrades to a
@@ -48,7 +49,7 @@
 //     request and degrades to {ok:false, reason:"over-response"} rather than
 //     being concatenated whole into memory. The `http` failure envelope's
 //     `detail.body` is ALWAYS a string on the same reasoning: sanitized through
-//     both lib/redact-url.mjs exports and capped at `MAX_HTTP_BODY_BYTES`, never
+//     both lib/redact-url.mjs exports and capped at 1024 bytes by `redactAndCap`, never
 //     the whole body and never a parsed object for a small one.
 //
 // Usage:
@@ -100,8 +101,9 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { measure } from './lib/surface-weight.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
-import { redactUrl, redactCredentials, REDACTION_MARK } from './lib/redact-url.mjs';
+import { redactUrl, redactCredentials, redactAndCap, REDACTION_MARK } from './lib/redact-url.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
+import { isModelId } from './lib/model-id.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -272,15 +274,30 @@ export function parseEnvFile(text) {
   return out;
 }
 
+// A key taken from the file whose group or other read bits are set is a key
+// other local users can read: said on the envelope, never refused (D-15). Only
+// a key that CAME from the file is checked - an env-supplied key never reaches
+// here - and win32 has no such mode bits. A stat failure adds nothing: the read
+// above it already succeeded.
+/** @param {string} file @returns {string[]} */
+function keyFileWarnings(file) {
+  if (process.platform === 'win32') return [];
+  try {
+    const mode = fs.statSync(file).mode & 0o777;
+    if (!(mode & 0o044)) return [];
+    return [`${file} is mode ${mode.toString(8).padStart(4, '0')}, readable by other users and it holds an API key - restrict it to its owner: chmod 600 ${file}`];
+  } catch { return []; }
+}
+
 function resolveKey(provider, keyFile) {
   const name = ENV_VAR[provider];
-  if (process.env[name]) return { key: process.env[name], source: 'env' };
+  if (process.env[name]) return { key: process.env[name], source: 'env', warnings: [] };
   const file = providersEnvPath(keyFile);
   try {
     const parsed = parseEnvFile(fs.readFileSync(file, 'utf8'));
-    if (parsed[name]) return { key: parsed[name], source: 'file' };
+    if (parsed[name]) return { key: parsed[name], source: 'file', warnings: keyFileWarnings(file) };
   } catch { /* file absent/unreadable -> treated as no-key below */ }
-  return { key: null, where: `env $${name} or ${file}` };
+  return { key: null, where: `env $${name} or ${file}`, warnings: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -339,27 +356,6 @@ const MAX_RESPONSE_BYTES = 4194304;
 // on its message: a diagnostic string that decides control flow is a parser, and
 // the message is free text nobody promised to keep.
 const OVER_RESPONSE = Symbol('cadence-over-response');
-
-// The HTTP failure envelope's body excerpt (RVP-01, D-04). ONE shape always - a
-// capped, sanitized STRING - never a parsed object for a small body and a string
-// for a large one, which would make every consumer branch on `typeof
-// detail.body`.
-//
-// 1024 bytes, measured rather than round: the largest real OpenAI error body in
-// this seam's own fixtures is 155 bytes (`model_not_found`) and a documented
-// invalid-schema rejection runs about 226, so the whole diagnostic
-// workflows/config-review.md reads this envelope FOR fits with more than 4x
-// headroom, while a proxy HTML error page is bounded to a readable head.
-const MAX_HTTP_BODY_BYTES = 1024;
-
-// Appended in place of what was cut, so a reader can tell an excerpt from a
-// whole body. Inside the cap, not added to it.
-const TRUNCATED = ' ...[truncated]';
-
-// How much of the raw body the sanitizers ever see. A COST bound, not a privacy
-// one - see `bodyExcerpt` for the measurement that forces it and for why the
-// window's edge cannot reach the excerpt.
-const SANITIZE_WINDOW_BYTES = MAX_HTTP_BODY_BYTES * 4;
 
 // Pure so the unit tests can exercise it without touching config or the network.
 // Anything unusable - absent, non-numeric, non-integer, zero, negative - falls
@@ -801,66 +797,17 @@ const HTTP_HINT = 'the provider refused the request: 401 or 403 means the key, '
 /**
  * The `body` of every `http` failure envelope: a sanitized, capped STRING.
  *
- * Sanitize BEFORE the excerpt is cut, never after. Cutting first can slice a
- * credential in half and leave its prefix in the envelope, which is a leak
- * wearing a cap. Two sanitizers because neither covers the other: `redactUrl`
- * takes credentials in URL position, `redactCredentials` takes the
- * `authorization: Bearer ...` and `<name>=<value>` spans a misconfigured gateway
- * echoes back.
- *
- * The WINDOW is a cost bound, and it is not optional. Measured 2026-08-17 on
- * this box: `redactUrl` is quadratic in its input (78ms at 10KB, 337ms at 20KB,
- * 5.1s at 80KB) because its scheme-less rule scans forward from every offset,
- * and `MAX_RESPONSE_BYTES` above lets a body reach 4 MiB - which extrapolates to
- * roughly four HOURS of CPU for one failure envelope. Sanitizing a bounded
- * window instead keeps the worst case in the tens of milliseconds. Fixing the
- * quadratic in `redactUrl` itself is the better repair and is not this plan's:
- * its four other callers hand it a git error message, so the cost only became
- * reachable here.
- *
- * The window's own edge is handled where it is CREATED, not here. Cutting a
- * prefix can leave a credential's opening quote inside the window and its
- * closing quote outside, so `redactCredentials` matches an unterminated quoted
- * value to end-of-input - see rule 4's VALUE alternatives in lib/redact-url.mjs.
- * The earlier reasoning on this line was that the cap discards anything near the
- * edge unless sanitizing shrank the window below the cap, in which case the
- * trailing token is dropped at the last whitespace. That arm is gated on
- * `clean <= room`, so a body that is almost entirely credential spans could
- * shrink to JUST PAST the cap, skip the safeguard, and carry 73 bytes of a value
- * into the envelope. Both regression fixtures are in the test file; the
- * whitespace arm below stays as a second line of defence, not the guarantee.
- *
- * The cut is by BYTES, and the head is trimmed back if slicing landed
- * mid-code-point, so the returned string never exceeds the cap however the body
- * was encoded.
- * EXPORTED for its own unit test and nothing else (D-09). The two
- * `fail('http', ...)` sites below are still its only callers in the tree; the
- * export exists because the leak class it guards - a credential cut by the
- * window edge - is reachable at unit level with one string, while reaching it
- * through `runFaked` costs a fake transport and a body tuned to a compression
- * ratio. Plain `export function`, matching every other pure helper here with
- * test value (`resolveTimeoutMs`, `validateFindings`, `estimatePromptTokens`);
- * the `__setTransportForTests` spelling is for the transport seam, which is a
- * replaceable module-private REFERENCE rather than a function to call.
+ * A delegate to `redactAndCap` in lib/redact-url.mjs, where the whole design
+ * record now lives (sanitize BEFORE the cut, the bounded window and why, the
+ * byte cap and the code-point-safe trim). It keeps its name and its export
+ * because review-provider.test.mjs reads it off the namespace import and its
+ * re-watch recipes depend on the name. The two `fail('http', ...)` sites below
+ * are its only callers in this file; git-publish.mjs's push-failed detail
+ * shares the same helper (D-13).
  * @param {unknown} raw @returns {string}
  */
 export function bodyExcerpt(raw) {
-  const full = raw == null ? '' : String(raw);
-  const buf = Buffer.from(full, 'utf8');
-  const windowed = buf.length > SANITIZE_WINDOW_BYTES;
-  let clean = redactCredentials(redactUrl(
-    windowed ? buf.subarray(0, SANITIZE_WINDOW_BYTES).toString('utf8') : full));
-  const room = MAX_HTTP_BODY_BYTES - Buffer.byteLength(TRUNCATED);
-  if (windowed && Buffer.byteLength(clean) <= room) {
-    const lastSpace = clean.search(/\s\S*$/);
-    clean = lastSpace >= 0 ? clean.slice(0, lastSpace) : '';
-  }
-  if (!windowed && Buffer.byteLength(clean) <= MAX_HTTP_BODY_BYTES) return clean;
-  let head = Buffer.from(clean, 'utf8').subarray(0, room).toString('utf8');
-  // A partial code point re-encodes as U+FFFD, which is wider than the bytes it
-  // replaced; drop characters until it fits rather than trusting the slice.
-  while (Buffer.byteLength(head) > room) head = head.slice(0, -1);
-  return head + TRUNCATED;
+  return redactAndCap(raw);
 }
 
 // ---------------------------------------------------------------------------
@@ -916,6 +863,10 @@ export const FINDING_SCHEMA = {
 // "the primary engineer is stuck - what would you try?" It returns angles to
 // investigate, never a decision. Decision-support only; the main model grounds
 // each angle and the user decides (DESIGN §6).
+// Consult's bounds (D-16): a reply is refused past them, never truncated. Gemini
+// drops `maxItems` through stripForGemini and keeps `maxLength`.
+const MAX_ANGLES = 10;
+const CONSULT_KEYS = ['hypothesis', 'rationale', 'how_to_check'];
 const CONSULT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -923,31 +874,40 @@ const CONSULT_SCHEMA = {
   properties: {
     angles: {
       type: 'array',
+      maxItems: MAX_ANGLES,
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['hypothesis', 'rationale', 'how_to_check'],
+        required: CONSULT_KEYS,
         properties: {
-          hypothesis: { type: 'string' },
-          rationale: { type: 'string' },
-          how_to_check: { type: 'string' },
+          hypothesis: { type: 'string', maxLength: MAX_TEXT_CHARS },
+          rationale: { type: 'string', maxLength: MAX_TEXT_CHARS },
+          how_to_check: { type: 'string', maxLength: MAX_TEXT_CHARS },
         },
       },
     },
   },
 };
 
-// Deep-copy a JSON schema with every `additionalProperties` key removed.
-// OpenAI strict mode requires it; Gemini's OpenAPI-subset responseSchema
-// rejects it. One schema, two dialects.
+// Deep-copy a JSON schema into Gemini's dialect: every key in GEMINI_STRIPPED
+// removed, at every depth. OpenAI strict mode requires `additionalProperties`;
+// Gemini's OpenAPI-subset responseSchema rejects it. Gemini takes `maxItems`
+// on a small array, but on an array of objects it refuses a large bound with a
+// bare 400 "Request contains an invalid argument": FINDING_SCHEMA's 100 was
+// refused on gemini-3.5-flash-lite and gemini-3.1-pro-preview, and on
+// flash-lite 50 was refused and 20 passed, with or without the string bounds
+// (measured 2026-10-23). The cap still holds for Gemini: validateFindings
+// refuses a reply past MAX_FINDINGS. One schema, two dialects.
+const GEMINI_STRIPPED = new Set(['additionalProperties', 'maxItems']);
+
 /** @param {any} node @returns {any} */
-export function stripAdditionalProperties(node) {
-  if (Array.isArray(node)) return node.map(stripAdditionalProperties);
+export function stripForGemini(node) {
+  if (Array.isArray(node)) return node.map(stripForGemini);
   if (node && typeof node === 'object') {
     const out = {};
     for (const [k, v] of Object.entries(node)) {
-      if (k === 'additionalProperties') continue;
-      out[k] = stripAdditionalProperties(v);
+      if (GEMINI_STRIPPED.has(k)) continue;
+      out[k] = stripForGemini(v);
     }
     return out;
   }
@@ -1110,11 +1070,12 @@ export const ADAPTERS = {
       const generationConfig = {
         responseMimeType: 'application/json',
         // Gemini responseSchema is an OpenAPI-3.0 subset that rejects the
-        // `additionalProperties` keyword (which OpenAI strict mode requires),
-        // so strip it for Gemini only. thinkingLevel is the Gemini 3.x effort
+        // `additionalProperties` keyword (which OpenAI strict mode requires)
+        // and the findings array's `maxItems`, so strip both for Gemini only
+        // (stripForGemini says why). thinkingLevel is the Gemini 3.x effort
         // dial (minimal|low|medium|high); omitted when no effort is set, and
         // the shared enum's `xhigh` goes as `high`, the dial's top.
-        responseSchema: stripAdditionalProperties(schema),
+        responseSchema: stripForGemini(schema),
       };
       if (effort) generationConfig.thinkingConfig = { thinkingLevel: effort === 'xhigh' ? 'high' : effort };
       const body = {
@@ -1122,7 +1083,10 @@ export const ADAPTERS = {
         contents: [{ role: 'user', parts: [{ text: user }] }],
         generationConfig,
       };
-      return { path: `/v1beta/models/${model}:generateContent`, method: 'POST', body };
+      // The model segment only is percent-encoded: the id is operator-supplied
+      // and `/`, `?` and `#` would otherwise redirect the request inside the
+      // host. The `:generateContent` suffix stays raw, it is the method (D-19).
+      return { path: `/v1beta/models/${encodeURIComponent(model)}:generateContent`, method: 'POST', body };
     },
     extractText(json) {
       const parts = json?.candidates?.[0]?.content?.parts;
@@ -1280,10 +1244,15 @@ export function validateFindings(obj) {
 /** @param {any} obj @returns {string|null} null when valid, else the defect */
 export function validateConsult(obj) {
   if (!obj || !Array.isArray(obj.angles)) return 'missing angles[]';
+  if (obj.angles.length > MAX_ANGLES) {
+    return `angles[] holds at most ${MAX_ANGLES} entries, got ${obj.angles.length}`;
+  }
   for (const a of obj.angles) {
     if (!a || typeof a !== 'object') return 'angle not an object';
-    for (const k of ['hypothesis', 'rationale', 'how_to_check']) {
+    for (const k of CONSULT_KEYS) {
       if (typeof a[k] !== 'string') return `angle.${k} must be a string`;
+      const n = codePoints(a[k]);
+      if (n > MAX_TEXT_CHARS) return `angle.${k} is at most ${MAX_TEXT_CHARS} characters, got ${n}`;
     }
   }
   return null;
@@ -1311,10 +1280,15 @@ function resolveProvider(opts, cmdName) {
     `pass --provider as one of: ${Object.keys(ADAPTERS).join(', ')}`);
   if (!opts.model) fail('bad-args', `${cmdName} needs --model`,
     'pass --model with an id this provider serves - `review-provider.mjs detect-models --provider <name>` lists them');
-  const { key, where } = resolveKey(provider, opts['key-file']);
+  // Before the key is read and before any request: the id lands in a request
+  // path and a command line, so a malformed one is a malformed CALL (D-17).
+  if (!isModelId(opts.model)) fail('bad-args',
+    `${cmdName} --model ${JSON.stringify(opts.model)} is not a model id`,
+    'pass --model with an id this provider serves - `review-provider.mjs detect-models --provider <name>` lists them');
+  const { key, where, warnings } = resolveKey(provider, opts['key-file']);
   if (!key) fail('no-key', `set ${where}`,
     'write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config');
-  return { provider, adapter, key };
+  return { provider, adapter, key, warnings };
 }
 
 // Run a structured-output request through the transport, extract, and parse.
@@ -1373,7 +1347,7 @@ async function cmdReview(opts) {
   const meta = beginProviderCall('review',
     { provider: opts.provider, model: opts.model, effort: opts.effort,
       trigger: opts.trigger });
-  const { provider, adapter, key } = resolveProvider(opts, 'review');
+  const { provider, adapter, key, warnings } = resolveProvider(opts, 'review');
   const payload = await readPayload(opts);
   if (!payload || typeof payload.instruction !== 'string' || typeof payload.artifact !== 'string') {
     fail('bad-payload', 'payload needs {instruction, artifact}, both strings',
@@ -1406,13 +1380,14 @@ async function cmdReview(opts) {
   // artifact. references/review-triggers.md reads `{ok:false}` reasons; this is
   // an additive key on the `ok` side and no existing arm moves without it.
   ok({ provider, model: opts.model, findings: parsed.findings,
-    ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}) });
+    ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}),
+    ...(warnings.length ? { warnings } : {}) });
 }
 
 async function cmdConsult(opts) {
   const meta = beginProviderCall('consult',
     { provider: opts.provider, model: opts.model, effort: opts.effort });
-  const { provider, adapter, key } = resolveProvider(opts, 'consult');
+  const { provider, adapter, key, warnings } = resolveProvider(opts, 'consult');
   const payload = await readPayload(opts);
   if (!payload || typeof payload.situation !== 'string') {
     fail('bad-payload', 'payload needs {situation}, a string',
@@ -1440,7 +1415,8 @@ async function cmdConsult(opts) {
   }
   traceProvider(meta, 'ok');
   ok({ provider, model: opts.model, angles: parsed.angles,
-    ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}) });
+    ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}),
+    ...(warnings.length ? { warnings } : {}) });
 }
 
 async function cmdDetect(opts) {
@@ -1454,7 +1430,7 @@ async function cmdDetect(opts) {
   if (!adapter) fail('bad-provider', `unknown provider: ${provider}`,
     `pass --provider as one of: ${Object.keys(ADAPTERS).join(', ')}`);
 
-  const { key, where } = resolveKey(provider, opts['key-file']);
+  const { key, where, warnings: keyWarnings } = resolveKey(provider, opts['key-file']);
   if (!key) fail('no-key', `set ${where}`,
     'write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config');
 
@@ -1472,7 +1448,9 @@ async function cmdDetect(opts) {
   }
   const ids = adapter.extractModels(res.json);
   traceProvider(meta, 'ok');
-  ok(detectEnvelope(provider, ids));
+  const env = detectEnvelope(provider, ids);
+  const warnings = [...keyWarnings, ...(env.warnings || [])];
+  ok(warnings.length ? { ...env, warnings } : env);
 }
 
 // Load references/model-hints.json, distinguishing a legitimately-absent
@@ -1522,8 +1500,16 @@ export function classify(provider, ids, hintsFile) {
 /** @param {string} provider @param {string[]} ids @param {string} [hintsFile] */
 export function detectEnvelope(provider, ids, hintsFile) {
   const { warning } = readModelHints(hintsFile);
-  const models = classify(provider, ids, hintsFile);
-  return warning ? { provider, models, warnings: [warning] } : { provider, models };
+  // A non-conforming id is dropped before classify and NAMED: the config-review
+  // workflow writes surviving ids into a single-quoted `config.mjs set` line,
+  // where a quote or a space must never arrive, and a wrongly refused id has to
+  // be visible rather than silent (D-17).
+  const kept = ids.filter(isModelId);
+  const warnings = ids.filter((id) => !isModelId(id))
+    .map((id) => `dropped ${JSON.stringify(id)}: not a model id`);
+  if (warning) warnings.push(warning);
+  const models = classify(provider, kept, hintsFile);
+  return warnings.length ? { provider, models, warnings } : { provider, models };
 }
 
 // ---------------------------------------------------------------------------

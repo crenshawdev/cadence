@@ -134,6 +134,7 @@ import { GLOBAL_CONFIG, layerIdentity, mergeLayers } from './lib/config-merge.mj
 import { rungFile, RUNG_FILES, RUNG_ORDER } from './lib/rung-agent.mjs';
 import { gateTriggers } from './lib/gate-agreement.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
+import { isModelId } from './lib/model-id.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { cursorPhase, declaredFilesIn, declaredPhaseFiles, declaredPlanFiles,
@@ -432,16 +433,25 @@ function roleEntryIn(rolesBlock, role) {
   return e && typeof e === 'object' && !Array.isArray(e) ? e : {};
 }
 
-// The model id one provider is configured with at one tier, or '' for none.
-// An empty string is deliberately NOT a model id: a `""` in a config is a key
-// somebody cleared, and dispatching a provider call with an empty model is the
-// silent-substitution shape RVW-02 opened against.
-function providerModel(providers, name, tier) {
-  if (!tier) return '';
+// The id string a layer holds for one provider at one tier, or null when there
+// is none; no judgment of it.
+function configuredTierId(providers, name, tier) {
+  if (!tier) return null;
   const block = providers[name];
   const tiers = block && typeof block === 'object' && !Array.isArray(block) ? block.tiers : null;
   const id = tiers && typeof tiers === 'object' && !Array.isArray(tiers) ? tiers[tier] : null;
-  return typeof id === 'string' && id.trim() ? id : '';
+  return typeof id === 'string' ? id : null;
+}
+
+// The model id one provider is configured with at one tier, or '' for none.
+// An empty string is deliberately NOT a model id: a `""` in a config is a key
+// somebody cleared, and dispatching a provider call with an empty model is the
+// silent-substitution shape RVW-02 opened against. Nor is a string the shared
+// predicate refuses (lib/model-id.mjs, D-17): a hand-edited or cloned config
+// can hold one, since `config.mjs set` is the only write face that checks.
+function providerModel(providers, name, tier) {
+  const id = configuredTierId(providers, name, tier);
+  return id !== null && isModelId(id) ? id : '';
 }
 
 /**
@@ -1272,9 +1282,13 @@ function resolve(opts) {
     for (const name of wantedReviewers) {
       if (name === 'claude-subagent') { kept.push(name); continue; }
       if (!providerModel(cfg.providers, name, tier)) {
+        const held = configuredTierId(cfg.providers, name, tier);
         dropped.push(tier
-          ? `${name} has no model id at the "${tier}" tier `
-            + `(review.providers.${name}.tiers.${tier}, tier from ${tierFrom})`
+          ? (held !== null && held.trim()
+            ? `${name}'s review.providers.${name}.tiers.${tier} is ${JSON.stringify(held)}, `
+              + `which is not a model id (tier from ${tierFrom})`
+            : `${name} has no model id at the "${tier}" tier `
+              + `(review.providers.${name}.tiers.${tier}, tier from ${tierFrom})`)
           : `${name} cannot be placed: the ${trigger} trigger resolves no tier `
             + `(no config layer set one and ${tierKey} carries no schema default)`);
         continue;

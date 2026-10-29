@@ -14,7 +14,7 @@ If you don't want to think about any of that, thirteen questions think it throug
 
 One thing people miss: routing governs the subagents Cadence dispatches, not your main session. Cadence cannot set your orchestrator's model or effort, that stays yours to set in Claude Code. Run it on the strongest model at high effort. The context discipline is what makes that affordable, the orchestrator stays lean and reads its own prefix from cache while the expensive file reading happens out in the routed subagents.
 
-Read the code: `cadence-core/bin/route.mjs` (the resolver), `cadence-core/config.schema.json` (where the review gates and the cross-model reviewer's tiers and efforts take their defaults - editable data, no code change to retune), `cadence-core/bin/lib/rung-agent.mjs` (which file carries which rung), `cadence-core/bin/route.test.mjs`. Design record: `DESIGN.md`, "Model routing."
+Read the code: `cadence-core/bin/route.mjs` (the resolver), `cadence-core/config.schema.json` (where the review gates and the cross-model reviewer's tiers and efforts take their defaults - editable data, no code change to retune), `cadence-core/bin/lib/rung-agent.mjs` (which file carries which rung), and `route.test.mjs`, which is in the cadence-tests repository (https://github.com/crenshawdev/cadence-tests), mounted at tests/. Design record: `DESIGN.md`, "Model routing."
 
 ## The push guard: the parser I deleted, and the tokenizer I wrote
 
@@ -36,7 +36,7 @@ v2.2.0 deleted all of it, which is line 29's rule applied to my own code a miles
 
 What replaced it is `cadence-core/bin/lib/git-segments.mjs`, eighty-five lines: a segment counts only when its command word is `git`, and the verb is its first non-flag word. It is total and linear, and the 336KB input that aborted the old hook decides in milliseconds. It also deleted a whole second rule. Detection used to be any-position, which meant `rg -t sh "git commit"` was seen as a commit, which meant refusal had to be narrowed back to command position by an enumerated prefix set that three review rounds kept finding new members of. Anchoring detection to the command word makes those silent up front: one rule where there were two, and nothing to enumerate. The cost is that a wrapped, substituted or prefixed invocation is now genuinely invisible, and that list is written down in `cadence-core/references/git-publish.md` rail 3, in the `CHANGELOG-v1-v2.md` entry that removed the parser, and as a pinned test row apiece. A gap you have written down and pinned is not the same animal as a gap you have not noticed.
 
-Read the code: `cadence-core/bin/git-guard.mjs` (the hook, no push exemption), `cadence-core/bin/lib/git-segments.mjs` (the anchored reader), `cadence-core/bin/git-segments.test.mjs` (its stated behavior, silent rows included), `cadence-core/bin/git-publish.mjs` (the sanctioned seam), `cadence-core/bin/lib/publish-decision.mjs` (the pure refuse-gate logic), tests in `cadence-core/bin/git-guard.test.mjs` and `cadence-core/bin/git-publish.test.mjs`. Design record: `DESIGN.md`, reversal R2.
+Read the code: `cadence-core/bin/git-guard.mjs` (the hook, no push exemption), `cadence-core/bin/lib/git-segments.mjs` (the anchored reader), `git-segments.test.mjs` (its stated behavior, silent rows included), `cadence-core/bin/git-publish.mjs` (the sanctioned seam), `cadence-core/bin/lib/publish-decision.mjs` (the pure refuse-gate logic), tests in `git-guard.test.mjs` and `git-publish.test.mjs`. These and `git-segments.test.mjs` are in the cadence-tests repository (https://github.com/crenshawdev/cadence-tests), mounted at tests/. Design record: `DESIGN.md`, reversal R2.
 
 ## Live model detection
 
@@ -62,7 +62,7 @@ Every seam that makes a decision splits in two. The decision is a pure function 
 
 That split is why the invariants hold. The judgment that is easy to get wrong is the part that never touches the disk and is tested to death, and the part that touches the disk is too small to hide a bug in. Prose keeps the judgment, the scripts keep the invariants, and the scripts are boring on purpose.
 
-Read the code: the `*-decision.mjs` cores under `cadence-core/bin/lib` and their tests (`cadence-core/bin/close-decision.test.mjs`, `cadence-core/bin/publish-decision.test.mjs`, `cadence-core/bin/branch-decision.test.mjs`, `cadence-core/bin/release-decision.test.mjs`).
+Read the code: the `*-decision.mjs` cores under `cadence-core/bin/lib` and their tests (`close-decision.test.mjs`, `publish-decision.test.mjs`, `branch-decision.test.mjs`, `release-decision.test.mjs`), which are in the cadence-tests repository (https://github.com/crenshawdev/cadence-tests), mounted at tests/.
 
 ## What a command carries
 
@@ -78,4 +78,4 @@ Ask it yourself, on any tree:
 
 `node cadence-core/bin/weight.mjs resident --root <repo root>`
 
-Read the code: `cadence-core/bin/lib/resident-weight.mjs` (the composition, and the reason reachable is one hop rather than a transitive closure), `cadence-core/bin/weight.test.mjs` (the shape, the determinism, and the fixtures that pin each definition).
+Read the code: `cadence-core/bin/lib/resident-weight.mjs` (the composition, and the reason reachable is one hop rather than a transitive closure), `weight.test.mjs` (the shape, the determinism, and the fixtures that pin each definition), which is in the cadence-tests repository (https://github.com/crenshawdev/cadence-tests), mounted at tests/.

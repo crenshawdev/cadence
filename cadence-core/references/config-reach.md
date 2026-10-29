@@ -11,7 +11,7 @@ for per-trigger `effort`).
 The single implementation is `parseReachTable` / `reachIssues` in
 `cadence-core/bin/lib/config-reach.mjs`, called by check 9 of
 `cadence-core/bin/self-verify.mjs`. Row-by-row test cases live in
-`cadence-core/bin/self-verify.test.mjs`.
+`self-verify.test.mjs` (cadence-tests repository).
 
 ## What the check proves, and what it does not
 

@@ -11,8 +11,10 @@ import { stripGlobalOnly } from './global-only-keys.mjs';
 import { isPlainObject } from './text-util.mjs';
 export { isPlainObject };
 
-// User-global config layer. CADENCE_GLOBAL_CONFIG relocates it (and keeps
-// tests hermetic); otherwise ~/.claude/cadence/config.json.
+// User-global config layer. CADENCE_GLOBAL_CONFIG is a documented, user-facing
+// relocation, honoured in production and deliberately NOT gated behind
+// CADENCE_TEST_SEAM (lib/test-seam.mjs says why); the tests also use it to stay
+// hermetic. Otherwise ~/.claude/cadence/config.json.
 //
 // homedir() THROWS where the uid has no passwd entry and HOME is unset - the
 // ordinary `docker run -u 12345` / OpenShift arbitrary-UID case. This runs at

@@ -34,7 +34,7 @@ unopened milestone as one that was opened and never seeded.
 A line inside `## Active` that names a requirement id but is not a bullet of
 the form above declares NO id. It is not silently dropped: `/cad-audit` reports
 it in `active_issues` as `{line, code, text}`, one issue per line, in line
-order. Each code below is pinned by a case in `cadence-core/bin/planning-files.test.mjs`.
+order. Each code below is pinned by a case in `planning-files.test.mjs` (cadence-tests repository).
 
 | Code | Example line | What `audit` does with it | Fix |
 |---|---|---|---|

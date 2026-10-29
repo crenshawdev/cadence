@@ -10,14 +10,15 @@ Fork freely. The license is MIT and it means it. If you want Cadence to hold som
 
 ## Running the checks
 
-Cadence has no build step and no runtime dependencies. The scripts inside are zero-dependency Node, nothing under `cadence-core/bin/` imports anything but `node:` builtins, and running Cadence never installs a package. The typecheck is the one exception, and it is a check rather than a dependency: CI installs both packages for the length of one job with `npm install --no-save --no-package-lock typescript @types/node` before it runs `npx tsc`. Locally you need the same two — `npx` fetches `typescript` for you on first use, but not `@types/node`, and `tsconfig.ci.json` sets `"types": ["node"]`, so without it the check fails with `TS2688: Cannot find type definition file for 'node'`. Run the same install line once, or skip the third check. The first two need nothing but `node` and `git` on your PATH:
+Cadence has no build step and no runtime dependencies. The scripts inside are zero-dependency Node, nothing under `cadence-core/bin/` imports anything but `node:` builtins, and running Cadence never installs a package. The typecheck is the one exception, and it is a check rather than a dependency: CI installs both packages for the length of one job with `npm install --no-save --no-package-lock typescript @types/node` before it runs `npx tsc`. Locally you need the same two — `npx` fetches `typescript` for you on first use, but not `@types/node`, and `tsconfig.ci.json` sets `"types": ["node"]`, so without it the check fails with `TS2688: Cannot find type definition file for 'node'`. Run the same install line once, or skip the third check. The tests live in their own repository, [cadence-tests](https://github.com/crenshawdev/cadence-tests), mounted at `tests/` as a git submodule, so a fresh clone fetches them once. `.gitmodules` marks that submodule `update = none` so a plugin install never pulls the suite into a user's plugin cache, and that also makes a plain `git submodule update` or `git clone --recurse-submodules` skip it, so the command below names `--checkout`. The first two checks need nothing but `node` and `git` on your PATH:
 
 ```
-node --test cadence-core/bin/*.test.mjs   # unit tests for the seam cores (~25s)
-node cadence-core/bin/test.mjs routing    # just one group (~6s)
-node cadence-core/bin/test.mjs --list     # the groups and what each owns
-node cadence-core/bin/self-verify.mjs     # the prose<->code drift linter
-npx tsc -p tsconfig.ci.json               # checkJs over cadence-core/bin, tests excluded
+git submodule update --init --checkout tests  # once, on a fresh clone: fetches the tests
+node --test tests/*.test.mjs                  # unit tests for the seam cores (~25s)
+node tests/test.mjs routing                   # just one group (~6s)
+node tests/test.mjs --list                    # the groups and what each owns
+node cadence-core/bin/self-verify.mjs         # the prose<->code drift linter
+npx tsc -p tsconfig.ci.json                   # checkJs over cadence-core/bin, tests excluded
 ```
 
 The self-verify step is the one that catches most drift. It lints the prose against the code: every config key, script invocation, and file path named in the workflows has to actually exist, or the build fails. It also weighs every agent file, every SKILL.md, every workflow, and every file under `cadence-core/references/` and `cadence-core/templates/`, and fails when one EXCEEDS its recorded byte count in `cadence-core/bin/weight-budgets.json`, or when an agent's prose reaches for a tool its frontmatter never declared. The budget is a ceiling, not an equality: a surface you shrank is green, and its entry can be re-pinned whenever it suits you. If you touch a command or a config key, run it before you push, because the build will run it for you either way.

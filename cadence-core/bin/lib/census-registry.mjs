@@ -11,8 +11,8 @@
 // WHY THE TABLE IS HAND-MAINTAINED. Nothing in a tree snapshot distinguishes a
 // pinned count from an incidental one: `assert.equal(n, 17)` reads identically
 // whether 17 is a claim about this repository or the length of a fixture the
-// test just built. Measured 2026-08-24 over `cadence-core/bin/*.test.mjs`, 73
-// `assert.equal(..., <2+ digit literal>)` calls and 147 on a looser shape, the
+// test just built. Measured 2026-08-24 over the test files then in
+// `cadence-core/bin`, 73 `assert.equal(..., <2+ digit literal>)` calls and 147 on a looser shape, the
 // large majority fixture-derived rather than tree-derived. So the register IS
 // the record, the same species of stated table as `lib/deferred-reads.mjs`'s
 // register, self-verify's CONTRACTS and `lib/rung-agent.mjs`'s RUNG_FILES.
@@ -98,7 +98,7 @@ function entry(e) {
 export const CENSUSES = Object.freeze([
   entry({
     id: 'self-verify-merge-layers',
-    holder: 'cadence-core/bin/self-verify.test.mjs',
+    holder: 'tests/self-verify.test.mjs',
     // `mergeLayers` is written here WITHOUT its opening paren on purpose. The
     // merge-warnings rule matches the name followed by `(` on any non-comment
     // line, so spelling the callsite out in this row's prose made the registry
@@ -132,14 +132,14 @@ export const CENSUSES = Object.freeze([
   }),
   entry({
     id: 'arg-contract-flag-entries',
-    holder: 'cadence-core/bin/arg-contract.test.mjs',
+    holder: 'tests/arg-contract.test.mjs',
     counts: 'the flag entries the `CONTRACTS` table declares and its top-level row count',
     asserted_by: 'the test named `every flag in every row declares a complete grammar`',
     subjects: ['cadence-core/bin/lib/arg-contract.mjs'],
   }),
   entry({
     id: 'trace-refusal-sentences',
-    holder: 'cadence-core/bin/trace.test.mjs',
+    holder: 'tests/trace.test.mjs',
     counts: "each of the four refusing trace flags' sentences appearing exactly "
       + 'once across the whole planning seam',
     asserted_by: 'the test named `the four refusing trace flags carry ONE '
@@ -172,14 +172,14 @@ export const CENSUSES = Object.freeze([
   }),
   entry({
     id: 'text-transport-register',
-    holder: 'cadence-core/bin/text-transport.test.mjs',
+    holder: 'tests/text-transport.test.mjs',
     counts: "the register's own row count and its derived-row count - 36 and 20",
     asserted_by: 'the test named `the register pins its row count`',
     subjects: ['cadence-core/bin/lib/text-transport.mjs'],
   }),
   entry({
     id: 'capture-writers-register',
-    holder: 'cadence-core/bin/capture-writers.test.mjs',
+    holder: 'tests/capture-writers.test.mjs',
     counts: "the register's 4 rows, none of them durable - a durable row is a "
       + 'reported problem on the live tree, so the second figure is the '
       + "classification's own floor rather than a tally",
@@ -188,7 +188,7 @@ export const CENSUSES = Object.freeze([
   }),
   entry({
     id: 'bulk-output-register',
-    holder: 'cadence-core/bin/bulk-output.test.mjs',
+    holder: 'tests/bulk-output.test.mjs',
     counts: "the register's row count and its two transport splits - 18, 4 "
       + 'redirect and 3 file',
     asserted_by: 'the test named `the register pins its row count`',
@@ -196,7 +196,7 @@ export const CENSUSES = Object.freeze([
   }),
   entry({
     id: 'rung-agent-files',
-    holder: 'cadence-core/bin/rung-agent.test.mjs',
+    holder: 'tests/rung-agent.test.mjs',
     counts: 'the 30 rung file stems across the six roles, each serving exactly one rung',
     asserted_by: 'the test named `RUNG_FILES names 30 files across the six '
       + 'roles, and is frozen`',
@@ -204,7 +204,7 @@ export const CENSUSES = Object.freeze([
   }),
   entry({
     id: 'deferred-reads-register',
-    holder: 'cadence-core/bin/deferred-reads.test.mjs',
+    holder: 'tests/deferred-reads.test.mjs',
     counts: "the register's 10 rows, pinned alongside a byte-identical slice of "
       + "the export's own source",
     asserted_by: 'the test named `register: the surviving cut rows are '
@@ -213,7 +213,7 @@ export const CENSUSES = Object.freeze([
   }),
   entry({
     id: 'planning-detail-sites',
-    holder: 'cadence-core/bin/planning-lease-check.test.mjs',
+    holder: 'tests/planning-lease-check.test.mjs',
     counts: 'the 14 error-detail sites across the whole planning seam and the 6 '
       + 'of them wrapped in `redactUrl`',
     asserted_by: "the test named `source: planning.mjs's no-staged-set detail "
@@ -227,7 +227,7 @@ export const CENSUSES = Object.freeze([
   }),
   entry({
     id: 'phase-spelling-callsites',
-    holder: 'cadence-core/bin/phase-spelling.test.mjs',
+    holder: 'tests/phase-spelling.test.mjs',
     counts: 'the 21 phase-argument callsites under `cadence-core/bin/planning/` and the 12 '
       + 'of them that resolve a `phases/<N>/` path, each with its disposition',
     asserted_by: 'the test named `census: every phase-argument callsite under planning/ '
@@ -243,7 +243,7 @@ export const CENSUSES = Object.freeze([
   }),
   entry({
     id: 'reference-router-branches',
-    holder: 'cadence-core/bin/reference-routers.test.mjs',
+    holder: 'tests/reference-routers.test.mjs',
     counts: "the register's row count and the number of ROUTERS those rows "
       + 'span - 7 over 2',
     asserted_by: 'the test named `the register pins its row count and its router count`',
@@ -258,7 +258,7 @@ export const CENSUSES = Object.freeze([
   }),
   entry({
     id: 'seam-call-counts',
-    holder: 'cadence-core/bin/seam-calls.test.mjs',
+    holder: 'tests/seam-calls.test.mjs',
     counts: 'the happy-path seam invocations each measured workflow instructs - '
       + '14 for `workflows/plan.md` and 6 for `workflows/context.md`',
     asserted_by: 'the generated test named `<file> instructs exactly <N> seam '
@@ -277,7 +277,7 @@ export const CENSUSES = Object.freeze([
   }),
   entry({
     id: 'planning-group-stems',
-    holder: 'cadence-core/bin/test-groups.test.mjs',
+    holder: 'tests/test-groups.test.mjs',
     // A SET, not a number, which is why no figure appears in this row either:
     // the census is equality against the tree in both directions, so a
     // legitimate new planning test costs one list edit and not two. Same
@@ -288,15 +288,15 @@ export const CENSUSES = Object.freeze([
       + '`GROUPS` - the SET of stems, never a count of them',
     asserted_by: 'the test named `GROUPS.planning is exactly the '
       + 'planning-*.test.mjs files on disk, both directions`',
-    // `test.mjs` alone, never `cadence-core/bin/`. The typed list lives in that
+    // `tests/test.mjs` alone, never a directory. The typed list lives in that
     // one file and only an edit to it can move the census; the other half of
     // the comparison is the tree, which no lease can pin. Replayed 2026-08-25
-    // over this repository's own record, where 39 plans declare a path under
-    // `cadence-core/bin/` against a half-the-plans line of 19.5: this subject
-    // with a separate test-file holder refuses 1 of 39, while
-    // `cadence-core/bin/` refuses 39 of 39 - the rail firing wrong that phase
-    // 1 narrowed `reference-router-branches` to escape.
-    subjects: ['cadence-core/bin/test.mjs'],
+    // over this repository's own record, when the file sat in `cadence-core/bin`
+    // and 39 plans declared a path under that directory against a half-the-plans
+    // line of 19.5: this subject with a separate test-file holder refused 1 of
+    // 39, while the directory refused 39 of 39 - the rail firing wrong that
+    // phase 1 narrowed `reference-router-branches` to escape.
+    subjects: ['tests/test.mjs'],
   }),
 ]);
 

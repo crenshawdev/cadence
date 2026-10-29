@@ -32,7 +32,10 @@
 //     verdict to degrade, and what has to be fixed is the caller's own argv.
 //     Base resolves from --base, else git.base_branch, else the
 //     first git.protected_branches entry - the same order land-cleanup.mjs
-//     cleanup uses. --timeout-ms overrides DEFAULT_TIMEOUT_MS below, which
+//     cleanup uses. That RESOLVED base is checked (lib/base-ref.mjs) before any
+//     git read: one that begins with `-` or names no commit is a `skip` whose
+//     reason names it JSON-quoted, because git.base_branch is committed text and
+//     a flag-shaped one would be an option to `git log`. --timeout-ms overrides DEFAULT_TIMEOUT_MS below, which
 //     bounds each subprocess AND the whole per-issue resolve loop.
 //
 // THE FORGE IS THE ONE THIS REPOSITORY CONFIGURED, NEVER ONE DETECTED HERE
@@ -100,6 +103,7 @@ import { emit } from './lib/seam-io.mjs';
 // than called here.
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
+import { refuseBase } from './lib/base-ref.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { onPath } from './lib/on-path.mjs';
 import {
@@ -256,6 +260,11 @@ function check(dir, baseArg, timeout) {
 
   const gitRead = (args) => run('git', ['-C', dir, ...args], { cwd: dir, timeout });
   const base = baseArg !== undefined ? baseArg : (git.base_branch || resolveProtectedBranches(git)[0]);
+  // The RESOLVED base, checked before it reaches a git argv (phase 1 D-10): a
+  // committed `git.base_branch` shaped like a flag would otherwise be an option
+  // to `git log`. A refusal is a skip, never a failed land (D-01).
+  const refused = refuseBase(dir, base, timeout);
+  if (refused) return skip({ action: 'skip', reason: `${refused}: no tracker report` }, { host, repo, warnings });
   const log = gitRead(['log', `${base}..HEAD`, '--format=%B']);
   decision = decideIssueCheck({ enabled, forge, loginName, logOk: log.ok, bin });
   if (decision.action !== 'query') return skip(decision, { host, repo, warnings });

@@ -1,7 +1,7 @@
 ---
 name: cad-verifier-low
 description: The `low` rung of `cad-verifier`; `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Bash, Grep, Glob, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
+tools: Read, Write, Bash, Grep, Glob
 color: green
 effort: low
 maxTurns: 200

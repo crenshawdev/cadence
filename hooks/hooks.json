@@ -14,7 +14,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Read|Grep|Glob|Bash|NotebookRead|mcp__excerpt__excerpt_read|mcp__excerpt__excerpt_search",
+        "matcher": "Read|Grep|Glob|Bash|NotebookRead",
         "hooks": [
           {
             "type": "command",

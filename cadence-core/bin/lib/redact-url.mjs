@@ -2,8 +2,8 @@
 // redact-url.mjs - strip the userinfo out of every remote-looking URL in a
 // string, so a caught git error's message can reach a seam envelope without
 // carrying a credential (EXP-01, AC8). Pure and TOTAL on the require-int.mjs /
-// retired-keys.mjs pattern: node builtins only (it uses none), no I/O, no emit,
-// never throws.
+// retired-keys.mjs pattern: node builtins only (it uses none; `Buffer` is a
+// global), no I/O, no emit, never throws.
 //
 // TWO REDACTORS, deliberately split (RVP-01), plus the mark they both write:
 //   `redactUrl`         - credentials in URL POSITION and nothing else. Its
@@ -18,6 +18,11 @@
 //                         whatever a provider or an intermediary proxy chose to
 //                         echo back - including, on a misconfigured gateway, the
 //                         request headers.
+//   `redactAndCap`      - both redactors in order, then a 1024-byte cap with the
+//                         truncation marker: the one excerpt builder for failure
+//                         text from outside this process (D-13). Sites:
+//                         review-provider.mjs's `bodyExcerpt` and git-publish.mjs's
+//                         push-failed detail.
 //   `REDACTION_MARK`    - the string both write in place of what they removed.
 //                         Exported because a caller that COUNTS redactions - the
 //                         outbound payload fence in review-provider.mjs - needs
@@ -28,8 +33,9 @@
 // without making one function's documented coverage a lie.
 //
 // ONE shared helper rather than a regex at each emit site (D-14). Four sites put
-// a caught error's message into a `detail` - git-publish.mjs's push-failed,
-// reap-failed and dispatch-internal arms, and planning.mjs's no-staged-set arm -
+// a caught error's message into a `detail` - git-publish.mjs's push-failed
+// (through `redactAndCap`), reap-failed and dispatch-internal arms, and
+// planning.mjs's no-staged-set arm -
 // and lib/publish-decision.mjs:14-17 already states the rule for this class: a
 // security-relevant regex duplicated across sites is how the copies drift, and
 // the fourth site is the one a reader misses.
@@ -224,7 +230,12 @@ export function redactUrl(s) {
 //    the header name pointing at a hole. The scheme word is consumed TOO - an
 //    excerpt that still reads `Bearer <redacted>` has told a reader nothing the
 //    name did not, and AC2 asks for the lead-in gone.
-const AUTH_SCHEME = /(?:authorization\s*[:=]\s*)?(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]+/gi;
+//    `token` is a scheme word too (GitHub's PAT header, `Authorization: token
+//    ghp_x`), but only BEHIND its header name: bare, `token` is the ordinary
+//    English word and `the token expired` must survive.
+const AUTH_SCHEME = new RegExp(
+  '(?:authorization\\s*[:=]\\s*)?(?:bearer|basic)\\s+[A-Za-z0-9._~+/=-]+'
+  + '|authorization\\s*[:=]\\s*token\\s+[A-Za-z0-9._~+/=-]+', 'gi');
 
 // 4. A credential-shaped NAME=VALUE pair, in the four spellings a body actually
 //    carries it: `key=v` in a query string, `key: v` in a header dump,
@@ -242,8 +253,12 @@ const AUTH_SCHEME = /(?:authorization\s*[:=]\s*)?(?:bearer|basic)\s+[A-Za-z0-9._
 //    repetition is bounded at four rather than left open: an unbounded nested
 //    quantifier backtracks quadratically on a long separator run, and this runs
 //    against a provider-controlled body up to the response ceiling.
-const CRED_NAME = '(?:[A-Za-z0-9]+[_.-]){0,4}'
-  + '(?:api[_.-]?key|access[_.-]?token|refresh[_.-]?token|passwd|password|secret|token|key)';
+//
+//    `pass` and `pwd` (`DB_PASS`, `MYSQL_PWD`) are credential names only BEHIND
+//    a prefix: bare, `pass: 3` is a test count and `pwd: /home/u` a shell line.
+const CRED_NAME = '(?:(?:[A-Za-z0-9]+[_.-]){0,4}'
+  + '(?:api[_.-]?key|access[_.-]?token|refresh[_.-]?token|passwd|password|secret|token|key)'
+  + '|(?:[A-Za-z0-9]+[_.-]){1,4}(?:pass|pwd))';
 //    The VALUE is five alternatives, not one class. A quoted value runs to its
 //    closing quote so a secret containing a space (`"password": "hunter2 xyz"`)
 //    goes whole - the bare class stops at the first space and left the tail in
@@ -277,6 +292,16 @@ const CRED_PAIR_CAMEL = new RegExp(
   `(?<![A-Za-z0-9_.-])["']?[a-z][A-Za-z0-9]{0,30}(?:Key|Token|Secret|Passwd|Password)["']?`
   + `\\s*[:=]\\s*${CRED_VALUE}`, 'g');
 
+// 6. The same pair in upper case with NO separator before the credential word:
+//    `PGPASSWORD`, `MYSQLPASSWORD`, `GITHUBTOKEN`. Rule 4 needs a `_`, `-` or
+//    `.` boundary and rule 5 needs a lower-case start, so both pass these. Case
+//    is the discriminator again (no `i`), and the word list is short on purpose:
+//    `KEY`, `PASS` and `PWD` are left out because `MONKEY`, `BYPASS` and
+//    `OLDPWD` end in them and a mid-word hit would eat a name that is not one.
+const CRED_PAIR_UPPER = new RegExp(
+  `(?<![A-Za-z0-9_.-])["']?[A-Z][A-Z0-9]{0,30}(?:PASSWORD|PASSWD|SECRET|TOKEN)["']?`
+  + `\\s*[:=]\\s*${CRED_VALUE}`, 'g');
+
 /**
  * `s` with every credential-shaped span replaced by `<redacted>` - the NAME, the
  * separator and the value together, never the value alone. Everything else is
@@ -291,5 +316,86 @@ export function redactCredentials(s) {
   return String(s)
     .replace(AUTH_SCHEME, MARK)
     .replace(CRED_PAIR, MARK)
-    .replace(CRED_PAIR_CAMEL, MARK);
+    .replace(CRED_PAIR_CAMEL, MARK)
+    .replace(CRED_PAIR_UPPER, MARK);
+}
+
+// ---------------------------------------------------------------------------
+// redactAndCap: the shared failure-text excerpt (D-13). Two sites put failure
+// text from OUTSIDE this process into an envelope - review-provider.mjs's `http`
+// body (through its `bodyExcerpt` delegate) and git-publish.mjs's push-failed
+// detail - and one helper means one cap and one order of operations.
+// ---------------------------------------------------------------------------
+
+// 1024 bytes, measured rather than round: the largest real OpenAI error body in
+// review-provider's own fixtures is 155 bytes (`model_not_found`) and a
+// documented invalid-schema rejection runs about 226, so the whole diagnostic
+// workflows/config-review.md reads the `http` envelope FOR fits with more than
+// 4x headroom, while a proxy HTML error page is bounded to a readable head.
+const MAX_EXCERPT_BYTES = 1024;
+
+// Appended in place of what was cut, so a reader can tell an excerpt from a
+// whole body. Inside the cap, not added to it.
+const TRUNCATED = ' ...[truncated]';
+
+// How much of the raw text the sanitizers ever see. A COST bound, not a privacy
+// one - see `redactAndCap` for the measurement that forces it and for why the
+// window's edge cannot reach the excerpt.
+const SANITIZE_WINDOW_BYTES = MAX_EXCERPT_BYTES * 4;
+
+/**
+ * A sanitized, capped STRING: ONE shape always, never a parsed object for a
+ * small input and a string for a large one.
+ *
+ * Sanitize BEFORE the excerpt is cut, never after. Cutting first can slice a
+ * credential in half and leave its prefix in the envelope, which is a leak
+ * wearing a cap. Two sanitizers because neither covers the other: `redactUrl`
+ * takes credentials in URL position, `redactCredentials` takes the
+ * `authorization: Bearer ...` and `<name>=<value>` spans a misconfigured gateway
+ * echoes back.
+ *
+ * The WINDOW is a cost bound, and it is not optional. Measured 2026-08-17 on
+ * this box: `redactUrl` is quadratic in its input (78ms at 10KB, 337ms at 20KB,
+ * 5.1s at 80KB) because its scheme-less rule scans forward from every offset,
+ * and a provider body may reach 4 MiB - which extrapolates to roughly four
+ * HOURS of CPU for one failure envelope. Sanitizing a bounded window instead
+ * keeps the worst case in the tens of milliseconds. Fixing the quadratic in
+ * `redactUrl` itself is the better repair and was not that plan's: its other
+ * callers hand it a git error message, so the cost only became reachable here.
+ *
+ * The window's own edge is handled where it is CREATED, not here. Cutting a
+ * prefix can leave a credential's opening quote inside the window and its
+ * closing quote outside, so `redactCredentials` matches an unterminated quoted
+ * value to end-of-input - see rule 4's VALUE alternatives above. The earlier
+ * reasoning was that the cap discards anything near the edge unless sanitizing
+ * shrank the window below the cap, in which case the trailing token is dropped
+ * at the last whitespace. That arm is gated on `clean <= room`, so a body that
+ * is almost entirely credential spans could shrink to JUST PAST the cap, skip
+ * the safeguard, and carry 73 bytes of a value into the envelope. Both
+ * regression fixtures are in review-provider.test.mjs; the whitespace arm below
+ * stays as a second line of defence, not the guarantee.
+ *
+ * The cut is by BYTES, and the head is trimmed back if slicing landed
+ * mid-code-point, so the returned string never exceeds the cap however the text
+ * was encoded.
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function redactAndCap(raw) {
+  const full = raw == null ? '' : String(raw);
+  const buf = Buffer.from(full, 'utf8');
+  const windowed = buf.length > SANITIZE_WINDOW_BYTES;
+  let clean = redactCredentials(redactUrl(
+    windowed ? buf.subarray(0, SANITIZE_WINDOW_BYTES).toString('utf8') : full));
+  const room = MAX_EXCERPT_BYTES - Buffer.byteLength(TRUNCATED);
+  if (windowed && Buffer.byteLength(clean) <= room) {
+    const lastSpace = clean.search(/\s\S*$/);
+    clean = lastSpace >= 0 ? clean.slice(0, lastSpace) : '';
+  }
+  if (!windowed && Buffer.byteLength(clean) <= MAX_EXCERPT_BYTES) return clean;
+  let head = Buffer.from(clean, 'utf8').subarray(0, room).toString('utf8');
+  // A partial code point re-encodes as U+FFFD, which is wider than the bytes it
+  // replaced; drop characters until it fits rather than trusting the slice.
+  while (Buffer.byteLength(head) > room) head = head.slice(0, -1);
+  return head + TRUNCATED;
 }

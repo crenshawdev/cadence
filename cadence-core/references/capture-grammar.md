@@ -13,9 +13,9 @@ is the READ side, the walk that feeds the BM25 corpus behind
 `planning.mjs recall`. `cadence-core/bin/lib/capture-health.mjs` is the HEALTH
 reading behind `planning.mjs capture-check`: the same bullet definition, counted
 without the `- None.` placeholder. Every claim below about the TAG is pinned by a row in
-the `CAPTURE_TAG_ROWS` table in `cadence-core/bin/planning-files.test.mjs`;
+the `CAPTURE_TAG_ROWS` table in `planning-files.test.mjs` (cadence-tests repository);
 every claim about where a written bullet LANDS is pinned by the per-kind rows
-in `cadence-core/bin/capture-file.test.mjs`.
+in `capture-file.test.mjs` there.
 
 ## The sections, and which three are walked
 

@@ -79,7 +79,8 @@ does, from `review.reviewers[]`:
   returns (relay its `warnings[]`, seam-spawn-agent.md), never a raw read of
   the global file, so this arm and step 3 agree -
   AND `review.providers.<name>.tiers[review.decision_review.tier]` is a
-  non-null model id: run the call-review-provider seam
+  non-null model id, read with `config.mjs get` on that key (null for a stored
+  value that is not a model id): run the call-review-provider seam
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" review \
     --provider <name> --model <resolved id> --effort <review.decision_review.effort> \
@@ -87,7 +88,8 @@ does, from `review.reviewers[]`:
   ```
   with `{instruction, artifact}` on stdin. Read the one JSON line; `ok:false`
   drops that reviewer (name the reason, same degradation rule as
-  review-triggers.md step 4) and single-model continues.
+  review-triggers.md step 4) and single-model continues. Relay the envelope's
+  `warnings[]` to the user.
 
 When the resolved set has more than one reviewer (claude-subagent plus a
 surviving cross-model provider, or several), dispatch them CONCURRENTLY in one

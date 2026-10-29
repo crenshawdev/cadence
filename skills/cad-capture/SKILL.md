@@ -85,8 +85,8 @@ else's project has to leave that project to reach Cadence:
      the `/cad-*` whose behaviour caused the friction, from the invocation when
      the user names one, asked for once when not.
    - **Quote nothing else from this tree** - no diff, no file contents, no path
-     out of the user's own work. There is no redaction machinery here, and this
-     rule stands in for it.
+     out of the user's own work. The seam strips URL credentials from the entry
+     on this arm, and nothing else; this rule covers everything else.
    - **Three rails.** (a) NO commit - not in this repo, not in the global
      directory, which is not a working tree at all - so step 3 does not run. (b)
      Nothing is transmitted; a note meant for a maintainer who is not the user

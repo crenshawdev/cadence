@@ -81,7 +81,7 @@ import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 // degrades to '' rather than throwing; here that '' reaches decidePublish as
 // "no branch", which refuses the push.
 import { readCurrentBranch } from './lib/git-head.mjs';
-import { redactUrl } from './lib/redact-url.mjs';
+import { redactUrl, redactAndCap } from './lib/redact-url.mjs';
 
 /** The configured remotes of the repo at `dir` (`git remote`), or [] on failure. */
 function readRemotes(dir) {
@@ -207,9 +207,12 @@ function publish(dir, remote) {
   } catch (e) {
     // git's stderr names the remote URL, and on the transports it does not
     // anonymize that URL still carries its userinfo - this is the one site a
-    // credential actually reaches an envelope through (lib/redact-url.mjs).
+    // credential actually reaches an envelope through (lib/redact-url.mjs). The
+    // remote is the caller's, so the message is also free-form: both redactors,
+    // then the 1024-byte cap (D-13). reap-failed and internal below keep
+    // `redactUrl` only.
     emit({ ok: false, reason: 'push-failed',
-      detail: redactUrl(e && e.message ? e.message : String(e)),
+      detail: redactAndCap(e && e.message ? e.message : String(e)),
       hint: 'git itself refused: pull and rebase if it names a non-fast-forward, or fix the credentials for this remote, then re-run',
       warnings });
   }

@@ -48,8 +48,8 @@ every Bash call and fails OPEN. A long enough command line switched the guard
 off entirely and let the push inside it run unprompted.
 
 So these shapes really can run git and are now invisible. Each is a pinned test
-row in `cadence-core/bin/git-segments.test.mjs` and
-`cadence-core/bin/git-guard.test.mjs`, not an absence:
+row in `git-segments.test.mjs` and
+`git-guard.test.mjs` (cadence-tests repository), not an absence:
 
 | Shape | Why it is silent |
 |---|---|

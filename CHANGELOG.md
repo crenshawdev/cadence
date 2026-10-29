@@ -5,6 +5,74 @@ All notable changes to Cadence are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
+## [3.9.1] - 2026-10-29
+
+Fourteen security fixes from a fresh threat-model trace, and the test suite
+moves out of the shipped plugin.
+
+### Fixed
+
+- **A flag-shaped or unknown base branch is refused before git runs.**
+  `issue-check` and `land-cleanup` refuse a `git.base_branch` or `--base` that
+  begins with `-` or names no commit, so a value like `--output=<path>` never
+  reaches git as an option. `/cad-land` asks `land-cleanup` about the base
+  before it checks the base out, and a base that resolves only as
+  `origin/<base>` is still accepted.
+- **git-guard asks on a push from a linked worktree or a submodule.** The push
+  rail looked for a `.git` directory, so a push from a worktree or a submodule
+  beneath a Cadence project went through without the question. It now follows
+  a `.git` file too.
+- **Filing a finding says where it goes.** The question names the target
+  repository and whether it is public, a security finding bound for a public
+  repository is asked a second time, and the issue title and body are redacted
+  where they are built. Redaction now also covers `Authorization: token` and
+  credential names written without a separator, and leaves a trailing
+  `file:line` alone.
+- **Repository and tool text is data, never instructions.** All six role
+  contracts, the reviewer brief and the workflows that relay findings say that
+  repository, planning, commit, reviewer, provider and forge text is data. The
+  executor stops and asks before a `Verify:` command that reaches the network,
+  pushes, or writes outside the repository. Self-verify fails a contract that
+  lacks the rule.
+- **Model ids are checked for shape.** `config set` refuses a malformed id on
+  the nine tier keys, `route` and `config get` read one as no model and say so,
+  `detect-models` drops a non-conforming id and names it, and `review-provider`
+  refuses a malformed `--model` before it reads a key or sends a request.
+  Gemini's request path percent-encodes the model.
+- **Smaller fixes, each with a test.** A group- or world-readable
+  `providers.env` warns on the review envelope. `/cad-undo` cannot be invoked
+  by the model. `/cad-capture --cadence` strips credentials from the origin URL
+  it records. `reads.jsonl` records each read as in the project,
+  plugin-relative or outside, after expanding a leading `~`. Consult angles
+  stop at 10 angles and 2000 characters per field. Push error text goes through
+  both redactors and is capped at 1024 bytes. `/cad-decision-review`'s
+  cross-model arm relays the review's warnings.
+- **Gemini reviews run again.** Gemini answered the findings array's
+  `maxItems` with a bare 400, so every Gemini review failed before it started.
+  Cadence no longer sends it, and still enforces the 100-finding cap on the
+  reply.
+
+### Changed
+
+- **The test suite lives in its own repository.** The plugin directory's
+  scanner flagged the fake keys in the redaction tests as a secret in a shipped
+  file, and every test shipped because the plugin folder is the repository
+  root. The tests, their fixtures and the `test.mjs` runner are now in
+  [cadence-tests](https://github.com/crenshawdev/cadence-tests), mounted at
+  `tests/` as a submodule marked `update = none`, so a marketplace install
+  never fetches it. Contributors run
+  `git submodule update --init --checkout tests` once on a fresh clone.
+- **Hooks and `planning.mjs` load less.** `planning.mjs` loads only the command
+  module a call runs, which takes `cursor get` from 34.0 to 23.0 ms. Each hook
+  loads its heavier modules only when it has work to do.
+
+### Removed
+
+- **The retired Excerpt tools are no longer named.** The `PostToolUse` matcher,
+  read-trace, the 30 agents' tool lists, the six role contracts and the README
+  stop naming `mcp__excerpt__excerpt_read` and `mcp__excerpt__excerpt_search`.
+  Context7 is the one optional MCP tool.
+
 ## [3.9.0] - 2026-10-12
 
 Four test switches, all off by default, hold a plan's tests to evidence that
@@ -3008,6 +3076,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.9.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.1
 [3.8.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.4
 [3.8.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.3
 [3.8.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.8.2

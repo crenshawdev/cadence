@@ -23,6 +23,14 @@
 // a Grep call records its search SCOPE and never its pattern. Cost accounting
 // needs the target and the count; it has never needed the payload.
 //
+// WHERE A PATH TARGET POINTS (phase 1 D-07). When the hook passes `opts.root`,
+// each path target is classified lexically, the way `filesOf` confines a Bash
+// token: a target inside the project is recorded as given, one inside the
+// plugin (`opts.pluginRoot`) relative to the plugin as `${CLAUDE_PLUGIN_ROOT}/...`,
+// and any other is recorded as the single word `outside`, so a home directory
+// or another project's path never lands in a record /cad-report prints. A caller
+// passing no `root` gets the record it always got.
+//
 // NEVER throws, never speaks, always exits 0 at the seam. This runs as a
 // PostToolUse hook on every tool call: a recorder that can fail a tool call is
 // worse than no recorder, the same contract lib/trace.mjs states for the same
@@ -34,6 +42,7 @@ import {
   statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
+import { homedir } from 'node:os';
 // The join below needs a recorded `agent_type` stem back to the role a dispatch
 // event names. Those reverse lookups live beside RUNG_FILES in lib/rung-agent.mjs.
 import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
@@ -49,18 +58,8 @@ export const READS_FILE = 'reads.jsonl';
  */
 export const MAX_READS_BYTES = 8388608;
 
-/**
- * The tools whose calls are worth billing. Anything else is not a read.
- *
- * The two `mcp__excerpt__*` entries are named the same way the rung agents name
- * them on their `tools:` lines: a user without excerpt never emits one, so the
- * entry costs them nothing, and a user with it gets the read counted in the
- * same denominator as `Read` and `Bash` instead of vanishing. Without them a
- * dispatch that reads entirely through excerpt records ZERO reads, which is
- * indistinguishable from a dispatch that read nothing.
- */
-export const RECORDED_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead',
-  'mcp__excerpt__excerpt_read', 'mcp__excerpt__excerpt_search'];
+/** The tools whose calls are worth billing. Anything else is not a read. */
+export const RECORDED_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead'];
 
 /** The longest error text a record may carry. A cause, never a payload. */
 export const MAX_ERROR_TEXT = 200;
@@ -299,10 +298,12 @@ export function filesOf(cmd, opts) {
  * not a read. Pure: no I/O, so the whole rule is testable without a hook.
  * @param {any} input the parsed hook JSON
  * @param {string} [now] ISO timestamp, injectable for tests
- * @param {{root?: string, cwd?: string, isFile?: (p: string) => boolean}} [opts]
- *   the project root and existence predicate `filesOf` needs. Omitted - the
- *   shape every existing caller and test uses - no `files` field is added and
- *   the record is exactly what it was.
+ * @param {{root?: string, cwd?: string, isFile?: (p: string) => boolean, pluginRoot?: string}} [opts]
+ *   the project root and existence predicate `filesOf` needs, and the plugin
+ *   root that tells a plugin file from any other path outside the project (see
+ *   `classifyTarget`). Omitted - the shape every existing caller and test uses -
+ *   no `files` field is added, no path target is reclassified, and the record is
+ *   exactly what it was.
  */
 /**
  * Whether a `tool_response` reports failure, or `null` when it does not say.
@@ -324,10 +325,9 @@ export function errorFlagOf(resp) {
 /**
  * The FIRST LINE of a failed response's text, capped at `MAX_ERROR_TEXT`.
  *
- * One line and a cap, deliberately. The cause is what makes a refusal legible -
- * excerpt writes `<path>: <reason>` - while the rest of a failure is a payload
- * this file has never stored (`:24` - it needs the target and the count, never
- * the payload). A stack trace or a dumped file body in `reads.jsonl` would put
+ * One line and a cap, deliberately. The cause is what makes a refusal legible,
+ * while the rest of a failure is a payload this file has never stored (`:24` -
+ * it needs the target and the count, never the payload). A stack trace or a dumped file body in `reads.jsonl` would put
  * bytes nobody reviewed into a record that /cad-report prints.
  * @param {any} resp
  * @returns {string|null}
@@ -376,6 +376,43 @@ export function redactCause(line) {
       '$1=<redacted>');
 }
 
+/**
+ * A path target as the record should carry it. Pure and lexical, like `filesOf`:
+ * resolve a relative target against the call's cwd, prefix-match on the
+ * separator, no realpath and no stat; a leading `~` is the home directory.
+ * Inside the project root: as given. Inside
+ * the plugin root: `${CLAUDE_PLUGIN_ROOT}/<relative path>`. Anything else:
+ * `outside`. The project test runs first, so a plugin root lying inside the
+ * project records as given. Null stays null; with no `opts.root` the target is
+ * returned untouched.
+ * @param {unknown} target
+ * @param {any} input the parsed hook JSON
+ * @param {{root?: string, cwd?: string, pluginRoot?: string}} [opts]
+ * @returns {any}
+ */
+function classifyTarget(target, input, opts) {
+  const root = opts && typeof opts.root === 'string' && opts.root ? opts.root : null;
+  if (!root || typeof target !== 'string' || !target) return target;
+  const cwd = (opts && opts.cwd) || (input && input.cwd);
+  const base = typeof cwd === 'string' && cwd ? cwd : root;
+  let abs;
+  // A leading `~` is the HOME directory, which the host expands for Glob and
+  // Grep; resolved against the cwd it would read as a project directory named
+  // `~`, so a path under another project would be recorded as given. Expanded
+  // here instead, then judged by the same two roots as any other path.
+  try {
+    abs = target === '~' || target.startsWith('~/') ? resolve(homedir(), target.slice(2)) : resolve(base, target);
+  } catch { return 'outside'; }
+  const within = (dir) => abs === dir || abs.startsWith(dir + sep);
+  if (within(root)) return target;
+  const plugin = opts && typeof opts.pluginRoot === 'string' && opts.pluginRoot ? opts.pluginRoot : null;
+  if (plugin && within(plugin)) {
+    const rel = relative(plugin, abs).split(sep).join('/');
+    return rel ? '${CLAUDE_PLUGIN_ROOT}/' + rel : '${CLAUDE_PLUGIN_ROOT}';
+  }
+  return 'outside';
+}
+
 export function recordFromHook(input, now, opts) {
   if (!input || typeof input !== 'object') return null;
   const tool = input.tool_name;
@@ -404,14 +441,6 @@ export function recordFromHook(input, now, opts) {
     // SCOPE only. The pattern is the field that can carry a secret.
     rec.target = ti.path ?? null;
     if (ti.output_mode) rec.mode = ti.output_mode;
-  } else if (tool === 'mcp__excerpt__excerpt_read') {
-    rec.target = ti.path ?? ti.file_path ?? null;
-    if (Number.isFinite(ti.offset)) rec.offset = ti.offset;
-    if (Number.isFinite(ti.limit)) rec.limit = ti.limit;
-  } else if (tool === 'mcp__excerpt__excerpt_search') {
-    // SCOPE only, exactly as `Grep` above: the pattern is the field that can
-    // carry a secret, and an excerpt search takes the same kind of pattern.
-    rec.target = ti.path ?? null;
   } else if (tool === 'Bash') {
     // `target` stays the PROGRAM, unchanged: it is what `byTool`/`topTargets`
     // have always counted and what every record on disk already carries.
@@ -421,6 +450,9 @@ export function recordFromHook(input, now, opts) {
     const files = filesOf(ti.command, { ...(opts || {}), cwd: (opts && opts.cwd) || input.cwd });
     if (files.length) rec.files = files;
   }
+
+  const target = rec.target;
+  if (tool !== 'Bash') rec.target = classifyTarget(rec.target, input, opts);
 
   // Opportunistic: `tool_response` is not documented for PostToolUse. If the
   // host does send one, its size is the only exact byte figure available and
@@ -439,8 +471,11 @@ export function recordFromHook(input, now, opts) {
     // is the invented figure `bytes` above already refuses to make.
     if (failed === true) {
       rec.is_error = true;
+      // Not for a target that was hidden: the cause is `<path>: <reason>`, so
+      // keeping it would put the absolute path `target: 'outside'` withholds
+      // back into the same record. `is_error` still says the call failed.
       const text = errorTextOf(resp);
-      if (text) rec.error = text;
+      if (text && !(rec.target === 'outside' && target !== 'outside')) rec.error = text;
     } else if (failed === false) {
       rec.is_error = false;
     }

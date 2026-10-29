@@ -60,8 +60,8 @@ way.
 
 ## A worked example
 
-`cadence-core/bin/fixtures/verbatim.design-brief.md` is a real one, committed
-whole: the brief that a Rust project called verbatim arrived with, and the
+`fixtures/verbatim.design-brief.md` in the cadence-tests repository is a real
+one, committed whole: the brief that a Rust project called verbatim arrived with, and the
 measurement the rule above rests on. It is worth reading for three habits.
 
 It **separates decided from undecided**, and says so in its second line, so a

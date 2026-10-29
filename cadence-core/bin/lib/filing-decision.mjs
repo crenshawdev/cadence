@@ -29,6 +29,7 @@
 
 import { createHash } from 'node:crypto';
 import { buildEntries } from './adjudication-record.mjs';
+import { redactUrl, redactCredentials } from './redact-url.mjs';
 
 /**
  * The two raised severities a `blocking` gate HALTS over.
@@ -336,6 +337,21 @@ const TITLE_TOKEN = new RegExp(`^\\[${TITLE_PREFIX} ([0-9a-f]{${FINGERPRINT_CHAR
  * the caller - the discipline `appendArchiveRows` states for the same reason. */
 const flatten = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
 
+/** `flatten`, then the two credential strips: `redactUrl` first so a userinfo
+ * URL goes whole, then `redactCredentials` for a name/value pair or an
+ * Authorization scheme. Applied to every finding-derived span of a title or a
+ * body (CONTEXT D-04) - a finding is third-party text that can quote a secret
+ * out of the code it was raised on, and the title lands in `FILED.md` and
+ * `DECLINED.md`, which are committed. Flatten FIRST so a credential split by a
+ * newline is one span when it is read.
+ *
+ * `redactUrl` reads the end of its input as a possible cut (rules 1b and 2b are
+ * built for a sliced excerpt), so a trailing `src/a.mjs:42` or `{ok:false}`
+ * would go as a `user:secret` fragment. A finding field is whole, not a window,
+ * so a space is added behind it: the last segment is then empty and the CUT
+ * rules match nothing. Only a span that carries its `@` is userinfo here. */
+const clean = (v) => redactCredentials(redactUrl(`${flatten(v)} `)).trim();
+
 /**
  * The issue TITLE for a finding: the fingerprint token, then the claim.
  *
@@ -345,12 +361,18 @@ const flatten = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
  * index,title` - and reading a body back would be one call per issue, which is
  * the per-finding query criterion 11 forbids.
  *
+ * THE CLAIM IS REDACTED BEFORE THE PREFIX IS JOINED AND BEFORE THE CLIP
+ * (CONTEXT D-04): the prefix stays byte-exact for `fingerprintInTitle`, and a
+ * credential cannot survive as a clipped half that no pattern matches. The
+ * fingerprint is NOT redacted - it digests the raw `(file, claim)`, so a row an
+ * earlier version wrote still matches and nothing is re-filed or re-asked.
+ *
  * @param {unknown} finding @returns {string}
  */
 export function issueTitle(finding) {
   const f = finding && typeof finding === 'object' ? /** @type {any} */ (finding) : {};
   const head = `[${TITLE_PREFIX} ${fingerprint(finding)}] `;
-  const claim = flatten(f.claim) || '(no claim)';
+  const claim = clean(f.claim) || '(no claim)';
   return (head + claim).slice(0, TITLE_MAX);
 }
 
@@ -387,19 +409,24 @@ export function fingerprintInTitle(title) {
  * that says why the claim matters, and an issue filed without it is the finding
  * with its argument removed.
  *
+ * EVERY FIELD TAKEN FROM THE FINDING IS REDACTED (CONTEXT D-04), file and
+ * ruling included: the body is posted to a tracker that may be public. The
+ * fingerprint printed at the foot is the digest of the raw text, which is a
+ * hash and not a way back to it.
+ *
  * @param {unknown} finding @returns {string}
  */
 export function issueBody(finding) {
   const f = finding && typeof finding === 'object' ? /** @type {any} */ (finding) : {};
-  const at = `${flatten(f.file) || '(no file)'}:${Number.isSafeInteger(f.line) ? f.line : '?'}`;
+  const at = `${clean(f.file) || '(no file)'}:${Number.isSafeInteger(f.line) ? f.line : '?'}`;
   return [
-    `Raised at ${at} as **${flatten(f.severity) || '(no severity)'}**`
-      + `${f.voice ? ` by ${flatten(f.voice)}` : ''}`
-      + `${f.ruling ? `, ruled ${flatten(f.ruling)}` : ''}.`,
+    `Raised at ${at} as **${clean(f.severity) || '(no severity)'}**`
+      + `${f.voice ? ` by ${clean(f.voice)}` : ''}`
+      + `${f.ruling ? `, ruled ${clean(f.ruling)}` : ''}.`,
     '',
-    `**Claim.** ${flatten(f.claim) || '(no claim)'}`,
+    `**Claim.** ${clean(f.claim) || '(no claim)'}`,
     '',
-    `**Failure scenario.** ${flatten(f.failure_scenario) || '(none given)'}`,
+    `**Failure scenario.** ${clean(f.failure_scenario) || '(none given)'}`,
     '',
     `Filed by Cadence. Fingerprint \`${fingerprint(finding)}\` over (file, claim).`,
   ].join('\n');
@@ -656,6 +683,18 @@ export function normalizeLookup(text, limit, numberKey) {
  * stranger's tracker WRITTEN to. `gh` and `glab` are not multi-account-
  * ambiguous the way tea's `--repo` is.
  *
+ * THE VISIBILITY QUERY IS A STATED FACT PER ROW TOO (CONTEXT D-05). `visibility`
+ * builds the read-only argv that asks the forge whether the configured
+ * repository is public, private or internal, or is `null` where the CLI offers
+ * no such query - and `normalizeVisibility` below turns what it printed into
+ * one of three fixed words. `visibilityMeasured` is the lookup's flag again:
+ * true only after that exact argv was run against a live repository of each
+ * setting. Only github's has been (gh 2.45.0 against `crenshawdev/cadence`,
+ * 2026-10-26, which answered `{"visibility":"PUBLIC"}`). gitlab's is taken from
+ * glab's own `repo view` documentation and forgejo's is absent, and both read
+ * as public until a live run says otherwise - the safe direction, because the
+ * question that follows is asked harder for a public repository, not softer.
+ *
  * WHETHER `DECLINE_LABEL` MUST ALREADY EXIST ON THE INSTANCE IS NOT SETTLED
  * HERE. A forge may refuse a label it does not hold rather than creating it on
  * the create call, and that answer is unobtainable without a live create
@@ -669,6 +708,18 @@ export const FILING_TABLE = Object.freeze({
     limit: 50,
     numberKey: 'index',
     lookupMeasured: true,
+    visibilityMeasured: false,
+    /** NO QUERY. tea 's own documentation (docs/CLI.md, read 2026-10-26) lists
+     *  `repos`' printable fields as description, forks, id, name, owner, stars,
+     *  ssh, updated, url, permission and type - no visibility - and offers no
+     *  command that views one repository. `repos search --private true|false`
+     *  filters on it but answers "no row" for both "not that kind" and "no such
+     *  name", which is not a reading. So this row is unreadable and the ask
+     *  face shows public (D-05), the safe direction. If a later tea adds a
+     *  field or a view command, the argv goes here and the flag flips only
+     *  after a live run against a public and a private repository.
+     *  @type {null} */
+    visibility: null,
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @param {string} login @returns {string[]} */
@@ -698,6 +749,12 @@ export const FILING_TABLE = Object.freeze({
     limit: 200,
     numberKey: 'number',
     lookupMeasured: true,
+    visibilityMeasured: true,
+    /** MEASURED 2026-10-26 on gh 2.45.0 against `crenshawdev/cadence`, which
+     *  answered `{"visibility":"PUBLIC"}`. gh's `visibility` is upper case
+     *  (PUBLIC, PRIVATE, INTERNAL); `normalizeVisibility` folds the case.
+     *  @param {string} slug @returns {string[]} */
+    visibility: (slug) => ['repo', 'view', slug, '--json', 'visibility'],
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @returns {string[]} */
@@ -721,6 +778,14 @@ export const FILING_TABLE = Object.freeze({
     limit: 100,
     numberKey: 'iid',
     lookupMeasured: false,
+    visibilityMeasured: false,
+    /** NOT MEASURED - no glab here. `glab repo view <repo> --output json` is
+     *  documented ("Format output as: text, json") and prints the project
+     *  object, whose `visibility` is `public`, `internal` or `private` in the
+     *  GitLab API. Whether glab's JSON keeps that key is the open question;
+     *  if it does not, the answer is unparseable and reads as public.
+     *  @param {string} slug @returns {string[]} */
+    visibility: (slug) => ['repo', 'view', slug, '--output', 'json'],
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @returns {string[]} */
@@ -748,3 +813,31 @@ export const FILING_TABLE = Object.freeze({
       '--output', 'json', '--per-page', String(limit)],
   }),
 });
+
+/** The three words a repository's visibility is reported in, and no others. */
+const VISIBILITY_WORDS = Object.freeze(['public', 'private', 'internal']);
+
+/**
+ * One visibility query's stdout -> `{visibility, read}`. Total, and the answer
+ * is always one of the three fixed words (CONTEXT D-05).
+ *
+ * `read` says whether the word came off the forge. Anything that is not a JSON
+ * object holding a `visibility` string naming one of the three - an unparseable
+ * stdout, a missing key, an unknown word - is `public` with `read: false`, the
+ * direction that asks harder rather than softer. A nonzero exit or a timeout
+ * never reaches here; the caller answers those with the same pair. gh spells
+ * the word in upper case and GitLab in lower, so the case is folded.
+ *
+ * @param {unknown} stdout
+ * @returns {{visibility: 'public'|'private'|'internal', read: boolean}}
+ */
+export function normalizeVisibility(stdout) {
+  let value = null;
+  try { value = JSON.parse(String(stdout)); } catch { value = null; }
+  const raw = value && typeof value === 'object' ? /** @type {any} */ (value).visibility : null;
+  const word = typeof raw === 'string' ? raw.toLowerCase() : '';
+  const hit = VISIBILITY_WORDS.find((w) => w === word);
+  return hit
+    ? { visibility: /** @type {'public'|'private'|'internal'} */ (hit), read: true }
+    : { visibility: 'public', read: false };
+}
