@@ -22,7 +22,8 @@
 //                        git-publish seam as a subprocess (execFileSync argv),
 //                        not a Bash tool call, so this hook never sees it.
 //   git commit on a   -> per config git.on_protected: ask (default) | refuse
-//   protected branch     (alias: "deny") | allow (silent).
+//   protected branch     (alias: "deny") | allow (writes nothing, so Claude
+//                        Code's own permission flow decides).
 //
 // Contract: stdin carries the hook JSON ({tool_input:{command}, cwd}); a
 // permission decision is one JSON object on stdout, exit 0. Any internal
@@ -42,14 +43,14 @@ import { gitInvocations, planningRoot } from './lib/git-segments.mjs';
 // silence.
 let mergeLayers, resolveProtectedBranches, readCurrentBranch;
 
+// The only decisions this hook can write are the two literals below, ask and
+// deny. It never approves a call and never rewrites its input: with nothing to
+// say it writes nothing, and Claude Code's own permission flow decides.
 function decide(decision, reason) {
-  process.stdout.write(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: decision,
-      permissionDecisionReason: reason,
-    },
-  }) + '\n');
+  const hookSpecificOutput = decision === 'deny'
+    ? { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason }
+    : { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: reason };
+  process.stdout.write(JSON.stringify({ hookSpecificOutput }) + '\n');
 }
 
 // What a command IS, is read by lib/git-segments.mjs: a segment counts only

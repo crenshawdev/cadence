@@ -2,8 +2,6 @@
 name: cad-why
 description: "Why is this code like this - a git-log chain over one file[:line], joined to the phase, task, decision, deviation and review record on disk"
 argument-hint: "<path>[:<line>]"
-allowed-tools:
-  - Bash
 ---
 
 <objective>

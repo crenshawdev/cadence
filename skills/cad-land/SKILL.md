@@ -4,7 +4,6 @@ description: "Land finished work - report git state, then ask how to publish (pu
 argument-hint: "[base branch | defaults to git.base_branch]"
 allowed-tools:
   - Read
-  - Bash
   - Task
   - AskUserQuestion
 ---

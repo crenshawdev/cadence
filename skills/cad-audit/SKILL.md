@@ -4,7 +4,6 @@ description: "Pre-ship traceability audit - every requirement traced to a phase,
 argument-hint: "[milestone | defaults to all active requirements]"
 allowed-tools:
   - Read
-  - Bash
   - Grep
   - Glob
   - AskUserQuestion

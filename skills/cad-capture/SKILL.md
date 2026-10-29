@@ -4,7 +4,6 @@ description: "Capture a phase-linked todo, a seed idea for a future milestone, o
 argument-hint: "[todo | seed | note] <text> [--phase N] [--cadence]"
 allowed-tools:
   - Read
-  - Bash
   - AskUserQuestion
 ---
 

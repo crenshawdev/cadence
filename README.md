@@ -151,16 +151,18 @@ What Cadence writes outside your repository:
 
 What it reads outside it: your user-global config, `providers.env` or the `review.key_file` file during a provider call, and `~/.claude/settings.json` and the platform's `managed-settings.json` to learn `worktree.baseRef` before running plans in parallel worktrees.
 
-### Why every command keeps Bash open
+### Shell commands
 
-Every Cadence command except `/cad-help` lists `Bash` in `allowed-tools` with no command pattern, so it doesn't ask before running a shell command. Narrowing that looks safer and isn't:
+No Cadence command lists `Bash` in `allowed-tools`, so every shell command a workflow runs goes through Claude Code's own permission check, and your permission mode and your `permissions.allow` rules decide whether it asks first. What the workflows run:
 
-- Cadence's own seam calls are typed by the model, and the form varies, a quoted `${CLAUDE_PLUGIN_ROOT}` path one time, an exported variable or a relative path the next. A permission rule matches only the exact form it names, so a narrowed command would stop and ask about its own scripts.
-- Workflows run compound scratch lines with `node -e` read-backs and `case ... esac` guards. The only rule that covers those allows arbitrary code, which narrows nothing.
-- Some commands run things with no fixed form at all. `/cad-execute`, `/cad-task` and `/cad-coverage` run `workflow.test_command` or a detected test runner, `/cad-spike` runs experiment code, and `/cad-debug` reruns reproductions.
-- `/cad-land` runs forge merge commands, and the unattended `/cad-milestone` into `/cad-land` chain can't stop to ask about them. A prompt that shows up mid-run stalls that chain where nobody is watching.
+- Cadence's own scripts, as `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/<script>.mjs"`;
+- `git`, and in `/cad-land` the forge CLI, `gh`, `glab` or `tea`;
+- scratch lines that make a directory with `mktemp -d` and read it back with `node -e`;
+- `workflow.test_command` or a detected test runner in `/cad-execute`, `/cad-task` and `/cad-coverage`, experiment code in `/cad-spike`, and reproductions in `/cad-debug`.
 
-Pushes are still guarded by git-guard, a hook rather than a permission rule, and the one push it never sees is the unattended close above.
+To stop the prompts, add rules for the commands you trust with `/permissions`. The unattended `/cad-milestone` into `/cad-land` chain stops at the first command your settings don't approve, so set those rules before you turn on `git.auto_close`.
+
+Pushes are still guarded by git-guard, a hook that only asks or refuses and never approves, and the one push it never sees is the unattended close above.
 
 ### Privacy
 

@@ -3,7 +3,6 @@ name: cad-suggest
 description: "Turn the run record into evidence-backed retune suggestions - each with its config key, the value in force, a direction and a target - and offer to route the ones you accept to /cad-config"
 argument-hint: "[phase]"
 allowed-tools:
-  - Bash
   - SlashCommand
 ---
 
