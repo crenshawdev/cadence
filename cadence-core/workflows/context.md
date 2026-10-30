@@ -360,6 +360,8 @@ stamps the date):
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"
 ```
+
+Hold its envelope's `cursor` for `done`: the position is composed from it.
 </step>
 
 <step name="commit">
@@ -378,11 +380,16 @@ If false, leave the files uncommitted and say so in the report.
 Report:
 
 ```
-Context gathered: phase {N} - {phase_name}
+Context gathered: {position}
 Decisions: {count} | Criteria: {count} | Flagged: {count}
 File: {phase_dir}/CONTEXT.md
 Commit: {hash or "not committed (planning.commit_docs=false)"}
 ```
+
+`{position}` is "Phase {phase} of {total}: {name}" from that `cursor`, or
+"Phase {phase} of {total}, plan {K} of {J}: {plan name}" when it carries a
+`plan` field, ending at "plan {K} of {J}" when that has no `name`. Never
+"plan 0 of 0".
 
 One suggestion max: `/cad-plan {N}` - safe to `/clear` first: CONTEXT.md
 holds every decision and planning runs in a fresh subagent, so a cleared

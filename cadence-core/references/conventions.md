@@ -231,33 +231,42 @@ earlier answer stay sequential.
 
 ## State
 
-- `STATE.md` is a 4-line cursor. It is overwritten in place, never appended.
+- `STATE.md` is a cursor of four required lines plus an optional `Plan:` line. It
+  is overwritten in place, never appended.
   The only correct writer is the seam (`planning.mjs cursor set` - it derives
   name/total from ROADMAP, validates the status, stamps the date, and writes
   atomically); read it with `cursor get`. Never hand-edit the file. NO audit
   logs, no activity tables, no session narratives - git history is the log.
   Derive views from `git log` on demand.
-- Canonical cursor schema - every writer emits exactly these four lines under a
-  `# State` heading, in this order:
+- Canonical cursor schema - every writer emits these four required lines and
+  the optional `Plan:` line under a `# State` heading, in this order:
 
   ```
   Phase: <N> of <total> (<phase name>)
+  Plan: <K> of <J> (<plan name>)      (optional)
   Status: <lifecycle value>
   Next: <the one command to run next>
   Updated: <YYYY-MM-DD>
   ```
 
+- The `Plan:` line: `cursor set` writes it from disk on every write, with no
+  flag. K is the lowest-numbered plan whose report is not `PLAN COMPLETE`, by its
+  file number (PLAN-<k>.md is k, a bare PLAN.md is 1). J is the phase's
+  plan-file count, and the name comes from the plan's heading; the line reads
+  `Plan: K of J` when the heading has no name. It is absent when the phase has no
+  plan files or every plan is complete, so `executed` and `phase complete`
+  cursors are four lines. It is never folded into `Phase:`, `Status:` or `Next:`.
 - Status lifecycle (the only permitted values, one per spine step):
   `ready to plan` (new-project) -> `context gathered` (context) -> `planned`
   (plan) -> `executed` (execute) -> `phase complete` (verify). `paused`
   (cad-pause) is allowed at any point. Do not invent other values.
 - `paused` adds no extra lines: `Status: paused` with the `Next:` line holding
-  cad-pause's one-line resume pointer. The cursor is always exactly these
-  four lines - there is no fifth.
+  cad-pause's one-line resume pointer. The cursor gains no line for it.
 - `cad-progress` treats the cursor as a hint: if it disagrees with the derived
   state it rewrites it in this schema. Any skill that changes phase state
   overwrites the cursor and commits it with that step's docs commit - never
-  leave it dirty.
+  leave it dirty. /cad-execute's per-plan and per-batch rewrites ride its `state`
+  step's docs commit.
 
 ## Subagents and reviews
 

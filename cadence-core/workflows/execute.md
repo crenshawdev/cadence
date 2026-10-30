@@ -88,6 +88,20 @@ re-deciding a seam's answer in prose is how the two come to disagree. And the
 because SUMMARY.md is the phase's record and that plan's work is part of the
 phase.
 
+**The position line.** "Phase N of M, plan K of J: <plan name>". N is the phase,
+M the `total` on the `status` envelope, K the plan's `k` and its name from that
+plan's row in the replay seam's `reports`, and J its `plan_count` - ALL of the
+phase's plans, never the dispatch set, so a resumed run dispatching plan 2 prints
+"plan 2 of 3". A row with no `name` ends the line at "plan K of J", with no colon
+and no stand-in. Every line the coordinator prints about one plan starts with
+it: the dispatch announcement, the done line, the checkpoint relay, the partial
+and turn-cap relays, the test-evidence result, the check-inspection ask and the
+`risk_surface` fire, on the sequential and the parallel path alike. Before each
+dispatch print "Phase N of M, plan K of J: <plan name> - dispatching"; when the
+plan is reported done, "Phase N of M, plan K of J: <plan name> - done". No
+position line carries a task count. Print what the seams returned and never read a
+plan heading yourself.
+
 Read the phase goal from ROADMAP.md (one line - the goal check and SUMMARY use
 it) and the config in one message - independent, so only a call that consumes a
 prior call's output is serialized.
@@ -227,6 +241,7 @@ Sequential (default) unless ALL of these hold:
 For each plan in the dispatch set, in order: dispatch ONE cad-executor via the
 spawn-agent seam (references/seam-spawn-agent.md), in the normal working tree,
 no worktrees, and wait for it to finish before starting the next.
+Print the dispatching line `locate` states before each dispatch.
 
 Record the pre-plan HEAD, then dispatch with a prompt ordered stable-first, so
 successive executors in the phase share a cached prefix: phase-level context
@@ -535,6 +550,21 @@ delivers it: a check's Task cell, or a test's label task. A continuation that
 completes the plan again meets the inspection again. With the switch false,
 nothing here runs.
 
+**Reported done.** The plan is reported done once its risk step has settled and,
+with `workflow.check_inspection` true, its check inspection has been answered.
+Print its done line, then rewrite the cursor before the next plan's dispatch:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status planned --next "/cad-execute <N>"
+```
+
+`cursor set` derives the `Plan:` line from the reports on disk, so it names the
+next unfinished plan and is gone once every plan is complete. Run it the same way
+after a plan the user chose to stop incomplete: that plan is still the next one.
+The status stays `planned` until the `state` step. These mid-run writes are not
+committed: with `planning.commit_docs` true, STATE.md rides the `state` step's
+docs commit.
+
 Then fire the `diff` review trigger
 (references/review-triggers.md) with the refs
 `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
@@ -569,7 +599,8 @@ gate.
 A checkpoint return carries no completed-task table - only the digest, the
 checkpoint type, the current task, and what the executor needs. The completed
 tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
-`CHECKPOINT` status line before returning. Route by type:
+`CHECKPOINT` status line before returning. Open every relay below with the
+position line `locate` states. Route by type:
 
 - **structural** (architectural change needed, plan wrong at its core) ->
   present to the user via the ask-user seam: approve the proposed change /
@@ -743,7 +774,9 @@ The cursor is never left uncommitted.
 </step>
 
 <step name="done">
-Report tersely: the goal-check verdict FIRST - it is the one thing the
+Open the report with "Phase N of M: <phase name>" - phase only, because every
+plan has run - from the `status` envelope `locate` holds (its `total` and the
+phase entry's `name`). Then report tersely: the goal-check verdict FIRST - it is the one thing the
 reader came for - then plans executed, commits (count and range), deviations
 count, open items. One suggestion max: `/cad-verify <N>` - safe
 to `/clear` first: SUMMARY.md and the STATE cursor are committed and
@@ -758,7 +791,9 @@ verification runs in a fresh subagent.
   inside an executor.
 - The sequential path never touches worktrees.
 - Executors never write STATE.md, ROADMAP.md, or SUMMARY.md. This workflow
-  is the only STATE writer, and only as the 4-line overwrite.
+  is the only STATE writer, and only as the cursor overwrite: four required
+  lines plus the optional `Plan:` line `cursor set` derives, written after each
+  plan or batch and at `state`.
 - Second opinions only via review triggers; the goal check stays inline
   prose, never an agent.
 - Deviations live in SUMMARY.md - git and SUMMARY are the record, STATE is
@@ -787,5 +822,7 @@ verification runs in a fresh subagent.
       `advisory`, blocking at `adjudicated`; `risk_surface` fired ONCE per plan
       on the committed range, never mid-plan
 - [ ] SUMMARY.md written: what shipped, commits, deviations, open items, goal check
-- [ ] STATE.md is exactly the 4-line cursor, overwritten
+- [ ] STATE.md is exactly the cursor, overwritten: four required lines plus the
+      optional `Plan:` line, naming the next unfinished plan after each plan or
+      batch and absent once `executed`
 </success_criteria>

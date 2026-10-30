@@ -21,7 +21,7 @@ export const CURSOR_STATUSES = [
 ];
 
 // ---------------------------------------------------------------------------
-// STATE.md - the 4-line cursor.
+// STATE.md - the cursor: four required lines plus an optional `Plan:` line.
 // ---------------------------------------------------------------------------
 
 // `parseCursor` lives in lib/state-cursor.mjs (see the header) and is
@@ -29,11 +29,16 @@ export const CURSOR_STATUSES = [
 export { parseCursor };
 
 /**
- * Render the canonical cursor - exactly four lines under `# State`.
- * @param {{phase:number,total:number,name:string,status:string,next:string,updated:string}} c
+ * Render the canonical cursor under `# State`: the four required lines, with the
+ * optional `Plan: K of J (<name>)` line directly after `Phase:` when the cursor
+ * carries a `plan`. Without one it is the 3.9.3 four-line text byte for byte.
+ * @param {{phase:number,total:number,name:string,status:string,next:string,updated:string,
+ *   plan?:{k:number,j:number,name?:string}}} c
  */
 export function renderCursor(c) {
-  return `# State\n\nPhase: ${c.phase} of ${c.total} (${c.name})\n` +
+  const plan = c.plan
+    ? `Plan: ${c.plan.k} of ${c.plan.j}${c.plan.name ? ` (${c.plan.name})` : ''}\n` : '';
+  return `# State\n\nPhase: ${c.phase} of ${c.total} (${c.name})\n${plan}` +
     `Status: ${c.status}\nNext: ${c.next}\nUpdated: ${c.updated}\n`;
 }
 
@@ -491,6 +496,38 @@ export function phaseCriteria(text, phase) {
 export function planTaskTitles(text) {
   return [...normalizeCrlf(String(text || '')).matchAll(/^### Task\s+[\d.]+\s*:?\s*(.*)$/gm)]
     .map((m) => m[1].trim());
+}
+
+/**
+ * The plan name in one PLAN's first H1 (after any YAML frontmatter), or null
+ * when the heading yields none. THE one place a plan heading is parsed: every
+ * seam that prints a plan name calls this, and no workflow reads headings.
+ *
+ * Takes the LAST ` - Plan ...` part on the heading, so a phase name holding
+ * " - " or the word "Plan" does not cut the name short. The accepted tails are
+ * `Plan K: <name>`, `Plan K of J: <name>` (the `of J` is dropped) and
+ * `Plan K (<name>)`, after a hyphen or an em dash. The number is never read
+ * back: K is the file's number (D-08), and a heading's own count disagrees with
+ * disk often enough to be no source. No stand-in for a missing name (D-10).
+ * Pure and total: any input, a non-string included, returns a string or null.
+ * @param {string} text @returns {string|null}
+ */
+export function planName(text) {
+  if (typeof text !== 'string') return null;
+  let body = normalizeCrlf(text);
+  if (body.startsWith('---\n')) {
+    const end = body.indexOf('\n---', 3);
+    if (end !== -1) body = body.slice(end + 4);
+  }
+  const h1 = /^# (.*)$/m.exec(body);
+  if (!h1) return null;
+  const parts = [...h1[1].matchAll(/\s[-\u2014]\s+Plan(?!\w)/g)];
+  if (!parts.length) return null;
+  const last = parts[parts.length - 1];
+  const tail = /^\s+\d+(?:\s+of\s+\d+)?(?:\s*:(.*)|\s*\((.*)\))\s*$/
+    .exec(h1[1].slice(last.index + last[0].length));
+  const name = tail ? (tail[1] ?? tail[2]).trim() : '';
+  return name === '' ? null : name;
 }
 
 /** Every requirement-id token in `s`, its leading delimiter stripped. */

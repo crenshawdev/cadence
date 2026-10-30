@@ -410,13 +410,22 @@ whichever of STATE.md, ROADMAP.md, and REQUIREMENTS.md changed:
 Report tersely:
 
 ```
-UAT {complete|partial}: phase <N>
+UAT {complete|partial}: {position}
 Passed {n}/{total} ({v} auto-verified, {m} model-executed) | Failed {n} | Skipped {n} | Blocked {n}
 Reworked {n} (items that failed first pass, then were fixed)
 {open failed items, one line each, if any}
 ```
 
 Omit the Reworked line when the count is zero.
+
+`{position}` is "Phase <N> of <M>: <phase name>", and "Phase <N> of <M>, plan <K>
+of <J>: <plan name>" instead when a plan field is present (ending at "plan <K>
+of <J>" with no name); once every plan has run there is none. On **complete**
+it comes from the `cursor` of step 2's `cursor set` envelope. On **partial** no
+`cursor set` ran, so run
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` once, right
+before the report, and compose it from its `total` and phase <N>'s `phases[]`
+entry (`name`, and `plan` when present).
 
 One suggestion max: the resume command if partial, the next phase if
 complete. Either way, safe to `/clear` first: UAT.md and the STATE cursor

@@ -549,7 +549,8 @@ opinion, not another iteration.
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status planned --next "/cad-execute {N}"
    ```
 
-   `cursor set` derives name/total from ROADMAP and stamps the date.
+   `cursor set` derives name/total from ROADMAP and stamps the date; hold its
+   envelope's `cursor.total` for `done`.
    `seed-reqs` inserts `| <id> | Phase {N} | Pending |` for exactly the declared
    `requirements:` ids that also have an `## Active` bullet in
    REQUIREMENTS.md; idempotent, so a replan or a `--gaps` plan can never
@@ -592,7 +593,7 @@ the first.
 Report:
 
 ```
-Planned phase {N}: {name}
+Phase {N} of {M}: {K} plans written
 Plan(s): {files, task counts}
 Checker: {passed | passed after revision | skipped | overridden with N open issues}
 Review: {plan trigger outcome}
@@ -600,6 +601,10 @@ Traceability: {seeded ids | none seeded | orphan_ids: [...] | no_active_section}
 Citations: {planned C of S} -> {committed C of S}; {the search was off | it surfaced nothing | it surfaced S and the plan cited ZERO of them}{, record not written: <reason>}
 Commit: {hash | not committed (planning.commit_docs false)}
 ```
+
+M is that `cursor.total`; K is the plan files THIS run wrote (a `--gaps` run
+writes one), never the phase's total. K of 1 reads "Phase {N} of {M}: 1 plan
+written".
 
 With `workflow.test_attack` on, the Review line is followed by the `none named`
 lines the `plan` fire site prints (references/review-triggers.md step 2) once
@@ -631,7 +636,7 @@ on disk and each executor runs in a fresh context.
   the human.
 - ONE PLAN.md is the default; accept a split only with the planner's
   independence rationale (no shared files, no cross-slice ordering).
-- STATE.md stays a ~4-line overwritten cursor. No audit entries, no roadmap
+- STATE.md stays a four-line overwritten cursor plus an optional `Plan:` line. No audit entries, no roadmap
   annotations - git is the log.
 - Config keys only as named in templates/config.json - nothing invented.
 </guardrails>

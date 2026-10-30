@@ -15,6 +15,8 @@ on this path is a real defect to report, not the fork-point default.
    (seam-spawn-agent.md concurrent dispatch). Same prompt as sequential except
    the mode line:
    "Worktree executor on branch {branch} - worktree rules apply."
+   Announce each plan in the batch with its own position line, under the rule
+   `workflows/execute.md`'s `locate` states.
 2. Wait for every executor in the batch (same timeout).
 3. Merge each worktree branch back sequentially: record each branch's pre-merge
    HEAD first, then `git merge {branch}`, then record the HEAD it produced; on
@@ -25,6 +27,9 @@ on this path is a real defect to report, not the fork-point default.
    not recoverable then, and pairing its pre-merge HEAD with the current HEAD
    would hand that plan's reviewer every later plan's work as well.
 4. Remove each merged worktree and delete its branch.
+   Then rewrite the cursor once for the batch, with the call `workflows/execute.md`'s
+   "Reported done" states: the merges have brought its reports into the main tree,
+   so `Plan:` names the next unfinished plan.
 5. After all batches: read the key HERE, at its only consumer -
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.test_command` -
    and run it once if set.

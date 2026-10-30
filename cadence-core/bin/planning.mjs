@@ -15,7 +15,7 @@
 //
 // Subcommands (this file grows by dispatch-table entry, never by if-chain):
 //   status                          derived phase states + cursor + drift
-//   cursor get                      parse the STATE.md 4-line cursor
+//   cursor get                      parse the STATE.md cursor (4 required lines + optional Plan:)
 //   cursor set --phase N --status s --next cmd [--name s] [--total N]
 //                                   canonical overwrite; derives name/total
 //                                   from ROADMAP when omitted; stamps today

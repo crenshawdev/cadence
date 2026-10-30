@@ -517,7 +517,7 @@ transcript need not be carried forward.
 - Never spawn more than one research agent, and none at all unless
   configured or `--research` was passed. The 4-researcher fan-out and
   synthesizer are gone; do not reintroduce them.
-- STATE.md is a ~4-line overwritten cursor: no audit logs, no session
+- STATE.md is a four-line overwritten cursor plus an optional `Plan:` line: no audit logs, no session
   narratives, no progress bars, no metrics.
 - Config keys come from the engine config template only; never invent keys,
   never ask config questions this workflow doesn't need answered.
@@ -545,7 +545,7 @@ transcript need not be carried forward.
       falsifiable success criteria per phase; user approved it
 - [ ] Every `## Active` id appears in a ROADMAP phase (100% coverage);
       Traceability table left as bare headers for `/cad-plan` to seed
-- [ ] STATE.md is a 4-line cursor pointing at phase 1
+- [ ] STATE.md is a four-line cursor (no `Plan:` line) pointing at phase 1
 - [ ] Commits follow references/git-guard.md (guard before first commit, docs:
       prefix, specific files, no push) and respect planning.commit_docs
 - [ ] At most one research agent spawned, only when enabled

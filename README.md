@@ -89,7 +89,7 @@ The reviewers are adversarial by construction, because you cannot personally re-
 
 Cadence assumes the model will fail. Not that it is bad at the job, that it will now and then hand you something that looks finished and is not, and that you will not always catch it by reading. Everything else follows: the state stays durable, the workers stay disposable, and the rails sit where a worker cannot argue with them.
 
-Nothing important lives in the conversation. The roadmap, the plans, the summaries, the verification checklist and the four-line state cursor all sit in `.planning/` and in git history, and every command rebuilds what it needs from disk. Clear the window at any phase boundary and you lose nothing. There is no resume, a continuation is a fresh spawn that reads the prior artifact off disk, and every one of those spawns lands in the run record where you can read what it cost.
+Nothing important lives in the conversation. The roadmap, the plans, the summaries, the verification checklist and the state cursor (four lines plus an optional `Plan:` line) all sit in `.planning/` and in git history, and every command rebuilds what it needs from disk. Clear the window at any phase boundary and you lose nothing. There is no resume, a continuation is a fresh spawn that reads the prior artifact off disk, and every one of those spawns lands in the run record where you can read what it cost.
 
 A check that could not run never passes a gate. A reviewer that failed says why out loud instead of quietly dropping out of the set. The verifier scores every claim as verified, failed, or uncertain, and uncertain counts toward neither side. A test that would still pass if the behavior were wrong is not coverage, which is why the coverage audit reads assertions.
 

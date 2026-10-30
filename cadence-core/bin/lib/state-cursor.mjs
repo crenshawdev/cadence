@@ -1,5 +1,6 @@
 // @ts-check
-// state-cursor.mjs - the grammar of STATE.md's four-line cursor, read side.
+// state-cursor.mjs - the grammar of STATE.md's cursor, read side: four required
+// lines plus an optional `Plan:` line.
 //
 // It was split out of lib/planning-files.mjs so the Cadence module, which
 // 3.9.0 removed, could load it without `node:fs` (phase 3, D-05). It stays
@@ -13,9 +14,18 @@
 'use strict';
 
 /**
- * Parse the canonical 4-line cursor. Returns null when any line is missing
- * or malformed - callers degrade, never guess.
+ * Parse the canonical cursor: the four required lines plus an optional
+ * `Plan: K of J (<plan name>)` line. Returns null when any required line is
+ * missing or malformed - callers degrade, never guess.
+ *
+ * The optional line adds one `plan` field `{k, j, name?}` (`name` absent for the
+ * nameless `Plan: K of J`). A cursor without it returns exactly the six fields
+ * 3.9.3 returned, no `plan` key at all. A `Plan:` line outside that grammar is
+ * ignored rather than refused: nothing gates on it, and /cad-health checks its
+ * shape. The match is anchored and linear, since `cursor get` parses on every read.
  * @param {string} text
+ * @returns {{phase:number,total:number,name:string,status:string,next:string,
+ *   updated:string,plan?:{k:number,j:number,name?:string}}|null}
  */
 export function parseCursor(text) {
   const m = (re) => { const r = text.match(re); return r ? r : null; };
@@ -24,10 +34,14 @@ export function parseCursor(text) {
   const next = rest(text, /^Next:([^\r\n]*)/m);
   const updated = m(/^Updated:\s*(\d{4}-\d{2}-\d{2})\s*$/m);
   if (!phase || !status || !next || !updated) return null;
-  return {
+  const cursor = {
     phase: Number(phase[1]), total: Number(phase[2]), name: phase[3],
     status, next, updated: updated[1],
   };
+  const plan = m(/^Plan:[ \t]*(\d+)[ \t]+of[ \t]+(\d+)(?:[ \t]+\((.+)\))?[ \t]*$/m);
+  if (!plan) return cursor;
+  const name = plan[3] === undefined ? '' : plan[3].trim();
+  return { ...cursor, plan: { k: Number(plan[1]), j: Number(plan[2]), ...(name ? { name } : {}) } };
 }
 
 /**

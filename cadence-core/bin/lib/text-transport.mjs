@@ -285,6 +285,11 @@ export const TEXT_TRANSPORT = Object.freeze([
     reason: 'a literal slash command this workflow authors, interpolating only the phase number (D-02)',
   }),
   Object.freeze({
+    surface: 'cadence-core/workflows/execute.md',
+    flag: '--next', value: '/cad-execute <N>', derived: false,
+    reason: 'a literal slash command this workflow authors, interpolating only the phase number (D-02)',
+  }),
+  Object.freeze({
     surface: 'cadence-core/workflows/undo.md',
     flag: '--next', value: '<the redo step>', derived: false,
     reason: 'the slash command that re-runs the phase from the status this same call sets - /cad-plan <N> after a full revert, /cad-execute <N> after a partial one - so it is the same workflow-authored routing pointer as the seven literal sites, written as a placeholder because the status picks which one',

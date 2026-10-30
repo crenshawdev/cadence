@@ -12,7 +12,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, read, readPlanReports, readQueue,
+  PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, planPosition, read, readPlanReports, readQueue,
 } from './core.mjs';
 import { classifyPhaseList, parseCursor, parseRequirements } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
@@ -239,7 +239,13 @@ function cmdStatus(dir) {
     else if (current === null) agrees = parsed.status === 'phase complete';
     else agrees = parsed.phase === current &&
       (AGREE[currentEntry.status] || []).includes(parsed.status);
-    cursor = { phase: parsed.phase, status: parsed.status, next: parsed.next, updated: parsed.updated, agrees };
+    // `plan` is the cursor's own `Plan:` line as written, present only when it
+    // has one (D-06). It is not compared with the derived position: a mismatch
+    // is not drift (D-12), so `agrees` stays phase and status alone.
+    cursor = {
+      phase: parsed.phase, status: parsed.status, next: parsed.next, updated: parsed.updated, agrees,
+      ...(parsed.plan ? { plan: parsed.plan } : {}),
+    };
     if (!agrees) {
       drift.push({
         kind: 'cursor', phase: parsed.phase,
@@ -322,6 +328,9 @@ function cmdStatus(dir) {
     ...(closed ? { cycle: 'none' } : {}),
     phases: derived.map((p) => ({
       n: p.n, name: p.name, status: p.status,
+      // The plan to run next, off the helper `cursor set` writes its `Plan:`
+      // line from; absent with no plan files or every plan complete (D-03).
+      ...planPositionEntry(dir, p.n),
       // plans listed only when they deviate from a single PLAN.md
       ...(p.plans.length > 1 || (p.plans.length === 1 && p.plans[0] !== 'PLAN.md')
         ? { plans: p.plans } : {}),
@@ -330,6 +339,12 @@ function cmdStatus(dir) {
     ...(cursor ? { cursor } : {}),
     ...(drift.length ? { drift } : {}),
   });
+}
+
+/** `{plan: {k, j, name?}}` for a phase with an unfinished plan, else `{}`. */
+function planPositionEntry(dir, n) {
+  const plan = planPosition(join(dir, 'phases', String(n)));
+  return plan ? { plan } : {};
 }
 
 export { cmdStatus };
