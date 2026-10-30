@@ -9,7 +9,8 @@
 'use strict';
 
 import { join } from 'node:path';
-import { fail, phaseSpellingCollision, listPlanFiles, ok, readPlanReports } from './core.mjs';
+import { fail, phaseSpellingCollision, listPlanFiles, ok, read, readPlanReports } from './core.mjs';
+import { planName } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 
 function cmdReplayCheck(dir, opts) {
@@ -37,12 +38,21 @@ function cmdReplayCheck(dir, opts) {
   // stays HERE: it is built from the caller's raw spelling, which is not the
   // `String(n)` spelling `status` resolves, so it can never move into the
   // shared reader without making one of the two envelopes wrong.
-  const reports = readPlanReports(pdir, plans)
-    .map((r) => ({ ...r, report: join('phases', parsedPhase.raw, r.report) }));
+  //
+  // Each row also carries the plan's `name` when its heading yields one, read by
+  // `planName` - the one heading reader (D-09) - and left off otherwise (D-10).
+  // This is /cad-execute's source for "plan K of J: <plan name>" (D-15).
+  const reports = readPlanReports(pdir, plans).map((r) => {
+    const name = planName(read(join(pdir, r.plan)) ?? '');
+    return { ...r, report: join('phases', parsedPhase.raw, r.report), ...(name ? { name } : {}) };
+  });
 
   ok({
     phase: parsedPhase.value,
     rerun,
+    // J: every conforming plan file, never the dispatch set, so a resumed run
+    // dispatching plan 2 still prints "plan 2 of 3" (D-08, D-15).
+    plan_count: plans.length,
     reports,
     // EVERY plan, never `some` (D-02): one plan without a complete report is a
     // continuation, not a replay. `plans.length` guards `[].every() === true`,
