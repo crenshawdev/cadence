@@ -606,7 +606,7 @@ halts on a surviving blocker or high `risk_surface` finding.
 
 `cadence-core/references/conventions.md`
 
-`STATE.md` is a four-line cursor, overwritten in place and never appended. The
+`STATE.md` is a cursor of four lines plus an optional `Plan:` line, overwritten in place and never appended. The
 only correct writer is the seam, which derives the phase name and total from the
 roadmap, validates the status against a fixed lifecycle, stamps the date, and
 writes atomically. Hand-editing it is out of bounds.

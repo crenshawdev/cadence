@@ -636,7 +636,7 @@ on disk and each executor runs in a fresh context.
   the human.
 - ONE PLAN.md is the default; accept a split only with the planner's
   independence rationale (no shared files, no cross-slice ordering).
-- STATE.md stays a ~4-line overwritten cursor. No audit entries, no roadmap
+- STATE.md stays a four-line overwritten cursor plus an optional `Plan:` line. No audit entries, no roadmap
   annotations - git is the log.
 - Config keys only as named in templates/config.json - nothing invented.
 </guardrails>

@@ -172,7 +172,7 @@ milestone close and the next cycle - not an error:
   the prune was interrupted. One orphan directory can never block the closed
   state.
 - The cursor reads `Phase: <N> of 0 (no active cycle)`, which still satisfies
-  the canonical 4-line shape (`references/conventions.md`) - the name group is
+  the canonical cursor shape (`references/conventions.md`) - the name group is
   non-empty. `cursor set` derives it with no `--name` or `--total` flags. No
   new lifecycle status exists for this state.
 - A cursor whose `total` is not `0` against a zero-phase roadmap reports drift

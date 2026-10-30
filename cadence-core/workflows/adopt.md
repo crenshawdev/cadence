@@ -380,7 +380,7 @@ on disk in `.planning/`.
 - Config keys come from the engine config template only; never invent keys and
   never ask config questions.
 - Never fabricate an answer the ask-user seam was supposed to collect.
-- STATE.md is a ~4-line overwritten cursor: no audit log, no narrative.
+- STATE.md is a four-line overwritten cursor plus an optional `Plan:` line: no audit log, no narrative.
 - Nothing already shipped is written as an open requirement or an `- [x]` phase.
 </guardrails>
 
@@ -399,7 +399,7 @@ on disk in `.planning/`.
 - [ ] ROADMAP.md is remaining work: no `- [x]` entry, phase count follows
       `granularity`, 2-5 falsifiable criteria per phase, every `## Active` id
       mapped to exactly one phase, user approved it
-- [ ] STATE.md is a 4-line cursor pointing at phase 1, and no `phases/` dir
+- [ ] STATE.md is a four-line cursor (no `Plan:` line) pointing at phase 1, and no `phases/` dir
       was created
 - [ ] One `docs:` commit under references/git-guard.md, respecting
       `planning.commit_docs`, staging the five files by name and pushing nothing
