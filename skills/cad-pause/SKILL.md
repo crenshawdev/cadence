@@ -43,9 +43,14 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
    without it); supply the current phase from `cursor get`, which goes in one
    message with step 1's protected-branch git probes - they are independent, and
    only a call that consumes a prior call's output is serialized. The seam
-   derives name/total from ROADMAP and stamps `Updated:` itself.
+   derives name/total from ROADMAP and stamps `Updated:` itself; hold its
+   envelope for the report.
    Commit the cursor (`docs:`), or fold it into the WIP commit if one was made.
    Never leave the tree dirty.
 
-3. **Report.** One line: paused at <phase>, resume with /cad-progress.
+3. **Report.** One line: "Paused at {position}, resume with /cad-progress".
+   The position comes from step 2's envelope `cursor`: "Phase {phase} of
+   {total}: {name}" when it has no `plan` field, "Phase {phase} of {total},
+   plan {K} of {J}: {plan name}" when it does, ending at "plan {K} of {J}" when
+   that has no `name`. Never "plan 0 of 0".
 </process>
