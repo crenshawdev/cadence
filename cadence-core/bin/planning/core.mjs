@@ -28,7 +28,7 @@ import { CONTRACTS } from '../lib/arg-contract.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE } from '../lib/phase-plans.mjs';
-import { parseUat, uatComplete } from '../lib/planning-files.mjs';
+import { parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
@@ -365,6 +365,31 @@ function readPlanReports(pdir, plans) {
     return { plan, k, report, exists: status !== null, status,
       complete: status === 'PLAN COMPLETE' };
   });
+}
+
+// ---------------------------------------------------------------------------
+// planPosition - where one phase's plans stand: the plan to run next, by
+// position (phase 1, D-02, D-03, D-08).
+//
+// K is the numerically lowest plan file number whose report is not complete,
+// never the first entry of the list: `listPlanFiles` sorts lexically, which puts
+// PLAN-10.md before PLAN-2.md and PLAN-2.md before PLAN.md. J is the count of
+// conforming plan files. The name is `planName`'s reading of that plan's
+// heading, and is left off when the heading yields none (D-10). `null` when the
+// directory is missing, holds no plan file, or every plan reports complete - the
+// phase-only position. `cursor set` and `status` both call this, on the one
+// `readPlanReports` definition of "complete", so they cannot disagree.
+//
+// @param {string} pdir the phase directory
+// @returns {{k: number, j: number, name?: string}|null}
+// ---------------------------------------------------------------------------
+function planPosition(pdir) {
+  const { plans } = listPlanFiles(pdir);
+  const next = readPlanReports(pdir, plans).filter((r) => !r.complete)
+    .sort((a, b) => a.k - b.k)[0];
+  if (!next) return null;
+  const name = planName(read(join(pdir, next.plan)) ?? '');
+  return { k: next.k, j: plans.length, ...(name ? { name } : {}) };
 }
 
 /**
@@ -1191,6 +1216,7 @@ export {
   read,
   readJsonPayload,
   readPlanReports,
+  planPosition,
   readQueue,
   readReadsRecords,
   resolveIndex,

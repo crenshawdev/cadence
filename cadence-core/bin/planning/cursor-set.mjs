@@ -10,7 +10,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, ok, phaseSpellingRefusal, read } from './core.mjs';
+import { fail, ok, phaseSpellingRefusal, planPosition, read } from './core.mjs';
 import {
   CLOSED_CYCLE_NAME, CURSOR_STATUSES, atomicWrite, classifyPhaseList, parseCursor,
   renderCursor,
@@ -66,16 +66,16 @@ function cmdCursorSet(dir, opts) {
   }
   // ONE refusal the inline form never needed: `renderCursor` writes `next` into
   // the cursor's `Next:` line unflattened, and references/conventions.md states
-  // the cursor is always exactly four lines - a wrapped resume pointer would
-  // produce a fifth line `parseCursor` cannot read back, so the very next
-  // `cursor get` would answer `unparseable-cursor`. A file is the transport
+  // the cursor is four required lines plus an optional `Plan:` line - a wrapped
+  // resume pointer would add a line `parseCursor` cannot read back, so the very
+  // next `cursor get` would answer `unparseable-cursor`. A file is the transport
   // that can carry a newline, so this is where the structural term belongs. It
   // REFUSES rather than flattening, mirroring `milestone-prune --label`'s table
   // term: a malformed value is a malformed CALL and nothing is written.
   if (typeof next === 'string' && /[\r\n]/.test(next)) {
     return fail('bad-args',
-      'cursor set --next cannot contain a newline - the cursor is exactly four lines',
-      'put the resume pointer on ONE line and re-run; a wrapped one writes a fifth line the next'
+      'cursor set --next cannot contain a newline - the cursor is four required lines plus an optional `Plan:` line',
+      'put the resume pointer on ONE line and re-run; a wrapped one adds a line the next'
       + ' `cursor get` cannot read back');
   }
   if (!CURSOR_STATUSES.includes(opts.status)) {
@@ -142,9 +142,15 @@ function cmdCursorSet(dir, opts) {
       + ' so both can be derived from it');
   }
 
+  // The plan line is a derivation from disk on every write, with no flag
+  // (D-02): the lowest-numbered plan not `PLAN COMPLETE`, absent when the phase
+  // has no plan files or every plan is complete (D-03). The directory is the
+  // canonical spelling `phaseSpellingRefusal` passed above.
+  const plan = planPosition(join(dir, 'phases', String(opts.phase)));
   const cursor = {
     phase, total, name, status: opts.status, next,
     updated: new Date().toISOString().slice(0, 10),
+    ...(plan ? { plan } : {}),
   };
   atomicWrite(join(dir, 'STATE.md'), renderCursor(cursor));
   ok({ cursor });
