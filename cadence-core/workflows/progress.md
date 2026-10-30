@@ -22,7 +22,8 @@ Its one JSON line carries everything this workflow reads:
 
 - `phases[]` - each phase's derived status: **unplanned** (no PLAN) ->
   **planned** (PLAN, no SUMMARY) -> **executed** (SUMMARY, UAT not fully
-  passed) -> **complete**, with UAT counts where a checklist exists.
+  passed) -> **complete**, with UAT counts where a checklist exists. Its `plan` (`k`, `j`, `name?`)
+  is the derived next plan, present only while one is unfinished.
 - `current` - the lowest non-complete phase (null when all are complete).
 - `cycle` - present and `"none"` ONLY when the phase list is a derived closed
   milestone (the window between a close and the next cycle). There, `current`
@@ -167,7 +168,7 @@ and that is an answer, not an error.
 Compact status, no banners:
 
 ```
-# {project} - phase {N} of {total}: {name}
+# {project} - {position}
 
 {one line per phase: number, name, status}
 
@@ -175,6 +176,12 @@ Recent: {2-3 recent commit subjects}
 Paused: {the cursor's Next line}   (only when Status is paused)
 Deferred: {deferred.findings} finding(s) across {deferred.members.length} queued fire(s)
 ```
+
+`{position}` is read off phase N's `phases[]` entry in the `status` envelope,
+never the cursor's `Plan:` line (a cursor line naming another plan is not drift
+and is no reason to rewrite the cursor): "Phase {N} of {total}, plan {k} of {j}:
+{plan name}" when the entry has `plan` (ending at "plan {k} of {j}" with no
+`name`), else "Phase {N} of {total}: {name}".
 
 The `Deferred:` line prints only when `deferred.findings` is non-zero or
 `deferred.unreadable` is non-empty, and both figures are read off the `status`
