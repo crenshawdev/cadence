@@ -27,6 +27,9 @@ on this path is a real defect to report, not the fork-point default.
    not recoverable then, and pairing its pre-merge HEAD with the current HEAD
    would hand that plan's reviewer every later plan's work as well.
 4. Remove each merged worktree and delete its branch.
+   Then rewrite the cursor once for the batch, with the call `workflows/execute.md`'s
+   "Reported done" states: the merges have brought its reports into the main tree,
+   so `Plan:` names the next unfinished plan.
 5. After all batches: read the key HERE, at its only consumer -
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.test_command` -
    and run it once if set.

@@ -550,6 +550,21 @@ delivers it: a check's Task cell, or a test's label task. A continuation that
 completes the plan again meets the inspection again. With the switch false,
 nothing here runs.
 
+**Reported done.** The plan is reported done once its risk step has settled and,
+with `workflow.check_inspection` true, its check inspection has been answered.
+Print its done line, then rewrite the cursor before the next plan's dispatch:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status planned --next "/cad-execute <N>"
+```
+
+`cursor set` derives the `Plan:` line from the reports on disk, so it names the
+next unfinished plan and is gone once every plan is complete. Run it the same way
+after a plan the user chose to stop incomplete: that plan is still the next one.
+The status stays `planned` until the `state` step. These mid-run writes are not
+committed: with `planning.commit_docs` true, STATE.md rides the `state` step's
+docs commit.
+
 Then fire the `diff` review trigger
 (references/review-triggers.md) with the refs
 `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
@@ -776,7 +791,9 @@ verification runs in a fresh subagent.
   inside an executor.
 - The sequential path never touches worktrees.
 - Executors never write STATE.md, ROADMAP.md, or SUMMARY.md. This workflow
-  is the only STATE writer, and only as the 4-line overwrite.
+  is the only STATE writer, and only as the cursor overwrite: four required
+  lines plus the optional `Plan:` line `cursor set` derives, written after each
+  plan or batch and at `state`.
 - Second opinions only via review triggers; the goal check stays inline
   prose, never an agent.
 - Deviations live in SUMMARY.md - git and SUMMARY are the record, STATE is
@@ -805,5 +822,7 @@ verification runs in a fresh subagent.
       `advisory`, blocking at `adjudicated`; `risk_surface` fired ONCE per plan
       on the committed range, never mid-plan
 - [ ] SUMMARY.md written: what shipped, commits, deviations, open items, goal check
-- [ ] STATE.md is exactly the 4-line cursor, overwritten
+- [ ] STATE.md is exactly the cursor, overwritten: four required lines plus the
+      optional `Plan:` line, naming the next unfinished plan after each plan or
+      batch and absent once `executed`
 </success_criteria>
