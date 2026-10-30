@@ -12,7 +12,8 @@
       { "match": "luna",  "tier": "cheap",    "high_effort": false },
       { "match": "mini",  "tier": "balanced", "high_effort": true },
       { "match": "terra", "tier": "balanced", "high_effort": true },
-      { "match": "sol",   "tier": "flagship", "high_effort": true },
+      { "match": "sol",   "tier": "balanced", "high_effort": true },
+      { "match": "astra", "tier": "flagship", "high_effort": true },
       { "match": "gpt-5", "tier": "flagship", "high_effort": true }
     ],
     "gemini": [
