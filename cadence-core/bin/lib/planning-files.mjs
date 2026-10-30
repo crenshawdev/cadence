@@ -493,6 +493,38 @@ export function planTaskTitles(text) {
     .map((m) => m[1].trim());
 }
 
+/**
+ * The plan name in one PLAN's first H1 (after any YAML frontmatter), or null
+ * when the heading yields none. THE one place a plan heading is parsed: every
+ * seam that prints a plan name calls this, and no workflow reads headings.
+ *
+ * Takes the LAST ` - Plan ...` part on the heading, so a phase name holding
+ * " - " or the word "Plan" does not cut the name short. The accepted tails are
+ * `Plan K: <name>`, `Plan K of J: <name>` (the `of J` is dropped) and
+ * `Plan K (<name>)`, after a hyphen or an em dash. The number is never read
+ * back: K is the file's number (D-08), and a heading's own count disagrees with
+ * disk often enough to be no source. No stand-in for a missing name (D-10).
+ * Pure and total: any input, a non-string included, returns a string or null.
+ * @param {string} text @returns {string|null}
+ */
+export function planName(text) {
+  if (typeof text !== 'string') return null;
+  let body = normalizeCrlf(text);
+  if (body.startsWith('---\n')) {
+    const end = body.indexOf('\n---', 3);
+    if (end !== -1) body = body.slice(end + 4);
+  }
+  const h1 = /^# (.*)$/m.exec(body);
+  if (!h1) return null;
+  const parts = [...h1[1].matchAll(/\s[-\u2014]\s+Plan(?!\w)/g)];
+  if (!parts.length) return null;
+  const last = parts[parts.length - 1];
+  const tail = /^\s+\d+(?:\s+of\s+\d+)?(?:\s*:(.*)|\s*\((.*)\))\s*$/
+    .exec(h1[1].slice(last.index + last[0].length));
+  const name = tail ? (tail[1] ?? tail[2]).trim() : '';
+  return name === '' ? null : name;
+}
+
 /** Every requirement-id token in `s`, its leading delimiter stripped. */
 function idTokensIn(s) {
   return [...s.matchAll(REQ_ID_TOKEN_G)].map((m) => m[0].slice(m[0].search(/[A-Z#]/)));
