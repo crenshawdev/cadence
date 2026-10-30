@@ -68,12 +68,15 @@ Check, then report - do not fix without asking.
      incident this check exists for - all five lost bullets sat under
      `## Archive`, the section any allowlist would have named first.
 
-2. **STATE cursor.** Exactly the 4-line schema (Phase / Status / Next / Updated -
-   references/conventions.md). `Status` is one of the lifecycle values
+2. **STATE cursor.** The four required lines (Phase / Status / Next / Updated -
+   references/conventions.md) plus the optional `Plan:` line after `Phase:`.
+   `Status` is one of the lifecycle values
    (`ready to plan | context gathered | planned | executed | phase complete |
    paused`). `Phase: N of M` parses with N <= M (except in the closed-milestone
-   case rule 5 states). `Updated` is a date. Flag a 5th line, an unknown status,
-   or an unparseable phase.
+   case rule 5 states). `Updated` is a date. Flag any other fifth line, an unknown status,
+   an unparseable phase, or a `Plan:` line not shaped `Plan: K of J` or
+   `Plan: K of J (<name>)` (whole numbers, J >= 1, K <= J). Check `Plan:` for
+   shape only, never against the phase's plans or reports.
 
 3. **ROADMAP.** `## Phases` entries are `- [ ]` / `- [x]` **Phase N: Name**,
    numbered 1..M with no gaps or dupes. An EMPTY `## Phases` is a legitimately
