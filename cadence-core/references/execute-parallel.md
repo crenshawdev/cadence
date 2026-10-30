@@ -15,6 +15,8 @@ on this path is a real defect to report, not the fork-point default.
    (seam-spawn-agent.md concurrent dispatch). Same prompt as sequential except
    the mode line:
    "Worktree executor on branch {branch} - worktree rules apply."
+   Announce each plan in the batch with its own position line, under the rule
+   `workflows/execute.md`'s `locate` states.
 2. Wait for every executor in the batch (same timeout).
 3. Merge each worktree branch back sequentially: record each branch's pre-merge
    HEAD first, then `git merge {branch}`, then record the HEAD it produced; on
