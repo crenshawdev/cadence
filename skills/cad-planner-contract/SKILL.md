@@ -189,6 +189,10 @@ record the deviation and its reason in your return marker and in the PLAN
 Notes. File independence wins over the directive; a silent divergence does
 not.
 
+Every plan, a single PLAN.md and a gap plan included, names itself in its
+heading: `# Phase <N>: <phase name> - Plan <K>: <plan name>`, K the plan's file
+number and no `of J`. Progress messages print that plan name.
+
 Gaps mode: write the next free plan number (an unnumbered PLAN.md counts as
 plan 1), tasks derived one-to-one from the unresolved UAT items.
 </plan_output>

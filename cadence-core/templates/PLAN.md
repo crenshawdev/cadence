@@ -5,7 +5,10 @@ requirements:        # phase requirement IDs this plan covers - never empty; quo
 files:               # files this plan touches; split plans must not overlap; quote a #-shaped id ("#41"); see references/plan-frontmatter.md
 ---
 
-# Phase {N}: {name} - Plan
+# Phase {N}: {phase name} - Plan {K}: {plan name}
+
+{K is the plan's file number (PLAN.md is 1, PLAN-<k>.md is k), with no "of J".
+Every plan names itself here, a single PLAN.md too: progress messages print it.}
 
 ## Goal
 

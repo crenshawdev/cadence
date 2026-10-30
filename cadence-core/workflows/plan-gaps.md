@@ -38,6 +38,8 @@ at `spawn_planner` with Mode: gaps.
 4. Continue to plan.md `spawn_planner` with:
    - Mode: gaps
    - Write target: the filename step 3 resolved, never `PLAN.md`.
+   - The heading carries the plan number step 3 resolved and a plan name:
+     `# Phase <N>: <phase name> - Plan <K>: <plan name>`.
    - The planner's read list additionally includes phases/<N>/UAT.md plus
      the existing PLAN* and SUMMARY* files.
    - The gap items (with their evidence and causes) go into the prompt as
