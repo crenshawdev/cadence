@@ -21,7 +21,7 @@ export const CURSOR_STATUSES = [
 ];
 
 // ---------------------------------------------------------------------------
-// STATE.md - the 4-line cursor.
+// STATE.md - the cursor: four required lines plus an optional `Plan:` line.
 // ---------------------------------------------------------------------------
 
 // `parseCursor` lives in lib/state-cursor.mjs (see the header) and is
@@ -29,11 +29,16 @@ export const CURSOR_STATUSES = [
 export { parseCursor };
 
 /**
- * Render the canonical cursor - exactly four lines under `# State`.
- * @param {{phase:number,total:number,name:string,status:string,next:string,updated:string}} c
+ * Render the canonical cursor under `# State`: the four required lines, with the
+ * optional `Plan: K of J (<name>)` line directly after `Phase:` when the cursor
+ * carries a `plan`. Without one it is the 3.9.3 four-line text byte for byte.
+ * @param {{phase:number,total:number,name:string,status:string,next:string,updated:string,
+ *   plan?:{k:number,j:number,name?:string}}} c
  */
 export function renderCursor(c) {
-  return `# State\n\nPhase: ${c.phase} of ${c.total} (${c.name})\n` +
+  const plan = c.plan
+    ? `Plan: ${c.plan.k} of ${c.plan.j}${c.plan.name ? ` (${c.plan.name})` : ''}\n` : '';
+  return `# State\n\nPhase: ${c.phase} of ${c.total} (${c.name})\n${plan}` +
     `Status: ${c.status}\nNext: ${c.next}\nUpdated: ${c.updated}\n`;
 }
 
