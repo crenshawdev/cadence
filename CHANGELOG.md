@@ -7,6 +7,42 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.9.4] - 2026-10-30
+
+Every progress message and the STATE.md cursor say which phase and which plan
+a run is on, by position.
+
+### Added
+
+- **Progress messages name the phase and the plan by position.** A line about
+  one plan starts with "Phase N of M, plan K of J: <plan name>", where K is the
+  plan's file number and J is the number of plans in the phase. `/cad-execute`
+  prints it when it dispatches a plan, when the plan is done, and on every
+  checkpoint, partial or risk line about that plan. `/cad-plan` ends with
+  "Phase N of M: K plans written". The `/cad-progress` header and the
+  `/cad-context`, `/cad-pause` and `/cad-verify` reports use the same words, and
+  once every plan in a phase has run they name the phase alone. No position
+  line counts tasks.
+- **STATE.md carries the plan position.** `cursor set` writes an optional
+  `Plan: K of J (<plan name>)` line after `Phase:`, naming the lowest-numbered
+  plan whose report is not complete, and works it out from the plan files on
+  every write. It writes no `Plan:` line when the phase has no plans or every
+  plan is complete. `/cad-execute` rewrites the cursor after each plan, and
+  after each batch on the parallel path. `cursor get` and `status` return the
+  position as a `plan` field only when the line is there, so a four-line cursor
+  written by an earlier Cadence reads back exactly as before. `/cad-health`
+  checks the line's shape.
+- **Every new plan names itself in its heading.** The PLAN template's heading
+  is `# Phase {N}: {phase name} - Plan {K}: {plan name}`, and that name is what
+  the progress messages print. A plan with no name in its heading prints as
+  "plan K of J" with nothing after it.
+
+### Fixed
+
+- **`/cad-config --review` places OpenAI's current models.** It left
+  gpt-6-astra unclassified and put the Sol models in the flagship tier. Astra
+  is now flagship, and Sol joins Terra in balanced.
+
 ## [3.9.3] - 2026-10-29
 
 Commands no longer pre-approve shell commands, and git-guard's code now shows it
@@ -3117,6 +3153,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.9.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.4
 [3.9.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.3
 [3.9.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.2
 [3.9.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.1
