@@ -256,8 +256,12 @@ const NAME_ATTR_RE = /\bname="([^"]*)"/;
  * A markdown heading, level 2 and deeper. An `#` H1 is deliberately NOT matched:
  * `config.md:1` is the document title, and including it would prefix every label
  * in that file with `cad-config workflow/`.
+ *
+ * The title group matches what `(.+?)\s*$` matched, written so a long run of
+ * spaces can't make it backtrack. The second branch keeps the old result for a
+ * title that is only whitespace.
  */
-const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
+const HEADING_RE = /^(#{2,6})\s+(\S(?:.*\S)?|[^\S\n\r\u2028\u2029](?=[\n\r\u2028\u2029]*$))\s*$/;
 
 /**
  * Label the region a line belongs to, walking the file top to bottom.
