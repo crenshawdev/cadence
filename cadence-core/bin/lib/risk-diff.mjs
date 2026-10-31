@@ -509,25 +509,31 @@ const IMPORT_LINE_KINDS = Object.freeze([
   // ES modules, Java, Python `import x`. The negative lookahead is the dynamic
   // `import` call, which is an expression and stays code.
   /^\s*import\s+(?!\()[^;]*;?\s*$/,
-  // Python `from x import y`.
-  /^\s*from\s+\S+\s+import\s+[^;]*;?\s*$/,
+  // Python `from x import y`. This arm and the two below are written so a long
+  // run of spaces can't make them backtrack: `\s[^;]*` is the same match as
+  // `\s+[^;]*`, and `(?:;\s*)?$` the same as `;?\s*$` after it.
+  /^\s*from\s+\S+\s+import\s[^;]*(?:;\s*)?$/,
   // C and C++.
   /^\s*#\s*include\s+\S[^;]*$/,
   // Rust, PHP, Perl. `use ` and never `use`, so `useEffect(...)` stays a call.
-  /^\s*use\s+[^;]*;?\s*$/,
+  /^\s*use\s[^;]*(?:;\s*)?$/,
   // CommonJS. The binding keyword is broader than the constant arm's on
   // purpose: what makes this an import is the module load on the right.
-  /^\s*(?:const|let|var)\s+[^=;]+=\s*require\s*\([^;]*\)\s*;?\s*$/,
+  /^\s*(?:const|let|var)\s[^=;]+=\s*require\s*\([^;]*\)\s*(?:;\s*)?$/,
 ]);
+
+// The two constant shapes capture the initializer untrimmed and the caller
+// trims it. Trimming inside the regex let a long run of spaces make it
+// backtrack.
 
 /** `const NAME = ...` and its cousins in other languages, up to the initializer. */
 const DECLARED_CONSTANT =
-  /^\s*(?:(?:export|public|private|protected|readonly)\s+)*(?:const|static|final|val)\s+[A-Za-z_$][^=;]*=\s*([^;]*?)\s*;?\s*$/;
+  /^\s*(?:(?:export|public|private|protected|readonly)\s+)*(?:const|static|final|val)\s+[A-Za-z_$][^=;]*=([^;]*)(?:;\s*)?$/;
 
 /** A SCREAMING_SNAKE name bound with no declaration keyword at all - Python,
  * shell, Make. The name shape is the one `CONTENT_SIGNALS.secrets` itself
  * reads, so the two agree on what a constant NAME looks like. */
-const SHOUTING_CONSTANT = /^\s*[A-Z][A-Z0-9_]*\s*(?::[^=;]*)?=\s*([^;]*?)\s*;?\s*$/;
+const SHOUTING_CONSTANT = /^\s*[A-Z][A-Z0-9_]*\s*(?::[^=;]*)?=([^;]*)(?:;\s*)?$/;
 
 /** What an initializer may START with to be a literal: a string, a number, a
  * regex, a bracketed literal, or one of the value keywords. Deliberately not a
@@ -556,7 +562,7 @@ function isImportStatement(/** @type {string} */ line) {
 function isConstantDeclaration(/** @type {string} */ line) {
   const m = DECLARED_CONSTANT.exec(line) || SHOUTING_CONSTANT.exec(line);
   if (!m) return false;
-  const init = m[1];
+  const init = m[1].trim();
   if (!init || !LITERAL_INITIALIZER.test(init)) return false;
   return REGEX_LITERAL.test(init) || !CALL_EXPRESSION.test(init);
 }

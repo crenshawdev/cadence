@@ -1522,7 +1522,10 @@ const CRITERION_SUB = /^\s+[-*+]\s+(?:\[[ xX]\]\s+)?AC\d+\b/;
 // Anchored at the head for the same reason `CRITERION_HEAD_NEAR` is: an id
 // named later in a line (`- [ ] the AC3 pin holds`) is prose that mentions an
 // id, not a declaration of one, and that bullet is `criterion-unidded`.
-const CRITERION_ID_DECLARED = /^\s*(?:[-*+]|#{1,6}|\d+[.)])?\s*(?:\[[ xX]\]\s*)?[*_`]*\s*AC\d+\b/i;
+//
+// Each run of spaces belongs to exactly one `\s*`, so a long run can't make it
+// backtrack.
+const CRITERION_ID_DECLARED = /^\s*(?:(?:[-*+]|#{1,6}|\d+[.)])\s*)?(?:\[[ xX]\]\s*)?(?:[*_`]+\s*)?AC\d+\b/i;
 
 /**
  * A stateful line filter: `true` while the line is a fence marker or sits
@@ -1852,6 +1855,13 @@ export function sectionSpan(lines, heading) {
   return { start, end: start < 0 ? -1 : lines.length };
 }
 
+// A UAT `key: value` line and an item's `N. Name` head. The value group matches
+// what `(.+?)\s*$` matched, written so a long run of spaces can't make it
+// backtrack. The second branch keeps the old result for a value that is only
+// whitespace.
+const UAT_FIELD = /^(\w+):\s*(\S(?:.*\S)?|[^\S\n\r\u2028\u2029](?=[\n\r\u2028\u2029]*$))\s*$/;
+const UAT_HEAD = /^(\d+)\.\s+(\S(?:.*\S)?|[^\S\n\r\u2028\u2029](?=[\n\r\u2028\u2029]*$))\s*$/;
+
 /**
  * Parse UAT: full frontmatter + items with their field lines. Counts are
  * always recomputed from the items, never read from Summary.
@@ -1872,7 +1882,7 @@ export function parseUat(text) {
   const fm = {};
   if (fmMatch) {
     for (const line of fmMatch[1].split('\n')) {
-      const f = line.match(/^(\w+):\s*(.+?)\s*$/);
+      const f = line.match(UAT_FIELD);
       if (f) fm[f[1]] = f[2];
     }
   }
@@ -1886,7 +1896,7 @@ export function parseUat(text) {
     // a code block is content, not the start of the next section.
     const bound = sectionBound(lines);
     const body = bound === -1 ? lines : lines.slice(0, bound);
-    const head = lines[0].match(/^(\d+)\.\s+(.+?)\s*$/);
+    const head = lines[0].match(UAT_HEAD);
     if (!head) {
       // A hand-added section, kept verbatim; trailing whitespace is trimmed so
       // repeated parse/render cycles are byte-stable.
@@ -1897,7 +1907,7 @@ export function parseUat(text) {
     /** @type {Record<string, string|number>} */
     const item = { k: Number(head[1]), name: head[2] };
     for (const line of body.slice(1)) {
-      const f = line.match(/^(\w+):\s*(.+?)\s*$/);
+      const f = line.match(UAT_FIELD);
       if (f) item[f[1]] = f[2];
     }
     items.push(item);
