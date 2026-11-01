@@ -32,11 +32,12 @@ jobs:
       # the commits they name - so a depth-1 checkout fails 23 of its arms with
       # `invalid object name <sha>^`. The step after it clones the cadence-tests
       # repository into tests/ at the commit .github/tests-pin names; only this
-      # job needs it. It is a plain clone, not a submodule: the plugin directory
-      # refuses a submodule set to `update = none`, and without that setting a
-      # plugin install pulls the suite into the user's plugin cache. The other
-      # jobs below walk no history, keep the shallow default and clone no
-      # suite, so they see the tree a GitHub install receives.
+      # job and coverage need it. It is a plain clone, not a submodule: the
+      # plugin directory refuses a submodule set to `update = none`, and without
+      # that setting a plugin install pulls the suite into the user's plugin
+      # cache. The other jobs below, apart from coverage, walk no history, keep
+      # the shallow default and clone no suite, so they see the tree a GitHub
+      # install receives.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -55,6 +56,70 @@ jobs:
           node-version: ${{ matrix.node }}
       # Zero-dep repo: no install step, the built-in runner is the framework.
       - run: node tests/test.mjs ${{ matrix.group }}
+
+  coverage:
+    # The whole suite in one run with Node's built-in coverage, written as LCOV
+    # for SonarQube. The scan runs in this job after the report is written, so
+    # no artifact passes between jobs. node --test runs the files directly
+    # because test.mjs passes no runner flags through; the env line does what
+    # test.mjs does, pointing the suite at a user-global config that does not
+    # exist. fetch-depth: 0 because why-record.test.mjs reads this repository's
+    # history (see node-test), and the scan uses blame to find new code.
+    # persist-credentials: false keeps the job token out of .git/config, where
+    # the scan action could read it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Clone the suite at the pinned commit
+        run: |
+          set -euo pipefail
+          PIN="$(cat .github/tests-pin)"
+          if ! [[ "$PIN" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::.github/tests-pin must hold one full 40-character commit SHA"
+            exit 1
+          fi
+          git clone --quiet https://github.com/crenshawdev/cadence-tests tests
+          git -C tests checkout --quiet --detach "$PIN"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Run the suite with coverage
+        env:
+          CADENCE_GLOBAL_CONFIG: ${{ runner.temp }}/no-global/config.json
+        run: >-
+          node --test --experimental-test-coverage
+          --test-coverage-include='cadence-core/**'
+          --test-coverage-lines=95 --test-coverage-branches=88
+          --test-reporter=spec --test-reporter-destination=stdout
+          --test-reporter=lcov --test-reporter-destination=lcov.info
+          tests/*.test.mjs
+
+      # Forks and Dependabot runs don't get the secret, so they skip the scan.
+      - name: Check for SonarQube token
+        id: sonar
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "$SONAR_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cache SonarQube packages
+        if: steps.sonar.outputs.enabled == 'true'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: SonarQube scan
+        if: steps.sonar.outputs.enabled == 'true'
+        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304 # v8.4.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   self-verify:
     # The prose<->code drift linter: every config key, script invocation, and
