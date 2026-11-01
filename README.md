@@ -1,6 +1,8 @@
 # Cadence
 
 [![Test](https://github.com/crenshawdev/cadence/actions/workflows/test.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/test.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=crenshawdev_cadence&metric=alert_status)](https://sonarcloud.io/project/overview?id=crenshawdev_cadence)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=crenshawdev_cadence&metric=coverage)](https://sonarcloud.io/project/overview?id=crenshawdev_cadence)
 [![Release](https://github.com/crenshawdev/cadence/actions/workflows/release.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/crenshawdev/cadence?label=release)](https://github.com/crenshawdev/cadence/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/crenshawdev/cadence)](LICENSE)
