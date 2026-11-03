@@ -52,7 +52,7 @@ Two stops first, before anything is written.
    every line it had and a re-run adds no second line.
 
    The config template is copied VERBATIM - ask no configuration questions,
-   with TWO deliberate exceptions and no others. The first is item 4 below: the
+   with THREE deliberate exceptions and no others. The first is item 4 below: the
    forge. A forge is a PRECONDITION rather than an option (FRG-02), and no
    template can carry a default for it, because which forge hosts a repository
    is a fact about that repository and not about Cadence. So it is asked, once,
@@ -66,6 +66,11 @@ Two stops first, before anything is written.
    already does. Same shape of reason as the forge - a template cannot carry a
    default for what a model costs the person paying for it, and an adopted
    repository is exactly where a per-project answer differs from the machine's.
+
+   The third is the testing policy, asked once as the `testing_policy` step
+   between `write_requirements` and `write_roadmap`. Same shape of reason as the
+   forge - no template can carry a default for what a project's tests must
+   prove, and the roadmap's first phase may be planned against the answer.
 
    Every other key keeps the template's value. Say in one line what was written
    and where: "Config written with defaults (standard granularity, research and
@@ -226,6 +231,8 @@ the reason is measured rather than stylistic: the first computed discriminator
 this tree tried ordered its fixture's phases backwards, and the standing
 requirement on this door is that it never become a scripted interview.
 Suppression is judgment. You read the repo, so you already know what it said.
+The `testing_policy` step below reports coverage figures and thresholds and
+decides no question here.
 </step>
 
 <step name="write_project">
@@ -272,6 +279,25 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/REQUIREMENTS.md` and write
   adopted repo.
 </step>
 
+<step name="testing_policy">
+Follow the **Testing policy** section of
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md` (one consult site -
+this step) here, after `survey`'s reading and before the roadmap: one
+recommendation, Accept or Adjust, written, rendered and checked. The survey
+already read the workflows, manifests and tree whose thresholds and exclusions
+it quotes.
+
+Skip that section's publishing question. Ask nothing about publishing; say in
+one line that verification publishing is off and that `/cad-config --testing` is
+where to authorize it.
+
+The step leaves `testing.*` in `.planning/config.json` and writes
+`.github/cadence/coverage-policy.json`. Both are staged by the `commit` step
+when `planning.commit_docs` is true. When it is false they stay uncommitted, and
+the first CI plan task commits the policy file, since `/cad-plan` puts that task
+first when `check` finds no gate.
+</step>
+
 <step name="write_roadmap">
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
 `.planning/ROADMAP.md`. It covers REMAINING work only, derived here - there is
@@ -290,6 +316,13 @@ no roadmapper agent.
    be shown false. Never "X works".
 5. Map every `## Active` id to exactly one phase - full coverage, no orphans,
    no double-mapping.
+6. Only when a policy was accepted in `testing_policy`: a project below its
+   accepted thresholds keeps them, and the first phase closes the shortfall and
+   installs the gate together, completing when the required jobs pass. This
+   holds when coverage reads `unknown` too, because the gate's first run gives
+   the real figure. It is one of rule 2's counted phases, it maps no `## Active`
+   id unless one is about this work, and its criteria are the thresholds met and
+   the required jobs passing. It never lowers a threshold to make that easier.
 
 Then count what you just wrote - rule 4 above is prose until a seam counts it:
 
@@ -342,8 +375,9 @@ commits at all has nothing to branch from: skip the guard and let this commit
 create the root commit on the current branch.)
 
 Then ONE commit, `docs: adopt existing project into Cadence`, staging exactly
-the five files written: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
-`.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/config.json`. One
+the six files written: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
+`.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/config.json` and
+`.github/cadence/coverage-policy.json`. One
 commit, not three - all three documents were derived in a single pass, so there
 is no intermediate state worth a separate commit.
 </step>
@@ -356,6 +390,7 @@ Adopted: {project name}
 Found: {one line - stack, size, release state}
 .planning/: PROJECT.md, REQUIREMENTS.md, ROADMAP.md ({N} phases),
             STATE.md, config.json
+Testing policy: {scope}, {lines}/{branches}; publishing off
 Commit: {hash, or "none - commit_docs is false"}
 
 Next: /cad-context 1
@@ -375,10 +410,14 @@ on disk in `.planning/`.
   `git init`. Its inputs are code and history, and git's upward discovery would
   otherwise let a subdirectory answer from the repo above it.
 - Nothing outside the canonical `.planning/` set is created: PROJECT.md,
-  REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json. No `phases/` dirs, no
+  REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json - and
+  `.github/cadence/coverage-policy.json`, which the `testing_policy` step
+  renders. No `phases/` dirs, no
   CLAUDE.md generation, no extra scaffolding.
 - Config keys come from the engine config template only; never invent keys and
-  never ask config questions.
+  never ask config questions beyond the forge, the roles interview and the
+  `testing_policy` step, which is the only place `testing.*` is written and
+  never asks about publishing.
 - Never fabricate an answer the ask-user seam was supposed to collect.
 - STATE.md is a four-line overwritten cursor plus an optional `Plan:` line: no audit log, no narrative.
 - Nothing already shipped is written as an open requirement or an `- [x]` phase.
@@ -388,7 +427,8 @@ on disk in `.planning/`.
 - [ ] Refused unless `git rev-parse --show-toplevel` succeeded AND equalled the
       working directory; refused if `.planning/PROJECT.md` already existed
 - [ ] `.planning/` holds PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and
-      config.json, with config.json copied verbatim from the engine template
+      config.json, with config.json copied verbatim from the engine template and
+      written only with the forge, roles and testing policy answers
 - [ ] The trace ignore line is present and `.planning/trace.jsonl` is untracked
 - [ ] Nothing the README, the manifests, the tree or the log already answered
       was re-asked, and every question asked named the gap it was filling
@@ -402,6 +442,6 @@ on disk in `.planning/`.
 - [ ] STATE.md is a four-line cursor (no `Plan:` line) pointing at phase 1, and no `phases/` dir
       was created
 - [ ] One `docs:` commit under references/git-guard.md, respecting
-      `planning.commit_docs`, staging the five files by name and pushing nothing
+      `planning.commit_docs`, staging the six files by name and pushing nothing
 - [ ] No subagent was dispatched
 </success_criteria>
