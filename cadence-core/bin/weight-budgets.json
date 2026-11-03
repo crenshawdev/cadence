@@ -70,6 +70,7 @@
     "cadence-core/templates/SUMMARY.md": 756,
     "cadence-core/templates/UAT.md": 6831,
     "cadence-core/templates/config.json": 1420,
+    "cadence-core/templates/coverage-report-check.mjs": 5407,
     "cadence-core/workflows/adopt.md": 21886,
     "cadence-core/workflows/audit.md": 13029,
     "cadence-core/workflows/config-review.md": 4991,
