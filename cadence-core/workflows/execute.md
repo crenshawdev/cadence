@@ -114,8 +114,12 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch \
   workflow.test_evidence \
-  workflow.check_inspection
+  workflow.check_inspection \
+  testing.scope
 ```
+
+`testing.scope` set means a testing policy is active. It gates the one line
+`execute_sequential` adds to the dispatch.
 
 The `diff` and `phase_diff` gates are NOT read here: fire(trigger) takes every
 gate from the routing bundle (`route.mjs resolve`). A `config.mjs get` of a gate
@@ -257,6 +261,10 @@ successive executors in the phase share a cached prefix: phase-level context
 - The `<test_evidence>` block below, verbatim, ONLY when `workflow.test_evidence`
   (read in `locate`) is true; when it is false, nothing at all is added. It is
   the same for every plan in the phase, so it sits here.
+- With `testing.scope` set, the one line "A testing policy is active." Unset,
+  nothing at all is added. It is the same for every plan, so it sits here, and
+  it rides every dispatch of a plan - continuation and re-dispatched remainder
+  included - and the parallel path's prompt, which is this one.
 - Then the plan-specific tail: the plan file to read, commit scope
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."
