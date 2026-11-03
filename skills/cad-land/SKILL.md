@@ -259,9 +259,12 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      surviving finding halts it. Then Read
      `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` (one consult
      site, this step) for the bounded wait, and read the required jobs of the
-     branch head with a Bash timeout of 600000:
-     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy ci-status --commit "$(git rev-parse <branch>)" --wait 540 --root .`
-     Only `answer:"pass"` reaches `gh pr merge`. `fail` stops and names each
+     branch head with a Bash timeout of 600000. Resolve the head sha ONCE with
+     `git rev-parse <branch>` and use that same sha for the read and the merge:
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy ci-status --commit <sha> --wait 540 --root .`
+     Only `answer:"pass"` reaches `gh pr merge`, and that merge adds
+     `--match-head-commit <sha>`, so a commit pushed to the PR branch after the
+     read is refused rather than landed unchecked. `fail` stops and names each
      failing job. `pending` after the wait stops with nothing landed, and a
      re-run resumes here. With it unset, this bullet does not apply.
    - **Merge on the platform.** GitHub `gh pr merge <branch> --merge

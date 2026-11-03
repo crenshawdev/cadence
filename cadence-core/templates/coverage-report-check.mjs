@@ -43,7 +43,14 @@ if (!['python', 'go', 'lcov'].includes(format) || !reportPath) {
 let policy;
 try { policy = JSON.parse(read(policyPath, 'policy')).coverage; } catch { policy = undefined; }
 if (!policy || typeof policy !== 'object') { fail(`policy: ${policyPath} is not a usable coverage policy`); finish(); }
-const threshold = (m) => (Number.isFinite(policy[m]) ? policy[m] : 0);
+// Only an explicit 0 disables a metric: a missing or non-numeric threshold is a
+// broken policy, never a silent 0.
+const METRICS = ['lines', 'branches', 'statements'];
+for (const m of METRICS) {
+  if (!Number.isFinite(policy[m])) fail(`policy: ${m} threshold is missing or not a number in ${policyPath}`);
+}
+if (failed) finish();
+const threshold = (m) => policy[m];
 
 const text = read(reportPath, 'report');
 if (!text.trim()) { fail(`report: ${reportPath} is empty`); finish(); }
@@ -91,12 +98,13 @@ if (format === 'python') {
   if (!/^LF:\d+/m.test(text)) { fail(`report: ${reportPath} has no LCOV line records`); finish(); }
   metrics.lines = [sum('LH'), sum('LF')];
   metrics.statements = 'LCOV reports lines, not statements';
-  metrics.branches = [sum('BRH'), sum('BRF')];
+  // No BRF record at all is absent data, not a measured zero.
+  metrics.branches = /^BRF:\d+/m.test(text) ? [sum('BRH'), sum('BRF')] : 'the report has no BRF branch records';
   // BRF:0 alone cannot prove instrumentation; --branch in an accepted command does.
   zeroBranchesOk = (policy.commands || []).some((c) => /(^|\s)--branch(\s|=|$)/.test(String(c)));
 }
 
-for (const name of ['lines', 'branches', 'statements']) {
+for (const name of METRICS) {
   const want = threshold(name);
   const got = metrics[name];
   if (want === 0) { say(`${name}: disabled (threshold 0)`); continue; }

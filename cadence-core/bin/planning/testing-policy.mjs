@@ -238,6 +238,9 @@ function cmdCheck(root, base) {
     const absent = policy.required_jobs.filter((/** @type {string} */ j) => !named(j));
     for (const j of absent) problems.push(`required job "${j}" is named in no workflow file under .github/workflows/`);
     if (policy.required_jobs.length === 0) problems.push('no required job is configured');
+    if (coverage.commands.length === 0 && ['lines', 'branches', 'statements'].some((m) => coverage[m] > 0)) {
+      problems.push('testing.coverage.commands is empty while a coverage threshold is above 0, so no workflow command enforces it');
+    }
     gate_found = Boolean(committed) && coverage.commands.length > 0 && missing.length === 0
       && policy.required_jobs.length > 0 && absent.length === 0;
   }
