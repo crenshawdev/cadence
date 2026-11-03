@@ -33,6 +33,17 @@ SUMMARY.md.
 - Existing tests: locate the project's tests (test dirs, `*.test.*`,
   `*_test.*`, spec files) and the runner (`workflow.test_command`; if null,
   detect from the repo - package.json scripts, pytest, cargo test, go test).
+- Policy: read `testing.scope` with
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get testing.scope`.
+  Set means a testing policy is active: read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` once, and read
+  the required jobs' result for HEAD, once:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy ci-status --commit "$(git rev-parse HEAD)" --root .
+  ```
+
+  A result of pending or fail is reported as it is. Unset, neither is read.
 
 ## 3. Audit coverage (the gap map)
 For each requirement, decide covered vs gap by the definition above:
@@ -44,12 +55,19 @@ For each requirement, decide covered vs gap by the definition above:
 Report the map: covered requirements with their guarding test, gaps listed
 plainly. If there are no gaps, state that and stop - the phase is covered.
 
+With a policy active, keep the gap map: an important behavior needs a test even
+when the aggregate coverage passes, so a requirement with no failing-capable
+test is a gap whatever the aggregate says. Add the required coverage job's
+result for HEAD from the `ci-status` read above.
+
 ## 4. Propose a gap test plan (approval gate)
 For each gap, propose: the requirement, the test kind that fits (unit /
 integration / end-to-end - chosen from what the code is, not a default), the
 target test file, and the behavior the test will pin. Present the plan via the
 ask-user seam and get approval before writing anything. Let the user drop or
 adjust entries.
+
+With a policy active, present the plan and go on to step 5 with no ask.
 
 ## 5. Generate the tests
 Write each approved test in the project's framework and conventions (match the
@@ -59,6 +77,9 @@ behavior, not a tautology. Do not invent a new framework or add a heavy E2E
 dependency the project does not already use; if a gap truly needs one, flag it
 for the user rather than pulling it in silently.
 
+With a policy active, the policy's bug-fix and meaningful-assertion rules
+govern the tests, and the RED check above is not applied to every test.
+
 ## 6. Run and report
 Run `workflow.test_command` (or the detected runner) over the new tests.
 - Green -> report the closed gaps and the updated coverage map.
@@ -67,6 +88,11 @@ Run `workflow.test_command` (or the detected runner) over the new tests.
   defect). Never leave a red test committed as "coverage."
 - Report any requirement still uncovered (e.g. the user dropped it, or it needs
   a dependency they declined).
+
+With a policy active, stop by the policy's stopping rule and handle a
+coverage shortfall by its coverage shortfall rule: measure first, report the
+actual gap, keep the accepted thresholds, and if closing the gap materially
+exceeds the planned effort, report that once.
 
 ## 7. Commit
 Commit the generated tests atomically, `test(phase-<N>): cover <requirements>`,
