@@ -703,6 +703,11 @@ export const CONTRACTS = {
     'test-policy render': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // The same `--root` row, for the same reason: `check` reads the project's
+    // config, its committed policy file and its workflow files.
+    'test-policy check': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // Plan file paths are positional words, so it takes no flag.
     'test-checks': {},
     // One plan file path as a positional word, so it takes no flag.

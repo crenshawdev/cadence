@@ -15,15 +15,23 @@
 // schema's default; the schema is located the way config.mjs and route.mjs
 // locate it and its defaults are never restated here.
 //
+// `check` compares TEXT: the config, that file, and the workflow files directly
+// under `.github/workflows/`. It parses no tool configuration and never runs an
+// accepted command (D-03) - a config that arrives with a clone must not choose
+// what Cadence runs.
+//
 // `--root` is the PROJECT root, deliberately NOT `--dir`, which this script
 // defines as the planning directory.
 'use strict';
 
-import { mkdirSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readTestingPolicy } from '../lib/config-merge.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
+import { localGitEnv, publishAuthorized } from '../lib/publish-authorization.mjs';
+import { emit } from '../lib/seam-io.mjs';
 import { testSeamOpen } from '../lib/test-seam.mjs';
 import { fail, ok } from './core.mjs';
 
@@ -36,27 +44,46 @@ const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
 /** Where the committed policy lives, relative to the project root. */
 export const POLICY_FILE = join('.github', 'cadence', 'coverage-policy.json');
 
+/** The schema's `testing.*` keys as [dotted path under testing, default], in schema order. */
+function schemaKeys() {
+  const keys = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')).keys;
+  return Object.entries(keys).filter(([name]) => name.startsWith('testing.'))
+    .map(([name, spec]) => /** @type {[string[], any]} */ ([name.split('.').slice(1), spec.default]));
+}
+
+/** The value at `path` under `from`, or undefined. */
+function at(from, path) {
+  let have = from;
+  for (const p of path) have = have && typeof have === 'object' ? have[p] : undefined;
+  return have;
+}
+
 /**
- * The accepted policy with defaults filled, in the schema's key order - or null
- * when the project accepted none.
+ * The policy in the `testing` section's own nested shape, keys in the schema's
+ * order, every unset key at the schema's default. Applied to the config and to
+ * the committed file alike, so a key one side omits does not read as a change.
+ * @param {any} testing
+ */
+function fill(testing) {
+  /** @type {Record<string, any>} */
+  const policy = {};
+  for (const [path, dflt] of schemaKeys()) {
+    let into = policy;
+    for (const p of path.slice(0, -1)) into = into[p] ||= {};
+    const have = at(testing, path);
+    into[path[path.length - 1]] = have === undefined ? dflt : have;
+  }
+  return policy;
+}
+
+/**
+ * The accepted policy with defaults filled - or null when the project accepted
+ * none - and the forge the project names.
  * @param {string} root
  */
 function effectivePolicy(root) {
-  const { testing, accepted } = readTestingPolicy(join(root, '.planning', 'config.json'));
-  if (!accepted) return null;
-  const keys = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')).keys;
-  /** @type {Record<string, any>} */
-  const policy = {};
-  for (const [name, spec] of Object.entries(keys)) {
-    if (!name.startsWith('testing.')) continue;
-    const path = name.split('.').slice(1);
-    let have = testing;
-    for (const p of path) have = have && typeof have === 'object' ? have[p] : undefined;
-    let at = policy;
-    for (const p of path.slice(0, -1)) at = at[p] ||= {};
-    at[path[path.length - 1]] = have === undefined ? spec.default : have;
-  }
-  return policy;
+  const { testing, accepted, forgeProvider } = readTestingPolicy(join(root, '.planning', 'config.json'));
+  return { policy: accepted ? fill(testing) : null, forgeProvider };
 }
 
 const NO_POLICY_HINT = 'run /cad-config --testing to accept a testing policy first - until then the project behaves as it did before the policy existed';
@@ -65,7 +92,7 @@ const NO_POLICY_HINT = 'run /cad-config --testing to accept a testing policy fir
  * @param {string} root
  */
 function cmdRender(root) {
-  const policy = effectivePolicy(root);
+  const { policy } = effectivePolicy(root);
   if (!policy) {
     return fail('no-policy', 'testing.scope is unset, so no policy was accepted and there is nothing to render', NO_POLICY_HINT);
   }
@@ -76,6 +103,93 @@ function cmdRender(root) {
 }
 
 /**
+ * Text as a workflow comparison sees it: full-line YAML comments dropped, `\`
+ * line continuations joined, whitespace runs collapsed to one space. Applied to
+ * both sides, so a folded or continued command matches and a commented-out one
+ * does not.
+ * @param {string} text
+ */
+const normalize = (text) => text.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n')
+  .replace(/\\[ \t]*\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+
+/** Every file directly under `<root>/.github/workflows/`, normalized. */
+function workflowTexts(root) {
+  const dir = join(root, '.github', 'workflows');
+  try {
+    return readdirSync(dir).filter((f) => /\.ya?ml$/.test(f)).sort()
+      .map((f) => normalize(readFileSync(join(dir, f), 'utf8')));
+  } catch { return []; }
+}
+
+/** Whether git tracks a file matching `glob`, asked of git so no glob parser is written here. */
+function tracksMatch(root, glob) {
+  try {
+    return execFileSync('git', ['-C', root, 'ls-files', '--', `:(glob)${glob}`],
+      { encoding: 'utf8', env: localGitEnv(), stdio: ['ignore', 'pipe', 'ignore'] }).trim() !== '';
+  } catch { return false; }
+}
+
+/**
+ * @param {string} root
+ */
+function cmdCheck(root) {
+  const { policy, forgeProvider } = effectivePolicy(root);
+  const publish_authorized = publishAuthorized(root);
+  if (!policy) {
+    return ok({ accepted: false, publish_authorized,
+      detail: 'testing.scope is unset, so no policy was accepted and there is nothing to check', hint: NO_POLICY_HINT });
+  }
+  const problems = [];
+
+  // The config against the committed file.
+  let committed = null;
+  try { committed = JSON.parse(readFileSync(join(root, POLICY_FILE), 'utf8')); } catch { /* named below */ }
+  if (!committed || typeof committed !== 'object') {
+    problems.push(`${POLICY_FILE} is missing or unreadable`);
+  } else {
+    const theirs = fill(committed);
+    for (const [path] of schemaKeys()) {
+      const [mine, file] = [at(policy, path), at(theirs, path)];
+      if (JSON.stringify(mine) !== JSON.stringify(file)) {
+        problems.push(`testing.${path.join('.')} is ${JSON.stringify(mine)} in the config and ${JSON.stringify(file)} in ${POLICY_FILE}`);
+      }
+    }
+  }
+
+  const { coverage } = policy;
+  for (const glob of coverage.include) {
+    if (!tracksMatch(root, glob)) problems.push(`coverage.include "${glob}" matches no tracked file`);
+  }
+
+  // The config against the workflow files - GitHub Actions only.
+  const enforcement = forgeProvider === 'github' ? 'available' : 'unavailable';
+  /** @type {boolean|null} */
+  let gate_found = null;
+  if (enforcement === 'available') {
+    const texts = workflowTexts(root);
+    const named = (/** @type {string} */ s) => texts.some((t) => t.includes(normalize(s)));
+    const missing = coverage.commands.filter((/** @type {string} */ c) => !named(
+      c.split('{lines}').join(String(coverage.lines)).split('{branches}').join(String(coverage.branches))
+        .split('{statements}').join(String(coverage.statements))));
+    for (const c of missing) problems.push(`accepted command "${c}" is in no workflow file under .github/workflows/`);
+    const absent = policy.required_jobs.filter((/** @type {string} */ j) => !named(j));
+    for (const j of absent) problems.push(`required job "${j}" is named in no workflow file under .github/workflows/`);
+    if (policy.required_jobs.length === 0) problems.push('no required job is configured');
+    gate_found = Boolean(committed) && coverage.commands.length > 0 && missing.length === 0
+      && policy.required_jobs.length > 0 && absent.length === 0;
+  }
+
+  const answer = { accepted: true, enforcement, gate_found, problems, publish_authorized,
+    ...(enforcement === 'unavailable'
+      ? { note: `git.forge_provider is ${JSON.stringify(forgeProvider)}: enforcement is GitHub Actions only, so the workflow files were not compared` }
+      : {}) };
+  if (problems.length === 0) return ok(answer);
+  return emit({ ok: false, reason: 'policy-disagrees', detail: problems.join('; '),
+    hint: `run planning.mjs test-policy render --root <project> to rewrite ${POLICY_FILE} from the config, or fix the workflow file the detail names`,
+    ...answer });
+}
+
+/**
  * @param {string} _dir
  * @param {string|undefined} sub
  * @param {Record<string, any>} opts
@@ -83,5 +197,6 @@ function cmdRender(root) {
 export function cmdTestPolicy(_dir, sub, opts) {
   const root = typeof opts.root === 'string' ? opts.root : process.cwd();
   if (sub === 'render') return cmdRender(root);
+  if (sub === 'check') return cmdCheck(root);
   return fail('usage', 'test-policy render | check');
 }
