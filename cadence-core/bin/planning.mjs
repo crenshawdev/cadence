@@ -276,8 +276,8 @@ const COMMANDS = {
   // subcommand declares no flag of its own.
   'test-checks': async (_dir, _sub, _opts, rest) =>
     (await import('./planning/test-checks.mjs')).cmdTestChecks(rest),
-  'test-evidence': async (_dir, _sub, _opts, rest) =>
-    (await import('./planning/test-checks.mjs')).cmdTestEvidence(rest),
+  'test-evidence': async (dir, _sub, _opts, rest) =>
+    (await import('./planning/test-checks.mjs')).cmdTestEvidence(rest, dir),
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the
   // cwd, which would report a different tree than the caller named (#42/#45) -

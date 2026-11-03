@@ -299,3 +299,28 @@ export function mergeLayers(repoFile, opts = {}) {
     tornLayers: [...new Set(tornLayers)],
   };
 }
+
+/**
+ * The ONE read of the testing policy keys: for a config file, the merged
+ * `testing` section, the two forge keys the policy checks address, whether the
+ * accepted-scope predicate above holds for it, and the merge's `warnings`.
+ * `test-evidence` and the `test-policy` seam both read through here, so there is
+ * a single answer to "was a policy accepted" (D-17). It lives in this file, not
+ * a new one, so self-verify's merge census (check 12) keeps its count.
+ *
+ * `testing` is the MERGED object with no schema defaults applied (this file reads
+ * no schema): a key nobody set is absent from it. `accepted` reads the repo
+ * layer's own scope, the same layer `mergeLayers` overrides the switches from.
+ * @param {string} file
+ */
+export function readTestingPolicy(file) {
+  const { config, layers, warnings } = mergeLayers(file);
+  const repoTesting = layers.repo && layers.repo.testing;
+  return {
+    testing: isPlainObject(config.testing) ? config.testing : {},
+    forgeProvider: isPlainObject(config.git) && config.git.forge_provider !== undefined ? config.git.forge_provider : null,
+    forgeRepo: isPlainObject(config.git) && config.git.forge_repo !== undefined ? config.git.forge_repo : null,
+    accepted: isPlainObject(repoTesting) && isAcceptedTestScope(repoTesting.scope),
+    warnings,
+  };
+}

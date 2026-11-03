@@ -24,6 +24,7 @@ import { readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fail, ok, readPlanReports } from './core.mjs';
 import { atomicWrite, sectionSpan } from '../lib/planning-files.mjs';
+import { readTestingPolicy } from '../lib/config-merge.mjs';
 
 const MAP_HEADER = ['criterion', 'task', 'command', 'test file', 'function', 'expected',
   'unit and fakes', 'break'];
@@ -448,11 +449,24 @@ function controlFault(control) {
   return null;
 }
 
-/** @param {string[]} paths */
-function cmdTestEvidence(paths) {
+/**
+ * @param {string[]} paths
+ * @param {string} dir the planning directory whose config.json carries the policy
+ */
+function cmdTestEvidence(paths, dir) {
   if (paths.length !== 1) {
     return fail('bad-args', `test-evidence needs exactly one plan file path (got ${paths.length})`,
       'pass the one PLAN file whose report to judge as a positional word after `test-evidence`, then re-run');
+  }
+  // An accepted testing policy (testing.scope) requires no evidence rows and no
+  // negative control, so there is nothing to judge: answered before any plan or
+  // report is read, and nothing is written, so a report's first line stands.
+  // With no policy accepted every line below runs exactly as it always has.
+  const policy = readTestingPolicy(join(dir, 'config.json'));
+  if (policy.accepted) {
+    return ok({ plan: paths[0], state: 'nothing-required',
+      note: 'testing.scope is set, so this project requires no evidence rows or negative controls',
+      ...(policy.warnings.length ? { warnings: policy.warnings } : {}) });
   }
   const texts = readPlans(paths);
   if (!texts) return;
