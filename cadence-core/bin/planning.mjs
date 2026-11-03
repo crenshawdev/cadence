@@ -329,7 +329,7 @@ const COMMANDS = {
   // --root, never --dir: this one names the PROJECT root, the `detect-commands`
   // distinction. The declared row is applied at the dispatch door below.
   'test-policy': async (dir, sub, opts) =>
-    (await import('./planning/test-policy.mjs')).cmdTestPolicy(dir, sub, opts),
+    (await import('./planning/testing-policy.mjs')).cmdTestPolicy(dir, sub, opts),
   // The gate fire's per-finding rulings, beside the sibling REVIEW file.
   adjudication: async (dir, _sub, opts) =>
     (await import('./planning/adjudication.mjs')).cmdAdjudication(dir, opts),

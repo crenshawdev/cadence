@@ -1,6 +1,10 @@
 // @ts-check
-// planning/test-policy.mjs - `test-policy render`: the committed form of the
+// planning/testing-policy.mjs - `test-policy render`: the committed form of the
 // project's accepted testing policy.
+//
+// THE FILE NAME. `testing-policy`, not `test-policy` like the subcommand: Node's
+// default coverage exclusion skips files named `test-*`, which kept this module
+// outside the 95/88 gate.
 //
 // WHY A FILE. The policy lives in `.planning/config.json`, which a project may
 // keep out of its repository, and GitHub Actions can only read what is
