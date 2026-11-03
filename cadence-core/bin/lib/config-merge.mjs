@@ -180,6 +180,15 @@ export function layerIdentity(p) {
  * untouched: `config`, `source`, `layers`, `warnings` and `scopeWarnings` are
  * byte-identical, and it is empty rather than absent for the same reason
  * `scopeWarnings` is.
+ *
+ * The `testing` section is honoured from the REPO layer alone (D-09):
+ * `repo_only` in the schema refuses the write at the user-global layer, but a
+ * hand-edited global file never went through that write face, so the whole
+ * section is removed from the global object the merge consumes, by the literal
+ * section name and with no schema read (this runs in the PreToolUse hook), and a
+ * non-null one is named on `scopeWarnings`. `layers.global` keeps the file's own
+ * content. A collapsed read has no global layer, so the user's own file reads as
+ * written there.
  * @param {string} repoFile
  * @param {{asGlobal?: boolean}} [opts]
  */
@@ -225,15 +234,29 @@ export function mergeLayers(repoFile, opts = {}) {
   const scoped = opts && opts.asGlobal
     ? { layer: repoValue, warnings: [] }
     : stripGlobalOnly(repoValue, repoFile);
+  const scopeWarnings = [...scoped.warnings];
+  // The global object the MERGE consumes, without a `testing` section: the
+  // rest-spread copies every other own key, `layers.global` is untouched.
+  let globalForMerge = globalValue;
+  if (global && globalValue && Object.hasOwn(globalValue, 'testing')) {
+    const { testing, ...rest } = globalValue;
+    globalForMerge = rest;
+    if (testing !== null) {
+      scopeWarnings.push(`config section "testing" in ${GLOBAL_CONFIG} was ignored: it is honoured `
+        + 'from the repository config layer only, so a user-global value cannot lower or accept a '
+        + "testing policy for a repository that never chose one");
+    }
+  }
+  const config = deepMerge(globalForMerge || {}, scoped.layer || {});
   return {
-    config: deepMerge(globalValue || {}, scoped.layer || {}),
+    config,
     source: layers.length ? (shared ? sharedSource : layers.join('+')) : 'defaults',
     layers: { global: globalValue || null, repo: repoValue || null },
     // Kept alongside the collapse above: two genuinely different layers that
     // are both broken still get one entry each, and a caller pushing its own
     // strings in (route.mjs) never doubles a diagnostic.
     warnings: [...new Set(warnings)],
-    scopeWarnings: scoped.warnings,
+    scopeWarnings,
     // De-duplicated for the same reason `warnings` is: one collapsed file that
     // resolves as both layer paths is ONE torn layer, not two.
     tornLayers: [...new Set(tornLayers)],
