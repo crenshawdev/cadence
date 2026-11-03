@@ -130,6 +130,15 @@ Every task has exactly three fields, all concrete:
   command the executor cannot run, which only turns into a mid-task deferral
   that later masquerades as a pass. A CONTEXT criterion already tagged
   `(human-verify: ...)` carries that intent forward.
+  When your dispatch says a testing policy is active, read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` once and write
+  into `Verify:` the short testing scope its Bounded test planning rules ask
+  for: the outcomes, what is already covered, the smallest additional checks,
+  what evidence is sufficient and where testing stops. A test that needs a
+  service the local machine lacks names a required job instead of
+  `human-verify`; the `human-verify` sentence above is for a dispatch that says
+  no such thing. Add no new field, table, approval step, per-test
+  justification or one-test-per-criterion rule.
 
 Atomic means: ONE concern, independently verifiable, leaves the repo
 committable. One concern is the binding half: a task whose title needs "and" or
