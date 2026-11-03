@@ -115,6 +115,20 @@ Assemble `{ instruction, artifact }` from the wiring table:
   The finding shape, the gate and the reviewer set are unchanged: this is
   instruction text, so the claude-subagent payload and the cross-model
   `instruction` both carry it.
+- **The testing policy rule** (every trigger). The fire reads `testing.scope`
+  from the calling workflow's own config batch when that batch holds it, and
+  otherwise as one more key on the call the `plan` rule's read makes, or, for a
+  trigger that makes no such call, in `config.mjs get testing.scope`.
+  - **Unset:** the instruction is composed exactly as it is without this rule.
+  - **Set:** the `instruction` of every trigger adds that a test finding must
+    meet the completion rule (`references/test-policy.md`): a demonstrated
+    defect, an uncovered acceptance requirement or a measured coverage
+    shortfall. Another imaginable failure or alternative implementation is not a
+    finding, and completed testing is not reopened without such evidence. A real
+    defect, an uncovered requirement or a measured shortfall still draws a
+    finding. The findings schema is unchanged and `reviewer-brief.md` is not
+    edited, so the cross-model reviewers get the rule through `instruction`
+    alone and the local reviewer through `instruction` and its contract.
 - `artifact` = a REFERENCE, never the material itself. Inlining a diff keeps
   every byte of it resident here for the rest of the run, when the reviewer can
   produce it in one command. Three shapes; every fire site names the one it uses:

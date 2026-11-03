@@ -40,7 +40,9 @@ agreeable.
 - **Correctness** - logic that yields a wrong result on some input; off-by-one,
   wrong operator, missed branch, bad boundary.
 - **Edge cases / error handling** - empty, null, huge, concurrent, malformed,
-  offline; failures that escape as crashes instead of handled outcomes.
+  offline; failures that escape as crashes instead of handled outcomes. When
+  the instruction says a testing policy is active, a test finding must meet the
+  completion rule it states, and another imaginable failure is not one.
 - **Security** - injection, secret exposure, missing authz, unsafe parsing of
   untrusted input, destructive ops without a guard.
 - **For a plan** - a requirement with no task, a task that does not deliver its
