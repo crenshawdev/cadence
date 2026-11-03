@@ -24,6 +24,16 @@ npx tsc -p tsconfig.ci.json                                   # checkJs over cad
 
 The self-verify step is the one that catches most drift. It lints the prose against the code: every config key, script invocation, and file path named in the workflows has to actually exist, or the build fails. It also weighs every agent file, every SKILL.md, every workflow, and every file under `cadence-core/references/` and `cadence-core/templates/`, and fails when one EXCEEDS its recorded byte count in `cadence-core/bin/weight-budgets.json`, or when an agent's prose reaches for a tool its frontmatter never declared. The budget is a ceiling, not an equality: a surface you shrank is green, and its entry can be re-pinned whenever it suits you. If you touch a command or a config key, run it before you push, because the build will run it for you either way.
 
+## Writing tests
+
+A test has to earn its place, same as a feature. Before you write one, work out the outcomes and the realistic failures the change actually has, look at what the suite already covers, and add the smallest set of checks that proves the rest. If the fixtures or the setup outgrow the change, simplify the approach before you build it.
+
+Test behavior through the seams, with expected values that come from the design and not from the code under test. A test that only finds a filename in a workflow, or a paragraph in a certain order, checks the prose, it doesn't prove a model follows that prose, so don't offer it as proof.
+
+Stop when the agreed behavior is covered and the suite, self-verify, the typecheck and the coverage gate all pass. Expand only for a demonstrated defect, an uncovered acceptance requirement, or a measured coverage shortfall, name the gap, and use the smallest check that closes it. Another imaginable failure or another way the code could have been written is not a reason, and a review doesn't reopen finished testing without one of those three.
+
+If the coverage gate comes up short, measure first and report the real gap. The gate stays at 95 lines and 88 branches, and what you add has to assert behavior, not just run lines. If closing the gap would cost far more than the change planned for, say so once in the pull request instead of growing the work or lowering the gate.
+
 ## What a good bug report has
 
 The failing command, what you expected, what happened instead, and enough of the surrounding state to reproduce it: your Claude Code version, `node --version`, and the relevant slice of `.planning/` or config if the bug is state-shaped. A stack trace beats a paraphrase every time.
