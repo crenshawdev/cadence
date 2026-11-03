@@ -10,6 +10,8 @@
 // unknown/missing inputs never throw.
 //
 //   decidePublish - cad-land's sanctioned unattended integration-branch push.
+//   decideVerificationPublish - /cad-verify's push so CI can run, authorized only
+//                 by the repository-local cadence.publishForVerification.
 //   decideReap    - cad-land's local reap of the merged integration branch.
 //
 // decideReap lives HERE rather than in a lib of its own because it needs the
@@ -125,20 +127,65 @@ export function authorizationDetail(layers) {
  * @returns {{ action:'publish'|'refuse', argv:string[], branch:string|null, remote:string|null, reason:string, detail?:string }}
  */
 export function decidePublish({ autoClose, currentBranch, protectedBranches, remote, configuredRemotes } = {}) {
-  const protectedList = Array.isArray(protectedBranches) ? protectedBranches : [];
-  const remotes = Array.isArray(configuredRemotes) ? configuredRemotes : [];
-  const branch = typeof currentBranch === 'string' ? currentBranch : null;
-  const rem = typeof remote === 'string' ? remote : null;
-
-  /** @param {string} reason
-   *  @returns {{ action:'refuse', argv:string[], branch:string|null, remote:string|null, reason:string, detail?:string }} */
-  const refuse = (reason) => ({ action: 'refuse', argv: [], branch, remote: rem, reason });
-
   // 1. auto_close must be on in BOTH layers (D-02): repo-only, global-only and
   //    an unreadable half never publish. The reason token stays
   //    `auto-close-off` whichever off-state this is; the detail names the file.
   const missing = authorizationDetail(/** @type {any} */ (autoClose));
-  if (missing !== null) return { ...refuse('auto-close-off'), detail: missing };
+  if (missing !== null) {
+    return { action: 'refuse', argv: [],
+      branch: typeof currentBranch === 'string' ? currentBranch : null,
+      remote: typeof remote === 'string' ? remote : null,
+      reason: 'auto-close-off', detail: missing };
+  }
+  return branchPush({ currentBranch, protectedBranches, remote, configuredRemotes },
+    'sanctioned unattended integration-branch publish');
+}
+
+/**
+ * Decide whether the seam may push the current branch so CI can verify it, and
+ * build the exact argv if so (phase 1, D-02). PURE and TOTAL like
+ * decidePublish. The one authorization is `authorized`, the boolean
+ * lib/publish-authorization.mjs `publishAuthorized` reads from the repository's
+ * own `.git/config`: `git.auto_close` is not an input here and authorizes
+ * nothing. Once authorized, the branch and remote gates and the argv are
+ * decidePublish's own (`branchPush`), so the two cannot drift. Only a literal
+ * `true` authorizes.
+ *
+ * @param {{ authorized?: unknown, currentBranch?: unknown,
+ *   protectedBranches?: unknown, remote?: unknown, configuredRemotes?: unknown }} args
+ * @returns {{ action:'publish'|'refuse', argv:string[], branch:string|null, remote:string|null, reason:string, detail?:string }}
+ */
+export function decideVerificationPublish({ authorized, currentBranch, protectedBranches, remote, configuredRemotes } = {}) {
+  if (authorized !== true) {
+    return {
+      action: 'refuse', argv: [],
+      branch: typeof currentBranch === 'string' ? currentBranch : null,
+      remote: typeof remote === 'string' ? remote : null,
+      reason: 'publish-not-authorized',
+      detail: 'cadence.publishForVerification is not true in this repository\'s own .git/config, so nothing is pushed for CI verification. '
+        + 'Only that local setting authorizes it: not the user-global config, not .planning/config.json, and not git.auto_close.',
+    };
+  }
+  return branchPush({ currentBranch, protectedBranches, remote, configuredRemotes },
+    'sanctioned verification publish');
+}
+
+/**
+ * Gates 2 to 7 of decidePublish, shared with decideVerificationPublish: the
+ * branch must exist and be safe and unprotected, the remote a configured bare
+ * name; then the fully-qualified refspec.
+ * @param {{ currentBranch?: unknown, protectedBranches?: unknown, remote?: unknown, configuredRemotes?: unknown }} args
+ * @param {string} okReason
+ * @returns {{ action:'publish'|'refuse', argv:string[], branch:string|null, remote:string|null, reason:string }}
+ */
+function branchPush({ currentBranch, protectedBranches, remote, configuredRemotes }, okReason) {
+  const protectedList = Array.isArray(protectedBranches) ? protectedBranches : [];
+  const remotes = Array.isArray(configuredRemotes) ? configuredRemotes : [];
+  const branch = typeof currentBranch === 'string' ? currentBranch : null;
+  const rem = typeof remote === 'string' ? remote : null;
+  /** @param {string} reason */
+  const refuse = (reason) => ({ action: /** @type {const} */ ('refuse'), argv: [], branch, remote: rem, reason });
+
   // 2. A branch must exist and not be the detached-HEAD sentinel.
   if (!branch || branch === 'HEAD') return refuse('no-branch');
   // 3. The branch must be interpolation-safe (no leading '-', ':', or metachars).
@@ -154,11 +201,11 @@ export function decidePublish({ autoClose, currentBranch, protectedBranches, rem
   //    `--` end-of-options separator so neither remote nor refspec can be read as
   //    an option even if a future REMOTE_NAME regression let a dash through.
   return {
-    action: 'publish',
+    action: /** @type {const} */ ('publish'),
     argv: ['push', '--set-upstream', '--', rem, `refs/heads/${branch}:refs/heads/${branch}`],
     branch,
     remote: rem,
-    reason: 'sanctioned unattended integration-branch publish',
+    reason: okReason,
   };
 }
 

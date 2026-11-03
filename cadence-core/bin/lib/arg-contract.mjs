@@ -1191,6 +1191,9 @@ export const CONTRACTS = {
     publish: {
       '--remote': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
     },
+    'verify-publish': {
+      '--remote': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+    },
     reap: {
       '--branch': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
     },

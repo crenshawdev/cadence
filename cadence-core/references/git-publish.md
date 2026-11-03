@@ -5,7 +5,13 @@ this file's silences are - live in `references/git-guard.md`.
 
 ## 3. Never auto-push
 
-No workflow pushes, ever. Publishing is a human decision made through
+No workflow pushes, ever, with one case: under an accepted testing policy
+`/cad-verify` pushes a non-protected branch so CI can run on it, through
+`git-publish.mjs verify-publish`, and only when this repository's own
+`.git/config` holds `cadence.publishForVerification` as true
+(set by `/cad-config --testing` on an explicit yes). Nothing else authorizes it:
+not the user-global config, `.planning/config.json` or `git.auto_close`. Any
+other publishing is a human decision made through
 `/cad-land`, which reports git state and asks the mechanism (direct push /
 MR or PR / tag / leave local) with NO preselected default.
 
