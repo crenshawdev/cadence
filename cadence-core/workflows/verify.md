@@ -186,7 +186,7 @@ once, then:
 - Optional observations are listed under the results table and never recorded as
   results.
 
-Then print the one results table (below), and continue to `await_ci` and
+Then print the one results table (below), and continue to `await_ci` (below) and
 `route_failures`. Pass 2 does not run.
 
 **The bar.** An item is a HUMAN check only when the model cannot execute it -
@@ -347,6 +347,41 @@ The output's `next` field is the next pending item - present it, or
 continue to `route_failures` when `next` is null or the user stops.
 </step>
 
+<step name="await_ci">
+Runs only with `testing.scope` set and at least one item `pending_ci` in the
+UAT.md the walk read or recorded; otherwise go straight to `route_failures`, so
+only such a phase waits. It runs in the main session, never in the verifier
+subagent. Every `uat record` here carries repository text through
+`--fields-file`, as the walk does.
+
+1. Take `git rev-parse HEAD`. An item whose `commit` is not that head moves to it
+   by re-recording `pending_ci` with the new `commit` and the same `job`.
+2. Use the `publish_authorized` and `enforcement` fields of the walk's
+   `test-policy check` answer (present on a failing answer too).
+   - `enforcement: unavailable` (another forge): say enforcement is unavailable
+     and why, from the answer's `note`. Push nothing and read nothing. The items
+     stay required and pending until they run some other automated way or the
+     user explicitly makes one optional.
+   - `publish_authorized` false: push nothing, leave the items pending, and name
+     the ways on: `/cad-config --testing` to authorize publishing for
+     verification, or publishing through `/cad-land`.
+3. Authorized: push with
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" verify-publish`.
+   A refusal is relayed with its `reason` and `detail`, the items stay pending,
+   and there is no fall back to a raw `git push`.
+4. Read the jobs, with the bounded wait `references/test-policy.md` states and a
+   Bash timeout of 600000 so the call covers it:
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy ci-status --commit <sha> --phase <N> --wait 540 --root .`
+   A pending answer after the wait leaves the items pending and the phase
+   `partial`; a re-run of `/cad-verify` resumes here.
+5. For each job in the answer, record every `pending_ci` item naming that job:
+   `pass` with `{"evidence": "<job> concluded <conclusion> at <sha>"}`, or `fail`
+   with `{"cause": "<job> concluded <conclusion> at <sha>"}`, each `--source
+   model` through `--fields-file`. A `fail` reaches `route_failures`. A job still
+   pending leaves its items as they are. On an overall pass the seam itself
+   records the commit as the phase's `ci`.
+</step>
+
 <step name="route_failures">
 For each item with `status: fail` and no recorded cause:
 
@@ -458,7 +493,11 @@ commit UAT.md, `phases/<N>/FINDINGS.json` and
 whichever of STATE.md, ROADMAP.md, and REQUIREMENTS.md changed:
 `docs: phase <N> UAT - {passed} passed, {failed} failed`.
 
-Report tersely:
+Report tersely. Under a testing policy (`testing.scope` set) the report's first
+line is "CI-verified at `<sha>`" when `uat status` returned `ci`, and when it did
+not and `result` is `complete`, "complete locally, not CI-verified". A non-zero
+`counts.pending_ci` adds a "Pending CI {n}" line after the Passed line. With it
+unset, the report reads as below.
 
 ```
 UAT {complete|partial}: {position}
@@ -498,6 +537,9 @@ hold the result and the next command starts fresh.
 - Under a testing policy no required item is put to the user, a person never
   certifies one, and a `human-verify` or `why_human` item is never turned into
   `skipped` by this workflow - only the user's explicit decision does.
+- Under a policy the only push is `git-publish.mjs verify-publish`, run by
+  `await_ci` after the local authorization read, and a phase is called
+  CI-verified only with a recorded `ci` commit.
 - Never ask severity - infer it, default major.
 - Phase status TRANSITIONS (cursor, ROADMAP box, REQUIREMENTS row Status
   beyond Pending) are written only on full pass, only via phase-done + cursor
