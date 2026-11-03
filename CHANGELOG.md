@@ -7,6 +7,67 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+A project accepts one testing policy once, every test-writing path follows it,
+and GitHub Actions enforces its coverage thresholds. There is no per-test
+approval, evidence table or blanket negative control under it. A project that
+accepts no policy behaves exactly as it did before.
+
+### Added
+
+- **One testing policy per project.** `/cad-config --testing` accepts it, and
+  `/cad-new-project` and `/cad-adopt` offer the same recommendation before the
+  roadmap. It adds nine repo-only keys: `testing.scope` (`focused`,
+  `integrated` or `thorough`; unset means no policy), `testing.coverage.lines`,
+  `.branches`, `.statements`, `.include`, `.exclude` and `.commands`,
+  `testing.strong_areas` and `testing.required_jobs`. A user-global write of
+  any of them is refused, and a hand-edited user-global value is dropped from
+  the merged read.
+- **The rules every role follows.** `cadence-core/references/test-policy.md`
+  states them: a behavior change needs adequate automated coverage, tests are
+  added only where existing ones would miss a plausible defect, a bug fix reuses
+  an existing reproducer when it covers the regression, and testing stops once
+  the agreed behavior and the thresholds are met. Planning, execution, review,
+  debugging, coverage and verification read it. The testing scope is a short
+  statement inside a task's `Verify:`.
+- **Three `test-policy` subcommands on `planning.mjs`.** `render` writes the
+  policy to `.github/cadence/coverage-policy.json`. `check` compares the
+  config, that file and the workflow files, reports enforcement as unavailable
+  on a forge other than GitHub, and with `--base <ref>` names a lowered or
+  disabled threshold, an added exclusion or command, and a removed job.
+  `ci-status --commit <sha>` reads the required jobs for one commit from
+  GitHub and answers pass, fail or pending, with a bounded `--wait`. Cadence
+  matches the accepted commands as text and never runs them.
+- **A report check for Python, Go and Rust.**
+  `cadence-core/templates/coverage-report-check.mjs` enforces every enabled
+  metric on a recorded report, naming the one that fails. A missing report
+  fails, a threshold of 0 reads as disabled, and a complete report with zero
+  branches reads "not applicable—zero branches".
+- **`pending_ci`.** A check that cannot run locally waits on a named required
+  job and commit, and the phase stays `partial` until a pass is recorded.
+  `uat status` returns the `ci` commit once every required job passed. A phase
+  reads "CI-verified at `<sha>`" only with it, and otherwise "complete locally,
+  not CI-verified", in `/cad-verify`, `/cad-progress` and SUMMARY.md.
+- **A verification publish.** `/cad-verify` pushes a non-protected branch so
+  the required jobs can run, only when `cadence.publishForVerification` is true
+  in the repository's own `.git/config`. Global config, `git -c`, the
+  environment, `.planning/config.json` and `git.auto_close` can't supply it.
+  `/cad-config --testing` sets it after an explicit yes, and `/cad-health`
+  shows its state next to the result of `test-policy check`.
+
+### Changed
+
+- **Under a policy the four legacy switches read false** (`test_attack`,
+  `test_evidence`, `check_inspection`, `independent_rerun`), with a warning,
+  and `test-evidence` accepts a report with no `Test evidence:` section. The
+  switches stay for one more release.
+- **`/cad-land` requires the required jobs.** The unattended merge waits for
+  every required job to pass on the branch head, runs `test-policy check
+  --base`, and halts on any weakening. A timeout lands nothing. Direct push
+  onto the base branch is not offered under a policy.
+- **`/cad-verify` walks unattended under a policy**, and `/cad-coverage`
+  goes on without an approval ask.
+- **`CONTRIBUTING.md` gains a `## Writing tests` section.**
+
 ## [3.9.4] - 2026-10-30
 
 Every progress message and the STATE.md cursor say which phase and which plan
