@@ -122,6 +122,18 @@ Check, then report - do not fix without asking.
      -> the whole block is malformed, every key inside it reads as its schema
      default, and nothing warned. Same for any config block the schema declares
      as an object.
+   - **The testing policy.** Run
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy check --root .`
+     and report its answer, on a failing answer too. `accepted:false` -> the
+     one line "No testing policy accepted - `/cad-config --testing` sets one
+     up", no issue. Accepted -> each entry in `problems` is an issue naming its
+     fix (the `hint`), and `enforcement:"unavailable"` is a note quoting the
+     answer's `note`, not an issue. Always print whether verification
+     publishing is authorized here, read off the same answer's
+     `publish_authorized` and never off `.git/config` a second way: it sits
+     outside `config.schema.json`, so no other report shows it. `false` is a
+     state - "publishing for verification not authorized; `/cad-config
+     --testing` can authorize it" - and never an issue.
 
 7. **Version drift.** The `PROJECT.md ### Active` milestone version must not be
    one the project has ALREADY SHIPPED. Membership, not sort order: the issue is
