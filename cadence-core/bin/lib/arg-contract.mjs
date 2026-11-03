@@ -715,6 +715,16 @@ export const CONTRACTS = {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--base': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // `--commit` is a sha, shape-checked by the seam; `--wait` bounds one call's
+    // re-reads in whole seconds; `--phase` names the checklist a pass is
+    // recorded in. A valueless spelling of any of them refuses, because each
+    // would otherwise silently read as the flag being absent.
+    'test-policy ci-status': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--commit': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--wait': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
     // Plan file paths are positional words, so it takes no flag.
     'test-checks': {},
     // One plan file path as a positional word, so it takes no flag.

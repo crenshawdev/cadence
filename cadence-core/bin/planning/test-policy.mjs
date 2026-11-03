@@ -24,6 +24,14 @@
 // config now weakens against it. Those are reported, not failed: an explicit
 // adjustment is legal, and `/cad-land` decides what to do with them.
 //
+// `ci-status --commit <sha>` reads one commit's check runs from GitHub with
+// `gh api`, by argv and under a timeout, and answers pass, fail or pending for
+// the required jobs. It runs from the main session, never the verifier
+// subagent, whose contract forbids network use. Pass is never inferred: no
+// matching run, no `gh`, a failing call or another forge all read pending.
+// Only on an overall pass, and only with `--phase` named, does it write that
+// commit to the phase UAT's `ci` field - the one writer that field has.
+//
 // `--root` is the PROJECT root, deliberately NOT `--dir`, which this script
 // defines as the planning directory.
 'use strict';
@@ -33,11 +41,15 @@ import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readTestingPolicy } from '../lib/config-merge.mjs';
-import { atomicWrite } from '../lib/planning-files.mjs';
+import { isForgeSlug } from '../lib/forge-decision.mjs';
+import { onPath } from '../lib/on-path.mjs';
+import { atomicWrite, parseUat, renderUat } from '../lib/planning-files.mjs';
 import { localGitEnv, publishAuthorized } from '../lib/publish-authorization.mjs';
+import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { testSeamOpen } from '../lib/test-seam.mjs';
-import { fail, ok } from './core.mjs';
+import { sleep } from '../lib/text-util.mjs';
+import { fail, ok, phaseSpellingCollision, read } from './core.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // The exact shape config.mjs's SCHEMA_PATH has: the same file, the same
@@ -237,14 +249,141 @@ function cmdCheck(root, base) {
     ...answer });
 }
 
+// --- ci-status ----------------------------------------------------------------
+
+// The longest one call keeps re-reading: under the host's 600-second ceiling on
+// a foreground command, with room for the final read.
+const MAX_WAIT_S = 540;
+const POLL_MS = 15000;
+const GH_TIMEOUT_MS = 30000;
+
 /**
- * @param {string} _dir
+ * Every check run on one commit, every page: `--paginate` with a `--jq` that
+ * prints one compact object per run, so the pages never have to be stitched
+ * back into one JSON document. Null when `gh` fails or prints something else.
+ * @param {string} slug
+ * @param {string} sha
+ * @returns {Array<{name: string, status: string, conclusion: string|null}>|null}
+ */
+function readCheckRuns(slug, sha) {
+  let out;
+  try {
+    out = execFileSync('gh', ['api', '--paginate', '--jq', '.check_runs[] | {name, status, conclusion}',
+      `repos/${slug}/commits/${sha}/check-runs?per_page=100`],
+    { encoding: 'utf8', timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch { return null; }
+  try {
+    return out.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+  } catch { return null; }
+}
+
+/**
+ * One required job's answer from the runs that match it: a run matches on the
+ * job's exact name or the name followed by ` (`, which is how a matrix job reads.
+ * @param {string} job
+ * @param {Array<{name: string, status: string, conclusion: string|null}>} runs
+ */
+function judgeJob(job, runs) {
+  const matches = runs.filter((r) => typeof r.name === 'string' && (r.name === job || r.name.startsWith(`${job} (`)));
+  const finished = (/** @type {{status: string}} */ r) => r.status === 'completed';
+  let answer = 'pending';
+  if (matches.some((r) => finished(r) && r.conclusion !== 'success')) answer = 'fail';
+  else if (matches.length > 0 && matches.every((r) => finished(r) && r.conclusion === 'success')) answer = 'pass';
+  return { job, answer, runs: matches.map((r) => ({ name: r.name, status: r.status, conclusion: r.conclusion })) };
+}
+
+/**
+ * @param {string} dir the planning directory
+ * @param {string} root
+ * @param {Record<string, any>} opts
+ */
+function cmdCiStatus(dir, root, opts) {
+  const sha = typeof opts.commit === 'string' ? opts.commit : '';
+  if (!/^[0-9a-fA-F]{7,40}$/.test(sha)) {
+    return fail('bad-args', '--commit must be 7 to 40 hexadecimal characters',
+      'pass --commit <sha> naming the commit whose required jobs to read, as git rev-parse prints it');
+  }
+  let wait = 0;
+  if (opts.wait !== undefined) {
+    const w = requireInt(opts.wait);
+    if (!w.ok || w.value < 0) {
+      return fail('bad-args', '--wait must be a whole number of seconds, 0 or more',
+        `pass --wait <seconds>, at most ${MAX_WAIT_S} (larger values are held to that), or drop it to read once`);
+    }
+    wait = Math.min(w.value, MAX_WAIT_S);
+  }
+  /** @type {{raw: string}|null} */
+  let phase = null;
+  if (opts.phase !== undefined) {
+    const parsed = requirePhaseArg(opts.phase);
+    if (!parsed.ok) {
+      return fail('bad-args', 'ci-status --phase needs a phase number',
+        'pass --phase <N> naming the phase whose UAT.md should record the commit, or drop it');
+    }
+    const collision = phaseSpellingCollision(dir, parsed);
+    if (collision) {
+      return fail('bad-args', `ci-status ${collision}`,
+        're-run with one of the two spellings the detail names - nothing was read');
+    }
+    phase = parsed;
+  }
+
+  const { testing, accepted, forgeProvider, forgeRepo } = readTestingPolicy(join(root, '.planning', 'config.json'));
+  if (!accepted) return fail('no-policy', 'testing.scope is unset, so no policy was accepted and there are no required jobs to read', NO_POLICY_HINT);
+  const required = Array.isArray(testing.required_jobs) ? testing.required_jobs : [];
+  const answer = (/** @type {string} */ a, /** @type {Record<string, any>} */ more) => ({ commit: sha.toLowerCase(), answer: a, jobs: [], ...more });
+
+  if (forgeProvider !== 'github') {
+    return ok(answer('pending', { reason: `git.forge_provider is ${JSON.stringify(forgeProvider)}: CI results are read from GitHub only, so this stays pending until the checks run some other automated way` }));
+  }
+  if (required.length === 0) {
+    return ok(answer('pending', { reason: 'testing.required_jobs is empty, so there is no job whose success could be read' }));
+  }
+  if (!isForgeSlug(forgeRepo)) {
+    return fail('bad-forge-repo', `git.forge_repo ${JSON.stringify(forgeRepo)} is not an owner/repo name`,
+      'set git.forge_repo to the GitHub repository as owner/repo with /cad-config, then re-run');
+  }
+  if (!onPath('gh')) {
+    return ok(answer('pending', { reason: 'gh is not on PATH, so the check runs cannot be read; install and sign in to the GitHub CLI' }));
+  }
+
+  const deadline = Date.now() + wait * 1000;
+  let judged = null;
+  for (;;) {
+    const runs = readCheckRuns(String(forgeRepo), sha);
+    judged = runs === null ? null : required.map((/** @type {string} */ j) => judgeJob(j, runs));
+    const overall = judged === null ? 'pending'
+      : judged.some((j) => j.answer === 'fail') ? 'fail'
+        : judged.every((j) => j.answer === 'pass') ? 'pass' : 'pending';
+    const left = deadline - Date.now();
+    if (overall !== 'pending' || left <= 0) {
+      const result = answer(overall, { jobs: judged || [],
+        ...(judged === null ? { reason: 'gh api failed or timed out, so no check run could be read' } : {}) });
+      if (overall !== 'pass' || phase === null) return ok(result);
+      const file = join(dir, 'phases', phase.raw, 'UAT.md');
+      const text = read(file);
+      if (text === null) {
+        return emit({ ok: false, reason: 'no-uat', detail: `${file} not found, so the passing commit was not recorded`,
+          hint: 'create the phase checklist with `uat init --phase <N>` first, then re-run ci-status', ...result });
+      }
+      const uat = parseUat(text);
+      uat.fm.ci = sha.toLowerCase();
+      atomicWrite(file, renderUat(uat));
+      return ok({ ...result, recorded: true });
+    }
+    sleep(Math.min(POLL_MS, left));
+  }
+}
+
+/**
+ * @param {string} dir the planning directory
  * @param {string|undefined} sub
  * @param {Record<string, any>} opts
  */
-export function cmdTestPolicy(_dir, sub, opts) {
+export function cmdTestPolicy(dir, sub, opts) {
   const root = typeof opts.root === 'string' ? opts.root : process.cwd();
   if (sub === 'render') return cmdRender(root);
   if (sub === 'check') return cmdCheck(root, opts.base);
-  return fail('usage', 'test-policy render | check');
+  if (sub === 'ci-status') return cmdCiStatus(dir, root, opts);
+  return fail('usage', 'test-policy render | check | ci-status');
 }

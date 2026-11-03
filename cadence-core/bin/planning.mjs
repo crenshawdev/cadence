@@ -121,6 +121,17 @@
 //                                   what the config weakens against the
 //                                   committed file at that ref (reported, not
 //                                   failed)
+//   test-policy ci-status --commit <sha> [--root <path>] [--wait <seconds>]
+//                           [--phase <N>]
+//                                   read the required jobs' check runs for
+//                                   one commit from GitHub (gh api): pass when
+//                                   every job succeeded, fail when one did
+//                                   not, pending otherwise (no run, no gh,
+//                                   another forge). --wait re-reads for at
+//                                   most that long while pending. --phase
+//                                   records the commit in that phase's UAT.md
+//                                   `ci` field on an overall pass, and
+//                                   nothing else. Main session only
 //   detect-surfaces [--root <path>] [--answered <a,b,c>]
 //                                   which of the eight risk-surface categories
 //                                   the project's STRUCTURE evidences - dirs,
