@@ -117,10 +117,20 @@ rather than claiming a number - an invented figure would land in
 <step name="inline_path">
 (Inline scope only.)
 
+Read `testing.scope` once:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get testing.scope
+```
+
+Set means a testing policy is active: read
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` once.
+
 1. Read the relevant files.
 2. Make the change.
 3. Verify: run `workflow.test_command` from config if set and relevant,
-   otherwise do a direct sanity check of the changed behavior.
+   otherwise do a direct sanity check of the changed behavior. With a policy
+   active, the policy's behavior-change rule replaces that sanity check.
 4. Commit per references/git-guard.md rail 2 (specific files, conventional message).
 
 No PLAN.md, no SUMMARY.md, no state writes.
@@ -129,8 +139,13 @@ No PLAN.md, no SUMMARY.md, no state writes.
 <step name="planned_path">
 (Planned scope only.)
 
+Read `testing.scope` once, the call `inline_path` states. With a policy active,
+read `references/test-policy.md` once.
+
 1. Write `.planning/tasks/{slug}/PLAN.md`: 1-3 atomic tasks, each with files,
    action, and a falsifiable verification ("running X shows Y", not "X works").
+   With a policy active, each `Verify:` carries the short testing scope the
+   policy's Bounded test planning rules ask for.
    If `.planning/` does not exist, put the plan nowhere - keep it in-context
    and say so; a task plan does not justify creating project scaffolding.
 2. Execute task-by-task in the current context: change, verify, commit
