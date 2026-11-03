@@ -20,6 +20,10 @@
 // accepted command (D-03) - a config that arrives with a clone must not choose
 // what Cadence runs.
 //
+// `check --base <ref>` also reads the committed file at a ref and NAMES what the
+// config now weakens against it. Those are reported, not failed: an explicit
+// adjustment is legal, and `/cad-land` decides what to do with them.
+//
 // `--root` is the PROJECT root, deliberately NOT `--dir`, which this script
 // defines as the planning directory.
 'use strict';
@@ -42,7 +46,7 @@ const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
   || join(HERE, '..', '..', 'config.schema.json');
 
 /** Where the committed policy lives, relative to the project root. */
-export const POLICY_FILE = join('.github', 'cadence', 'coverage-policy.json');
+export const POLICY_FILE = '.github/cadence/coverage-policy.json';
 
 /** The schema's `testing.*` keys as [dotted path under testing, default], in schema order. */
 function schemaKeys() {
@@ -129,10 +133,48 @@ function tracksMatch(root, glob) {
   } catch { return false; }
 }
 
+/** Elements of `a` that `b` does not hold, as changes of `kind`. */
+const only = (kind, a, b) => a.filter((/** @type {string} */ x) => !b.includes(x)).map((/** @type {string} */ name) => ({ kind, name }));
+
+/**
+ * What the current policy weakens or changes against the committed file at
+ * `ref`, or null when git cannot resolve the ref. The ref goes after
+ * `--end-of-options`, so it can never read as an option; the file is then read
+ * at the commit it resolved to.
+ * @param {string} root
+ * @param {string} ref
+ * @param {Record<string, any>} now
+ */
+function againstRef(root, ref, now) {
+  const git = (/** @type {string[]} */ args) => execFileSync('git', ['-C', root, ...args],
+    { encoding: 'utf8', env: localGitEnv(), stdio: ['ignore', 'pipe', 'ignore'] });
+  let sha;
+  try { sha = git(['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`]).trim(); } catch { return null; }
+  let held = null;
+  try { held = JSON.parse(git(['show', `${sha}:${POLICY_FILE}`])); } catch { /* none at that ref */ }
+  if (!held || typeof held !== 'object') {
+    return { ref, found: false, changes: [], note: `${POLICY_FILE} is absent or unreadable at ${ref}, so nothing is named` };
+  }
+  const was = fill(held);
+  const changes = [];
+  for (const metric of ['lines', 'branches', 'statements']) {
+    const [from, to] = [was.coverage[metric], now.coverage[metric]];
+    if (from > 0 && to === 0) changes.push({ kind: 'disabled', name: metric, from, to });
+    else if (to > 0 && to < from) changes.push({ kind: 'lowered', name: metric, from, to });
+  }
+  changes.push(...only('exclude_added', now.coverage.exclude, was.coverage.exclude),
+    ...only('include_removed', was.coverage.include, now.coverage.include),
+    ...only('job_removed', was.required_jobs, now.required_jobs),
+    ...only('command_added', now.coverage.commands, was.coverage.commands),
+    ...only('command_removed', was.coverage.commands, now.coverage.commands));
+  return { ref, found: true, changes };
+}
+
 /**
  * @param {string} root
+ * @param {unknown} base
  */
-function cmdCheck(root) {
+function cmdCheck(root, base) {
   const { policy, forgeProvider } = effectivePolicy(root);
   const publish_authorized = publishAuthorized(root);
   if (!policy) {
@@ -140,6 +182,11 @@ function cmdCheck(root) {
       detail: 'testing.scope is unset, so no policy was accepted and there is nothing to check', hint: NO_POLICY_HINT });
   }
   const problems = [];
+  const against = typeof base === 'string' ? againstRef(root, base, policy) : undefined;
+  if (against === null) {
+    return fail('bad-ref', `${JSON.stringify(base)} does not resolve to a commit in ${root}`,
+      'name a branch, tag or commit that exists in the project repository - --base reads the committed policy file at that ref');
+  }
 
   // The config against the committed file.
   let committed = null;
@@ -180,6 +227,7 @@ function cmdCheck(root) {
   }
 
   const answer = { accepted: true, enforcement, gate_found, problems, publish_authorized,
+    ...(against ? { base: against } : {}),
     ...(enforcement === 'unavailable'
       ? { note: `git.forge_provider is ${JSON.stringify(forgeProvider)}: enforcement is GitHub Actions only, so the workflow files were not compared` }
       : {}) };
@@ -197,6 +245,6 @@ function cmdCheck(root) {
 export function cmdTestPolicy(_dir, sub, opts) {
   const root = typeof opts.root === 'string' ? opts.root : process.cwd();
   if (sub === 'render') return cmdRender(root);
-  if (sub === 'check') return cmdCheck(root);
+  if (sub === 'check') return cmdCheck(root, opts.base);
   return fail('usage', 'test-policy render | check');
 }

@@ -110,14 +110,17 @@
 //                                   from the accepted testing policy, defaults
 //                                   filled; refused when testing.scope is unset
 //                                   (NOT --dir: --root is the PROJECT root)
-//   test-policy check [--root <path>]
+//   test-policy check [--root <path>] [--base <ref>]
 //                                   the config, the committed policy file and
 //                                   the workflow files agree: thresholds, each
 //                                   accepted command as text (never run), the
 //                                   include globs, the required jobs; reports
 //                                   enforcement unavailable off GitHub and
 //                                   whether cadence.publishForVerification
-//                                   authorizes publishing here
+//                                   authorizes publishing here. --base names
+//                                   what the config weakens against the
+//                                   committed file at that ref (reported, not
+//                                   failed)
 //   detect-surfaces [--root <path>] [--answered <a,b,c>]
 //                                   which of the eight risk-surface categories
 //                                   the project's STRUCTURE evidences - dirs,

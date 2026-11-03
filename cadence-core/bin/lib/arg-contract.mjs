@@ -705,8 +705,12 @@ export const CONTRACTS = {
     },
     // The same `--root` row, for the same reason: `check` reads the project's
     // config, its committed policy file and its workflow files.
+    //
+    // `--base` is a ref, read by the seam after `--end-of-options` so it can
+    // never act as a git option; a flag-shaped value is refused here as well.
     'test-policy check': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--base': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // Plan file paths are positional words, so it takes no flag.
     'test-checks': {},
