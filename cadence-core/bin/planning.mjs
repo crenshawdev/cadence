@@ -105,6 +105,11 @@
 //                                   plan lists; a short record rewrites the
 //                                   report's first line to PLAN CHECKPOINT:
 //                                   blocked and nothing else
+//   test-policy render [--root <path>]
+//                                   write .github/cadence/coverage-policy.json
+//                                   from the accepted testing policy, defaults
+//                                   filled; refused when testing.scope is unset
+//                                   (NOT --dir: --root is the PROJECT root)
 //   detect-surfaces [--root <path>] [--answered <a,b,c>]
 //                                   which of the eight risk-surface categories
 //                                   the project's STRUCTURE evidences - dirs,
@@ -299,6 +304,10 @@ const COMMANDS = {
   trace: async (dir, sub, opts) => (await import('./planning/trace.mjs')).cmdTrace(dir, sub, opts),
   'risk-check': async (dir, sub, opts) =>
     (await import('./planning/risk-check.mjs')).cmdRiskCheck(dir, sub, opts),
+  // --root, never --dir: this one names the PROJECT root, the `detect-commands`
+  // distinction. The declared row is applied at the dispatch door below.
+  'test-policy': async (dir, sub, opts) =>
+    (await import('./planning/test-policy.mjs')).cmdTestPolicy(dir, sub, opts),
   // The gate fire's per-finding rulings, beside the sibling REVIEW file.
   adjudication: async (dir, _sub, opts) =>
     (await import('./planning/adjudication.mjs')).cmdAdjudication(dir, opts),

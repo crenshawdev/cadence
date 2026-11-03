@@ -698,6 +698,11 @@ export const CONTRACTS = {
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // The accepted testing policy's committed form. `--root` is the PROJECT root
+    // and copies `detect-commands`'s row: the same refusal for the same spelling.
+    'test-policy render': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // Plan file paths are positional words, so it takes no flag.
     'test-checks': {},
     // One plan file path as a positional word, so it takes no flag.
