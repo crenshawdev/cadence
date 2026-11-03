@@ -582,8 +582,9 @@ export const CONTRACTS = {
     'uat refresh': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
-    // `--fields-file` is the path transport for the five FREE-TEXT fields
-    // (`reason`, `reported`, `cause`, `fix`, `evidence`) as ONE JSON object -
+    // `--fields-file` is the path transport for the seven FREE-TEXT fields
+    // (`reason`, `reported`, `cause`, `fix`, `evidence`, and a `pending_ci`
+    // item's `job` and `commit`) as ONE JSON object -
     // one file per failing item rather than three, on the workflow whose
     // per-item round-trip discipline is explicit. The enum-validated flags gain
     // no file form: a value that must survive `UAT_RESULTS.includes()` or an
@@ -602,6 +603,8 @@ export const CONTRACTS = {
       '--source': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--origin': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--criterion': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--job': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--commit': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     'uat merge': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },

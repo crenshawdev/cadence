@@ -44,14 +44,14 @@ function writeUat(dir, n, uat) {
 // `pending` is legal for a user re-record: a fixed failure goes back to
 // pending (with fix: "<hash>, retest") so the walk retests it. first_pass is
 // untouched by that reset - it only ever records the first pass/fail verdict.
-const UAT_RESULTS = ['pass', 'fail', 'skipped', 'blocked', 'pending'];
+const UAT_RESULTS = ['pass', 'fail', 'skipped', 'blocked', 'pending', 'pending_ci'];
 
 // The FREE-TEXT half of `uat record`'s fields, and exactly what `--fields-file`
 // may carry. Every other field the subcommand takes is validated against a
 // closed enum, an `AC<N>` shape or an integer grammar at its own guard, so it is
 // not caller-derived prose and gains nothing from a path transport - and
 // admitting one here would route it around the guard that validates it.
-const UAT_TEXT_FIELDS = ['reason', 'reported', 'cause', 'fix', 'evidence'];
+const UAT_TEXT_FIELDS = ['reason', 'reported', 'cause', 'fix', 'evidence', 'job', 'commit'];
 
 function cmdUat(dir, sub, opts) {
   // The shared reader, replacing a bare `Number()` + NaN test: a malformed
@@ -287,6 +287,15 @@ function cmdUat(dir, sub, opts) {
       }
       fileFields = payload;
     }
+    const given = (/** @type {string} */ key) => (opts[key] !== undefined ? opts[key] : fileFields[key]);
+    if (opts.result === 'pending_ci') {
+      if (typeof given('job') !== 'string' || typeof given('commit') !== 'string') {
+        return fail('bad-args', '--result pending_ci needs both --job <name> and --commit <sha>',
+          'name the CI job that will run this check and the commit it is waiting on, inline or in'
+          + ' --fields-file; nothing was written. Re-record pending_ci with a new --commit to move'
+          + ' the item to a later head');
+      }
+    }
     item.status = opts.result;
     // `user` stays IMPLICIT - never written onto the item - so every existing
     // checklist stays byte-identical; `verifier` and `model` are the two values
@@ -296,7 +305,7 @@ function cmdUat(dir, sub, opts) {
     // renders directly after `expected` and survives every later rewrite.
     for (const [flag, field] of [['reason', 'reason'], ['reported', 'reported'],
       ['severity', 'severity'], ['cause', 'cause'], ['fix', 'fix'], ['evidence', 'evidence'],
-      ['origin', 'origin'], ['criterion', 'criterion']]) {
+      ['origin', 'origin'], ['criterion', 'criterion'], ['job', 'job'], ['commit', 'commit']]) {
       // The file form feeds THIS loop and nothing else, so an identical value
       // through either transport writes a byte-identical UAT.md.
       const value = opts[flag] !== undefined ? opts[flag] : fileFields[flag];
@@ -521,6 +530,7 @@ function cmdUat(dir, sub, opts) {
     const complete = uatComplete(uat);
     return ok({
       status: uat.status, counts: uat.counts,
+      ...(uat.fm.ci ? { ci: uat.fm.ci } : {}),
       result: complete ? 'complete' : 'partial',
       ...(nextPending(uat.items) ? { first_pending: nextPending(uat.items) } : {}),
     });
