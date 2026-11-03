@@ -29,6 +29,11 @@ Parse `$ARGUMENTS`: optional phase number, `--sweep`, `--deep`.
 </step>
 
 <step name="build_or_resume">
+Read `testing.scope` once:
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get testing.scope`. Set
+means a testing policy is active, and `walk` and `complete` use this value. Unset
+means no policy was accepted, and every policy sentence in this file is skipped.
+
 Check the checklist state:
 
 ```
@@ -92,6 +97,10 @@ Item rules (the model's judgment, before the seam call):
   scratch - boots clean, migrations/seeds complete, one primary query
   returns real data." Fresh-start bugs pass against warm state and break
   in production.
+  With a policy active, this item is an automated clean-start check instead: it
+  names the required job from `testing.required_jobs` that starts the service
+  from clean state, as `(ci: <required job>)`, and stays separate from the
+  packaging job (`references/test-policy.md`).
 
 Then create the checklist in one call:
 
@@ -137,6 +146,48 @@ and follow it. Otherwise skip to `walk`.
 <step name="walk">
 TWO passes: the model executes and cites everything it can, then the user is
 asked about only what is left.
+
+**Under a testing policy.** With `testing.scope` unset, skip this block: the bar,
+the re-run and pass 2 below read as they always did. With it set, no required
+item is offered to a person, so this block replaces the bar and pass 2 for every
+required item. Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md`
+once, then:
+
+- Run `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy check --root .`
+  once. A failing answer is appended once as an item through `uat refresh`
+  (named "Testing policy agrees with the workflow files", expected: `test-policy
+  check` passes) and recorded `fail` with `--source model`, its `detail` as
+  `cause` through `--fields-file`, so it reaches `route_failures`.
+- Run the project's suite once yourself, in this session's shell and never in the
+  verifier subagent, resolved the way the executor contract resolves it:
+  `config.mjs get workflow.test_command`, and where that is null the project's
+  manifest runner, saying which. Cite its command and result as the evidence
+  for the items it settles. A red suite is appended and recorded `fail` the same
+  way, as one item named for the suite.
+- Pass 1 runs every pending item. A check that cannot run locally, including a
+  `(ci: <required job>)` criterion, is recorded `pending_ci`, never `pass`: write
+  `{"job": "<required job>", "commit": "<git rev-parse HEAD>", "evidence": "<why
+  it cannot run here>"}` to a scratch file and pass its PATH as `--fields-file`
+  to `uat record --result pending_ci --source model`.
+- An item whose `expected` carries the `(human-verify: ...)` suffix, and a
+  `why_human` item, run their automated check, or are recorded `fail` with a
+  `cause` saying no automated check exists, and go to `route_failures`. Only the
+  user's explicit decision makes one optional, and then it is `skipped` with that
+  decision as its reason (D-06). No step here turns one into `skipped` by itself.
+  `blocked` is not used: a check that cannot run for an environmental reason is
+  `pending_ci` when CI can run it, and `fail` with that cause otherwise.
+- Coverage thresholds are enforced by the required jobs and are not re-measured.
+- For an acceptance criterion, the independent re-run's reading stays: read its
+  test function, and when it asserts nothing the criterion cares about, or stubs
+  the thing it claims to test, record `fail` with a `cause` naming which. What
+  that reading may ask for is bounded by the completion rule in `test-policy.md`
+  (a demonstrated defect, an uncovered acceptance requirement or a measured
+  shortfall), never another imaginable failure.
+- Optional observations are listed under the results table and never recorded as
+  results.
+
+Then print the one results table (below), and continue to `await_ci` and
+`route_failures`. Pass 2 does not run.
 
 **The bar.** An item is a HUMAN check only when the model cannot execute it -
 it is irreversible against real data, or it is outside the model's reach
@@ -444,6 +495,9 @@ hold the result and the next command starts fresh.
   set-once, counts always consistent, every write atomic.
 - No internal fixer or reviewer loops; second opinions only via the
   review-trigger interface, fixes only with user approval.
+- Under a testing policy no required item is put to the user, a person never
+  certifies one, and a `human-verify` or `why_human` item is never turned into
+  `skipped` by this workflow - only the user's explicit decision does.
 - Never ask severity - infer it, default major.
 - Phase status TRANSITIONS (cursor, ROADMAP box, REQUIREMENTS row Status
   beyond Pending) are written only on full pass, only via phase-done + cursor
