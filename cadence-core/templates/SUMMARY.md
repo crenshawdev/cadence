@@ -35,3 +35,7 @@ Good: "JWT auth with refresh rotation using jose". Bad: "Auth implemented".>
 
 <one paragraph: does the sum of the commits above plausibly deliver the
 phase goal? Anything missing, named honestly.>
+
+<under an accepted testing policy (`testing.scope` set), end with the line
+"complete locally, not CI-verified": this is written before any CI result
+exists, so a SUMMARY never claims one.>

@@ -183,6 +183,14 @@ and is no reason to rewrite the cursor): "Phase {N} of {total}, plan {k} of {j}:
 {plan name}" when the entry has `plan` (ending at "plan {k} of {j}" with no
 `name`), else "Phase {N} of {total}: {name}".
 
+Under an accepted testing policy (`config.mjs get testing.scope` set, read once
+for the whole report), a phase line whose status is complete adds its CI state,
+read once per such phase off the `ci` field of
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat status --phase <N>`:
+"CI-verified at `<sha>`" when `ci` is present, and "complete locally, not
+CI-verified" otherwise. A phase is never called CI-verified without a recorded
+`ci`. With `testing.scope` unset, no line adds anything and that call is not made.
+
 The `Deferred:` line prints only when `deferred.findings` is non-zero or
 `deferred.unreadable` is non-empty, and both figures are read off the `status`
 envelope's `deferred` block - never counted by hand and never taken off the
