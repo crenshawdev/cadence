@@ -8,8 +8,12 @@ Dispatch cad-verifier via the spawn-agent seam, the bracket on its resolve:
 `--bracket-read ".planning/phases/<N>/PLAN*.md,.planning/phases/<N>/SUMMARY*.md,.planning/ROADMAP.md,.planning/phases/<N>/UAT.md"`
 - the same paths the dispatch instruction below hands it. Hand it the phase number, goal,
 the current UAT items, the PLAN/SUMMARY/ROADMAP paths, and the path it must
-write: `.planning/phases/<N>/verifier-findings.json`. It writes exactly that
-one file and returns a digest plus that path. Its contract is its own
+write: `.planning/phases/<N>/verifier-findings.json`. With `testing.scope` set
+(read in verify.md `build_or_resume`), the prompt also says "A testing policy is
+active." and hands it the suite command, resolved as the executor contract
+resolves it: `config.mjs get workflow.test_command`, or, where that is null,
+that the project manifest's runner applies. It writes exactly that one file and
+returns a digest plus that path. Its contract is its own
 (`skills/cad-verifier-contract`) and is not restated here.
 
 Close the bracket HERE, the moment the return is in hand and before either arm
