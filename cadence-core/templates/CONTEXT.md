@@ -29,7 +29,10 @@ decisions this phase are durable" if empty}
 
 - [ ] AC1: {pass/fail, observed behavior}
 - [ ] AC2: {pass/fail, observed behavior} (human-verify: needs {tool/service})
-- [ ] AC3: ...
+- [ ] AC3: {pass/fail, observed behavior} (ci: {required job})
+- [ ] AC4: ...
+{the `(ci: ...)` suffix applies only under an accepted testing policy, for a
+criterion whose tool is absent locally; otherwise use `human-verify`}
 
 ## Flagged assumptions
 
