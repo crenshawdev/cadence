@@ -362,9 +362,11 @@ subagent. Every `uat record` here carries repository text through
      and why, from the answer's `note`. Push nothing and read nothing. The items
      stay required and pending until they run some other automated way or the
      user explicitly makes one optional.
-   - `publish_authorized` false: push nothing, leave the items pending, and name
-     the ways on: `/cad-config --testing` to authorize publishing for
-     verification, or publishing through `/cad-land`.
+   - `publish_authorized` false: push nothing, and name the ways on:
+     `/cad-config --testing` to authorize publishing for verification, or
+     publishing through `/cad-land`. The commit may already be on GitHub from one
+     of those, so go to step 4 and read once, without `--wait`. With no runs, the
+     items stay pending.
 3. Authorized: push with
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" verify-publish`.
    A refusal is relayed with its `reason` and `detail`, the items stay pending,
