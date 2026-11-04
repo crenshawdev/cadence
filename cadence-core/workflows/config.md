@@ -52,10 +52,10 @@ walk is the flat way.
    (sections in walk order).
    Walk them **in order, 4 knobs per `AskUserQuestion` call** (the ask-user seam;
    its 4-option cap is why we page). For each knob:
-   - one question; its text = the knob's `question`, options = the `value` of
-     each `explain` entry,
-   - **each option carries its entry's `text` as the option `description`** (the
-     line under the option in the list),
+   - one question; its text = the knob's `question`, options = the first item of
+     each `explain` entry (`[value, text?]`),
+   - **each option carries the entry's second item, `text`, as its
+     `description`**,
    - **Label the value in force, and name the LAYER it comes from. Two labels,
      never zero.** Compare step 0's raw read of `.planning/config.json` against
      `config.mjs get`:
