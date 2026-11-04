@@ -7,6 +7,22 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+### Removed
+
+- **The four legacy test switches are retired.** `workflow.test_attack`,
+  `workflow.test_evidence`, `workflow.check_inspection` and
+  `workflow.independent_rerun` are gone, together with the evidence, inspection
+  and re-run steps they gated. The testing policy that `/cad-config --testing`
+  accepts replaces them, and a project with no policy gets no replacement step.
+  A config that still holds one of them warns on every read, and `set` of any of
+  them is refused. Drop them from the user-global file and from each repository
+  that holds them:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset workflow.test_attack workflow.test_evidence workflow.check_inspection workflow.independent_rerun
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset --global workflow.test_attack workflow.test_evidence workflow.check_inspection workflow.independent_rerun
+  ```
+
 ## [3.11.0] - 2026-11-04
 
 A project accepts one testing policy once, every test-writing path follows it,
