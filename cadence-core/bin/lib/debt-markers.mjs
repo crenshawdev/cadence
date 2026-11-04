@@ -1,32 +1,17 @@
 // @ts-check
-// debt-markers.mjs - the `CADENCE-DEBT` marker grammar, as a pure function.
-//
-// The convention is stated in cadence-core/references/conventions.md and this
-// file is its single implementation: the token followed IMMEDIATELY by a colon,
-// then the one-line description, then ` | ceiling: <what it does not handle> `
-// and ` | trigger: <what should prompt revisiting it> `.
-//
-// Pure by design, the same split lib/phase-plans.mjs carries against
-// lib/phase-plans.mjs: no I/O, no throw, no stream of its own. The caller owns
-// the tree walk, the file reads and the envelope; this owns the grammar and the
-// rendering, so both are testable without a fixture directory.
-//
-// The token must be followed immediately by a colon, which is what keeps
-// documentation ABOUT the convention from being ingested as a marker: prose
-// naming the token in backticks (`REQUIREMENTS.md`, this phase's CONTEXT,
-// conventions.md's own section) is not a marker and never becomes one.
+// the debt marker grammar, as a pure function; conventions.md states the convention and this is its one implementation
+// the token, an immediate colon, a one-line description, then ` | ceiling: ...` and ` | trigger: ...`
+// the colon has to follow the token immediately, so prose that names the token in backticks is never ingested as a marker
+// no I/O and no throw: the caller owns the tree walk and the envelope, so this is testable without a fixture directory
 'use strict';
 
 /** The marker token. Namespaced so it cannot collide with another tool's. */
 export const DEBT_TOKEN = 'CADENCE-DEBT';
 
-// Built rather than written as a literal so this file does not itself contain
-// the token-followed-by-a-colon sequence it recognizes.
+// built, not written as a literal, so this file doesn't contain the sequence it recognizes
 const MARKER_HEAD = `${DEBT_TOKEN}:`;
 
-// Trailing comment closers, stripped from the LAST field only: a marker in a
-// `/* ... */` or `<!-- ... -->` comment would otherwise carry `*/` into the
-// trigger text and put it in the queue that way.
+// strip the comment closer from the last field only, or a marker inside `/* ... */` carries `*/` into the trigger text
 const TRAILERS = [/\s*\*\/\s*$/, /\s*-->\s*$/, /\s*}}\s*$/];
 
 /** @param {string} s @returns {string} */
@@ -46,12 +31,10 @@ export function stripTrailer(s) {
  */
 
 /**
- * Every marker in one file's contents, in line order.
- *
- * A marker missing `ceiling` or `trigger` is returned with that field `null` and
- * `malformed` naming it - NEVER dropped. Dropping it would make an incomplete
- * marker invisible, which is strictly worse than a marker: the corner is still
- * cut and now nothing says so.
+ * Every marker in one file's contents, in line order. A marker missing `ceiling`
+ * or `trigger` comes back with that field `null` and `malformed` naming it,
+ * never dropped: an incomplete marker would turn invisible, and the corner is
+ * still cut with nothing saying so.
  * @param {string} text @returns {DebtMarker[]}
  */
 export function debtMarkersIn(text) {
@@ -59,12 +42,7 @@ export function debtMarkersIn(text) {
   const out = [];
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    // EVERY occurrence on the line, each bounded by the next one's head. A single
-    // `indexOf` was worse than dropping the second marker: the field loop ran to
-    // the end of the LINE, so a second marker's `| ceiling:` and `| trigger:`
-    // overwrote the first's, and one entry came back carrying another cut's
-    // ceiling. A wrong ceiling in the queue is a wrong answer; a missing bullet is
-    // only a gap.
+    // every occurrence on the line, each bounded by the next head: a single indexOf let a second marker's ceiling and trigger overwrite the first's, and a wrong ceiling in the queue is worse than a gap
     for (const seg of markerSegments(lines[i])) {
       const parts = seg.split('|');
       let ceiling = null;
@@ -92,13 +70,10 @@ export function debtMarkersIn(text) {
 }
 
 /**
- * One line's marker bodies, in order: everything after each marker head (the
- * token followed by a colon) up to the next one's head, or the end of the line
- * for the last. The head is NOT spelled out here: this file is tracked source,
- * the harvest walks tracked source, and a literal token-plus-colon in a comment
- * is ingested as a real marker - which is what the note above `DEBT_TOKEN`
- * already promised and this doc comment was quietly breaking. lib/census-registry.mjs
- * passes its own head.
+ * One line's marker bodies, in order: everything after each marker head up to
+ * the next head, or the end of the line for the last. The head isn't spelled
+ * here because the harvest walks tracked source and would ingest it as a real
+ * marker. census-registry passes its own head.
  * @param {string} line @param {string} [head] @returns {string[]}
  */
 export function markerSegments(line, head = MARKER_HEAD) {
@@ -114,12 +89,9 @@ export function markerSegments(line, head = MARKER_HEAD) {
 const UNSTATED = '(unstated)';
 
 /**
- * The `## Debt markers` section BODY - one bullet per marker, sorted by path
- * then line, and `- None.` when there are none.
- *
- * Deterministic: same markers in, byte-identical body out, which is what makes
- * the harvest idempotent. No timestamps and no counts in the body for the same
- * reason.
+ * The `## Debt markers` section body: one bullet per marker, sorted by path then
+ * line, or `- None.`. Same markers in, byte-identical body out, so the harvest
+ * is idempotent, which is also why there are no timestamps or counts.
  * @param {Array<DebtMarker & {path: string}>} entries
  * @returns {string}
  */

@@ -1,56 +1,14 @@
 // @ts-check
-// lease-grammar.mjs - the ONE statement of what a declared `files:` entry
-// covers. A plan's declarations are read at two different moments by two
-// different seams, and until this module existed each carried its own idea of
-// containment: `plan-overlap` intersected the two lists by exact string
-// equality, while `lease-check` read a trailing slash as a directory prefix. A
-// phase declaring `src/` in one plan and `src/auth.js` in another therefore
-// produced an EMPTY overlap, passed the parallel-safety gate that is supposed
-// to prove the two plans independent, and was then refused at the commit step -
-// the gate admitting exactly the pair the enforcement would not separate. Both
-// seams now ask this module, so the two answers cannot drift apart again.
+// what a declared `files:` entry covers, as one statement two seams ask: plan-overlap intersected by exact string while lease-check read a trailing slash as a directory, so `src/` in one plan and `src/auth.js` in another passed the parallel-safety gate and were then refused at commit
 //
-// THE GRAMMAR, in one sentence each:
-//
-//   A declaration ending in `/` is a DIRECTORY LEASE and covers every path
-//   beneath it, so `src/` covers `src/auth.js` and `src/auth/session.js`.
-//
-//   Every other declaration covers only the BYTE-IDENTICAL path.
-//
-// The second rule's narrowness is deliberate and load-bearing, not an
-// unfinished substring match: matching by substring would let a plan declaring
-// `src/auth` license `src/authority.js`, a DIFFERENT file that some other plan
-// may have declared, and the lease would then license destroying it. A plan
-// that means the directory says so with the slash.
-//
-// NON-PATH STRINGS are accepted, never classified as directory leases and never
-// a throw. `parsePlanFiles` deliberately unions the raw annotated form of a
-// `- **Files:**` task line (`src/a.rs (edit)`) into the same set as its
-// normalized twin - the cross-arm bridge that keeps one declared path from
-// reaching the set as two different strings - so this module is handed strings
-// that are not paths as a matter of course. One that does not end in `/` simply
-// matches nothing but itself, which is the correct answer for a string no file
-// is named.
-//
-// NO FILESYSTEM, and three cases deliberately NOT normalized here, each with
-// its reason:
-//
-//   symlinks       resolving one needs filesystem access at gate time, and
-//                  `plan-overlap` runs against declarations that name files
-//                  which may not exist yet - a plan declares what it is about
-//                  to create.
-//   case folding   whether `SRC/a.js` and `src/a.js` are one path is a property
-//                  of the filesystem, so folding here would make two identical
-//                  declarations resolve differently on two machines.
-//   `..` traversal a declaration that climbs out of the repo root is an
-//                  out-of-repo-lease defect, a different thing from two readers
-//                  disagreeing about one spelling, and it is not made safe by
-//                  agreeing about it.
-//
-// Only the DECLARED side is resolved. The staged side reaches `lease-check`
-// already canonical through `repoRel` - repo-relative, forward-slash, no `./`,
-// no `//` - and a second transform over paths that round-tripped through that
-// seam's byte-level guard is how the non-ASCII hard block gets re-broken.
+// a declaration ending in `/` is a directory lease and covers everything beneath it; every other declaration covers only the byte-identical path
+// no substring matching, or a plan declaring `src/auth` would license `src/authority.js`, a different file another plan may have declared, and the lease would license destroying it
+// non-path strings are accepted and match only themselves: parsePlanFiles unions the raw annotated form of a task line (`src/a.rs (edit)`) in beside its normalized twin
+// no filesystem, and three things deliberately not normalized:
+//   symlinks: resolving one needs the filesystem at gate time, and a plan declares files it hasn't created yet
+//   case folding: whether `SRC/a.js` and `src/a.js` are one path depends on the filesystem, so folding would resolve the same declarations differently on two machines
+//   `..`: climbing out of the repo root is a different defect from two readers disagreeing about a spelling
+// only the declared side is resolved; the staged side arrives canonical through `repoRel`, and a second transform over it is how the non-ASCII hard block gets re-broken
 'use strict';
 
 /**
@@ -67,9 +25,8 @@ export function covers(declaration, path) {
 }
 
 /**
- * Do two DECLARATIONS reach any of the same files? Symmetric by construction,
- * because either one may be the directory lease containing the other - which
- * is the whole question the pre-flight overlap gate is asking.
+ * Do two declarations reach any of the same files? Symmetric, because either
+ * may be the directory lease containing the other.
  *
  * @param {unknown} a @param {unknown} b @returns {boolean}
  */
@@ -78,26 +35,16 @@ export function intersects(a, b) {
 }
 
 /**
- * Does this declaration carry a spelling the lease grammar REFUSES?
+ * Does this declaration carry a spelling the grammar refuses? Exactly three: a
+ * leading `./`, a `/./` segment and `//`. Each names the same file as its plain
+ * spelling, so admitting one would put a file in the declared set under two
+ * strings read as two files.
  *
- * Exactly three forms, and deliberately nothing else: a declaration beginning
- * `./`, a declaration carrying a `/./` segment, and a declaration carrying
- * `//`. Each names the same file as its plain spelling, so admitting it would
- * put ONE file into the declared set under two strings the grammar above reads
- * as two different files - the covering half of the same divergence this module
- * closes, arriving through the plan author's keyboard instead of through a
- * second reader.
+ * Refused rather than normalized, because normalizing can only widen a lease
+ * and a parallel-safety gate must not do that quietly. The caller drops the
+ * declaration and files a diagnostic so the author is told.
  *
- * REFUSED at declaration time rather than normalized away, because normalizing
- * can only ever WIDEN what a plan leases, and widening a lease is the one thing
- * a parallel-safety gate must not do quietly. The caller drops the declaration
- * and files a named diagnostic, so the author is told rather than silently
- * given a lease they did not write.
- *
- * `..` is NOT in the set. A declaration climbing out of the repo root is an
- * out-of-repo-lease defect, a different question from two spellings of one
- * path, and widening this rule to reach it would refuse declarations that name
- * real files.
+ * `..` isn't here: that's an out-of-repo lease, a different question.
  *
  * @param {unknown} declaration @returns {boolean}
  */

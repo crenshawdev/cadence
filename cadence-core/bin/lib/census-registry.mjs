@@ -1,71 +1,11 @@
 // @ts-check
-// census-registry.mjs - the ONE table naming every HAND-MAINTAINED census this
-// repository carries (CEN-01). A census is a count a human wrote down that the
-// code must keep true: `assert.equal(entries, 184)` is the enumeration's own
-// claim that the phase examined these sites and no others, and an edit that
-// adds a site moves the number whether or not the author knew the number
-// existed. Until this table, that class was invisible - each census was watched
-// by exactly one test and by nothing that knew the others were the same kind of
-// thing.
-//
-// WHY THE TABLE IS HAND-MAINTAINED. Nothing in a tree snapshot distinguishes a
-// pinned count from an incidental one: `assert.equal(n, 17)` reads identically
-// whether 17 is a claim about this repository or the length of a fixture the
-// test just built. Measured 2026-08-24 over the test files then in
-// `cadence-core/bin`, 73 `assert.equal(..., <2+ digit literal>)` calls and 147 on a looser shape, the
-// large majority fixture-derived rather than tree-derived. So the register IS
-// the record, the same species of stated table as `lib/deferred-reads.mjs`'s
-// register, self-verify's CONTRACTS and `lib/rung-agent.mjs`'s RUNG_FILES.
-//
-// WHAT A ROW COSTS. A row is added in the commit that plants the marker at the
-// asserting site, and it is not deleted without deleting the census. Deleting
-// the row alone leaves the marker behind and unwatches the count, which is why
-// a marked site with no row REDDENS the suite instead of passing quietly - the
-// one direction `censusIssues` below checks. The reverse direction is not
-// checked here (D-06): a row whose marker someone removed is a census that
-// stopped being findable, and inferring censushood from assertion shape is what
-// the measurement above rules out.
-//
-// SUBJECTS ARE NARROW, and hand-written per row (D-03). A row's `subjects` are
-// scoped to what the assertion actually PINS, never to whatever the census
-// really scans. The wider reading is more honest and unusable: measured
-// 2026-08-24 over `git ls-files .planning`, 46 PLAN files carry a `files:`
-// block and 40 declare at least one path under `cadence-core/bin/`, and a
-// `cadence-core/bin/` subject for the whole-tree `helper-census.test.mjs` walk
-// (`helper-census.test.mjs:216`) would have refused 38 of those 40, while
-// `self-verify.test.mjs` check 12's own `walk(binDir)` gives 22 of 40. Both are
-// a rail that fires wrong, and `cadence-core/bin/planning/lease-check.mjs`'s
-// header states what happens to one of those: it gets deleted, not tuned. The
-// narrowing is itself hand-maintained and can drift. That cost is accepted, and
-// it is the price of the rail firing at all rather than being overridden on
-// sight - `.planning/phases/1/SUMMARY.md:46` already records the commit-time
-// arm being overridden twice rather than obeyed.
-//
-// WHAT IS NOT A CENSUS (D-05, as corrected mid-phase). A DERIVED number - one
-// the test computes from the tree at run time and checks against another thing
-// it computed - is a MEASUREMENT, and no plan can invalidate it: change the
-// tree and both sides move together. The exemption reaches only numbers nobody
-// wrote down. A count a human TYPED into the test is a census however carefully
-// the test's header derives it, because that derivation is provenance for the
-// number and not a second reading of the tree - the file still holds a literal
-// a plan's work can move, so it takes a row here and a marker at its asserting
-// site like every other one.
-//
-// THIS TABLE'S OWN LENGTH IS NEVER ASSERTED (D-04), and there is no count
-// export to assert it with. A length assertion would make adding a row a
-// census-invalidating act - putting this registry inside its own table and
-// charging every future phase a lease amendment for the row it adds - and
-// exempting the registry from itself instead would leave a census nothing
-// watches, which is the exact class this table enumerates. The rows' SHAPE is
-// what `census-registry.test.mjs` asserts in its place, the way
-// `helper-census.test.mjs:217-224` already handles its own self-reference. Do
-// NOT add a length or count export.
-//
-// Pure in the sense `lib/lease-grammar.mjs` and `lib/debt-markers.mjs` are:
-// classify, never emit, no fs, no git, no envelope. The caller owns the tree
-// walk, the file reads and the verdict. It takes no CONTRACTS row and no CLI
-// entry point, for the reason self-verify.mjs check 14 states about
-// `lib/*.mjs`: they are modules prose never invokes.
+// every hand-maintained census in the repo: a count a human wrote down that the code must keep true
+// a census is a count someone typed into a test; a number the test derives from the tree and checks against another thing it derived is a measurement, and no plan can invalidate it. A typed count takes a row and a marker however carefully the test derives it
+// hand-maintained because nothing in a tree snapshot tells a pinned count from an incidental one: `assert.equal(n, 17)` reads the same whether 17 claims something about the repo or is the length of a fixture, and most such literals were fixtures
+// a row's `subjects` are narrow, scoped to what the assertion pins and not what the census scans. The wider reading is more honest and unusable: it refuses most plans, and a rail that fires wrong gets deleted, not tuned. The narrowing can drift and that cost is accepted
+// the table's own length is never asserted and there's no count export: that would make adding a row a census-invalidating act, and exempting the registry from itself leaves a census nothing watches. The test asserts the rows' shape instead
+// a row goes in with the commit that plants the marker, and a marked site with no row reddens the suite
+// pure: no fs, no git. The caller owns the walk, and this takes no CONTRACTS row or CLI entry, for the reason self-verify check 14 gives for `lib/*.mjs`
 'use strict';
 
 import { markerSegments, stripTrailer } from './debt-markers.mjs';
@@ -88,10 +28,9 @@ function entry(e) {
 /**
  * Every hand-maintained census in this tree, one row each.
  *
- * `holder` is where the number LIVES; `subjects` is what moving a file under
- * them would MOVE it. The two are different paths on purpose (D-02): a plan
- * that edits a subject and never names the holder is exactly the plan this
- * registry exists to catch, and it is the shape phase 5's own PLAN-1 had.
+ * `holder` is where the number lives; `subjects` is what moving a file under
+ * them would move. They differ on purpose: a plan that edits a subject and never
+ * names the holder is exactly the plan this registry exists to catch.
  *
  * @type {readonly CensusEntry[]}
  */
@@ -99,20 +38,12 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'self-verify-merge-layers',
     holder: 'tests/self-verify.test.mjs',
-    // `mergeLayers` is written here WITHOUT its opening paren on purpose. The
-    // merge-warnings rule matches the name followed by `(` on any non-comment
-    // line, so spelling the callsite out in this row's prose made the registry
-    // itself the thirteenth file carrying a callsite - self-verify red, and
-    // check 12 red at seventeen over thirteen. The fix belongs at the MENTION,
-    // which is the discipline lib/merge-warnings.mjs states and the same one
-    // that keeps this file's own marker head built rather than written.
+    // no paren after mergeLayers here, or the merge-warnings rule reads this row as a callsite and the registry becomes a file carrying one
     counts: 'eighteen `mergeLayers` callsites over fourteen files, each in one '
       + 'of the two warning-surfacing arms',
     asserted_by: 'the test named `check 12: the live tree is SEVENTEEN callsites '
       + 'over THIRTEEN files, each in an arm`',
-    // The fourteen files that carry a callsite today. lib/config-merge.mjs is
-    // deliberately NOT a subject: that test's own `skip` excludes it, so
-    // editing it cannot move the count.
+    // lib/config-merge.mjs isn't a subject: that test skips it, so editing it can't move the count
     subjects: [
       'cadence-core/bin/config.mjs',
       'cadence-core/bin/forge.mjs',
@@ -144,24 +75,17 @@ export const CENSUSES = Object.freeze([
       + 'once across the whole planning seam',
     asserted_by: 'the test named `the four refusing trace flags carry ONE '
       + 'sentence each, in one map`',
-    // A directory lease beside the entry file: that test deliberately reads the
-    // whole seam, so a second copy pasted into any command module is what it
-    // catches and any narrower subject would miss.
+    // a directory lease beside the entry file: that test reads the whole seam, and a second copy pasted into any command module is what it catches
     subjects: ['cadence-core/bin/planning.mjs', 'cadence-core/bin/planning/'],
   }),
   entry({
     id: 'weight-budgets',
     holder: 'cadence-core/bin/weight-budgets.json',
     counts: 'a UTF-8 byte ceiling for each budgeted prose surface',
-    // Row (d) stretches criterion 1's "the test that asserts it" to a non-test
-    // asserting site on purpose (D-08). It is the one census every
-    // prose-editing plan in this repository invalidates.
+    // a non-test asserting site on purpose; every plan that edits prose invalidates this census
     asserted_by: "`cadence-core/bin/self-verify.mjs`'s budget check, the "
       + '`budget-overrun` arm',
-    // Five directory leases, measured 2026-08-24 to cover all 111 budgeted
-    // keys. Copying the key list in would be a second copy of
-    // weight-budgets.json, and is refused for the reason lib/lease-grammar.mjs
-    // exists.
+    // five directory leases cover all the budgeted keys; listing the keys would be a second copy of weight-budgets.json
     subjects: [
       'agents/',
       'cadence-core/references/',
@@ -218,11 +142,7 @@ export const CENSUSES = Object.freeze([
       + 'of them wrapped in `redactUrl`',
     asserted_by: "the test named `source: planning.mjs's no-staged-set detail "
       + 'goes through redactUrl`',
-    // Wide by NECESSITY, not by choice: this census is taken over the
-    // concatenated seam `seamSource()` reads (`planning.test.mjs:53-55`), so a
-    // narrower subject would not be what the assertion pins. The same subject
-    // pair `trace-refusal-sentences` carries, and its refusal cost is measured
-    // against the same bound every other row answers to rather than assumed.
+    // wide by necessity: the census is taken over the concatenated seam, so a narrower subject isn't what the assertion pins
     subjects: ['cadence-core/bin/planning.mjs', 'cadence-core/bin/planning/'],
   }),
   entry({
@@ -232,13 +152,7 @@ export const CENSUSES = Object.freeze([
       + 'of them that resolve a `phases/<N>/` path, each with its disposition',
     asserted_by: 'the test named `census: every phase-argument callsite under planning/ '
       + 'carries a disposition`',
-    // NARROW on purpose, and measured. The two rows above carry
-    // `planning.mjs` beside the directory because their assertions are taken
-    // over the concatenated seam; this one walks the directory alone, and no
-    // phase-argument callsite lives in `planning.mjs` at all. Adding
-    // `planning.mjs` for symmetry was replayed against the live corpus on
-    // 2026-08-25 and moves this row from 4 of 46 plans refused to 18, against
-    // the half-the-plans rail's bound of 23 - a cost paid for nothing (D-11).
+    // narrow on purpose: this walks the directory alone and no callsite lives in planning.mjs, so adding it for symmetry would refuse far more plans for nothing
     subjects: ['cadence-core/bin/planning/'],
   }),
   entry({
@@ -247,13 +161,7 @@ export const CENSUSES = Object.freeze([
     counts: "the register's row count and the number of ROUTERS those rows "
       + 'span - 7 over 2',
     asserted_by: 'the test named `the register pins its row count and its router count`',
-    // The MODULE, not `cadence-core/references/`. Both numbers are read off
-    // `ROUTERS` itself, so the only edit that can move either one is an edit to
-    // this file - the same subject every other register census in this table
-    // carries. The wide directory lease was measured on 2026-08-25 and refuses
-    // 21 of the 37 plans declaring under `cadence-core/bin/`, past the
-    // half-the-plans rail `planning-lease-check.test.mjs` asserts, because a
-    // reference cold-split without a new ROUTER row moves no count at all.
+    // the module and not the references directory: both numbers are read off ROUTERS itself, and a reference split without a new row moves no count
     subjects: ['cadence-core/bin/lib/reference-routers.mjs'],
   }),
   entry({
@@ -263,13 +171,7 @@ export const CENSUSES = Object.freeze([
       + '14 for `workflows/plan.md` and 6 for `workflows/context.md`',
     asserted_by: 'the generated test named `<file> instructs exactly <N> seam '
       + 'invocations`, one per row of that file\'s `CENSUS` array',
-    // The two workflows the 2026-08-14 scan measured, and nothing wider: the
-    // count is per FILE and only these two files carry a row, so a subject
-    // reaching the rest of `cadence-core/workflows/` would refuse plans this
-    // census has nothing to say about. Replayed 2026-08-25 over this
-    // repository's own record, the narrow pair refuses 9 of the 47 plans
-    // declaring under `cadence-core/bin/`, against the half-the-plans bound of
-    // 23.5 that `planning-lease-check.test.mjs` asserts.
+    // only these two workflows carry a row and the count is per file, so reaching the rest of the directory would refuse plans this census says nothing about
     subjects: [
       'cadence-core/workflows/plan.md',
       'cadence-core/workflows/context.md',
@@ -278,62 +180,30 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'planning-group-stems',
     holder: 'tests/test-groups.test.mjs',
-    // A SET, not a number, which is why no figure appears in this row either:
-    // the census is equality against the tree in both directions, so a
-    // legitimate new planning test costs one list edit and not two. Same
-    // hand-list-versus-tree shape as `rung-agent-files` above, and the reason
-    // it takes a row at all is D-05: one side of the comparison is typed by a
-    // human.
+    // a set, not a number, so no figure here: the census is equality against the tree both ways, and it takes a row because one side is typed by a human
     counts: "the `planning` group's membership in test.mjs's hand-typed "
       + '`GROUPS` - the SET of stems, never a count of them',
     asserted_by: 'the test named `GROUPS.planning is exactly the '
       + 'planning-*.test.mjs files on disk, both directions`',
-    // `tests/test.mjs` alone, never a directory. The typed list lives in that
-    // one file and only an edit to it can move the census; the other half of
-    // the comparison is the tree, which no lease can pin. Replayed 2026-08-25
-    // over this repository's own record, when the file sat in `cadence-core/bin`
-    // and 39 plans declared a path under that directory against a half-the-plans
-    // line of 19.5: this subject with a separate test-file holder refused 1 of
-    // 39, while the directory refused 39 of 39 - the rail firing wrong that
-    // phase 1 narrowed `reference-router-branches` to escape.
+    // `tests/test.mjs` alone, never a directory: the typed list lives in that one file and only an edit to it moves the census, and a directory lease would refuse nearly every plan
     subjects: ['tests/test.mjs'],
   }),
 ]);
 
 // --- discovery: the marker grammar, and the one rule over it -----------------
 //
-// D-06. A census that lives in a test but has no row above is invisible, and
-// inferring censushood from assertion shape is what the measurement in this
-// file's header rules out. So the census site carries a LEXICAL MARKER, on the
-// `CADENCE-DEBT` model, and the suite fails on any marked site with no row.
-//
-// The stated cost, which is real: a census written WITHOUT the marker stays
-// invisible. That is a statement about counts nobody has found yet, not a
-// licence to skip a known one - every census this tree carries as of 2026-08-24
-// is above, and each one is marked.
-//
-// ONE DIRECTION ONLY. A marked site with no row is an issue; a row whose marker
-// someone deleted is not checked here. The reverse direction would need this
-// module to know where every asserting site is, which is the disk half the
-// caller owns.
-//
-// Pure over TEXT, the split `lib/debt-markers.mjs` states: no `fs`, no walk, no
-// throw. The caller owns the tree walk, the file reads and the envelope; this
-// owns the grammar.
+// a census in a test with no row would be invisible, so the census site carries a lexical marker like the debt marker and the suite fails on any marked site with no row
+// a census written without the marker stays invisible; that's the stated cost, and every census here is marked
+// one direction only: a row whose marker was deleted isn't checked, because that needs the disk half the caller owns
+// pure over text: the caller owns the walk and the envelope
 
 /**
- * The marker token. Namespaced so it cannot collide with another tool's, and
- * distinct from `DEBT_TOKEN` so the debt harvest cannot pick these up. Verified
- * 2026-08-24: `git grep -w` finds it nowhere else in this tree.
+ * The marker token. Namespaced so it can't collide with another tool's, and
+ * distinct from `DEBT_TOKEN` so the debt harvest doesn't pick these up.
  */
 export const CENSUS_TOKEN = 'CADENCE-CENSUS';
 
-// Built rather than written as a literal so this file does not itself contain
-// the token-followed-by-a-colon sequence it recognizes. The walk in
-// census-registry.test.mjs reads every `.mjs` under cadence-core/bin/, this one
-// included, so a spelled-out head here would be ingested as a real marked site
-// and would need an exclusion list to undo - the second-list failure
-// `lib/merge-warnings.mjs` and `helper-census.test.mjs` both refuse.
+// built, not written as a literal: the test walk reads every .mjs under cadence-core/bin, this one included, and a spelled-out head would be ingested as a real marked site and need an exclusion list to undo
 const MARKER_HEAD = `${CENSUS_TOKEN}:`;
 
 /** The one named field a marker carries after its id. */
@@ -350,18 +220,14 @@ const ASSERTS = 'asserts';
 /**
  * Every census marker in one file's contents, in line order.
  *
- * The grammar: the token followed IMMEDIATELY by a colon, then the registry
- * `id`, then ` | `, then `asserts` and a colon, then one line naming what the
- * assertion pins. The immediate colon is what keeps documentation ABOUT the
- * convention from being ingested - prose naming the token in backticks is not a
- * marker and never becomes one.
+ * The grammar: the token, an immediate colon, the registry `id`, ` | `, then
+ * `asserts` and a colon and one line naming what the assertion pins. The
+ * immediate colon keeps prose that names the token in backticks from being
+ * ingested.
  *
- * A marker missing its id or its `asserts` field is RETURNED with `malformed`
- * naming the part, never dropped, for `lib/debt-markers.mjs`'s stated reason:
- * dropping it makes an incomplete marker invisible, which is strictly worse
- * than the marker - the site is still a census and now nothing says so. An
- * empty id also matches no registry row, so it reaches `censusIssues` as an
- * issue rather than passing as registered.
+ * A marker missing its id or its `asserts` comes back with `malformed` naming
+ * the part, never dropped, or the site is still a census and nothing says so. An
+ * empty id matches no row, so it reaches `censusIssues` as an issue.
  *
  * @param {string} text @returns {CensusMarker[]}
  */
@@ -402,11 +268,9 @@ export function censusMarkersIn(text) {
  */
 
 /**
- * The marked sites in one file that no registry row accounts for.
- *
- * A marker whose `id` matches a row is NOT an issue - the row is the record and
- * the marker is the site claiming it. Everything else is: an id no row uses, an
- * id someone deleted the row for, and a marker that stated no id at all.
+ * The marked sites in one file that no registry row accounts for: an id no row
+ * uses, an id whose row was deleted, and a marker that stated no id. A marker
+ * whose id matches a row is the site claiming its record, not an issue.
  *
  * @param {string} path the file's own path, repo-relative
  * @param {CensusMarker[]} markers what `censusMarkersIn` returned for it
@@ -429,18 +293,8 @@ export function censusIssues(path, markers) {
 
 // --- the lease predicate: what a declared file list puts at risk -------------
 //
-// D-10. Path intersection is the ONLY relation available at plan time. Nothing
-// in a PLAN declares what it will CHANGE other than paths:
-// `cadence-core/references/plan-frontmatter.md` documents the whole frontmatter
-// grammar and `files:` is its only path-bearing key, unioned by `parsePlanFiles`
-// with the `- **Files:**` task lines. Reading the plan's Action prose, or
-// opening a census test to see what it scans, both reach past "the lease and
-// the registry only" - so neither is reachable from here by construction.
-//
-// Both halves go through `lib/lease-grammar.mjs`. Re-implementing either would
-// redden `helper-census.test.mjs`'s `covers` row, and would be the
-// two-readers-one-rule divergence that module exists to close, reproduced
-// inside the phase meant to close it.
+// paths are the only relation available at plan time: a plan declares what it changes only through `files:` and the task `Files` lines, and reading Action prose or opening a census test would reach past the lease and the registry
+// both halves go through lease-grammar, or the covers row of the helper census goes red and two readers disagree on one rule again
 
 /**
  * @typedef {object} CensusAtRisk
@@ -453,22 +307,17 @@ export function censusIssues(path, markers) {
 /**
  * The registered censuses a declared file list puts at risk.
  *
- * An entry qualifies on two conditions together: some declaration INTERSECTS
- * one of its subject paths - the work will reach what the count is taken over -
- * and no declaration COVERS the entry's own holding file, so nothing in the
- * plan can move the number back into agreement. Declaring the holder is
- * therefore the whole remedy, which is what makes the refusal actionable rather
- * than merely correct.
+ * An entry qualifies when some declaration intersects one of its subjects (the
+ * work will reach what the count is taken over) and no declaration covers its
+ * holder, so nothing in the plan can move the number back into agreement.
+ * Declaring the holder is the whole remedy.
  *
- * Intersection is the right half on the subject side and containment on the
- * holder side, and they are not interchangeable: a declaration may be a
- * DIRECTORY lease that contains a subject, or a subject may be a directory
- * lease containing the declaration, and either reaches the count - while the
- * holder is one named file, and a lease amendment has to actually reach it.
+ * Intersection on the subject side and containment on the holder side aren't
+ * interchangeable: a directory lease may contain a subject or be contained by
+ * one and either reaches the count, but the holder is one named file and the
+ * lease has to actually reach it.
  *
- * Pure: no `fs`, no git, no envelope, no throw. The caller owns those and owns
- * the verdict. Living here rather than in the seam is what lets a replay ask
- * the question once per historical plan without a seam invocation each time.
+ * Pure, so a replay can ask once per historical plan.
  *
  * @param {readonly string[]} declared the plan's declared file list
  * @returns {CensusAtRisk[]}
