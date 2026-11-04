@@ -16,6 +16,7 @@ fields_version: 1
 sources: [CONTEXT.md | PLAN.md + ROADMAP.md, SUMMARY.md]
 started: [ISO timestamp]
 updated: [ISO timestamp]
+ci: [commit sha - only after a passing test-policy ci-status]
 ---
 
 ## Items
@@ -63,12 +64,19 @@ origin: verifier
 why_human: [why inspection cannot settle it - credentials, GUI, hardware]
 status: pending
 
+### 8. [Name]
+expected: [observable behavior]
+status: pending_ci
+job: [the required CI job that will run it]
+commit: [the commit that job is waiting on]
+
 ## Summary
 
 total: [N]
 passed: [N]
 failed: [N]
 pending: [N]
+pending_ci: [N - this line appears only when an item is pending_ci]
 skipped: [N]
 blocked: [N]
 reworked: [N]
@@ -126,6 +134,16 @@ reworked: [N]
 - `why_human`: the verifier's per-item reason inspection cannot settle
   this check, written by `uat merge` from `human_checks[].why_human`. The
   walk reads it as already judged and does not re-litigate the reason.
+- `pending_ci`: a check that cannot run locally and waits on GitHub Actions.
+  It needs both `job` and `commit` (`uat record --job ... --commit ...`, or
+  the same two keys in `--fields-file`); without both the record is refused.
+  The walk never offers it and the phase stays `partial`, since only `pass`
+  or `skipped` with a reason completes. Recording `pending_ci` again with a
+  new `commit` moves the item to a later head; `pass` then settles it.
+- `ci` (frontmatter): the commit `test-policy ci-status --phase <N>` passed
+  every required job for. Written only by that command, never by a `uat`
+  subcommand, and returned by `uat status`. A phase with it reads
+  "CI-verified at <sha>"; without it, "complete locally, not CI-verified".
 - Failure evidence lives on the item (reported / severity / cause / fix) -
   there is no separate gaps section.
 - Summary counts: recomputed and overwritten after every response.
@@ -148,7 +166,7 @@ Default: major.
 - Every user reply updates one item + Summary + `updated`, and the file
   is written immediately - it IS the session state.
 - Session end: status `complete` (every item pass or skipped-with-reason,
-  none failed) or `partial` (anything pending, failed, blocked, or
+  none failed) or `partial` (anything pending, pending_ci, failed, blocked, or
   skipped without a reason). Partial sessions resume at the first
   `pending` item on the next run.
 - A fixed failure goes back to `pending` with `fix: {hash}, retest`;

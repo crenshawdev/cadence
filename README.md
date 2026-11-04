@@ -87,6 +87,14 @@ The reviewers are adversarial by construction, because you cannot personally re-
 
 `/cad-minimalism-review` points the same posture at code that works and should not exist, an abstraction with one implementation, flexibility nothing exercises, config nobody sets, and hands back a ranked delete-list. It applies none of it.
 
+## The testing policy
+
+A project accepts one testing policy, once, with `/cad-config --testing` (`/cad-new-project` and `/cad-adopt` offer the same recommendation before the roadmap). It sets `testing.scope`, the coverage thresholds for lines and branches (Go gets its own statement threshold), the files the coverage measures, and the GitHub Actions jobs that must pass. After that, planning, execution, review, debugging, coverage and verification all follow it: a behavior change needs adequate automated coverage, a test is added only where the existing ones would miss a plausible defect, and nobody is asked to approve a test, fill in an evidence table or add a negative control for its own sake. The rules are in `cadence-core/references/test-policy.md`.
+
+The thresholds are enforced where the tests run. `planning.mjs test-policy render` writes the policy to `.github/cadence/coverage-policy.json`, `test-policy check` compares it with the config and the workflow files and names any weakening against a base branch, and `test-policy ci-status` reads whether every required job passed for a commit. Cadence only matches the accepted commands as text and never runs them, so a config that arrives with a clone cannot choose what runs on your machine. Enforcement is GitHub Actions only.
+
+A phase is called CI-verified only when every required job passed for a recorded commit. Until then it reads "complete locally, not CI-verified", a check that waits on CI stays `pending_ci`, and `/cad-land` refuses to merge unattended without all required jobs passing on the branch head. To read those jobs, `/cad-verify` can push a non-protected branch, and only when `cadence.publishForVerification` is true in the repository's own `.git/config`, which `/cad-config --testing` sets after you say yes. A project with no policy accepted behaves exactly as it did before. Nothing here adds a dependency to Cadence: the scripts stay zero-dependency, and the report check a Python, Go or Rust project copies in imports `node:` builtins only.
+
 ## How it works
 
 Cadence assumes the model will fail. Not that it is bad at the job, that it will now and then hand you something that looks finished and is not, and that you will not always catch it by reading. Everything else follows: the state stays durable, the workers stay disposable, and the rails sit where a worker cannot argue with them.
@@ -132,6 +140,7 @@ Every forge write goes through your own `tea`, `gh` or `glab`, signed in as you:
 - `repo create --private`, once, at `/cad-new-project`, after you confirm the owner and name;
 - `issue create`, with an `issue list` first to find a duplicate, when you send a review finding to the tracker instead of fixing it now;
 - PR or MR create and merge at `/cad-land`, when you pick that arm, or unattended when `git.auto_close` is true in both the repository's config and your user-global config.
+- under an accepted testing policy, `gh api` reads the check runs of one commit, and `/cad-verify` pushes a non-protected branch so those jobs can run, only when `cadence.publishForVerification` is true in the repository's `.git/config`.
 
 ### Optional MCP tool
 
@@ -164,7 +173,7 @@ No Cadence command lists `Bash` in `allowed-tools`, so every shell command a wor
 
 To stop the prompts, add rules for the commands you trust with `/permissions`. The unattended `/cad-milestone` into `/cad-land` chain stops at the first command your settings don't approve, so set those rules before you turn on `git.auto_close`.
 
-Pushes are still guarded by git-guard, a hook that only asks or refuses and never approves, and the one push it never sees is the unattended close above.
+Pushes are still guarded by git-guard, a hook that only asks or refuses and never approves, and the pushes it never sees are the unattended close above and the verification publish, which a repository authorizes for itself in `.git/config`.
 
 ### Privacy
 

@@ -64,6 +64,12 @@ planner writes the Verify as a `human-verify` instruction naming the tool and
 what to observe. It never writes a command the executor cannot run, because that
 turns into a mid-task deferral that later masquerades as a pass.
 
+Under an accepted testing policy (`testing.scope` set), a test that needs a
+service the local machine lacks names a required job that runs it in GitHub
+Actions instead of a `human-verify`, since every required test runs unattended.
+The testing scope, the checks a task adds and where testing stops, is a short
+statement inside `Verify:`, with no separate field, table or per-test approval.
+
 ### Scope reduction is treated as a defect
 
 Prohibited in task actions: "v1", "simplified", "for now", "placeholder",

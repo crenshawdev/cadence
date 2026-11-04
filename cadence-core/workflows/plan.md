@@ -42,8 +42,19 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.test_attack workflow.test_evidence workflow.check_inspection workflow.independent_rerun \
   planning.commit_docs \
   git.protected_branches git.on_protected \
-  git.base_branch memory.backend
+  git.base_branch memory.backend testing.scope
 ```
+
+`testing.scope` set means the project accepted a testing policy. Then run, once:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy check --root .
+```
+
+Hold `gate_found`. A project with no gate yet gets `ok:false` with
+`gate_found: false`, the answer the setup steps say to expect, so it is not a
+stop. Any other failing answer has `gate_found: null`: relay its `detail` and
+plan without the CI task until it is fixed. Unset, make no call.
 
 Then size the phase, BEFORE spending a planner dispatch on it:
 
@@ -65,7 +76,8 @@ gate either way - it answers the configured value or the schema default and
 knows nothing about the floor.
 
 `memory.backend` rides this same batch. It gates recall in spawn_planner and
-inline_plan below.
+inline_plan below. `testing.scope` rides it too, and gates the
+`<testing_policy>` block in spawn_planner.
 </step>
 
 <step name="load_phase">
@@ -231,6 +243,19 @@ In either table a literal | inside a cell is written \| and a cell that is one b
 </test_method>
 ```
 
+When `testing.scope` is set, the prompt carries one more block, the
+`<testing_policy>` below, placed where `<test_method>` goes. With it unset the
+prompt carries none of it. Gaps and revision modes reuse this prompt and so
+carry the block. The sentence about the CI task is added only when `gate_found`
+is `false`.
+
+```text
+<testing_policy>
+A testing policy is active for this project. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md once and follow it.
+{gate_found false: No CI job enforces the policy yet, so this plan's first task builds or extends them as an ordinary plan task, including any required job no workflow defines yet, such as a packaging job. Extend an existing workflow; never overwrite it. Take the commands, thresholds and required jobs from the values `test-policy.md` says how to read, and commit `.github/cadence/coverage-policy.json` in that task.}
+</testing_policy>
+```
+
 Revision mode: dispatch a FRESH cad-planner (never resume the prior run - the
 plan on disk carries the grounding). Append the checker's issues verbatim in a
 `<checker_issues>` block and instruct: fix each issue with minimal edits to the
@@ -266,6 +291,10 @@ disk, and do not continue while it refuses.
 With any of the four test switches on, the inline plan carries the same two
 sections, `## Evidence map` and `## Tests`, in the grammar of spawn_planner's
 `<test_method>` block.
+
+With `testing.scope` set, read `references/test-policy.md` once and follow it
+as spawn_planner's `<testing_policy>` block says: the testing scope in each
+task's `Verify:`, and the CI task first when `gate_found` is `false`.
 </step>
 
 <step name="handle_return">
@@ -445,6 +474,7 @@ Goal: {goal from ROADMAP.md}
 Requirements: {phase requirement IDs}
 Task ceiling: {workflow.max_plan_tasks} - the resolved value, for dimension 6.
 Rung: {the `effort` the resolve above returned} - that value, never a rung named here.
+{testing.scope set: Testing policy: active. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md once.}
 
 Read:
 - .planning/phases/{N}/PLAN*.md (the plans under review)
@@ -621,6 +651,10 @@ Advisory, once and last: the plan is not refused, the planner is not
 re-dispatched, the plan file is not edited to add a citation, and the run's one
 suggestion is unchanged. Add no second suggestion, no new ask and no branch on
 the count.
+
+With `testing.scope` unset, print one more line before the suggestion: "No
+testing policy is accepted; `/cad-config --testing` sets one." With it set,
+print nothing.
 
 One suggestion only: `/cad-execute {N}` - safe to `/clear` first: the plan is
 on disk and each executor runs in a fresh context.

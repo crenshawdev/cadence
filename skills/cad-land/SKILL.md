@@ -23,7 +23,7 @@ which runs the close unattended; it is stated once, at step 3(b).
 <process>
 Read every config key this run needs in ONE `config.mjs get` up front
 (conventions.md Parallel work) - `git.base_branch git.protected_branches
-git.on_land_cleanup git.create_tag` - and reuse the values across the steps
+git.on_land_cleanup git.create_tag testing.scope` - and reuse the values across the steps
 below rather than re-reading per step. Step 3 asks a seam, not this read.
 
 1. **Report git state - base first.** The base = `$ARGUMENTS`, else
@@ -118,7 +118,14 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    the ask came back.
 
    **(a) `git.auto_close` false, or not set in both layers (default): ask the
-   mechanism (ask-user seam, NO preselected default):**
+   mechanism (ask-user seam, NO preselected default).** With `testing.scope`
+   set, first run `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs"
+   test-policy check --root . --base <base>` and print any weakening it names
+   as ONE line before the question. Under a policy, when HEAD is the base
+   branch the Direct push option is absent, because a commit pushed straight
+   onto the base cannot pass the required jobs before it lands: say so and
+   point at opening a PR from another branch. Direct push of any other branch
+   stays. With it unset, nothing here changes.
    - **Direct push** - push the current branch to its remote.
    - **Open MR / PR** - the detected host's mechanism (`glab mr create` on
      GitLab, `gh pr create` on GitHub, `tea pr create --base <base> --head
@@ -244,6 +251,22 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      `glab mr create --source-branch <branch> --target-branch <base> --fill`,
      Forgejo `tea pr create --base <base> --head <branch>` (record the index
      it prints - tea addresses PRs by index, not branch).
+   - **Under a policy, the required jobs gate the merge (GitHub arm).** With
+     `testing.scope` set, once the PR exists and before the merge, run
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy check --root . --base <base>`.
+     A disagreement (`ok:false`) or any named weakening in `base.changes` is
+     shown and halts the unattended path until it is resolved, the way a
+     surviving finding halts it. Then Read
+     `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` (one consult
+     site, this step) for the bounded wait, and read the required jobs of the
+     branch head with a Bash timeout of 600000. Resolve the head sha ONCE with
+     `git rev-parse <branch>` and use that same sha for the read and the merge:
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy ci-status --commit <sha> --wait 540 --root .`
+     Only `answer:"pass"` reaches `gh pr merge`, and that merge adds
+     `--match-head-commit <sha>`, so a commit pushed to the PR branch after the
+     read is refused rather than landed unchecked. `fail` stops and names each
+     failing job. `pending` after the wait stops with nothing landed, and a
+     re-run resumes here. With it unset, this bullet does not apply.
    - **Merge on the platform.** GitHub `gh pr merge <branch> --merge
      --delete-branch` (an explicit merge strategy is required or gh
      errors/prompts; `--delete-branch` removes the remote+local source). GitLab

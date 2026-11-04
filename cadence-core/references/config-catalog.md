@@ -70,6 +70,16 @@ pair is one selectable option and its `description`.
 | **Planning** |||||
 | `planning.commit_docs` | bool | Commit `.planning` docs alongside code | `true`→track docs · `false`→leave untracked | true |
 | `planning.max_capture_bullets` | int | How many live items may sit in `.planning/CAPTURE.md` before Cadence says the queue has stopped being the phase in flight? A crossing is reported by `planning.mjs capture-check` and nothing is refused - filing never stops. The default sits above this repository's own 30 (measured 2026-08-25), so it fires on growth rather than on arrival | e.g. `40` | 40 |
+| **Testing** |||||
+| `testing.scope` `[repo-layer-only]` | enum | Which testing policy did this project accept? Asked once by `/cad-config --testing`; `null` means none was accepted and nothing changes. Set, the four legacy test switches read false here | `focused`→unit and component tests · `integrated`→adds integration tests across the main paths · `thorough`→deeper failure and limit tests where a concrete requirement or plausible defect calls for them · empty→`null` (no policy) | null |
+| `testing.coverage.lines` `[repo-layer-only]` | int | Aggregate line coverage threshold, 0-100. 0 disables the metric and is never reported as satisfied | e.g. `85` | 85 |
+| `testing.coverage.branches` `[repo-layer-only]` | int | Aggregate branch coverage threshold, 0-100, checked separately. 0 disables the metric and is never reported as satisfied | e.g. `85` | 85 |
+| `testing.coverage.statements` `[repo-layer-only]` | int | Statement coverage threshold, 0-100, for tools that report only statements such as Go. It is never read as a line threshold. 0 disables it | e.g. `80` | 0 |
+| `testing.coverage.include` `[repo-layer-only]` | list | Globs naming the production files coverage is measured over | comma-typed globs · empty→`[]` | [] |
+| `testing.coverage.exclude` `[repo-layer-only]` | list | Globs for generated code, bundled output and test code left out of coverage | comma-typed globs · empty→`[]` | [] |
+| `testing.coverage.commands` `[repo-layer-only]` | list | The accepted CI coverage commands, matched as text against the workflow files and never run by Cadence | comma-typed commands · empty→`[]` | [] |
+| `testing.strong_areas` `[repo-layer-only]` | list | Project paths with a concrete requirement or plausible consequential defect that justify deeper tests | comma-typed paths · empty→`[]` | [] |
+| `testing.required_jobs` `[repo-layer-only]` | list | The GitHub Actions jobs that must pass before a phase is called CI-verified | comma-typed job names · empty→`[]` | [] |
 | **Memory** |||||
 | `memory.backend` `[repo]` | enum | How past planning notes are searched and resurfaced | `builtin`→built-in search over your `.planning/` docs, no setup and no dependencies · `none`→turn that search off | builtin |
 | **Review** (providers handled separately) |||||

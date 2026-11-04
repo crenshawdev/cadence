@@ -86,11 +86,13 @@ key this workflow uses, the batched form seven other sites already ship:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
-  memory.backend planning.commit_docs
+  memory.backend planning.commit_docs testing.scope testing.required_jobs
 ```
 
 `planning.commit_docs` is not needed until the `commit` step at the very end.
-Read it HERE and carry the value forward.
+Read it HERE and carry the value forward. `testing.scope` and
+`testing.required_jobs` ride the same call for `acceptance_criteria`, which
+carries them forward too.
 
 When `memory.backend` is `builtin` (the schema default), run recall for the
 phase goal:
@@ -306,6 +308,15 @@ it to a human check from the start and the executor never discovers
 mid-task that it cannot self-verify (which is how a deferred check
 masquerades as a pass). A criterion whose tool is present stays a normal
 machine-checkable box.
+
+When `testing.scope` is set, a criterion whose tool is absent here is not
+tagged `human-verify`. It gets a CI check instead: a job from
+`testing.required_jobs` that proves it, recorded as a `(ci: <required job>)`
+suffix beside where the tag would sit. Where no automated check seems possible,
+ask the user once (ask-user seam) what to do about that criterion. Never
+rewrite a criterion and never make one optional yourself: only the user's
+explicit decision does. A `human-verify` criterion already written stays as it
+is. With `testing.scope` unset, the paragraph above is the whole rule.
 </step>
 
 <step name="size_check">

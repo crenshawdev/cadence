@@ -56,13 +56,15 @@ On every route into this loop - a new symptom AND a `continue <slug>` resume -
 first read the config seam once:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend review.consult.attempt_threshold
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend review.consult.attempt_threshold testing.scope
 ```
 
 `memory.backend` gates the Hypothesize recall step (step 1); `review.consult.attempt_threshold`
 (T) gates the dead-end consult (see Consult). The `continue <slug>` resume enters here
 directly, bypassing the New session steps, so anchoring the read to loop entry keeps both
-gates fed on resume.
+gates fed on resume. `testing.scope` set means a testing policy is active: read
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` once, for Resolve
+step 4.
 
 Repeat until a root cause is confirmed or a dead-end is reached:
 
@@ -137,7 +139,10 @@ Repeat until a root cause is confirmed or a dead-end is reached:
 4. Verify: re-run the reproduction. Symptom gone -> set Status: resolved, fill
    Resolution, done. Symptom remains -> increment Attempts, record what the
    attempt changed and did not, and return to the method loop (the failed fix
-   is itself an observation).
+   is itself an observation). With a policy active, also apply the policy's
+   bug-fix rule: ask whether an existing reproducer gives adequate regression
+   coverage, confirm it fails for the defect and passes after the fix, and add a
+   test only where the completion rule says to.
 
 ## Consult at dead-ends (references/consult.md)
 

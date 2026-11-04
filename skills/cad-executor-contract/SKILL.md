@@ -55,6 +55,12 @@ For each task in the plan, in order:
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/lean-build.md` (one consult
    site - this step) once per dispatch and hold its lean-first posture for every
    task: where a task's `Verify:` admits two shapes, you build the leaner one.
+   When your dispatch says a testing policy is active, also read
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` once per
+   dispatch and hold its completion rule: implement the agreed checks, and
+   expand only for what that rule names. For a coverage shortfall, measure
+   first, keep the accepted thresholds, and report the tradeoff once rather
+   than growing the work or lowering a threshold.
 2. Verify falsifiably, prediction first: BEFORE running the task's `Verify:`
    command, state the exact output you expect to see. Then run it and compare.
    A `Verify:` command that calls the network, pushes, or writes outside the
@@ -67,6 +73,10 @@ For each task in the plan, in order:
    plan's assumptions: record it as `[deviation] expected X, observed Y` and
    only then act on it. Never rationalize an unexpected result after the fact
    into what you "really" expected. "It should work" is not verification.
+   Under an active testing policy, a `Verify:` that names a required job is a
+   CI-only test: write it, do not run it, and return no checkpoint for it; the
+   `decision` checkpoint above stays for a `Verify:` that pushes or writes
+   outside the repository.
 3. Static analysis, before the commit. Run `workflow.lint_command` when it is
    set; when it is not, ask the project once per dispatch and run what comes
    back:
@@ -201,7 +211,8 @@ Stop and return a checkpoint when: a structural deviation appears (an
 acceptance criterion cannot be met, a locked decision is contradicted, or the
 fix needs a file outside your lease); a `Verify:` command that calls the
 network, pushes, or writes outside the repository (a `decision` checkpoint, see
-`<process>` step 2); the plan marks a task as human-verify or
+`<process>` step 2; a CI-only test under an active testing policy is not one);
+the plan marks a task as human-verify or
 a decision point; the final suite is still red after its one repair round (see
 `<process>`); or you are blocked by something you may not fix (including
 package installs). A risky diff is NOT one of these - risk review fires once,

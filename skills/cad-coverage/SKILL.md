@@ -28,5 +28,6 @@ default - the test kind and runner follow the code and `workflow.test_command`.
 <process>
 Run the coverage workflow end-to-end. Coverage means a test that would FAIL if
 the requirement broke - not a test that merely runs the code. Get user approval
-on the gap test plan before generating, and verify generated tests actually run.
+on the gap test plan before generating (when `testing.scope` is unset), and
+verify generated tests actually run.
 </process>

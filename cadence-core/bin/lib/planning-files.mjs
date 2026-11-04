@@ -1755,7 +1755,7 @@ export function classifyAcceptanceCriteria(text) {
 // and `origin` sit directly after `expected` because that is where a hand-added
 // line has to be for the first rewrite not to move it.
 const UAT_FIELDS = ['expected', 'criterion', 'origin', 'why_human', 'status',
-  'first_pass', 'source', 'evidence', 'reported', 'severity', 'cause', 'fix',
+  'job', 'commit', 'first_pass', 'source', 'evidence', 'reported', 'severity', 'cause', 'fix',
   'reason'];
 
 // The one place the `source` enum lives - where a RESULT came from. `user` is
@@ -1786,7 +1786,28 @@ export const UAT_ORIGINS = ['criterion', 'verifier', 'smoke'];
 // beside declared ids is a dropped link rather than an old file - reported as a
 // `fieldless-checklist` break. No writer here can produce the absence either way.
 export const UAT_FIELDS_VERSION = '1';
-const UAT_FM_FIELDS = ['status', 'phase', 'fields_version', 'sources', 'started', 'updated'];
+// `ci` is the commit `test-policy ci-status` last passed every required job for.
+// No `uat` subcommand sets it: that seam is its only writer, so "CI-verified"
+// cannot be claimed by a person typing it.
+const UAT_FM_FIELDS = ['status', 'phase', 'fields_version', 'sources', 'started', 'updated', 'ci'];
+
+// The Summary and `uat status` counts. `pending_ci` appears only when an item
+// holds that result, so a checklist with none renders and reports byte-for-byte
+// as it did before the result existed (D-01). Own keys only, the idiom
+// lib/trace.mjs's counts loop uses for the same job: `in` walks the prototype,
+// so a hand-written `status: constructor` would pass the guard and turn that
+// count into NaN.
+function countStatuses(items) {
+  /** @type {Record<string, number>} */
+  const counts = { pass: 0, fail: 0, pending: 0, skipped: 0, blocked: 0 };
+  let pendingCi = 0;
+  for (const it of items) {
+    if (it.status === 'pending_ci') pendingCi++;
+    else if (Object.prototype.hasOwnProperty.call(counts, String(it.status))) counts[String(it.status)]++;
+  }
+  if (pendingCi) counts.pending_ci = pendingCi;
+  return counts;
+}
 
 /**
  * Index of the first `## ` line in `lines` that sits OUTSIDE a fenced code
@@ -1912,11 +1933,7 @@ export function parseUat(text) {
     }
     items.push(item);
   }
-  const counts = { pass: 0, fail: 0, pending: 0, skipped: 0, blocked: 0 };
-  // Own keys only, the idiom lib/trace.mjs's counts loop uses for the same
-  // job: `in` walks the prototype, so a hand-written `status: constructor`
-  // would pass the guard and turn that count into NaN.
-  for (const it of items) if (Object.prototype.hasOwnProperty.call(counts, String(it.status))) counts[String(it.status)]++;
+  const counts = countStatuses(items);
   return { status: fm.status || null, phase: fm.phase || null, fm, items, counts, extras };
 }
 
@@ -1944,18 +1961,17 @@ export function renderUat({ fm, items, extras = [] }) {
       .map((k) => `${k}: ${flat(it[k])}`);
     return `### ${it.k}. ${flat(it.name)}\n${fields.join('\n')}\n`;
   });
-  const counts = { pass: 0, fail: 0, pending: 0, skipped: 0, blocked: 0 };
-  for (const it of items) if (Object.prototype.hasOwnProperty.call(counts, String(it.status))) counts[String(it.status)]++;
+  const counts = countStatuses(items);
   const reworked = items.filter((i) => i.first_pass === 'fail').length;
   const summary = `total: ${items.length}\npassed: ${counts.pass}\nfailed: ${counts.fail}\n` +
-    `pending: ${counts.pending}\nskipped: ${counts.skipped}\nblocked: ${counts.blocked}\nreworked: ${reworked}`;
+    `pending: ${counts.pending}\n${counts.pending_ci ? `pending_ci: ${counts.pending_ci}\n` : ''}skipped: ${counts.skipped}\nblocked: ${counts.blocked}\nreworked: ${reworked}`;
   const kept = extras.map((e) => `\n${e}\n`).join('');
   return `---\n${fmLines.join('\n')}\n---\n\n## Items\n\n${blocks.join('\n')}${kept}\n## Summary\n\n${summary}\n`;
 }
 
 /**
  * The verify.md completion rule: every item pass, or skipped WITH a reason;
- * nothing failed, pending, or blocked. An empty checklist is not complete.
+ * nothing failed, pending, pending_ci, or blocked. An empty checklist is not complete.
  * @param {{items: Array<Record<string, string|number>>}} uat
  */
 export function uatComplete(uat) {

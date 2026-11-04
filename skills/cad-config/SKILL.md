@@ -1,7 +1,7 @@
 ---
 name: cad-config
 description: "Configure Cadence's config.json - workflow toggles, the per-role model and effort interview, and interactive cross-model review provider setup"
-argument-hint: "[--review [redetect] | --surfaces | --roles [--global] | <key>=<value> ...]"
+argument-hint: "[--review [redetect] | --surfaces | --testing | --roles [--global] | <key>=<value> ...]"
 allowed-tools:
   - Read
   - Write
@@ -21,6 +21,9 @@ Routing:
   cheap tiers.
 - **--surfaces**: re-open the one-time risk-surface question - the answered set
   beside what the structure evidences now, re-answerable or declinable.
+- **--testing**: accept or reopen the one project testing policy from a single
+  recommendation, then ask separately whether `/cad-verify` may publish a branch
+  for CI.
 - **--roles [--global]**: the thirteen questions that say what each of the six
   roles costs - a model and a start rung per role, then the risk floor. Writes
   repo-layer diffs by default; `--global` re-enters the full thirteen against

@@ -105,6 +105,33 @@
 //                                   plan lists; a short record rewrites the
 //                                   report's first line to PLAN CHECKPOINT:
 //                                   blocked and nothing else
+//   test-policy render [--root <path>]
+//                                   write .github/cadence/coverage-policy.json
+//                                   from the accepted testing policy, defaults
+//                                   filled; refused when testing.scope is unset
+//                                   (NOT --dir: --root is the PROJECT root)
+//   test-policy check [--root <path>] [--base <ref>]
+//                                   the config, the committed policy file and
+//                                   the workflow files agree: thresholds, each
+//                                   accepted command as text (never run), the
+//                                   include globs, the required jobs; reports
+//                                   enforcement unavailable off GitHub and
+//                                   whether cadence.publishForVerification
+//                                   authorizes publishing here. --base names
+//                                   what the config weakens against the
+//                                   committed file at that ref (reported, not
+//                                   failed)
+//   test-policy ci-status --commit <sha> [--root <path>] [--wait <seconds>]
+//                           [--phase <N>]
+//                                   read the required jobs' check runs for
+//                                   one commit from GitHub (gh api): pass when
+//                                   every job succeeded, fail when one did
+//                                   not, pending otherwise (no run, no gh,
+//                                   another forge). --wait re-reads for at
+//                                   most that long while pending. --phase
+//                                   records the commit in that phase's UAT.md
+//                                   `ci` field on an overall pass, and
+//                                   nothing else. Main session only
 //   detect-surfaces [--root <path>] [--answered <a,b,c>]
 //                                   which of the eight risk-surface categories
 //                                   the project's STRUCTURE evidences - dirs,
@@ -276,8 +303,8 @@ const COMMANDS = {
   // subcommand declares no flag of its own.
   'test-checks': async (_dir, _sub, _opts, rest) =>
     (await import('./planning/test-checks.mjs')).cmdTestChecks(rest),
-  'test-evidence': async (_dir, _sub, _opts, rest) =>
-    (await import('./planning/test-checks.mjs')).cmdTestEvidence(rest),
+  'test-evidence': async (dir, _sub, _opts, rest) =>
+    (await import('./planning/test-checks.mjs')).cmdTestEvidence(rest, dir),
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the
   // cwd, which would report a different tree than the caller named (#42/#45) -
@@ -299,6 +326,10 @@ const COMMANDS = {
   trace: async (dir, sub, opts) => (await import('./planning/trace.mjs')).cmdTrace(dir, sub, opts),
   'risk-check': async (dir, sub, opts) =>
     (await import('./planning/risk-check.mjs')).cmdRiskCheck(dir, sub, opts),
+  // --root, never --dir: this one names the PROJECT root, the `detect-commands`
+  // distinction. The declared row is applied at the dispatch door below.
+  'test-policy': async (dir, sub, opts) =>
+    (await import('./planning/testing-policy.mjs')).cmdTestPolicy(dir, sub, opts),
   // The gate fire's per-finding rulings, beside the sibling REVIEW file.
   adjudication: async (dir, _sub, opts) =>
     (await import('./planning/adjudication.mjs')).cmdAdjudication(dir, opts),

@@ -94,6 +94,12 @@ FAILED (missing, stub, or unwired - cite the file and what is wrong),
 UNCERTAIN (only a human can settle it - visual, feel, external service,
 live behavior with no runnable probe).
 
+When the dispatch says "A testing policy is active.", nothing is left to a
+person: a truth you would classify UNCERTAIN is a gap instead, whose `reason`
+says no automated check exercises it. That is the completion rule's "uncovered
+acceptance requirement" (`references/test-policy.md`) and asks the project for
+the smallest check that closes it, nothing broader.
+
 ## 4. Anti-pattern scan
 
 On the files the phase touched (from SUMMARY; else git log for the
@@ -129,6 +135,9 @@ Constraints:
   verification (`workflow.test_command` from `.planning/config.json`, if
   set) - grep its saved output rather than re-running.
 - No runnable entry points: skip this step and say so.
+- When the dispatch says "A testing policy is active.", it also names the suite
+  command to use for that one full-suite run, or says the project manifest's
+  runner applies. Run what it names, and do not read `.planning/config.json`.
 
 ## 6. Requirements coverage
 
@@ -146,6 +155,10 @@ Status, most restrictive first:
 2. Else any UNCERTAIN truth or human-only check -> **needs_human**
 3. Else -> **delivered**
 
+When the dispatch says "A testing policy is active.", there is no UNCERTAIN
+truth (step 3) and no `needs_human`: rule 2 does not arise, so the status is
+**gaps** or **delivered**.
+
 Score: verified/total truths. UNCERTAIN counts toward neither side - a
 clean N/N means every behavior claim rests on behavior actually observed,
 never symbol presence alone.
@@ -160,7 +173,7 @@ single `Write` call.
 
 The name is NOT `FINDINGS.json`: `uat merge` atomically overwrites
 `.planning/phases/<N>/FINDINGS.json` with its own counters envelope on every
-successful merge (`planning/uat.mjs:499-501`), so a verifier
+successful merge (`planning/uat.mjs:508-510`), so a verifier
 writing that name would have its input destroyed by the merge it feeds.
 
 ```json
@@ -199,6 +212,10 @@ writing that name would have its input destroyed by the merge it feeds.
   walk re-applies its own bar to that text (`workflows/verify.md` step `walk`)
   and sends everything short of irreversibility or an out-of-reach resource
   back to be executed rather than asked.
+
+When the dispatch says "A testing policy is active.", `human_checks` is `[]`
+and `status` is never `needs_human`; every other key, and the file, are as
+above.
 
 The three list names and their fields are the `uat merge` payload's, on
 purpose: the seam consumes only `passes`, `gaps` and `human_checks` and ignores

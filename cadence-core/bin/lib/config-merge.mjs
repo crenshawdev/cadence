@@ -118,6 +118,20 @@ export function layerIdentity(p) {
   try { return resolvePath(p); } catch { return null; }
 }
 
+// The testing policy (phase 1). `testing.scope` set to one of these three is "a
+// policy was accepted"; null, absent, or anything else a hand edit left is not.
+// ONE predicate, read by mergeLayers (the four legacy switches read false) and by
+// readTestingPolicy (test-evidence requires nothing), so the two cannot disagree
+// about what counts as accepted. Hand-maintained rather than read off
+// config.schema.json, for the reason global-only-keys.mjs states: this file runs
+// inside git-guard.mjs's PreToolUse hook, where a schema read or a spawn does not
+// belong.
+export const ACCEPTED_TEST_SCOPES = Object.freeze(['focused', 'integrated', 'thorough']);
+/** @param {any} v */
+export const isAcceptedTestScope = (v) => typeof v === 'string' && ACCEPTED_TEST_SCOPES.includes(v);
+// The four legacy test switches an accepted policy replaces, read false.
+const LEGACY_TEST_SWITCHES = Object.freeze(['test_attack', 'test_evidence', 'check_inspection', 'independent_rerun']);
+
 /**
  * Merge the global and repo layers (repo wins). Returns {config, source,
  * warnings} where source names the layers that applied ("global+repo",
@@ -180,6 +194,22 @@ export function layerIdentity(p) {
  * untouched: `config`, `source`, `layers`, `warnings` and `scopeWarnings` are
  * byte-identical, and it is empty rather than absent for the same reason
  * `scopeWarnings` is.
+ *
+ * The `testing` section is honoured from the REPO layer alone (D-09):
+ * `repo_only` in the schema refuses the write at the user-global layer, but a
+ * hand-edited global file never went through that write face, so the whole
+ * section is removed from the global object the merge consumes, by the literal
+ * section name and with no schema read (this runs in the PreToolUse hook), and a
+ * non-null one is named on `scopeWarnings`. `layers.global` keeps the file's own
+ * content. A collapsed read has no global layer, so the user's own file reads as
+ * written there.
+ *
+ * An accepted `testing.scope` in the repo layer (D-01) makes the merged config
+ * read the four legacy switches false - the ONE place that override lives, so
+ * the prose branches reading them need no edit. A switch a layer set to true is
+ * named on `scopeWarnings`; one already false or unset has nothing overridden
+ * and draws no warning. An `asGlobal` read is not overridden: it addresses the
+ * user-global layer and no repository.
  * @param {string} repoFile
  * @param {{asGlobal?: boolean}} [opts]
  */
@@ -225,17 +255,79 @@ export function mergeLayers(repoFile, opts = {}) {
   const scoped = opts && opts.asGlobal
     ? { layer: repoValue, warnings: [] }
     : stripGlobalOnly(repoValue, repoFile);
+  const scopeWarnings = [...scoped.warnings];
+  // The global object the MERGE consumes, without a `testing` section: the
+  // rest-spread copies every other own key, `layers.global` is untouched.
+  let globalForMerge = globalValue;
+  if (global && globalValue && Object.hasOwn(globalValue, 'testing')) {
+    const { testing, ...rest } = globalValue;
+    globalForMerge = rest;
+    if (testing !== null) {
+      scopeWarnings.push(`config section "testing" in ${GLOBAL_CONFIG} was ignored: it is honoured `
+        + 'from the repository config layer only, so a user-global value cannot lower or accept a '
+        + "testing policy for a repository that never chose one");
+    }
+  }
+  let config = deepMerge(globalForMerge || {}, scoped.layer || {});
+  const asGlobal = !!(opts && opts.asGlobal);
+  if (!asGlobal && repoValue && isPlainObject(repoValue.testing) && isAcceptedTestScope(repoValue.testing.scope)) {
+    for (const sw of LEGACY_TEST_SWITCHES) {
+      const setIn = [[global && globalValue, GLOBAL_CONFIG], [repoValue, repoFile]]
+        .filter(([l]) => l && isPlainObject(l.workflow) && l.workflow[sw] === true).map(([, f]) => f);
+      if (setIn.length) {
+        scopeWarnings.push(`config key "workflow.${sw}" is true in ${[...new Set(setIn)].join(' and ')} `
+          + `and reads false: testing.scope is "${repoValue.testing.scope}" in ${repoFile}, and an `
+          + 'accepted testing policy replaces the four test switches');
+      }
+    }
+    config = { ...config, workflow: {
+      ...(isPlainObject(config.workflow) ? config.workflow : {}),
+      ...Object.fromEntries(LEGACY_TEST_SWITCHES.map((sw) => [sw, false])),
+    } };
+  } else if (!asGlobal && repoValue && isPlainObject(repoValue.testing) && repoValue.testing.scope != null) {
+    scopeWarnings.push(`config key "testing.scope" is ${JSON.stringify(repoValue.testing.scope)} in ${repoFile}, `
+      + 'which is not focused, integrated or thorough, so no testing policy is accepted');
+  }
   return {
-    config: deepMerge(globalValue || {}, scoped.layer || {}),
+    config,
     source: layers.length ? (shared ? sharedSource : layers.join('+')) : 'defaults',
     layers: { global: globalValue || null, repo: repoValue || null },
     // Kept alongside the collapse above: two genuinely different layers that
     // are both broken still get one entry each, and a caller pushing its own
     // strings in (route.mjs) never doubles a diagnostic.
     warnings: [...new Set(warnings)],
-    scopeWarnings: scoped.warnings,
+    scopeWarnings,
     // De-duplicated for the same reason `warnings` is: one collapsed file that
     // resolves as both layer paths is ONE torn layer, not two.
     tornLayers: [...new Set(tornLayers)],
+  };
+}
+
+/**
+ * The ONE read of the testing policy keys: for a config file, the merged
+ * `testing` section, the two forge keys the policy checks address, whether the
+ * accepted-scope predicate above holds for it, a scope outside that predicate,
+ * and the merge's `warnings` and `tornLayers`.
+ * `test-evidence` and the `test-policy` seam both read through here, so there is
+ * a single answer to "was a policy accepted" (D-17). It lives in this file, not
+ * a new one, so self-verify's merge census (check 12) keeps its count.
+ *
+ * `testing` is the MERGED object with no schema defaults applied (this file reads
+ * no schema): a key nobody set is absent from it. `accepted` reads the repo
+ * layer's own scope, the same layer `mergeLayers` overrides the switches from.
+ * @param {string} file
+ */
+export function readTestingPolicy(file) {
+  const { config, layers, warnings, tornLayers } = mergeLayers(file);
+  const repoTesting = layers.repo && layers.repo.testing;
+  const scope = isPlainObject(repoTesting) ? repoTesting.scope : null;
+  return {
+    testing: isPlainObject(config.testing) ? config.testing : {},
+    forgeProvider: isPlainObject(config.git) && config.git.forge_provider !== undefined ? config.git.forge_provider : null,
+    forgeRepo: isPlainObject(config.git) && config.git.forge_repo !== undefined ? config.git.forge_repo : null,
+    accepted: isAcceptedTestScope(scope),
+    invalidScope: scope === null || scope === undefined || isAcceptedTestScope(scope) ? null : scope,
+    warnings,
+    tornLayers,
   };
 }

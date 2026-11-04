@@ -56,7 +56,7 @@ line):
    cp "${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/config.json" .planning/config.json
    ```
 
-   Ask no configuration questions - with TWO deliberate exceptions, and no
+   Ask no configuration questions - with THREE deliberate exceptions, and no
    others. The first is item 6 below: the forge. A forge is a PRECONDITION
    rather than an option (FRG-02), and no template can carry a default for it,
    because which forge hosts a repository is a fact about that repository and
@@ -73,6 +73,11 @@ line):
    person paying for it, and the six roles' models are the largest single
    decision about what running Cadence costs. A user who accepts every default
    answers thirteen questions once per machine and none of them again.
+
+   The third is the testing policy, asked once as the `testing_policy` step
+   between `requirements` and `roadmap`. Same shape of reason as the forge - no
+   template can carry a default for what a project's tests must prove, and the
+   roadmap's phases are planned against the answer.
 
    Every other key keeps the template's value. Tell the user in one line what
    was written and where: "Config written with defaults (standard granularity,
@@ -423,6 +428,24 @@ to scoping.
 Commit: `docs: define requirements` with `.planning/REQUIREMENTS.md`.
 </step>
 
+<step name="testing_policy">
+Follow the **Testing policy** section of
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md` (one consult site -
+this step) here, before the roadmap: one recommendation, Accept or Adjust,
+written, rendered and checked. A blank-page project has no code to inspect, so
+it accepts from the stack PROJECT.md states and its coverage reads `unknown`.
+
+Skip that section's publishing question. Ask nothing about publishing; say in
+one line that verification publishing is off and that `/cad-config --testing` is
+where to authorize it.
+
+The step leaves `testing.*` in `.planning/config.json` and writes
+`.github/cadence/coverage-policy.json`. Both ride the `state` step's commit when
+`planning.commit_docs` is true. When it is false they stay uncommitted, and the
+first CI plan task commits the policy file, since `/cad-plan` puts that task
+first when `check` finds no gate.
+</step>
+
 <step name="roadmap">
 Build the roadmap inline in this context - there is no roadmapper agent.
 
@@ -491,7 +514,8 @@ already present; the grammar for `<N>` is stated in
 `references/roadmap-phases.md`.
 
 Commit: `docs: create roadmap ([N] phases)` with `.planning/ROADMAP.md`,
-`.planning/STATE.md`, `.planning/REQUIREMENTS.md`.
+`.planning/STATE.md`, `.planning/REQUIREMENTS.md`, `.planning/config.json` and
+`.github/cadence/coverage-policy.json`.
 </step>
 
 <step name="done">
@@ -501,6 +525,7 @@ Report tersely:
 Initialized: {project name}
 .planning/: PROJECT.md, REQUIREMENTS.md, ROADMAP.md ({N} phases),
             STATE.md, config.json{, research/RESEARCH.md}
+Testing policy: {scope}, {lines}/{branches}; publishing off
 Commit(s): {hashes, or "none - commit_docs is false"}
 
 Next: /cad-context 1
@@ -520,13 +545,16 @@ transcript need not be carried forward.
 - STATE.md is a four-line overwritten cursor plus an optional `Plan:` line: no audit logs, no session
   narratives, no progress bars, no metrics.
 - Config keys come from the engine config template only; never invent keys,
-  never ask config questions this workflow doesn't need answered.
+  never ask config questions beyond the forge, the roles interview and the
+  testing policy step. That step is the only place `testing.*` is written, and
+  it never asks about publishing.
 - Never fabricate an answer the ask-user seam was supposed to collect; when
   the user wants to talk freeform, drop structured questions until they're
   done.
 - Create nothing outside the canonical .planning/ set (PROJECT.md,
   REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json, research/ if the pass
-  ran). No phases/ dirs, no CLAUDE.md generation, no extra scaffolding.
+  ran) and `.github/cadence/coverage-policy.json`, which the testing policy
+  step renders. No phases/ dirs, no CLAUDE.md generation, no extra scaffolding.
 - A failed research pass is reported and skipped, never a blocker.
 - Don't rush the questioning to get to the artifacts. The artifacts are
   only as good as the questioning that fed them.
@@ -535,8 +563,10 @@ transcript need not be carried forward.
 <success_criteria>
 - [ ] Questioning followed threads until what / why / who / done were all
       concrete (not rushed, not checklist-walked)
-- [ ] .planning/config.json copied verbatim from the engine template, no
-      config interrogation
+- [ ] .planning/config.json copied from the engine template; the forge, roles
+      and testing policy answers are the only config interrogation
+- [ ] The testing policy was accepted before the roadmap was written, publishing
+      was not asked, and `.github/cadence/coverage-policy.json` was rendered
 - [ ] PROJECT.md captures the full gathered context; Active requirements
       framed as hypotheses
 - [ ] REQUIREMENTS.md: user scoped every category; REQ-IDs assigned;

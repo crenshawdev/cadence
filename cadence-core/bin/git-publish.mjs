@@ -43,6 +43,12 @@
 //     does its own pushing (GitLab: `glab mr create` publishes the source
 //     branch itself) still has one authorization answer to consult BEFORE it
 //     mutates, instead of no gate at all.
+//   verify-publish [--dir <path>] [--remote <name>]
+//     /cad-verify's push so CI can run on the branch. Authorized ONLY by
+//     `cadence.publishForVerification` true in this repository's own .git/config
+//     (lib/publish-authorization.mjs); git.auto_close is not consulted. Same
+//     branch and remote rules as publish, and its git calls run with the
+//     repository-local env variables (GIT_DIR, ...) removed from the process.
 // publish refuses (ok:false + reason, pushes nothing) unless git.auto_close is
 // true in BOTH this repository's .planning/config.json and the user-global
 // config AND HEAD is a non-protected branch whose name is safe AND the remote is
@@ -66,7 +72,10 @@ import { mergeLayers } from './lib/config-merge.mjs';
 // header carries why each half is a raw read and why it must fail closed.
 import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { emit } from './lib/seam-io.mjs';
-import { authorizationDetail, decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
+import { authorizationDetail, decidePublish, decideReap, decideVerificationPublish, tornLayerRefusal } from './lib/publish-decision.mjs';
+// The ONE reader of `cadence.publishForVerification`, and the env scrub the
+// verification publish's own git calls run under (D-02).
+import { localGitEnv, publishAuthorized } from './lib/publish-authorization.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 // The argument contract (ARG-06). This file states no flag rule of its own any
 // more: what each flag may be, and what it costs when it is not, are DECLARED
@@ -154,6 +163,14 @@ const GATE_HINTS = Object.freeze({
     'bad-remote': 'pass --remote a bare remote NAME, never a URL or a path',
     'remote-not-configured': 'run `git remote` and pass --remote one of the names it lists',
   }),
+  'verify-publish': Object.freeze({
+    'publish-not-authorized': 'run `/cad-config --testing` and answer yes to verification publishing, or publish the branch through `/cad-land`',
+    'no-branch': 'check out a branch first - a detached HEAD names nothing to publish',
+    'bad-branch': 'rename the branch to plain characters (no leading `-`, no `:`, no shell metacharacters) and re-run',
+    'protected-branch': 'check out a non-protected branch - a verification publish never pushes a protected one',
+    'bad-remote': 'pass --remote a bare remote NAME, never a URL or a path',
+    'remote-not-configured': 'run `git remote` and pass --remote one of the names it lists',
+  }),
   reap: Object.freeze({
     'no-branch': 'pass --branch the name of the branch to delete',
     'bad-branch': 'this seam only deletes plainly-named branches (no leading `-`, no `:`, no shell metacharacters) - delete this one by hand if the name is really what you want',
@@ -162,7 +179,7 @@ const GATE_HINTS = Object.freeze({
   }),
 });
 
-/** @param {'publish'|'reap'} arm @param {string} reason */
+/** @param {'publish'|'verify-publish'|'reap'} arm @param {string} reason */
 const gateHint = (arm, reason) => (GATE_HINTS[arm] || {})[reason]
   || 'the reason names the gate that stopped this - put the repository into a state that gate accepts, then re-run';
 
@@ -196,10 +213,18 @@ function publish(dir, remote) {
     return;
   }
 
-  // The program is the literal 'git' and the args are a JS array (execve, never
-  // /bin/sh); no command string is ever built. The only variable tokens are
-  // `dir` (right after -C, a path), the validated `remote`, and the `branch`
-  // (only inside the refspec decidePublish built). No -c/--config/global option.
+  pushDecided(dir, decision, warnings);
+}
+
+/** Run the push `decision` built, then emit its envelope. Shared by `publish` and
+ * `verify-publish` so the push, and the one credential-redacting error site,
+ * exist once.
+ *
+ * The program is the literal 'git' and the args are a JS array (execve, never
+ * /bin/sh); no command string is ever built. The only variable tokens are
+ * `dir` (right after -C, a path), the validated `remote`, and the `branch`
+ * (only inside the refspec the decider built). No -c/--config/global option. */
+function pushDecided(dir, decision, warnings) {
   try {
     execFileSync('git', ['-C', dir, ...decision.argv],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -216,6 +241,42 @@ function publish(dir, remote) {
       hint: 'git itself refused: pull and rebase if it names a non-fast-forward, or fix the credentials for this remote, then re-run',
       warnings });
   }
+}
+
+/** The verification publish: push the current branch so CI can run on it, when
+ * and only when this repository's own `.git/config` says
+ * `cadence.publishForVerification` is true. `git.auto_close` is not read.
+ *
+ * The repository-local variables (`GIT_DIR`, ...) are deleted from this
+ * process's environment first, the same set lib/publish-authorization.mjs
+ * `localGitEnv` removes for its read. This is a one-shot CLI process, so that
+ * one scrub covers the shared branch reader, the remote read and the push, and
+ * none of them can be pointed at another repository. */
+function verifyPublish(dir, remote) {
+  const clean = localGitEnv();
+  for (const name of Object.keys(process.env)) if (!(name in clean)) delete process.env[name];
+  const currentBranch = readCurrentBranch(dir);
+  const { branches: protectedBranches, warnings, tornLayers } = readProtectedBranches(dir);
+  const decision = decideVerificationPublish({
+    authorized: publishAuthorized(dir), currentBranch, protectedBranches, remote,
+    configuredRemotes: readRemotes(dir),
+  });
+  if (decision.action !== 'publish') {
+    emit({ ok: false, reason: decision.reason, branch: decision.branch, remote: decision.remote,
+      detail: decision.detail, hint: gateHint('verify-publish', decision.reason), warnings });
+    return;
+  }
+
+  // The protected-branch list is what stopped a protected push above, so a torn
+  // layer (the list ran as the default) refuses here, before the mutation.
+  const torn = tornLayerRefusal({ warnings, tornLayers });
+  if (torn) {
+    emit({ ok: false, reason: 'config-parse-failed', branch: currentBranch, remote, detail: torn,
+      hint: 'repair the config layer the detail names so the protected-branch list can be read, then re-run - nothing is pushed while that list is unprovable',
+      warnings });
+    return;
+  }
+  pushDecided(dir, decision, warnings);
 }
 
 function reap(dir, branch) {
@@ -328,13 +389,15 @@ try {
   // and `reap` still refuses `no-branch` rather than reaping a guessed one.
   if (cmd === 'publish') {
     publish(arg('publish', '--dir') || process.cwd(), arg('publish', '--remote') || 'origin');
+  } else if (cmd === 'verify-publish') {
+    verifyPublish(arg('verify-publish', '--dir') || process.cwd(), arg('verify-publish', '--remote') || 'origin');
   } else if (cmd === 'reap') {
     reap(arg('reap', '--dir') || process.cwd(), arg('reap', '--branch'));
   } else if (cmd === 'authorized') {
     authorized(arg('authorized', '--dir') || process.cwd());
   } else {
     emit({ ok: false, reason: 'usage',
-      detail: 'subcommands: publish [--dir <path>] [--remote <name>] | reap [--dir <path>] --branch <name>'
+      detail: 'subcommands: publish [--dir <path>] [--remote <name>] | verify-publish [--dir <path>] [--remote <name>] | reap [--dir <path>] --branch <name>'
         + ' | authorized [--dir <path>]' });
   }
 } catch (e) {

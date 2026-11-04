@@ -32,7 +32,11 @@ on this path is a real defect to report, not the fork-point default.
    so `Plan:` names the next unfinished plan.
 5. After all batches: read the key HERE, at its only consumer -
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.test_command` -
-   and run it once if set.
+   and run it once if set. With `testing.scope` set and the key null, run the
+   suite the project's own manifest names - the `package.json` script, the
+   `pyproject.toml` runner, the Makefile target - and say which one you ran, as
+   the executor contract states for the sequential path. With `testing.scope`
+   unset, a null key runs nothing, as before.
 
    With `workflow.test_evidence` true, the `test-evidence` check
    `workflows/execute.md` states at a complete return runs here per plan, once

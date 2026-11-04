@@ -60,6 +60,11 @@ Check six dimensions:
    (`Cargo.lock`, `package-lock.json`, `uv.lock`, `go.sum`, `Gemfile.lock`)
    declared is a BLOCKER - `lease-check` refuses that commit as
    `undeclared-files` and the executor halts mid-plan.
+   When the dispatch says a testing policy is active, a test finding must meet
+   the completion rule (a demonstrated defect, an uncovered acceptance
+   requirement or a measured coverage shortfall), a short testing scope inside
+   `Verify:` is sufficient, and you ask for no table or one-test-per-criterion
+   mapping.
 3. **Sequencing** - tasks are ordered so each depends only on prior
    completed work. For split plans (PLAN-1, PLAN-2 ...): slices share no
    files and have no cross-slice ordering; if they do, the split is a

@@ -582,8 +582,9 @@ export const CONTRACTS = {
     'uat refresh': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
-    // `--fields-file` is the path transport for the five FREE-TEXT fields
-    // (`reason`, `reported`, `cause`, `fix`, `evidence`) as ONE JSON object -
+    // `--fields-file` is the path transport for the seven FREE-TEXT fields
+    // (`reason`, `reported`, `cause`, `fix`, `evidence`, and a `pending_ci`
+    // item's `job` and `commit`) as ONE JSON object -
     // one file per failing item rather than three, on the workflow whose
     // per-item round-trip discipline is explicit. The enum-validated flags gain
     // no file form: a value that must survive `UAT_RESULTS.includes()` or an
@@ -602,6 +603,8 @@ export const CONTRACTS = {
       '--source': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--origin': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--criterion': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--job': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--commit': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     'uat merge': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
@@ -697,6 +700,30 @@ export const CONTRACTS = {
     },
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    // The accepted testing policy's committed form. `--root` is the PROJECT root
+    // and copies `detect-commands`'s row: the same refusal for the same spelling.
+    'test-policy render': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    // The same `--root` row, for the same reason: `check` reads the project's
+    // config, its committed policy file and its workflow files.
+    //
+    // `--base` is a ref, read by the seam after `--end-of-options` so it can
+    // never act as a git option; a flag-shaped value is refused here as well.
+    'test-policy check': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--base': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    // `--commit` is a sha, shape-checked by the seam; `--wait` bounds one call's
+    // re-reads in whole seconds; `--phase` names the checklist a pass is
+    // recorded in. A valueless spelling of any of them refuses, because each
+    // would otherwise silently read as the flag being absent.
+    'test-policy ci-status': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--commit': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--wait': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
     // Plan file paths are positional words, so it takes no flag.
     'test-checks': {},
@@ -1162,6 +1189,9 @@ export const CONTRACTS = {
       '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     publish: {
+      '--remote': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+    },
+    'verify-publish': {
       '--remote': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
     },
     reap: {
