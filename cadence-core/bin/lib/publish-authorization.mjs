@@ -1,25 +1,13 @@
 // @ts-check
-// publish-authorization.mjs - the ONE reader of `cadence.publishForVerification`,
-// the repository-local git setting that authorizes publishing a branch for CI
-// verification (phase 1, D-02). `test-policy check` reports it and the publish
-// path imports this same function, so the two cannot drift.
-//
-// WHY `git config --local` AND NOTHING ELSE. The value must come from this
-// repository's own `.git/config`: not the user-global config, not `git -c`, not
-// the environment, not `.planning/config.json` (which arrives with a clone), and
-// not `git.auto_close`. `--local` alone is not enough - measured with git 2.56,
-// it reads ANOTHER repository's value when `GIT_DIR` or `GIT_COMMON_DIR` points
-// there, even with `-C`. So the child runs with every repository-local variable
-// `git rev-parse --local-env-vars` prints removed, which also drops
-// `GIT_CONFIG_PARAMETERS`, the carrier of `git -c`.
+// publish-authorization.mjs - the one reader of `cadence.publishForVerification`, the repository-local git setting that authorizes publishing a branch for CI verification. `test-policy check` reports it and the publish path imports this same function, so the two can't drift
+// it reads `git config --local` and nothing else, because the value must come from this repo's own .git/config: not the user-global config, `git -c`, the environment, .planning/config.json (which arrives with a clone) or `git.auto_close`
+// `--local` alone isn't enough: with git 2.56 it reads another repository's value when GIT_DIR or GIT_COMMON_DIR points there, even with -C. So the child runs with every variable `git rev-parse --local-env-vars` prints removed, which also drops GIT_CONFIG_PARAMETERS, the carrier of `git -c`
 'use strict';
 
 import { execFileSync } from 'node:child_process';
 
 /**
- * `env` without the variables that would point git at a repository other than
- * the one `-C` names. Never throws: when git cannot print its own list, the two
- * measured ones are removed.
+ * `env` without the variables that would point git at a repository other than the one `-C` names. Never throws: when git can't print its own list, GIT_DIR and GIT_COMMON_DIR are removed.
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {NodeJS.ProcessEnv}
  */
@@ -35,9 +23,7 @@ export function localGitEnv(env = process.env) {
 }
 
 /**
- * True only when the repository at `dir` holds `cadence.publishForVerification`
- * as true in its own config. An unset value (exit 1) or an invalid one (exit 128)
- * is false, and this never throws.
+ * True only when the repository at `dir` holds `cadence.publishForVerification` as true in its own config. Unset (exit 1) or invalid (exit 128) is false, and this never throws.
  * @param {string} dir
  * @returns {boolean}
  */

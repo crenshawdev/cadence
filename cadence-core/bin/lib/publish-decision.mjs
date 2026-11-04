@@ -1,60 +1,26 @@
 // @ts-check
-// publish-decision.mjs - the pure, testable core of the git-publish seam (Phase
-// 2, GIT-03). Zero-dep (node builtins only, and it uses none): TOTAL functions
-// that decide, from repo config + live git facts the seam supplies, whether one
-// of the seam's two mutating actions may run, and if so return the byte-exact
-// git argv (minus the runtime `-C <dir>` prefix the seam prepends). They never
-// run live git and never do I/O - the git-publish.mjs seam reads the branch, the
-// configured remotes, and the both-layer auto_close answer, then hands them here.
-// Mirrors branch-decision.mjs and close-decision.mjs discipline:
-// unknown/missing inputs never throw.
-//
-//   decidePublish - cad-land's sanctioned unattended integration-branch push.
-//   decideVerificationPublish - /cad-verify's push so CI can run, authorized only
-//                 by the repository-local cadence.publishForVerification.
-//   decideReap    - cad-land's local reap of the merged integration branch.
-//
-// decideReap lives HERE rather than in a lib of its own because it needs the
-// same SAFE_BRANCH rule, and duplicating a security-relevant regex across two
-// decision modules is how the two drift.
+// publish-decision.mjs - the pure core of the git-publish seam: total functions that decide, from config and the live git facts the seam supplies, whether one of its mutating actions may run, and return the exact git argv (minus the -C <dir> prefix the seam adds)
+// they never run git or do I/O, and unknown or missing inputs never throw. The seam reads the branch, the remotes and the both-layer auto_close answer, then hands them here
+// decidePublish is cad-land's unattended integration-branch push, decideVerificationPublish is /cad-verify's push so CI can run (authorized only by the repo-local cadence.publishForVerification) and decideReap is cad-land's local reap of the merged branch
+// decideReap lives here because it needs the same SAFE_BRANCH rule, and duplicating a security-relevant regex across two decision modules is how the two drift
 
-// A branch name safe to interpolate into a refspec: starts with an alphanumeric
-// (forbids a leading '-' so a branch can never be read as an option) and carries
-// only word/`.`/`_`/`/`/`-` chars (no ':', so it can never smuggle a `src:dst`
-// refspec, no whitespace or shell metachars).
+// safe to interpolate into a refspec: it starts alphanumeric so a leading '-' can't read as an option, and carries only word, '.', '_', '/' and '-' chars, so no ':' to smuggle a src:dst refspec and no whitespace or shell metachars
 const SAFE_BRANCH = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/;
-// A bare remote NAME: starts with an alphanumeric (forbids a leading '-' so the
-// remote can never be read as an option like `--mirror`/`-f`, mirroring
-// SAFE_BRANCH's anchor) and carries no '/', ':', or '@', so a filesystem path or
-// URL can never stand in as the push destination.
+// a bare remote name: it starts alphanumeric so it can't read as an option like --mirror or -f, and carries no '/', ':' or '@', so a filesystem path or URL can never stand in as the push destination
 const REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-// How the refusal sentences name the user-global file when no path is in hand.
+// how the refusal sentences name the user-global file when no path is in hand
 const GLOBAL_NAME = 'the user-global config (~/.claude/cadence/config.json, or the file CADENCE_GLOBAL_CONFIG names)';
 const SET_IT = '"git": {"auto_close": true}';
 
 /**
- * Which half of the unattended-close authorization was missing, as a sentence
- * the user can act on - or null when both halves opted in. PURE and TOTAL: any
- * input that is not the per-layer answer lib/repo-auto-close.mjs
- * `autoCloseLayers` returns reads as off in both layers, nothing throws.
+ * Which half of the unattended-close authorization was missing, as a sentence the user can act on, or null when both halves opted in. Total: anything that isn't the per-layer answer lib/repo-auto-close.mjs `autoCloseLayers` returns reads as off in both layers, and nothing throws.
  *
- * Under D-02 the close needs `git.auto_close` true in BOTH this repository's
- * `.planning/config.json` and the user-global config. `reason` stays the token
- * `auto-close-off` for every off-state (consumers match it by equality), so
- * which file to fix has to live in this sentence, and there is one per state:
- * neither set, repo-only, global-only, and a file that exists but could not be
- * read. That last one comes first and never calls the file the missing half:
- * it may already carry the key, and only a repair can prove it.
+ * The close needs `git.auto_close` true in both this repository's `.planning/config.json` and the user-global config. `reason` stays the token `auto-close-off` for every off-state (consumers match it by equality), so which file to fix has to live in this sentence, one per state: neither set, repo-only, global-only, and a file that exists but couldn't be read. That last one comes first and never calls the file the missing half, since it may already carry the key and only a repair can prove it.
  *
- * One more cause sits under those states: `shared`, the user-global path
- * resolving to this repository's own config file. That is one layer, so the
- * global half reads `unset`, and the repo-only sentence would tell the user to
- * set a key the file already sets - advice that can never authorize anything.
- * The sentence names the collapse instead. The verdict does not move.
+ * `shared` is one more cause: the user-global path resolving to this repository's own config file. That's one layer, so the global half reads `unset` and the repo-only sentence would tell the user to set a key the file already sets, advice that can never authorize anything. The sentence names the collapse instead and the verdict doesn't move.
  *
- * No sentence names a `config.mjs set` command: the sentence states the file
- * and the key, which stays true whichever write face the user reaches for.
+ * No sentence names a `config.mjs set` command: the file and the key stay true whichever write face the user reaches for.
  *
  * @param {{ repo?: unknown, global?: unknown, shared?: unknown, globalFile?: unknown }} [layers]
  * @returns {string|null}
@@ -97,39 +63,21 @@ export function authorizationDetail(layers) {
 }
 
 /**
- * Decide whether the seam may publish the current branch, and build the exact
- * argv if so. PURE and TOTAL: non-array `protectedBranches`/`configuredRemotes`
- * coerce to [], a non-string `currentBranch`/`remote` yields a refuse, nothing
- * throws. Gates run FIRST-FAILING-WINS; every refuse is total (`argv:[]`):
- *   1. not both layers opted in -> 'auto-close-off', plus the `detail` sentence
- *      `authorizationDetail` words from the per-layer answer - the ONE gate
- *      that carries a detail, so every other refusal's envelope is unchanged
- *   2. no branch / detached HEAD                 -> 'no-branch'
- *   3. branch fails SAFE_BRANCH                   -> 'bad-branch'
- *   4. branch is protected                        -> 'protected-branch'
- *   5. remote fails REMOTE_NAME                    -> 'bad-remote'
- *   6. remote not in configuredRemotes             -> 'remote-not-configured'
+ * Decide whether the seam may publish the current branch, and build the exact argv if so. Total: non-array `protectedBranches`/`configuredRemotes` coerce to [], a non-string `currentBranch`/`remote` refuses, nothing throws. Gates run first-failing-wins and every refuse is total (`argv:[]`):
+ *   1. not both layers opted in -> 'auto-close-off', plus the `detail` sentence from `authorizationDetail`, the one gate that carries a detail
+ *   2-6. no branch, unsafe branch, protected branch, bad remote name, unconfigured remote -> 'no-branch', 'bad-branch', 'protected-branch', 'bad-remote', 'remote-not-configured'
  *   7. else publish.
  *
- * The publish argv is the fully-qualified, non-fast-forward-safe refspec so the
- * only variable token that carries the branch is the single `refs/heads` token,
- * with a `--` end-of-options separator before the remote so no variable token
- * can ever be parsed as an option (defense-in-depth against a REMOTE_NAME
- * regression reopening option injection):
- * `['push','--set-upstream','--',remote,'refs/heads/<b>:refs/heads/<b>']`.
+ * The publish argv is the fully-qualified, non-fast-forward-safe refspec, so the only variable token carrying the branch is the single `refs/heads` token, with a `--` separator before the remote so no variable token can be parsed as an option (defense in depth against a REMOTE_NAME regression reopening option injection): `['push','--set-upstream','--',remote,'refs/heads/<b>:refs/heads/<b>']`.
  *
- * `autoClose` is lib/repo-auto-close.mjs `autoCloseLayers`' per-layer answer
- * (D-02). Gate 1 passes exactly when `authorizationDetail` has nothing to say,
- * so the verdict and its sentence are one reading and cannot disagree.
+ * `autoClose` is `autoCloseLayers`' per-layer answer. Gate 1 passes exactly when `authorizationDetail` has nothing to say, so the verdict and its sentence are one reading and can't disagree.
  *
  * @param {{ autoClose?: unknown, currentBranch?: unknown,
  *   protectedBranches?: unknown, remote?: unknown, configuredRemotes?: unknown }} args
  * @returns {{ action:'publish'|'refuse', argv:string[], branch:string|null, remote:string|null, reason:string, detail?:string }}
  */
 export function decidePublish({ autoClose, currentBranch, protectedBranches, remote, configuredRemotes } = {}) {
-  // 1. auto_close must be on in BOTH layers (D-02): repo-only, global-only and
-  //    an unreadable half never publish. The reason token stays
-  //    `auto-close-off` whichever off-state this is; the detail names the file.
+  // gate 1: auto_close on in both layers, so repo-only, global-only and an unreadable half never publish. The reason stays auto-close-off whichever off-state this is; the detail names the file
   const missing = authorizationDetail(/** @type {any} */ (autoClose));
   if (missing !== null) {
     return { action: 'refuse', argv: [],
@@ -142,14 +90,7 @@ export function decidePublish({ autoClose, currentBranch, protectedBranches, rem
 }
 
 /**
- * Decide whether the seam may push the current branch so CI can verify it, and
- * build the exact argv if so (phase 1, D-02). PURE and TOTAL like
- * decidePublish. The one authorization is `authorized`, the boolean
- * lib/publish-authorization.mjs `publishAuthorized` reads from the repository's
- * own `.git/config`: `git.auto_close` is not an input here and authorizes
- * nothing. Once authorized, the branch and remote gates and the argv are
- * decidePublish's own (`branchPush`), so the two cannot drift. Only a literal
- * `true` authorizes.
+ * Decide whether the seam may push the current branch so CI can verify it, and build the exact argv if so. Total, like decidePublish. The one authorization is `authorized`, the boolean `publishAuthorized` in lib/publish-authorization.mjs reads from the repository's own `.git/config`; `git.auto_close` isn't an input and authorizes nothing, and only a literal `true` does. Once authorized, the branch and remote gates and the argv are decidePublish's own (`branchPush`), so the two can't drift.
  *
  * @param {{ authorized?: unknown, currentBranch?: unknown,
  *   protectedBranches?: unknown, remote?: unknown, configuredRemotes?: unknown }} args
@@ -171,9 +112,7 @@ export function decideVerificationPublish({ authorized, currentBranch, protected
 }
 
 /**
- * Gates 2 to 7 of decidePublish, shared with decideVerificationPublish: the
- * branch must exist and be safe and unprotected, the remote a configured bare
- * name; then the fully-qualified refspec.
+ * Gates 2 to 7 of decidePublish, shared with decideVerificationPublish: the branch must exist and be safe and unprotected, the remote a configured bare name, then the fully-qualified refspec.
  * @param {{ currentBranch?: unknown, protectedBranches?: unknown, remote?: unknown, configuredRemotes?: unknown }} args
  * @param {string} okReason
  * @returns {{ action:'publish'|'refuse', argv:string[], branch:string|null, remote:string|null, reason:string }}
@@ -186,20 +125,13 @@ function branchPush({ currentBranch, protectedBranches, remote, configuredRemote
   /** @param {string} reason */
   const refuse = (reason) => ({ action: /** @type {const} */ ('refuse'), argv: [], branch, remote: rem, reason });
 
-  // 2. A branch must exist and not be the detached-HEAD sentinel.
   if (!branch || branch === 'HEAD') return refuse('no-branch');
-  // 3. The branch must be interpolation-safe (no leading '-', ':', or metachars).
   if (!SAFE_BRANCH.test(branch)) return refuse('bad-branch');
-  // 4. Never publish a protected branch.
   if (protectedList.includes(branch)) return refuse('protected-branch');
-  // 5. The remote must be a bare name, never a path/URL destination.
   if (!rem || !REMOTE_NAME.test(rem)) return refuse('bad-remote');
-  // 6. The remote must actually be configured (`git remote`).
   if (!remotes.includes(rem)) return refuse('remote-not-configured');
 
-  // 7. Sanctioned publish: fully-qualified refspec, branch only inside it, with a
-  //    `--` end-of-options separator so neither remote nor refspec can be read as
-  //    an option even if a future REMOTE_NAME regression let a dash through.
+  // the -- separator means neither the remote nor the refspec can be read as an option, even if a REMOTE_NAME regression let a dash through
   return {
     action: /** @type {const} */ ('publish'),
     argv: ['push', '--set-upstream', '--', rem, `refs/heads/${branch}:refs/heads/${branch}`],
@@ -210,35 +142,17 @@ function branchPush({ currentBranch, protectedBranches, remote, configuredRemote
 }
 
 /**
- * Decide whether the seam may delete a merged local integration branch, and
- * build the exact argv if so. PURE and TOTAL, same discipline as decidePublish:
- * a non-array `protectedBranches` coerces to [], a non-string `branch` refuses,
- * nothing throws. Gates run FIRST-FAILING-WINS; every refuse is total
- * (`argv:[]`):
- *   1. no branch / not a string / empty        -> refuse 'no-branch'
- *   2. branch fails SAFE_BRANCH                 -> refuse 'bad-branch'
- *   3. branch is protected                      -> refuse 'protected-branch'
- *   4. branch === currentBranch                  -> refuse 'current-branch'
- *   5. exists === false                          -> skip   'already-absent'
+ * Decide whether the seam may delete a merged local integration branch, and build the exact argv if so. Total, like decidePublish: a non-array `protectedBranches` coerces to [], a non-string `branch` refuses, nothing throws. Gates run first-failing-wins and every refuse is total (`argv:[]`):
+ *   1-3. no branch, unsafe branch, protected branch -> refuse 'no-branch', 'bad-branch', 'protected-branch'
+ *   4. branch === currentBranch -> refuse 'current-branch'
+ *   5. exists === false -> skip 'already-absent'
  *   6. else reap.
  *
- * Gate 4 exists because git itself refuses to delete the checked-out branch
- * ("error: cannot delete branch 'main' used by worktree at ..."), and a named
- * reason beats a git error the caller has to parse. Gate 5 is how cad-land's
- * stated idempotency survives the platform's own `--delete-branch` having
- * already removed it: an absent branch is a SKIP, not a failure.
+ * Gate 4 exists because git itself refuses to delete the checked-out branch, and a named reason beats a git error the caller has to parse. Gate 5 is how cad-land's idempotency survives the platform's own `--delete-branch` having already removed it: an absent branch is a skip, not a failure.
  *
- * It deliberately does NOT re-derive merged-ness: `land-cleanup.mjs cleanup`
- * owns that verdict, and the auto_close arm's merge lands on the platform, so a
- * local merged check would refuse exactly the case the seam exists for. It also
- * deliberately does NOT gate on `git.auto_close`: deleting an already-merged
- * local branch publishes nothing and needs no publish authorization, unlike
- * `publish`.
+ * It deliberately doesn't re-derive merged-ness, since `land-cleanup.mjs cleanup` owns that verdict and the auto_close arm's merge lands on the platform, so a local merged check would refuse exactly the case the seam exists for. It doesn't gate on `git.auto_close` either: deleting an already-merged local branch publishes nothing.
  *
- * The argv carries the `--` end-of-options separator for the same reason
- * decidePublish's does - verified accepted by git 2.55 - so the one variable
- * token can never be read as an option even if a future SAFE_BRANCH regression
- * let a leading dash through.
+ * The argv carries the `--` separator for the same reason decidePublish's does, so the one variable token can't be read as an option even if a SAFE_BRANCH regression let a leading dash through.
  *
  * @param {{ branch?: unknown, currentBranch?: unknown, protectedBranches?: unknown,
  *   exists?: unknown }} args
@@ -268,30 +182,13 @@ export function decideReap({ branch, currentBranch, protectedBranches, exists } 
 }
 
 /**
- * The mutation gate's classifier: the refusal detail when a config layer that
- * could have carried `protected_branches` failed to parse, or null when every
- * layer read cleanly. PURE and TOTAL, same discipline as the two deciders - a
- * non-array input coerces to [], nothing throws.
+ * The mutation gate's classifier: the refusal detail when a config layer that could have carried `protected_branches` failed to parse, or null when every layer read cleanly. Total, like the two deciders: a non-array input coerces to [], nothing throws.
  *
- * It lives HERE rather than in git-publish.mjs for the reason that file's header
- * gives for the deciders: git-publish.mjs runs its dispatch at module load and
- * cannot be imported, so a rule kept there is reachable only through a
- * subprocess and cannot be unit-tested at all.
+ * It lives here and not in git-publish.mjs because that file runs its dispatch at module load and can't be imported, so a rule kept there is reachable only through a subprocess and can't be unit-tested.
  *
- * The question is deliberately about the CLASS, not about the channel. The
- * shipped rule refused on any non-empty `warnings[]`, so every diagnostic
- * `mergeLayers` might ever add stopped a land - phase 1's global-only-key
- * warning had to be routed onto a separate field to avoid exactly that (D-18).
- * `tornLayers` names the files whose content could not be used as a config layer
- * at all, which is the only class that matters here: for such a layer
- * `readProtectedBranches` fell back to `["main","master"]`, so the
- * protected-branch gate inside decidePublish/decideReap ran on the DEFAULT list
- * and not on the user's.
+ * The question is about the class and not the channel. The old rule refused on any non-empty `warnings[]`, so every diagnostic `mergeLayers` might add stopped a land, and the global-only-key warning had to be routed onto a separate field to avoid that. `tornLayers` names the files that couldn't be used as a config layer at all, the only class that matters here: for such a layer `readProtectedBranches` fell back to `["main","master"]`, so the protected-branch gate in decidePublish/decideReap ran on the default list and not the user's.
  *
- * The detail is the merge's own wording for that layer where there is one, so
- * the envelope keeps saying `failed to parse` / `is not an object` rather than a
- * second sentence invented here; the fallback covers a caller that supplies the
- * class without the message.
+ * The detail is the merge's own wording for that layer where there is one, so the envelope keeps saying `failed to parse` / `is not an object` and not a second sentence invented here; the fallback covers a caller that supplies the class without the message.
  *
  * @param {{ warnings?: unknown, tornLayers?: unknown }} [merged]
  * @returns {string|null}
