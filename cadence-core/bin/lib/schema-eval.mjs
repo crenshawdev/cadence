@@ -1,41 +1,14 @@
 // @ts-check
-// schema-eval.mjs - a keyword-limited JSON Schema evaluator, in-repo and
-// zero-dep. It exists for exactly one job: to make the agreement between
-// `FINDING_SCHEMA` (the shape review-provider.mjs SENDS on the wire) and
-// `validateFindings` (the shape it ASSERTS on return) a machine-run fact
-// rather than a reviewer's opinion frozen at write time. The agreement test in
-// review-provider.test.mjs runs every fixture through both sides and compares
-// accept-vs-reject; without an independent reading of the schema there is no
-// second side to compare against, and the drift the pairing exists to kill
-// returns unnoticed.
-//
-// TEST-ONLY BY DESIGN. Nothing in the shipped runtime path imports it: the
-// seam validates with `validateFindings`, which is hand-written and fast. It
-// lives here under `lib/` rather than inside the test file because
-// `tsconfig.ci.json` includes every `.mjs` under `cadence-core/bin` and
-// EXCLUDES `*.test.mjs` - so a helper in the test file is unchecked, and this
-// helper's correctness is what the whole agreement verdict rests on.
-//
-// LIMITED ON PURPOSE, and it THROWS on its limits. It implements exactly the
-// keywords `FINDING_SCHEMA` uses and no others. An evaluator that IGNORED an
-// unknown keyword would treat it as satisfied, so a keyword added to
-// FINDING_SCHEMA tomorrow with no mirror in `validateFindings` would make the
-// agreement test go green on an agreement it never checked. Throwing turns
-// that silent pass into a loud failure at the moment the schema grows.
-//
-// CODE POINTS, never UTF-16 code units. JSON Schema counts `minLength` and
-// `maxLength` in Unicode code points; JavaScript's `.length` counts UTF-16
-// units, so one astral character (an emoji) reads as 2. That distinction is
-// load-bearing HERE specifically: both this module and `validateFindings` were
-// written in the same phase, so if both reached for `.length` they would agree
-// with each other while both disagreed with the schema, and the agreement test
-// would pass on the shared error. The non-BMP fixtures in that table are what
-// pin it.
-//
-// Pure and total in the conforming direction: no I/O, no emit, node builtins
-// only. It returns `null` when the value conforms or a string naming the first
-// violation. It throws ONLY on a schema it cannot faithfully evaluate, never
-// on a value.
+// schema-eval.mjs - a keyword-limited, zero-dep JSON Schema evaluator that makes `FINDING_SCHEMA` (what
+// review-provider.mjs sends) and `validateFindings` (what it asserts on return) agree by machine, not by a
+// reviewer's say-so. The agreement test in review-provider.test.mjs runs every fixture through both sides.
+// Test-only, but in lib/ because tsconfig.ci.json typechecks every .mjs there except *.test.mjs, and the whole
+// verdict rests on this being right.
+// It implements only the keywords `FINDING_SCHEMA` uses and throws on any other: an evaluator that ignored an
+// unknown keyword would call it satisfied, and a new one with no mirror in validateFindings would go green unchecked.
+// minLength and maxLength count code points, not 16-bit units (an emoji is 2 in `.length`). Both sides were
+// written together, so two `.length`s would agree and both be wrong; the non-BMP fixtures pin it.
+// Pure: null for a conforming value, else a string naming the first violation. Throws only on a bad schema.
 'use strict';
 
 import { isPlainObject } from './text-util.mjs';
@@ -49,7 +22,7 @@ const IMPLEMENTED = new Set([
 /** The `type` values this evaluator understands. */
 const TYPES = new Set(['object', 'array', 'string', 'integer', 'number', 'boolean', 'null']);
 
-/** Length in Unicode code points. See the header. @param {string} s */
+/** Length in Unicode code points, not 16-bit units. @param {string} s */
 function codePoints(s) {
   let n = 0;
   for (const _ of s) n += 1;
@@ -57,11 +30,9 @@ function codePoints(s) {
 }
 
 /**
- * Walk the whole SCHEMA (independently of any value) and throw on anything
- * this evaluator cannot faithfully evaluate. Run before evaluation, over every
- * branch, because a value that never reaches a subschema would otherwise let
- * an unimplemented keyword through unnoticed - which is the exact silent pass
- * the throw exists to prevent.
+ * Walks the whole schema, independent of any value, and throws on anything this evaluator can't faithfully
+ * evaluate. It runs before evaluation over every branch: a value that never reaches a subschema would otherwise
+ * let an unimplemented keyword through, which is the silent pass the throw exists to stop.
  * @param {any} schema @param {string} path
  */
 function assertSupported(schema, path) {
@@ -74,13 +45,11 @@ function assertSupported(schema, path) {
     }
   }
   if ('type' in schema && !TYPES.has(schema.type)) {
-    // Includes the array-of-types union form, which this evaluator does not do.
+    // this covers the array-of-types union form too, which isn't implemented
     throw new Error(`schema-eval: unimplemented type \`${JSON.stringify(schema.type)}\` at ${path}`);
   }
   if ('additionalProperties' in schema && schema.additionalProperties !== false) {
-    // `false` is the only form FINDING_SCHEMA uses. A subschema value would
-    // need real evaluation and `true` is a no-op this module has never had to
-    // mean; either way, guessing is what the header refuses.
+    // false is the only form FINDING_SCHEMA uses. A subschema would need real evaluation and true is a no-op, and guessing is what this module refuses.
     throw new Error(`schema-eval: unimplemented additionalProperties at ${path}`);
   }
   if ('properties' in schema) {
