@@ -7,6 +7,8 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.11.0] - 2026-11-04
+
 A project accepts one testing policy once, every test-writing path follows it,
 and GitHub Actions enforces its coverage thresholds. There is no per-test
 approval, evidence table or blanket negative control under it. A project that
@@ -27,26 +29,32 @@ accepts no policy behaves exactly as it did before.
   added only where existing ones would miss a plausible defect, a bug fix reuses
   an existing reproducer when it covers the regression, and testing stops once
   the agreed behavior and the thresholds are met. Planning, execution, review,
-  debugging, coverage and verification read it. The testing scope is a short
-  statement inside a task's `Verify:`.
+  debugging, coverage and verification read it, and it tells them to read the
+  project's accepted `testing.scope` and `testing.strong_areas` and what each
+  scope means. The testing scope is a short statement inside a task's `Verify:`.
 - **Three `test-policy` subcommands on `planning.mjs`.** `render` writes the
   policy to `.github/cadence/coverage-policy.json`. `check` compares the
   config, that file and the workflow files, reports enforcement as unavailable
   on a forge other than GitHub, and with `--base <ref>` names a lowered or
-  disabled threshold, an added exclusion or command, and a removed job.
-  `ci-status --commit <sha>` reads the required jobs for one commit from
+  disabled threshold, an added exclusion or command, and a removed job. It fails
+  on a policy file git doesn't track, an unset `git.forge_provider`, a config it
+  can't read, an invalid scope, and an empty command list under a threshold
+  above 0. `ci-status --commit <sha>` reads the required jobs for one commit from
   GitHub and answers pass, fail or pending, with a bounded `--wait`. Cadence
   matches the accepted commands as text and never runs them.
 - **A report check for Python, Go and Rust.**
   `cadence-core/templates/coverage-report-check.mjs` enforces every enabled
-  metric on a recorded report, naming the one that fails. A missing report
-  fails, a threshold of 0 reads as disabled, and a complete report with zero
-  branches reads "not applicable—zero branches".
+  metric on a recorded report, naming the one that fails. A missing report, a
+  missing threshold and an LCOV report with no `BRF` records all fail, a
+  threshold of 0 reads as disabled, and a complete report with zero branches
+  reads "not applicable—zero branches".
 - **`pending_ci`.** A check that cannot run locally waits on a named required
   job and commit, and the phase stays `partial` until a pass is recorded.
   `uat status` returns the `ci` commit once every required job passed. A phase
   reads "CI-verified at `<sha>`" only with it, and otherwise "complete locally,
-  not CI-verified", in `/cad-verify`, `/cad-progress` and SUMMARY.md.
+  not CI-verified", in `/cad-verify`, `/cad-progress` and SUMMARY.md. `/cad-verify`
+  reads the jobs without publishing authorization too, so a phase published
+  through `/cad-land` can settle.
 - **A verification publish.** `/cad-verify` pushes a non-protected branch so
   the required jobs can run, only when `cadence.publishForVerification` is true
   in the repository's own `.git/config`. Global config, `git -c`, the
@@ -62,11 +70,25 @@ accepts no policy behaves exactly as it did before.
   switches stay for one more release.
 - **`/cad-land` requires the required jobs.** The unattended merge waits for
   every required job to pass on the branch head, runs `test-policy check
-  --base`, and halts on any weakening. A timeout lands nothing. Direct push
-  onto the base branch is not offered under a policy.
+  --base`, and halts on any weakening. A timeout lands nothing, and the merge
+  passes `--match-head-commit`, so a commit pushed after the read is refused.
+  Direct push onto the base branch is not offered under a policy.
 - **`/cad-verify` walks unattended under a policy**, and `/cad-coverage`
   goes on without an approval ask.
 - **`CONTRIBUTING.md` gains a `## Writing tests` section.**
+- **CI gains a coverage job.** It runs the whole suite once with Node's built-in
+  coverage, holds a 95% line and 88% branch floor, and hands the LCOV report to a
+  SonarQube Cloud scan in the same job. The scan skips when `SONAR_TOKEN` is
+  absent. The typecheck and validate jobs install with npm's install scripts off,
+  and the README gets the quality gate and coverage badges.
+
+### Fixed
+
+- **A long run of spaces no longer makes regexes backtrack.** Ten cubic and
+  quartic patterns cost from 50 ms to over 3 s on a line of about 1,000 spaces
+  or tabs. Each rewrite returned the same results as the old pattern on 633,761
+  real lines from eleven repos, on the checker's attack strings and on 300,000
+  random strings.
 
 ## [3.9.4] - 2026-10-30
 
@@ -3214,6 +3236,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.11.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.11.0
 [3.9.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.4
 [3.9.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.3
 [3.9.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.2
