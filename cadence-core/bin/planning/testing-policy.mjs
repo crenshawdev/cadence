@@ -224,7 +224,7 @@ function cmdCheck(root, base) {
       'name a branch, tag or commit that exists in the project repository - --base reads the committed policy file at that ref');
   }
 
-  // The config against the committed file.
+  // The config against the file on disk. Whether it's really committed is git's answer, below.
   let committed = null;
   try { committed = JSON.parse(readFileSync(join(root, POLICY_FILE), 'utf8')); } catch { /* named below */ }
   if (!committed || typeof committed !== 'object') {
@@ -252,6 +252,8 @@ function cmdCheck(root, base) {
   /** @type {boolean|null} */
   let gate_found = null;
   if (enforcement === 'available') {
+    const tracked = Boolean(committed) && tracksMatch(root, POLICY_FILE);
+    if (committed && !tracked) problems.push(`${POLICY_FILE} is not tracked by git, so CI and check --base cannot read it; commit it`);
     const texts = workflowTexts(root);
     const named = (/** @type {string} */ s) => texts.some((t) => t.includes(normalize(s)));
     const missing = coverage.commands.filter((/** @type {string} */ c) => !named(
@@ -264,7 +266,7 @@ function cmdCheck(root, base) {
     if (coverage.commands.length === 0 && ['lines', 'branches', 'statements'].some((m) => coverage[m] > 0)) {
       problems.push('testing.coverage.commands is empty while a coverage threshold is above 0, so no workflow command enforces it');
     }
-    gate_found = Boolean(committed) && coverage.commands.length > 0 && missing.length === 0
+    gate_found = tracked && coverage.commands.length > 0 && missing.length === 0
       && policy.required_jobs.length > 0 && absent.length === 0;
   }
 

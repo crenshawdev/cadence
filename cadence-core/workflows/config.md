@@ -370,8 +370,9 @@ site - this section). This section points at them and restates none.
    ```
 
    A project with no gate yet reports its accepted commands and required jobs
-   missing from the workflow files. That is expected: `/cad-plan` puts the CI
-   task first when `check` finds no gate.
+   missing from the workflow files, and the policy file untracked. That is
+   expected: `/cad-plan` puts the CI task first when `check` finds no gate, and
+   that task commits the file.
 
 5. Publishing is a separate question, asked ONLY when this arm was reached by
    `--testing`. Setup never asks it: it says verification publishing is off and

@@ -61,7 +61,7 @@ All roles share this rule:
 
 ## Enforcing coverage in CI
 
-The project's own tool enforces what it supports. The CI job is an ordinary plan task, and an existing workflow is extended through a plan, never overwritten. The task copies the accepted commands from `testing.coverage.commands` into the workflow with their thresholds filled in, and names its jobs from `testing.required_jobs`. It never changes those values. Cadence only matches them as text against the workflow files and never runs them.
+The project's own tool enforces what it supports. The CI job is an ordinary plan task, and an existing workflow is extended through a plan, never overwritten. The task copies the accepted commands from `testing.coverage.commands` into the workflow with their thresholds filled in, and names its jobs from `testing.required_jobs`. It never changes those values. It also commits `.github/cadence/coverage-policy.json`, because CI and `check --base` read it from the repository and `check` fails until git tracks it. Cadence only matches the commands as text against the workflow files and never runs them.
 
 ### Accepted command shapes
 

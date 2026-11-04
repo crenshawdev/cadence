@@ -252,7 +252,7 @@ is `false`.
 ```text
 <testing_policy>
 A testing policy is active for this project. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md once and follow it.
-{gate_found false: No CI job enforces the policy yet, so this plan's first task builds or extends them as an ordinary plan task, including any required job no workflow defines yet, such as a packaging job. Extend an existing workflow; never overwrite it. Take the commands, thresholds and required jobs from the values `test-policy.md` says how to read.}
+{gate_found false: No CI job enforces the policy yet, so this plan's first task builds or extends them as an ordinary plan task, including any required job no workflow defines yet, such as a packaging job. Extend an existing workflow; never overwrite it. Take the commands, thresholds and required jobs from the values `test-policy.md` says how to read, and commit `.github/cadence/coverage-policy.json` in that task.}
 </testing_policy>
 ```
 
