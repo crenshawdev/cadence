@@ -1,293 +1,9 @@
 #!/usr/bin/env node
 // @ts-check
-// self-verify.mjs - the prose<->code drift linter, run in CI. The 2026-07-16
-// sweep found that nearly every defect in this repo was prose describing a
-// flag, key, or path the code did not have; this script makes that whole
-// class mechanical. Checks run over the LIVE prose surfaces (workflows,
-// references, skills, agents, templates, docs/, plus README, INTERNALS and
-// METHOD - deliberately not the historical docs DESIGN/LINEAGE/CHANGELOG,
-// which may name cut keys while explaining the cut):
-//
-//   1. config keys   every dotted config token in prose must exist in
-//                    config.schema.json (placeholders <t>/<name> expanded),
-//                    and every schema key must be referenced somewhere -
-//                    an unreferenced key is inert and gets pruned, not kept.
-//   2. invocations   every `<script>.mjs <subcommand> --flag` in prose must
-//                    match the real subcommand/flag contract table, which is
-//                    lib/arg-contract.mjs's `CONTRACTS` - the SAME table the
-//                    seam CLIs refuse against, imported here rather than
-//                    restated (D-06). This side reads its flag NAMES through
-//                    `flagNames`; the scripts' own tests keep it honest.
-//   3. paths         every ${CLAUDE_PLUGIN_ROOT}/<path> must exist in-repo.
-//                    Checks 1 to 3 also read the schema's own walk text - each
-//                    key's `question`, `explain` entry text and `hint`, never
-//                    `purpose` (D-12) - filed against the schema with the key
-//                    named, and that text does not count as a reader for 1b.
-//   3b. internals    every backticked repo path cited in INTERNALS.md (the
-//                    deep-dive "Read the code" pointers) must exist in-repo.
-//   6. agent skills  every skill an agent preloads via `skills:` frontmatter
-//                    must resolve on disk and be model-invocable. The host
-//                    skips a missing or disabled one SILENTLY, so this check
-//                    is what keeps a preloaded contract from vanishing.
-//   7. agent body    an agent that preloads a contract (`skills:`) must carry
-//                    NO contract section tag in its own body. A rung file is
-//                    a pointer at one single-sourced contract; the moment one
-//                    grows behaviour, the ladder is N divergent variants
-//                    instead of one contract at N efforts.
-//   8. rung ladder   lib/rung-agent.mjs's RUNG_FILES against agents/, both
-//                    directions. Map -> disk: every rung is reachable by
-//                    config (`roles.<role>.effort` names any of the five), so
-//                    the reachable set IS the map and every file it names must
-//                    exist. route.mjs returns an agent name it never checks
-//                    exists, so an unbuilt rung would surface as a failed
-//                    spawn instead of in CI. That arm is gated on isFullTree:
-//                    the map lives in CODE, so a --root fixture cannot supply
-//                    its own, and a minimal fixture is not claiming to carry a
-//                    ladder. Disk -> map, ungated: a rung-suffixed agent file
-//                    the map files for NOBODY is refused, while a mapped rung
-//                    is legal whatever config reaches it.
-//   9. config reach  references/config-reach.md must carry one reach row per
-//                    config.schema.json key, name no key the schema lacks, and
-//                    every reach narrower than `universal` must appear in that
-//                    key's own `purpose` - where a user setting the value reads
-//                    it. This is what makes "no key is resolved and then
-//                    silently dropped" re-runnable rather than a one-time sweep.
-//  10. dispatch      prose under cadence-core/workflows or references that
-//      phrasing      claims concurrency for a set of dispatches must issue them
-//                    in ONE message, and every sentence in such a block that
-//                    ISSUES the set - a bare dispatch verb opening a clause, or
-//                    the colon that introduces the list below it - is reported
-//                    when it hands the set out one at a time ("one dispatch per
-//                    message"), hedges on the host ("where the host allows"),
-//                    or dispatches the set concurrently without saying so
-//                    (#88). Per sentence, because one compliant sentence must
-//                    not excuse its neighbour - which is how the first-shipped
-//                    rule missed the very sentence it was written to prevent
-//                    returning. Only an imperative one, because a rationale, a
-//                    negation and a catalog row carry the same vocabulary in
-//                    another mood and issue nothing. Without this check the
-//                    prose repair is UAT-walk-only.
-//  12. merge         every `mergeLayers(` callsite under cadence-core/bin must
-//      warnings      either bind the `warnings[]` it gets back or sit in a file
-//                    whose header says why its envelope is the surfacing. The
-//                    one diagnostic that says a config layer was TORN was
-//                    dropped on the floor at eight of ten callsites, so branch
-//                    rails, cleanup rails and recall decided from defaults in
-//                    silence. The rule is lib/merge-warnings.mjs; this is the
-//                    only check that walks .mjs SOURCE rather than prose.
-//  13. deferred      a reference a command skill deliberately stopped
-//      reads         `@`-including must still be Read by name at the step that
-//                    needs it. De-preloading is the cheapest context cut there
-//                    is and the easiest to break: delete one sentence and the
-//                    reference is unreachable, with nothing failing. The
-//                    register of removals and the sentence-level rule live in
-//                    lib/deferred-reads.mjs; this side only calls it.
-//  14. script        every top-level script under cadence-core/bin must have a
-//      contracts     row in lib/arg-contract.mjs's `CONTRACTS`. Check 2 SKIPS
-//                    a script it finds no row for - it has to, since prose
-//                    names third-party scripts too - so deleting a row was a
-//                    silent opt-out of the flag lint rather than a problem, and
-//                    the table's completeness could not be checked from the
-//                    prose side at all. It is checked from the tree side here.
-//                    TOP-LEVEL only: a `lib/*.mjs` module is not invoked from
-//                    prose and takes no row, which is true of the table's own
-//                    home as much as of any other module there.
-//  15. NUL bytes     no file under cadence-core/bin may contain a literal
-//                    U+0000. One makes GNU `grep -rn` print nothing at all for
-//                    that file without `-a` and `rg` skip it silently, so the
-//                    file drops out of every search while looking present.
-//                    `git grep` still matches (its binary heuristic reads only
-//                    the head of the blob), which is why the defect survived.
-//                    The walk here is extension-blind and exclusion-free -
-//                    tests and JSON data files go dark the same way sources do.
-//  16. include        every `@`-include of a cadence-core/references/* or
-//      consumers      cadence-core/templates/* surface must be NAMED somewhere
-//                    in the including command's own eager prose. An include
-//                    claims a consumer; this checks the claim. Same species as
-//                    check 3 (an included path exists) and check 6 (an agent's
-//                    `skills:` resolve), and the opposite direction from check
-//                    13, which watches a reference a skill still NAMES but no
-//                    longer includes. A `cadence-core/workflows/*` include is
-//                    exempt - the workflow IS the command's process, so naming
-//                    it would be a command citing its own body. The rule, its
-//                    branch exemption and its waiver register - which ships
-//                    EMPTY - live in lib/include-consumers.mjs; this side decides
-//                    that it applies to the whole root. It takes no CONTRACTS
-//                    row, for the reason check 14 states: `lib/*.mjs` are
-//                    modules prose never invokes.
-//  17. global-only   the keys lib/global-only-keys.mjs strips out of the repo
-//      key scope     layer and the config.schema.json keys marked
-//                    `src: "global"`, against each other in BOTH directions -
-//                    the same pair check 8 keeps between the rung map and
-//                    agents/. A key the merge enforces without the marker is a
-//                    scope no rendered surface shows the user setting it; a
-//                    marked key the merge does not enforce is a promise nothing
-//                    keeps. The set is hand-maintained precisely so it is not a
-//                    runtime read of the schema (CADENCE_CONFIG_SCHEMA would
-//                    otherwise un-mark every protected key), which is what makes
-//                    this cross-check the thing keeping the two honest.
-//  18. gate          all twelve config.schema.json
-//      agreement     `review.triggers.<t>.{gate,tier,effort}` rows as the
-//                    ANSWERS they now are, in both of the ways a row states
-//                    one: its `default`, which must be a member of its own
-//                    `values` because nothing else decides the key and
-//                    `config.mjs get` answers it verbatim, and its `purpose`,
-//                    which must carry a `defaults to <value>` clause naming
-//                    that same default. Three surfaces described these settings
-//                    and nothing made them agree - a `phase_diff` default of
-//                    `advisory` outlived the v3.2.0 move of that gate to `off`
-//                    with every check green, and workflows/execute.md carried a
-//                    paragraph telling callers to route around the seam because
-//                    of it. The rows used to sit on a `null` sentinel with a
-//                    level-keyed grid as the authority; the level is gone, so
-//                    the schema is the only authority and this check no longer
-//                    reads a data file. The rule is lib/gate-agreement.mjs; it
-//                    takes no CONTRACTS row, for the reason check 14 states
-//                    about `lib/*.mjs`.
-//  19. text          a prose site that hands a seam a value derived from agent
-//      transport     output or repository content must hand it a PATH: a
-//                    double-quoted shell word carrying `$(...)` or a backtick
-//                    executes before Node starts. That reasoning was conceded
-//                    for one flag and re-derived nowhere, so sixteen other
-//                    sites still prescribed the unsafe form. The register of
-//                    every examined site, its classification and the reason on
-//                    every out-of-scope row live in lib/text-transport.mjs, and
-//                    a site the register does not classify is REPORTED - the
-//                    check cannot be a whitelist that goes quiet on the
-//                    seventeenth site. It is deliberately NOT built on check
-//                    2's invocation parser: thirty of the qualifying mentions
-//                    sit in prose fragments with no `<script>.mjs <word>`
-//                    prefix, which that parser skips.
-//  20. bulk output   a prose site that PRESCRIBES a tool call whose measured
-//                    response is bulk must redirect that output to a scratch
-//                    file and hand the transcript a digest: a response sitting
-//                    in the transcript is re-paid on every later turn at the
-//                    cache-read rate. The lesson v3.5.2 learned for
-//                    caller-derived INPUT was never applied to bulk OUTPUT, so
-//                    the largest response any Cadence prose prescribes - a
-//                    68,044 B `trace render` - was read whole into a model's
-//                    context at three sites. The register of every examined
-//                    site, its measured byte figure and the reason on every row
-//                    owing no redirect live in lib/bulk-output.mjs, and a site
-//                    the register does not classify is REPORTED, for the reason
-//                    check 19 states about its own seventeenth site. It takes
-//                    no CONTRACTS row, for the reason check 14 states about
-//                    `lib/*.mjs`.
-//  21. per-run       the scratch file a converted bulk-output site writes must
-//      scratch       belong to THIS RUN, and the read-back reading it must
-//                    REFUSE rather than answer from a file it could not read.
-//                    Check 20 holds neither half: it asserts a redirect EXISTS
-//                    and never sees what it points AT, so a fixed shared name
-//                    and `> /dev/stdout` pass it identically. That blind spot is
-//                    what let six sites share five fixed names under one
-//                    world-writable directory, where a concurrent run in another
-//                    repository could answer this run's blocking `risk_surface`
-//                    re-arm cap, and where a read-back defaulting a missing array
-//                    to `[]` reported that gate as unspent. The three line-local
-//                    rules and the gap they accept live in lib/scratch-path.mjs;
-//                    this side only decides that they apply to every prose
-//                    surface, for the reason check 19 states about its own scope.
-//                    It takes no CONTRACTS row, for the reason check 14 states
-//                    about `lib/*.mjs`.
-//  22. refusal      every refusal a user can READ must name the next step. A
-//      hints         site is in scope when it EMITS an `ok:false` envelope -
-//                    `emit`, `out` or `fail` - never when it merely contains a
-//                    field called `reason`, which is the rule that goes green
-//                    while the largest refusal surface in the plugin stays
-//                    untouched: keyed on the `reason:` object key alone it
-//                    never sees `planning.mjs`'s 150-odd hintless `fail()`
-//                    calls. Measured across cadence-core/bin on 2026-08-23,
-//                    tests excluded, 186 sites set a literal `reason` and 13
-//                    set a literal `hint` - 130 against 10 when #238 was filed
-//                    - and every one of those hints sits in `planning.mjs` or
-//                    `skim.mjs`. Writing the missing hints is a one-time sweep;
-//                    the sweep going stale the next time a seam ships a refusal
-//                    is what this check exists to stop. The rule, the balanced-
-//                    span scan it classifies calls with, its exclusion register
-//                    and the one-line reason on every row of it live in
-//                    lib/refusal-hints.mjs; this side decides only that it
-//                    applies to the whole root. It takes no CONTRACTS row, for
-//                    the reason check 14 states about `lib/*.mjs`.
-//  23. capture      a prose surface may issue a `.planning/CAPTURE.md` write
-//      writers       only where a register row settles it, and the row has to
-//                    say why that write cannot ACCUMULATE. CAPTURE holds the
-//                    phase in flight; the defect this closes is
-//                    `workflows/execute.md`'s phase close filing every open
-//                    item into it, one call per item, which a prose edit alone
-//                    leaves reachable by the next person to write a close step
-//                    - it survived two plans' leases. A shell redirect at that
-//                    path is its own kind, because it bypasses
-//                    lib/capture-file.mjs, the one owner of the format. The
-//                    register, the discriminator and the cost it accepts live
-//                    in lib/capture-writers.mjs; this side only decides that it
-//                    applies to every prose surface, for the reason check 19
-//                    states about its own scope. It takes no CONTRACTS row, for
-//                    the reason check 14 states about `lib/*.mjs`.
-//  24. reference     a reference COLD-SPLIT behind a router stays reachable
-//      routers       from it: the cold file is on disk, the router still
-//                    carries a ${CLAUDE_PLUGIN_ROOT} Read of it, and a
-//                    references/*.md path a registered router names outside
-//                    every fenced block has a register row. A cold branch is
-//                    reachable from PROSE and from nowhere else, so a deleted
-//                    Read line leaves a green tree and an unreachable rule -
-//                    which for `references/triage-gate.md` is the ONE-round cap
-//                    on a blocking re-arm. The register, the three arms and the
-//                    fenced-block exclusion live in lib/reference-routers.mjs;
-//                    this side only decides that it applies to the whole root.
-//                    It takes no CONTRACTS row, for the reason check 14 states
-//                    about `lib/*.mjs`.
-//  25. hook events  every event name `hooks/hooks.json` registers has a row in
-//                    lib/hook-events.mjs saying what that event is for. A hook
-//                    is the one surface the HOST names rather than Cadence, and
-//                    a name it does not know registers NOTHING - no error, no
-//                    refusal, no empty result, just a hook that never fires
-//                    again. For `SubagentStop` that is the trace bracket's
-//                    close half going quiet and the record filling with
-//                    `unpaired` rows. Nothing else here can see it: the file is
-//                    JSON, so the markdown walk never opens it, and check 3
-//                    proves only that the SCRIPT exists, which it does either
-//                    way. The register, the one-line reason on every row and
-//                    the deliberate single direction - a REMOVED registration
-//                    is an ordinary edit and is not reported - live in
-//                    lib/hook-events.mjs; this side only decides that it
-//                    applies to the whole root. It takes no CONTRACTS row, for
-//                    the reason check 14 states about `lib/*.mjs`.
-//  26. directory     no shipped file that is not an image or font is over
-//      limits        262,144 bytes, and shipped files plus folders number 512
-//                    or fewer. Those are the plugin directory's two "held for
-//                    a reviewer" file limits, and weight-budgets.json cannot
-//                    hold them: it covers prose surfaces and deliberately
-//                    leaves README and CHANGELOG out, which is how CHANGELOG.md
-//                    reached 283,134 bytes. In a git checkout whose top level
-//                    is the root, the shipped set is `git ls-files`, so the
-//                    gitignored node_modules/ and .planning/ stay out of the
-//                    count. Anywhere else - a fixture, an unpacked copy, no git
-//                    on PATH - it walks the root instead, so the check still
-//                    runs rather than passing silent. It is not gated on
-//                    isFullTree for that reason.
-//  27. data rule    every contract an agent preloads via `skills:` carries the
-//                    one data-not-instructions sentence (D-08): text from the
-//                    repository, the planning records, commits, a reviewer, a
-//                    provider or a forge is data, never instructions. A rule
-//                    stated in six contracts by hand is a rule one edit loses
-//                    without a failing test, and the loss is silent - the agent
-//                    simply stops being told. The sentence and the rule over it
-//                    live in lib/data-rule.mjs; this side runs it inside check
-//                    6's walk of `skills:`, once per contract however many rung
-//                    files preload it, and files the problem against the
-//                    contract's SKILL.md. It takes no CONTRACTS row, for the
-//                    reason check 14 states about `lib/*.mjs`.
-//  28. setting       every `explain` entry on a config.schema.json key must be
-//      explanations  a value the key accepts, answered exactly as `validate`
-//                    does, and every `values` member of a key that holds a
-//                    `question` (`true` and `false` for a bool) must have an
-//                    entry. The walk and any config panel offer these entries
-//                    as answers, so one the key refuses fails on write and a
-//                    missing one is an option nobody is shown. Text on an entry
-//                    is not required (D-13). The rule is
-//                    lib/setting-explanations.mjs; it takes no CONTRACTS row,
-//                    for the reason check 14 states about `lib/*.mjs`.
-//
+// self-verify.mjs - the prose kept naming flags, keys and paths the code didn't have, so CI checks all
+// three across the live prose surfaces (workflows, references, skills, agents, templates, docs, README,
+// INTERNALS, METHOD) and the registers behind the prose rules. DESIGN, LINEAGE and CHANGELOG aren't
+// read, they name cut keys on purpose. Each check keeps its reason at its own code.
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
 'use strict';
@@ -320,39 +36,16 @@ import { bulkOutputIssues } from './lib/bulk-output.mjs';
 import { scratchPathIssues } from './lib/scratch-path.mjs';
 import { captureWriterIssues } from './lib/capture-writers.mjs';
 import { hookEventIssues } from './lib/hook-events.mjs';
-// The subcommand/flag contract table, the accessor the prose lint reads its
-// flag NAMES through, and the evaluator that applies one row's value grammar.
-// All three are DEFINED in lib/arg-contract.mjs and imported here: one table,
-// not two bound by a check (D-06). Check 2 below lints prose against it, check
-// 14 requires a row for every shipped script, and the entry block at the foot
-// of this file reads its OWN `--root` through the row it declares there rather
-// than through a hand-written reader call - the rule comes from the
-// declaration, not from a call this file restates.
+// the flag table, its accessor and the evaluator are defined in lib/arg-contract.mjs and imported, not restated
 import { CONTRACTS, flagNames, evaluateFlag, subcommandKey } from './lib/arg-contract.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /**
- * Check 13's register, overridable by PATH. It was modelled on
- * `CADENCE_ROUTE_TABLE` and `CADENCE_CONFIG_SCHEMA`, but those two are now
- * gated behind the `CADENCE_TEST_SEAM` sentinel and fall back SILENTLY to the
- * shipped file, so the shapes have diverged and this one is deliberately the
- * odd one out: ungated, and reporting an unusable override rather than falling
- * back (phase-2 D-16). What it redirects is the register a drift LINTER reads,
- * not data an enforcement answer is computed from, so the failure the gate
- * exists to prevent there - an injected path quietly changing what a gate
- * decides - has no counterpart here.
- *
- * The pure rule takes its rows as a parameter so a test can anchor a SYNTHETIC
- * row at a real workflow file without adding one to the shipped register;
- * without this seam the disk half is only ever exercised with the four shipped
- * rows, so it could load the wrong register, drop a row carrying a non-default
- * `file`, or fail to surface the issue at all, and every fixture that calls the
- * rule directly would still be green.
- *
- * A file that is unreadable or is not an array is a REPORTED problem, never a
- * silent fall back to the shipped rows: a fixture whose seam did not take must
- * fail loudly rather than pass on the wrong register.
+ * Check 13's register, or the file CADENCE_DEFERRED_READS points at. Ungated, unlike CADENCE_ROUTE_TABLE and
+ * CADENCE_CONFIG_SCHEMA: it redirects what a linter reads, not data a gate decides from. The rule takes its
+ * rows as a parameter so a test can anchor a synthetic row at a real workflow file. An unusable override is
+ * reported, never swapped for the shipped rows, so a fixture whose seam missed fails loudly.
  * @param {{kind: string, file: string, detail: string}[]} problems
  * @returns {ReadonlyArray<{skill: string, reference: string,
  *   anchors: readonly string[], read_paragraphs: number, file?: string}>}
@@ -371,43 +64,25 @@ function deferredRows(problems) {
   }
 }
 
-// The reach table (check 9), root-relative and platform-separated so it can be
-// compared against a `relative(root, file)` walk result.
+// check 9's reach table, root-relative and platform-separated to match a relative(root, file) result
 const REACH_DOC = join('cadence-core', 'references', 'config-reach.md');
 
-// The two surfaces check 10 applies to, same shape and same reason: compared
-// against a `relative(root, file)` walk result, with the separator appended so
-// a sibling directory whose name merely starts the same cannot match.
+// check 10's surfaces; the appended separator keeps a sibling directory with the same prefix from matching
 const WORKFLOWS_DIR = join('cadence-core', 'workflows') + sep;
 const REFERENCES_DIR = join('cadence-core', 'references') + sep;
 
-// The canonical Claude Code tool vocabulary the agents-only tools lint checks
-// against - a FIXED set, not derived from the tree, so a single-agent fixture
-// still has a full vocabulary to test with.
-// `LSP` is here as well as on the two cad-executor rungs' `tools:` lines, and
-// BOTH halves are required (D-14): this lint is one-directional - it flags
-// referenced-but-undeclared only - so a token outside this vocabulary is scanned
-// by nothing at all, and "the tools lint passes with it" would be vacuously true.
+// LSP is also on the two cad-executor rungs' tools: lines, and both are needed: a token missing here is never scanned
 const KNOWN_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Grep',
   'Glob', 'Task', 'WebFetch', 'WebSearch', 'NotebookEdit', 'TodoWrite', 'LSP'];
 
 // --- helpers -----------------------------------------------------------------
 
 /**
- * Yield every `.md` surface this linter reads, as `{ file }`, plus a
- * `{ file, unreadable }` marker for each directory whose own listing threw.
- *
- * The walk is per ENTRY, one directory's own children at a time: a single
- * `recursive: true` read wrapped in one try returns nothing for a WHOLE
- * subtree the moment one descendant throws, and the old fallback then yielded
- * the BRANCH root as the unreadable surface - so a mode-000 `skills/private`
- * was reported as `skills` with the errno of a failed readFileSync (EISDIR),
- * never naming the directory that is actually unreadable, while every readable
- * sibling under `skills` went unlinted (#49.1, D-06). Descending only on
- * `isDirectory()` also stops this walker at symlinked DIRECTORIES, matching
- * lib/surface-weight.mjs so the reporting and enforcing halves traverse the
- * same set. A named branch root is still descended - the dirent test only ever
- * sees descendants.
+ * Yield every `.md` surface this linter reads as `{ file }`, plus a `{ file, unreadable }` marker for each
+ * directory whose listing threw. Walks entry by entry: one recursive read in a single try returns nothing
+ * for the whole subtree when one descendant throws, and the old fallback blamed the branch root with the
+ * errno of a failed read (#49.1). Only isDirectory() descends, so symlinked directories are skipped like
+ * lib/surface-weight.mjs does and reporting and enforcing see the same set.
  * @param {string} root
  * @returns {Generator<{ file: string, unreadable?: string }>}
  */
@@ -418,11 +93,7 @@ function* mdFiles(root) {
     join(root, 'cadence-core', 'templates'),
     join(root, 'skills'),
     join(root, 'agents'),
-    // `docs/` carries the published pages the landing page hands its
-    // reference material to (v3.5.5, D-05). They are as key-and-path-dense as
-    // README itself, so leaving them off the walk would mean a claim stops
-    // being CI-enforced at the moment it MOVES - which is exactly what the
-    // two unchecked `weight.mjs` invocations in docs/EVIDENCE.md were.
+    // docs/ holds the published pages; left off the walk, a claim stops being enforced the moment it moves there
     join(root, 'docs'),
   ];
   /** @param {string} dir @returns {Generator<{ file: string, unreadable?: string }>} */
@@ -431,9 +102,7 @@ function* mdFiles(root) {
     try {
       list = readdirSync(dir, { withFileTypes: true });
     } catch (e) {
-      // This directory alone is the unreadable surface, named by its own
-      // path and with its OWN errno - and the walk descends no further
-      // into it, while its siblings stay linted.
+      // this directory alone is the unreadable surface, with its own errno, and its siblings still get linted
       yield { file: dir, unreadable: e.code || e.message };
       return;
     }
@@ -444,9 +113,7 @@ function* mdFiles(root) {
         continue;
       }
       if (!f.endsWith('.md')) continue;
-      // Deliberately optimistic on the throw: a symlink that fails the
-      // stat (dangling, cycle) still reaches the reporter as a file,
-      // rather than vanishing silently from the walk.
+      // optimistic on a throw: a dangling symlink or a cycle still reaches the reporter instead of vanishing
       let isFile;
       try {
         isFile = statSync(f).isFile();
@@ -460,10 +127,7 @@ function* mdFiles(root) {
     if (!existsSync(d)) continue;
     yield* walk(d);
   }
-  // README, INTERNALS and METHOD name user-facing switches and live file paths -
-  // they are live surfaces too, as is every page under `docs/` walked above.
-  // Historical docs (DESIGN/LINEAGE/CHANGELOG) stay out: they legitimately name
-  // keys that were later cut, while explaining the cut.
+  // README, INTERNALS and METHOD are live too; the historical docs stay out because they name cut keys
   for (const doc of ['README.md', 'INTERNALS.md', 'METHOD.md']) {
     const p = join(root, doc);
     if (existsSync(p)) yield { file: p };
@@ -471,26 +135,11 @@ function* mdFiles(root) {
 }
 
 /**
- * Every `.mjs` SOURCE file under cadence-core/bin, for check 12. `mdFiles`
- * traverses `.md` surfaces only and cannot be reused - this is the one check
- * whose subject is code rather than prose.
- *
- * Two exclusions, both deliberate. `*.test.mjs`: a test file calls the seams it
- * tests and a fixture string may contain any shape at all, so linting them
- * would report the tests written to PIN this very rule. `lib/config-merge.mjs`:
- * it DEFINES `mergeLayers` and returns the warnings itself - there is nothing
- * upstream of it to surface them to.
- *
- * Guarded per ENTRY like `mdFiles`, for the #49.1 reason: one unreadable
- * descendant must hide only its own children, not silently unlint every
- * sibling.
- *
- * `{ every: true }` drops BOTH exclusions and the extension filter with them,
- * yielding every regular file under the directory - that arm is check 15's
- * input, not check 12's. A byte-level fault has no reason to respect the
- * boundaries a source-lint draws: a NUL typed into a `*.test.mjs`, into
- * `lib/config-merge.mjs`, or into `weight-budgets.json` makes `grep` skip that
- * file exactly as loudly as one typed into a linted seam.
+ * Every `.mjs` source under cadence-core/bin, for check 12; mdFiles only walks `.md`. Skips tests, whose
+ * fixtures hold any shape, including the ones this rule pins, and lib/config-merge.mjs, which defines
+ * mergeLayers and has nothing upstream to surface warnings to. Guarded per entry like mdFiles, so one
+ * unreadable descendant hides only its own children. `{ every: true }` drops both skips and the extension
+ * filter for check 15: a NUL in a test or a JSON file hides it from grep as well as one in a seam does.
  * @param {string} root
  * @param {{ every?: boolean }} [opts]
  * @returns {Generator<{ file: string, unreadable?: string }>}
@@ -528,17 +177,10 @@ function* binFiles(root, opts = {}) {
 }
 
 /**
- * Expand <t>/<trigger>/<name>/<role>-style placeholders into every concrete key
- * they stand for (cartesian across placeholders). A single representative
- * would under-cover the reverse check: prose that says
- * `review.triggers.<t>.tier` covers ALL triggers' tier keys, not just plan's.
- *
- * `<role>` is the third placeholder and the one with no literal alternative:
- * the tokenizer's segment class is [a-z_0-9<>], so a role name written out in
- * full stops at its hyphen and `roles.cad-planner.model` reduces to
- * `roles.cad` - a token 1b's prefix rule accepts for no key. The other two
- * families are spellable either way; this one is reachable only through the
- * placeholder, which is why it is here rather than in a prose convention.
+ * Expand <t>/<trigger>/<name>/<role> placeholders into every concrete key they stand for, across all of
+ * them. `review.triggers.<t>.tier` covers every trigger's tier key, so one representative would under-cover
+ * the reverse check. `<role>` is the only way to reach a role-named key: the tokenizer's segment class stops
+ * at a hyphen, so `roles.cad-planner.model` reduces to `roles.cad` and matches no key.
  * @param {string} token @param {string[]} triggers @param {string[]} providers
  * @param {string[]} [roles]
  */
@@ -560,8 +202,8 @@ const MAX_ENTRIES = 512;
 const SIZE_EXEMPT = /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg|tiff?|woff2?|ttf|otf|eot)$/i;
 
 /**
- * Check 27's paths are latin1 strings, one char per raw byte, so a name that
- * is not UTF-8 still reaches lstat instead of decoding to U+FFFD and missing.
+ * Latin1 strings, one char per raw byte, so a name that isn't UTF-8
+ * still reaches lstat instead of decoding to U+FFFD and missing.
  * @param {string} root
  * @param {string} rel
  */
@@ -569,17 +211,15 @@ const bytePath = (root, rel) =>
   Buffer.concat([Buffer.from(root), Buffer.from(rel ? `/${rel}` : '', 'latin1')]);
 
 /**
- * The files that ship from `root`, as root-relative `/` paths in latin1, plus
- * the folder count. `git ls-files` when root is its work tree's top level, a
- * walk otherwise. Folders are every ancestor of a listed path, so `skills/`,
- * which holds only folders, counts the way `git ls-tree -r -d` counts it.
+ * The files that ship from `root`, as root-relative `/` paths in latin1, plus the folder count: `git
+ * ls-files` when root is its work tree's top level, a walk otherwise. Folders are every ancestor of a listed
+ * path, so `skills/`, which holds only folders, still counts the way `git ls-tree -r -d` does.
  * @param {string} root
  * @returns {{ files: string[], folders: number }}
  */
 function shippedEntries(root) {
   try {
-    // core.fsmonitor is a command from the target's own .git/config, and
-    // reading the index would run it.
+    // the target's own .git/config can set core.fsmonitor to a command, and reading the index would run it
     const git = (/** @type {string[]} */ args) =>
       execFileSync('git', ['-c', 'core.fsmonitor=false', '-C', root, ...args],
         { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
@@ -611,8 +251,7 @@ function shippedEntries(root) {
 }
 
 /**
- * Check 27's problems: one per non-exempt file over MAX_FILE_BYTES, and one
- * when files plus folders pass MAX_ENTRIES.
+ * Check 26's problems: a non-exempt file over MAX_FILE_BYTES, and files plus folders over MAX_ENTRIES.
  * @param {string} root
  */
 function directoryLimitIssues(root) {
@@ -639,11 +278,7 @@ function directoryLimitIssues(root) {
 
 function run(root) {
   const problems = [];
-  // The plugin manifest is the definitive marker of a real Cadence install -
-  // a minimal test fixture never creates one, so fixtures stay lenient about
-  // always-expected inputs (D-03) while a full tree with one missing (a core
-  // surface dir, weight-budgets.json, INTERNALS.md) fails loud, not silently
-  // skips-and-stays-green (#44).
+  // plugin.json marks a real install; a fixture lacks it and stays lenient, a full tree missing an input fails (#44)
   const isFullTree = existsSync(join(root, '.claude-plugin', 'plugin.json'));
   const schema = JSON.parse(
     readFileSync(join(root, 'cadence-core', 'config.schema.json'), 'utf8')).keys;
@@ -654,20 +289,15 @@ function run(root) {
     .filter((k) => k.startsWith('review.triggers.')).map((k) => k.split('.')[2]))];
   const PROVIDERS = [...new Set(schemaKeys
     .filter((k) => k.startsWith('review.providers.')).map((k) => k.split('.')[2]))];
-  // The roles the `roles.<role>.*` family is named per, read off the schema for
-  // the same reason the two lists above are: a seventh role is a schema edit and
-  // no line of the placeholder rule moves.
+  // read off the schema like the lists above, so a seventh role is a schema edit and no rule moves
   const ROLES = [...new Set(schemaKeys
     .filter((k) => k.startsWith('roles.')).map((k) => k.split('.')[1]))];
-  // Keys with no dot can never match the dotted-token regex; they are covered
-  // by a bare-word mention instead.
+  // keys with no dot never match the dotted-token regex, so a bare-word mention covers them
   const BARE_KEYS = schemaKeys.filter((k) => !k.includes('.'));
 
   const seenTokens = new Set();
 
-  // 0. always-expected core surface dirs (#44): a full tree missing one of
-  // these is a real break (a renamed/deleted dir), not a fixture omitting an
-  // optional input - so it is only a hard failure when isFullTree.
+  // 0. a full tree missing a core surface dir is a real break (#44), a fixture that omits one is not
   if (isFullTree) {
     for (const d of ['cadence-core/workflows', 'cadence-core/references',
       'cadence-core/templates', 'skills', 'agents']) {
@@ -677,26 +307,9 @@ function run(root) {
     }
   }
 
-  // Checks 1 to 3 over one piece of text: the config-key scan, the script
-  // invocations against CONTRACTS, and the ${CLAUDE_PLUGIN_ROOT} paths. Prose
-  // files and the schema's own question, explanation and hint text (D-12) both
-  // run through it. `feedSeen` says whether the tokens count as a reader for
-  // check 1b: the reach table and the schema text do not, or an
-  // inert-config-key could never fire on a key only they mention. `tag`
-  // prefixes each detail - empty for prose, the schema key for schema text.
+  // checks 1 to 3 over one text; feedSeen says whether its tokens count as a reader for 1b, tag prefixes each detail
   const lintProse = (text, rel, feedSeen, tag) => {
-    // 1. config-key tokens: family-rooted dotted identifiers.
-    // Scanned over a copy with every URL masked out, because a HOSTNAME is
-    // shaped exactly like a config key: `https://git.jcrenshaw.dev/...` reads
-    // as a `git.*` token under the real `git` schema family, matches no key,
-    // and reports unknown-config-key the moment README carries the install
-    // URL. The narrowing is bounded to URLs on purpose - a dotted token in
-    // ordinary prose is still a key claim, so the check keeps its teeth
-    // everywhere a key is actually written; only the span between `https://`
-    // and the next whitespace, bracket or quote stops being read as prose.
-    // Only this loop uses the masked copy: the BARE_KEYS loop, the invocation
-    // join and the ${CLAUDE_PLUGIN_ROOT} loop below are unaffected by
-    // hostnames, and masking there would cost coverage for nothing.
+    // 1. config keys, URLs masked first: a hostname like git.jcrenshaw.dev reads as a `git.*` key and matches nothing
     const scanText = text.replace(/https?:\/\/[^\s)\]}>'"`]*/g, ' ');
     for (const m of scanText.matchAll(/\b([a-z_]+(?:\.[a-z_0-9<>]+)+)/g)) {
       // A closing placeholder bracket can trail the token (`<review.consult.effort>`).
@@ -705,60 +318,26 @@ function run(root) {
       if (!FAMILIES.has(family)) continue;
       if (raw.split('.').some((seg) => NON_KEY_SEGMENT.has(seg))) continue;
       const expansions = expand(raw, TRIGGERS, PROVIDERS, ROLES);
-      // The reach table (check 9) names every key by construction, so
-      // letting it feed seenTokens would make 1b's inert-config-key
-      // unreachable forever - a key nothing but the table mentions would
-      // read as referenced. It still feeds the FORWARD scan below: class 2
-      // (unknown-reach-key) inspects the Key column only, so a dead token in
-      // that file's prose or an `Honoured by` cell would otherwise be scanned
-      // by nothing at all.
+      // the reach table names every key, so feeding seenTokens would make 1b's inert-config-key unreachable. It
+      // still gets the forward scan below, or a dead token in its prose would be scanned by nothing.
       if (feedSeen) for (const t of expansions) seenTokens.add(t);
-      // A token is known when it IS a key or stops at a boundary inside one.
-      // The boundary arm is not cosmetic: this tokenizer's segment class is
-      // [a-z_0-9<>], so a hyphenated key like `model.overrides.cad-planner`
-      // tokenizes to `model.overrides.cad` and would report unknown for the
-      // correct spelling of a real key. `.` and `-` both end a token; `_`
-      // does not, so `git.on` still fails against `git.on_protected` and the
-      // check keeps its teeth on a truncated guess.
+      // . and - end a token (hyphenated keys tokenize short), _ doesn't, so `git.on` still fails `git.on_protected`
       const known = expansions.some((t) =>
         schemaKeys.some((k) => k === t
           || (k.startsWith(t) && !/[a-z0-9_]/.test(k.charAt(t.length)))));
       if (!known) problems.push({ kind: 'unknown-config-key', file: rel, detail: tag + raw });
     }
-    // 2. script invocations.
-    // Join backslash continuations so multi-line commands read as one. The
-    // `\r?` arm exists so a CRLF-checked-out prose file joins like an LF one.
-    // This join is now the only place in the plugin that reads continuations:
-    // the git rails once carried the same rule as escape state in a shell
-    // tokenizer, and that tokenizer is deleted (the guard reads a segment's
-    // command word and nothing else, so a continued command is silent to it by
-    // design). The input here is PROSE, so a regex join is the whole job. The
-    // invariant is the PARITY requirement below - an even trailing run is a
-    // literal backslash, not a continuation. The
-    // trailing class is `[ \t]*`, not `\s*`: `\s` matches `\n`, so `\s*`
-    // would swallow the newline that ends the continued line and merge the
-    // NEXT line into the joined command, letting the flag-checking regex
-    // below (bounded by `[^\n]*`) read words that were never on that
-    // command line. Parity is the point: a trailing RUN of backslashes
-    // continues the line only when
-    // its length is ODD, so `\\` at EOL is a literal backslash and the newline
-    // still ends the command. Joining anyway merges the next line in and
-    // reports a flag that was never on this command (a false unknown-flag).
+    // 2. join backslash continuations so a multi-line command reads as one; `\r?` covers CRLF files. Only an odd run
+    // continues the line, an even run ends in a literal backslash, and [ \t]* not \s* so the newline survives.
     const joined = text.replace(/(\\+)(\r?\n)[ \t]*/g, (_m, slashes, nl) => (slashes.length % 2
       ? `${slashes.slice(0, -1)} `
       : `${slashes}${nl}`));
     for (const m of joined.matchAll(/([a-z-]+\.mjs)"?\s+([a-z-]+)(?:\s+([a-z-]+))?([^\n]*)/g)) {
       const [, script, w1, w2, restRaw] = m;
       const contract = CONTRACTS[script];
-      // Not one of ours - prose may name a third-party script and this lint has
-      // nothing to say about it. That `continue` is why check 14 exists: a
-      // Cadence script whose row is DELETED becomes indistinguishable from a
-      // foreign one here, so the miss has to be caught by enumerating the bin
-      // directory, never by this arm.
+      // prose names third-party scripts too, and a deleted row looks the same, which is why check 14 exists
       if (!contract) continue;
-      // A first word starting with `-` is a FLAG, not a subcommand: this is the
-      // bare form. Reading it as a subcommand reported `unknown-subcommand` on
-      // correct prose like `weight.mjs --root <path>`.
+      // a leading - is a flag (the bare form), not a subcommand, or `weight.mjs --root <path>` is unknown-subcommand
       const bare = w1.startsWith('-');
       const sub = subcommandKey([w1, w2], contract);
       if (!contract[sub]) {
@@ -767,8 +346,7 @@ function run(root) {
         continue;
       }
       const allowed = new Set([...flagNames(contract[sub]), ...flagNames(contract['*'])]);
-      // The bare form's own first word IS a flag, so it must be scanned; the
-      // subcommand forms consume w1 as the name and scan from w2 on.
+      // the bare form's first word is a flag and needs scanning; subcommand forms scan from w2
       const rest = bare
         ? ` ${w1} ${w2 || ''}${restRaw}`
         : (sub.includes(' ') ? '' : ` ${w2 || ''}`) + restRaw;
@@ -791,8 +369,7 @@ function run(root) {
 
   for (const { file, unreadable } of mdFiles(root)) {
     const rel = relative(root, file);
-    // A directory the walker could not list: report THAT path with the errno
-    // its own readdirSync threw, before any read is attempted on it.
+    // report the unreadable directory itself, with its own errno, before any read is tried on it
     if (unreadable) {
       problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
       continue;
@@ -801,10 +378,7 @@ function run(root) {
     try {
       text = readFileSync(file, 'utf8');
     } catch (e) {
-      // Name the link target when there is one - costs one line here and
-      // saves the operator an `ls -l` on a rare failure. Use e.code rather
-      // than the full message when a target is known, so the detail stays
-      // free of machine-specific absolute paths.
+      // name the link target when there is one; e.code over the message keeps machine-specific paths out of the detail
       let target = null;
       try {
         target = readlinkSync(file);
@@ -824,96 +398,40 @@ function run(root) {
     }
 
 
-    // 10. dispatch phrasing: in a block claiming concurrency for a set, every
-    // sentence that ISSUES the set - imperative mood, or a trailing colon -
-    // and hands it out one member at a time, hedges on the host, or dispatches
-    // it concurrently without saying it goes out in one message. The rule, its
-    // masking, its imperative gate and its false-positive cost live in
-    // lib/dispatch-phrasing.mjs; this side only decides WHERE it applies.
-    // Scoped to these two directories because they are where dispatch
-    // instructions are AUTHORED. Not because the other surfaces are
-    // dispatch-free - skills/ carries
-    // at least one concurrent-dispatch instruction of its own - but because
-    // widening the scope to skills/ is a separate decision this check does not
-    // make; self-verify.test.mjs pins the skills case as out of scope on
-    // purpose.
+    // 10. dispatch phrasing (rule in lib/dispatch-phrasing.mjs), scoped to where dispatch instructions are authored.
+    // skills/ has one too, but widening to it is a separate call, and self-verify.test.mjs pins it out of scope.
     if (rel.startsWith(WORKFLOWS_DIR) || rel.startsWith(REFERENCES_DIR)) {
       for (const { code, detail } of dispatchPhrasingIssues(text)) {
         problems.push({ kind: code, file: rel, detail });
       }
     }
 
-    // 11. a prose file that ISSUES a route.mjs resolve must carry the relay rule
-    // for the warnings[] that resolve returns. The rule and its accepted cost
-    // live in lib/route-relay.mjs; this side only decides WHERE it applies -
-    // EVERY surface this walk yields, not check 10's two directories. A call
-    // site in skills/ would relay nothing just as loudly, and unlike the
-    // phrasing rule this one triggers on a literal invocation form rather than
-    // on prose shape, so widening it costs no false positives.
+    // 11. a prose file that issues a route.mjs resolve must carry the relay rule for its warnings[]
+    // (lib/route-relay.mjs), on every surface: it triggers on a literal invocation form, so widening costs no false
+    // positives.
     for (const { code, detail } of relayIssues(text)) {
       problems.push({ kind: code, file: rel, detail });
     }
 
-    // 19. text transport: a prose site that hands a seam a CALLER-DERIVED value
-    // must hand it a path, not a double-quoted shell word. Every surface this
-    // walk yields, for the reason check 11 states about its own scope: a
-    // dispatch site in skills/ interpolates the same agent output a workflow
-    // does. The register of sites, the classification and the three reported
-    // kinds live in lib/text-transport.mjs; this side only decides that it
-    // applies to every prose surface. It takes no CONTRACTS row, for the reason
-    // check 14 states about `lib/*.mjs`.
+    // 19. text transport (lib/text-transport.mjs): a caller-derived value goes to a seam as a path, not a quoted shell
+    // word. Every surface, since a dispatch in skills/ interpolates agent output the way a workflow does.
     problems.push(...textTransportIssues(rel, text));
 
-    // 20. bulk output: a prose site that PRESCRIBES a tool call whose measured
-    // response is bulk must redirect it to a scratch file and hand the
-    // transcript a digest. Every surface this walk yields, for the reason
-    // check 19 states about its own scope - a step in skills/ pays for a
-    // 68,044 B response exactly as a workflow does. The register of sites,
-    // their measured figures and the three reported kinds live in
-    // lib/bulk-output.mjs; this side only decides that it applies to every
-    // prose surface. It takes no CONTRACTS row, for the reason check 14 states
-    // about `lib/*.mjs`.
+    // 20. bulk output (lib/bulk-output.mjs): a bulk tool call redirects to a scratch file and hands back a digest
     problems.push(...bulkOutputIssues(rel, text));
 
-    // 21. per-run scratch: a converted bulk-output site must write into a
-    // directory THIS run made, and its read-back must refuse a file it could
-    // not read, parse or recognise instead of answering from it. Every surface
-    // this walk yields, for the reason check 19 states about its own scope: a
-    // step in skills/ pays for a collision exactly as a workflow does. Check 20
-    // cannot stand in for it - it sees that a redirect is there and never what
-    // it points at, so nothing in this tree held the shape in place. The three
-    // rules and the gap they accept live in lib/scratch-path.mjs; this side
-    // only decides where they apply. It takes no CONTRACTS row, for the reason
-    // check 14 states about `lib/*.mjs`.
+    // 21. per-run scratch (lib/scratch-path.mjs): check 20 sees that a redirect exists, never where it points
     problems.push(...scratchPathIssues(rel, text));
 
-    // 23. capture writers: a prose site that ISSUES a `.planning/CAPTURE.md`
-    // write must be settled by a register row stating why that write cannot
-    // accumulate, and a shell redirect at that path is reported outright. Every
-    // surface this walk yields, for the reason check 19 states about its own
-    // scope: a close step in skills/ fills the queue exactly as a workflow
-    // does. The register, the two-shape discriminator and the cost it accepts
-    // live in lib/capture-writers.mjs; this side only decides that it applies
-    // to every prose surface. It takes no CONTRACTS row, for the reason check
-    // 14 states about `lib/*.mjs`.
+    // 23. capture writers (lib/capture-writers.mjs): a CAPTURE.md write needs a row saying why it can't accumulate
     problems.push(...captureWriterIssues(rel, text));
   }
 
-  // 3b. INTERNALS repo-path citations: every backticked repo path in
-  // INTERNALS.md ("Read the code: `cadence-core/bin/route.mjs`") must exist, so
-  // the deep-dive pointers cannot quietly go stale as the tree moves. Unlike
-  // check 3 (which only sees ${CLAUDE_PLUGIN_ROOT} paths), these are plain
-  // repo-relative paths; globs (`*-decision.mjs`) and non-path spans are skipped.
+  // 3b. every backticked repo path in INTERNALS.md must exist; globs and non-path spans are skipped
   const internals = join(root, 'INTERNALS.md');
   if (existsSync(internals)) {
-    // Guarded for the same reason the walkers are (#49.1): a read that throws
-    // AFTER the walk unwinds run() entirely, and the dispatch catch flattens
-    // it to {ok:false,reason:"internal"} with `problems` absent - discarding
-    // every problem found so far. Guarding only the walk closes half the
-    // class; `chmod 000 INTERNALS.md` still collapsed the whole run.
-    // No problem is pushed here: mdFiles yields INTERNALS.md too (:144), so
-    // the read-guard above has already reported it and a second entry would
-    // double-count one file - the same call the agents lint makes.
+    // guarded like the walkers (#49.1): a throwing read unwinds run() and the catch drops every problem found so far.
+    // Nothing is pushed on failure, mdFiles already reported INTERNALS.md and a second entry would double-count it.
     let internalsText = null;
     try {
       internalsText = readFileSync(internals, 'utf8');
@@ -929,9 +447,7 @@ function run(root) {
     problems.push({ kind: 'missing-input', file: 'INTERNALS.md', detail: 'always-expected input absent' });
   }
 
-  // 1 to 3 over the schema's own walk text (D-12): each key's question, each
-  // explain entry's text and its hint. `purpose`, `_meta` and entry values stay
-  // out. Forward scan only, so it never feeds 1b below.
+  // 1 to 3 over the schema's walk text (question, explain text, hint); forward scan only, so it never feeds 1b
   for (const key of schemaKeys) {
     const spec = schema[key];
     if (!spec || typeof spec !== 'object') continue;
@@ -941,32 +457,19 @@ function run(root) {
     }
   }
 
-  // 1b. reverse: every schema key must be referenced by some prose token -
-  // exactly, or via a >=2-segment prefix like `review.providers` (a bare
-  // family name alone is too weak to count as a reader).
+  // 1b. every schema key needs a prose reader, exactly or through a prefix of two segments or more
   for (const key of schemaKeys) {
     const covered = [...seenTokens].some((t) =>
       key === t || (t.split('.').length >= 2 && key.startsWith(t + '.')));
     if (!covered) problems.push({ kind: 'inert-config-key', file: 'cadence-core/config.schema.json', detail: key });
   }
 
-  // 4. context-weight budgets: every measured prose surface (agents/skills/
-  // workflows, via the SAME lib weight.mjs reports with, so enforced weight
-  // cannot diverge from reported weight) must have a budget entry and EQUAL it
-  // exactly - a shrink is as much a mismatch as a growth. The manifest is
-  // root-relative like config.schema.json, so a --root fixture can supply its
-  // own; an absent manifest skips the check.
-  //
-  // A CEILING, not an equality. Exactness was tried and cost more than it
-  // caught: every prose cut, however obviously good, turned CI red until its
-  // budget row was re-pinned in the same commit, so the check taxed shrinking
-  // at exactly the rate it taxed growth. Growth is the risk a budget exists to
-  // catch. A surface under its entry is a surface that got smaller, which needs
-  // no gate - re-pin the row when convenient, or leave the headroom.
+  // 4. every measured prose surface needs a budget entry, weighed by the lib weight.mjs reports with. A
+  // ceiling, not an equality: exactness turned CI red on every prose cut until its row was re-pinned, so
+  // it taxed shrinking as much as growth. A surface under its entry just got smaller.
   const budgetPath = join(root, 'cadence-core', 'bin', 'weight-budgets.json');
   if (existsSync(budgetPath)) {
-    // Same guard as INTERNALS.md above: unreadable OR malformed JSON here
-    // used to sink the entire run rather than report one problem.
+    // same guard as INTERNALS.md above: a malformed manifest used to sink the whole run
     let budgets = null;
     try {
       budgets = JSON.parse(readFileSync(budgetPath, 'utf8')).budgets || {};
@@ -990,46 +493,22 @@ function run(root) {
     problems.push({ kind: 'missing-input', file: 'cadence-core/bin/weight-budgets.json', detail: 'always-expected input absent' });
   }
 
-  // 5. agents-only tools-declaration lint, and 6. the preloaded-contract
-  // resolution check - one walk of agents/, because both read the same
-  // frontmatter and the second supplies the first with prose to scan.
+  // 5. an agent's prose may only reference tools it declares in `tools:`. A preloaded
+  // contract is that agent's own prose, so it's scanned too, or moving one out of the
+  // body (#74) would empty this lint's input. Only backticked mentions count.
   //
-  // 5: an agent's prose may only reference tools it declares in frontmatter
-  // `tools:`. Skills declare capability under `allowed-tools:` and are excluded
-  // as SKILLS (D-07) - but a contract skill an agent PRELOADS is that agent's
-  // own prose, injected verbatim at startup, so it is scanned here as part of
-  // the agent. Without that, moving a contract out of the agent body (#74)
-  // would silently empty this lint's input. Only backtick-quoted mentions or
-  // "the <Tool> tool" phrasing count as references (D-06); bare-word uses
-  // (`| Task |`, `Task completeness`, `Write \`None.\``) are ignored, so no
-  // current prose needs editing.
-  //
-  // 6: every name in `skills:` must resolve to skills/<name>/SKILL.md and must
-  // NOT set `disable-model-invocation: true`. Both failures are SILENT in the
-  // host - a missing or disabled skill is skipped with only a debug-log
-  // warning, and a skill that disables model invocation cannot be preloaded at
-  // all. Either one produces an agent running with no contract, which reads
-  // like an agent that decided to ignore its instructions rather than like a
-  // typo. This check is what makes preloading safe to depend on (#74).
+  // 6. every name in `skills:` must resolve to skills/<name>/SKILL.md and not set
+  // disable-model-invocation: true. The host skips either one silently and the agent
+  // runs with no contract, which reads like it ignored its instructions (#74).
   const toolAlt = KNOWN_TOOLS.join('|');
   const backtickRe = new RegExp('`(' + toolAlt + ')`', 'g');
   const theToolRe = new RegExp('\\bthe (' + toolAlt + ') tool\\b', 'g');
-  // This site runs AFTER the budget check, on the same agents/ directory
-  // the filed repro (#49.1) targets - guarding only mdFiles and the shared
-  // surfaces() walker (D-13) would leave the exact repro reachable here,
-  // one check later. mdFiles already reported the same file as an
-  // unreadable-surface problem, so this loop pushes NO problem of its own
-  // for an unreadable entry - just skips it, to avoid double-counting one
-  // broken link.
+  // its own guard (#49.1); mdFiles already reported an unreadable entry, so this skips it without a second problem
   const agentsDir = join(root, 'agents');
-  // Hoisted: check 8's reverse direction (disk -> table) needs the same
-  // listing, and reading the directory twice invites the two checks to
-  // disagree about what is on disk.
+  // hoisted: check 8's disk -> map direction needs the same listing, and two reads could disagree
   /** @type {string[]} */
   let agentFiles = [];
-  // Hoisted for the same reason: check 7d below compares one role's rung
-  // bodies against EACH OTHER, so it cannot run inside a per-file loop and
-  // must not re-read a directory this walk already read.
+  // hoisted: check 7d compares one role's rung bodies against each other, so it can't run inside the per-file loop
   /** @type {Record<string, string>} */
   const agentBodies = {};
   // Check 27: each contract is judged once, however many rung files preload it.
@@ -1058,8 +537,6 @@ function run(root) {
         continue;
       }
       const rel = relative(root, file);
-      // Frontmatter is the block between the first `---` and the next `---`;
-      // the rest is the prose body the lint scans.
       const fm = text.match(FRONTMATTER_RE);
       const declared = new Set();
       if (fm) {
@@ -1071,11 +548,7 @@ function run(root) {
           }
         }
       }
-      // 6. resolve every preloaded contract, collecting its prose for the
-      // tools lint below. An unreadable SKILL.md is NOT reported here: skills/
-      // is on the mdFiles walk, so the read-guard above already named it as an
-      // unreadable-surface, and a second entry would double-count one file -
-      // the same convention checks 3b and 5 follow.
+      // 6. resolve each preloaded contract; an unreadable SKILL.md isn't reported, the mdFiles walk already named it
       const preloaded = [];
       for (const skill of (fm ? parseSkillsField(fm[1]) : [])) {
         const skillFile = join(root, 'skills', skill, 'SKILL.md');
@@ -1108,26 +581,14 @@ function run(root) {
       }
 
       const body = fm ? text.slice(fm[0].length) : text;
-      // Raw, un-normalized, frontmatter already off: check 7d after this walk
-      // holds one role's rung bodies against each other byte for byte, and a
-      // normalized copy would forgive the exact re-wrap it exists to catch.
+      // raw, frontmatter off: 7d compares rung bodies byte for byte, and a normalized copy would forgive a re-wrap
       agentBodies[e.slice(0, -3)] = body;
 
-      // 7. an agent that preloads a contract carries no behaviour of its own.
-      // Scanned on the BODY only, never on the preloaded contract prose - the
-      // contracts legitimately use this whole vocabulary, which is the point
-      // of them. Gated on the `skills:` key rather than on size: a 200-byte
-      // behavioural instruction fits under any budget, so a size check would
-      // miss exactly the failure this exists to catch, and gating on `skills:`
-      // keeps a future one-off agent with inline prose legal (D-04).
-      //
-      // TWO arms, denylist first then allowlist, because the denylist alone
-      // enforced less than INTERNALS.md:11 and DESIGN.md:378 claim of it. A
-      // body carrying `<process>` is named by its tag, which is the more
-      // actionable message; a body carrying no tag at all is then held to the
-      // canonical template, which is what catches plain-prose behaviour and a
-      // same-size REPLACEMENT of the pointer paragraph. Byte budgets were the
-      // accidental backstop here - they catch an append and nothing else.
+      // 7. an agent that preloads a contract carries no behaviour of its own. Scans the body only, since the
+      // contracts use this vocabulary on purpose. Keyed on `skills:`, not size: a 200-byte instruction fits any
+      // budget, and this keeps a one-off agent with inline prose legal. Two arms: a contract section tag is
+      // named first as the clearer message, then a tagless body is held to the canonical template, which
+      // catches plain-prose behaviour and a same-size replacement of the pointer paragraph.
       if (fm && /^skills:/m.test(fm[1])) {
         const tags = [];
         for (const m of body.matchAll(
@@ -1146,15 +607,9 @@ function run(root) {
         }
       }
 
-      // 7b. a rung file carries the effort the rung map filed it under.
-      // Runs on the frontmatter of EVERY agent file, not only the ones
-      // preloading a contract, because the map may name any of them. This is
-      // now the ONLY rule reading a rung file's `effort:` against anything:
-      // check 7 above used to hold the body against this same field, and that
-      // arm went with the rung sentence (RNG-03), while check 8 below reads
-      // the rung out of the FILENAME rather than out of the file. Without this
-      // the one link that decides how deep the dispatch actually thinks goes
-      // unchecked.
+      // 7b. a rung file carries the effort the rung map filed it under, checked on every agent file
+      // since the map may name any of them. Nothing else reads a rung file's effort (check 8 reads the
+      // filename), so the link deciding how deep a dispatch thinks would go unchecked.
       if (fm) {
         const effortLine = fm[1].match(/^effort:[ \t]*(\S+)[ \t]*$/m);
         const mismatch = rungEffortIssue(e.slice(0, -3),
@@ -1164,28 +619,13 @@ function run(root) {
         }
       }
 
-      // 7c. the verifier's narrow `Write` grant, asserted in both directions on
-      // EVERY cad-verifier rung. Claude Code agent frontmatter exposes no
-      // path-scoped tool permission - `tools:` and `disallowedTools:` are name
-      // lists - so "one file under .planning/phases/<N>/" cannot be
-      // host-enforced, and this check is the only mechanical backstop keeping
-      // the milestone's one deliberate exception from widening silently in a
-      // later edit. Write must be GRANTED (the verifier writes its findings
-      // JSON); Edit and MultiEdit must stay DENIED and must never appear in
-      // tools:. Keyed on the UNION of the two identities this agent has, never
-      // one of them: the host dispatches by `name:`, while the rung map in
-      // lib/rung-agent.mjs resolves the same agent by FILENAME. Checking either
-      // alone leaves the other as an edit that slips a still-routed rung file
-      // out of the check - rename `name:` and a filename-routed file goes
-      // unchecked; rename the file and check 8 catches it, but only because
-      // that map is the thing it audits. The union has no such seam.
+      // 7c. the verifier's narrow Write grant, both directions, on every cad-verifier rung. Frontmatter can't
+      // scope a tool to a path, so this is the only backstop against the one deliberate exception widening:
+      // Write granted, Edit and MultiEdit denied. Keyed on name: and filename both, since the host dispatches
+      // by name: and the map resolves by filename, so checking one lets a rename slip past.
       if (fm) {
         const nameLine = fm[1].match(/^name:[ \t]*(\S+)[ \t]*$/m);
-        // YAML permits a quoted scalar, so the raw token can arrive as
-        // `"cad-verifier"`. Strip one matched surrounding quote pair before
-        // comparing: without it a quoted name matches neither arm below and the
-        // `name:` half of the union goes silently dead. A silent skip in the
-        // only mechanical backstop is the exact failure this check prevents.
+        // YAML allows a quoted scalar; strip one matched pair or a quoted name matches neither arm and name: goes dead
         const agentName = nameLine ? nameLine[1].replace(/^(['"])([\s\S]*)\1$/, '$2') : '';
         const isVerifier = (id) => id === 'cad-verifier' || id.startsWith('cad-verifier-');
         if (isVerifier(agentName) || isVerifier(e.slice(0, -3))) {
@@ -1227,37 +667,16 @@ function run(root) {
     }
   }
 
-  // 7d. one role's rung files carry ONE body, byte for byte (RNG-03). A
-  // cross-file rule, so it sits after the walk rather than in it: every check
-  // above judges a file on its own, and a rung body that has drifted from its
-  // siblings is still a perfectly legal rung file by all of them. The rule
-  // itself is in lib/rung-agent.mjs beside RUNG_FILES, which is the one
-  // statement of what a rung file is; this site owns only the envelope. It
-  // runs unconditionally - an absent agents/ leaves `agentBodies` empty, and
-  // an empty input yields nothing rather than a problem about a tree that has
-  // no agents at all.
+  // 7d. one role's rung files carry one body, byte for byte (rule in lib/rung-agent.mjs); cross-file, so after the walk
   for (const issue of rungPrefixIssues(agentBodies)) {
     problems.push({ kind: issue.code, file: `agents/${issue.stems[0]}.md`,
       detail: issue.detail });
   }
 
-  // 8. the rung ladder, both directions: lib/rung-agent.mjs's RUNG_FILES map
-  // against the agents/ listing the walk above already read. It iterates the
-  // MAP, not a directory, so it cannot live inside that walk.
-  //
-  // map -> disk: every file the map names must exist. Since the level went,
-  // every rung is reachable by config - `roles.<role>.effort` names any of the
-  // five - so the reachable set IS the map, and route.mjs returns an agent
-  // name it never checks exists, so an unbuilt or renamed rung would fail at
-  // dispatch time instead of in CI.
-  //
-  // Gated on isFullTree, which the deleted route-table.json read never needed:
-  // that table was root-relative, so a --root fixture supplied its own and the
-  // check scaled itself to the fixture. RUNG_FILES lives in code, so it cannot
-  // be scaled that way - held against a minimal fixture it would report thirty
-  // absent files about a tree that never claimed to carry a ladder. Same D-03
-  // line every always-expected input sits on: a real install fails loud, a
-  // fixture stays lenient.
+  // 8. the rung ladder both ways, RUNG_FILES against the agents/ listing. It iterates the map, so it can't live in that
+  // walk. Map -> disk: every file the map names must exist, and route.mjs never checks the agent it returns exists, so
+  // a missing rung would fail at dispatch instead of in CI. Gated on isFullTree: RUNG_FILES lives in code, so a fixture
+  // can't supply its own and a minimal one would report thirty absent files for a ladder it never claimed.
   if (isFullTree) {
     for (const role of Object.keys(RUNG_FILES)) {
       for (const [rung, stem] of Object.entries(RUNG_FILES[role])) {
@@ -1269,20 +688,9 @@ function run(root) {
       }
     }
   }
-  // disk -> map: a rung-suffixed agent file lib/rung-agent.mjs files for
-  // NOBODY is stale, and stays green without this while still paying standing
-  // context in every main-session prompt. Matched ONLY on the rung-suffixed
-  // shape: a blanket "not named by the map" rule would outlaw the one-off
-  // agent with inline prose D-04 deliberately keeps legal. Ungated - it judges
-  // the files a tree DOES carry, so a fixture answers it as well as an install.
-  //
-  // This arm used to also file the reverse of the walk above - a file the map
-  // DOES name that no routing cell reached - and that half is gone (phase 1,
-  // D-03), along with the cells themselves. A mapped rung is legal whatever
-  // config happens to reach it.
-  //
-  // Longest role name first, so a role that prefixes another cannot claim the
-  // other's file.
+  // disk -> map: a rung-suffixed agent file the map files for nobody is stale and still costs standing context in
+  // every prompt. Matched only on that shape, since a blanket "not named by the map" would outlaw the one-off agent
+  // with inline prose. Longest role name first, so a role that prefixes another can't claim its file.
   const roleNames = Object.keys(RUNG_FILES).sort((a, b) => b.length - a.length);
   for (const e of agentFiles) {
     if (!e.endsWith('.md')) continue;
@@ -1291,8 +699,7 @@ function run(root) {
       if (!stem.startsWith(`${role}-`)) continue;
       const rung = stem.slice(role.length + 1);
       if (RUNG_ORDER.includes(rung) && rungFile(role, rung) !== stem) {
-        // The fix is always the same one: delete the file, or file it in the
-        // map. A file the map DOES name is not this arm's business.
+        // the fix is always the same: delete the file, or file it in the map
         problems.push({ kind: 'undeclared-rung-agent', file: `agents/${stem}.md`,
           detail: `lib/rung-agent.mjs files ${role}'s ${rung} rung as `
             + `agents/${rungFile(role, rung)}.md, so it maps no file to this one` });
@@ -1301,47 +708,24 @@ function run(root) {
     }
   }
 
-  // 8b. the shipped `model.effort.<role>` enums against RUNG_FILES, at the one
-  // rung vocabulary both halves of check 8 read. It used to be handed the
-  // deleted table's `rung_order` and carried a comment about not nesting under
-  // that table's guards; RUNG_ORDER is now stated beside the map it orders, so
-  // there is no second copy to be conditional on.
-  //
-  // Filed against config.schema.json, not the map: that is the file a
-  // maintainer edits to fix it.
+  // 8b. the shipped model.effort.<role> enums against RUNG_FILES, filed against the schema a maintainer edits
   for (const { code, detail } of effortEnumIssues(schema, RUNG_ORDER)) {
     problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
   }
 
-  // 18. the twelve `review.triggers.<t>.{gate,tier,effort}` rows as DEFAULTS:
-  // each one's `default` a member of its own `values`, and each one's `purpose`
-  // naming that default. It used to compare them against route-table.json's
-  // level-keyed grids and lived inside check 8's guard on that table parsing;
-  // the level is gone, the schema default IS the answer, and the lib reads
-  // nothing but the schema - so a schema-against-itself proof is conditional on
-  // nothing, which is what moving it out here bought before the file itself
-  // went. Filed against config.schema.json, the file a maintainer edits.
+  // 18. each review.triggers.<t> gate, tier and effort default is a member of its own values and named in its purpose
   for (const { code, detail } of gateAgreementIssues(schema)) {
     problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
   }
 
-  // 28. each key's `explain` entries against the key: a value it refuses, or a
-  // `values` member of a walk key left unexplained. Filed against the schema.
+  // 28. each key's explain entries against the key: a value it refuses, or a walk key's value left unexplained
   for (const { code, detail } of settingExplanationIssues(schema)) {
     problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
   }
 
-  // 9. the config-key reach table, against config.schema.json in both
-  // directions, plus the narrow-reach-must-be-stated rule. Root-relative like
-  // config.schema.json and weight-budgets.json, so a --root fixture can supply
-  // its own schema AND its own reach doc; an absent doc skips the check, and a
-  // full tree missing it is a missing-input like the other always-expected
-  // inputs. The read and the parse are guarded the way those two are: a
-  // malformed table is problems ON THE TABLE and the run continues, rather
-  // than unwinding run() into {ok:false,reason:"internal"} and discarding
-  // every problem found so far (the #49.1 collapse). The read failure itself
-  // pushes nothing - references/ is on the mdFiles walk, so the read-guard up
-  // there already named the file, the convention checks 3b and 5 follow.
+  // 9. the reach table against config.schema.json both ways, plus the narrow-reach-must-be-stated rule. Root-relative,
+  // so a fixture can supply its own doc, and a full tree missing it is a missing-input. Read and parse are guarded: a
+  // malformed table is problems on the table, not an unwind to internal that drops the rest (#49.1).
   const reachPath = join(root, REACH_DOC);
   if (existsSync(reachPath)) {
     let reachText = null;
@@ -1354,9 +738,7 @@ function run(root) {
         for (const { code, detail } of issues) {
           problems.push({ kind: code, file: REACH_DOC, detail });
         }
-        // `rows === null` means the section heading is absent, already one
-        // problem above - reporting every key missing on top of it would
-        // bury the one fault under copies of another.
+        // rows === null means the heading is missing, already one problem; every key reported absent would bury it
         if (rows) {
           for (const { code, detail } of reachIssues(schema, rows)) {
             problems.push({ kind: code, file: REACH_DOC, detail });
@@ -1372,14 +754,8 @@ function run(root) {
       detail: 'always-expected input absent' });
   }
 
-  // 17. the global-only key set against the schema's `src` marker, both ways
-  // (CFG-02). Reads the schema the run already loaded, so a --root fixture
-  // supplies its own - like check 8b, and OUTSIDE check 9's doc guards, because
-  // this proves the schema against a LIB and needs no reach table at all.
-  //
-  // Each direction is filed against the file a maintainer opens to fix it: an
-  // unmarked enforced key is a schema edit, and a marked key nothing enforces is
-  // a lib edit (or a marker to remove, which the detail names).
+  // 17. the global-only key set against the schema's src marker, both ways, each filed against the file a maintainer
+  // opens to fix it: an unmarked enforced key is a schema edit, a marked key nothing enforces is a lib edit.
   const GLOBAL_ONLY_FILE = {
     'missing-global-only-marker': join('cadence-core', 'config.schema.json'),
     'undeclared-global-only-key': join('cadence-core', 'bin', 'lib', 'global-only-keys.mjs'),
@@ -1388,13 +764,9 @@ function run(root) {
     problems.push({ kind: code, file: GLOBAL_ONLY_FILE[code], detail });
   }
 
-  // 12. mergeLayers callsites: bind the warnings[] or say in the file header
-  // why the envelope is the surfacing (lib/merge-warnings.mjs holds the rule
-  // and its accepted costs). This side decides only WHERE it applies - every
-  // .mjs the bin walk yields. The read is guarded like every other walk read
-  // (#49.1): an unreadable source file is one problem naming that file, never
-  // an unwound run() that discards every problem found so far. Unlike the prose
-  // walks there is no second reporter to defer to, so this one files it.
+  // 12. mergeLayers callsites bind the warnings[] or say in the file header why the envelope
+  // is the surfacing (lib/merge-warnings.mjs). An unreadable file is one problem naming it,
+  // never an unwind (#49.1), and no second reporter exists here to defer to.
   for (const { file, unreadable } of binFiles(root)) {
     const rel = relative(root, file);
     if (unreadable) {
@@ -1414,41 +786,21 @@ function run(root) {
     }
   }
 
-  // 13. deferred reads: every reference the register records as de-preloaded is
-  // still Read by name at the step that needs it. The rule, its register and
-  // the reason the unit is the SENTENCE live in lib/deferred-reads.mjs; this
-  // side only decides that it applies to the whole root.
+  // 13. every de-preloaded reference is still Read by name at the step that needs it (lib/deferred-reads.mjs)
   for (const issue of deferredReadIssues(root, deferredRows(problems))) problems.push(issue);
 
-  // 24. reference routers: a reference cold-split behind a router is still
-  // reachable from it, and the router grew no branch the register does not
-  // name. The rule, its hand-maintained register, the three arms and the
-  // fenced-block exclusion that keeps an in-command path argument from reading
-  // as a branch live in lib/reference-routers.mjs; this side only decides that
-  // it applies to the whole root.
+  // 24. a cold-split reference stays reachable from its router, which grew no unregistered branch
   for (const issue of referenceRouterIssues(root)) problems.push(issue);
 
-  // 14. every shipped seam is contracted. Check 2 skips any script with no
-  // CONTRACTS row (`if (!contract) continue`), which it must - prose names
-  // third-party scripts too. The cost is that DELETING a row silently opts
-  // that script out of the flag lint while self-verify stays ok:true, so the
-  // table's own completeness cannot be checked from the prose side. It is
-  // checked from the tree side instead: enumerate the top-level scripts and
-  // require a row for each.
-  //
-  // TOP-LEVEL only, deliberately non-recursive: `lib/*.mjs` are modules that
-  // prose never invokes, so a contract for them would describe nothing. This
-  // is the same subject as check 12 but a different set, which is why it does
-  // not reuse binFiles - that walker descends into lib/.
+  // 14. every shipped seam is contracted. Check 2 skips a script with no CONTRACTS row, since
+  // prose names third-party scripts too, so deleting a row silently opts that script out of
+  // the flag lint. Top-level only: lib/*.mjs are never invoked from prose.
   const binDir = join(root, 'cadence-core', 'bin');
   let binList = null;
   try {
     binList = readdirSync(binDir, { withFileTypes: true });
   } catch (e) {
-    // An ABSENT bin directory is a partial fixture, not a fault - the same
-    // call this check makes on a synthetic root that only carries prose. A
-    // directory that exists and cannot be READ is a fault, and reporting it
-    // is what stops an unreadable bin from vacuously satisfying the check.
+    // an absent bin directory is a partial fixture; one that exists and can't be read is a fault, not a pass
     if (e && e.code !== 'ENOENT') {
       problems.push({ kind: 'unreadable-surface', file: relative(root, binDir),
         detail: e.code || String(e) });
@@ -1463,18 +815,10 @@ function run(root) {
     }
   }
 
-  // 15. no literal U+0000 in any file under cadence-core/bin. A NUL makes GNU
-  // `grep -rn` treat the whole file as binary and print NOTHING for it without
-  // `-a`, and `rg` skip it silently - two NULs inside one template literal in
-  // lib/trace.mjs cost a debugging detour before anyone noticed the file was
-  // absent from every search. `git grep` does NOT catch it (its binary
-  // heuristic inspects only the head of the blob), so this is the check.
-  //
-  // The walk is `{ every: true }`: extension-blind and exclusion-free, because
-  // `grep` does not care that a file is a test or a JSON data file. Scoped to
-  // cadence-core/bin and nothing wider - .planning/_archive-v2.5.0/1/PLAN-2.md
-  // carries the same two bytes inside an immutable phase record, and a
-  // tree-wide guard would land red on a record no one may rewrite.
+  // 15. no literal U+0000 under cadence-core/bin. A NUL makes GNU grep -rn print nothing for the
+  // file without -a and rg skip it, so it drops out of every search, and git grep doesn't catch it.
+  // Extension-blind, since grep doesn't care that a file is a test, and scoped to bin because the
+  // phase records elsewhere carry the same bytes and nobody may rewrite them.
   for (const { file, unreadable } of binFiles(root, { every: true })) {
     const rel = relative(root, file);
     if (unreadable) {
@@ -1497,30 +841,16 @@ function run(root) {
       detail: `literal U+0000 at byte offset ${at} (${count} in file) - type \\0 instead` });
   }
 
-  // 16. include consumers: an `@`-included references/* or templates/* surface
-  // must be NAMED in the including command's own eager prose. The rule, the
-  // `workflows/*` branch exemption, the two scan-text exclusions that stop an
-  // include naming itself, and the waiver register - which ships EMPTY, with
-  // both of its bounds still wired - live in lib/include-consumers.mjs; this
-  // side only decides that it applies to the whole root.
+  // 16. an @-included references/templates surface must be named in the command's eager prose (include-consumers)
   for (const issue of includeConsumerIssues(root)) problems.push(issue);
 
-  // 22. refusal hints: a refusal a user can READ must name the next step. The
-  // population is the EMITTING call - `emit`, `out` or `fail` with an `ok:false`
-  // envelope - never a field named `reason`; the balanced-span scan that
-  // classifies those calls, the exclusion register and the one-line reason on
-  // every row of it live in lib/refusal-hints.mjs, and this side only decides
-  // that it applies to the whole root.
+  // 22. a refusal a user can read must name the next step; the scan and exclusion register are in lib/refusal-hints.mjs
   for (const issue of refusalHintIssues(root)) problems.push(issue);
 
-  // 25. hook events: every event name `hooks/hooks.json` registers has a
-  // register row. The register, the full-tree leniency and the one-issue
-  // handling of an unreadable or malformed file live in lib/hook-events.mjs,
-  // and this side only decides that it applies to the whole root.
+  // 25. every event hooks/hooks.json registers has a register row (lib/hook-events.mjs)
   for (const issue of hookEventIssues(root)) problems.push(issue);
 
-  // 26. directory limits: no shipped file but an image or font over 256 KiB,
-  // and 512 shipped files plus folders at most. Every root, fixture included.
+  // 26. no shipped file but an image or font over 256 KiB, and at most 512 files plus folders, every root included
   for (const issue of directoryLimitIssues(root)) problems.push(issue);
 
   return problems;
@@ -1528,31 +858,20 @@ function run(root) {
 
 // --- entry ---------------------------------------------------------------------
 
-// This file's own refusal vocabulary for an unusable flag value, which is
-// lib/seam-input.mjs's word (D-07: the contract mints none of its own - the
-// evaluator classifies and the CALLER names the refusal). Held as a const
-// rather than written inline at the throw because helper-census.test.mjs pins
-// that literal throw body to lib/seam-input.mjs, and a second spelling of it
-// here is exactly the copy the census exists to redden.
+// a const: helper-census.test.mjs pins that literal throw body to lib/seam-input.mjs, so a copy would redden it
 const MISSING_FLAG_VALUE = 'missing-flag-value';
 
 try {
   const argv = process.argv.slice(2);
-  // The tracer bullet for the whole contract: declaration -> evaluator -> CLI
-  // refusal -> envelope, and the first adopter is the file the table just left.
-  // The THROWING mechanism stays (D-08) because the catch arm below is already
-  // written for it; a genuinely ABSENT `--root` still resolves to the plugin's
-  // own tree, while the empty, valueless and flag-shaped spellings refuse -
-  // each of them used to return ok:true with problems:[] about a tree the
-  // caller never named.
+  // the tracer bullet for the whole contract: declaration -> evaluator -> CLI refusal -> envelope. The empty,
+  // valueless and flag-shaped spellings refuse where they used to return ok:true about a tree nobody named.
   const rooted = evaluateFlag(argv, '--root', CONTRACTS['self-verify.mjs']['*']['--root']);
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
   emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations', problems });
 } catch (e) {
-  // The seam arm lands WITH the throw above: a thrown seam object carries no
-  // `message`, so without it the refusal emits detail "[object Object]".
+  // a thrown seam object has no message, so without this arm the refusal's detail is "[object Object]"
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
     hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
