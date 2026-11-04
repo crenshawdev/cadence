@@ -1,7 +1,5 @@
 // @ts-check
-// planning/risk-carry.mjs - `risk-carry`: the risk_surface rulings out of the
-// phase directory a close is about to delete, so the land gate can still derive
-// its verdict from them.
+// planning/risk-carry.mjs - `risk-carry`: copies the risk_surface rulings out of a phase directory before the close deletes it, so the land gate can still derive its verdict
 'use strict';
 
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
@@ -9,59 +7,16 @@ import { join } from 'node:path';
 import { fail, ok, phaseSpellingCollision } from './core.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 
-// ---------------------------------------------------------------------------
-// risk-carry - every `risk_surface` REVIEW file and every adjudication record
-// beside it, copied OUT of `phases/<N>/` before `milestone-prune` removes that
-// directory, so `land-cleanup.mjs gate` still has rulings to read at close time
-// (LND-02, D-01).
-//
-// WHY A SEAM AND NOT A PROSE INSTRUCTION. Same argument
-// `planning/deferred-carry.mjs` makes about itself: this runs inside
-// `/cad-milestone`, which chains `/cad-land` after the prune with nobody
-// watching, and a prose step that half-ran there leaves the only thing that
-// can stop that land inside a directory `milestone-prune` is about to delete.
-//
-// A COPY AND NOT THE MOVE `deferred-carry.mjs` MAKES, and the difference is
-// load-bearing. The deferred queue's destination is committed and permanent, so
-// a copy there would leave one fire counted twice. THIS destination is
-// TRANSIENT - `/cad-milestone` deletes `risk-carry/` when the close resolves -
-// so a move would strip `_archive-<label>/<N>/` under `--mode archive` of the
-// very records that tier is supposed to keep, which is the tier
-// `lib/why-record.mjs` reads to answer `/cad-why`.
-//
-// SCOPED TO THE `risk_surface` TRIGGER, never every record in the directory. A
-// `plan` or `diff` record carried into this set would halt closes on findings
-// the land has never halted on - `/cad-land`'s own consumer globs name
-// `REVIEW-risk_surface*` and nothing else (land-cleanup.mjs's header).
-//
-// EVERY ROUND, never the highest alone (D-08). A re-arm is a SECOND fire on the
-// same discriminator and its record holds only what round two re-stated;
-// measured on `_archive-v3.7.3/1/`, 2 of that fire's 6 findings appear in round
-// one's record and nowhere else. Both stems carry the same `-r<n>` suffix rule,
-// so the prefix match below takes every round without knowing the rule.
-//
-// THE BASENAME IS PRESERVED, which is the whole join. The gate's caller pairs a
-// `REVIEW-risk_surface-<disc>[-r<n>].md` with the
-// `ADJUDICATION-risk_surface-<disc>[-r<n>].json` sitting beside it, and that
-// pairing is by NAME - a renamed carry would make every carried review read as
-// unruled and halt every close (D-03).
-//
-// EVERY PATH IS `lstat`ed AND MUST BE WHAT IT LOOKS LIKE, on BOTH sides. The
-// two calls this seam makes over a caller-supplied path - `readdirSync` on the
-// source and `copyFileSync` between them - FOLLOW a symlink, so a link on the
-// source side reads and copies whatever it points at (a credential file
-// outside the planning root included) and a link on the destination side is
-// left dangling by the prune however its target compares today. The rails
-// below are the same rail asked four times: two source components, two
-// destination components, then each entry on each side.
-//
-// THE PHASE STAYS A DIRECTORY LEVEL, for the reason the deferred carry keeps
-// one: two phases routinely fire the same trigger on the same `plan-<k>`
-// discriminator, so a flat carry would collide and the collision would be one
-// fire's rulings silently replacing another's.
-// ---------------------------------------------------------------------------
+// every risk_surface review file and adjudication record is copied out of `phases/<N>/` before milestone-prune removes it, so land-cleanup.mjs gate still has rulings to read at close time
+// a seam and not a prose step, same as deferred-carry: this runs inside /cad-milestone, which chains /cad-land after the prune with nobody watching, and a half-run prose step would strand the only thing that can stop that land in a directory about to be deleted
+// a copy and not deferred-carry's move: that destination is permanent so a copy there would count one fire twice, but this one is deleted when the close resolves, and a move would strip the archive tier of records it exists to keep for /cad-why
+// scoped to the risk_surface trigger and nothing else in the directory: a plan or diff record carried in would halt closes on findings the land never halted on
+// every round and never the highest alone: a re-arm is a second fire on the same discriminator and its record holds only what round two re-stated, so some findings exist in round one's record and nowhere else
+// the basename is preserved, which is the whole join: the gate's caller pairs a review with the adjudication beside it by name, and a renamed carry would read every review as unruled and halt every close
+// every path is lstat'ed and has to be what it looks like, on both sides: readdirSync and copyFileSync follow a symlink, so a link on the source side copies whatever it points at and a link on the destination side is left dangling by the prune. The checks below are that one rail asked four times
+// the phase stays a directory level, because two phases routinely fire the same trigger on the same plan discriminator and a flat carry would let one fire's rulings silently replace another's
 
-/** The two stems this carry moves, as `[prefix, extension]` pairs. */
+/** The two stems this carry takes, as `[prefix, extension]` pairs. */
 const CARRIED = Object.freeze([
   ['REVIEW-risk_surface', '.md'],
   ['ADJUDICATION-risk_surface', '.json'],
@@ -71,23 +26,16 @@ const CARRIED = Object.freeze([
 const isCarried = (name) =>
   CARRIED.some(([prefix, ext]) => name.startsWith(prefix) && name.endsWith(ext));
 
-/**
- * The `unlistable-phase` detail for a source path whose stat failed. It names
- * the planning-relative `label` and never says the path exists, because a
- * failed stat cannot know that.
- */
+/** The `unlistable-phase` detail for a source path whose stat failed. It never says the path exists, because a failed stat can't know that. */
 const unprovable = (label, n) =>
   `${label} could not be inspected (a directory on that path may not be searchable), so this`
   + ` carry cannot prove what phase ${n} has ruled`;
 
-/** The remedy for a source path that could not be stat'ed. Search (x) is the bit that's missing. */
+/** The remedy for a source path that couldn't be stat'ed; search (x) is the bit that's missing. */
 const UNSEARCHABLE_HINT = 'make every directory on that path readable and searchable (chmod u+rx),'
   + ' then re-run BEFORE milestone-prune, which deletes the phase directory - nothing was copied';
 
-/**
- * The `carry-dest-unsearchable` detail for a destination path whose stat
- * failed. Like `unprovable`, it never says the path exists or is missing.
- */
+/** The `carry-dest-unsearchable` detail for a destination path whose stat failed; like `unprovable`, it never says the path exists or is missing. */
 const undestinable = (label) =>
   `${label} could not be inspected (risk-carry/ or a directory under it may not be searchable),`
   + ' so this carry cannot tell what is already there';
@@ -104,10 +52,7 @@ function cmdRiskCarry(dir, opts) {
       'pass --phase <N> for the phase whose risk_surface rulings are being carried out, then'
       + ' re-run - this runs BEFORE milestone-prune, which deletes the directory they sit in');
   }
-  // The tree-aware collision check, right after the parse and BEFORE the
-  // destination rail below - the same order `deferred carry` takes, and for the
-  // same reason: a spelling that names one phase in the envelope and another on
-  // disk is refused before anything is written.
+  // the tree-aware collision check goes right after the parse and before the destination rail, same order as `deferred carry`: a spelling that names one phase in the envelope and another on disk is refused before anything is written
   const collision = phaseSpellingCollision(dir, parsed);
   if (collision) {
     return fail('bad-args', `risk-carry ${collision}`,
@@ -116,22 +61,14 @@ function cmdRiskCarry(dir, opts) {
   const n = parsed.raw;
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
 
-  // THE DESTINATION FIRST, before a single source file has been read. BOTH
-  // components, not the last one alone: `lstatSync` does not follow the FINAL
-  // path component and follows every one before it, so a check aimed at
-  // `risk-carry/<N>` answers "absent, go ahead" while `risk-carry/` is already a
-  // link out of the tree - and the `mkdirSync(recursive)` below then builds
-  // `<wherever>/<N>` and the copy fills it. Two levels down takes two checks.
+  // the destination first, before any source file is read, and both components and not the last alone: lstatSync doesn't follow the final component but follows every one before it, so a check on `risk-carry/<N>` says "absent, go ahead" while `risk-carry/` is already a link out of the tree, and the mkdir below builds there
   const carryRoot = join(dir, 'risk-carry');
   const dest = join(dir, 'risk-carry', n);
   for (const [path, label] of [[carryRoot, 'risk-carry/'], [dest, `risk-carry/${n}`]]) {
     let stat;
     try { stat = lstatSync(path, { throwIfNoEntry: false }); }
     catch {
-      // Not absence, for the reason the source side's catch gives (GH-302): a
-      // `risk-carry/` without its search bit cannot say whether `<N>` is there,
-      // and "absent, go ahead" would send the mkdir below into the same wall as
-      // a raw `internal`.
+      // not absence (GH-302): without its search bit `risk-carry/` can't say whether `<N>` is there, and "absent, go ahead" would send the mkdir below into the same wall as a raw `internal`
       return fail('carry-dest-unsearchable', undestinable(label), UNSEARCHABLE_DEST_HINT);
     }
     if (stat && !stat.isDirectory()) {
@@ -144,23 +81,14 @@ function cmdRiskCarry(dir, opts) {
     }
   }
 
-  // THE SOURCE SIDE, both components of it, for the reason the destination side
-  // gives: `readdirSync` follows every component it is handed, so a linked
-  // `phases/` or `phases/<N>` lists some other tree and this carry copies what
-  // it finds there in under THIS phase's name - and `existsSync` cannot tell
-  // the difference because it follows too.
+  // the source side gets both components too: readdirSync follows every component, so a linked `phases/` or `phases/<N>` lists some other tree and this copies what it finds there under this phase's name, and existsSync can't tell since it follows too
   const src = join(dir, 'phases', n);
   let phaseStat;
   for (const [path, label] of [[join(dir, 'phases'), 'phases/'], [src, `phases/${n}`]]) {
     let stat;
     try { stat = lstatSync(path, { throwIfNoEntry: false }); }
     catch {
-      // `throwIfNoEntry: false` already turns ENOENT into `undefined`, so a
-      // throw here is something else, most often a `phases/` without its search
-      // bit (GH-202). That is never absence. A `phases/` that cannot be searched
-      // cannot prove `phases/<N>` is missing, and a false "nothing to carry"
-      // lets `milestone-prune` delete rulings this carry never saw. Same rule
-      // `readQueue` in core.mjs applies to its homes.
+      // throwIfNoEntry already turns ENOENT into undefined, so a throw is something else, most often a `phases/` without its search bit (GH-202), and that's never absence: a false "nothing to carry" lets milestone-prune delete rulings this carry never saw. Same rule as readQueue in core.mjs
       return fail('unlistable-phase', unprovable(label, n), UNSEARCHABLE_HINT);
     }
     if (stat && !stat.isDirectory()) {
@@ -173,23 +101,15 @@ function cmdRiskCarry(dir, opts) {
     }
     phaseStat = stat; // the last pass is `src`
   }
-  // An absent phase directory is an ANSWER, not a refusal - `milestone-prune`
-  // already tolerates one as `dirs.missing`, and a close that ran this carry
-  // twice would otherwise fail the second time on a phase it already handled.
-  // ONLY ENOENT is absence: any other stat failure refused in the loop above,
-  // and this reuses that stat rather than asking again.
-  // `lstatSync` and not `existsSync`, so a DANGLING link at `phases/<N>` is the
-  // refusal above rather than a quiet "nothing to carry".
+  // an absent phase directory is an answer and not a refusal: milestone-prune tolerates one as `dirs.missing`, and a close that ran this carry twice would otherwise fail the second time. Only ENOENT is absence, since the loop above refused every other stat failure
+  // lstatSync and not existsSync, so a dangling link at `phases/<N>` is the refusal above and not a quiet "nothing to carry"
   if (!phaseStat) {
     return ok({ phase: n, carried: [], copied: 0, skipped: 0 });
   }
   let names;
   try { names = readdirSync(src).sort(); }
   catch {
-    // SHARPER than a reader's refusal, and for a sharper reason: this call is
-    // the last thing that runs before `milestone-prune` DELETES this directory.
-    // Carrying what could be listed and saying nothing about the rest would
-    // destroy exactly the rulings it could not see.
+    // sharper than a reader's refusal, because this is the last call before milestone-prune deletes the directory: carrying what could be listed and saying nothing about the rest would destroy exactly the rulings it couldn't see
     return fail('unlistable-phase',
       `phases/${n}/ exists under ${dir} and could not be listed, so this carry cannot prove what`
       + ` phase ${n} has ruled`,
@@ -199,33 +119,17 @@ function cmdRiskCarry(dir, opts) {
   const moving = names.filter(isCarried);
   if (!moving.length) return ok({ phase: n, carried: [], copied: 0, skipped: 0 });
 
-  // EVERY destination decided BEFORE the first write, so a collision refuses the
-  // whole carry rather than leaving half the fire at each home.
-  //
-  // Already-carried is SKIPPED and a differing one REFUSES. The two are not the
-  // same case: a close re-runs this carry after a partial one, and refusing on
-  // a byte-identical file it wrote itself would make the second run a refusal
-  // storm with no remedy. A destination holding DIFFERENT bytes under the same
-  // name is another fire's rulings, or a hand edit, and this seam never
-  // overwrites either.
+  // every destination is decided before the first write, so a collision refuses the whole carry and doesn't leave half a fire at each home
+  // already-carried is skipped and a differing one refuses: a close re-runs this after a partial carry, so refusing on a byte-identical file it wrote itself would be a refusal storm with no remedy. Different bytes under the same name are another fire's rulings or a hand edit, and this never overwrites either
   const copying = [];
   const skipped = [];
   for (const name of moving) {
-    // THE SOURCE ENTRY FIRST, before this name is read or compared or copied.
-    // `copyFileSync` FOLLOWS, which is the thing the destination rail above
-    // already says about itself: a link planted in `phases/<N>/` under a
-    // carried name copies whatever it points at into a directory the close
-    // reads and `--mode archive` keeps. Refused for the WHOLE carry rather
-    // than skipped, for the reason `unlistable-phase` gives - this runs last
-    // before the prune deletes the directory, so passing over what could not
-    // be proved a ruling destroys exactly the rulings it passed over.
+    // the source entry first, before the name is read, compared or copied: copyFileSync follows, so a link planted under a carried name would copy whatever it points at into a directory the close reads and `--mode archive` keeps. It refuses the whole carry and doesn't skip, since passing over what couldn't be proved a ruling destroys it when the prune runs
     const from = join(src, name);
     let srcStat;
     try { srcStat = lstatSync(from, { throwIfNoEntry: false }); }
     catch {
-      // A `phases/<N>` that lists but can't be searched (0o444, GH-202). This
-      // refuses the whole carry too, never skips the entry, for the reason
-      // above: the prune runs next and deletes whatever could not be read.
+      // a `phases/<N>` that lists but can't be searched (0o444, GH-202); this refuses the whole carry too, for the reason above
       return fail('unlistable-phase', unprovable(`phases/${n}/${name}`, n), UNSEARCHABLE_HINT);
     }
     if (!srcStat || !srcStat.isFile()) {
@@ -236,11 +140,7 @@ function cmdRiskCarry(dir, opts) {
         're-run BEFORE milestone-prune, which deletes that directory - nothing was copied, and a'
         + ' carried ruling is only ever a file the phase it names wrote');
     }
-    // EVERY SOURCE IS READ HERE, the ones about to be copied as well as the ones
-    // about to be compared, so an unreadable ruling refuses BEFORE the mkdir
-    // below mints a destination (GH-302). Left to `copyFileSync`, it threw raw
-    // after `risk-carry/<N>/` already existed; left to the comparison, it read
-    // as "differs" when nothing was compared at all.
+    // every source is read here, the ones to copy as well as the ones to compare, so an unreadable ruling refuses before the mkdir below mints a destination (GH-302); left to copyFileSync it threw raw after `risk-carry/<N>/` existed, and left to the comparison it read as "differs"
     let fromBytes;
     try { fromBytes = readFileSync(from); }
     catch {
@@ -257,14 +157,7 @@ function cmdRiskCarry(dir, opts) {
         UNSEARCHABLE_DEST_HINT);
     }
     if (!destStat) { copying.push(name); continue; }
-    // A REGULAR FILE OR NOTHING, asked HERE rather than left to the comparison
-    // below - the two-level rail above is the same rail, and this is it
-    // reaching the individual entries. `lstatSync` answers "something is here"
-    // for a symlink, but the comparison is a `readFileSync` and `readFileSync`
-    // FOLLOWS: a link pointed back at `phases/<N>/<name>` compares
-    // byte-identical to its own target and would be marked `skipped`, and then
-    // `milestone-prune` deletes that target and the carried ruling is a
-    // dangling link the gate cannot read at the moment it has to decide.
+    // a regular file or nothing, asked here and not left to the comparison: lstatSync answers "something is here" for a symlink, but the comparison is a readFileSync, which follows, so a link pointed back at `phases/<N>/<name>` would compare byte-identical to its own target and be skipped, and then the prune deletes the target and leaves the gate a dangling link at the moment it has to decide
     if (!destStat.isFile()) {
       return fail('carry-dest-unusable',
         `risk-carry/${n}/${name} exists and is not a regular file`
@@ -273,9 +166,7 @@ function cmdRiskCarry(dir, opts) {
         'clear that path and re-run BEFORE milestone-prune - nothing has been copied yet, and the'
         + ' rulings are still in the phase directory the prune deletes');
     }
-    // A carried copy that cannot be read is NOT a copy that differs (GH-302):
-    // `carry-exists` there would send the user to delete a file that may be
-    // byte-identical, on a comparison that never ran.
+    // a carried copy that can't be read isn't one that differs (GH-302): `carry-exists` would send the user to delete a file that may be byte-identical, on a comparison that never ran
     let toBytes;
     try { toBytes = readFileSync(to); }
     catch {
@@ -293,16 +184,8 @@ function cmdRiskCarry(dir, opts) {
       + ' record of what was ruled, and the gate reads it at close time');
   }
 
-  // A plain copy loop, the shape `deferred carry` uses for its rename loop, and
-  // no staging directory in front of it. A partial carry here SELF-HEALS on the
-  // next run, which is what the skip-identical rule above buys: what already
-  // arrived is skipped and the rest is copied. Staging would put a transient
-  // directory inside the very destination the gate's caller globs, to protect
-  // against a case a re-run already fixes.
-  //
-  // A WRITE THAT FAILS is named, never `internal` (GH-302): a `risk-carry/`
-  // without its write bit stats fine and then refuses the mkdir. What already
-  // arrived is listed, because the re-run the hint asks for skips it.
+  // a plain copy loop like deferred carry's rename loop, with no staging directory: a partial carry self-heals on the next run because identical files are skipped, and staging would put a transient directory inside the very destination the gate's caller globs
+  // a write that fails is named and never `internal` (GH-302): a `risk-carry/` without its write bit stats fine and then refuses the mkdir. What already arrived is listed, because the re-run the hint asks for skips it
   const done = [];
   let at = `risk-carry/${n}/`;
   try {
