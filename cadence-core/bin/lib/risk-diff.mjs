@@ -1,56 +1,14 @@
 // @ts-check
-// risk-diff.mjs - the ONE statement of whether a set of files touched one of the
-// risk-surface categories, in two faces over ONE signal table: `scanDiff` reads
-// a committed RANGE, for planning.mjs's `risk-check` subcommand (which reads the
-// range out of git and hands the body here), and `scanDeclared` reads a DECLARED
-// FILE SET, for route.mjs's plan-time risk floor (CER-01), where no diff exists
-// yet. Two faces and not two files because the signals and their ORDER are the
-// thing that must not drift: a floor that raised on evidence the commit-time
-// gate would not fire on is two detectors wearing one name.
+// whether a set of files touched a risk-surface category, in two faces over one signal table
 //
-// THE SPLIT, because two files now carry the word "surface" (RSK-01).
-// lib/surface-scan.mjs answers which categories a project SCOPES - a one-time
-// question about a tree's STRUCTURE, whose answer the user persists in
-// `review.triggers.risk_surface.surfaces`. This file answers whether a given
-// RANGE touched one of them, every time a plan completes. The first is a
-// scoping aid and returns all eight unconditionally; the second is the
-// detection the blocking `risk_surface` gate fires on, and it can and does
-// return nothing.
-//
-// WHAT IT EXISTS TO FIX. Detection used to be `workflows/execute.md` telling a
-// model to check a diff against a prose list. A fire wrote a lifecycle event
-// and a non-match wrote nothing, so the run record could not tell "the step was
-// skipped" from "it ran and matched nothing". Heuristic detection stays
-// heuristic - that is not what changed. What changed is that the answer is now
-// computed by something that always returns one, so "did not run" stops
-// masquerading as "ran clean".
-//
-// SILENCE IS NEVER A CLEARED RANGE, the same rule lib/surface-scan.mjs states
-// for structure. A range this cannot judge - a file git rendered as binary, a
-// body with no readable hunk, a GITLINK section whose hunk carries a submodule
-// commit id where the code would be - is `inconclusive: true`, never collapsed into
-// `matches: []`, and `inconclusive` is INDEPENDENT of `matches` so a partly
-// unreadable range that also matched reports both. The caller fires on either,
-// because widening is the only safe direction on the one gate whose schema
-// default is `blocking`.
-//
-// AND WHAT IT MAY NOT READ. Never a category-NAME keyword grep. That pass was
-// measured on this repo on 2026-08-13 and false-positived `auth` on sixteen
-// `session` matches, every one of them a Claude session, and `billing` on prose
-// about token cost (lib/surface-scan.mjs's header holds the same rule and the
-// same evidence). Its signals are the changed PATHS - whole segments, base
-// names and extensions, never substrings, so `src/auth` is not matched by
-// `src/authority.rs` - and ANCHORED patterns over the ADDED and REMOVED lines
-// only. Context lines are not an input: they are the code the range did not
-// touch, and matching them would fire on every neighbour of every edit.
-//
-// The category VOCABULARY arrives from the caller, the way lib/gate-agreement's
-// gate and level names do, so this file never becomes a second statement of the
-// eight tokens; `CATEGORIES` in lib/surface-scan.mjs is the lib-side statement
-// and the caller passes it (narrowed to the project's resolved set).
-//
-// Pure lib: no fs, no emit, no process, no Date, no randomness. The caller
-// reads the range; this side owns the map from what was read to what it means.
+// `scanDiff` reads a committed range for `risk-check`; `scanDeclared` reads a declared file set for the plan-time risk floor, where no diff exists yet. One table and one ordering, or the floor raises on evidence the commit-time gate wouldn't fire on
+// surface-scan answers which categories a project scopes, once, from structure, and returns all eight. This answers whether a range touched one, every time a plan completes, and it can return nothing
+// it exists because detection used to be a prose list a model checked, so "the step was skipped" and "it ran and matched nothing" looked the same on the run record
+// silence is never a cleared range: a binary file, a body with no hunk or a submodule bump is `inconclusive`, independent of `matches`, and the caller fires on either because the gate defaults to blocking
+// signals are changed paths (whole segments, base names, extensions, never substrings) and anchored patterns over added and removed lines only; context lines are code the range didn't touch
+// no category-name keyword grep: it false-positived `auth` on every Claude session
+// the category vocabulary comes from the caller, so this file never becomes a second statement of the eight tokens
+// pure: the caller reads the range
 'use strict';
 
 /** @param {any} v @returns {string[]} */
@@ -59,13 +17,10 @@ const strs = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' &&
 const low = (s) => s.toLowerCase();
 
 /**
- * Whole path SEGMENTS that evidence a category, lowercased. Conservative on
- * purpose and deliberately close to lib/surface-scan.mjs's `DIR_SIGNALS`: a
- * name here has to mean the category on nearly every project that uses it, so
- * generic containers (`lib`, `src`, `tasks`, `public`) are absent even though
- * some projects do put the surface there. A miss costs nothing but a narrower
- * reason - the content patterns below still see the same lines - while a false
- * hit costs a blocking panel on a non-risk.
+ * Whole path segments that evidence a category, lowercased. Close to
+ * surface-scan's directory list on purpose, and just as conservative: a miss
+ * only narrows the reason because the content patterns still see the lines,
+ * while a false hit costs a blocking panel on a non-risk.
  */
 const SEGMENT_SIGNALS = Object.freeze({
   auth: ['auth', 'authn', 'authz', 'oauth', 'identity', 'login', 'session'],
@@ -77,9 +32,8 @@ const SEGMENT_SIGNALS = Object.freeze({
 });
 
 /**
- * File BASE names that evidence a category, lowercased and matched whole. A
- * dotfile is its own base name, so `.env` is listed here rather than as an
- * extension.
+ * File base names that evidence a category, lowercased and matched whole. A
+ * dotfile is its own base name, so `.env` is listed here and not as an extension.
  */
 const FILE_SIGNALS = Object.freeze({
   secrets: ['.env', '.env.local', '.env.production', 'id_rsa', 'id_ed25519'],
@@ -95,31 +49,16 @@ const EXT_SIGNALS = Object.freeze({
 });
 
 /**
- * ANCHORED patterns over the added and removed lines, each with the label the
- * `signal` string quotes. Anchored means the pattern names a CONSTRUCT - a
- * statement, a call, an assignment shape - never a bare category word: a
- * `\bauth\b` here would be exactly the keyword pass this design refuses.
+ * Anchored patterns over the added and removed lines, each with the label the
+ * `signal` string quotes. Anchored means a construct, never a bare category word.
  *
- * Non-global regexes on purpose: a `/g` literal carries `lastIndex` between
- * calls, so the second line tested against one starts mid-string and the third
- * silently misses.
+ * Not global: a `/g` literal keeps `lastIndex` between calls and misses the third line.
  *
- * AND WHY SO MANY ALTERNATIVES OPEN WITH A ONE-CHARACTER CLASS, and why some
- * labels are two string literals joined: this file is scanned BY these patterns
- * whenever a range that edits it reaches the `risk_surface` gate, and a pattern
- * written plainly matches its own source. Ten lines here did until v3.5.5 - a
- * whole-file add of this file evidenced six of the eight categories, every one
- * of them from the table below rather than from anything the file does - and
- * that gate defaults to `blocking`, so a phase editing the
- * detector spent its one re-arm on a self-match. `[x]yz` matches the same
- * language as `xyz` while the source text no longer carries the literal, and
- * `'ab' + 'cd'` is the same label bytes: REACH is unchanged and no emitted
- * `signal` string moves, which is the whole constraint. Keep the device when
- * you add an alternative or a label that would otherwise sit here plainly;
- * bin/risk-diff.test.mjs's census row fails when one does. The fix is at the
- * MENTION, never a path or filename exemption for this file - that is the rule
- * lib/merge-warnings.mjs states for a lexical rule that reported itself, and a
- * name-keyed detector is the one README.md deleted in v2.7.0.
+ * The one-character classes and split labels keep these patterns from matching
+ * this file's own source, which a plain pattern did until v3.5.5 and spent the
+ * blocking gate's re-arm on. Keep the device when adding an alternative; the
+ * test's census row fails when one is missing. Fix the mention, never exempt
+ * this file by name.
  */
 const CONTENT_SIGNALS = Object.freeze({
   auth: [
@@ -178,8 +117,7 @@ function segmentsOf(/** @type {string} */ path) {
   const base = parts[parts.length - 1];
   if (base) {
     const dot = base.lastIndexOf('.');
-    // `dot > 0`, never `>= 0`: a dotfile's leading dot is part of its NAME
-    // (`.env`), and stripping it would compare `env` as though it were a stem.
+    // `dot > 0`: a dotfile's leading dot is part of its name, and stripping it would compare `env` as a stem
     if (dot > 0) out.add(base.slice(0, dot));
   }
   return out;
@@ -207,28 +145,18 @@ function pathSets(/** @type {string[]} */ paths) {
 }
 
 /**
- * The first signal that evidences `category`, or null - THE one ordering, for
- * both faces. Path evidence before content evidence, and within the paths
- * segment before base name before extension: a `signal` string is what a fire
- * site quotes as its reason, so the order decides which of several true
- * sentences the user is shown, and two copies of it would answer the same
- * question in two wordings.
+ * The first signal that evidences `category`, or null, in the one ordering both
+ * faces share: path evidence before content, and segment before base name
+ * before extension. A `signal` string is the reason a fire site quotes, so the
+ * order decides which true sentence the user sees.
  *
- * `lines` is the text this may read: the ADDED and REMOVED lines for
- * `scanDiff`, the declared files' body lines for `scanDeclared`. Neither face
- * passes context lines - `scanDiff` because they are the code the range did not
- * touch, `scanDeclared` because it has no diff to draw a distinction in.
+ * `lines` is what this may read: the added and removed lines for `scanDiff`,
+ * the declared files' body lines for `scanDeclared`. Neither passes context.
  *
- * `contentPrefix` is the ONE thing the two faces spell differently, and it is
- * passed in rather than forked into a second table because the ORDER above is
- * what must not drift - a second copy of this walk is how the two faces would
- * come to answer the same question in two wordings. `scanDiff` read a range and
- * says `changed line`; `scanDeclared` read a whole current body at a moment when
- * no diff exists and nothing changed, so it says `body line`. The LABEL bytes
- * after the prefix are identical on both faces on purpose: a reader comparing a
- * plan-time reason with a commit-time `risk_surface` finding has to see the same
- * construct named the same way, or the floor looks like a different detector.
- * The PATH signal strings are face-neutral already and carry no prefix at all.
+ * `contentPrefix` is the one thing the faces spell differently, `changed line`
+ * for a range and `body line` for a current body with no diff. The label after
+ * it is identical so a plan-time reason and a commit-time finding name the same
+ * construct the same way.
  * @param {string} category
  * @param {{segments: Set<string>, bases: Set<string>, exts: Set<string>}} sets
  * @param {string[]} lines
@@ -252,24 +180,19 @@ function signalIn(category, sets, lines, contentPrefix) {
 }
 
 /**
- * A GITLINK section: a submodule pointer moving. Two markers, because git
- * spells the same change either way depending on which lines the range
- * produced - the `160000` mode on the `index`/`new file`/`deleted file` line,
- * and the `Subproject commit <id>` lines the hunk carries INSTEAD of code.
- * (A third spelling, `diff.submodule=log`'s `Submodule <path> aaa..bbb:`
- * stanza, emits no `@@` at all and already lands in `unreadable` through the
- * no-hunk arm below.)
+ * A GITLINK section: a submodule pointer moving. Git spells it two ways, the
+ * `160000` mode on a header line, or `Subproject commit <id>` lines in place of
+ * code. The `submodule=log` spelling has no hunk and lands in `unreadable`
+ * through the no-hunk arm.
  */
 const GITLINK_MODE = /^(?:index [0-9a-f]+\.\.[0-9a-f]+ 160000|(?:new file|deleted file|old|new) mode 160000)$/;
 const GITLINK_LINE = /^Subproject commit [0-9a-f]{7,64}(?:-dirty)?$/;
 
 /**
- * The parts of a unified diff this reads: which paths changed, which lines the
- * range ADDED or REMOVED, and whether anything in it could not be read.
- *
- * `unreadable` is the honest half. A `Binary files ... differ` stanza, a file
- * section carrying no hunk at all, and a GITLINK section are all change this
- * cannot judge, and saying so is the whole point of the seam.
+ * The paths that changed, the lines the range added or removed, and whether
+ * anything in it couldn't be read. `unreadable` is the honest half: binary
+ * stanzas, sections with no hunk and GITLINK sections are change this can't
+ * judge, and saying so is the point.
  * @param {string} body
  */
 function parseDiff(body) {
@@ -283,10 +206,9 @@ function parseDiff(body) {
   let sectionRead = true;
   let inSection = false;
   /**
-   * Inside a hunk, `--- x` and `+++ x` are a REMOVED and an ADDED line whose
-   * own text begins with two dashes or pluses, not file headers: the headers
-   * always precede the first `@@` of their section. Without this a removed
-   * markdown rule reads as a path and leaves the range's real content unread.
+   * Inside a hunk, `--- x` and `+++ x` are removed and added lines, not file
+   * headers, which always come before the first `@@`. Otherwise a removed
+   * markdown rule reads as a path.
    */
   let inHunk = false;
 
@@ -299,8 +221,7 @@ function parseDiff(body) {
     const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
     const header = /^diff --git a\/(.*) b\/(.*)$/.exec(line);
     if (header) {
-      // A previous section that never showed a hunk or a binary stanza is a
-      // rename, a mode change or a truncated body - real change, unjudged.
+      // a section that never showed a hunk is a rename, a mode change or a truncated body: real change, unjudged
       if (inSection && !sectionRead) unreadable = true;
       inSection = true;
       sectionRead = false;
@@ -315,79 +236,48 @@ function parseDiff(body) {
       sectionRead = true;
       continue;
     }
-    // A GITLINK section is UNREADABLE even though git emitted a hunk for it.
-    // The `@@` sets `sectionRead` and the hunk then carries commit ids where
-    // the code would be: every line of what the submodule actually changed
-    // lives in another repository this never opened. Left alone, a range whose
-    // only change was `vendor/sdk` bumping read `matches: []` with
-    // `inconclusive: false` - a judged-clean verdict over code the scanner
-    // never saw, which is the one collapse this seam exists to refuse.
+    // a gitlink section is unreadable even though git emits a hunk for it: the hunk is commit ids, and a bumped submodule would otherwise read as judged clean over code this never opened
     if (!inHunk && GITLINK_MODE.test(line)) { unreadable = true; continue; }
     if (!inHunk && line.startsWith('--- ')) { addPath(line.slice(4).replace(/^a\//, '')); continue; }
     if (!inHunk && line.startsWith('+++ ')) { addPath(line.slice(4).replace(/^b\//, '')); continue; }
-    // Content. `+++`/`---` are consumed above, so a bare `+`/`-` here is a
-    // changed line; a leading space is CONTEXT and is deliberately dropped.
+    // `+++`/`---` were consumed above, so a bare `+` or `-` is a changed line; a leading space is context and dropped
     if (line.startsWith('+') || line.startsWith('-')) {
       const content = line.slice(1);
-      // The gitlink's own pointer line. Marked unread and kept OUT of
-      // `changed`: it is a commit id, not code, and feeding a bare hex string
-      // to the content patterns can only ever produce a reason that is not
-      // true. The PATH still reaches the path signals, so a bumped
-      // `vendor/auth-sdk` still names its category - with `inconclusive` beside
-      // it, since the match is all this could see.
+      // the pointer line is a commit id, not code, so keep it out of `changed`; the path still reaches the path signals
       if (GITLINK_LINE.test(content)) { unreadable = true; continue; }
       changed.push(content);
     }
   }
   if (inSection && !sectionRead) unreadable = true;
-  // No hunk anywhere in a body that had bytes: an unparseable body, a
-  // rename-only range, or a read that stopped short. Reported, never cleared.
+  // no hunk anywhere in a body that had bytes: unparseable, rename-only or a short read, reported and never cleared
   if (hunks === 0) unreadable = true;
   return { paths: [...paths], changed, unreadable };
 }
 
 /**
- * What a committed RANGE touched.
+ * What a committed range touched.
  *
- * @param {any} body the unified-diff body the caller read out of git. Trusted
- *   for nothing: a null, a scalar or an unparseable body reports rather than
- *   throws.
- * @param {any} categories the category vocabulary, from the CALLER - normally
- *   `CATEGORIES` from lib/surface-scan.mjs, narrowed to the project's resolved
- *   `review.triggers.risk_surface.surfaces` set. A category not in this list is
- *   not looked for and is not reported.
+ * @param {any} body the unified-diff body read out of git. Trusted for nothing:
+ *   a null, a scalar or an unparseable body reports rather than throws.
+ * @param {any} categories the category vocabulary from the caller, normally
+ *   `CATEGORIES` narrowed to the project's resolved set. A category not in the
+ *   list is not looked for and is not reported.
  * @returns {{checked: boolean, categories: string[],
  *   matches: Array<{category: string, signal: string}>, inconclusive: boolean,
  *   empty: boolean}}
- *   `checked` is FALSE only when there was no diff body to read at all, and
- *   `checked: false` implies `inconclusive: true`. `empty` is TRUE only on the
- *   opposite arm: a body that WAS read and held nothing. Each `matches` entry
- *   names the category and the ONE signal that found it first, the shape
- *   `scanTree`'s `evidenced` uses, so a fire site can state a reason instead of
- *   a bare verdict.
+ *   `checked` is false only when there was no diff body to read, and implies
+ *   `inconclusive: true`. `empty` is true only for a body that was read and held
+ *   nothing. Each match names the category and the first signal that found it.
  */
 export function scanDiff(body, categories) {
   const wanted = strs(categories);
 
-  // TWO STATES THIS USED TO COLLAPSE INTO ONE ANSWER (#140, D-01). A non-string
-  // body was coerced to `''` and then took the same arm as a zero-byte diff, so
-  // "git handed back nothing to read" and "git read the range and it was empty"
-  // were byte-identical records: `checked: false, inconclusive: true`. The
-  // second is a COMPLETED check that matched nothing, and reporting it as
-  // unchecked deadlocked the blocking `risk_surface` gate - `risk-check status`
-  // filters on `checked` before its fire predicate is ever consulted, so an
-  // empty committed range refused `risk-record-missing` and no re-run could
-  // clear it, because re-running wrote the same record again.
-  //
-  // A non-string body is what `cmdRiskCheckRun` leaves when `resolveRange`
-  // refused or the `git diff` threw. It keeps today's answer.
+  // "git gave us nothing" and "git read the range and it was empty" used to look the same, and the empty one deadlocked the blocking gate: `risk-check status` filters on `checked` first, so no re-run could clear it
+  // a non-string body is what `cmdRiskCheckRun` leaves when `resolveRange` refused or the diff threw, and it keeps the unchecked answer
   if (typeof body !== 'string') {
     return { checked: false, categories: wanted, matches: [], inconclusive: true, empty: false };
   }
-  // EMPTY IS DECIDED FROM THE BODY, never from the resolved ids being equal
-  // (D-01): a revert pair has `base_id !== head_id` and a zero net diff, and an
-  // id compare would leave that shape deadlocked exactly as before. `checked`
-  // is the load-bearing half of the answer and `inconclusive: false` is not.
+  // decide empty from the body, not from equal ids: a revert pair has different ids and a zero net diff
   if (!body.trim()) {
     return { checked: true, categories: wanted, matches: [], inconclusive: false, empty: true };
   }
@@ -398,39 +288,25 @@ export function scanDiff(body, categories) {
   /** @type {Array<{category: string, signal: string}>} */
   const matches = [];
   for (const category of wanted) {
-    // `changed line`: this face read a RANGE, and the lines it matched are lines
-    // the range added or removed.
+    // `changed line`, since this face read a range
     const signal = signalIn(category, sets, changed, 'changed line');
     if (signal) matches.push({ category, signal });
   }
 
-  // INDEPENDENT of `matches`, deliberately: a range that is partly binary and
-  // partly a matched secrets change reports both, because collapsing either
-  // into the other loses the half the caller has to act on.
-  // `empty: false` on the scanned arm too, so the field is on EVERY return and
-  // its ABSENCE marks a record written before this seam split the two states,
-  // rather than a fresh honest `false` (D-03).
+  // independent of `matches`: a range partly binary and partly a matched change must report both
+  // `empty: false` on this arm too, so a record without the field marks one written before the split
   return { checked: true, categories: wanted, matches, inconclusive: unreadable, empty: false };
 }
 
 /**
- * The two files that ARE the signal table, exempt from `scanDeclared`'s
- * whole-body content pass (D-01). A whole-body scan of a signal table matches
- * its own patterns by construction - that is self-reference, not evidence about
- * the change - and this file's own header records the measured cost of the
- * confusion: a whole-file add of it evidenced six of the eight categories, every
- * one of them from the table rather than from anything the file does.
+ * The two files that are the signal table, exempt from `scanDeclared`'s
+ * whole-body content pass because a whole-body scan of a table matches its own
+ * patterns, which is self-reference and not evidence about the change.
  *
- * SCOPED TO THIS FACE, and deliberately not to `scanDiff`. That face reads a
- * HUNK - the lines a range actually added or removed - so a self-match there is
- * a real edit to a real pattern, and its header's rule holds unedited: the fix
- * is at the MENTION, never a path or filename exemption. Here the input is the
- * file's ENTIRE current body, most of which the plan does not touch, so the
- * mention rule has nothing to bite on.
- *
- * Matched as a path SUFFIX so a checkout nested under another tree keeps the
- * exemption, and never as a bare base name, which would exempt any file a
- * project happened to call `risk-diff.mjs`.
+ * Only this face: `scanDiff` reads a hunk, where a self-match is a real edit to
+ * a real pattern and the fix is at the mention, never an exemption. Matched as
+ * a path suffix so a nested checkout keeps it, and never as a bare base name,
+ * which would exempt any file a project called `risk-diff.mjs`.
  */
 const SIGNAL_TABLE_FILES = Object.freeze([
   'cadence-core/bin/lib/risk-diff.mjs',
@@ -444,29 +320,14 @@ function isSignalTable(/** @type {string} */ path) {
 }
 
 /**
- * Final extensions that name a DOCUMENT, whose body `scanDeclared` skips the
- * same way it skips a signal table's. A document cannot execute the call it
- * prints and a fenced example is a quotation, not a call site, so a whole-body
- * content pass over prose evidences what the prose DESCRIBES rather than what
- * the declared change does. Measured on this repository's 30 phase directories:
- * `METHOD.md` alone raised five phases on a recursive-delete line it documents
- * and references/review-triggers.md raised five more, and dropping the thirteen
- * documentation evidences took the raising phases from 29 of 30 to 27 - every
- * phase that lost one had no other evidence at all.
+ * Extensions that name a document, whose body `scanDeclared` skips. A document
+ * can't execute the call it prints, so a whole-body pass over prose evidences
+ * what the prose describes.
  *
- * A file with NO extension is deliberately not a document: that fails toward
- * raising, which is the safe direction, and a `Makefile` or a shebang script is
- * exactly the shape that would otherwise be exempted by accident.
- *
- * The PATH signals still run over a document's path, so `docs/auth/session.md`
- * evidences `auth` by segment and a declaration is never ignored - the body is
- * what is skipped, not the file.
- *
- * SCOPED TO THIS FACE, on the same reasoning the signal-table exemption above
- * states and for the same reason `scanDiff` is left out of it: that face reads a
- * HUNK, so a line ADDED to a document is a change someone actually made in this
- * range and its header's rule - fix at the MENTION, never a path or filename
- * exemption - stays in force unedited.
+ * No extension means not a document: that fails toward raising, and a Makefile
+ * or a shebang script would otherwise be exempted by accident. The path signals
+ * still run, so `docs/auth/session.md` evidences `auth`; only the body is
+ * skipped. Only this face, for the same reason as the table exemption.
  */
 const DOCUMENT_EXTS = Object.freeze(['.md', '.markdown', '.mdx', '.txt', '.rst', '.adoc']);
 
@@ -476,81 +337,48 @@ function isDocument(/** @type {string} */ path) {
 }
 
 /**
- * THE LINE KINDS `scanDeclared` WITHHOLDS from its content pass (RSK-05, D-03),
- * the third exemption on this face and the first that is about a LINE rather
- * than a file. A declared file's body is mostly lines the plan will never
- * touch, and two kinds of them name a construct without doing it: an IMPORT
- * statement, which brings a name into scope, and a CONSTANT DECLARATION whose
- * initializer is a literal, which binds a value. Measured on this repository
- * 2026-08-26: four of the raises on the archived phase set rest on exactly
- * those - an `fs` teardown import in a test file, and three SCREAMING_SNAKE
- * constants whose NAME carries a credential word - so the floor was raising on
- * the vocabulary a file happens to mention rather than on anything it does.
+ * The line kinds `scanDeclared` withholds from its content pass: an import,
+ * which brings a name into scope, and a constant bound to a literal. Both name
+ * a construct without doing it, and four raises on this repo's phases rested on
+ * exactly those.
  *
- * A LINE THAT CALLS SOMETHING IS STILL EVIDENCE, and that is the whole boundary.
- * Every pattern below is anchored at line START, on the rule this file's header
- * states, and every one of them must reach the END of the line: a line that
- * both declares and calls - an import followed by a call to what it imported -
- * is NOT withheld, because withholding it would drop a genuine call site and buy
- * the discount by weakening the floor. The literal restriction on the constant
- * arm is the same argument: a `const` bound to a JSON parse of a file read is
- * syntactically a constant declaration and is a real untrusted-input call site,
- * so exempting every `const` would make the floor fire or not on assignment
- * style. A dynamic `import` CALL is code, not an import statement, and is
- * excluded here for the same reason.
- *
- * SCOPED TO THIS FACE, like the two exemptions above and for their reason:
- * `scanDiff` reads a HUNK, where an import someone actually added is a change
- * in the range, and its header's fix-at-the-MENTION rule stays in force
- * unedited. Nothing here reaches `CONTENT_SIGNALS`, which the `blocking`
- * commit-time gate shares by construction (D-02).
+ * A line that calls something is still evidence. Every pattern is anchored at
+ * line start and must reach the end of the line, so an import followed by a
+ * call isn't withheld, and a constant bound to a parse of a file read isn't
+ * either; exempting every `const` would make the floor depend on assignment
+ * style. A dynamic `import` call is code. Only this face, and nothing here
+ * reaches the table the commit-time gate shares.
  */
 const IMPORT_LINE_KINDS = Object.freeze([
-  // ES modules, Java, Python `import x`. The negative lookahead is the dynamic
-  // `import` call, which is an expression and stays code.
+  // ES modules, Java, Python `import x`; the lookahead leaves a dynamic import call as code
   /^\s*import\s+(?!\()[^;]*;?\s*$/,
-  // Python `from x import y`. This arm and the two below are written so a long
-  // run of spaces can't make them backtrack: `\s[^;]*` is the same match as
-  // `\s+[^;]*`, and `(?:;\s*)?$` the same as `;?\s*$` after it.
+  // Python `from x import y`; written so a long run of spaces can't make this or the next two backtrack
   /^\s*from\s+\S+\s+import\s[^;]*(?:;\s*)?$/,
   // C and C++.
   /^\s*#\s*include\s+\S[^;]*$/,
   // Rust, PHP, Perl. `use ` and never `use`, so `useEffect(...)` stays a call.
   /^\s*use\s[^;]*(?:;\s*)?$/,
-  // CommonJS. The binding keyword is broader than the constant arm's on
-  // purpose: what makes this an import is the module load on the right.
+  // CommonJS: broader than the constant arm because the module load on the right is what makes it an import
   /^\s*(?:const|let|var)\s[^=;]+=\s*require\s*\([^;]*\)\s*(?:;\s*)?$/,
 ]);
 
-// The two constant shapes capture the initializer untrimmed and the caller
-// trims it. Trimming inside the regex let a long run of spaces make it
-// backtrack.
+// the constants capture the initializer untrimmed and the caller trims it, because trimming inside the regex let a long run of spaces backtrack
 
 /** `const NAME = ...` and its cousins in other languages, up to the initializer. */
 const DECLARED_CONSTANT =
   /^\s*(?:(?:export|public|private|protected|readonly)\s+)*(?:const|static|final|val)\s+[A-Za-z_$][^=;]*=([^;]*)(?:;\s*)?$/;
 
-/** A SCREAMING_SNAKE name bound with no declaration keyword at all - Python,
- * shell, Make. The name shape is the one `CONTENT_SIGNALS.secrets` itself
- * reads, so the two agree on what a constant NAME looks like. */
+/** A SCREAMING_SNAKE name bound with no declaration keyword (Python, shell, Make), shaped like the name the credential pattern reads. */
 const SHOUTING_CONSTANT = /^\s*[A-Z][A-Z0-9_]*\s*(?::[^=;]*)?=([^;]*)(?:;\s*)?$/;
 
-/** What an initializer may START with to be a literal: a string, a number, a
- * regex, a bracketed literal, or one of the value keywords. Deliberately not a
- * `(`, which opens an arrow function or a parenthesized expression. */
+/** What an initializer may start with to be a literal; not `(`, which opens an arrow function or a grouped expression. */
 const LITERAL_INITIALIZER =
   /^(?:['"`]|[-+]?\d|\/[^/*]|[[{]|true\b|false\b|null\b|undefined\b|None\b|nil\b)/;
 
-/** An initializer that is nothing but a regex literal. Judged on its own,
- * because a regex may carry a `(` of its own - `/\bPhase (\d+)\b/` is one of the
- * four measured false positives - and that parenthesis is a capture group, not
- * a call. */
+/** An initializer that is only a regex literal, judged alone because its own parens are capture groups and not a call. */
 const REGEX_LITERAL = /^\/(?:[^/\\\n]|\\.)*\/[a-z]*$/;
 
-/** A call anywhere in an initializer: a `(` opened by a name, a closing bracket
- * or a closing paren. This is what keeps a literal-looking initializer that
- * actually invokes something - a list holding a call, a regex with `.test`
- * applied - counting as evidence. */
+/** A call anywhere in an initializer, which keeps a literal-looking one that invokes something counting as evidence. */
 const CALL_EXPRESSION = /[\w$\])]\s*\(/;
 
 /** Whether `line` is only a module import. */
@@ -567,45 +395,28 @@ function isConstantDeclaration(/** @type {string} */ line) {
   return REGEX_LITERAL.test(init) || !CALL_EXPRESSION.test(init);
 }
 
-/** Whether `line` names a construct without doing it, and so is withheld from
- * `scanDeclared`'s content pass. */
+/** Whether `line` names a construct without doing it, so it's withheld from the content pass. */
 function isIncidentalLine(/** @type {string} */ line) {
   return isImportStatement(line) || isConstantDeclaration(line);
 }
 
 /**
- * What a DECLARED FILE SET touches - the plan-time face, where there is no diff
- * to read because the change has not been written yet.
+ * What a declared file set touches, the plan-time face, where the change isn't
+ * written yet and there is no diff.
  *
- * @param {any} files what the caller could read: a list of `{path, body}`, where
- *   `body` is the file's current bytes or nothing at all. A bare string entry is
- *   a path with no body. Trusted for nothing - a null, a scalar or a
- *   non-list reports rather than throws.
- * @param {any} categories the category vocabulary, from the CALLER, exactly as
- *   `scanDiff` takes it: normally `CATEGORIES` from lib/surface-scan.mjs
- *   narrowed to the project's answered
- *   `review.triggers.risk_surface.surfaces` set. A category not in this list is
- *   not looked for and is not reported.
+ * @param {any} files a list of `{path, body}` (body may be absent) or bare string paths; a null, a scalar or a non-list reports rather than throws
+ * @param {any} categories the category vocabulary from the caller, as `scanDiff` takes it
  * @returns {{categories: string[], matches: Array<{category: string, signal: string}>,
  *   withheld: Array<{path: string, category: string}>}}
- *   `matches` is the same `{category, signal}` entries `scanDiff` returns, so a
- *   fire site states a reason from one shape whichever face produced it.
- *   `withheld` is what the LINE-KIND exemption cost, per declared path: a
- *   category that file evidenced BEFORE the narrowing and does not evidence
- *   after it, because its only matching line was an import or a literal
- *   constant. A raise that used to rest on one of those says so instead of
- *   moving silently, and a file whose category survives on a line the exemption
- *   kept is not listed. `scanDiff` has no such field: that face withholds
- *   nothing.
+ *   `matches` has the same shape `scanDiff` returns. `withheld` is what the
+ *   line-kind exemption cost per path: a category the file evidenced before the
+ *   narrowing and doesn't after, because its only matching line was an import
+ *   or a literal constant. `scanDiff` withholds nothing.
  *
- * A DECLARED PATH WITH NO READABLE BODY IS NOT INCONCLUSIVE, which is the one
- * place this face deliberately parts from `scanDiff`'s silence-is-never-cleared
- * rule. At plan time a declared file frequently does not exist yet - the plan is
- * what creates it - so calling an absent body unjudgeable would raise every
- * create-a-file plan. That is the raise-tax the retired name-keyed floor died
- * of, where `tests/ingest_concurrency.rs` took six roles to their top rung. The
- * path signals still run over such a file, so the declaration is not ignored;
- * only the body it does not have yet is.
+ * A declared path with no readable body is not inconclusive, the one place this
+ * face parts from `scanDiff`. At plan time the plan often creates the file, and
+ * calling an absent body unjudgeable would raise every create-a-file plan. The
+ * path signals still run.
  */
 export function scanDeclared(files, categories) {
   const wanted = strs(categories);
@@ -614,8 +425,7 @@ export function scanDeclared(files, categories) {
   const paths = [];
   /** @type {string[]} */
   const lines = [];
-  /** Per declared path that lost at least one line, what the exemption kept and
-   * what it withheld - the only input the cost list below needs. */
+  /** Per declared path that lost a line: what the exemption kept and withheld. */
   /** @type {Array<{path: string, kept: string[], dropped: string[]}>} */
   const split = [];
   for (const entry of list) {
@@ -634,9 +444,7 @@ export function scanDeclared(files, categories) {
     const dropped = [];
     for (const raw of body.split('\n')) {
       const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-      // The third exemption, and the only one that is per LINE (RSK-05, D-03):
-      // a line that names a construct without doing it is not evidence that the
-      // declared change touches the surface.
+      // the third exemption, per line: a line that names a construct without doing it isn't evidence the plan touches the surface
       if (isIncidentalLine(line)) { dropped.push(line); continue; }
       kept.push(line);
       lines.push(line);
@@ -648,21 +456,12 @@ export function scanDeclared(files, categories) {
   /** @type {Array<{category: string, signal: string}>} */
   const matches = [];
   for (const category of wanted) {
-    // `body line`, never `changed line`: this face runs at plan time, where no
-    // diff exists and nothing has changed - what it matched is a line of a
-    // declared file's CURRENT body, most of which the plan will not touch.
+    // `body line`, not `changed line`: no diff exists at plan time, and this is a line of the current body
     const signal = signalIn(category, sets, lines, 'body line');
     if (signal) matches.push({ category, signal });
   }
 
-  // WHAT THE NARROWING COST, per declared path. Computed through the SAME
-  // `signalIn` the matches above go through - a second signal table here would
-  // be the drift this file exists to prevent - and asked twice of one file: once
-  // over every line of its body, once over the lines the exemption kept. A
-  // category answering the first and not the second evidenced that file only on
-  // a withheld line. The PATH signals run identically in both calls, so a file
-  // that evidences a category by its path or its extension never appears here:
-  // the exemption did not cost that evidence, and saying it did would be false.
+  // ask signalIn twice of each file, over every line and over the kept lines; a category answering only the first rested on a withheld line. Path signals run in both, so a file evidenced by its path never appears here
   /** @type {Array<{path: string, category: string}>} */
   const withheld = [];
   for (const { path, kept, dropped } of split) {
