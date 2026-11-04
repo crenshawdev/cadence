@@ -1,68 +1,11 @@
 // @ts-check
-// why-corpus.mjs - the DISK half of `/cad-why`'s join (WHY-01, phase 1 plan 2).
-// Guarded I/O against `.planning/`, failing OPEN with warnings rather than
-// throwing - the split `lib/phase-plans.mjs` already keeps against
-// `lib/risk-diff.mjs`, and the mirror of `lib/why-record.mjs`, which is pure
-// and never touches a filesystem.
-//
-// WHAT IT BUILDS: the commit-to-phase index, over the two storage tiers a
-// milestone close can leave on disk (CONTEXT D-03) -
-//
-//   - the LIVE `phases/<N>/` of the milestone currently open, and
-//   - the `_archive-v<ver>/<N>/` trees the `--mode archive` closes wrote (9
-//     archive groups, 27 complete phase directories in this repository).
-//
-// The `--mode delete` closes left neither, and recovering those out of git
-// history is plan 3's job, not this module's.
-//
-// AND, BESIDE THE PHASE SPINE ENTIRELY, the OFF-ROADMAP tier: the
-// `tasks/<slug>/RECORD.md` a `/cad-task` run leaves (FST-01, phase 3 D-02).
-// `buildTaskIndex` states why that is a tier of its own rather than a widened
-// `phaseDirsIn`, and why its directory descriptor refuses to carry a phase
-// number.
-//
-// ONE ENUMERATOR PER TIER, AND NEVER A SECOND OPINION ABOUT EITHER:
-// `phaseDirsIn` FROM `lib/phase-plans.mjs` for the phase tiers, `taskRecordsIn`
-// FROM `lib/task-record.mjs` for the task one. `phaseDirsIn` already walks
-// `phases` plus every `_archive-`-prefixed group, already CONTAINS that walk
-// against a symlinked directory escaping the planning root, already fails open
-// on an unreadable directory, and already returns `{label, path}` sorted by
-// label so two runs see one order. A second enumerator over the SAME tier is
-// the split-brain `CAPTURE_WALK_SECTIONS` records the cost of in full: the
-// reader and the writer disagreeing about which directories are the walk lost
-// five filed bullets, and it can only recur while the fact has two homes.
-//
-// THE INDEX IS WHAT MAKES THE PHASE A READ FACT RATHER THAN A GUESS (D-06).
-// The conventional-commit scope `<type>(<phase>-<plan>)` is CORROBORATION and a
-// named fallback only, never the key, because phase numbers reset every
-// milestone: `feat(1-1)` exists in seven cycles, both candidate directories
-// legitimately exist on disk, and so a scope-keyed read fails INVISIBLY - it
-// returns a phase 1, just somebody else's. Every phase number this command
-// prints is read off a resolved directory's own name.
-//
-// AMBIGUITY IS AN ANSWER, NOT A TIE TO BREAK. Two summaries whose abbreviations
-// both prefix one full sha are REPORTED as ambiguous, naming both, rather than
-// resolved by picking the first, the newest or the longest match. Picking would
-// reintroduce exactly the invisible failure the index exists to remove.
-// Measured over this repository on 2026-08-23: 256 rows across 28 directories,
-// zero prefix pairs and zero cross-directory duplicates - so the ambiguous arm
-// is a guard against a corpus that grows into it, and its proof is a built
-// fixture.
-//
-// EVERY READ IS GUARDED AND EVERY FAILURE IS A WARNING. An ABSENT SUMMARY.md is
-// silent: a phase directory with plans and no summary is the ordinary
-// mid-phase state, and warning there would fire on every run of the milestone
-// currently open. A summary that EXISTS and cannot be read is a warning and
-// contributes no rows, and a path that is not a regular file is refused BEFORE
-// it is opened - `readFileSync` follows a FIFO and blocks the process forever
-// waiting for a writer, which is the same defect a `risk_surface` reviewer
-// raised against `readChangelog` and the same one still open against
-// `planning.mjs`'s `read(reqFile)`. So is a path that RESOLVES outside the
-// directory it was joined onto: `phaseDirsIn` contains the walk per DIRECTORY,
-// and a symlinked NAME under a contained directory is how that containment came
-// back one level down (`readArtifact`'s `EESCAPE`). A warning carries the artifact's label and
-// an errno CODE, never the raw error text: a filesystem error message is
-// third-party bytes, and this seam's stdout is the place EXP-01 was about.
+// Disk half of /cad-why's join: guarded I/O against `.planning/` that fails open with warnings instead of throwing. It mirrors why-record.mjs, which is pure and never touches a filesystem.
+// It builds the commit-to-phase index over the two tiers a milestone close can leave on disk: the live `phases/<N>/` and the archived trees from `--mode archive` closes. `--mode delete` closes leave neither, and buildRecoveredIndex gets those out of git history. The off-roadmap `tasks/<slug>/RECORD.md` a /cad-task run leaves is a tier of its own (buildTaskIndex says why).
+// One enumerator per tier and never a second opinion about either: `phaseDirsIn` (lib/phase-plans.mjs) for the phase tiers, `taskRecordsIn` (lib/task-record.mjs) for tasks. They already contain the walk against a symlinked directory escaping the planning root, fail open on an unreadable directory and sort by label. A second enumerator over one tier is the split-brain CAPTURE_WALK_SECTIONS records, where reader and writer disagreed about the walk and five filed bullets were lost.
+// The index makes the phase a read fact. The commit scope `<type>(<phase>-<plan>)` is corroboration only, never the key, because phase numbers reset every milestone: `feat(1-1)` exists in seven cycles, both directories exist, and a scope-keyed read fails invisibly by returning somebody else's first phase. Every phase number printed is read off a resolved directory's name.
+// Ambiguity is an answer, not a tie to break. Two summaries whose abbreviations both prefix one full sha are reported as ambiguous, naming both, instead of picking the first, the newest or the longest, which would bring back the invisible failure the index exists to remove.
+// Every read is guarded and every failure is a warning. An absent SUMMARY.md is silent, since a phase with plans and no summary is the ordinary mid-phase state. A summary that exists and can't be read warns and contributes no rows. A path that isn't a regular file is refused before opening, because readFileSync on a FIFO blocks forever waiting for a writer, and so is one that resolves outside the directory it was joined onto (a symlinked name under a contained directory is how the walk's containment came back one level down).
+// Warnings carry the artifact's label and an errno code, never raw error text: a filesystem error message is third-party bytes, and this seam's stdout is where those must not land.
 'use strict';
 
 import { execFileSync } from 'node:child_process';
@@ -77,12 +20,8 @@ import { RECORD_FILE, TASKS_DIR, taskRecordsIn } from './task-record.mjs';
 import { parseAdjudication, parseCommitRows, shaMatches } from './why-record.mjs';
 
 /**
- * Read one artifact under the planning root, refusing anything that is not a
- * regular file BEFORE opening it.
- *
- * Three outcomes, and the caller acts on the difference: `absent` (nothing is
- * there - the ordinary state, no warning), `text` (bytes), and a `code` naming
- * why a present path could not be read.
+ * Read one artifact under the planning root, refusing anything that isn't a regular file before opening it.
+ * Three outcomes: `absent` (the ordinary state, no warning), `text`, and a `code` saying why a present path couldn't be read.
  *
  * @param {string} file
  * @returns {{text: string|null, absent: boolean, code: string|null}}
@@ -96,22 +35,13 @@ export function readArtifact(file) {
     if (err && err.code === 'ENOENT') return { text: null, absent: true, code: null };
     return { text: null, absent: false, code: String((err && err.code) || 'ESTAT') };
   }
-  // `statSync` follows symlinks, so this judges what the path RESOLVES to - a
-  // symlinked SUMMARY.md inside the phase directory still reads, a symlink to a
-  // FIFO does not. The check is what stops `readFileSync` blocking on a pipe.
+  // statSync follows symlinks, so this judges what the path resolves to: a symlinked SUMMARY.md in the phase directory still reads, a symlink to a FIFO doesn't, and that's what stops readFileSync blocking on a pipe
   if (!st.isFile()) return { text: null, absent: false, code: 'ENOTREGULAR' };
-  // CONTAINMENT IS PER FILE, NOT ONLY PER DIRECTORY. `phaseDirsIn` contains the
-  // WALK against a symlinked directory escaping the planning root, and this
-  // module's header says so - but every caller then joins a NAME onto a
-  // contained directory, and `statSync` following that name's own symlink is
-  // how the escape came back one level down. A `SUMMARY.md` symlinked to
-  // `~/.ssh/id_rsa` passes `isFile()` and its bytes reach a seam whose stdout is
-  // the place EXP-01 was about. So the RESOLVED path must stay inside the
-  // resolved directory the caller joined it onto: a non-symlink resolves to
-  // itself and passes trivially, a symlink pointing out is refused before it is
-  // opened. Refusing rather than following also closes the check-to-use race on
-  // the same line - the path a symlink names cannot be swapped for one outside
-  // the directory after the check, because a symlink out never passes it.
+  // containment is per file, not only per directory. phaseDirsIn contains the walk, but every caller joins a name onto a contained
+  // directory, and statSync following that name's own symlink brings the escape back: a SUMMARY.md symlinked to `~/.ssh/id_rsa`
+  // passes isFile() and its bytes would reach a seam whose stdout mustn't carry them. So the resolved path has to stay inside the
+  // resolved directory. A non-symlink passes trivially and a symlink pointing out is refused before it's opened, which also
+  // closes the check-to-use race, since a symlink out never passes.
   let real;
   let realDir;
   try {
@@ -143,10 +73,8 @@ export function readArtifact(file) {
  */
 
 /**
- * Split `phaseDirsIn`'s `<group>/<name>` label into the two facts a rendered
- * entry names: WHICH milestone's record this is, and which phase number in it.
- * `phases` is the live milestone and says so in those words rather than
- * borrowing a version it does not know; `_archive-v3.4.0` reports `v3.4.0`.
+ * Split phaseDirsIn's `<group>/<name>` label into the milestone this record belongs to and the phase number in it.
+ * `phases` is the open milestone and says so instead of borrowing a version it doesn't know; an archived group reports its bare version, v3.4.0 for instance.
  * @param {{label: string, path: string}} d @returns {PhaseDir}
  */
 function describe(d) {
@@ -158,11 +86,8 @@ function describe(d) {
 }
 
 /**
- * The commit-to-phase index over both on-disk tiers, in ONE pass.
- *
- * `rows` is in a fixed order - by directory label, then by the order the
- * summary's own table wrote them - because the resolution below reports EVERY
- * match and a reshuffled match list is a reshuffled answer.
+ * The commit-to-phase index over both on-disk tiers, in one pass.
+ * `rows` has a fixed order, by directory label then the summary table's own order, because resolution reports every match and a reshuffled match list is a reshuffled answer.
  *
  * @param {string} planningRoot
  * @returns {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[]}}
@@ -175,7 +100,7 @@ export function buildCommitIndex(planningRoot) {
   const warnings = [];
   for (const dir of dirs) {
     const { text, absent, code } = readArtifact(join(dir.path, 'SUMMARY.md'));
-    // Absent is the ordinary mid-phase state and is deliberately silent.
+    // absent is the ordinary mid-phase state, so it's silent
     if (absent) continue;
     if (text === null) {
       warnings.push(`${dir.label}/SUMMARY.md could not be read (${code}); its commits are not indexed`);
@@ -187,11 +112,7 @@ export function buildCommitIndex(planningRoot) {
 }
 
 /**
- * A TASK directory's descriptor: `describe()`'s five keys plus the `slug`
- * MARKER a consumer tells a task directory from a phase directory by. `phase`
- * and `milestone` are `null` rather than strings because a `/cad-task` run is
- * off-roadmap - there is no number and no milestone to name, and any
- * placeholder put here would eventually be printed as one.
+ * A task directory's descriptor: describe()'s five keys plus the `slug` marker a consumer tells a task directory from a phase one by. `phase` and `milestone` are null because /cad-task is off-roadmap, and a placeholder would eventually be printed as a number.
  * @typedef {{
  *   label: string, path: string, group: string, phase: null, milestone: null,
  *   slug: string,
@@ -199,32 +120,11 @@ export function buildCommitIndex(planningRoot) {
  */
 
 /**
- * The commit-to-TASK index (FST-01, CONTEXT phase 3 D-02) - the same
- * `{dirs, rows, warnings}` shape `buildCommitIndex` returns, so `resolveCommit`
- * needs no change at all and this is an added TIER rather than a second
- * resolution path.
- *
- * NOT `phaseDirsIn`, DELIBERATELY. That enumerator admits a directory only when
- * it holds a conforming `PLAN.md`/`PLAN-<k>.md`, and `/cad-task`'s inline arm
- * writes no plan file at all. Widening it would also hand every task directory
- * to every other `phaseDirsIn` caller and make `describe()` render
- * `tasks phase <slug>` - a WRONG join rather than a missing one, which is the
- * failure `/cad-why` exists to prevent.
- *
- * ONE HOME FOR WHERE A RECORD LIVES: `taskRecordsIn` in `lib/task-record.mjs`,
- * never a second walk of `tasks/` written here. That module is the WRITER's and
- * the recall walk's enumerator too, and it already contains the walk against a
- * symlinked slug directory AND against a symlinked `RECORD.md` resolving out of
- * the planning root, already fails open on an unreadable directory, and already
- * sorts by slug so two runs see one order. This file's own header records what
- * a second opinion about which directories are the walk costs.
- *
- * ONE READER FOR THE BYTES: `readArtifact` and `parseCommitRows`, unchanged.
- * The record carries its own `## Commits` table (D-10) precisely so that no
- * second table grammar is needed here.
- *
- * `tasks/<slug>` cannot collide with a `phases/<n>` or `_archive-<label>/<n>`
- * label, so the merged index's per-label lookups stay unambiguous.
+ * The commit-to-task index, the same `{dirs, rows, warnings}` shape as buildCommitIndex, so resolveCommit needs no change and this is an added tier, not a second resolution path.
+ * Not phaseDirsIn, deliberately: it only admits a directory holding a conforming PLAN file, and /cad-task's inline arm writes none. Widening it would hand every task directory to every other caller and make describe() render `tasks phase <slug>`, a wrong join instead of a missing one, which is what /cad-why exists to prevent.
+ * Where a record lives comes from taskRecordsIn in lib/task-record.mjs, which the writer and the recall walk use too, and never from a second walk of `tasks/` here (the header says what that costs).
+ * The bytes go through readArtifact and parseCommitRows unchanged: the record carries its own `## Commits` table so no second table grammar is needed.
+ * A `tasks/<slug>` label can't collide with a phase or archive label, so the merged index's per-label lookups stay unambiguous.
  *
  * @param {string} planningRoot
  * @returns {{dirs: TaskDir[], rows: IndexRow[], warnings: string[]}}
@@ -248,10 +148,7 @@ export function buildTaskIndex(planningRoot) {
     };
     dirs.push(dir);
     const { text, absent, code } = readArtifact(path);
-    // ABSENT is unreachable except through a race: the lister returned this
-    // path only because it stat'd it as a regular file. It is taken silently
-    // anyway - `buildCommitIndex`'s disposition - because a record deleted
-    // between the walk and the read is not a corpus defect to warn about.
+    // absent only through a race, since the lister stat'd this path as a regular file; taken silently like buildCommitIndex because a record deleted between the walk and the read isn't a corpus defect
     if (absent) continue;
     if (text === null) {
       warnings.push(`${dir.label}/${RECORD_FILE} could not be read (${code}); its commits are not indexed`);
@@ -264,18 +161,13 @@ export function buildTaskIndex(planningRoot) {
 
 /**
  * Resolve one full 40-character sha against the index.
- *
- * `matches` is every row whose commit cell prefix-matches, in index order.
- * Rows that agree on the directory, plan and task are one answer however many
- * summaries wrote them; rows that disagree are AMBIGUOUS and both are named.
+ * `matches` is every row whose commit cell prefix-matches, in index order. Rows agreeing on directory, plan and task are one answer however many summaries wrote them; rows that disagree are ambiguous and both are named.
  *
  * @param {{rows: IndexRow[]}} index @param {string} sha
  * @returns {{state: 'resolved'|'ambiguous'|'unresolved', row: IndexRow|null, matches: IndexRow[]}}
  */
 export function resolveCommit(index, sha) {
-  // A MERGED index carries ordered TIERS and is asked in order, taking the
-  // first tier that answers at all (`mergeCommitIndexes` states why). A
-  // single-tier index is its own only tier, so this is one code path.
+  // a merged index carries ordered tiers and is asked in order, taking the first tier that answers at all; a single-tier index is its own only tier, so there's one code path
   const tiers = /** @type {any} */ (index).tiers || [index];
   for (const tier of tiers) {
     const matches = tier.rows.filter((/** @type {IndexRow} */ r) => shaMatches(r.commit, sha));
@@ -289,25 +181,9 @@ export function resolveCommit(index, sha) {
 
 /**
  * One named artifact out of a phase directory, wherever that directory lives.
- *
- * TWO SOURCES, ONE SET OF READERS. A disk directory opens the file; a RECOVERED
- * directory - whose `path` is null because the close deleted it - shows the
- * same name out of the prune commit's parent tree. Both hand back plain text to
- * the SAME pure readers in `lib/why-record.mjs`, which is the whole reason this
- * tier costs a different SOURCE and not a second parser: a `## Deviations`
- * section means the same thing whether its bytes came from `open(2)` or from a
- * tree object.
- *
- * Absent is silent on both, and for the same reason `buildCommitIndex` gives.
- * The git side cannot tell an absent path from an unreadable one - both are a
- * non-zero exit with the message on stderr, which never reaches this seam's
- * stdout - so it takes the absent reading, which is what the corpus actually
- * holds: a phase with no adjudication record and a phase with no CONTEXT.md are
- * both ordinary.
- *
- * The git argument is `<40-hex parent>:<tree>/<name>`. It opens with a
- * hexadecimal sha, so it can never be read by git as an option, and `<tree>`
- * came out of a pathspec-limited `--name-only` under `.planning/phases/`.
+ * A disk directory opens the file; a recovered directory (path null, since the close deleted it) reads the same name out of the prune commit's parent tree. Both hand plain text to the same pure readers in why-record.mjs, so this tier costs a different source and not a second parser.
+ * Absent is silent on both, for the reason buildCommitIndex gives. git can't tell an absent path from an unreadable one (both exit non-zero with the message on stderr, which never reaches stdout), so it takes the absent reading, which is what the corpus holds: a phase with no adjudication record or no context file is ordinary.
+ * The git argument is `<40-hex parent>:<tree>/<name>`. It opens with a hexadecimal sha so git can never read it as an option, and `<tree>` came out of a pathspec-limited `--name-only` under `.planning/phases/`.
  *
  * @param {any} dir @param {string|undefined} repoDir @param {string[]} warnings
  * @returns {(name: string) => string}
@@ -330,29 +206,11 @@ function artifactReader(dir, repoDir, warnings) {
 }
 
 /**
- * The artifacts a resolved phase directory joins THROUGH: its CONTEXT.md, its
- * SUMMARY.md, and the ONE plan file the commits table's Plan cell names.
- *
- * The plan file is looked up by the two spellings `declaredFilesIn` already
- * states as equivalent - `PLAN-<key>.md`, and `PLAN.md` for plan 1 spelled
- * bare - by NAME rather than by listing the directory and matching a plan-file
- * grammar. The grammar lives in `lib/phase-plans.mjs`; a second copy of it here
- * is what would drift. A Plan cell that is empty (the three-column era, before
- * plans were numbered) means `PLAN.md` and nothing else.
- *
- * A TASK directory declares in its `RECORD.md`, which is tried FIRST (D-10).
- * The record carries the `- **Files:**` line precisely so `taskDeclaredFiles` -
- * and through it `declaringTasks`, which is what the `declared by:` edge calls
- * - reaches it. Without that ordering the edge reads the task's `PLAN.md` when
- * the PLANNED path happened to write one, which declares what the run set out
- * to touch rather than what it did, and reads nothing at all when the INLINE
- * path wrote no plan file. `CONTEXT.md` and `SUMMARY.md` stay read exactly as
- * they are: a task directory has neither, absent is silent, and the decision
- * and deviation edges then state their own absence - the true answer.
- *
- * Absent is silent on both, for the reason `buildCommitIndex` gives: a phase
- * with no CONTEXT.md is a real and ordinary state, and a warning there would
- * fire on every run.
+ * The artifacts a resolved phase directory joins through: its context file, its summary, and the one plan file the commits table's Plan cell names.
+ * The plan file is looked up by name in the two spellings declaredFilesIn treats as equivalent, `PLAN-<key>.md` and a bare `PLAN.md` for the first plan, instead of listing the directory against a plan-file grammar, because a second copy of that grammar (it lives in lib/phase-plans.mjs) is what would drift. An empty Plan cell (the three-column era) means `PLAN.md` and nothing else.
+ * A task directory declares in its RECORD.md, which is tried first: it carries the `- **Files:**` line so taskDeclaredFiles, and through it declaringTasks and the `declared by:` edge, can reach it. Otherwise the edge would read the task's PLAN.md when the planned path wrote one, which says what the run set out to touch instead of what it did, and nothing at all on the inline path.
+ * The context and summary are read as they are: a task directory has neither, absent is silent, and the decision and deviation edges state their own absence, which is the true answer.
+ * Absent is silent on both, for the reason buildCommitIndex gives: a phase with no context file is ordinary and a warning would fire on every run.
  *
  * @param {any} dir @param {string} [planCell] @param {string} [repoDir]
  * @returns {{context: string, summary: string, plan: string,
@@ -366,9 +224,7 @@ export function readPhaseRecords(dir, planCell, repoDir) {
 
   const key = String(planCell || '').trim();
   const spellings = key && key !== '1' ? [`PLAN-${key}.md`] : [`PLAN-${key || '1'}.md`, 'PLAN.md'];
-  // The `slug` MARKER again, never a label prefix. A task directory may hold a
-  // PLAN.md too - the planned `/cad-task` arm writes one - so the RECORD is
-  // tried ahead of it rather than only as a fallback.
+  // the slug marker again, never a label prefix; a task directory may hold a PLAN.md too (the planned /cad-task arm writes one), so the RECORD is tried ahead of it, not only as a fallback
   const names = dir.slug ? [RECORD_FILE, ...spellings] : spellings;
   let plan = '';
   /** @type {string|null} */
@@ -380,33 +236,10 @@ export function readPhaseRecords(dir, planCell, repoDir) {
   return { context: pull('CONTEXT.md'), summary: pull('SUMMARY.md'), plan, planFile, warnings };
 }
 
-// ---------------------------------------------------------------------------
-// THE REVIEW EDGE'S DISK AND GIT HALF (D-11).
-//
-// FILENAMES ARE DERIVED FROM `recordName`, NEVER RE-SPELLED. That function in
-// `lib/adjudication-record.mjs` is the ONE rule for what a gate fire's record
-// is called, and the writer, the receipt recount and the deferred queue's
-// supersession test all resolve by it. A fourth reader with its own
-// `/^ADJUDICATION-.*\.json$/` would be the fourth place to fix when the name
-// moves, so the fixed affixes below are read OUT of `recordName` by probing it
-// with sentinel parts. If that rule ever stops producing a fixed prefix and a
-// fixed extension, the probe stops matching and the tests redden, which is the
-// point.
-//
-// RANGE MEMBERSHIP IS ONE `git rev-list` PER DISTINCT RANGE, never one per
-// entry: a phase with four records over one range asks git once. `base..head`
-// is git's own reading - the commits reachable from `head` and not from `base`
-// - and an id this clone does not have (a shallow clone, a dropped commit)
-// answers UNRESOLVABLE rather than "not in range", because those are different
-// facts and only one of them is knowable here.
-//
-// GIT RUNS THROUGH AN ARGV ARRAY WITH `-C <dir>`, never a shell string, and the
-// two ids are passed as ONE `<base>..<head>` argument after `--`-free
-// positional placement that git parses as a revision range. They come out of a
-// JSON file this process did not write, so they are validated as hexadecimal
-// BEFORE they reach the argv: a value like `--upload-pack=...` in a `base_id`
-// field would otherwise be read by git as an option rather than as a revision.
-// ---------------------------------------------------------------------------
+// The review edge's disk and git half.
+// Filenames are derived from recordName, never re-spelled: it's the one rule for what a gate fire's record is called, and the writer, the receipt recount and the deferred queue all resolve by it. A fourth reader with its own filename regex would be a fourth place to fix when the name moves, so the fixed affixes are read out of recordName by probing it with sentinel parts. If it ever stops producing a fixed prefix and extension the probe stops matching and the tests redden, which is the point.
+// Range membership is one `git rev-list` per distinct range, never one per entry. An id this clone doesn't have (a shallow clone, a dropped commit) answers unresolvable instead of "not in range", since those are different facts and only one is knowable here.
+// git runs through an argv array with `-C <dir>`, never a shell string. The ids come out of a JSON file this process didn't write, so they're validated as hexadecimal before they reach the argv: a `base_id` like `--upload-pack=...` would otherwise be read by git as an option.
 
 /** A probe of the one filename rule, used to derive its fixed affixes. */
 const NAME_PROBE = recordName('TRIGGER', 'DISCRIMINATOR', 1);
@@ -419,12 +252,8 @@ const ADJ_SUFFIX = NAME_PROBE.slice(NAME_PROBE.indexOf('DISCRIMINATOR') + 'DISCR
 const COMMIT_ID = /^[0-9a-fA-F]{4,40}$/;
 
 /**
- * The adjudication records in one phase directory, sorted by filename so two
- * runs read them in one order, each parsed through `parseAdjudication`.
- *
- * An absent directory or a directory with no record is `[]` and silent - most
- * phases have none. A record that will not parse contributes a warning naming
- * the file and the issue CODE the pure reader returned, and no findings.
+ * The adjudication records in one phase directory, sorted by filename so two runs read them in one order, each parsed through parseAdjudication.
+ * An absent directory or one with no record is `[]` and silent, since most phases have none. A record that won't parse contributes a warning naming the file and the issue code the pure reader returned, and no findings.
  *
  * @param {any} dir @param {string} [repoDir]
  * @returns {{records: any[], warnings: string[]}}
@@ -437,8 +266,7 @@ export function readAdjudications(dir, repoDir) {
   if (!dir) return { records, warnings };
   const pull = artifactReader(dir, repoDir, warnings);
   for (const name of listRecordNames(dir, repoDir)) {
-    // The name came from a listing, so the entry IS there; an empty read means
-    // the reader already said why, and its warning is the whole answer.
+    // the name came from a listing so the entry is there; an empty read means the reader already said why, and its warning is the whole answer
     const before = warnings.length;
     const text = pull(name);
     if (warnings.length > before) continue;
@@ -450,11 +278,7 @@ export function readAdjudications(dir, repoDir) {
 }
 
 /**
- * The adjudication record names in one phase directory, sorted, from whichever
- * source holds it. The recovered side LISTS the tree rather than guessing
- * filenames: `ADJUDICATION-<trigger>-<discriminator>[-rN].json` carries a
- * discriminator no caller can predict, so the only way to find the records is
- * to ask what is there.
+ * The adjudication record names in one phase directory, sorted, from whichever source holds it. The recovered side lists the tree instead of guessing filenames, since the discriminator in `ADJUDICATION-<trigger>-<discriminator>[-rN].json` can't be predicted.
  * @param {any} dir @param {string|undefined} repoDir @returns {string[]}
  */
 function listRecordNames(dir, repoDir) {
@@ -477,8 +301,7 @@ function listRecordNames(dir, repoDir) {
 }
 
 /**
- * The commits in `base..head`, or null when either id does not resolve in this
- * repository - which is a STATED unresolvable join, not an empty one.
+ * The commits in `base..head`, or null when either id doesn't resolve in this repository, which is a stated unresolvable join, not an empty one.
  * @param {string} repoDir @param {string} base @param {string} head
  * @returns {Set<string>|null}
  */
@@ -493,71 +316,18 @@ export function rangeMembers(repoDir, base, head) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// THE GIT-HISTORY TIER (D-03's third, D-05) - plan 3.
-//
-// A `--mode delete` close leaves NEITHER a live `phases/<N>/` nor an
-// `_archive-v<ver>/<N>/`, so for 16 of this repository's 25 closes the record
-// exists only in git history. This half finds those closes and binds each to
-// the milestone label it carried; the map itself is built on top of it.
-//
-// `--full-history` IS LOAD-BEARING, NOT DECORATIVE. Measured against this
-// repository on 2026-08-22 and again on 2026-08-23: the same search WITHOUT it
-// returns 4 prune commits, and WITH it returns 25. Git's default history
-// simplification drops commits a pathspec makes "uninteresting", so the plain
-// form silently loses 21 of 25 closes and would report the gap on milestones
-// the record can actually answer. `PRUNE_ARGV` is exported and its control -
-// the same argv with the flag filtered out, returning strictly fewer - is
-// asserted in why-corpus.test.mjs, so the flag cannot be dropped without a red
-// test.
-//
-// `-M` IS PINNED EXPLICITLY (D-17) rather than inherited from whatever
-// `diff.renames` the reading machine happens to configure. It changes nothing
-// here - all three of `-M`, `--no-renames` and the default answer 25 - because
-// the pathspec limits the diff BEFORE rename detection runs, so the archive
-// copy a `--mode archive` close adds is never a rename candidate for the phase
-// copy it deletes. Pinning it is what keeps that true on someone else's clone.
-//
-// ONE PASS, NOT ONE `git show` PER ENTRY. D-05 rejects the lazy per-commit
-// form, which reruns the prune search for every chain entry. `--name-only`
-// rides the same invocation so the deleted paths come back with the commits,
-// and the labels come back in ONE further call over exactly the commits the
-// first pass found.
-//
-// THE LABEL COMES FROM THE CLOSE'S OWN WRITE, NEVER FROM ITS SUBJECT LINE. A
-// prune appends `.planning/ARCHIVE.md`'s `## <label>` heading in the SAME
-// commit that removes the directories (measured: `72940906` appends
-// `## v3.5.9`), so the binding is a diff of one file at one commit rather than
-// a regex over a commit message. It is available for 7 of this repository's 25
-// closes and no more, because `.planning/ARCHIVE.md` did not exist before
-// v3.5.3 - an absent label is therefore the ORDINARY state of an old close and
-// is reported as absent rather than guessed. Exactly one added heading binds;
-// zero binds nothing, and two or more bind nothing either, because a close that
-// wrote two headings does not say which one owns the deleted phases.
-//
-// A MERGE-SHAPED PRUNE COMMIT IS REPORTED, NOT RESOLVED. Every recovery below
-// reads `<prune>^`, and on a commit with two parents `^` names the first one
-// arbitrarily - so a merge would silently answer out of whichever side git
-// listed first. All 25 in this repository are single-parent today, which is
-// what makes refusing cheap rather than a lost answer.
-//
-// AND THE REFUSAL IS NOT REACHABLE THROUGH `PRUNE_ARGV` AS SHIPPED. Measured on
-// git 2.55.0 on 2026-08-23 against two built fixtures - an ordinary merge of a
-// branch that deleted the summary, and an "evil" merge whose own tree performs
-// the deletion - `--diff-filter=D` selects NEITHER, because a merge produces no
-// diff under the default `--diff-merges=off` and so matches no diff filter.
-// Adding `--diff-merges=first-parent` to the same argv makes the evil merge
-// come back with its two parents, which is why the guard stays and why the
-// parse is a separate exported function: `parsePruneRecords` is where the
-// two-parent record is proved refused, over stdout git itself produced.
-// ---------------------------------------------------------------------------
+// The git-history tier. A `--mode delete` close leaves neither a live `phases/<N>/` nor an archived tree, so most of this repository's closes exist only in git history. This half finds those closes and binds each to the milestone label it carried; the map is built on top.
+// `--full-history` is load-bearing: git's default history simplification drops commits a pathspec makes uninteresting, so without it the search silently loses most closes and reports a gap on milestones the record can answer. PRUNE_ARGV is exported and why-corpus.test.mjs asserts its control (the same argv minus the flag) returns strictly fewer, so the flag can't be dropped without a red test.
+// `-M` is pinned rather than inherited from the reading machine's diff.renames. It changes nothing today because the pathspec limits the diff before rename detection, so the archive copy an archive close adds is never a rename candidate for the phase copy it deletes; pinning keeps that true on someone else's clone.
+// One pass, not one `git show` per entry: `--name-only` rides the same invocation so deleted paths come back with the commits, and the labels come back in one further call over exactly the commits found.
+// The label comes from the close's own write, never its subject line: a prune appends `.planning/ARCHIVE.md`'s `## <label>` heading in the same commit that removes the directories, so the binding is a diff of one file at one commit. It exists only for closes after ARCHIVE.md did, and an absent label is the ordinary state of an old close, reported as absent and never guessed. Exactly one added heading binds; zero or several bind nothing, since several don't say which owns the deleted phases.
+// A merge-shaped prune commit is reported, not resolved: every recovery reads `<prune>^`, and on a two-parent commit that names the first parent arbitrarily, so a merge would silently answer from whichever side git listed first.
+// That refusal isn't reachable through PRUNE_ARGV as shipped: `--diff-filter=D` selects no merge, because a merge produces no diff under the default `--diff-merges=off`. Adding `--diff-merges=first-parent` makes an evil merge (one whose own tree does the deletion) come back with its two parents, which is why the guard stays and why parsePruneRecords is a separate export, provable over stdout git itself produced.
 
 /** The pathspec a milestone close deletes when it prunes a phase directory. */
 const PRUNED_SUMMARY = '.planning/phases/*/SUMMARY.md';
 
-/** The record separator that lets `--name-only`'s path lines be told apart
- * from the next commit's header - `\x01`, matching `LOG_FORMAT`'s use of
- * `\x1f` for the same reason: a byte no path and no date can contain. */
+/** A record separator (`\x01`, like LOG_FORMAT's `\x1f`) so `--name-only`'s path lines can be told from the next commit's header: a byte no path and no date can contain. */
 const PRUNE_FORMAT = '%x01%H%x1f%cI%x1f%P';
 
 /** The prune search, exported so its control can be built from it. */
@@ -569,14 +339,11 @@ export const PRUNE_ARGV = Object.freeze([
 /** The heading a close appends to ARCHIVE.md, as a diff line. */
 const ADDED_SECTION = /^\+## (.+?)\s*$/;
 
-/** `.planning/phases/<N>/SUMMARY.md`, with the phase number captured. It is
- * READ from the deleted path, which is a recovered artifact, never guessed. */
+/** `.planning/phases/<N>/SUMMARY.md` with the phase number captured. It's read off the deleted path, a recovered artifact, never guessed. */
 const PRUNED_PATH = /^\.planning\/phases\/([^/]+)\/SUMMARY\.md$/;
 
 /**
- * Run git in `repoDir`, never throwing. A non-zero exit or a spawn failure is
- * `{ok: false}` with whatever stdout arrived, which every caller here treats as
- * "this tier contributes nothing" rather than as a failed query.
+ * Run git in `repoDir` without throwing. A non-zero exit or spawn failure is `{ok: false}` with whatever stdout arrived, which every caller treats as "this tier contributes nothing" and not as a failed query.
  * @param {string} repoDir @param {readonly string[]} args
  * @returns {{ok: boolean, stdout: string}}
  */
@@ -599,9 +366,7 @@ function git(repoDir, args) {
  */
 
 /**
- * The milestone label each of `commits` bound, read off the `## <label>`
- * heading that commit added to `.planning/ARCHIVE.md`. ONE git call for the
- * whole set.
+ * The milestone label each of `commits` bound, read off the `## <label>` heading that commit added to ARCHIVE.md, in one git call for the whole set.
  * @param {string} repoDir @param {string[]} commits
  * @returns {Map<string, string|null>}
  */
@@ -621,19 +386,14 @@ function pruneLabels(repoDir, commits) {
   }
   /** @type {Map<string, string|null>} */
   const labels = new Map();
-  // EXACTLY ONE added heading binds. Zero is the ordinary state of a close
-  // older than ARCHIVE.md itself; two or more does not say which heading owns
-  // the deleted phases, so it binds nothing rather than picking.
+  // exactly one added heading binds: zero is the ordinary state of a close older than ARCHIVE.md, and two or more don't say which owns the deleted phases, so they bind nothing instead of picking
   for (const [commit, headings] of added) labels.set(commit, headings.length === 1 ? headings[0] : null);
   return labels;
 }
 
 /**
- * Every commit that DELETED a phase SUMMARY, newest first, each bound to the
- * milestone label its close carried and carrying the phase paths it removed.
- *
- * Order is explicit (D-17): commit date descending, then full 40-character sha
- * descending, never git's own emission order.
+ * Every commit that deleted a phase SUMMARY, newest first, each bound to the milestone label its close carried and carrying the phase paths it removed.
+ * Order is explicit, commit date descending then full sha descending, never git's own emission order.
  *
  * @param {string} repoDir
  * @returns {{prunes: PruneCommit[], warnings: string[]}}
@@ -650,13 +410,8 @@ export function findPruneCommits(repoDir) {
 }
 
 /**
- * Turn `PRUNE_ARGV`'s stdout into prune records, sorted by the explicit key.
- *
- * Pure and exported for the reason the module header gives: the merge-shaped
- * record the guard refuses cannot be produced by `PRUNE_ARGV` as shipped, so
- * the only way to prove the refusal over bytes GIT wrote rather than bytes a
- * test invented is to run the same log with `--diff-merges=first-parent` and
- * feed its stdout here.
+ * Turn PRUNE_ARGV's stdout into prune records, sorted by the explicit key.
+ * Pure and exported because the merge-shaped record the guard refuses can't be produced by PRUNE_ARGV as shipped. Proving the refusal over bytes git wrote means running the same log with `--diff-merges=first-parent` and feeding its stdout here.
  *
  * @param {string} stdout @returns {PruneCommit[]}
  */
@@ -701,46 +456,14 @@ export function parsePruneRecords(stdout) {
   return prunes;
 }
 
-// ---------------------------------------------------------------------------
-// THE REVERSE COMMIT-TO-PHASE MAP (D-05), AND THE MERGE WITH THE DISK TIERS.
-//
-// THE KEY IS THE COMMIT THE RECORD NAMES. Not the directory name, not the
-// commit message scope. That is the whole reason a RENUMBERED phase resolves
-// unchanged: `/cad-phase renumber` moves the directory and leaves the summary's
-// `## Commits` rows exactly where they were, so a map keyed on the row's commit
-// cell answers the same thing before and after the move, while a map keyed on
-// `phases/<N>` answers a different phase or nothing at all.
-//
-// MATCHING IS `shaMatches` AND NOTHING ELSE - case-insensitive, a prefix test in
-// either direction, against the full 40-character shas the chain carries
-// (D-17). That is what admits the 7-character abbreviations every on-disk
-// archive uses AND the 8-character ones v3.5.9's record carries, without a
-// fixed-width slice that would be wrong for one era or the other.
-//
-// A SHA THE MAP NAMES THAT THIS CLONE DOES NOT HAVE IS A STATED ABSENCE, NOT A
-// DROPPED ROW. Measured here on 2026-08-23, 248 of 248 shas extracted from the
-// archived tables resolve; a shallow clone is the case that does not, and there
-// the honest answer is "the record names a commit this clone cannot show you",
-// never a silently shorter map. The presence probe is ONE `git cat-file
-// --batch-check` over every recovered row, reading shas on STDIN - so a commit
-// cell can never be read by git as an option, whatever a summary's table says.
-//
-// THE DISK TIER WINS, ALWAYS. A `--mode archive` close both DELETED
-// `phases/<N>/SUMMARY.md` and ADDED `_archive-v<ver>/<N>/SUMMARY.md` in one
-// commit, so every archived phase is ALSO recoverable out of that commit's
-// parent - the same rows under two labels. Merging the two tiers flat would
-// make every one of them `ambiguous`, which is the index reporting a conflict
-// with itself. So the merged index carries ORDERED TIERS and the resolution
-// asks them in order, taking the first tier that answers at all: the on-disk
-// record is the one a reader can open, and the recovered tier exists for the
-// commits no on-disk summary claims. Ambiguity WITHIN a tier is still an
-// answer, and still stops the walk.
-// ---------------------------------------------------------------------------
+// The reverse commit-to-phase map, and its merge with the disk tiers.
+// The key is the commit the record names, not the directory name or the commit scope. That's why a renumbered phase resolves unchanged: `/cad-phase renumber` moves the directory and leaves the summary's `## Commits` rows where they were, so a map keyed on the row's commit cell answers the same before and after, while one keyed on `phases/<N>` answers a different phase or nothing.
+// Matching is shaMatches and nothing else, case-insensitive and a prefix test either way against the full 40-character shas the chain carries. That admits the 7-character abbreviations the archives use and the 8-character ones an older record carries, without a fixed-width slice that would be wrong for one era.
+// A sha the map names that this clone doesn't have is a stated absence, not a dropped row. A shallow clone is the case, and the honest answer there is "the record names a commit this clone cannot show you", never a silently shorter map. The presence probe is one `git cat-file --batch-check` reading shas on stdin, so a commit cell can never be read by git as an option.
+// The disk tier wins, always. An archive close both deleted `phases/<N>/SUMMARY.md` and added the archived copy in one commit, so every archived phase is also recoverable from that commit's parent: the same rows under two labels. Merging flat would make each of them ambiguous, the index reporting a conflict with itself. So the merged index carries ordered tiers and resolution takes the first tier that answers at all: the on-disk record is the one a reader can open, and the recovered tier exists for commits no on-disk summary claims. Ambiguity within a tier is still an answer and still stops the walk.
 
 /**
- * One recovered phase directory - the same shape `describe` returns for a disk
- * directory, with `path: null` (there is nothing to open) and a `recovered`
- * anchor naming the tree its artifacts live in.
+ * One recovered phase directory: the same shape describe returns for a disk directory, with `path` null (nothing to open) and a `recovered` anchor naming the tree its artifacts live in.
  * @param {PruneCommit} prune @param {string} phase @param {string} path
  * @returns {PhaseDir}
  */
@@ -751,16 +474,14 @@ function recoveredDir(prune, phase, path) {
     path: null,
     group: 'recovered',
     phase,
-    // The label the close bound, or a statement that it bound none. Never the
-    // close's subject line, and never a version inferred from the date.
+    // the label the close bound, or a statement that it bound none; never the close's subject line, never a version inferred from the date
     milestone: prune.label || `an unlabelled close (${prune.commit.slice(0, 8)})`,
     recovered: { prune: prune.commit, parent: prune.parent, tree },
   });
 }
 
 /**
- * Mark every row's commit cell as present in this clone or not, in ONE call.
- * Shas ride STDIN, so no cell is ever argv.
+ * Mark every row's commit cell as present in this clone or not, in one call. Shas ride stdin, so no cell is ever argv.
  * @param {string} repoDir @param {IndexRow[]} rows @returns {void}
  */
 function markPresence(repoDir, rows) {
@@ -782,11 +503,7 @@ function markPresence(repoDir, rows) {
 }
 
 /**
- * Many `<rev>:<path>` blobs read in one `git cat-file --batch` process, in the
- * order asked. Each answer is the blob's text, or null where git reports the
- * spec missing or the batch cannot run. The framing is `<oid> <type> <size>`,
- * then exactly `<size>` bytes and a newline, so the content is cut by byte
- * count and never by searching for the next header.
+ * Many `<rev>:<path>` blobs read in one `git cat-file --batch` process, in the order asked: each answer is the blob's text, or null where git reports the spec missing or the batch can't run. The framing is `<oid> <type> <size>` then exactly size bytes and a newline, so content is cut by byte count and never by searching for the next header.
  * @param {string} repoDir @param {string[]} specs @returns {(string|null)[]}
  */
 function catBlobs(repoDir, specs) {
@@ -816,12 +533,7 @@ function catBlobs(repoDir, specs) {
 }
 
 /**
- * The reverse commit-to-phase map, recovered from git history alone.
- *
- * ONE pass for the closes (`findPruneCommits`), then every deleted phase
- * summary read back in ONE `git cat-file --batch` (`catBlobs`). One `git show`
- * per summary cost 99 ms of a 168 ms `/cad-why` run on this repository's 123
- * summaries (2026-10-19); the batch reads them in about 5 ms.
+ * The reverse commit-to-phase map, recovered from git history alone: one pass for the closes (findPruneCommits), then every deleted phase summary read back in one `git cat-file --batch` (catBlobs), because a `git show` per summary was most of a /cad-why run.
  *
  * @param {string} repoDir
  * @returns {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[], prunes: PruneCommit[]}}
@@ -849,29 +561,15 @@ export function buildRecoveredIndex(repoDir) {
     for (const row of parseCommitRows(text)) rows.push({ ...row, dir });
   });
   markPresence(repoDir, rows);
-  // `prunes` rides the index because the NAMED GAP below needs the same closes
-  // - which milestone a gap sits under is read off them, and searching twice
-  // is what D-05 rejected.
+  // prunes rides the index because the named gap reads the same closes, and searching twice would cost a second pass
   return { dirs, rows, warnings, prunes };
 }
 
 /**
- * The one index a caller asks, over ORDERED tiers: the on-disk phase record
- * first, the off-roadmap task record second, the git-recovered record third
- * (see the header).
- *
- * THE PHASE SPINE IS THE AUTHORITY when a commit is named by both. A commit a
- * phase SUMMARY and a task record both claim resolves to the phase, because
- * `resolveCommit` takes the first tier that answers at all and the roadmap is
- * where that work was planned, reviewed and verified.
- *
- * THE TASKS TIER GOES AHEAD OF THE RECOVERED ONE on the same argument the disk
- * tier already makes against it: a task record and a phase directory are both
- * records a reader can OPEN, while the recovered tier reconstructs a directory
- * that no longer exists on disk at all.
- *
- * `prunes` comes off the RECOVERED argument alone. It is the close history the
- * named-gap block reads, and neither on-disk tier produces one.
+ * The one index a caller asks, over ordered tiers: the on-disk phase record, then the off-roadmap task record, then the git-recovered record.
+ * The phase spine is the authority when a commit is named by both: resolveCommit takes the first tier that answers at all, and the roadmap is where that work was planned, reviewed and verified.
+ * The tasks tier goes ahead of the recovered one on the same argument: a task record and a phase directory can both be opened, while the recovered tier reconstructs a directory that no longer exists.
+ * `prunes` comes from the recovered argument alone; it's the close history the named-gap block reads, and neither on-disk tier produces one.
  *
  * @param {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[]}} disk
  * @param {{dirs: TaskDir[], rows: IndexRow[], warnings: string[]}} tasks
@@ -888,38 +586,14 @@ export function mergeCommitIndexes(disk, tasks, recovered) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// THE NAMED GAP (AC4's second half, D-04, D-06) - plan 3, task 5.
-//
-// When neither tier resolves a commit, the answer is a STATED GAP plus
-// everything the record does carry, never a guessed phase number. Three
-// contributions, and each is honest about what it is:
-//
-//   - what GIT carries for that commit: the paths it touched, fetched for the
-//     whole unresolved set in ONE `git show --name-only`, never one call per
-//     entry;
-//   - which CLOSE the gap sits under, from the prune commits already found -
-//     the earliest close at or after the commit's date. It is a statement about
-//     WHEN, never about which phase, and it is absent rather than guessed when
-//     the commit is newer than every close;
-//   - `.planning/ARCHIVE.md`'s residue for that milestone, and NOTHING else.
-//     D-04 measured why: ARCHIVE.md carries no commit-to-phase edge and cannot
-//     supply one. Its row grammar is an origin path plus free text, only 18 of
-//     558 rows contain any hex token and those are incidental prose inside
-//     deviation text, and only `Deviations` and `Open items` ever reach the file
-//     - the `## Commits` table is never archived. So its rows are printed as
-//     the milestone's residue, joined to a LABEL and never to a commit.
-//
-// ROWS COME THROUGH `parseArchiveRows`, which already carries the label/origin
-// split and the phase-number round-trip guard. Its header states why `label`
-// and `origin` ride ALONGSIDE the composed `source` rather than being recovered
-// from it - a label containing a `/` makes the composed field ambiguous - so
-// nothing here re-splits `source`.
-// ---------------------------------------------------------------------------
+// The named gap. When no tier resolves a commit the answer is a stated gap plus everything the record does carry, never a guessed phase number. Three contributions, each honest about what it is:
+//   - what git carries for that commit: the paths it touched, fetched for the whole unresolved set in one `git show --name-only`
+//   - which close the gap sits under, from the prune commits already found: the earliest close at or after the commit's date. It says when, never which phase, and it's absent when the commit is newer than every close
+//   - ARCHIVE.md's residue for that milestone and nothing else: ARCHIVE.md carries no commit-to-phase edge (its rows are an origin path plus free text, almost none hold a hex token and those are incidental prose, and the `## Commits` table is never archived), so its rows are printed as the milestone's residue, joined to a label and never to a commit
+// Rows come through parseArchiveRows, which already carries the label/origin split and the phase-number round-trip guard. Label and origin ride alongside the composed `source` because a label containing a `/` makes the composed field ambiguous, so nothing here re-splits `source`.
 
 /**
- * The paths each of `shas` touched, in ONE `git show`. A merge reports none
- * under git's default, which is an absent list rather than a failure.
+ * The paths each of `shas` touched, in one `git show`. A merge reports none under git's default, which is an absent list rather than a failure.
  * @param {string} repoDir @param {string[]} shas @returns {Map<string, string[]>}
  */
 export function touchedPaths(repoDir, shas) {
@@ -943,28 +617,10 @@ export function touchedPaths(repoDir, shas) {
 }
 
 /**
- * Which close a commit's date falls under, or null when no close is later than
- * it - the ordinary state of a commit in the milestone currently open.
- *
- * PARSED INSTANTS ON BOTH SIDES, NEVER THE `%cI` STRINGS (WHY-04, phase 1
- * D-04). ISO-8601 values under different UTC offsets do not string-sort
- * chronologically - `2026-05-01T20:00:00+09:00` sorts AFTER
- * `2026-05-01T07:00:00-05:00` and happens an hour BEFORE it - so a string
- * comparison attaches an unresolved commit to a close that happened before it.
- *
- * AND THE SELECTION IS ORDER-INDEPENDENT. This scans for the SMALLEST instant
- * at or after the commit's rather than trusting `prunes` to arrive
- * newest-first, which is `findPruneCommits`'s ordering and not a contract this
- * function should silently depend on; a caller that sorted its own list would
- * otherwise break it just as quietly as the string compare did. Two closes
- * sharing one instant tie-break on the full sha, so the answer is a property of
- * the data rather than of the array's order.
- *
- * AN UNPARSEABLE DATE IS A STATED ABSENCE, NEVER A THROW. A commit date that
- * will not parse answers null - the same absence the empty-date arm already
- * gives - and a prune whose OWN date will not parse is skipped rather than
- * allowed to decide. This runs inside the gap pass over a chain git has already
- * answered, so a throw here loses a query that was already resolved.
+ * Which close a commit's date falls under, or null when no close is later than it, the ordinary state of a commit in the open milestone.
+ * Instants are parsed on both sides, never the `%cI` strings: ISO-8601 values under different UTC offsets don't string-sort chronologically (`2026-05-01T20:00:00+09:00` sorts after `2026-05-01T07:00:00-05:00` and happens an hour before it), so a string compare attaches a commit to a close that happened before it.
+ * The selection is order-independent: it scans for the smallest instant at or after the commit's instead of trusting `prunes` to arrive newest-first, which is findPruneCommits's ordering and not a contract this should silently depend on. Two closes at one instant tie-break on the full sha.
+ * An unparseable date is a stated absence, never a throw: a commit date that won't parse answers null, and a prune whose own date won't parse is skipped. This runs inside the gap pass over a chain git already answered, so a throw would lose a resolved query.
  * @param {PruneCommit[]} prunes @param {string} date an ISO commit date
  * @returns {{commit: string, label: string|null, date: string}|null}
  */
@@ -985,8 +641,7 @@ export function closeOver(prunes, date) {
 }
 
 /**
- * `.planning/ARCHIVE.md`'s rows grouped by milestone label, in the file's own
- * order. Absent is an empty map and is silent - most repositories have none.
+ * ARCHIVE.md's rows grouped by milestone label, in the file's own order. Absent is an empty map and is silent, since most repositories have none.
  * @param {string} planningRoot
  * @returns {Map<string, Array<{origin: string, text: string}>>}
  */
