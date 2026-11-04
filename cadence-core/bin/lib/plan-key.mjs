@@ -1,61 +1,17 @@
 // @ts-check
-// plan-key.mjs - the ONE statement of what a `--plan` value may be, for the two
-// `risk-check` faces that have to agree about it.
-//
-// THE DEFECT (RSK-03). `risk-check run` guarded `--plan` with `requireInt` and
-// `risk-check status` derives what it demands from the lifecycle brackets
-// `workflows/execute.md` writes, where `references/seams.md` describes
-// `--bracket-plan` as "the worker key when it is not the role name" and
-// lib/trace.mjs describes it as "a plan number on either execute path, a role
-// name for a role-dispatched worker". A coordinator that bracketed a fix pass
-// as `1-fix` therefore had `status` demand a record for `1-fix` that `run`
-// answered `bad-args` for - a gate the schema defaults to `blocking`, that no
-// argv could satisfy and whose only exit was an `override`.
-//
-// So the grammar WIDENS to the worker key, and `status` does not narrow
-// (phase 3 D-01): dropping a key the coordinator actually bracketed would be
-// fail-open on the one trigger that blocks everywhere, which is the worse of
-// the two errors. ONE predicate, consulted by both faces (D-02) - two copies
-// let the face that enforces the question disagree with the face that reports
-// it, which is the failure lib/surface-scan.mjs's `answeredSurfaces` comment
-// already states for the surface question, and which is this defect itself one
-// spelling over.
-//
-// WHAT IT REFUSES, each for a reason and not for tidiness:
-//
-//   a non-string     `parseArgs` gives a VALUELESS `--plan` the boolean `true`,
-//                    and `Number(true)` is 1 - so `risk-check run --plan` with
-//                    nothing after it recorded the answer against plan 1. That
-//                    is the VAL-01 rail the `requireInt` call was standing for,
-//                    and it survives the widening.
-//   empty / blank    a key that identifies nothing. `status` groups completed
-//                    ranges BY this value, so a blank one silently joins the
-//                    "no plan at all" row.
-//   outer whitespace `trace append --plan` stores the caller's string
-//                    untrimmed, so ` 1` and `1` would reach the join as two
-//                    different rows. Refused rather than normalized, because a
-//                    face that trimmed would write a record no receipt written
-//                    with the untrimmed spelling could ever settle - D-01's
-//                    stated cost, paid at the door instead.
-//   NUL or newline   `cmdRiskCheckStatus`'s `rowKey` joins the correlation id
-//                    and the plan with a NUL separator, so a key carrying one
-//                    can be spelled to collide with another row's identity -
-//                    a receipt for one range settling another. A newline is
-//                    the same argument against the append-only JSONL the
-//                    record and the receipt both live in.
-//
-// The accepted value comes back VERBATIM, never normalized: the record `run`
-// writes and the receipt `trace append --plan` writes must be one spelling or
-// the join finds nothing, and the only spelling both callers can be relied on
-// to produce is the one the coordinator typed.
-//
-// Shaped like lib/require-int.mjs: classify, never emit, no I/O, no env -
-// each caller owns its own reason string and its own wording.
+// what a `--plan` value may be, stated once for the two `risk-check` faces that have to agree about it
+// `run` guarded `--plan` with requireInt while `status` demands whatever key the lifecycle brackets carry, so a fix pass bracketed as `1-fix` made `status` demand a record `run` answered `bad-args` for: a blocking gate no argv could satisfy, whose only exit was an override
+// so the grammar widens to the worker key and `status` doesn't narrow, since dropping a key the coordinator actually bracketed would fail open on the one trigger that blocks everywhere. One predicate, so the face that enforces can't disagree with the face that reports
+// what it refuses, each for a reason:
+//   a non-string     parseArgs gives a valueless `--plan` the boolean `true` and Number(true) is 1, so a bare `--plan` recorded the answer against the first plan
+//   empty or blank   identifies nothing, and `status` groups ranges by this value, so a blank one joins the "no plan at all" row
+//   outer whitespace `trace append --plan` stores the string untrimmed, so ` 1` and `1` would be two rows; refused and not normalized, because a trimming face would write a record no untrimmed receipt could settle
+//   NUL or newline  `rowKey` joins the correlation id and plan with NUL, so a key carrying one could collide with another row's identity, and a newline breaks the append-only JSONL
+// the accepted value comes back verbatim, since the record and the receipt have to be one spelling or the join finds nothing
+// classify, never emit, no I/O, like require-int; each caller owns its reason string
 'use strict';
 
-/** NUL and both line breaks. `\r` rides with `\n` because they are one class -
- * a key that can be split across the record's line boundary - and refusing
- * half of it would leave the argument standing and the hole open. */
+/** NUL and both line breaks; `\r` rides with `\n` because refusing half the class would leave the hole open. */
 const FORBIDDEN = /[\0\n\r]/;
 
 /**

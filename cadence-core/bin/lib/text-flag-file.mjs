@@ -1,42 +1,14 @@
 // @ts-check
-// text-flag-file.mjs - the ONE reader behind every `--<field>-file` flag on the
-// seam, and the one home for the four refusals such a flag owes its caller.
-//
-// WHY THE TRANSPORT EXISTS. A workflow that prescribes
-// `--<field> "<value>"` puts caller-derived prose inside a double-quoted shell
-// word, so a value carrying `$(...)` or a backtick executes before Node starts.
-// A PATH cannot: the caller writes the text with a file tool and names the file
-// here, and the bytes reach the seam verbatim. `capture --text-file`
-// (planning.mjs) conceded that reasoning for one flag; this module is the same
-// transport stated once so the other free-text flags cannot each re-derive it.
-// The rule itself - which values are caller-derived and which the workflow
-// authors itself - is stated in references/conventions.md and cited by path;
-// this module only carries it out.
-//
-// ADDITIVE, never a replacement (D-04). Every inline form survives: a human
-// typing at a shell is passing their OWN text, which no transport needs to
-// protect them from.
-//
-// THE FOUR REFUSALS ARE `cmdCapture`'s, in shape (D-04):
-//   - a flag present with nothing usable after it (parseArgs mints the boolean
-//     `true` for a valueless flag, and a written-through `true` is a value the
-//     caller never passed with an ok:true envelope - #42/#45),
-//   - a path that cannot be read, with the READ ERROR named (which is also the
-//     missing-path arm: ENOENT arrives here),
-//   - a file that is empty once trimmed,
-//   - the inline and the file form given together, refused rather than resolved
-//     by precedence, because a precedence rule silently discards one of two
-//     values the caller believed was recorded.
-//
-// It deliberately does NOT route the read through `readText` in
-// lib/seam-input.mjs: that reader returns '' on failure and discards the error,
-// and naming the error is the whole point of the unreadable arm. It is not
-// `readJsonPayload` either (planning.mjs), whose envelope is
-// `no-payload`/`bad-payload` - a vocabulary no workflow reads.
-//
-// PURE and zero-dep past node builtins: no emit, no process, no write. The
-// caller owns its envelope and its `reason` string, the way lib/require-int.mjs
-// leaves `bad-args` vs `usage` to its callers.
+// the one reader behind every `--<field>-file` flag, and the home for the four refusals such a flag owes its caller
+// a workflow that prescribes `--<field> "<value>"` puts caller-derived prose inside a double-quoted shell word, so `$(...)` or a backtick in it runs before Node starts. A path can't: the caller writes the file and names it, and the bytes arrive verbatim. `capture --text-file` took this reasoning for one flag and this states it once for the rest
+// conventions.md says which values are caller-derived; this only carries it out, and every inline form survives since a human at a shell passes their own text
+// the four refusals are cmdCapture's, in shape:
+//   - a flag with nothing usable after it (parseArgs mints the boolean `true` for a valueless flag, and writing that through is a value the caller never passed, under ok:true; #42/#45)
+//   - an unreadable path, with the read error named (ENOENT lands here too)
+//   - a file that is empty once trimmed
+//   - the inline and file forms together, refused and not resolved by precedence, which silently discards one of two values the caller thought was recorded
+// the read doesn't go through `readText` in seam-input, which returns '' and discards the error, and naming the error is the point; nor `readJsonPayload`, whose `no-payload`/`bad-payload` vocabulary no workflow reads
+// pure past node builtins: the caller owns its envelope and reason string
 'use strict';
 
 import { readFileSync } from 'node:fs';
@@ -44,17 +16,14 @@ import { readFileSync } from 'node:fs';
 /**
  * Resolve `--<field>-file` to the file's trimmed contents, or say why not.
  *
- * ABSENT IS NOT AN ANSWER ABOUT THE INLINE FLAG. With no `--<field>-file` at
- * all this returns `value: undefined` and says nothing about `--<field>`, so
- * every caller keeps its own inline handling byte-for-byte - the inline value
- * is never trimmed, defaulted or re-validated here. A caller reads it as
- * `resolved.value !== undefined ? resolved.value : opts[field]`.
+ * With no `--<field>-file` this returns `value: undefined` and says nothing
+ * about the inline flag, so every caller keeps its own inline handling byte for
+ * byte: that value is never trimmed, defaulted or re-validated here. A caller
+ * reads `resolved.value !== undefined ? resolved.value : opts[field]`.
  *
- * ONE shape on both paths rather than an `ok`-discriminated union, the
- * `resolveRange` precedent in planning.mjs: this repo's CI typecheck runs
- * `strict: false`, where narrowing a JSDoc union by its boolean literal does
- * not happen, so the union costs every caller a cast (measured - it is a
- * TS2339 at the first call site). A refusal reads
+ * One shape on both paths, not an `ok`-discriminated union: CI typechecks with
+ * `strict: false`, where narrowing on the boolean literal doesn't happen and the
+ * union cost every caller a cast. A refusal reads
  * `{ok: false, value: undefined, detail: <why>}`.
  *
  * @param {Record<string, any>} opts parsed flags (parseArgs' `opts` object)
