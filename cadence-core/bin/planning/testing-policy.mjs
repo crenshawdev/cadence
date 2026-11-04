@@ -119,6 +119,8 @@ function effectivePolicy(root) {
   return { policy: config.accepted ? fill(config.testing) : null, forgeProvider: config.forgeProvider, unusable: unusableConfig(config) };
 }
 
+const SET_FORGE = 'run /cad-config --testing, or name the forge with config.mjs set git.forge_provider=<provider>';
+
 const NO_POLICY_HINT = 'run /cad-config --testing to accept a testing policy first - until then the project behaves as it did before the policy existed';
 
 /**
@@ -244,6 +246,9 @@ function cmdCheck(root, base) {
 
   // The config against the workflow files - GitHub Actions only.
   const enforcement = forgeProvider === 'github' ? 'available' : 'unavailable';
+  // Null means nobody answered, which is not another forge. Nothing was compared, so it can't pass.
+  const unsetForge = `git.forge_provider is unset, so the workflow files were not compared; ${SET_FORGE}`;
+  if (forgeProvider === null) problems.push(unsetForge);
   /** @type {boolean|null} */
   let gate_found = null;
   if (enforcement === 'available') {
@@ -266,7 +271,7 @@ function cmdCheck(root, base) {
   const answer = { accepted: true, enforcement, gate_found, problems, publish_authorized,
     ...(against ? { base: against } : {}),
     ...(enforcement === 'unavailable'
-      ? { note: `git.forge_provider is ${JSON.stringify(forgeProvider)}: enforcement is GitHub Actions only, so the workflow files were not compared` }
+      ? { note: forgeProvider === null ? unsetForge : `git.forge_provider is ${JSON.stringify(forgeProvider)}: enforcement is GitHub Actions only, so the workflow files were not compared` }
       : {}) };
   if (problems.length === 0) return ok(answer);
   return emit({ ok: false, reason: 'policy-disagrees', detail: problems.join('; '),
@@ -361,6 +366,9 @@ function cmdCiStatus(dir, root, opts) {
   const required = Array.isArray(testing.required_jobs) ? testing.required_jobs : [];
   const answer = (/** @type {string} */ a, /** @type {Record<string, any>} */ more) => ({ commit: sha.toLowerCase(), answer: a, jobs: [], ...more });
 
+  if (forgeProvider === null) {
+    return ok(answer('pending', { reason: `git.forge_provider is unset, so no CI result was read; ${SET_FORGE}` }));
+  }
   if (forgeProvider !== 'github') {
     return ok(answer('pending', { reason: `git.forge_provider is ${JSON.stringify(forgeProvider)}: CI results are read from GitHub only, so this stays pending until the checks run some other automated way` }));
   }

@@ -306,6 +306,13 @@ site - this section). This section points at them and restates none.
    blank-page project has no code to inspect: it accepts from the stated stack
    and every coverage figure reads `unknown`.
 
+   On the `--testing` route only, resolve the forge too, because enforcement
+   reads it and setup has not run here. Run
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" detect --dir .` and
+   follow the **Pick a forge** item of
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/adopt.md`. A refusal or a declined
+   answer leaves it unset: say so and carry on, because `check` in step 4 names it.
+
 3. Present ONE recommendation through the ask-user seam
    (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/seam-ask-user.md`) with two
    options, Accept and Adjust, and no third. It carries:

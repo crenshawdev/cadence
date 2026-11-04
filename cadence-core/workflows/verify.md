@@ -358,7 +358,7 @@ subagent. Every `uat record` here carries repository text through
    by re-recording `pending_ci` with the new `commit` and the same `job`.
 2. Use the `publish_authorized` and `enforcement` fields of the walk's
    `test-policy check` answer (present on a failing answer too).
-   - `enforcement: unavailable` (another forge): say enforcement is unavailable
+   - `enforcement: unavailable` (another forge, or none set): say enforcement is unavailable
      and why, from the answer's `note`. Push nothing and read nothing. The items
      stay required and pending until they run some other automated way or the
      user explicitly makes one optional.
