@@ -52,11 +52,15 @@ walk is the flat way.
 ### The walk
 
 1. Read the current config. Show a one-screen summary (each knob = current value).
-2. Walk the catalog **in order, 4 knobs per `AskUserQuestion` call** (the
-   ask-user seam; its 4-option cap is why we page). For each knob:
-   - one question; its text = the knob's **Purpose**, options = the knob's Values,
-   - **each option carries its Explanation as the option `description`** (the small
-     line shown under the option in the selection list),
+2. Read the walk's rows with
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys --walk`
+   (one consult site - this step): sections in walk order, each with its keys.
+   Walk them **in order, 4 knobs per `AskUserQuestion` call** (the ask-user seam;
+   its 4-option cap is why we page). For each knob:
+   - one question; its text = the knob's `question`, options = the `value` of
+     each `explain` entry,
+   - **each option carries its entry's `text` as the option `description`** (the
+     small line shown under the option in the selection list),
    - **Label the value in force, and name the LAYER it comes from. Two labels,
      never zero.** Compare step 0's raw read of `.planning/config.json` against
      `config.mjs get`:
@@ -81,10 +85,6 @@ walk is the flat way.
      value silently absent reads as a value that does not exist -
      `review.triggers.<t>.gate` is the live case, at five.
    - `Other` (auto-added) is the free-type entry for numbers, strings, and lists.
-
-   Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/config-catalog.md`
-   (one consult site - this step) for the rows themselves, in walk
-   order, each carrying its Purpose, Values and Explanations.
 3. A page whose knobs the user leaves unchanged is a no-op, and so is a page
    where every pick matched the value already in force (step 2's no-op rule).
    Only a value that DIFFERS from what is in force is a diff, and only diffs are
@@ -96,18 +96,6 @@ walk is the flat way.
    (`Configure review providers now?`) that enters **Review provider setup**.
 6. Then run **Worktree base ref** below - a HOST setting, offered only when
    the config now in hand runs plans in parallel worktrees.
-
-### Catalog
-
-The catalog is references/config-catalog.md, read at walk step 2 above.
-**Source of truth is `cadence-core/config.schema.json`**, enforced by the
-`bin/config.mjs` seam - the catalog is the menu's *presentation layer* (purpose
-+ per-value copy) and must stay in sync with the schema's keys/types/enums:
-never hand-validate against the catalog; call the seam (see **Validation seam**
-below). It is deliberately transcribed, NOT derived from `config.mjs keys`: the
-schema carries no per-value explanation field, while the walk above requires
-each option to carry its Explanation as the option `description`, so deriving
-would drop required copy rather than save bytes.
 
 ### Validation seam
 
@@ -121,6 +109,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set   <key=value>…  #
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset <key>…        # remove keys from ONE layer; absent key = ok, no bytes changed
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get   [key …]       # EFFECTIVE values (repo > global > defaults)
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys                # dump schema (types/enums/defaults/purpose)
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys --walk         # the walk's rows only: question + value explanations
 ```
 
 `get` is how every workflow reads config - the only read that sees the global
