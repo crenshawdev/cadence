@@ -37,17 +37,17 @@
 
 # Reference
 
-- [Commands]()
-- [Permissions and data]()
+- [Commands](reference/commands.md)
+- [Permissions and data](reference/permissions.md)
 
 # How it works
 
-- [Roles and context]()
-- [State and records]()
-- [Controls and their limits]()
-- [Cost]()
+- [Roles and context](how-it-works/roles.md)
+- [State and records](how-it-works/records.md)
+- [Controls and their limits](how-it-works/controls.md)
+- [Cost](how-it-works/cost.md)
 
 ---
 
-[Contributing]()
-[Design decisions and lineage]()
+[Contributing](contributing.md)
+[Design decisions and lineage](lineage.md)

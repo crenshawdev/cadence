@@ -35,7 +35,7 @@ Cadence's shell commands go through Claude Code's permission checks. Your permis
 
 Publishing has additional controls. Accepting a testing policy doesn't authorize verification pushes; you make that choice separately through `/cadence:cad-config --testing`.
 
-The [permissions and data reference](https://github.com/crenshawdev/cadence/blob/main/docs/PERMISSIONS.md) describes provider calls, credentials and files outside your project.
+The [permissions and data reference](../reference/permissions.md) describes provider calls, credentials and files outside your project.
 
 ## Update or remove
 
