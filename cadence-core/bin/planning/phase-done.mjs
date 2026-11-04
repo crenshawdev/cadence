@@ -1,11 +1,8 @@
 // @ts-check
-// planning/phase-done.mjs - `phase-done`, the two status flips verify.md owns
-// (and undo reverses). Flips phase N's ROADMAP box and its traceability rows in
-// one call; output names exactly what changed. Deferred rows are never touched
-// unless named explicitly via --reqs.
-//
-// Every edit is decided before the first write (JRN-02), so a malformed sibling
-// leaves the tree at its old state under ok:false rather than half-flipped.
+// planning/phase-done.mjs - `phase-done`, the two status flips verify.md owns (and undo reverses)
+// it flips phase N's ROADMAP box and its traceability rows in one call and names exactly what changed
+// deferred rows are never touched unless --reqs names them
+// every edit is decided before the first write, so a malformed sibling leaves the tree at its old state under ok:false and not half-flipped
 'use strict';
 
 import { existsSync, statSync, readFileSync } from 'node:fs';
@@ -20,13 +17,9 @@ import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 function cmdPhaseDone(dir, opts) {
-  // `--n "$PHASE"` with the variable unset reaches parseArgs as a valueless
-  // flag, which mints the boolean `true` - and `Number(true) === 1` boxed
-  // phase 1 complete and flipped its traceability rows, ok:true. requirePhaseArg
-  // refuses that shape (and every non-numeric one) before anything is read.
-  // `.value`, not `.raw` (D-11): setPhaseBox, the `r.phase === n` row filter and
-  // the unknown-phase message all take a number, and the raw spelling would
-  // regress `--n 02` to unknown-phase while `--n 2.1` must keep boxing Phase 2.1.
+  // `--n "$PHASE"` with the variable unset reaches parseArgs as a valueless flag, which mints the boolean true, and Number(true) === 1 boxed the first phase complete with ok:true
+  // requirePhaseArg refuses that and every other non-numeric shape before anything is read
+  // .value and not .raw: setPhaseBox, the r.phase === n filter and the unknown-phase message all take a number, and the raw spelling would regress `--n 02` to unknown-phase while `--n 2.1` has to keep boxing the 2.1 phase
   const parsedPhase = requirePhaseArg(opts.n);
   if (!parsedPhase.ok) {
     return fail('bad-args', 'phase-done needs --n <phase>',
@@ -34,10 +27,7 @@ function cmdPhaseDone(dir, opts) {
       + ' unset reaches here as a flag with no value');
   }
   const n = parsedPhase.value;
-  // An explicit --reqs means "exactly these rows". An empty one is almost
-  // always an unset variable (`--reqs "$IDS"`), and treating it as "flag
-  // absent" would silently widen that to every non-Deferred row of the phase -
-  // the opposite of the caller's intent - so it fails here instead.
+  // an explicit --reqs means exactly these rows. An empty one is almost always an unset variable, and treating it as absent would silently widen to every non-Deferred row of the phase, so it fails
   let namedReqs = null;
   if ('reqs' in opts) {
     if (typeof opts.reqs !== 'string') {
@@ -67,30 +57,10 @@ function cmdPhaseDone(dir, opts) {
       + ' there first');
   }
 
-  // REQUIREMENTS.md as a THREE-state fact - absent, present-but-unreadable,
-  // present-and-read - because `read()` answers `null` for the first two alike
-  // and that collapse is the defect: measured 2026-08-22, `phase-done --n 1`
-  // against a tree where REQUIREMENTS.md was a DIRECTORY returned
-  // `{"ok":true,...,"reqs":[]}` at exit 0 with the roadmap boxed and the
-  // traceability rows silently unwritten. `read()` itself is not touched - its
-  // callers throughout this file legitimately treat absence as data - and the
-  // shape is `readManifest`'s in release-bump.mjs, which already separates
-  // "no manifest" from "a manifest I cannot parse" for the same reason.
-  //
-  // ABSENT keeps today's path exactly: no REQUIREMENTS step, `reqs: []`,
-  // ok:true. verify.md's phase-done step is a hard step, so a project that
-  // never kept a REQUIREMENTS.md must still be able to close a phase (D-03).
-  // UNREADABLE refuses the whole transition below.
-  //
-  // UNREADABLE is decided from the file's SHAPE, not from whether reading it
-  // threw. `read()` wraps readFileSync, which does not throw on a FIFO (it
-  // blocks forever with no writer) nor on a character device (/dev/null reads
-  // as ''), so neither shape would ever reach the refusal the pre-flight below
-  // advertises: one hangs before any envelope, the other reads '' as a genuine
-  // requirements document and reports REQUIREMENTS.md as written. That is the
-  // same defect the blocking review found at readChangelog, fixed there with
-  // this check (`cadence-core/bin/release-bump.mjs`); the bar belongs on both
-  // members of the write set, not one.
+  // REQUIREMENTS.md is a three-state fact (absent, present but unreadable, read) because read() answers null for the first two alike
+  // with REQUIREMENTS.md as a directory this used to return ok:true at exit 0, roadmap boxed and the traceability rows silently unwritten
+  // absent keeps the old path: no REQUIREMENTS step and reqs: [], since a project that never kept one must still be able to close a phase. Unreadable refuses the whole transition below
+  // unreadable is decided from the file's shape and not from whether reading threw: readFileSync blocks forever on a FIFO and reads /dev/null as '', so neither would reach the refusal. release-bump's readChangelog had the same bug
   const reqFile = join(dir, 'REQUIREMENTS.md');
   const reqPresent = existsSync(reqFile);
   let reqRegular = false;
@@ -110,40 +80,15 @@ function cmdPhaseDone(dir, opts) {
     newReqText = res.text;
   }
 
-  // THE CLOSE ASSERTS THE QUEUE IS EMPTY - it does not empty it (CAP-03).
-  // `.planning/CAPTURE.md` holds the phase IN FLIGHT, and what makes it
-  // transient is that an item leaves at the gate that declined to fix it, not
-  // in a roll-out here. So this reads the queue and REPORTS what is left; a
-  // non-empty queue is a named problem and never a refusal, because a phase's
-  // completion is a fact about the work, not about this file.
-  //
-  // Read BEFORE the transition runs, for the same reason the pre-flight is
-  // where it is: whatever this returns must not depend on which documents have
-  // already been written. And nothing it returns can change the outcome - an
-  // absent queue is an EMPTY queue, and one that cannot be opened is reported
-  // `unread` and closes anyway. `planning.mjs capture-check` is where an
-  // unreadable queue gets a reason and a hint; it is a report of its own and
-  // refusing a phase close over it would be this seam answering a question
-  // nobody asked it.
+  // the close asserts the capture queue is empty and doesn't empty it: an item leaves at the gate that declined to fix it
+  // so this reports what's left, and a non-empty queue is a named problem and never a refusal, since a phase's completion is a fact about the work and not about this file
+  // read before the transition runs so the result can't depend on which documents are already written. An absent queue is empty and an unopenable one is `unread` and closes anyway; capture-check is where it gets a reason
   const capture = undo ? null : readQueue(join(dir, 'CAPTURE.md'));
 
-  // ONE ordered step list, stopped at the first failure: ROADMAP.md, then
-  // REQUIREMENTS.md when there is one to write. The key on each step is the
-  // DOCUMENT NAME rather than the joined path, because that key is what the
-  // envelope reports and a caller reading it wants the document, not the
-  // fixture's temp directory. The order is load-bearing and is the one this
-  // seam has always used.
-  //
-  // The PRE-FLIGHT is what makes "nothing was written" true, and it is the only
-  // form of that promise this seam can keep: an atomic rename protects ONE file
-  // from torn bytes and cannot make two files change together, and the
-  // primitive underneath is a refusal protocol with no undo (D-01), so once
-  // ROADMAP.md has landed there is nothing to roll back to. The refusal
-  // therefore has to happen BEFORE the first thunk runs - which is what makes
-  // an unreadable REQUIREMENTS.md leave ROADMAP.md byte-identical instead of
-  // boxed-and-then-reported-as-an-error. `satisfied` answers from a value
-  // already in hand and performs no I/O of its own (D-12), so it cannot throw
-  // past runTransition, which has no arm for that.
+  // one ordered step list, stopped at the first failure: ROADMAP.md, then REQUIREMENTS.md when there's one to write
+  // keyed by document name and not the joined path, because that's what the envelope reports
+  // the preflight is what makes "nothing was written" true: an atomic rename protects one file and can't make two change together, and the transition has no undo, so once ROADMAP.md lands there's nothing to roll back to
+  // satisfied answers from a value already in hand and does no I/O, so it can't throw past runTransition, which has no arm for that
   /** @type {Array<[string, () => void]>} */
   const steps = [['ROADMAP.md', () => atomicWrite(roadmapFile, boxed.text)]];
   if (newReqText !== null) steps.push(['REQUIREMENTS.md', () => atomicWrite(reqFile, newReqText)]);
@@ -161,18 +106,9 @@ function cmdPhaseDone(dir, opts) {
       + ' is byte-identical and the close starts over cleanly');
   }
   if (!applied.ok) {
-    // The shapes that reach here are the ones NO readability check can see - an
-    // EACCES on `.planning` itself, a symlink planted at atomicWrite's derived
-    // temp path, ENOSPC - which is why the pre-flight above deliberately does
-    // not pretend to cover them: a refusal advertised for failures it cannot
-    // deliver would talk callers out of checking the tree by hand.
-    //
-    // Emitted directly rather than through fail(), for the reason cmdRenumber
-    // records for its own partial arm: fail() carries reason/detail/hint only,
-    // and this arm has to carry the write record too. Letting it reach the
-    // dispatch-level catch instead would flatten it to
-    // `{"ok":false,"reason":"internal"}` with no record of which document moved
-    // - the undifferentiated envelope this whole change exists to remove.
+    // these are the shapes no readability check can see (EACCES on .planning, a symlink planted at atomicWrite's temp path, ENOSPC), so the preflight doesn't pretend to cover them
+    // emitted directly and not through fail(), like cmdRenumber's partial arm: fail carries reason/detail/hint only and this arm needs the write record too
+    // the dispatch-level catch would flatten it to {"ok":false,"reason":"internal"} with no record of which document moved
     const e = applied.failures[0].error;
     return emit({
       ok: false, reason: 'partial-flip', wrote: applied.completed,
@@ -182,32 +118,17 @@ function cmdPhaseDone(dir, opts) {
         : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
     });
   }
-  // `wrote` is the transition's own completed record rendered into the
-  // envelope: the document names, in write order, so a caller can tell "both
-  // documents moved" from "only the roadmap did" without re-deriving it from
-  // `reqs`. It is a NEW field precisely so nothing existing has to carry that
-  // meaning (D-04): `roadmap.{line,now}` and `reqs` keep the shape and contents
-  // they have always had - `reqs` stays the ids setReqStatus reported changed
-  // and never becomes `null` to mean "not written", because /cad-verify and
-  // /cad-undo read it and planning.test.mjs deep-equals it across nine cases.
-  //
-  // `capture` is a NEW field on D-04's own precedent, and rides the CLOSE arm
-  // only: reopening a phase makes no assertion about the queue, so `--undo`
-  // omits it on the omit-optionals convention. Nothing existing changes
-  // meaning - `roadmap`, `reqs` and `wrote` keep the shape and contents nine
-  // deep-equal cases already assert.
+  // wrote is the transition's completed record: document names in write order, so a caller can tell "both moved" from "only the roadmap did" without re-deriving it from reqs
+  // it's a new field so nothing existing changes meaning, and reqs stays the ids setReqStatus changed and never becomes null, because /cad-verify and /cad-undo read it
+  // capture is new too and rides the close arm only: reopening a phase says nothing about the queue, so --undo omits it
   ok({ roadmap: { line: boxed.line, now: undo ? '[ ]' : '[x]' }, reqs, wrote: applied.completed,
     ...(capture ? { capture } : {}) });
 }
 
 /**
- * The capture queue at close: `{substantive, items}` when it could be read or
- * is absent, `{unread: true}` when it is present and could not be.
+ * The capture queue at close: `{substantive, items}` when it could be read or is absent, `{unread: true}` when it is present and couldn't be.
  *
- * The unread arm carries no `fs` message on purpose. This envelope's job is the
- * CLOSE, and a reader who needs the reason runs `capture-check`, which refuses
- * that file with a detail and a hint rather than reporting about a file it
- * could not open.
+ * The unread arm carries no fs message on purpose: the close only needs to know, and `capture-check` refuses that file with a detail and a hint.
  * @param {string} file
  * @returns {{substantive: number, items: Array<{section: string, line: number, text: string}>}
  *   | {unread: true}}
@@ -218,8 +139,7 @@ function readQueue(file) {
   try {
     text = readFileSync(file, 'utf8');
   } catch (e) {
-    // Absence is DATA, as everywhere in this seam: a project with no CAPTURE.md
-    // has an empty queue, which is exactly what this assertion wants to find.
+    // absence is data, as everywhere in this seam: no CAPTURE.md means an empty queue
     if (e && /** @type {any} */ (e).code === 'ENOENT') return { substantive: 0, items: [] };
     return { unread: true };
   }

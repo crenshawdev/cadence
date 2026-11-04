@@ -1,6 +1,5 @@
 // @ts-check
-// planning/task-record.mjs - `task-record`: the artifact a /cad-task run leaves
-// behind (FST-01).
+// planning/task-record.mjs - `task-record`: the artifact a /cad-task run leaves behind
 'use strict';
 
 import { execFileSync } from 'node:child_process';
@@ -17,39 +16,13 @@ import {
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { appendEvent } from '../lib/trace.mjs';
 
-// ---------------------------------------------------------------------------
-// task-record - the artifact a `/cad-task` run leaves behind (FST-01).
-//
-// THE HOLE IT FILLS. The fast path is the one most real work takes, and until
-// now it left commits and nothing else: no artifact the recall corpus could
-// index and nothing `/cad-why` could join a commit back to. The phase spine got
-// the design attention because Cadence's own work is always the heavy kind.
-//
-// CODE WRITES IT, never workflow prose holding `Write`/`Edit` (D-07).
-// lib/capture-file.mjs's header records what that shape cost this queue: five
-// filed bullets were lost because a model wrote them below a heading the recall
-// walk does not visit, and nothing could fail. `cmdCiteCount` and
-// `cmdRiskCheckRun` are the in-code precedents, down to appending their own
-// `outcome` event before the envelope is emitted.
-//
-// EVERY FIGURE IS DERIVED FROM THE RANGE, never retyped onto a flag. The
-// commits table comes from one `git log` and the declared-files line from one
-// `git diff --name-only`, both over the ids `resolveRange` resolved - so a
-// re-run over an unchanged range rewrites byte-identical bytes, which is what
-// makes the record evidence rather than a claim about the range.
-//
-// WHERE IT LANDS is lib/task-record.mjs's, and so is what it looks like: the
-// writer here, the recall walk in `cmdRecall` and `/cad-why`'s task tier are
-// three readers of one fact, which is exactly the split that lost those five
-// bullets.
-// ---------------------------------------------------------------------------
+// the fast path is the one most real work takes, and it used to leave commits and nothing else: nothing the recall corpus could index and nothing /cad-why could join a commit back to
+// code writes the record and never workflow prose holding Write/Edit: five filed bullets were lost when a model wrote them below a heading the recall walk doesn't visit, and nothing could fail
+// every figure comes from the range and none is retyped onto a flag, so a re-run over an unchanged range rewrites the same bytes
+// where it lands and what it looks like is lib/task-record.mjs's, so the writer, the recall walk and /cad-why's task tier all read one fact
 
 function cmdTaskRecord(dir, opts) {
-  // THE SLUG IS A PATH SEGMENT, refused and never sanitised - the VAL-01 lesson
-  // from `milestone-prune --label`, which was only TRIMMED before being joined
-  // onto a directory path and escaped the tree. Judged FIRST and with nothing
-  // written, so a slug that could name a path outside `.planning/tasks/` never
-  // reaches a `join`.
+  // the slug is a path segment, refused and never sanitised: milestone-prune --label was only trimmed before being joined onto a path and escaped the tree. Judged first, with nothing written
   if (!isTaskSlug(opts.slug)) {
     return fail('bad-args',
       'task-record --slug must be ONE path segment of lowercase letters, digits and '
@@ -59,9 +32,7 @@ function cmdTaskRecord(dir, opts) {
   }
   const slug = String(opts.slug);
 
-  // BOTH required and neither defaulted, `risk-check run`'s rule read through
-  // that face's own `riskRef`: a defaulted head is a range the caller never
-  // stated, and this record is the evidence of what shipped.
+  // both required and neither defaulted, like risk-check run: a defaulted head is a range the caller never stated, and this record is the evidence of what shipped
   const base = riskRef(opts.base);
   const head = riskRef(opts.head);
   if (!base || !head) {
@@ -71,10 +42,7 @@ function cmdTaskRecord(dir, opts) {
       + ' this record');
   }
 
-  // The prose, through the ONE reader every `--<field>-file` flag goes through.
-  // `--text-file` is the transport a workflow prescribes - `--text "<value>"`
-  // puts caller-derived prose inside a double-quoted shell word, where a `$(...)`
-  // executes before Node starts - and `--text` stays for a human at a shell.
+  // --text-file is what workflows use: --text "<value>" puts caller-derived prose inside a double-quoted shell word, where a $(...) runs before Node starts. --text stays for a human at a shell
   const resolvedText = resolveTextFlag(opts, 'text', 'task-record');
   if (!resolvedText.ok) {
     return fail('bad-args', resolvedText.detail,
@@ -82,8 +50,7 @@ function cmdTaskRecord(dir, opts) {
   }
   const text = resolvedText.value !== undefined
     ? resolvedText.value
-    // parseArgs mints the boolean `true` for a valueless flag, so a bare
-    // `--text` written through would record the literal word "true" (#42/#45).
+    // parseArgs mints the boolean true for a valueless flag, so a bare --text would record the word "true"
     : (typeof opts.text === 'string' ? opts.text.trim() : '');
   if (!text) {
     return fail('bad-args', 'task-record needs what shipped: --text-file <path> '
@@ -92,13 +59,9 @@ function cmdTaskRecord(dir, opts) {
       + ' --text at a shell - it is what a later /cad-why reads back off this range');
   }
 
-  // ONE git call per figure, never one per commit. `%x1f` separates the fields
-  // because a subject can carry anything a commit message can, a tab and a pipe
-  // included; the split is on the FIRST separator alone, so a subject carrying
-  // one keeps its tail instead of losing it to a third field. `--reverse` puts
-  // the oldest commit first, the order a record reads in. The trailing `--`
-  // ends the revision list, so a ref that also names a path cannot turn into a
-  // pathspec.
+  // one git call per figure, never per commit
+  // %x1f separates the fields because a subject can carry a tab or a pipe, and splitting on the first one only keeps a subject that carries another
+  // --reverse puts the oldest commit first, and the trailing -- ends the revision list so a ref that also names a path can't become a pathspec
   let commits = [];
   let files = [];
   let rangeError = null;
@@ -119,8 +82,7 @@ function cmdTaskRecord(dir, opts) {
         });
       files = git(['diff', '--name-only', range.base, range.head, '--']);
     } catch (e) {
-      // redactUrl first, the EXP-01 rail `resolveRange` itself applies: a git
-      // failure detail can carry a remote URL with credentials in it.
+      // redactUrl first: a git failure detail can carry a remote URL with credentials in it
       rangeError = redactUrl(e && e.message ? e.message : String(e));
     }
   }
@@ -130,12 +92,8 @@ function cmdTaskRecord(dir, opts) {
   let written = false;
   let reason;
   let writeError = null;
-  // A PLANNING ROOT THAT DOES NOT EXIST IS NOT CREATED HERE, and neither is
-  // `tasks/`. The record is a tracked artifact of a project that has one; on a
-  // tree with no `.planning/` the fast path's guarantee is that it scaffolds
-  // nothing, so this answers `written: false` with a reason rather than minting
-  // a planning tree the user never asked for. A non-directory at that path
-  // takes the same arm: it is the same answer - there is no root to write into.
+  // a missing planning root isn't created here, and neither is tasks/: with no .planning/ the fast path scaffolds nothing, so it answers written: false with a reason
+  // a non-directory at that path takes the same arm, because there's no root to write into either way
   let rootIsDir = false;
   try { rootIsDir = statSync(dir).isDirectory(); } catch { /* absent is the ordinary case */ }
   if (rangeError !== null) {
@@ -145,31 +103,16 @@ function cmdTaskRecord(dir, opts) {
   } else {
     try {
       mkdirSync(recordDir, { recursive: true });
-      // CONTAINED THE WAY THE LISTER IS, and for the same reason one level
-      // earlier. `isTaskSlug` refuses a slug that TRAVERSES; it says nothing
-      // about a `tasks/<slug>` that already IS a symlink, and git carries
-      // symlinks, so a cloned planning tree ships one. `mkdirSync(recursive)`
-      // follows it without complaint and `atomicWrite` does not catch it - it
-      // `lstat`s its own TEMP path, which refuses a symlinked destination FILE
-      // and is silent about a symlinked parent DIRECTORY. So the record would
-      // land in a tree `taskRecordsIn` would then refuse to read it back from:
-      // the writer and the reader disagreeing about containment is the
-      // asymmetry, and this is the half that was missing. Checked AFTER the
-      // mkdir because that is when the directory exists to be resolved.
+      // isTaskSlug refuses a slug that traverses but says nothing about tasks/<slug> already being a symlink, and git carries those
+      // mkdir -p follows it and atomicWrite only lstats its own temp path, so the record would land where taskRecordsIn refuses to read it back
+      // checked after the mkdir because that's when the directory exists to resolve
       if (!insideRoot(dir, recordDir)) {
         throw new Error(`task-record refused: ${recordDir} resolves outside ${dir}`);
       }
-      // OVERWRITING IS CORRECT HERE, and is the opposite of `cmdAdjudication`'s
-      // refusal: that seam refuses because a second round's rulings must not
-      // replace a first's, while this record is derived WHOLLY from the range
-      // and the text - a re-run over an unchanged range rewrites the same bytes,
-      // and a re-run over a wider range is the correction the caller intended.
-      // `atomicWrite` is the symlink-refusing writer FSW-01 put in place.
+      // overwriting is right here, unlike cmdAdjudication: this record is derived wholly from the range and the text, so a re-run rewrites the same bytes and a wider range is the correction the caller meant
       atomicWrite(recordPath, renderTaskRecord({
         slug,
-        // The heading's title is the SLUG, not a flag: a title a caller could
-        // type is a second name for the record, and nothing reads it but this
-        // heading.
+        // the title is the slug and not a flag, since a typed title would be a second name for the record
         title: slug,
         body: text,
         commits,
@@ -177,46 +120,23 @@ function cmdTaskRecord(dir, opts) {
       }));
       written = true;
     } catch (e) {
-      // NOT through `redactUrl`, and the census in planning.test.mjs states the
-      // rule: this is an `fs` error over a path the CALLER just named through
-      // `--dir`, so the only string it can echo is one the caller already holds.
-      // `redactUrl` targets a credential arriving from a remote the user never
-      // typed, which a local write cannot carry. The `git` catch above IS
-      // wrapped, for exactly that reason.
+      // not through redactUrl: this is an fs error over a path the caller just named, so the only string it can echo is one they already hold. The git catch above is wrapped because a remote can send back a credential nobody typed
       writeError = e && e.message ? e.message : String(e);
       reason = writeError;
     }
   }
 
-  // Appended BEFORE the envelope is emitted and on every path past argument
-  // validation - the unresolvable-range path and the absent-root path included -
-  // so even a refusal leaves the record saying a task record was ATTEMPTED.
-  // `cmdRiskCheckRun`'s precedent exactly, and the reason this is a WRITING seam
-  // rather than a reader with a `trace append` beside it: two extra invocations,
-  // and every figure retyped between them.
-  //
-  // `phase` is hardcoded to 0 rather than taken from a `--phase` a caller could
-  // misstate: `workflows/task.md` already states the fast path carries no
-  // roadmap phase, and 0 is the number it uses for that.
-  //
-  // NO `role` and NO `tokens`: this opens no bracket and bills no worker, and a
-  // token figure is read off a SUBAGENT return this seam does not have
-  // (lib/trace.mjs's TOKEN PROVENANCE).
-  //
-  // The append may NOT change the verdict - `appendEvent` never throws and never
-  // speaks - so its `{written, reason}` rides the envelope as `trace: {...}`
-  // beside the record's own top-level `{written, reason}`. On a tree with no
-  // planning root it writes nothing either, which is the same answer the record
-  // gave and not a second failure.
+  // appended before the envelope and on every path past argument validation, so even a refusal records that a task record was attempted
+  // that's why this writes the trace itself and isn't a reader with a separate trace append beside it: two extra invocations and every figure retyped between them
+  // phase is 0 because the fast path carries no roadmap phase, and a --phase would be one more thing for a caller to misstate
+  // no role and no tokens: this opens no bracket and bills no worker, and token counts come off a subagent return this seam doesn't have
+  // appendEvent never throws and never speaks, so it can't change the verdict, and its {written, reason} rides the envelope as trace
   const res = appendEvent(dir, {
     phase: 0,
     family: 'outcome',
     event: 'task_record',
     slug,
-    // Both spellings AND both ids, always: the spelling is what a reader
-    // recognises, the id is the range's identity. Written even when null, so a
-    // run that resolved nothing is visibly unidentifiable rather than silently
-    // absent a field.
+    // both spellings and both ids, written even when null so a run that resolved nothing is visibly unidentifiable and not silently missing a field
     base,
     head,
     base_id: range.ok ? range.base : null,
@@ -227,9 +147,7 @@ function cmdTaskRecord(dir, opts) {
   });
   const trace = { written: res.written, ...(res.reason ? { reason: res.reason } : {}) };
 
-  // A range that could not be READ is never ok, `risk-check run`'s `no-diff`
-  // rule: a caller must not be able to take "git refused" for "the task touched
-  // nothing".
+  // a range that couldn't be read is never ok, so a caller can't take "git refused" for "the task touched nothing"
   if (rangeError !== null) {
     return emit({ ok: false, reason: 'no-range', detail: rangeError, slug, base, head,
       written: false, trace,
@@ -251,9 +169,7 @@ function cmdTaskRecord(dir, opts) {
     record: recordPath,
     commits: commits.length,
     files: files.length,
-    // ALWAYS present, both of them: `written: false` beside a reason is the
-    // answer on a tree with no planning root, and a caller that had to infer it
-    // from an absent `record` field would be inferring.
+    // always present: written: false beside a reason is the answer on a tree with no planning root, and a caller shouldn't have to infer it from a missing record
     written,
     ...(reason ? { reason } : {}),
     trace,
