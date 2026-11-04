@@ -7,6 +7,17 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.11.1] - 2026-11-04
+
+### Changed
+
+- **This repository's CI enforces its own testing policy.** The `coverage` job
+  runs the accepted command on Node 26 with both guards, and `plugin-validate`
+  installs the plugin from the checkout and launches it from outside it.
+- **The detailed documentation moved into the Cadence guide.** The README is
+  shorter, and the guide under `docs/guide/` covers the settings, the testing
+  policy and the working commands.
+
 ### Removed
 
 - **The four legacy test switches are retired.** `workflow.test_attack`,
@@ -3252,6 +3263,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.11.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.11.1
 [3.11.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.11.0
 [3.9.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.4
 [3.9.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.3
