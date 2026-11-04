@@ -32,16 +32,11 @@ Parse `$ARGUMENTS`:
 
 ## Interactive menu (no args)
 
-Goal: let the user adjust every knob the catalog carries, presented as
-selectable lists. The twelve `roles.<role>.model` and `roles.<role>.effort`
-keys ARE in the catalog. They were excluded while the six `model.overrides`
-pins and the six `model.effort` rungs existed to override a decision a routing
-grid otherwise made; that grid is gone, and what a role costs is now a plain
-answer the user gives, so the menu reaches it like any other knob. Those two
-older families stay edit-the-file-only and have no catalog row - they survive
-only as the narrower fallbacks UNDER the roles keys, reachable by direct set
-(`/cad-config model.effort.cad-executor=medium`) for a config that already
-carries them. Two more sets stay out for reasons of their own:
+Goal: let the user adjust every knob the walk carries, presented as
+selectable lists, the twelve `roles.<role>.model` and `.effort` keys included. The older `model.overrides` and `model.effort` families stay
+edit-the-file-only: they are the narrower fallbacks UNDER the roles keys,
+reachable by direct set (`/cad-config model.effort.cad-executor=medium`) for a
+config that already carries them. Two more sets stay out:
 `review.providers.*`, which needs live detection, so the menu routes it to
 **Review provider setup** rather than free-typing model ids; and
 `review.decision_review`'s two keys, which belong to an on-demand command
@@ -54,13 +49,13 @@ walk is the flat way.
 1. Read the current config. Show a one-screen summary (each knob = current value).
 2. Read the walk's rows with
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys --walk`
-   (one consult site - this step): sections in walk order, each with its keys.
+   (sections in walk order).
    Walk them **in order, 4 knobs per `AskUserQuestion` call** (the ask-user seam;
    its 4-option cap is why we page). For each knob:
    - one question; its text = the knob's `question`, options = the `value` of
      each `explain` entry,
    - **each option carries its entry's `text` as the option `description`** (the
-     small line shown under the option in the selection list),
+     line under the option in the list),
    - **Label the value in force, and name the LAYER it comes from. Two labels,
      never zero.** Compare step 0's raw read of `.planning/config.json` against
      `config.mjs get`:
@@ -76,15 +71,29 @@ walk is the flat way.
    - **A pick equal to the value already in force writes NOTHING**, on both
      arms: re-picking `(current)` and re-picking `(in force)` are each a no-op.
      This is what stops the walk pinning the whole global layer into the repo
-     file one page at a time - a user who agrees with an inherited value is
+     file page by page - a user who agrees with an inherited value is
      agreeing, not choosing to override it.
-   - **An enum with more than four values does not fit the seam.** The cap is 4
+   - **A key with more than four options does not fit the seam.** The cap is 4
      options and `Other` is the free-type entry, so show the value in force plus
      the three the user is most likely to want, and name every omitted value in
-     the last option's `description` with the words "reachable via `Other`". A
-     value silently absent reads as a value that does not exist -
+     the last option's `description` with the words "reachable via `Other`".
      `review.triggers.<t>.gate` is the live case, at five.
-   - `Other` (auto-added) is the free-type entry for numbers, strings, and lists.
+   - A `hint` is shown as text, never offered as an option. A `null` entry on
+     a list key explains the unset state and is not written, because `set`
+     refuses it. A key with fewer than two options offers the value in force and
+     a fixed `Leave unchanged`, both writing nothing; `Other` types a new value.
+   - `type` says how a key is answered: `bool` and `enum` are picked;
+     `int`, `string` and `string_or_null` are typed through `Other` (empty
+     becomes `null`); `array_string` and `array_enum` are comma-typed and
+     written as an array.
+   - `src` and `repo_only` say which layer a key is written to: `global` is the
+     user-global layer only (`set --global`), `repo` either layer, and
+     `repo_only` is refused at the user-global layer.
+   - The twelve `review.triggers.<t>.gate`, `.tier` and `.effort` keys are power
+     knobs: give them their own page, or a "Review triggers?" opt-in step.
+   - Picking `review.triggers.risk_surface.surfaces` opens **Risk surfaces**
+     (`/cad-config --surfaces`), which scans the project first and offers
+     answers from what it finds.
 3. A page whose knobs the user leaves unchanged is a no-op, and so is a page
    where every pick matched the value already in force (step 2's no-op rule).
    Only a value that DIFFERS from what is in force is a diff, and only diffs are
@@ -595,7 +604,7 @@ migration, then re-issue the command that produced it.
    `cadence-core/config.schema.json`'s own defaults, so a project that leaned on
    a `critical` row's gates has to state them itself - `review.triggers.<t>.gate`,
    `review.triggers.<t>.tier` and `review.triggers.<t>.effort` are in the
-   catalog, and the deep pass now runs when the risk floor raises rather than
+   walk, and the deep pass now runs when the risk floor raises rather than
    when a level said so, with `workflow.verifier` still its off switch.
 
 ## Review provider setup (cold branch)
