@@ -1,11 +1,7 @@
 // @ts-check
-// planning/replay-check.mjs - `replay-check`: has this phase's work already
-// been committed, and which plans still need dispatching.
-//
-// `/cad-execute`'s `locate` step asked this in PROSE, so the only probe was a
-// live run reading `.planning/trace.jsonl` afterwards - a test that costs an
-// executor dispatch is a test nobody runs. Here a fixture directory answers it.
-// It reports; the stop and its wording stay the workflow's.
+// planning/replay-check.mjs - `replay-check`: has this phase's work already been committed, and which plans still need dispatching
+// /cad-execute's locate step asked this in prose, so the only probe was a live run reading trace.jsonl afterwards, and a test that costs an executor dispatch is one nobody runs. A fixture directory answers it here
+// it reports; the stop and its wording stay the workflow's
 'use strict';
 
 import { join } from 'node:path';
@@ -32,17 +28,10 @@ function cmdReplayCheck(dir, opts) {
   }
 
   const rerun = opts.rerun === true;
-  // The per-plan report read is core.mjs's `readPlanReports` - the ONE
-  // definition `status` reads too, so the dispatch set and the outstanding set
-  // cannot disagree about the same phase (D-04). The `phases/<raw>/` prefix
-  // stays HERE: it is built from the caller's raw spelling, which is not the
-  // `String(n)` spelling `status` resolves, so it can never move into the
-  // shared reader without making one of the two envelopes wrong.
-  //
-  // Each row also carries the plan's `name` when its heading yields one, read by
-  // `planName` - the one heading reader (D-09) - and left off otherwise (D-10).
-  // This is /cad-execute's source for "plan K of J: <plan name>" (D-15).
+  // readPlanReports is the one definition status reads too, so the dispatch set and the outstanding set can't disagree about the same phase
+  // the phases/<raw>/ prefix stays here: it's built from the caller's raw spelling and not the String(n) spelling status resolves, so moving it into the shared reader would make one of the two envelopes wrong
   const reports = readPlanReports(pdir, plans).map((r) => {
+    // the name is what /cad-execute prints for its "plan K of J: <plan name>" line, and it's left off when the heading yields none
     const name = planName(read(join(pdir, r.plan)) ?? '');
     return { ...r, report: join('phases', parsedPhase.raw, r.report), ...(name ? { name } : {}) };
   });
@@ -50,15 +39,13 @@ function cmdReplayCheck(dir, opts) {
   ok({
     phase: parsedPhase.value,
     rerun,
-    // J: every conforming plan file, never the dispatch set, so a resumed run
-    // dispatching plan 2 still prints "plan 2 of 3" (D-08, D-15).
+    // J: every conforming plan file and not the dispatch set, so a resumed run still prints its true position out of the total
     plan_count: plans.length,
     reports,
-    // EVERY plan, never `some` (D-02): one plan without a complete report is a
-    // continuation, not a replay. `plans.length` guards `[].every() === true`,
-    // which would report an unplanned phase as a replay.
+    // every plan and never some: one plan without a complete report is a continuation and not a replay
+    // plans.length guards `[].every() === true`, which would report an unplanned phase as a replay
     replay: !rerun && plans.length > 0 && reports.every((r) => r.complete),
-    // Under --rerun, every plan - that is what the override means.
+    // under --rerun it's every plan, which is what the override means
     dispatch_set: rerun ? plans : reports.filter((r) => !r.complete).map((r) => r.plan),
     reports_read: reports.filter((r) => r.exists).map((r) => r.report),
     ...(nonconforming.length ? { nonconforming_plans: nonconforming } : {}),
