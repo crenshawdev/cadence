@@ -1,22 +1,7 @@
 // @ts-check
-// planning/trace.mjs - the `trace` family: the joined run record
-// (.planning/trace.jsonl), its six subcommands, and the .gitignore arm that
-// keeps the record out of git.
-//
-// BOTH handlers live here rather than one file each, because `cmdTrace`'s
-// `ignore` arm CALLS `cmdTraceIgnore` - one of only two handler-to-handler call
-// edges the single-file layout had, and splitting them would turn an internal
-// call into an import between two command modules (D-07).
-//
-// Everything else here is single-use for one of those two (D-05): the ignore
-// line and its comment with the four .gitignore readers, the unset-layer
-// fallback map and `suggest`'s two ladders (gates off the schema, rungs off
-// `lib/rung-agent.mjs`), the checkpoint plan-task count, the resolver, the
-// string-flag grammar, and the receipt recount behind `close`'s cross-check.
-//
-// The two `mergeLayers(` callsites below both destructure `warnings` and carry
-// it into their envelope, which is arm (a) of self-verify check 12 - no header
-// marker, because nothing here drops a layer's warnings on the floor (D-11).
+// planning/trace.mjs - the `trace` family: the joined run record (.planning/trace.jsonl), its subcommands, and the .gitignore arm that keeps the record out of git.
+// both handlers live here because the `ignore` arm of cmdTrace calls cmdTraceIgnore, and splitting them would turn an internal call into an import between two command modules.
+// everything else is single-use for one of the two, and the two mergeLayers callers carry the layer warnings into their envelope, so no header marker is needed.
 'use strict';
 
 import { execFileSync } from 'node:child_process';
@@ -43,41 +28,18 @@ import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
 import { FAMILIES, ROTATED_TRACE_FILE, appendEvent, correlationId, renderTrace } from '../lib/trace.mjs';
 import { windowBudget } from '../lib/window-budget.mjs';
 
-// ---------------------------------------------------------------------------
-// trace - the joined run record (.planning/trace.jsonl). This subcommand family
-// is how PROSE writes the lifecycle and outcome families: two of the four have
-// no script of their own to hang a direct write on (lifecycle lives in
-// workflows/execute.md, outcomes in references/review-triggers.md and
-// workflows/verify.md), so the seam is the writer everything shares. The seam
-// scripts that DO have code (route.mjs, review-provider.mjs) call lib/trace.mjs
-// directly rather than shelling out to this.
-//
-// `append` is BEST EFFORT and says so in its envelope: a write that did not
-// happen - the file is at its size cap, the planning root is unwritable -
-// returns ok:true with `written:false` and the reason, the same
-// successful-check-with-a-negative-answer shape plan-overlap uses. Only a
-// malformed CALL is ok:false. The trace records what a run did; it may never be
-// able to change what a run does.
-// ---------------------------------------------------------------------------
-// The ignore line a project needs so its run record stays out of git, and the
-// comment written above it so the next reader knows what it is.
+// the seam is how prose writes the lifecycle and outcome families, since neither has a script to hang a direct write on; scripts that have code (route, review-provider) call lib/trace.mjs directly
+// `append` is best effort and says so: a write that didn't happen (file at its cap, planning root unwritable) is ok:true with `written:false` and the reason, and only a malformed call is ok:false
+// the trace records what a run did and may never change what it does
+// the ignore line a project needs to keep its run record out of git, and the comment written above it so the next reader knows what it is
 const TRACE_IGNORE_LINE = '.planning/trace.jsonl';
 const TRACE_IGNORE_COMMENT = "# Cadence's joined run record - local diagnostics"
   + " only, one machine's routing/provider/worker events";
 
 /**
- * The SECOND rule: the generation a rotation at the record's size bound leaves
- * behind. Without it the first rotation leaves a file of up to
- * `MAX_TRACE_BYTES` untracked for the next `git add .planning` to sweep into
- * the repository - the same failure the line above exists to prevent, one
- * filename over, and on a public repo it republishes exactly the local
- * diagnostics that line withholds.
- *
- * A SECOND LITERAL and not a glob on the first. `line` is what `/cad-health`
- * reports and what `traceTracked` passes to `ls-files --error-unmatch` as a
- * pathspec, and a glob would change the meaning of both. Its basename is
- * DERIVED from the spelling `lib/trace.mjs` exports, so the rule and the file
- * the writer actually creates cannot drift apart.
+ * The second rule: the generation a rotation at the record's size bound leaves behind.
+ * Without it the first rotation leaves up to `MAX_TRACE_BYTES` untracked for the next `git add .planning` to sweep into the repo, which on a public repo republishes the diagnostics the line above withholds.
+ * A second literal and not a glob on the first, since `line` is what `/cad-health` reports and what `traceTracked` hands `ls-files --error-unmatch` as a pathspec. The basename comes from what `lib/trace.mjs` exports, so the rule and the written file can't drift.
  */
 const ROTATED_IGNORE_LINE = `.planning/${ROTATED_TRACE_FILE}`;
 const ROTATED_IGNORE_COMMENT = "# ...and the generation Cadence's run record"
@@ -85,35 +47,10 @@ const ROTATED_IGNORE_COMMENT = "# ...and the generation Cadence's run record"
 
 /**
  * The reads record's six rules, in one block.
- *
- * Nothing Cadence ships wrote an ignore rule for THIS record until now (D-11),
- * so on a scaffolded project the live file is untracked and unignored and the
- * first rotation adds up to `MAX_READS_BYTES` more of local diagnostics beside
- * it - all of it there for the next `git add .planning` to sweep in, which is
- * exactly what the two rules above exist to prevent for the trace, one filename
- * over.
- *
- * SIX and not one glob, because each names a different thing a reader has to
- * be able to recognise: the live record, the one prior generation
- * `rotateReads` keeps, the shared claim sidecar a completed rotation leaves
- * behind INERT by design (`lib/read-trace.mjs`'s release is guarded by `held`
- * precisely so it survives), the private stamps a rotation killed between its
- * write and its rename strands beside that sidecar, and the two private temps
- * that same death strands - the fresh record awaiting its rename, and the
- * evicted generation, which is a whole `MAX_READS_BYTES` of local diagnostics
- * for the next `git add .planning` to sweep in. The last three are patterns,
- * because those are the three with names no caller can predict - each carries
- * the writer's pid and a random suffix.
- *
- * Every basename is DERIVED from the spelling `lib/read-trace.mjs` exports, for
- * the reason `ROTATED_IGNORE_LINE` derives its own: a rule spelled by hand here
- * and a path spelled there are two statements of one fact, and the day they
- * disagree the rule covers nothing.
- *
- * The TRACE's own `.rotate` and `.evict` temps get nothing here on purpose -
- * they are the trace's residue and this phase's CONTEXT defers them. The
- * reads-side pair of the same two spellings is covered above: it is THIS
- * record's residue, introduced by the rotation these rules exist to cover.
+ * Nothing used to ignore this record, so on a scaffolded project the live file and each rotation's leftovers sat untracked for the next `git add .planning` to sweep in.
+ * Six and not one glob because each names a different thing: the live record, the one prior generation `rotateReads` keeps, the claim sidecar a completed rotation leaves inert on purpose, and the private stamps and two temps a rotation killed halfway strands. The last three are patterns since each carries the writer's pid and a random suffix.
+ * Basenames come from what `lib/read-trace.mjs` exports, for the reason ROTATED_IGNORE_LINE does: a rule spelled by hand here and a path spelled there are two statements of one fact.
+ * The trace's own `.rotate` and `.evict` temps get nothing here on purpose, they're the trace's residue and are left out of this block.
  */
 const READS_IGNORE_LINES = Object.freeze([
   `.planning/${READS_FILE}`,
@@ -128,14 +65,8 @@ const READS_IGNORE_COMMENT = "# ...and Cadence's per-tool-call read record, the"
   + ' and killed-mid-rotation temps';
 
 /**
- * Does a `check-ignore -v` match source TRAVEL with the repository?
- *
- * This is why `-v` is used instead of `-q`. `check-ignore` also consults
- * `core.excludesFile` and `.git/info/exclude`, and NEITHER is cloned: a machine-
- * local exclusion would answer `ignored:true` and leave the project with no
- * ignore line of its own, so the collaborator who clones it commits the run
- * record on the next `git add .planning` - exactly the failure this subcommand
- * exists to close. Only a `.gitignore` file inside the root counts.
+ * Does a `check-ignore -v` match source travel with the repository?
+ * That's why `-v` and not `-q`: `check-ignore` also consults `core.excludesFile` and `.git/info/exclude`, neither is cloned, so a machine-local exclusion would answer `ignored:true` and whoever clones commits the run record. Only a `.gitignore` file inside the root counts.
  * @param {string|null} source the first field of `check-ignore -v` output
  * @returns {boolean}
  */
@@ -148,21 +79,8 @@ function ignoreSourceTravels(source) {
 }
 
 /**
- * Git's own answer about the ignore line, with the matching SOURCE, or
- * `method: 'file'` when git cannot answer at all (not installed, or the root is
- * not a repository). Exit 1 from `check-ignore` is DATA - nothing matched - and
- * only a harder failure falls back.
- *
- * `--no-index` is load-bearing, not a tidy-up. Without it `check-ignore` reports
- * nothing for a path that is in the INDEX, because git's own contract is "would
- * this path be ignored if it were untracked" and a tracked path is already past
- * that question. The two states then become indistinguishable: a project whose
- * `.gitignore` carries the line AND has the record force-added answered
- * `ignored:false`, so `cmdTraceIgnore` appended the line again on every run and
- * `/cad-health` reported a missing rule that was right there. `--no-index` asks
- * the question this seam actually has - does a rule cover this path - and leaves
- * TRACKED to `traceTracked`, which is the separate fact and the one that needs
- * `git rm --cached`.
+ * Git's own answer about the ignore line, with the matching source, or `method: 'file'` when git can't answer at all (not installed, or not a repository). Exit 1 from `check-ignore` is data, nothing matched; only a harder failure falls back.
+ * `--no-index` is load-bearing: without it `check-ignore` reports nothing for a path in the index, so a project with the line and the record force-added answered `ignored:false`, `cmdTraceIgnore` appended the line every run, and `/cad-health` reported a missing rule that was right there. Tracked is `traceTracked`'s separate question.
  * @param {string} root
  * @param {string} path the ignore rule to ask about, as a repo-relative path
  * @returns {{method: 'git'|'file', travels: boolean, source: string|null}}
@@ -181,9 +99,7 @@ function gitIgnoreState(root, path) {
     if (e && e.status === 1) return { method: 'git', travels: false, source: null };
     return noGit;
   }
-  // `<source>:<line>:<pattern>\t<pathname>`. The source is everything before
-  // the LAST two colons of the left half, so a source path containing a colon
-  // is not silently truncated into a different file name.
+  // the output is `<source>:<line>:<pattern>`, a tab, then the pathname; the source is everything before the last two colons of the left half, so a path containing a colon isn't truncated into another file name
   const left = out.split('\n')[0].split('\t')[0];
   const last = left.lastIndexOf(':');
   const prev = last > 0 ? left.lastIndexOf(':', last - 1) : -1;
@@ -191,7 +107,7 @@ function gitIgnoreState(root, path) {
   return { method: 'git', travels: ignoreSourceTravels(source), source };
 }
 
-/** Is the run record TRACKED? A non-repo tracks nothing, so it is false there. */
+/** Is the run record tracked? A non-repo tracks nothing, so false there. */
 function traceTracked(root) {
   try {
     execFileSync('git', ['-C', root, 'ls-files', '--error-unmatch', '--', TRACE_IGNORE_LINE],
@@ -201,10 +117,8 @@ function traceTracked(root) {
 }
 
 /**
- * The literal fallback: the line as a project would write it, in `<root>/.gitignore`.
- * Comments and blank lines are skipped. Used only when git could not answer -
- * it cannot see a `.planning/` wholesale ignore, which is why the git arm is
- * tried first and is not decoration.
+ * The literal fallback: the line as a project would write it in `<root>/.gitignore`, comments and blank lines skipped.
+ * Used only when git couldn't answer, since it can't see a `.planning/` wholesale ignore, which is why the git arm goes first.
  * @param {string} root
  * @param {string} path the ignore rule to look for, as a repo-relative path
  */
@@ -219,22 +133,9 @@ function gitignoreCarriesLine(root, path) {
 }
 
 /**
- * `trace ignore` - the scaffold-time writer of the ignore line, and the
- * read-only reporter `/cad-health` runs (D-03).
- *
- * `ignored` and `tracked` are the state AS FOUND, before any write; `written`
- * says what this call changed. `--check` writes nothing at all: /cad-health
- * reports on a project it did not create and may not edit its `.gitignore`.
- *
- * WHO calls which arm, and what the ignore buys (moved out of
- * `workflows/execute.md`, v2.6.2): `/cad-new-project` writes the line through
- * `trace ignore` at scaffold time, and `/cad-health` runs the `--check` arm, so
- * a project scaffolded before this seam existed is REPORTED rather than having
- * its `.gitignore` edited underneath it. Because `.planning/trace.jsonl` is
- * ignored, nothing a parallel worktree wrote to the run record could ride the
- * merge back into phase history - which is half of why a worktree executor
- * emits no trace events of its own; the other half is that its return is a
- * frozen five-field digest with no room for one.
+ * `trace ignore` - the scaffold-time writer of the ignore line, and the read-only reporter `/cad-health` runs.
+ * `ignored` and `tracked` are the state as found, before any write, and `written` says what this call changed. `--check` writes nothing: `/cad-health` reports on a project it didn't create and may not edit its `.gitignore`.
+ * `/cad-new-project` writes the line at scaffold time and `/cad-health` runs `--check`, so an older project is reported and not edited underneath. Because the record is ignored, nothing a parallel worktree wrote can ride the merge back into phase history, which is half of why a worktree executor emits no trace events.
  * @param {string} root @param {any} opts
  */
 function cmdTraceIgnore(root, opts) {
@@ -246,21 +147,12 @@ function cmdTraceIgnore(root, opts) {
   const file = join(root, '.gitignore');
   const git = gitIgnoreState(root, TRACE_IGNORE_LINE);
   const live = git.method === 'git' ? git.travels : gitignoreCarriesLine(root, TRACE_IGNORE_LINE);
-  // The SIBLING is asked about separately and by the same two readers: a
-  // `.planning/` wholesale rule covers both, a line-per-file `.gitignore`
-  // covers whichever lines it carries, and a project covered for the record and
-  // not for its rotated generation is exactly the half-covered state
-  // /cad-health has to report rather than pass over.
+  // the sibling is asked separately by the same two readers: a project covered for the record and not its rotated generation is the half-covered state /cad-health has to report
   const rotatedGit = gitIgnoreState(root, ROTATED_IGNORE_LINE);
   const rotated = rotatedGit.method === 'git'
     ? rotatedGit.travels
     : gitignoreCarriesLine(root, ROTATED_IGNORE_LINE);
-  // The reads record's four rules go through the SAME two readers, one rule at
-  // a time: git's own answer first, the literal scan only where git could not
-  // answer at all. A `.planning/` wholesale rule covers all four at once, a
-  // line-per-file `.gitignore` covers whichever lines it carries, and a project
-  // covered for the trace and not for the reads record and its residue is the
-  // same half-covered state /cad-health has to report rather than pass over.
+  // the reads record's rules go through the same two readers one at a time: git's answer first, the literal scan only where git couldn't answer
   const missingReads = READS_IGNORE_LINES.filter((rule) => {
     const g = gitIgnoreState(root, rule);
     return !(g.method === 'git' ? g.travels : gitignoreCarriesLine(root, rule));
@@ -268,14 +160,10 @@ function cmdTraceIgnore(root, opts) {
   const common = {
     root,
     file,
-    // `line` stays the LIVE record's literal, so /cad-health's `ignored` and
-    // `tracked` reading is unchanged and that surface needs no edit; the
-    // sibling's rule is a field of its own beside it.
+    // `line` stays the live record's literal so /cad-health's `ignored` and `tracked` reading is unchanged; the sibling's rule is a field of its own beside it
     line: TRACE_IGNORE_LINE,
     rotated_line: ROTATED_IGNORE_LINE,
-    // A field of its OWN beside those two, never folded into either: `line` is
-    // what /cad-health reports and what `traceTracked` passes to
-    // `ls-files --error-unmatch` as a pathspec, and both would change meaning.
+    // its own field and never folded into either: `line` is what /cad-health reports and what `traceTracked` passes to `ls-files --error-unmatch` as a pathspec
     reads_lines: [...READS_IGNORE_LINES],
     ignored: live && rotated && missingReads.length === 0,
     tracked: traceTracked(root),
@@ -283,15 +171,10 @@ function cmdTraceIgnore(root, opts) {
     ...(git.source ? { source: git.source } : {}),
   };
   if ('check' in opts) return ok({ ...common, written: false });
-  // Already covered by lines that travel: the no-op that makes a re-run safe.
+  // already covered by lines that travel, which is what makes a re-run safe
   if (common.ignored) return ok({ ...common, written: false, reason: 'already-ignored' });
 
-  // Only what is MISSING is added, so a project scaffolded before the rotated
-  // generation - or before the reads record's rules - existed is upgraded on
-  // its next non-`--check` run without its existing rules being written a
-  // second time. Each record's rules ride a block of their own with a comment
-  // of their own, and a block whose rules are all present is not emitted at
-  // all, so the two records' coverage is reported and repaired independently.
+  // only what's missing is added, so an older project is upgraded on its next non-`--check` run without rewriting rules it has; each record's rules get their own block and comment, and a block with nothing missing isn't emitted
   const missingTrace = [
     ...(live ? [] : [TRACE_IGNORE_LINE]),
     ...(rotated ? [] : [ROTATED_IGNORE_LINE]),
@@ -303,9 +186,7 @@ function cmdTraceIgnore(root, opts) {
     ...(missingReads.length ? [`${READS_IGNORE_COMMENT}\n${missingReads.join('\n')}\n`] : []),
   ];
   const block = blocks.join('\n');
-  // Every existing byte survives. The newline is added only when the current
-  // contents lack a trailing one, so a brownfield `.gitignore` keeps every line
-  // it had and the new lines still land on lines of their own.
+  // every existing byte survives; the newline is added only when the file lacks a trailing one, so a brownfield .gitignore keeps its lines and ours land on lines of their own
   const existing = read(file);
   const next = existing === null || existing === ''
     ? block
@@ -315,22 +196,9 @@ function cmdTraceIgnore(root, opts) {
 }
 
 /**
- * The values the `suggest` arm falls back to for the keys its rules NAME when
- * no config layer holds one - and only for the keys whose schema default is a
- * real value. A key defaulting to `null` is not in here on purpose: `null` is
- * the schema's sentinel for "no layer pins this", and the suggestion reports
- * that state as unset rather than inventing the value something else would fire
- * (D-06).
- *
- * `cadence-core/config.schema.json` IS THE SOURCE OF TRUTH for these values -
- * its rows carry the defaults and the argument behind them. This map is the
- * unset-layer fallback and nothing else, the same duplication
- * `DISPATCH_WINDOW_DEFAULTS` above already accepts: this seam reads the merged
- * config, not the schema, so an unset key has to resolve to something here. The
- * schema is deliberately NOT parsed at runtime (D-15) - neither this file nor
- * `lib/trace-suggest.mjs` reads it today. A value changed in one place and not
- * the other makes `/cad-suggest` print a `current` that disagrees with the row
- * `/cad-config` shows, which `prose-agreement.test.mjs` fails on.
+ * The values the `suggest` arm falls back to for the keys its rules name when no config layer holds one, and only for keys whose schema default is a real value.
+ * A key defaulting to `null` stays out on purpose: `null` is the schema's "no layer pins this", and the suggestion reports that as unset instead of inventing a value.
+ * `config.schema.json` is the source of truth. This map is the unset-layer fallback and nothing else, the same duplication DISPATCH_WINDOW_DEFAULTS accepts, and the schema isn't parsed at runtime. Change one place and not the other and `/cad-suggest` prints a `current` that disagrees with `/cad-config`, which `prose-agreement.test.mjs` fails on.
  */
 const SUGGEST_KEY_DEFAULTS = Object.freeze({
   'workflow.max_plan_tasks': 8,
@@ -338,14 +206,8 @@ const SUGGEST_KEY_DEFAULTS = Object.freeze({
 });
 
 /**
- * The gate ladder `config.schema.json`'s `review.triggers.plan.gate` row
- * declares, weakest first. `routeLadder` in ./core.mjs owns the read and states
- * why the env override is not honoured; this decides what a suggestion tells a
- * user to set a review gate to.
- *
- * A schema that cannot be read or parsed degrades to NO ladder, which makes the
- * gate arm omit `proposed`. That omission is the report; no ladder is
- * substituted from memory here.
+ * The gate ladder from the `review.triggers.plan.gate` row, weakest first. `routeLadder` owns the read and the reason the env override isn't honoured, this decides what a suggestion tells a user to set a gate to.
+ * An unreadable schema means no ladder, so the gate arm omits `proposed`, and nothing is substituted from memory.
  * @returns {string[]|undefined}
  */
 function gateLadder() {
@@ -353,18 +215,9 @@ function gateLadder() {
 }
 
 /**
- * The task count of the plan a `cad-executor` checkpoint names, or `null` when
- * the checkpoint maps to no readable plan - UNKNOWN, never under-ceiling
- * (D-09). Unknown is the common case and stays so: a `plan` that is a WORKER
- * key rather than a plan number (`1-cut`, `1-fix`) names no file, an archived
- * cycle keeps its phase dirs under a different milestone dir and filename
- * shape, and a delete-mode close removes them outright.
- *
- * The `phase` is read through `requirePhaseArg`, which is the traversal guard
- * as much as the shape one: this value comes off a RECORD line rather than a
- * flag, and it is about to be a directory component. The `plan` needs no such
- * guard - it is only ever compared against `readdirSync` entries, so a `../`
- * in it matches nothing.
+ * The task count of the plan a `cad-executor` checkpoint names, or null when it maps to no readable plan: unknown, never under-ceiling.
+ * Unknown is the common case: a `plan` that's a worker key (`1-cut`, `1-fix`) names no file, an archived cycle keeps its phase dirs elsewhere, and a delete-mode close removes them.
+ * `phase` goes through `requirePhaseArg` as the traversal guard as much as the shape one, since it comes off a record line and becomes a directory component. `plan` needs none, it's only compared against `readdirSync` entries so a `../` matches nothing.
  * @param {string} dir the planning dir
  * @param {any} event a `lifecycle/checkpoint` event
  * @returns {number|null}
@@ -386,18 +239,10 @@ function checkpointPlanTasks(dir, event) {
 }
 
 /**
- * Everything the pure rules in `lib/trace-suggest.mjs` need to name a
- * direction, a current value and - where one can be READ - a target: the
- * resolved config value behind each key the record's own events reach, and the
- * two ladders. Resolved HERE because that file is pure and stays that way
- * (D-05); it owns the rules, this owns the reads.
- *
- * Keyed off the RECORD rather than the schema's key space: a trigger that never
- * fired and a role that never resolved are keys no rule can name, so resolving
- * them would read config nothing asked about.
- *
- * `checkpointTasks` is the FILE half of R4's binding check, here for the same
- * reason as everything else in this function: reading a plan file is I/O.
+ * Everything the pure rules in `lib/trace-suggest.mjs` need to name a direction, a current value and, where one can be read, a target: the resolved config value behind each key the record's events reach, and the two ladders.
+ * Resolved here because that file is pure and stays that way, it owns the rules and this owns the reads.
+ * Keyed off the record and not the schema's key space, since a trigger that never fired and a role that never resolved are keys no rule can name.
+ * `checkpointTasks` is the file half of the binding check, here because reading a plan file is I/O.
  * @param {string} dir the planning dir
  * @param {any} render
  * @param {any} config the merged config layers
@@ -405,14 +250,12 @@ function checkpointPlanTasks(dir, event) {
 function suggestResolution(dir, render, config) {
   /** @type {Record<string, any>} */
   const values = {};
-  // An absent or null value is NOT recorded: `lib/trace-suggest.mjs` reads a
-  // missing key as unset, which is the state D-06 makes it print.
+  // an absent or null value isn't recorded: trace-suggest reads a missing key as unset, which is what it should print
   const set = (key, value) => { if (value !== undefined && value !== null) values[key] = value; };
   const triggers = config?.review?.triggers || {};
   const effort = config?.model?.effort || {};
   const events = Array.isArray(render?.events) ? render.events : [];
-  // One entry per counted checkpoint, in record order, so the rule can tell
-  // "every one of them was measured" from "some were".
+  // one entry per counted checkpoint, in record order, so the rule can tell "every one was measured" from "some were"
   /** @type {(number|null)[]} */
   const checkpointTasks = [];
   for (const e of events) {
@@ -430,48 +273,25 @@ function suggestResolution(dir, render, config) {
   set('workflow.max_plan_tasks',
     config?.workflow?.max_plan_tasks ?? SUGGEST_KEY_DEFAULTS['workflow.max_plan_tasks']);
   const gates = gateLadder();
-  // R3 compares its target against the rung a config layer set.
+  // the rung rule compares its target against the rung a config layer set
   return { values, ...(gates ? { gates } : {}), rungs: [...RUNG_ORDER], checkpointTasks };
 }
 
-// The grammar the SHARED `trace append|close` body judges its string flags by,
-// read off lib/arg-contract.mjs rather than restated as seven guards below.
-//
-// The two rows are UNIONED because ONE body validates both subcommands. A flag
-// row is a prose allowlist that never widens what a subcommand accepts, so
-// `trace close` declares no `--sha`, `--base`, `--step` or `--trigger` row even
-// though this body reads them for it; every key both rows do declare, they
-// declare identically, so the union states no grammar either row denies.
+// the grammar the shared `trace append|close` body judges its string flags by, read off arg-contract and not restated as guards below
+// the two rows are unioned because one body validates both subcommands: a flag row is a prose allowlist that never widens what a subcommand accepts, so `trace close` declares no `--sha`, `--base`, `--step` or `--trigger` though this body reads them for it
 const TRACE_GRAMMAR = {
   ...CONTRACTS['planning.mjs']['trace append'],
   ...CONTRACTS['planning.mjs']['trace close'],
 };
 
-// The flags whose whole rule is the value grammar, in the order they are read.
-// The first three declare `fallback` on both axes and every one after them
-// `refuse` - the two dispositions this one body has always run side by side
-// (D-05), now stated once in the table instead of once per flag here.
+// the flags whose whole rule is the value grammar, in the order they're read: the first three declare `fallback` on both axes and the rest `refuse`, the two dispositions this body has always run side by side
 const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer',
   '--trigger', '--agent-id', '--anchor', '--authorization-id'];
 
-// The `--duration-ms` grammar, CLOSED to digits and unit letters.
-//
-// Two accepted spellings and nothing else: a plain non-negative integer, which
-// is a millisecond count, and the host's own formatted rendering - one or more
-// number-plus-unit terms over hours, minutes, seconds and milliseconds,
-// optionally space-separated (`1m 23s`, `1h2m3s`, `450ms`). `ms` is first in
-// the alternation because `m` would otherwise swallow the `m` of `450ms` and
-// read it as 450 minutes plus a stray `s`.
-//
-// CLOSED rather than free text on purpose: this flag carries a caller-derived
-// FIGURE, not caller-derived prose, so it stays out of
-// lib/text-transport.mjs's `TEXT_FLAGS` - whose header excludes `--tokens` on
-// exactly this ground - and needs no `-file` transport to be safe.
-//
-// `null` means malformed, which the caller turns into a refusal with NOTHING
-// appended. The safe-integer test is part of the grammar and not a paranoia
-// arm: `9999999999999999999h` parses term by term and would otherwise write a
-// float into a field a reader sums as an integer.
+// the `--duration-ms` grammar, closed to digits and unit letters: a plain non-negative integer (milliseconds) or the host's own rendering, number-plus-unit terms over h, m, s and ms (`1m 23s`, `1h2m3s`, `450ms`)
+// `ms` comes first in the alternation or `m` swallows the `m` of `450ms` and reads 450 minutes plus a stray `s`
+// closed and not free text because this is a caller-derived figure and not prose, so it needs no `-file` transport
+// null means malformed and the caller refuses with nothing appended; the safe-integer test is part of the grammar, since `9999999999999999999h` would otherwise write a float into a field readers sum as an integer
 const DURATION_UNITS = { ms: 1, s: 1000, m: 60000, h: 3600000 };
 const DURATION_TERMS = /^\d+(?:ms|h|m|s)(?:\s*\d+(?:ms|h|m|s))*$/;
 
@@ -492,78 +312,26 @@ function parseDurationMs(raw) {
   return Number.isSafeInteger(total) ? total : null;
 }
 
-// ---------------------------------------------------------------------------
-// WHAT THE PROVIDERS SAID THIS SCOPE'S REVIEW CALLS COST.
-//
-// Folded rather than passed through, for the same reason the raw event array is
-// withheld below: this response is read into a model's context, and this
-// repository's own record holds 293 `provider/request` events. A summed figure
-// with its call count answers "what did the cross-model panel cost" in three
-// numbers instead of three hundred objects.
-//
-// ITS OWN DENOMINATION, and it never touches `roles`. `roles.tokens` is a
-// final-window figure the execution HOST reported for one dispatch; this is an
-// input+output count off the WIRE, reported by the provider. Summing the two
-// would denominate `roles.cad-reviewer.tokens` in nothing, which is the rule
-// lib/trace.mjs's `TraceRender` typedef already states for the two cache keys
-// ("They stop HERE either way") - so nothing here reads or writes `r.roles`
-// (D-01).
-//
-// A call whose event carried NO usage raises `unrecorded` and contributes no
-// zero to the total: every `provider/request` event written before the seam
-// read usage at all carries neither key, and folding those in as zeros would
-// price a whole cycle's reviews at nothing (D-11). The block itself is absent
-// where the scope holds no provider REVIEW call, the omit-when-empty discipline
-// `roles`, `coordinator`, `mismatched` and `rotated` already follow, so a
-// record without one renders byte-identically for every reader already parsing
-// this envelope.
-//
-// WHICH CALLS IT PRICES, and the answer is one field: `command`. The seam
-// writes its one event for three different commands, and only one of them is a
-// review - this repository's own record holds `review` (298), `detect-models`
-// (16), which lists a provider's model ids, and `consult` (3), `/cad-debug`'s
-// dead-end second opinion. All three cost money and only the first is a review,
-// so folding all three into a figure `/cad-report` prints as `Cross-model
-// reviews` prices a model listing as review spend. `command === 'review'` and
-// nothing else, which also means an event carrying no `command` is not priced:
-// this figure may only price a call it can NAME, and no event carrying `usage`
-// predates that field. The consult arm is deliberately not re-reported here
-// under a second name - what a debug consult cost is a different question from
-// what a phase's review panel cost, and `counts.provider` still carries every
-// provider event in scope, so leaving it out of this one hides nothing.
-//
-// AND ONLY THE CALLS THAT REACHED THE WIRE. The seam writes its event for a
-// call it refused before sending anything, too - no key, no model id, an
-// unknown provider, an unparseable payload, an artifact over the cap - and D-04
-// says those "have nothing to read" for the same reason they are dropped here:
-// no request left the machine, so there was no spend and no reviewer. Counted,
-// each would raise `unrecorded`, claiming an unknown cost for a call that
-// provably cost nothing. Everything PAST the send stays counted, degraded
-// outcomes included: a call that burned its budget and came back unusable is
-// exactly the one whose cost must still reach this figure (D-04).
-// `UNSENT_OUTCOMES` is `review-provider.mjs`'s vocabulary read back out of a
-// FILE rather than imported, so a refusal reason added there and not here lands
-// as one more unrecorded call - the safe direction, because this figure may
-// overstate what is unknown and may never hide what was spent.
-//
-// Not filtered on `event`: the seam writes exactly ONE event per call and every
-// provider event on this record reads `request`, so a second filter would
-// defend against a shape the seam does not produce (D-06).
+// what the providers said this scope's review calls cost, folded and not passed through: this response is read into a model's context, and a summed figure with its call count beats hundreds of `provider/request` objects
+// its own denomination, and it never touches `roles`: `roles.tokens` is the host's final-window figure for a dispatch while this is an input+output count off the wire, and summing them would denominate `roles.cad-reviewer.tokens` in nothing
+// a call whose event carried no usage raises `unrecorded` and adds no zero to the total, or older events (which carry neither key) would price a whole cycle's reviews at nothing
+// the block is absent where the scope holds no provider review call, like `roles` and `coordinator`, so a record without one renders byte-identically for readers already parsing this envelope
+// only `command === 'review'` is priced: the seam writes this event for `review`, `detect-models` and `consult` too, and folding them in would price a model listing as review spend. An event with no `command` isn't priced, since this figure may only price a call it can name
+// only calls that reached the wire: a call refused before sending (no key, unknown provider, bad payload, over the cap) cost nothing, and counting it would claim an unknown cost. Everything past the send stays counted, degraded outcomes included, since a call that burned its budget and came back unusable is the one whose cost must show
+// UNSENT_OUTCOMES is review-provider's vocabulary read back out of a file and not imported, so a refusal reason added there and not here lands as one more unrecorded call, the safe direction: this figure may overstate what's unknown and may never hide what was spent
+// no filter on `event`: the seam writes exactly one event per call and they all read `request`, so a second filter would defend against a shape it doesn't produce
 
 /**
- * The `outcome` values `review-provider.mjs` writes for a call it refused
- * BEFORE the request was sent, each one a `fail()` reached above the transport.
- * No bytes on the wire, so no spend to price and no call to count (D-04).
+ * The `outcome` values `review-provider.mjs` writes for a call it refused before the request was sent.
+ * No bytes on the wire, so no spend to price and no call to count.
  */
 const UNSENT_OUTCOMES = new Set([
   'bad-provider', 'bad-args', 'no-key', 'bad-payload', 'over-cap',
 ]);
 
 /**
- * One token count off a provider event, or `undefined` where the line carries
- * something that is not one. The trace is a file, and a hand-edited or
- * foreign-producer line must never be string-concatenated onto a numeric total
- * - the same refusal `renderTrace` makes for a string `tokens` on a return.
+ * One token count off a provider event, or undefined where the line carries something that isn't one.
+ * The trace is a file, and a hand-edited or foreign line must never get string-concatenated onto a numeric total, the same refusal `renderTrace` makes for a string `tokens` on a return.
  * @param {any} v @returns {number|undefined}
  */
 function usageCount(v) {
@@ -572,10 +340,7 @@ function usageCount(v) {
 
 /**
  * The provider-spend fold for a set of scoped events, spread into the response.
- * `calls` counts `provider/request` events whose `command` is `review` and whose
- * `outcome` is not one the seam wrote without sending anything; every other
- * provider event in scope is outside this figure and stays visible in
- * `counts.provider`.
+ * `calls` counts `provider/request` events whose `command` is `review` and whose `outcome` isn't one the seam wrote without sending anything. Other provider events stay visible in `counts.provider`.
  * @param {Record<string, any>[]} events the events already scoped to `--phase`
  * @returns {{provider_spend?: {calls: number, tokens?: number, unrecorded?: number}}}
  */
@@ -585,9 +350,7 @@ function providerSpend(events) {
   let tokens = 0;
   for (const e of events) {
     if (e.family !== 'provider') continue;
-    // A REVIEW, and one that was actually sent. The other two commands on this
-    // family are real provider calls with real costs; neither is what the line
-    // reading this figure tells a human it is counting.
+    // a review that was actually sent: the other commands on this family are real provider calls with real costs, but not what the line reading this figure says it counts
     if (e.command !== 'review' || UNSENT_OUTCOMES.has(e.outcome)) continue;
     calls++;
     const u = e.usage;
@@ -603,8 +366,7 @@ function providerSpend(events) {
   return {
     provider_spend: {
       calls,
-      // Gated on a figure having LANDED, exactly as `roles.tokens` is: a scope
-      // whose every call reported nothing says `unrecorded`, never `0`.
+      // only when a figure landed, as `roles.tokens` is: a scope where every call reported nothing says `unrecorded` and never `0`
       ...(priced ? { tokens } : {}),
       ...(unrecorded ? { unrecorded } : {}),
     },
@@ -613,17 +375,11 @@ function providerSpend(events) {
 
 function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
-    // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
-    // there while the line it carries is `.planning/trace.jsonl`. A `--root`
-    // present with nothing usable after it is REFUSED by its declared row at
-    // the dispatch door rather than falling through to the cwd, which would
-    // edit a different tree than the caller named (the `#42/#45` rail).
+    // --root is the PROJECT root and not --dir: .gitignore lives there while the line it carries is .planning/trace.jsonl
+    // a --root with nothing usable after it is refused by its declared row at the door, or it would edit the cwd's tree and not the caller's (#42/#45)
     return cmdTraceIgnore(typeof opts.root === 'string' ? opts.root : process.cwd(), opts);
   }
-  // `close` is `append` with the two fields a dispatch site used to restate
-  // taken off its hands, so every flag below is validated by ONE body: a second
-  // copy of the `--tokens` grammar is a second place for it to drift, and the
-  // close half is exactly where the token figure lands.
+  // close is append with the two fields a dispatch site used to restate taken off its hands, so one body validates every flag below: a second copy of the --tokens grammar is a second place to drift
   if (sub === 'append' || sub === 'close') {
     const parsedPhase = requirePhaseArg(opts.phase);
     if (!parsedPhase.ok) {
@@ -631,24 +387,15 @@ function cmdTrace(dir, sub, opts) {
         `pass --phase <N> for the phase this event belongs to, then re-run the ${sub} - nothing was`
         + ' appended, so exactly one event lands');
     }
-    // The tree-aware collision check, right after the parse and ahead of every
-    // other flag rail below. `append` and `close` are the two arms whose
-    // `parsedPhase.raw` leaves this file: it reaches `recountReceipt` and then
-    // `recordForFire`'s `join(dir, 'phases', ...)`, so a colliding spelling
-    // would recount one phase's fires under another phase's name. The
-    // `suggest`, `render` and `window` arms take no wire - their raw spelling
-    // scopes a `.planning/trace.jsonl` filter and resolves no directory.
+    // the tree-aware collision check goes right after the parse and ahead of the other flag rails: append and close are the arms whose raw spelling reaches a phases/ path, so a colliding one would recount one phase's fires under another's name
+    // suggest, render and window only filter trace.jsonl and resolve no directory
     const collision = phaseSpellingCollision(dir, parsedPhase);
     if (collision) {
       return fail('bad-args', `trace ${sub} ${collision}`,
         `re-run the ${sub} with one of the two spellings the detail names - nothing was appended`);
     }
-    // `--detail-file` is the SAFE transport for a detail the CALLER derived -
-    // a reviewer's verdict, a checkpoint's reason - and the reasoning lives in
-    // lib/text-flag-file.mjs and references/conventions.md, not restated here.
-    // Resolved BEFORE the close arm's inference below, which reads the detail:
-    // left on `opts.detail` alone, every converted checkpoint site would bill
-    // as a clean `return`, the one arm the record exists to keep separate.
+    // --detail-file is the safe transport for a detail the caller derived (a verdict, a checkpoint's reason); the reasoning lives in text-flag-file and conventions.md
+    // resolved before the close inference below reads the detail: on opts.detail alone, every converted checkpoint site would bill as a clean return
     const resolvedDetail = resolveTextFlag(opts, 'detail', `trace ${sub}`);
     if (!resolvedDetail.ok) {
       return fail('bad-args', resolvedDetail.detail,
@@ -659,22 +406,10 @@ function cmdTrace(dir, sub, opts) {
     let family;
     let event;
     if (sub === 'close') {
-      // Fixed, never read off the caller: the whole point of the subcommand is
-      // that a close site states WHAT it is closing and nothing about how the
-      // record spells it.
+      // fixed, never read off the caller: a close site states what it is closing and nothing about how the record spells it
       family = 'lifecycle';
-      // The arm is inferred from `--detail` and NEVER from `--tokens` (D-06).
-      // Measured across all twenty shipped close lines: 6 of the 10 checkpoint
-      // sites carry `--tokens` and 4 do not, while every checkpoint carries
-      // `--detail` and no return does. A token-presence classifier would
-      // therefore write `return` for four shipped checkpoint sites - billing a
-      // worker that came back unusable as a clean close, which is the one arm
-      // the record exists to keep separate.
-      //
-      // `escalation` stays OUTSIDE this inference (D-13): it is a TERMINAL
-      // member with zero prose producers, so a three-way inference would be
-      // flexibility nothing exercises. It stays reachable through
-      // `trace append --event escalation`.
+      // the arm is inferred from --detail and never from --tokens: every checkpoint carries --detail and no return does, while some checkpoints carry no --tokens, so a token classifier would bill an unusable worker as a clean close
+      // escalation stays out of the inference: it has no prose producer, so a three-way inference is flexibility nothing exercises, and it's still reachable through trace append --event escalation
       event = typeof detail === 'string' && detail.trim() ? 'checkpoint' : 'return';
     } else {
       family = typeof opts.family === 'string' ? opts.family : '';
@@ -691,21 +426,9 @@ function cmdTrace(dir, sub, opts) {
       }
     }
 
-    // --tokens: what the dispatch COST, read by the orchestrator off the
-    // worker's return metadata. A malformed value is a malformed CALL, not a
-    // best-effort append with the field dropped: a dropped field renders the
-    // role `unrecorded` while the caller believes a figure was recorded, which
-    // is exactly the zero/unrecorded/recorded conflation the per-role block
-    // exists to prevent. So nothing at all is appended here.
-    // One exception to "malformed value, nothing appended": a COMMA-GROUPED
-    // integer. This plugin prints token figures grouped (context.md's measured
-    // block reads `cad-planner 146,405`) three lines from the `--tokens` order
-    // that copies them, so `--tokens 146,405` is the transcription the prose
-    // itself models. Refusing it drops the append, and the `dispatch` half is
-    // already written, so the worker is stranded in renderTrace's unpaired[]
-    // forever - escalating a recording error into loss of the bracket it was
-    // recording. Grouping is stripped only in the strict 3-digit shape, so
-    // `1,2,3` and `146,40` are still malformed CALLS and still refused.
+    // --tokens is what the dispatch cost, read off the worker's return. A malformed value is a malformed call and nothing is appended: a dropped field renders the role unrecorded while the caller thinks a figure landed
+    // the one exception is a comma-grouped integer, because this plugin prints token figures grouped (146,405) and refusing it strands the worker unpaired with the dispatch half already written
+    // grouping is stripped only in the strict 3-digit shape, so 1,2,3 and 146,40 are still refused
     let tokens;
     if ('tokens' in opts) {
       const raw = typeof opts.tokens === 'string' && /^\d{1,3}(?:,\d{3})+$/.test(opts.tokens.trim())
@@ -721,23 +444,9 @@ function cmdTrace(dir, sub, opts) {
       tokens = parsed.value;
     }
 
-    // --turns: how many TOOL CALLS the dispatch made, read off the same subagent
-    // return metadata `--tokens` is (lib/trace.mjs's TOKEN PROVENANCE header
-    // states that provenance once, for both). Tokens alone cannot price a run -
-    // the bill is turns times window - so a record carrying only the token half
-    // can describe what a worker returned and never what it cost to get there.
-    // Structured, and never parsed back out of `--detail`: that slot is not a
-    // machine-join surface (one trigger was spelled four different ways across
-    // 35 shipped `outcome/adjudication` events), so a figure recovered from it
-    // is exactly as trustworthy as the substitution that condemned it.
-    // Validated the way `--raised` is, and for the same reason: a malformed
-    // value is a malformed CALL and NOTHING is appended, never a best-effort
-    // append with the field dropped - a dropped count renders the role
-    // turn-unrecorded while the caller believes a figure landed, which is the
-    // zero/unrecorded/recorded conflation the per-role block exists to prevent.
-    // No comma-grouping exception: that one exists because this plugin PRINTS
-    // token figures grouped, and a tool-call count never is, so accepting
-    // `1,234` would only widen what can be mistyped.
+    // --turns is how many tool calls the dispatch made, off the same return metadata as --tokens; tokens alone can't price a run, since the bill is turns times window
+    // structured and never parsed back out of --detail, which isn't a machine-join surface (one trigger was spelled four ways across shipped adjudication events)
+    // validated like --raised: a malformed value is a malformed call and nothing is appended, and there's no comma-grouping exception because a tool-call count is never printed grouped
     let turns;
     if ('turns' in opts) {
       const parsed = requireInt(opts.turns);
@@ -749,21 +458,9 @@ function cmdTrace(dir, sub, opts) {
       turns = parsed.value;
     }
 
-    // --duration-ms: how long the dispatch itself TOOK, the third figure on the
-    // same subagent return `--tokens` and `--turns` are read off. Distinct from
-    // the dispatch-to-close span `renderTrace` already derives off the two
-    // timestamps: that one includes the orchestrator's own time between the two
-    // writes, so a bracket carrying only it can say how long the STEP took and
-    // never how long the WORKER did.
-    // The value grammar is the one `parseDurationMs` above states, and it
-    // accepts the host's formatted spelling because that is the only one an
-    // orchestrator can copy: refusing `1m 23s` would drop the append with the
-    // `dispatch` half already written, stranding the worker in renderTrace's
-    // unpaired[] forever - the same escalation the `--tokens` comma-grouping
-    // exception exists to prevent.
-    // Outside that grammar it is a malformed CALL and NOTHING is appended, the
-    // posture `--tokens` and `--turns` both take: a dropped field renders the
-    // bracket duration-less while the caller believes a figure landed.
+    // --duration-ms is how long the dispatch itself took, the third figure off the same return; the dispatch-to-close span renderTrace derives includes the orchestrator's own time, so it says how long the step took and not the worker
+    // the grammar is parseDurationMs's, and it takes the host's formatted spelling because that's the only one an orchestrator can copy: refusing 1m 23s would strand the worker unpaired, as with --tokens grouping
+    // outside it, it's a malformed call and nothing is appended, same as --tokens and --turns
     let durationMs;
     if ('duration-ms' in opts) {
       const parsed = parseDurationMs(opts['duration-ms']);
@@ -776,19 +473,9 @@ function cmdTrace(dir, sub, opts) {
       durationMs = parsed;
     }
 
-    // --raised: how many findings the reviewers RAISED before adjudication, so
-    // the record can tell a gate that found nothing (0 of 0) from a reviewer
-    // whose every finding was refuted (0 of 9). Structured, because the
-    // free-text `--detail` slot is the one already condemned for carrying the
-    // voice list - a figure parsed back out of prose is exactly as trustworthy
-    // as the substitution that condemned it (D-01).
-    // Validated the way `--tokens` is, and for the same reason: a malformed
-    // value is a malformed CALL and NOTHING is appended, never a best-effort
-    // append with the field dropped, because a dropped figure reads downstream
-    // as UNKNOWN while the caller believes a count was recorded.
-    // No comma-grouping exception here: that one exists because this plugin
-    // PRINTS token figures grouped, and a finding count never is, so accepting
-    // `1,234` would only widen what can be mistyped.
+    // --raised is how many findings the reviewers raised before adjudication, so the record can tell a gate that found nothing (0 of 0) from one whose every finding was refuted (0 of 9)
+    // structured because a figure parsed back out of --detail prose is only as trustworthy as the substitution that condemned it
+    // validated like --tokens, with no comma-grouping exception since a finding count is never printed grouped
     let raised;
     if ('raised' in opts) {
       const parsed = requireInt(opts.raised);
@@ -800,20 +487,9 @@ function cmdTrace(dir, sub, opts) {
       raised = parsed.value;
     }
 
-    // --survivors / --downgraded / --refuted: the SETTLED figures of a fire,
-    // the other side of the `--raised` count above. `9 raised` says what the
-    // reviewers found; these three say what survived being argued with, which
-    // is the whole of what an adjudication decided.
-    // Structured for the reason `--raised` is, and validated the same way: a
-    // malformed value is a malformed CALL and NOTHING is appended, never a
-    // best-effort append with the field dropped, because a dropped figure reads
-    // downstream as UNKNOWN while the caller believes a count landed. No
-    // comma-grouping exception, for the reason `--raised` and `--turns` both
-    // give - a finding count is never PRINTED grouped, so accepting `1,234`
-    // would only widen what can be mistyped.
-    // Each key is OMITTED when its flag was absent and a real `--survivors 0`
-    // still records a 0: a fire nobody counted and a fire that counted zero are
-    // different fires, and the key is what separates them.
+    // --survivors / --downgraded / --refuted are the settled figures of a fire, the other side of --raised: what survived being argued with, which is the whole of what an adjudication decided
+    // validated like --raised, with no comma-grouping exception
+    // each key is omitted when its flag was absent and a real --survivors 0 still records a 0: a fire nobody counted and a fire that counted zero are different fires
     const settled = {};
     for (const flag of ['survivors', 'downgraded', 'refuted']) {
       if (!(flag in opts)) continue;
@@ -826,13 +502,8 @@ function cmdTrace(dir, sub, opts) {
       settled[flag] = parsed.value;
     }
 
-    // --round: WHICH round of a capped re-arm this event belongs to. Not
-    // decoration - the record a receipt settles is written at
-    // `...-<discriminator>-r<round>.json` above round 1, so a settle that names
-    // no round resolves ROUND ONE's filename and would check round two's
-    // figures against round one's stale rulings, passing whenever the two
-    // happen to coincide. Absent means round 1 on both sides, so the write side
-    // and the receipt side resolve one filename by one rule.
+    // --round says which round of a capped re-arm this event belongs to: the record a receipt settles is written at ...-<discriminator>-r<round>.json above round 1, so a settle naming no round would resolve round one's file and check round two's figures against stale rulings, passing whenever they happen to coincide
+    // absent means round 1 on both sides, so the write and receipt sides resolve one filename by one rule
     let round = 1;
     if ('round' in opts) {
       const parsed = requireInt(opts.round);
@@ -845,25 +516,10 @@ function cmdTrace(dir, sub, opts) {
       round = parsed.value;
     }
 
-    // --read: the read-set the SITE caused the worker to read, as ONE
-    // comma-separated value split the way `phase-done --reqs` splits its ids.
-    // A repeated flag is impossible by construction rather than by choice -
-    // `parseArgs` does `opts[a.slice(2)] = next`, so `--read a --read b` would
-    // keep only `b` and the record would drop most of its rows while looking
-    // complete. Do not "improve" this into a repeatable flag.
-    //
-    // GRAMMAR: an element is any VERBATIM string naming something the site
-    // caused the worker to read - a path, a glob, or a non-path reference (a
-    // `<base>..<head>` ref range) the worker resolves for itself. Stored with
-    // no existence check, no normalization and no byte measurement, so a reader
-    // converting the set to bytes must resolve each element BY KIND rather than
-    // assume a plain path.
-    //
-    // `--read-file` is the same value through the path transport, for a site
-    // whose read-set is composed from what the worker was handed rather than
-    // typed by a human. It is split by the SAME grammar and refused by the SAME
-    // all-blank test - one list-builder below, so the two transports cannot
-    // disagree about what an element is.
+    // --read is the read-set the site made the worker read, one comma-separated value split like phase-done --reqs splits its ids
+    // a repeated flag is impossible, not a choice: parseArgs keeps only the last, so --read a --read b would drop rows while looking complete. Don't "improve" this into a repeatable flag
+    // an element is any verbatim string the site made the worker read: a path, a glob, or a non-path reference like a <base>..<head> range. It's stored with no existence check or normalization, so a reader converting to bytes has to resolve each element by kind
+    // --read-file is the same value through the path transport, split by the same grammar and refused by the same all-blank test, so the two can't disagree about what an element is
     let read;
     const resolvedRead = resolveTextFlag(opts, 'read', `trace ${sub}`);
     if (!resolvedRead.ok) {
@@ -876,11 +532,7 @@ function cmdTrace(dir, sub, opts) {
       const list = typeof raw === 'string'
         ? raw.split(',').map((s) => s.trim()).filter(Boolean)
         : [];
-      // A bare `--read`, an empty string, or an all-blank value is almost
-      // always an unset `"$PATHS"`, and a complete-looking dispatch with no
-      // read-set is the failure this refusal exists against. The file form
-      // reaches this same test with a file holding only separators - a
-      // whitespace-only file is already refused by the reader as empty.
+      // a bare --read, an empty string or an all-blank value is almost always an unset "$PATHS", and a complete-looking dispatch with no read-set is what this refuses; a file holding only separators reaches the same test
       if (!list.length) {
         return fail('bad-args',
           `trace ${sub} --read${'read-file' in opts ? '-file' : ''} needs a comma-separated path list`,
@@ -891,52 +543,17 @@ function cmdTrace(dir, sub, opts) {
       read = list;
     }
 
-    // The ten string flags, each read through its DECLARED row. One loop
-    // where seven hand-written guards used to state the same two rules, and
-    // the ONE place this body's two bare-flag dispositions are decided (D-05):
-    // `--plan`, `--sha` and `--base` declare `fallback` and read as absent, so
-    // every shipped `trace close` written without them keeps answering ok:true,
-    // while `--role`, `--step`, `--reviewer` and `--trigger` REFUSE.
-    //
-    // `--role` MOVED to refuse, and that is the behaviour change. Measured
-    // 2026-08-19, `trace append --phase 1 --family lifecycle --event dispatch
-    // --role --tokens 5` returned `{"ok":true,"written":true}`, wrote a line
-    // carrying no `role` key, and `trace render` then aggregated it under the
-    // EMPTY STRING key - `"roles":{"":{"dispatches":2,...}}`, a
-    // complete-looking dispatch whose attribution is gone. `--role ''` was
-    // identical. The other direction - extending the drop arm to the three
-    // refusals beside it - was the alternative, and those three are written
-    // against exactly this shape.
-    //
-    // What each of the four refusing flags IS:
-    //   --step      the workflow step a COORDINATOR marker names. A marker
-    //               naming no step defeats the per-step attribution it exists
-    //               for.
-    //   --reviewer  WHICH reviewer actually ran this fire, so a cross-model
-    //               review and a subagent review of one trigger stop being one
-    //               shape in the record (RVW-02). It names the reviewer that
-    //               RAN, never the one the trigger asked for - nothing refuses
-    //               a dispatch to a reviewer outside the resolved set (D-07),
-    //               so this mark is the whole enforcement.
-    //   --trigger   WHICH review trigger this event belongs to, so an `outcome`
-    //               event JOINS to the fire that produced it without reading
-    //               prose; `risk-check status` demands one for a matched range
-    //               (D-12). Measured across this repository's 35
-    //               `outcome/adjudication` events the trigger is spelled four
-    //               different ways inside the free-text `--detail`, and
-    //               lib/trace-suggest.mjs discards that text entirely, so
-    //               parsing it back out is the substitution this flag exists to
-    //               avoid.
-    //   --role      the role the per-role token block aggregates under.
-    // A bare one of them parses as boolean `true` in `parseArgs`, which is why
-    // the read is against ARGV: the refusal has to see the spelling.
+    // the ten string flags, each read through its declared row: one loop where seven hand-written guards used to state the same two rules, and the one place this body's two bare-flag dispositions are decided
+    // --plan, --sha and --base declare fallback and read as absent, so every shipped trace close written without them keeps answering ok:true; --role, --step, --reviewer and --trigger refuse
+    // --role moved to refuse: a bare one returned ok:true, wrote a line with no role key, and trace render aggregated it under the empty string key, a complete-looking dispatch with its attribution gone
+    // --step names the workflow step a coordinator marker is for; a marker without one defeats the per-step attribution it exists for
+    // --reviewer is which reviewer actually ran the fire (not the one the trigger asked for), so cross-model and subagent reviews of one trigger stop being one shape; nothing refuses a reviewer outside the resolved set, so this mark is the whole enforcement
+    // --trigger is which review trigger the event belongs to, so an outcome event joins to its fire without reading prose, and risk-check status demands one for a matched range; the free-text --detail spelled it four ways, which is the substitution this flag avoids
+    // a bare one parses as boolean true in parseArgs, which is why the read is against ARGV: the refusal has to see the spelling
     const flags = {};
     for (const flag of TRACE_STRING_FLAGS) {
       const parsedFlag = evaluateFlag(ARGV, flag, TRACE_GRAMMAR[flag]);
-      // The wording comes from the ONE flag->sentence map the dispatch door
-      // composes from, so `trace append --role` (bare) answers with the same
-      // sentence whichever of the two refuses it first - the door for the flags
-      // the resolved row declares, this loop for the ones only the UNION does.
+      // the wording comes from the one flag-to-sentence map the dispatch door uses, so a bare trace append --role answers the same whichever refuses it first (the door for flags the resolved row declares, this loop for the ones only the union does)
       if (!parsedFlag.ok) {
         return fail('bad-args', argRefusal(`trace ${sub}`, flag),
           'give the flag the detail names a value, or leave it off entirely - nothing was appended,'
@@ -944,163 +561,77 @@ function cmdTrace(dir, sub, opts) {
       }
       flags[flag] = parsedFlag.value;
     }
-    // Trimmed for the four that refuse, because a stored name is a JOIN KEY and
-    // ` cad-executor ` must not read as a second role. The `fallback` three are
-    // stored VERBATIM, exactly as they always were.
+    // trimmed for the four that refuse, since a stored name is a join key and " cad-executor " must not read as a second role; the fallback three are stored verbatim as always
     const trimmed = (flag) => (flags[flag] === undefined ? undefined : String(flags[flag]).trim());
     const step = trimmed('--step');
     const reviewer = trimmed('--reviewer');
     const trigger = trimmed('--trigger');
     const agentId = trimmed('--agent-id');
 
-    // THE WINDOW THIS RECEIPT SETTLES, when it is not the window the run is in
-    // (D-01). `correlationId` derives a run's id off the phase's NEWEST
-    // `lifecycle/phase_start`, so a settlement written after the phase
-    // re-anchored is stamped with the new window's id and can never settle the
-    // fire that ran under the old one - the state GH-227 Case A reports,
-    // repaired today by hand-appending the line. `renderEvent` already prefers
-    // an explicit non-empty `corr` on the event and falls back to the
-    // derivation only when there is none, so the whole of the fix is a flag
-    // that supplies one.
-    //
-    // The flag carries the earlier window's own anchor SHA, never a whole
-    // correlation id, and the id is derived from it through `correlationId` -
-    // the one derivation in the tree, which short-circuits on a supplied sha
-    // and returns `<phase>-<sha>` with no file read. So a receipt can only name
-    // a window of the phase it already declares, and the two spellings cannot
-    // drift apart.
-    //
-    // NO KEY when the flag is absent, so every existing call derives exactly as
-    // it does today. Not coupled to an event NAME either: this seam carries no
-    // runtime refusal keyed to an event, and the first one would be read as
-    // drift and deleted.
+    // the window this receipt settles when it isn't the window the run is in: correlationId derives a run's id off the phase's newest phase_start, so a settlement written after a re-anchor is stamped with the new window's id and can never settle the fire from the old one (GH-227 Case A, repaired by hand-appending the line)
+    // renderEvent already prefers an explicit non-empty corr on the event, so the fix is just a flag that supplies one
+    // the flag carries the earlier window's anchor SHA and never a whole correlation id, derived through correlationId, so a receipt can only name a window of the phase it already declares
+    // no key when the flag is absent, so existing calls derive as they do today; not coupled to an event name either, since this seam carries no runtime refusal keyed to one and the first would be read as drift and deleted
     const anchor = trimmed('--anchor');
     const corr = anchor === undefined
       ? undefined
       : correlationId(dir, parsedPhase.raw, anchor);
 
-    // THE HUMAN ANSWER THIS RECEIPT DESCENDS FROM (D-02, GH-220). One
-    // authorization applied to two ranges is two receipts by construction, and
-    // nothing on either said they came from one decision. The id is MINTED by
-    // the coordinator when the engineer answers - never hashed, never
-    // normalized out of the reason text: measured over nine shipped
-    // `outcome/override` events, grouping by exact `--detail` text collapses
-    // the two duplicate pairs and misses the trio of three distinct texts
-    // written on one standing authorization, so a derived key answers two cases
-    // of three and misses the one that motivated the issue.
-    //
-    // TRIMMED, like the other refusing flags: a stored id is a JOIN KEY and a
-    // padded copy must not read as a second decision. ABSENT AND EMPTY STAY
-    // DISTINGUISHABLE - the key rides the event only when the flag was given,
-    // or every event written before this flag existed would read as a labelled
-    // one.
-    //
-    // Not keyed to the `override` event name. This seam is event-agnostic by
-    // contract, and the rule that only an override carries an id is held by the
-    // prose that writes it, exactly as the rule that a coordinator marker
-    // carries no `--role` is.
+    // the human answer this receipt descends from (GH-220): one authorization applied to two ranges is two receipts, and nothing on either said they came from one decision
+    // the id is minted by the coordinator when the engineer answers and never hashed or normalized out of the reason text; grouping shipped overrides by exact --detail collapsed two duplicate pairs and missed three distinct texts written on one standing authorization
+    // trimmed like the other refusing flags since a stored id is a join key, and absent and empty stay distinguishable: the key rides the event only when the flag was given, or every older event would read as labelled
+    // not keyed to the override event name: the seam is event-agnostic, and the rule that only an override carries an id is held by the prose that writes it
     const authorizationId = trimmed('--authorization-id');
 
-    // THE CROSS-ARTIFACT CHECK (AC4). The three settled figures are DERIVED by
-    // the `adjudication` seam from the record's own rulings and copied onto
-    // this line by hand, so this is where a mistyped one is still cheap: the
-    // record for this fire is recounted and a figure that disagrees is a
-    // malformed CALL, refused with NOTHING appended. Left to a later test, the
-    // wrong count has already shipped on the fire's own receipt.
-    //
-    // ABSENT RECORD OMITS THE CHECK and stores the flags as given - a fire
-    // predating the format, or an advisory arm that wrote none. This is a
-    // cross-check between two artifacts, never a requirement that one exist:
-    // making a receipt depend on a record would make an unrecordable fire
-    // unrecordable in the trace as well.
+    // the cross-artifact check: the adjudication seam derives the three settled figures from the record's rulings and they're copied onto this line by hand, so a mistyped one is cheapest to catch here. The record is recounted and a disagreeing figure is refused with nothing appended
+    // an absent record omits the check and stores the flags as given (a fire predating the format, or an advisory arm that wrote none), or an unrecordable fire would be unrecordable in the trace too
     const recount = recountReceipt(dir, parsedPhase.raw, {
       trigger, plan: flags['--plan'], sha: flags['--sha'], round, settled,
     });
     if (!recount.ok) return fail(recount.reason, recount.detail, recount.hint);
 
-    // THE SECOND CROSS-ARTIFACT CHECK, over the same resolved record: a receipt
-    // that settles a range whose record says a PERSON cleared a blocking halt
-    // has to say why. See `overrideAccounted` for why it runs on any settled
-    // figure rather than on all three, and why it is phrased as a
-    // record/receipt contradiction rather than keyed to an event name.
+    // the second cross-artifact check, over the same resolved record: a receipt settling a range whose record says a person cleared a blocking halt has to say why. overrideAccounted explains why it runs on any settled figure and not an event name
     const override = overrideAccounted(dir, parsedPhase.raw, {
       trigger, plan: flags['--plan'], sha: flags['--sha'], round, settled, reason: detail,
     });
     if (!override.ok) return fail(override.reason, override.detail, override.hint);
 
-    // No flag below is coupled to an event NAME: the seam stays event-agnostic
-    // exactly as it is today, which is what makes `return`, `checkpoint` and
-    // `escalation` store tokens identically. `--step` does not change that: the
-    // rule that a coordinator marker carries no `--role` and no `--tokens` is
-    // held by the prose that writes it and by the census assertion in
-    // trace.test.mjs, never by a runtime refusal keyed to an event name.
+    // nothing below is coupled to an event name, which is what makes return, checkpoint and escalation store tokens identically; the rule that a coordinator marker carries no --role and no --tokens is held by the prose and the census assertion in trace.test.mjs, never by a runtime refusal
     const res = appendEvent(dir, {
-      // The caller's SPELLING, which is what separates `1.10` from `1.1`:
-      // normalized, both phases shared one trace key and one correlation id, so
-      // the record joined two phases into one story. `lib/trace.mjs`'s `key()`
-      // stringifies both sides of every comparison, so the derived id, the
-      // render filter and the dispatch/terminal pairing all keep working
-      // against traces written before this change and lib/trace.mjs needs no
-      // edit.
+      // the caller's spelling, which is what separates 1.10 from 1.1: normalized, both phases shared one trace key and correlation id. lib/trace.mjs stringifies both sides of every comparison, so older traces keep working
       phase: parsedPhase.raw,
       family,
       event,
-      // Present ONLY when `--anchor` named an earlier window; absent, the
-      // derivation in `renderEvent` answers exactly as it always has.
+      // present only when --anchor named an earlier window; absent, renderEvent derives as always
       ...(corr === undefined ? {} : { corr }),
-      // The four below carry no guard of their own any more: the loop above
-      // already applied each flag's declared disposition, so an absent flag and
-      // a `fallback` one both arrive here as `undefined` and omit their key.
+      // no guard of their own: the loop above already applied each flag's disposition, so absent and fallback both arrive as undefined and omit the key
       ...(flags['--plan'] === undefined ? {} : { plan: flags['--plan'] }),
       ...(flags['--sha'] === undefined ? {} : { sha: flags['--sha'] }),
-      // `--base` beside `--sha`: a fire RECEIPT names both ends of the range it
-      // settled, because two ranges can share a head and differ at the base and
-      // are then different diffs over different surfaces.
+      // --base beside --sha: a fire receipt names both ends of the range it settled, since two ranges can share a head and differ at the base
       ...(flags['--base'] === undefined ? {} : { base: flags['--base'] }),
       ...(typeof detail === 'string' && detail ? { detail } : {}),
       ...(trimmed('--role') === undefined ? {} : { role: trimmed('--role') }),
       ...(tokens === undefined ? {} : { tokens }),
-      // OMITTED when the return carried no count, never sent as `0`: a zero
-      // claims a dispatch that used no tools, while an absent key is readable
-      // as "this host reported none". A real `--turns 0` still records a 0,
-      // exactly as `--tokens 0` already does.
+      // omitted when the return carried no count and never sent as 0: zero claims a dispatch that used no tools, an absent key reads as the host reporting none. A real --turns 0 still records 0
       ...(turns === undefined ? {} : { turns }),
-      // OMITTED for the reason `--turns` is, and spelled `duration_ms` because
-      // the 232 `provider` events already on the record spell it that way - one
-      // reader parses one field name.
+      // omitted like --turns, and spelled duration_ms because the provider events already on the record spell it that way
       ...(durationMs === undefined ? {} : { duration_ms: durationMs }),
       ...(raised === undefined ? {} : { raised }),
-      // The settled figures, each key present only when its flag was: a fire
-      // nobody counted stays distinguishable from one that counted zero.
+      // each key only when its flag was: a fire nobody counted stays distinguishable from one that counted zero
       ...settled,
-      // The round, only when the caller named one: an ordinary fire is round 1
-      // by omission on both sides, and writing a `round: 1` onto every event
-      // would put a re-arm field on the thousands that never re-armed.
+      // only when the caller named a round: an ordinary fire is round 1 by omission, and writing round: 1 onto every event would put a re-arm field on thousands that never re-armed
       ...('round' in opts ? { round } : {}),
       ...(read === undefined ? {} : { read }),
       ...(step === undefined ? {} : { step }),
       ...(reviewer === undefined ? {} : { reviewer }),
-      // A dispatch that committed NOTHING because its tasks were already
-      // satisfied in HEAD. The bracket is otherwise byte-identical in shape to
-      // a real one, so two measured replays charged 30,588 and 24,570 tokens
-      // that a cost read over this file counted as execution. Present only when
-      // true, the shape every optional field here takes: `false` and absent say
-      // the same thing, and writing a `replay: false` onto every close would
-      // put a replay field on thousands of dispatches that were not one.
+      // a dispatch that committed nothing because its tasks were already satisfied in HEAD: otherwise the bracket looks like a real one and a cost read counted two measured replays (30,588 and 24,570 tokens) as execution
+      // present only when true, like every optional field here, so replay: false doesn't land on thousands of dispatches that weren't one
       ...(opts.replay === true ? { replay: true } : {}),
       ...(trigger === undefined ? {} : { trigger }),
-      // The worker's host id, carried so the `SubagentStop` hook can tell a
-      // worker that has ALREADY been closed from one still running. It is the
-      // only identity the hook and the orchestrator both hold: the `dispatch`
-      // half cannot carry it (that event is written before the subagent
-      // exists), and the orchestrator learns it the moment the host returns.
+      // the worker's host id, so the SubagentStop hook can tell a closed worker from a running one; the dispatch half can't carry it (written before the subagent exists), and it's the only identity the hook and orchestrator both hold
       ...(agentId === undefined ? {} : { agent_id: agentId }),
-      // The authorization a settle descends from, so a reader can tell a second
-      // range settled by ONE human answer from a duplicate write of one range.
-      // It LABELS that pair and nothing more (D-03): `risk-check status` still
-      // requires every fired record to carry its own receipt naming both ends
-      // of its own range, so a shared id never lets one receipt settle a second
-      // range.
+      // the authorization a settle descends from, so a second range settled by one human answer reads differently from a duplicate write of one range
+      // it only labels the pair: risk-check status still wants every fired record to carry its own receipt naming both ends, so a shared id never lets one receipt settle a second range
       ...(authorizationId === undefined ? {} : { authorization_id: authorizationId }),
     });
     return ok({
@@ -1110,10 +641,7 @@ function cmdTrace(dir, sub, opts) {
     });
   }
   if (sub === 'suggest') {
-    // Evidence-backed config suggestions off the record - the pure rules live
-    // in lib/trace-suggest.mjs, this arm owns only scope and envelope. No
-    // `--phase` means the WHOLE record on purpose: the caller is the milestone
-    // close, and a milestone's evidence spans every phase it shipped.
+    // evidence-backed config suggestions off the record: the pure rules live in lib/trace-suggest.mjs and this arm owns scope and envelope. No --phase means the whole record on purpose, since the caller is the milestone close and its evidence spans every phase
     let phase;
     if (opts.phase !== undefined) {
       const parsedPhase = requirePhaseArg(opts.phase);
@@ -1125,24 +653,10 @@ function cmdTrace(dir, sub, opts) {
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
-    // warnings[] BOUND and ridden on the envelope when non-empty, the rule
-    // lib/merge-warnings.mjs holds every mergeLayers callsite to (D-13): a torn
-    // layer reads every key as unset, so every suggestion would report an unset
-    // `current` and a project that deliberately pinned one would be told to
-    // move a value the read never saw.
+    // warnings ride the envelope when non-empty, which every mergeLayers caller owes: a torn layer reads every key as unset, so a project that pinned one would be told to move a value the read never saw
     const { config: suggestConfig, warnings } = mergeLayers(join(dir, 'config.json'));
-    // The SECOND record this arm opens (RDX-01): `.planning/reads.jsonl`, folded
-    // to the per-role in-dispatch figures R7 reads. The brackets are the render
-    // ALREADY computed above - a second `renderTrace` call would re-read the
-    // trace for nothing - so a `--phase N` run scopes itself without a new flag:
-    // only reads landing inside that phase's dispatches join at all.
-    //
-    // An ABSENT file yields no rows and therefore no entry, never an error and
-    // never a zero, which is the posture `cmdReads`'s own ENOENT arm already
-    // states for a project that has not run since the hook was installed. An
-    // UNREADABLE one yields no entry AND names the file in `warnings[]`, the
-    // channel this envelope already carries for exactly this class of partial
-    // read (D-13).
+    // the second record this arm opens is .planning/reads.jsonl, folded to the per-role in-dispatch figures; the brackets are the render already computed, so a --phase run scopes itself and only reads inside that phase's dispatches join
+    // an absent file yields no rows and so no entry, never an error or a zero (as the ENOENT arm of cmdReads does); an unreadable one yields no entry and names the file in warnings
     const readRecord = readReadsRecords(dir);
     const inDispatch = readRecord.status === 'ok'
       ? inDispatchReads(joinReads(readRecord.records, r.brackets).rows)
@@ -1152,29 +666,16 @@ function cmdTrace(dir, sub, opts) {
       : warnings;
     const suggestions = suggestFromRender(r, suggestResolution(dir, r, suggestConfig), inDispatch);
     return ok({
-      // The record these suggestions were argued off, which this arm did not
-      // name at all until TRC-08: a retune argued off a record the reader
-      // cannot name is a number. It rides the SAME `renderTrace` result the
-      // suggestions do, so the two can never name different files.
+      // the record these suggestions were argued off, riding the same renderTrace result as the suggestions so the two can't name different files: a retune argued off a record the reader can't name is just a number
       file: r.file,
       scope: phase === undefined ? 'all' : String(phase),
       events_read: r.events.length,
       ...(r.capped ? { capped: true } : {}),
-      // The rotation, on the same footing it rides `trace render`: a reader
-      // seeing fewer events than it expected can tell a cut from a quiet run
-      // without inferring it from what is missing. NOT folded into `capped` -
-      // that one still means this READ was truncated at the ceiling, and a
-      // rotated record is not capped.
+      // the rotation, as on trace render, so a reader seeing fewer events can tell a cut from a quiet run; not folded into capped, which means this read hit the ceiling
       ...(r.rotated ? { rotated: r.rotated } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
-      // The SECOND record this arm read, named and - where it was cut - dated,
-      // on the SAME nested key `reads` returns so a reader has one shape to
-      // learn (D-04). Sourced from the `readReadsRecords` result this arm
-      // already holds, so the name here and the figures below can never come
-      // off different files. NOT the top-level `rotated` above: that one means
-      // the TRACE was cut, `workflows/suggest.md:29-30` ties it to that record
-      // specifically, and one key meaning two records is the thing this nesting
-      // exists to prevent.
+      // the reads record, named and dated where cut, on the same nested key reads returns so a reader learns one shape. It comes from the readReadsRecords result already held here, so name and figures can't come off different files
+      // not the top-level rotated above, which means the trace was cut, and one key meaning two records is what this nesting prevents
       reads: {
         file: readRecord.file,
         ...(readRecord.rotated ? { rotated: readRecord.rotated } : {}),
@@ -1194,39 +695,19 @@ function cmdTrace(dir, sub, opts) {
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
-    // The BOUND, and it lives here rather than in `renderTrace` (D-08). Two
-    // in-process consumers read the full array off the function - `trace
-    // suggest` above reads `r.events.length`, and lib/trace-suggest.mjs reads
-    // `render.events` directly - so bounding the function would make every
-    // evidence-backed retune suggestion price a fraction of the run. What is
-    // oversized is the CLI RESPONSE, which is read into a model's context:
-    // 36,916 B for `--phase 3` on this repo's own record, nearly all of it the
-    // raw event array.
-    //
-    // What replaces it is NOT a tail-N of `events`. It is the per-bracket rows
-    // plus EVERY `outcome` event, because references/triage-gate.md reads this
-    // response to find a prior `rearm` outcome under the current `corr` before
-    // firing the narrowed round - a truncated payload makes that lookup miss,
-    // and the one-re-arm cap on the only BLOCKING trigger fails open. The
-    // second reader, workflows/report.md, needs one row per dispatch/return
-    // pair and one line per review fire, which is the same shape.
-    // PRESENCE, the `--undo` precedent at `phase-done`: the flag says "hand me
-    // the raw array" and has no value to get wrong.
+    // the bound lives here and not in renderTrace: trace suggest and lib/trace-suggest.mjs read the full array in-process, so bounding the function would make every retune suggestion price a fraction of the run. What's oversized is the CLI response, which is read into a model's context
+    // what replaces it is the per-bracket rows plus every outcome event, not a tail-N: triage-gate reads this response for a prior rearm outcome under the current corr, and a truncated payload makes that miss, so the one-re-arm cap on the only blocking trigger fails open
+    // --events is a presence flag, like --undo at phase-done: it says "hand me the raw array" and has no value to get wrong
     const full = 'events' in opts;
     return ok({
       file: r.file,
       corr: r.corr,
       capped: r.capped,
-      // Emitted only where the record carries a rotation marker, so an envelope
-      // every reader already parses is byte-identical on a record that never
-      // rotated. It names the sibling the cut events are in; nothing reads that
-      // file, and this field is how a reader learns they are not missing.
+      // only where the record carries a rotation marker, so the envelope is byte-identical on a record that never rotated; it names the sibling the cut events are in, which is how a reader learns they aren't missing
       ...(r.rotated ? { rotated: r.rotated } : {}),
       counts: r.counts,
       ...(Object.keys(r.roles).length ? { roles: r.roles } : {}),
-      // Emitted the way `roles` is: only when there is something to say. A
-      // trace carrying no coordinator marker has no residue to report, and a
-      // zeroed block would read as a coordinator that spent nothing.
+      // only when there's something to say, like roles: a trace with no coordinator marker has no residue, and a zeroed block would read as a coordinator that spent nothing
       ...(r.coordinator ? { coordinator: r.coordinator } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
       ...(full
@@ -1234,24 +715,16 @@ function cmdTrace(dir, sub, opts) {
         : {
           brackets: r.brackets,
           outcomes: r.events.filter((e) => e.family === 'outcome'),
-          // The third bounded projection, and it rides the SAME arm as the
-          // other two: `--events` is an either/or, so a caller asking for the
-          // raw array gets today's envelope and folds the spend itself.
+          // the third bounded projection rides the same arm as the other two: --events is an either/or, so a caller asking for the raw array gets the old envelope and folds the spend itself
           ...providerSpend(r.events),
         }),
       unpaired: r.unpaired,
-      // Emitted the way `roles` and `coordinator` are - only when there is
-      // something to say, so a clean trace's envelope is byte-identical to the
-      // one every reader already parses. A bracket closed under a role its
-      // dispatch did not name is a prose defect at one of the two sites; it is
-      // reported here and billed nowhere (the dispatch stays the authority).
+      // only when there's something to say, so a clean trace's envelope is byte-identical to what readers already parse; a bracket closed under a role its dispatch didn't name is a prose defect at one of two sites, reported here and billed nowhere (the dispatch stays the authority)
       ...(r.mismatched.length ? { mismatched: r.mismatched } : {}),
     });
   }
   if (sub === 'window') {
-    // Scope exactly as `render` and `suggest` take it: no `--phase` is the
-    // WHOLE record, because a window ceiling is argued off a milestone's worth
-    // of dispatches rather than one phase's.
+    // scoped as render and suggest are: no --phase is the whole record, since a window ceiling is argued off a milestone's worth of dispatches
     let phase;
     if (opts.phase !== undefined) {
       const parsedPhase = requirePhaseArg(opts.phase);
@@ -1263,11 +736,7 @@ function cmdTrace(dir, sub, opts) {
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
-    // warnings[] BOUND and ridden on the envelope when non-empty, the rule
-    // lib/merge-warnings.mjs holds every mergeLayers callsite to: a torn layer
-    // reads every ceiling as unset, so the report silently falls back to the
-    // defaults below and a project that deliberately raised one would see its
-    // crossings come back with nothing said.
+    // warnings ride the envelope when non-empty, which every mergeLayers caller owes: a torn layer reads every ceiling as unset, so the report falls back to the defaults and a project that raised one sees its crossings come back with nothing said
     const { config: windowConfig, warnings } = mergeLayers(join(dir, 'config.json'));
     const set = windowConfig?.workflow?.max_dispatch_tokens;
     /** @type {Record<string, number>} */
@@ -1280,15 +749,11 @@ function cmdTrace(dir, sub, opts) {
     return ok({
       checked: 'dispatch-window',
       scope: phase === undefined ? 'all' : String(phase),
-      // The record the crossings were read from, which is also the `file` on
-      // every problem: a finding that cannot name its source is a number.
+      // the record the crossings were read from, also the file on every problem: a finding that can't name its source is a number
       file: r.file,
       ceilings,
       problems: w.problems,
-      // Stated at zero rather than omitted, unlike `render`'s conditional keys.
-      // This subcommand has no byte-stable envelope to preserve, and the whole
-      // point of the two counters is that a reader can tell how much of the
-      // record was actually compared - an absent count would read as none.
+      // stated at zero and not omitted like render's conditional keys: this envelope has no byte-stable shape to preserve, and an absent count would read as none, hiding how much of the record was compared
       compared: w.compared,
       unbudgeted: w.unbudgeted,
       unrecorded: w.unrecorded,
@@ -1299,47 +764,13 @@ function cmdTrace(dir, sub, opts) {
 }
 
 /**
- * The record a receipt SETTLES, as an absolute path, or '' when this fire has
- * none that can be resolved.
- *
- * A receipt names its fire with `--trigger`, `--sha` and - on a per-plan fire -
- * `--plan <k>`, which is the D-06 discriminator grammar minus the spelling: a
- * per-plan fire's discriminator IS `plan-<k>`, and every other fire's is
- * `<command>-<short head sha>`, whose command half no receipt carries. So the
- * per-plan arm resolves ONE name and the other arm matches the directory on the
- * trigger, the round and the head the discriminator ends with, taking a single
- * unambiguous hit and nothing else. Two candidates answer '' rather than a
- * guess: a check that might be reading another fire's rulings is worse than no
- * check, because it refuses a correct receipt.
- *
- * EVERY ARM ANSWERS '' RATHER THAN THROWING. This resolves a cross-check, and
- * an unresolvable one omits the check - it never fails the append.
- *
- * TWO HOMES, CHOSEN BY THE PHASE (D-04). `phases/<N>/` for every phase but one,
- * and `.planning/tasks/<slug>/` for phase 0. A `/cad-task` fire deliberately
- * spells its phase `0` - the one number no roadmap phase carries, so there is no
- * `phases/0/` and there never will be - and keeps its record beside the sibling
- * REVIEW file under its slug. Resolving only the phase join meant every task
- * settlement's counts were self-asserted: the recount below found no record and
- * omitted itself, so a receipt naming any figure at all was appended. The
- * receipt carries NO slug to look it up by (`references/triage-gate.md` states
- * `--plan <k>` is omitted on a task fire, and the live receipts confirm it), so
- * the phase is the only signal there is and every task directory is searched.
- * `deferred/<N>/` is deliberately NOT here - see the block comment on `fireHome`
- * in planning/core.mjs, which states why the safe direction differs between the
- * writer and this recount.
- *
- * A SEARCH ACROSS HOMES DOES NOT WEAKEN THE ONE-CANDIDATE RULE. Candidates are
- * counted across every home together, so two task directories holding a record
- * that matches this trigger, round and head answer '' exactly as two records in
- * one directory already do: a check that might be reading another fire's
- * rulings is worse than no check.
- *
- * `trigger` is validated against `RECORD_TOKEN` before it reaches `join`, the
- * same rail the writer applies for the same reason (VAL-01): it reaches a
- * FILENAME, and a `--trigger ../../etc` that resolved anything at all would be
- * reading outside the phase directory.
- *
+ * The record a receipt settles, as an absolute path, or '' when this fire has none that can be resolved.
+ * A receipt names its fire with `--trigger`, `--sha` and, on a per-plan fire, `--plan <k>`. A per-plan fire's discriminator is `plan-<k>`, so that arm resolves one name. Every other fire's is `<command>-<short head sha>` and no receipt carries the command, so the other arm matches the directory on trigger, round and head and takes a single unambiguous hit. Two candidates answer '' and not a guess, since a check that might read another fire's rulings is worse than none: it refuses a correct receipt.
+ * Every arm answers '' instead of throwing, because an unresolvable cross-check omits the check and never fails the append.
+ * Two homes, chosen by the phase: `phases/<N>/`, and `.planning/tasks/<slug>/` when the phase is 0. `/cad-task` spells its phase `0` and keeps its record under its slug, so with only the phase join every task settlement's counts were self-asserted (the recount found no record and omitted itself). A task receipt carries no slug, so the phase is the only signal and every task directory is searched.
+ * `deferred/<N>/` is deliberately not here: fireHome in core.mjs says why the safe direction differs between the writer and this recount.
+ * Candidates are counted across all homes together, so two task directories each holding a match answer '' just as two in one directory do.
+ * `trigger` is checked against RECORD_TOKEN before it reaches `join`, the writer's rail, since it reaches a filename and `--trigger ../../etc` must not read outside the phase directory.
  * @param {string} dir @param {string|number} phaseRaw
  * @param {string|undefined} trigger @param {any} plan @param {any} sha
  * @param {number} round
@@ -1352,13 +783,8 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
   if (String(phaseRaw) !== '0') {
     homes = [join(dir, 'phases', String(phaseRaw))];
   } else {
-    // `lstatSync` on `tasks/` itself before the walk, the discipline `fireHome`
-    // takes at the write face: `readdirSync` follows a symlinked directory, so
-    // without this a symlinked `tasks` would be enumerated outside the planning
-    // tree and this recount would compare a receipt against a record from
-    // somewhere else. Each entry is then held to the same bar by `isDirectory()`
-    // off the dirent, which reads as `lstat` does and so answers false for a
-    // symlink pointing at a directory.
+    // lstat tasks/ itself before the walk, as fireHome does at the write face: readdirSync follows a symlinked directory, so a symlinked tasks would be enumerated outside the planning tree and the recount would compare a receipt against a record from elsewhere
+    // each entry gets the same bar from the dirent's isDirectory, which reads as lstat does and answers false for a symlink to a directory
     const troot = join(dir, 'tasks');
     let root = null;
     try { root = lstatSync(troot); } catch { /* no tasks/ is no candidate */ }
@@ -1369,8 +795,7 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
       } catch { homes = []; }
     }
   }
-  /** A regular FILE at `name` under `home`, or ''. A symlink is not a record:
-   * it is followed out of the tree by every reader after it. */
+  /** A regular file at `name` under `home`, or ''. A symlink isn't a record: every reader after it would follow it out of the tree. */
   const regular = (home, name) => {
     const file = join(home, name);
     try { return lstatSync(file).isFile() ? file : ''; } catch { return ''; }
@@ -1379,8 +804,7 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
   const planKey = plan === undefined || plan === null ? '' : String(plan).trim();
   if (planKey) {
     const discriminator = `plan-${planKey}`;
-    // Refused here for the reason the writer refuses it: a discriminator
-    // outside this grammar names no record the writer could ever have written.
+    // refused here as the writer refuses it: a discriminator outside this grammar names no record the writer could have written
     if (!RECORD_TOKEN.test(discriminator)) return '';
     const name = recordName(trigger, discriminator, round);
     const found = homes.map((home) => regular(home, name)).filter(Boolean);
@@ -1396,61 +820,30 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
   for (const home of homes) {
     /** @type {string[]} */
     let names = [];
-    // `continue`, never `return`: an unreadable home is one candidate source
-    // that answered nothing, and on the task arm the others are still to come.
+    // continue and never return: an unreadable home is one candidate source that answered nothing, and on the task arm the others are still to come
     try { names = readdirSync(home); } catch { continue; }
     for (const name of names) {
       if (!name.startsWith(prefix) || !name.endsWith(suffix)) continue;
       const discriminator = name.slice(prefix.length, name.length - suffix.length);
-      // At round 1 the suffix is bare `.json`, which every higher round's file
-      // also ends with - so a `-r<n>` tail is another round's record, not this
-      // fire's discriminator.
+      // at round 1 the suffix is a bare .json that every higher round's file also ends with, so a -r<n> tail is another round's record
       if (round === 1 && /-r\d+$/.test(discriminator)) continue;
-      // The discriminator's last segment is the short head sha. Compared as a
-      // PREFIX in whichever direction is shorter, because the receipt may spell
-      // the head 7-char or full while the filename is abbreviated.
+      // the discriminator's last segment is the short head sha, compared as a prefix in whichever direction is shorter since the receipt may spell the head 7-char or full
       const tail = discriminator.slice(discriminator.lastIndexOf('-') + 1).toLowerCase();
       if (tail.length >= 7 && (head.startsWith(tail) || tail.startsWith(head))) {
         hits.push({ home, name });
       }
     }
   }
-  // Counted as NAMES and filtered through `regular` only once one stands alone,
-  // the order the single-home walk already took: the glob found a name, and a
-  // symlink wearing that name is followed out of the tree by every reader after
-  // it. Dropping symlinks first would turn an ambiguous pair into a confident
-  // single, which is the guess this function exists not to make.
+  // counted as names and filtered through regular only once one stands alone, the order the single-home walk takes: dropping symlinks first would turn an ambiguous pair into a confident single, the guess this function exists not to make
   return hits.length === 1 ? regular(hits[0].home, hits[0].name) : '';
 }
 
 /**
- * Do this receipt's settled figures agree with the rulings in its fire's own
- * record (AC4/D-01)?
- *
- * WHY IT IS ASKED HERE. The three figures are DERIVED by the `adjudication`
- * seam and copied onto the receipt line by hand, so the receipt is where a
- * mistyped one enters the record - and once appended, the trace and the record
- * disagree forever with nothing saying which is right. Recounting at write time
- * is what makes the survivor count recomputable rather than asserted.
- *
- * ONLY WHEN ALL THREE ARE PRESENT: a partial set cannot be checked against a
- * recount that answers all three, and refusing on one of them would refuse a
- * receipt shape nothing writes.
- *
- * An ABSENT record omits the check - a fire predating the format, or an
- * advisory arm that wrote none. The trace is gitignored, so it is the local
- * cross-check and the committed record is the custody artifact; a receipt that
- * could not be cross-checked is not thereby wrong.
- *
- * ABSENT MEANS ABSENT FROM THE TWO HOMES `recordForFire` READS, which is two of
- * the three a record may live in: `phases/<N>/` and, on phase 0, the task's own
- * `tasks/<slug>/`. A fire `deferred carry` moved into `deferred/<N>/` resolves
- * nothing here and takes this omission by design (D-04) - the writer widened to
- * that home so a carried finding could still be ruled on, and widening the
- * recount with it would compare a receipt against a record it may not be for.
- * So a carried fire's counts stay self-asserted, and that is stated rather than
- * accidental.
- *
+ * Do this receipt's settled figures agree with the rulings in its fire's own record?
+ * Asked here because the `adjudication` seam derives the three figures and they're copied onto the receipt by hand, so this is where a mistyped one enters, and once appended the trace and the record disagree with nothing saying which is right. Recounting at write time makes the survivor count recomputable and not asserted.
+ * Only when all three are present: a partial set can't be checked against a recount that answers all three, and refusing on one would refuse a shape nothing writes.
+ * An absent record omits the check (a fire predating the format, or an advisory arm that wrote none). The trace is gitignored, so it's the local cross-check and the committed record is the custody artifact; a receipt that couldn't be cross-checked isn't thereby wrong.
+ * Absent means absent from the two homes `recordForFire` reads, `phases/<N>/` and the task's `tasks/<slug>/`. A fire `deferred carry` moved into `deferred/<N>/` takes this omission by design: the writer widened to that home so a carried finding could still be ruled on, and widening the recount would compare a receipt against a record it may not be for. So a carried fire's counts stay self-asserted, stated and not accidental.
  * @param {string} dir @param {string|number} phaseRaw
  * @param {{trigger: string|undefined, plan: any, sha: any, round: number,
  *   settled: Record<string, number>}} fire
@@ -1466,13 +859,8 @@ function recountReceipt(dir, phaseRaw, fire) {
 
   let record;
   try { record = JSON.parse(readFileSync(file, 'utf8')); } catch {
-    // REFUSED, not skipped. This file exists and was written by the seam as
-    // one atomic JSON object, so unparseable means truncated or edited - which
-    // is precisely the tampering the cross-check exists to surface, and
-    // appending a figure nothing can check against it would bury it.
-    // The parse error itself is deliberately NOT quoted back: the detail names
-    // the file, which is the whole of what a caller acts on here, and echoing a
-    // caught message is the idiom planning.test.mjs's redaction census counts.
+    // refused and not skipped: the seam wrote this file as one atomic JSON object, so unparseable means truncated or edited, the tampering the cross-check exists to surface
+    // the parse error isn't quoted back, since the detail names the file and that's all a caller acts on, and echoing a caught message is what the redaction census in planning.test.mjs counts
     return { ok: false, reason: 'bad-record',
       detail: `${rel} exists but is not readable as JSON, so this receipt's counts cannot be `
         + 'checked against its rulings and nothing was appended',
@@ -1494,60 +882,13 @@ function recountReceipt(dir, phaseRaw, fire) {
 }
 
 /**
- * Does this receipt account for a halt the RECORD says a person cleared?
- *
- * WHY IT IS ASKED HERE, and only here. `trace append` is the one place in the
- * tree where a fire's receipt and its adjudication record are both in hand
- * under a key that is PROVED rather than reconstructed - `recordForFire`
- * resolves it from the same `--trigger`, `--plan`, `--sha` and `--round` the
- * writer used, and `recountReceipt` above already refuses on that resolution.
- * `risk-check status` reads no records at all and the `adjudication` seam runs
- * BEFORE the receipt exists, so neither can hold both sides.
- *
- * THE CONTRADICTION, not an event name. A record holding a `survived` blocker
- * or high marked `overridden: true` is by construction a halting finding that
- * STOOD with no commit behind it: a person cleared the gate. A receipt that
- * settles that range while saying nothing at all is an unverifiable
- * self-assertion - it reads as a clean settle, and the cleared halt survives
- * only inside a record nobody downstream is obliged to open. The refusal is
- * phrased as that contradiction and NEVER keyed to an event name: this seam
- * carries no runtime refusal keyed to an event, and the first one would be read
- * as drift and deleted.
- *
- * WHENEVER ANY SETTLED FIGURE IS PRESENT, deliberately unlike the recount
- * above. That one needs all three because a partial set cannot be compared with
- * a recount that answers all three; this one recounts nothing, and inheriting
- * the all-three precondition would let a caller discharge the marker by
- * dropping one figure from the settle line - exactly the self-assertion the
- * guard exists to stop. `rearm` and `deferral`, which carry no figures at all,
- * stay out of scope by carrying none rather than by being named.
- *
- * AN ABSENT RECORD OMITS THE CHECK, as `recordForFire` and the recount both
- * already declare - a fire predating the format, or an advisory arm that wrote
- * none. A cross-check whose record does not exist must never fail an append.
- * ABSENT is again absent from the two homes `recordForFire` reads of the three a
- * record may live in - `phases/<N>/`, and `tasks/<slug>/` on phase 0 - so a fire
- * carried into `deferred/<N>/` clears this guard by resolving nothing, on the
- * same stated posture the recount above names (D-04).
- *
- * AN UNREADABLE ONE IS REFUSED, exactly as the recount refuses it, and the two
- * cases are not one case: an absent record is a record nobody wrote, an
- * unreadable one is a record somebody CHANGED. The seam writes it as a single
- * atomic JSON object, so unparseable means truncated or edited - and passing
- * there would hand back the discharge the any-figure rule above exists to
- * close, by a second route. The recount refuses a bad record only once all
- * three figures are present, so a partial settle line never reaches that
- * refusal; if this one passed too, editing the file the guard reads would clear
- * the marker with nobody having read what it held. A receipt that DOES carry a
- * reason is answered before the file is opened at all, because it has already
- * accounted for whatever the record holds.
- *
- * WHAT COUNTS AS ACCOUNTING FOR IT is the user's own words on the receipt -
- * `--detail-file` is the transport references/triage-gate.md states for an
- * override, and planning/risk-check.mjs already refuses one whose reason is
- * empty. So the test is whether the receipt carries a reason at all, and the
- * shape this refuses is the reasonless one.
- *
+ * Does this receipt account for a halt the record says a person cleared?
+ * Asked here and only here: `trace append` is the one place where a fire's receipt and its adjudication record are both in hand under a proved key (`recordForFire` resolves it from the same flags the writer used). `risk-check status` reads no records and the `adjudication` seam runs before the receipt exists.
+ * It's the contradiction and not an event name. A record holding a survived blocker or high marked `overridden: true` is a halting finding that stood with no commit behind it, and a receipt settling that range while saying nothing reads as a clean settle, with the cleared halt left in a record nobody has to open. The refusal never keys to an event name, because this seam carries no runtime refusal keyed to one and the first would be read as drift and deleted.
+ * Whenever any settled figure is present, unlike the recount: this recounts nothing, and the all-three precondition would let a caller discharge the marker by dropping one figure. `rearm` and `deferral` carry none, so they're out of scope without being named.
+ * An absent record omits the check, as `recordForFire` and the recount declare, and a fire carried into `deferred/<N>/` clears it by resolving nothing, the same stated posture as the recount.
+ * An unreadable record is refused, and that's not the same case as absent: absent is a record nobody wrote, unreadable is one somebody changed. Passing there would hand back the discharge the any-figure rule closes by a second route, since the recount only refuses a bad record once all three figures are present. A receipt that carries a reason is answered before the file is opened, because it has already accounted for whatever the record holds.
+ * Accounting for it means the user's own words on the receipt (`--detail-file`, the override transport), and `risk-check` already refuses an empty one, so the test is just whether a reason is there.
  * @param {string} dir @param {string|number} phaseRaw
  * @param {{trigger: string|undefined, plan: any, sha: any, round: number,
  *   settled: Record<string, number>, reason: any}} fire
@@ -1563,11 +904,7 @@ function overrideAccounted(dir, phaseRaw, fire) {
 
   let record;
   try { record = JSON.parse(readFileSync(file, 'utf8')); } catch {
-    // REFUSED, never passed - see the docblock above. The caught message is
-    // deliberately NOT quoted back, the same idiom the recount states: the
-    // detail names the FILE, which is the whole of what a caller acts on, and
-    // echoing a caught message is what planning.test.mjs's redaction census
-    // counts.
+    // refused and never passed, see the doc above; the caught message isn't quoted back, the detail names the file and echoing a caught message is what the redaction census counts
     return { ok: false, reason: 'bad-record',
       detail: `${rel} exists but is not readable as JSON, so the rulings this receipt settles `
         + 'cannot be read - a record that was truncated or edited may hold a halting finding '
@@ -1587,7 +924,5 @@ function overrideAccounted(dir, phaseRaw, fire) {
       + 'let stand; or fix the findings and re-write the record so no cleared halt is left in it' };
 }
 
-// Only `cmdTrace` is dispatched. `cmdTraceIgnore` is exported beside it because
-// it is a subcommand handler in its own right and the census counts it as one -
-// what makes it internal is that `trace ignore` reaches it through `cmdTrace`.
+// only cmdTrace is dispatched; cmdTraceIgnore is exported beside it because it's a handler in its own right and the census counts it, and `trace ignore` reaches it through cmdTrace
 export { cmdTrace, cmdTraceIgnore };
