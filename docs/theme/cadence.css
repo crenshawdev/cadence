@@ -1,0 +1,88 @@
+/* Warm reading palettes. Keep mdBook's layout and theme selector intact. */
+.light {
+    --bg: #faf7f0;
+    --fg: #302d28;
+    --sidebar-bg: #eee8dd;
+    --sidebar-fg: #514b42;
+    --sidebar-active: #855014;
+    --sidebar-spacer: #d5cbbc;
+    --sidebar-header-border-color: #aa7435;
+    --scrollbar: #a89b88;
+    --icons: #746958;
+    --icons-hover: #855014;
+    --links: #855014;
+    --inline-code-color: #744915;
+    --theme-popup-bg: #faf7f0;
+    --theme-popup-border: #c7baa6;
+    --theme-hover: #e6dccb;
+    --quote-bg: #f0e8da;
+    --quote-border: #aa7435;
+    --table-border-color: #d5cbbc;
+    --table-header-bg: #e6dccb;
+    --table-alternate-bg: #f2ece2;
+    --searchbar-border-color: #a89b88;
+    --searchbar-bg: #faf7f0;
+    --searchbar-fg: #302d28;
+    --searchbar-shadow-color: transparent;
+    --searchresults-header-fg: #645b4e;
+    --searchresults-border-color: #d5cbbc;
+    --searchresults-li-bg: #f0e8da;
+    --search-mark-bg: #edcf91;
+    --footnote-highlight: #edcf91;
+    --cadence-code-bg: #f0e8da;
+    --cadence-code-fg: #302d28;
+    --copy-button-filter: invert(40%);
+    --copy-button-filter-hover: invert(25%);
+}
+
+.coal {
+    --bg: #242321;
+    --fg: #e6dfd2;
+    --sidebar-bg: #1c1b19;
+    --sidebar-fg: #c5bcae;
+    --sidebar-active: #dfb16b;
+    --sidebar-spacer: #454039;
+    --sidebar-header-border-color: #b58b50;
+    --scrollbar: #777064;
+    --icons: #b4a995;
+    --icons-hover: #dfb16b;
+    --links: #dfb16b;
+    --inline-code-color: #e3bc80;
+    --theme-popup-bg: #2d2a26;
+    --theme-popup-border: #75664f;
+    --theme-hover: #3b342a;
+    --quote-bg: #2d2a26;
+    --quote-border: #b58b50;
+    --table-border-color: #494238;
+    --table-header-bg: #3b342a;
+    --table-alternate-bg: #2b2824;
+    --searchbar-border-color: #88785f;
+    --searchbar-bg: #1c1b19;
+    --searchbar-fg: #e6dfd2;
+    --searchbar-shadow-color: transparent;
+    --searchresults-header-fg: #c5bcae;
+    --searchresults-border-color: #494238;
+    --searchresults-li-bg: #2d2a26;
+    --search-mark-bg: #69502c;
+    --footnote-highlight: #69502c;
+    --cadence-code-bg: #1c1b19;
+    --cadence-code-fg: #e6dfd2;
+    --copy-button-filter: invert(70%);
+    --copy-button-filter-hover: invert(90%);
+}
+
+/* Inline code and highlighted blocks otherwise inherit the stock palette. */
+:is(.light, .coal) :is(code, .hljs) {
+    background-color: var(--cadence-code-bg);
+}
+
+:is(.light, .coal) .hljs {
+    color: var(--cadence-code-fg);
+}
+
+:is(.light, .coal) a:focus-visible,
+:is(.light, .coal) button:focus-visible,
+:is(.light, .coal) input:focus-visible {
+    outline: 2px solid var(--links);
+    outline-offset: 3px;
+}

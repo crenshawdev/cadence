@@ -33,7 +33,7 @@ A passing coverage percentage doesn't establish that the assertions mean anythin
 
 Setup offers the policy, or you can accept one for an existing Cadence project with `/cadence:cad-config --testing`. It's opt-in per repository. CI-only checks stay pending until they run, and a phase is called CI-verified only for a commit whose required jobs passed.
 
-Read the [testing chapter](./docs/guide/testing/policy.md) for the rules, supported coverage tools and enforcement limits.
+Read the [testing chapter](https://crenshawdev.github.io/cadence/testing/policy.html) for the rules, supported coverage tools and enforcement limits.
 
 ## Get started
 
@@ -78,17 +78,17 @@ The record stays with the project, so you can end a session without making the n
 
 ## Documentation
 
-[Read the Cadence guide](./docs/guide/index.md), or [browse the full contents](./docs/guide/SUMMARY.md).
+[Read the Cadence guide](https://crenshawdev.github.io/cadence/), or [browse the Markdown on GitHub](./docs/guide/SUMMARY.md).
 
 | Start here | What you'll find |
 |---|---|
-| [Getting started](./docs/guide/getting-started/install.md) · [Working with Cadence](./docs/guide/working/plan-execute.md) | Installation, the project cycle and your first phase. |
-| [Commands](./docs/guide/reference/commands.md) | The full command reference; also available through `/cadence:cad-help`. |
-| [Configuration](./docs/guide/configuration/index.md) | Options, defaults, types and configuration scopes. Use `/cadence:cad-config` to change them. |
-| [Testing policy](./docs/guide/testing/policy.md) | Test scope, stopping rules, coverage and required CI jobs. |
-| [Permissions and data](./docs/guide/reference/permissions.md) | Provider calls, credentials, local records, shell permissions and publishing. |
-| [How it works](./docs/guide/how-it-works/roles.md) · [Controls and limits](./docs/guide/how-it-works/controls.md) | What the roles do and how the controls work. |
-| [Cost](./docs/guide/how-it-works/cost.md) | Measured runs and where the spend goes. |
+| [Getting started](https://crenshawdev.github.io/cadence/getting-started/install.html) · [Working with Cadence](https://crenshawdev.github.io/cadence/working/plan-execute.html) | Installation, the project cycle and your first phase. |
+| [Commands](https://crenshawdev.github.io/cadence/reference/commands.html) | The full command reference; also available through `/cadence:cad-help`. |
+| [Configuration](https://crenshawdev.github.io/cadence/configuration/index.html) | Options, defaults, types and configuration scopes. Use `/cadence:cad-config` to change them. |
+| [Testing policy](https://crenshawdev.github.io/cadence/testing/policy.html) | Test scope, stopping rules, coverage and required CI jobs. |
+| [Permissions and data](https://crenshawdev.github.io/cadence/reference/permissions.html) | Provider calls, credentials, local records, shell permissions and publishing. |
+| [How it works](https://crenshawdev.github.io/cadence/how-it-works/roles.html) · [Controls and limits](https://crenshawdev.github.io/cadence/how-it-works/controls.html) | What the roles do and how the controls work. |
+| [Cost](https://crenshawdev.github.io/cadence/how-it-works/cost.html) | Measured runs and where the spend goes. |
 
 Cadence adds no telemetry. Its records stay in your repository and go wherever you push them. It runs inside Claude Code, so your session is still subject to the host's data handling. Optional external reviewers receive project material only when enabled.
 
