@@ -10,6 +10,9 @@ node_modules/
 npm-debug.log*
 *.tgz
 
+# Rendered documentation
+/docs/book/
+
 # Local scratch / test projects
 /tmp/
 scratch/
