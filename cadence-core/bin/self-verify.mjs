@@ -273,6 +273,16 @@
 //                    files preload it, and files the problem against the
 //                    contract's SKILL.md. It takes no CONTRACTS row, for the
 //                    reason check 14 states about `lib/*.mjs`.
+//  28. setting       every `explain` entry on a config.schema.json key must be
+//      explanations  a value the key accepts, answered exactly as `validate`
+//                    does, and every `values` member of a key that holds a
+//                    `question` (`true` and `false` for a bool) must have an
+//                    entry. The walk and any config panel offer these entries
+//                    as answers, so one the key refuses fails on write and a
+//                    missing one is an option nobody is shown. Text on an entry
+//                    is not required (D-13). The rule is
+//                    lib/setting-explanations.mjs; it takes no CONTRACTS row,
+//                    for the reason check 14 states about `lib/*.mjs`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -289,6 +299,7 @@ import {
   RUNG_FILES, RUNG_ORDER,
 } from './lib/rung-agent.mjs';
 import { gateAgreementIssues } from './lib/gate-agreement.mjs';
+import { settingExplanationIssues } from './lib/setting-explanations.mjs';
 import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
 import { globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
 import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
@@ -1287,6 +1298,12 @@ function run(root) {
     problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
   }
 
+  // 28. each key's `explain` entries against the key: a value it refuses, or a
+  // `values` member of a walk key left unexplained. Filed against the schema.
+  for (const { code, detail } of settingExplanationIssues(schema)) {
+    problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
+  }
+
   // 9. the config-key reach table, against config.schema.json in both
   // directions, plus the narrow-reach-must-be-stated rule. Root-relative like
   // config.schema.json and weight-budgets.json, so a --root fixture can supply
@@ -1505,7 +1522,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations', problems });
 } catch (e) {
   // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
