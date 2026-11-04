@@ -1,0 +1,14 @@
+[book]
+title = "Cadence"
+authors = ["John Crenshaw"]
+description = "A working guide to planning, building and verifying software with Cadence."
+language = "en"
+src = "guide"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+git-repository-url = "https://github.com/crenshawdev/cadence"
+site-url = "/cadence/"
