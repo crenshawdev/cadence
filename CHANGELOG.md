@@ -7,6 +7,33 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [3.11.1] - 2026-11-04
+
+### Changed
+
+- **This repository's CI enforces its own testing policy.** The `coverage` job
+  runs the accepted command on Node 26 with both guards, and `plugin-validate`
+  installs the plugin from the checkout and launches it from outside it.
+- **The detailed documentation moved into the Cadence guide.** The README is
+  shorter, and the guide under `docs/guide/` covers the settings, the testing
+  policy and the working commands.
+
+### Removed
+
+- **The four legacy test switches are retired.** `workflow.test_attack`,
+  `workflow.test_evidence`, `workflow.check_inspection` and
+  `workflow.independent_rerun` are gone, together with the evidence, inspection
+  and re-run steps they gated. The testing policy that `/cad-config --testing`
+  accepts replaces them, and a project with no policy gets no replacement step.
+  A config that still holds one of them warns on every read, and `set` of any of
+  them is refused. Drop them from the user-global file and from each repository
+  that holds them:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset workflow.test_attack workflow.test_evidence workflow.check_inspection workflow.independent_rerun
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset --global workflow.test_attack workflow.test_evidence workflow.check_inspection workflow.independent_rerun
+  ```
+
 ## [3.11.0] - 2026-11-04
 
 A project accepts one testing policy once, every test-writing path follows it,
@@ -3236,6 +3263,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[3.11.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.11.1
 [3.11.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.11.0
 [3.9.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.4
 [3.9.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.3

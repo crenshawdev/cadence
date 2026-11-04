@@ -18,18 +18,13 @@ Higher existing thresholds are preserved. For an adopted project below its accep
 
 For an already managed project accepting a policy through `--testing`, `/cadence:cad-plan` puts the CI task first when the policy check finds no gate. Accepting the settings alone doesn't install a working CI job.
 
-## The four legacy switches
+## The four retired switches
 
-Cadence 3.11.0 keeps these switches for compatibility:
+Cadence 3.11.1 retires `test_attack`, `test_evidence`, `check_inspection` and `independent_rerun` from the `workflow` settings, along with the evidence, inspection and re-run steps they turned on. Nothing reads them any more, with or without a policy.
 
-- `workflow.test_attack`
-- `workflow.test_evidence`
-- `workflow.check_inspection`
-- `workflow.independent_rerun`
+A config that still holds one gets a warning on every read, and setting one is refused. The warning names the two commands that remove it, and Cadence doesn't edit your config files for you. Other settings in the same file keep working.
 
-Once a project accepts a policy, the shared configuration read returns false for all four and warns that the policy replaces them. Your user-global settings remain untouched, so repositories without a policy retain their configured behavior.
-
-The policy keeps independent verification's purpose: verification runs the project's suite itself. It removes per-test inspection, evidence tables and blanket negative-control requirements from the policy path. Older plans carrying test tables can still be read during the compatibility period.
+The policy keeps independent verification's purpose: verification runs the project's suite itself. Older plans carrying test tables stay readable as plain text, and nothing acts on those sections.
 
 ## Existing human-verification criteria
 

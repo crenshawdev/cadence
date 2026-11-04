@@ -96,15 +96,6 @@
 //                                   in warnings[], never a fall-through to a
 //                                   lower one (NOT --dir: --root is the
 //                                   PROJECT root, one level deep only)
-//   test-checks <plan file>...      every evidence-map check and listed test of
-//                                   each plan, with the lines of those two
-//                                   sections it could not read; positional
-//                                   paths, the way `recall` takes its words
-//   test-evidence <plan file>       judge a PLAN COMPLETE report's recorded red
-//                                   runs and negative controls against what the
-//                                   plan lists; a short record rewrites the
-//                                   report's first line to PLAN CHECKPOINT:
-//                                   blocked and nothing else
 //   test-policy render [--root <path>]
 //                                   write .github/cadence/coverage-policy.json
 //                                   from the accepted testing policy, defaults
@@ -299,12 +290,6 @@ const COMMANDS = {
     (await import('./planning/task-record.mjs')).cmdTaskRecord(dir, opts),
   'lease-check': async (dir, _sub, opts) =>
     (await import('./planning/lease-check.mjs')).cmdLeaseCheck(dir, opts),
-  // Plan paths are positional words, as `recall`'s query is, so the
-  // subcommand declares no flag of its own.
-  'test-checks': async (_dir, _sub, _opts, rest) =>
-    (await import('./planning/test-checks.mjs')).cmdTestChecks(rest),
-  'test-evidence': async (dir, _sub, _opts, rest) =>
-    (await import('./planning/test-checks.mjs')).cmdTestEvidence(rest, dir),
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the
   // cwd, which would report a different tree than the caller named (#42/#45) -

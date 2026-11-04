@@ -29,6 +29,22 @@
  */
 
 /**
+ * The row all four legacy test switches share. Only the key differs, and the
+ * detail names that key's own unset commands.
+ * @param {string} key
+ * @returns {RetiredKey}
+ */
+const legacyTestSwitch = (key) => Object.freeze({
+  replacement: null,
+  since: 'v3.11.1',
+  detail: 'the four legacy test switches went with their evidence, inspection '
+    + 'and re-run steps - the testing policy `/cad-config --testing` accepts '
+    + 'replaces them, and nothing reads this key. Run `/cad-config --testing`, '
+    + `then \`config.mjs unset ${key}\` and `
+    + `\`config.mjs unset --global ${key}\` to drop it`,
+});
+
+/**
  * Every retired config key, keyed by the exact dotted token a user writes at
  * the CLI - `checkPairs` looks a key up by that token, so the spelling here IS
  * the matched string. `since` names the milestone that retired each one.
@@ -204,6 +220,10 @@ export const RETIRED_KEYS = Object.freeze({
       + 'reads this key; `config.mjs unset review.providers.openai.transport` '
       + 'drops it',
   }),
+  'workflow.test_attack': legacyTestSwitch('workflow.test_attack'),
+  'workflow.test_evidence': legacyTestSwitch('workflow.test_evidence'),
+  'workflow.check_inspection': legacyTestSwitch('workflow.check_inspection'),
+  'workflow.independent_rerun': legacyTestSwitch('workflow.independent_rerun'),
 });
 
 /**
@@ -225,7 +245,7 @@ export function retiredKeyError(key) {
   //
   // The guard lives HERE rather than at the caller so every caller inherits it,
   // and it is `hasOwn` rather than a check on the spec's shape: a spec whose
-  // `replacement` is null is a legitimate row - 16 of the 17 ship that way - so
+  // `replacement` is null is a legitimate row - 20 of the 21 ship that way - so
   // filtering by value would delete most of the vocabulary. A genuinely retired
   // key is an own property of the frozen literal above, so this changes nothing
   // for it.
