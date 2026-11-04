@@ -19,6 +19,10 @@
 //                    restated (D-06). This side reads its flag NAMES through
 //                    `flagNames`; the scripts' own tests keep it honest.
 //   3. paths         every ${CLAUDE_PLUGIN_ROOT}/<path> must exist in-repo.
+//                    Checks 1 to 3 also read the schema's own walk text - each
+//                    key's `question`, `explain` entry text and `hint`, never
+//                    `purpose` (D-12) - filed against the schema with the key
+//                    named, and that text does not count as a reader for 1b.
 //   3b. internals    every backticked repo path cited in INTERNALS.md (the
 //                    deep-dive "Read the code" pointers) must exist in-repo.
 //   6. agent skills  every skill an agent preloads via `skills:` frontmatter
@@ -673,33 +677,14 @@ function run(root) {
     }
   }
 
-  for (const { file, unreadable } of mdFiles(root)) {
-    const rel = relative(root, file);
-    // A directory the walker could not list: report THAT path with the errno
-    // its own readdirSync threw, before any read is attempted on it.
-    if (unreadable) {
-      problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
-      continue;
-    }
-    let text;
-    try {
-      text = readFileSync(file, 'utf8');
-    } catch (e) {
-      // Name the link target when there is one - costs one line here and
-      // saves the operator an `ls -l` on a rare failure. Use e.code rather
-      // than the full message when a target is known, so the detail stays
-      // free of machine-specific absolute paths.
-      let target = null;
-      try {
-        target = readlinkSync(file);
-      } catch { /* not a symlink, or target unreadable too */ }
-      const detail = target
-        ? `unreadable symlink -> ${target} (${e.code || e.message})`
-        : (e.code || e.message);
-      problems.push({ kind: 'unreadable-surface', file: rel, detail });
-      continue;
-    }
-
+  // Checks 1 to 3 over one piece of text: the config-key scan, the script
+  // invocations against CONTRACTS, and the ${CLAUDE_PLUGIN_ROOT} paths. Prose
+  // files and the schema's own question, explanation and hint text (D-12) both
+  // run through it. `feedSeen` says whether the tokens count as a reader for
+  // check 1b: the reach table and the schema text do not, or an
+  // inert-config-key could never fire on a key only they mention. `tag`
+  // prefixes each detail - empty for prose, the schema key for schema text.
+  const lintProse = (text, rel, feedSeen, tag) => {
     // 1. config-key tokens: family-rooted dotted identifiers.
     // Scanned over a copy with every URL masked out, because a HOSTNAME is
     // shaped exactly like a config key: `https://git.jcrenshaw.dev/...` reads
@@ -727,7 +712,7 @@ function run(root) {
       // (unknown-reach-key) inspects the Key column only, so a dead token in
       // that file's prose or an `Honoured by` cell would otherwise be scanned
       // by nothing at all.
-      if (rel !== REACH_DOC) for (const t of expansions) seenTokens.add(t);
+      if (feedSeen) for (const t of expansions) seenTokens.add(t);
       // A token is known when it IS a key or stops at a boundary inside one.
       // The boundary arm is not cosmetic: this tokenizer's segment class is
       // [a-z_0-9<>], so a hyphenated key like `model.overrides.cad-planner`
@@ -738,14 +723,8 @@ function run(root) {
       const known = expansions.some((t) =>
         schemaKeys.some((k) => k === t
           || (k.startsWith(t) && !/[a-z0-9_]/.test(k.charAt(t.length)))));
-      if (!known) problems.push({ kind: 'unknown-config-key', file: rel, detail: raw });
+      if (!known) problems.push({ kind: 'unknown-config-key', file: rel, detail: tag + raw });
     }
-    if (rel !== REACH_DOC) {
-      for (const k of BARE_KEYS) {
-        if (new RegExp(`\\b${k}\\b`).test(text)) seenTokens.add(k);
-      }
-    }
-
     // 2. script invocations.
     // Join backslash continuations so multi-line commands read as one. The
     // `\r?` arm exists so a CRLF-checked-out prose file joins like an LF one.
@@ -784,7 +763,7 @@ function run(root) {
       const sub = subcommandKey([w1, w2], contract);
       if (!contract[sub]) {
         problems.push({ kind: 'unknown-subcommand', file: rel,
-          detail: `${script} ${bare ? '(bare form)' : sub}` });
+          detail: `${tag}${script} ${bare ? '(bare form)' : sub}` });
         continue;
       }
       const allowed = new Set([...flagNames(contract[sub]), ...flagNames(contract['*'])]);
@@ -795,7 +774,7 @@ function run(root) {
         : (sub.includes(' ') ? '' : ` ${w2 || ''}`) + restRaw;
       for (const f of rest.matchAll(/--[a-z-]+/g)) {
         if (!allowed.has(f[0])) {
-          problems.push({ kind: 'unknown-flag', file: rel, detail: `${script} ${sub} ${f[0]}` });
+          problems.push({ kind: 'unknown-flag', file: rel, detail: `${tag}${script} ${sub} ${f[0]}` });
         }
       }
     }
@@ -805,9 +784,45 @@ function run(root) {
       const p = m[1].replace(/[.,;:]+$/, '');
       if (p.includes('{')) continue; // templated path, not checkable
       if (!existsSync(join(root, p))) {
-        problems.push({ kind: 'missing-path', file: rel, detail: p });
+        problems.push({ kind: 'missing-path', file: rel, detail: tag + p });
       }
     }
+  };
+
+  for (const { file, unreadable } of mdFiles(root)) {
+    const rel = relative(root, file);
+    // A directory the walker could not list: report THAT path with the errno
+    // its own readdirSync threw, before any read is attempted on it.
+    if (unreadable) {
+      problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
+      continue;
+    }
+    let text;
+    try {
+      text = readFileSync(file, 'utf8');
+    } catch (e) {
+      // Name the link target when there is one - costs one line here and
+      // saves the operator an `ls -l` on a rare failure. Use e.code rather
+      // than the full message when a target is known, so the detail stays
+      // free of machine-specific absolute paths.
+      let target = null;
+      try {
+        target = readlinkSync(file);
+      } catch { /* not a symlink, or target unreadable too */ }
+      const detail = target
+        ? `unreadable symlink -> ${target} (${e.code || e.message})`
+        : (e.code || e.message);
+      problems.push({ kind: 'unreadable-surface', file: rel, detail });
+      continue;
+    }
+
+    lintProse(text, rel, rel !== REACH_DOC, '');
+    if (rel !== REACH_DOC) {
+      for (const k of BARE_KEYS) {
+        if (new RegExp(`\\b${k}\\b`).test(text)) seenTokens.add(k);
+      }
+    }
+
 
     // 10. dispatch phrasing: in a block claiming concurrency for a set, every
     // sentence that ISSUES the set - imperative mood, or a trailing colon -
@@ -912,6 +927,18 @@ function run(root) {
     }
   } else if (isFullTree) {
     problems.push({ kind: 'missing-input', file: 'INTERNALS.md', detail: 'always-expected input absent' });
+  }
+
+  // 1 to 3 over the schema's own walk text (D-12): each key's question, each
+  // explain entry's text and its hint. `purpose`, `_meta` and entry values stay
+  // out. Forward scan only, so it never feeds 1b below.
+  for (const key of schemaKeys) {
+    const spec = schema[key];
+    if (!spec || typeof spec !== 'object') continue;
+    const texts = [spec.question, ...(Array.isArray(spec.explain) ? spec.explain.map((e) => e && e.text) : []), spec.hint];
+    for (const t of texts) {
+      if (typeof t === 'string') lintProse(t, 'cadence-core/config.schema.json', false, `${key}: `);
+    }
   }
 
   // 1b. reverse: every schema key must be referenced by some prose token -
