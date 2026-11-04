@@ -1,36 +1,26 @@
 // @ts-check
-// retired-keys.mjs - the ONE statement of which config keys v2.0.0 retired and
-// what replaced them, imported by config.mjs (the write face, `checkPairs`, and
-// the read face, `get`) and by route.mjs (the other read face). Spelling it in
-// each face separately is the drift class this repo keeps closing: a key
-// refused at `set` with one message and silently ignored at `resolve` is the
-// same defect as no diagnostic at all.
-//
-// A retired key is precisely one the schema NO LONGER holds, so this map cannot
-// be derived from config.schema.json - a schema-derived list would name nothing.
-// It is a hand-maintained record of a rename, and it reads nothing off disk:
-// crossWarnings' cross-file read of a routing data table is exactly how a
-// cross-key check came to fire unconditionally (D-12).
-//
-// Pure lib: no fs, no emit, no process, no Date, no randomness. It returns
-// strings; the callers own the envelope - config.mjs turns the write-face
-// string into a `{key, error}` detail entry, and both read faces push the
-// `retiredKeysIn` strings onto the `warnings` array they already carry.
+// retired-keys.mjs - the one statement of which config keys were retired and what replaced them. config.mjs
+// imports it for the write face (checkPairs) and the read face (get), route.mjs for the other read face.
+// Spelling it in each face is the drift class this repo keeps closing: a key refused at `set` and silently
+// ignored at `resolve` is the same defect as no diagnostic at all.
+// A retired key is one the schema no longer holds, so a schema-derived list would name nothing. This is a
+// hand-maintained record of a rename and reads nothing off disk: a cross-file read of a routing table is how a
+// cross-key check once fired unconditionally.
+// Pure: no fs, no emit, no process, no Date, no randomness. It returns strings and the callers own the
+// envelope: config.mjs turns the write-face string into a `{key, error}` entry, and both read faces push the
+// `retiredKeysIn` strings onto the warnings they already carry.
 'use strict';
 
 /**
  * @typedef {object} RetiredKey
- * @property {string|null} replacement the key that took its place, or null when
- *   the key was removed outright with nothing standing in for it
+ * @property {string|null} replacement the key that took its place, or null when the key was removed outright
  * @property {string} detail one clause a user can act on without a lookup
- * @property {string} [since] the version that retired it, default 'v2.0.0' -
- *   the map spans more than one milestone now, and a message naming the wrong
- *   one sends a user at the wrong changelog entry
+ * @property {string} [since] the version that retired it, default 'v2.0.0' - the map spans more than one
+ *   milestone, and naming the wrong one sends a user at the wrong changelog entry
  */
 
 /**
- * The row all four legacy test switches share. Only the key differs, and the
- * detail names that key's own unset commands.
+ * The row all four legacy test switches share. Only the key differs, and the detail names that key's own unset commands.
  * @param {string} key
  * @returns {RetiredKey}
  */
@@ -45,20 +35,15 @@ const legacyTestSwitch = (key) => Object.freeze({
 });
 
 /**
- * Every retired config key, keyed by the exact dotted token a user writes at
- * the CLI - `checkPairs` looks a key up by that token, so the spelling here IS
- * the matched string. `since` names the milestone that retired each one.
+ * Every retired config key, keyed by the exact dotted token a user writes at the CLI: `checkPairs` looks a key
+ * up by that token, so the spelling here is the matched string. `since` names the milestone that retired it.
  * @type {Readonly<Record<string, RetiredKey>>}
  */
 export const RETIRED_KEYS = Object.freeze({
-  // `replacement` is deliberately null for both of the next two rows even though
-  // something DID take their place: the field renders as `use "<key>" instead`,
-  // so it may only ever name a key `config.mjs set` will accept. Nothing
-  // one-to-one replaces a level that answered for six roles at once, and
-  // `roles.<role>.model` is a placeholder rather than a settable key - naming it
-  // there would send a user to a write the seam then refuses as unknown, which
-  // is precisely the defect this milestone fixed in `model.profile`'s own entry.
-  // The pointer rides `detail`, which both faces render verbatim.
+  // `replacement` is null for the next two rows even though something did take their place: it renders as
+  // `use "<key>" instead`, so it may only name a key `config.mjs set` will accept. Nothing one-to-one replaces a
+  // level that answered for six roles, and `roles.<role>.model` is a placeholder, not a settable key; naming it
+  // would send a user to a write the seam refuses as unknown. The pointer rides `detail`, which both faces print verbatim.
   'stakes': Object.freeze({
     replacement: null,
     since: 'v3.7.12',
@@ -227,28 +212,17 @@ export const RETIRED_KEYS = Object.freeze({
 });
 
 /**
- * The write-face error string for a retired key, or null when the key is not
- * retired. Phrased to name its own fix, matching config.mjs's existing
- * `cannot set through "..."` precedent: the remediation needs no second lookup.
+ * The write-face error string for a retired key, or null when it isn't retired. Phrased to name its own fix,
+ * like config.mjs's `cannot set through "..."`, so the remediation needs no second lookup.
  * @param {string} key
  * @returns {string|null}
  */
 export function retiredKeyError(key) {
-  // hasOwn, not a bare `RETIRED_KEYS[key]`: this map is a plain frozen object,
-  // so a key named `__proto__`, `constructor`, `toString` or any other
-  // Object.prototype member resolved to Object.prototype itself - a truthy
-  // "spec" whose `since`, `replacement` and `detail` are all undefined. That is
-  // how `config.mjs check '__proto__=1'` answered `retired in v2.0.0:
-  // undefined`: a WRONG diagnostic rather than a missing one, naming a
-  // retirement that never happened and sending the user to look for a
-  // replacement that never existed.
-  //
-  // The guard lives HERE rather than at the caller so every caller inherits it,
-  // and it is `hasOwn` rather than a check on the spec's shape: a spec whose
-  // `replacement` is null is a legitimate row - 20 of the 21 ship that way - so
-  // filtering by value would delete most of the vocabulary. A genuinely retired
-  // key is an own property of the frozen literal above, so this changes nothing
-  // for it.
+  // hasOwn, not a bare `RETIRED_KEYS[key]`: on a plain frozen object, `__proto__`, `constructor` or `toString`
+  // resolved to Object.prototype, a truthy "spec" with no since, replacement or detail. That's how
+  // `config.mjs check '__proto__=1'` answered `retired in v2.0.0: undefined`, a wrong diagnostic naming a
+  // retirement that never happened. It lives here so every caller inherits it, and it's hasOwn and not a check
+  // on the spec's shape because a null replacement is a legitimate row, so filtering by value would delete most of the vocabulary.
   const spec = typeof key === 'string' && Object.hasOwn(RETIRED_KEYS, key)
     ? RETIRED_KEYS[key] : undefined;
   if (!spec) return null;
@@ -259,12 +233,10 @@ export function retiredKeyError(key) {
 }
 
 /**
- * Walk a dotted path through a MERGED config object and report whether the
- * final segment is actually present. Value-agnostic: the key's PRESENCE is the
- * fault (D-09), so a null or false value still counts. Defensive at every
- * segment - a scalar, array or null where an object was expected yields no
- * match rather than a throw, because this runs on whatever a user's config
- * happens to hold.
+ * Walks a dotted path through a merged config and reports whether the final segment is present. Value-agnostic,
+ * since the key being there is the fault, so a null or false value still counts. Defensive at every segment:
+ * a scalar, array or null where an object was expected is no match, not a throw, because this runs on whatever
+ * a user's config holds.
  * @param {any} config
  * @param {string} dotted
  * @returns {boolean}
@@ -281,10 +253,8 @@ function hasPath(config, dotted) {
 }
 
 /**
- * One warning string per retired key actually present in a merged config, in
- * RETIRED_KEYS declaration order. A config holding none - the ordinary case -
- * yields an empty array, so a caller can spread it onto its `warnings` list
- * unconditionally.
+ * One warning string per retired key present in a merged config, in RETIRED_KEYS order. The ordinary case is an
+ * empty array, so a caller can spread it onto its `warnings` list unconditionally.
  * @param {any} config a MERGED config object (never a file path)
  * @returns {string[]}
  */
