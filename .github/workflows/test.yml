@@ -160,10 +160,13 @@ jobs:
 
   plugin-validate:
     # The host's own validator over both manifests, strict, so a check Claude
-    # Code tightens fails here before it fails someone's install. The CLI is
-    # pinned to the version fast.yml uses; the pin moves by hand, since
-    # .github/dependabot.yml carries no npm ecosystem and the repository has no
-    # package.json. An unpinned global install has no lockfile, which is what
+    # Code tightens fails here before it fails someone's install. Then the
+    # plugin is added from this checkout as a marketplace, installed, and its
+    # installed config.mjs launched from outside the checkout, with no secret
+    # or credential in any step: the plugin runs as a user receives it. The CLI
+    # is pinned to the only version those commands were tried on; the pin moves
+    # by hand, since .github/dependabot.yml carries no npm ecosystem and the
+    # repository has no package.json. An unpinned global install has no lockfile, which is what
     # zizmor's adhoc-packages audit looks for. --ignore-scripts keeps every
     # package's install script from running; Claude Code's own script only links
     # its native binary into place, so we run that one by name.
@@ -173,7 +176,17 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
-      - run: npm install -g --ignore-scripts @anthropic-ai/claude-code@2.1.300 # zizmor: ignore[adhoc-packages]
+      - run: npm install -g --ignore-scripts @anthropic-ai/claude-code@2.1.318 # zizmor: ignore[adhoc-packages]
       - run: npm explore -g @anthropic-ai/claude-code -- node install.cjs
       - run: claude plugin validate --strict .
       - run: claude plugin validate --strict .claude-plugin/plugin.json
+      - run: claude plugin marketplace add ./
+      - run: claude plugin install cadence@cadence
+      - name: Launch the installed plugin from outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          INSTALL="$(claude plugin list --json | node -e "const rows = JSON.parse(require('fs').readFileSync(0, 'utf8')); const row = rows.find((r) => r.id === 'cadence@cadence'); if (!row) { console.error('cadence@cadence is not installed'); process.exit(1); } process.stdout.write(row.installPath);")"
+          OUT="$(node "$INSTALL/cadence-core/bin/config.mjs" get workflow.plan_check)"
+          echo "$OUT"
+          echo "$OUT" | node -e "process.exit(JSON.parse(require('fs').readFileSync(0, 'utf8')).ok === true ? 0 : 1)"
