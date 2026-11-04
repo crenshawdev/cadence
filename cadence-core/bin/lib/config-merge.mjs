@@ -120,17 +120,14 @@ export function layerIdentity(p) {
 
 // The testing policy (phase 1). `testing.scope` set to one of these three is "a
 // policy was accepted"; null, absent, or anything else a hand edit left is not.
-// ONE predicate, read by mergeLayers (the four legacy switches read false) and by
-// readTestingPolicy (test-evidence requires nothing), so the two cannot disagree
-// about what counts as accepted. Hand-maintained rather than read off
+// ONE predicate, read by mergeLayers (the invalid-scope warning) and by
+// readTestingPolicy, so the two cannot disagree about what counts as accepted. Hand-maintained rather than read off
 // config.schema.json, for the reason global-only-keys.mjs states: this file runs
 // inside git-guard.mjs's PreToolUse hook, where a schema read or a spawn does not
 // belong.
 export const ACCEPTED_TEST_SCOPES = Object.freeze(['focused', 'integrated', 'thorough']);
 /** @param {any} v */
 export const isAcceptedTestScope = (v) => typeof v === 'string' && ACCEPTED_TEST_SCOPES.includes(v);
-// The four legacy test switches an accepted policy replaces, read false.
-const LEGACY_TEST_SWITCHES = Object.freeze(['test_attack', 'test_evidence', 'check_inspection', 'independent_rerun']);
 
 /**
  * Merge the global and repo layers (repo wins). Returns {config, source,
@@ -203,13 +200,6 @@ const LEGACY_TEST_SWITCHES = Object.freeze(['test_attack', 'test_evidence', 'che
  * non-null one is named on `scopeWarnings`. `layers.global` keeps the file's own
  * content. A collapsed read has no global layer, so the user's own file reads as
  * written there.
- *
- * An accepted `testing.scope` in the repo layer (D-01) makes the merged config
- * read the four legacy switches false - the ONE place that override lives, so
- * the prose branches reading them need no edit. A switch a layer set to true is
- * named on `scopeWarnings`; one already false or unset has nothing overridden
- * and draws no warning. An `asGlobal` read is not overridden: it addresses the
- * user-global layer and no repository.
  * @param {string} repoFile
  * @param {{asGlobal?: boolean}} [opts]
  */
@@ -270,21 +260,8 @@ export function mergeLayers(repoFile, opts = {}) {
   }
   let config = deepMerge(globalForMerge || {}, scoped.layer || {});
   const asGlobal = !!(opts && opts.asGlobal);
-  if (!asGlobal && repoValue && isPlainObject(repoValue.testing) && isAcceptedTestScope(repoValue.testing.scope)) {
-    for (const sw of LEGACY_TEST_SWITCHES) {
-      const setIn = [[global && globalValue, GLOBAL_CONFIG], [repoValue, repoFile]]
-        .filter(([l]) => l && isPlainObject(l.workflow) && l.workflow[sw] === true).map(([, f]) => f);
-      if (setIn.length) {
-        scopeWarnings.push(`config key "workflow.${sw}" is true in ${[...new Set(setIn)].join(' and ')} `
-          + `and reads false: testing.scope is "${repoValue.testing.scope}" in ${repoFile}, and an `
-          + 'accepted testing policy replaces the four test switches');
-      }
-    }
-    config = { ...config, workflow: {
-      ...(isPlainObject(config.workflow) ? config.workflow : {}),
-      ...Object.fromEntries(LEGACY_TEST_SWITCHES.map((sw) => [sw, false])),
-    } };
-  } else if (!asGlobal && repoValue && isPlainObject(repoValue.testing) && repoValue.testing.scope != null) {
+  if (!asGlobal && repoValue && isPlainObject(repoValue.testing) && repoValue.testing.scope != null
+      && !isAcceptedTestScope(repoValue.testing.scope)) {
     scopeWarnings.push(`config key "testing.scope" is ${JSON.stringify(repoValue.testing.scope)} in ${repoFile}, `
       + 'which is not focused, integrated or thorough, so no testing policy is accepted');
   }
@@ -308,13 +285,13 @@ export function mergeLayers(repoFile, opts = {}) {
  * `testing` section, the two forge keys the policy checks address, whether the
  * accepted-scope predicate above holds for it, a scope outside that predicate,
  * and the merge's `warnings` and `tornLayers`.
- * `test-evidence` and the `test-policy` seam both read through here, so there is
- * a single answer to "was a policy accepted" (D-17). It lives in this file, not
+ * The `test-policy` seam reads through here, so there is a single answer to
+ * "was a policy accepted" (D-17). It lives in this file, not
  * a new one, so self-verify's merge census (check 12) keeps its count.
  *
  * `testing` is the MERGED object with no schema defaults applied (this file reads
  * no schema): a key nobody set is absent from it. `accepted` reads the repo
- * layer's own scope, the same layer `mergeLayers` overrides the switches from.
+ * layer's own scope.
  * @param {string} file
  */
 export function readTestingPolicy(file) {

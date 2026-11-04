@@ -204,6 +204,42 @@ export const RETIRED_KEYS = Object.freeze({
       + 'reads this key; `config.mjs unset review.providers.openai.transport` '
       + 'drops it',
   }),
+  'workflow.test_attack': Object.freeze({
+    replacement: null,
+    since: 'v3.11.1',
+    detail: 'the four legacy test switches went with their evidence, inspection '
+      + 'and re-run steps - the testing policy `/cad-config --testing` accepts '
+      + 'replaces them, and nothing reads this key. Run `/cad-config --testing`, '
+      + 'then `config.mjs unset workflow.test_attack` and '
+      + '`config.mjs unset --global workflow.test_attack` to drop it',
+  }),
+  'workflow.test_evidence': Object.freeze({
+    replacement: null,
+    since: 'v3.11.1',
+    detail: 'the four legacy test switches went with their evidence, inspection '
+      + 'and re-run steps - the testing policy `/cad-config --testing` accepts '
+      + 'replaces them, and nothing reads this key. Run `/cad-config --testing`, '
+      + 'then `config.mjs unset workflow.test_evidence` and '
+      + '`config.mjs unset --global workflow.test_evidence` to drop it',
+  }),
+  'workflow.check_inspection': Object.freeze({
+    replacement: null,
+    since: 'v3.11.1',
+    detail: 'the four legacy test switches went with their evidence, inspection '
+      + 'and re-run steps - the testing policy `/cad-config --testing` accepts '
+      + 'replaces them, and nothing reads this key. Run `/cad-config --testing`, '
+      + 'then `config.mjs unset workflow.check_inspection` and '
+      + '`config.mjs unset --global workflow.check_inspection` to drop it',
+  }),
+  'workflow.independent_rerun': Object.freeze({
+    replacement: null,
+    since: 'v3.11.1',
+    detail: 'the four legacy test switches went with their evidence, inspection '
+      + 'and re-run steps - the testing policy `/cad-config --testing` accepts '
+      + 'replaces them, and nothing reads this key. Run `/cad-config --testing`, '
+      + 'then `config.mjs unset workflow.independent_rerun` and '
+      + '`config.mjs unset --global workflow.independent_rerun` to drop it',
+  }),
 });
 
 /**
@@ -225,7 +261,7 @@ export function retiredKeyError(key) {
   //
   // The guard lives HERE rather than at the caller so every caller inherits it,
   // and it is `hasOwn` rather than a check on the spec's shape: a spec whose
-  // `replacement` is null is a legitimate row - 16 of the 17 ship that way - so
+  // `replacement` is null is a legitimate row - 20 of the 21 ship that way - so
   // filtering by value would delete most of the vocabulary. A genuinely retired
   // key is an own property of the frozen literal above, so this changes nothing
   // for it.
