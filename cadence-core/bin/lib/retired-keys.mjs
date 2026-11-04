@@ -29,6 +29,22 @@
  */
 
 /**
+ * The row all four legacy test switches share. Only the key differs, and the
+ * detail names that key's own unset commands.
+ * @param {string} key
+ * @returns {RetiredKey}
+ */
+const legacyTestSwitch = (key) => Object.freeze({
+  replacement: null,
+  since: 'v3.11.1',
+  detail: 'the four legacy test switches went with their evidence, inspection '
+    + 'and re-run steps - the testing policy `/cad-config --testing` accepts '
+    + 'replaces them, and nothing reads this key. Run `/cad-config --testing`, '
+    + `then \`config.mjs unset ${key}\` and `
+    + `\`config.mjs unset --global ${key}\` to drop it`,
+});
+
+/**
  * Every retired config key, keyed by the exact dotted token a user writes at
  * the CLI - `checkPairs` looks a key up by that token, so the spelling here IS
  * the matched string. `since` names the milestone that retired each one.
@@ -204,42 +220,10 @@ export const RETIRED_KEYS = Object.freeze({
       + 'reads this key; `config.mjs unset review.providers.openai.transport` '
       + 'drops it',
   }),
-  'workflow.test_attack': Object.freeze({
-    replacement: null,
-    since: 'v3.11.1',
-    detail: 'the four legacy test switches went with their evidence, inspection '
-      + 'and re-run steps - the testing policy `/cad-config --testing` accepts '
-      + 'replaces them, and nothing reads this key. Run `/cad-config --testing`, '
-      + 'then `config.mjs unset workflow.test_attack` and '
-      + '`config.mjs unset --global workflow.test_attack` to drop it',
-  }),
-  'workflow.test_evidence': Object.freeze({
-    replacement: null,
-    since: 'v3.11.1',
-    detail: 'the four legacy test switches went with their evidence, inspection '
-      + 'and re-run steps - the testing policy `/cad-config --testing` accepts '
-      + 'replaces them, and nothing reads this key. Run `/cad-config --testing`, '
-      + 'then `config.mjs unset workflow.test_evidence` and '
-      + '`config.mjs unset --global workflow.test_evidence` to drop it',
-  }),
-  'workflow.check_inspection': Object.freeze({
-    replacement: null,
-    since: 'v3.11.1',
-    detail: 'the four legacy test switches went with their evidence, inspection '
-      + 'and re-run steps - the testing policy `/cad-config --testing` accepts '
-      + 'replaces them, and nothing reads this key. Run `/cad-config --testing`, '
-      + 'then `config.mjs unset workflow.check_inspection` and '
-      + '`config.mjs unset --global workflow.check_inspection` to drop it',
-  }),
-  'workflow.independent_rerun': Object.freeze({
-    replacement: null,
-    since: 'v3.11.1',
-    detail: 'the four legacy test switches went with their evidence, inspection '
-      + 'and re-run steps - the testing policy `/cad-config --testing` accepts '
-      + 'replaces them, and nothing reads this key. Run `/cad-config --testing`, '
-      + 'then `config.mjs unset workflow.independent_rerun` and '
-      + '`config.mjs unset --global workflow.independent_rerun` to drop it',
-  }),
+  'workflow.test_attack': legacyTestSwitch('workflow.test_attack'),
+  'workflow.test_evidence': legacyTestSwitch('workflow.test_evidence'),
+  'workflow.check_inspection': legacyTestSwitch('workflow.check_inspection'),
+  'workflow.independent_rerun': legacyTestSwitch('workflow.independent_rerun'),
 });
 
 /**
