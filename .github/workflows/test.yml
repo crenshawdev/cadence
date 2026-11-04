@@ -63,7 +63,9 @@ jobs:
     # no artifact passes between jobs. node --test runs the files directly
     # because test.mjs passes no runner flags through; the env line does what
     # test.mjs does, pointing the suite at a user-global config that does not
-    # exist. fetch-depth: 0 because why-record.test.mjs reads this repository's
+    # exist. Node 26, because --test-coverage-include-all needs Node 26.7 or
+    # later; it counts files no test loads, and the two guards after the run
+    # catch an empty scope and a file that was never loaded. fetch-depth: 0 because why-record.test.mjs reads this repository's
     # history (see node-test), and the scan uses blame to find new code.
     # persist-credentials: false keeps the job token out of .git/config, where
     # the scan action could read it.
@@ -85,17 +87,27 @@ jobs:
           git -C tests checkout --quiet --detach "$PIN"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '22'
+          node-version: '26'
       - name: Run the suite with coverage
         env:
           CADENCE_GLOBAL_CONFIG: ${{ runner.temp }}/no-global/config.json
         run: >-
           node --test --experimental-test-coverage
+          --test-coverage-include-all
           --test-coverage-include='cadence-core/**'
+          --test-coverage-exclude='tests/**'
           --test-coverage-lines=95 --test-coverage-branches=88
           --test-reporter=spec --test-reporter-destination=stdout
           --test-reporter=lcov --test-reporter-destination=lcov.info
           tests/*.test.mjs
+
+      - name: Guard against an empty coverage scope
+        run: |
+          grep -q '^LF:[1-9]' lcov.info
+
+      - name: Guard against a file the suite never loaded
+        run: |
+          ! grep -qx 'LH:0' lcov.info
 
       # Forks and Dependabot runs don't get the secret, so they skip the scan.
       - name: Check for SonarQube token

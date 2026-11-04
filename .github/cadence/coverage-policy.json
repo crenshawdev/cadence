@@ -1,0 +1,38 @@
+{
+  "scope": "integrated",
+  "coverage": {
+    "lines": 95,
+    "branches": 88,
+    "statements": 0,
+    "include": [
+      "cadence-core/**"
+    ],
+    "exclude": [
+      "tests/**"
+    ],
+    "commands": [
+      "node --test --experimental-test-coverage --test-coverage-include-all --test-coverage-include='cadence-core/**' --test-coverage-exclude='tests/**' --test-coverage-lines={lines} --test-coverage-branches={branches} --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=lcov.info tests/*.test.mjs",
+      "grep -q '^LF:[1-9]' lcov.info",
+      "! grep -qx 'LH:0' lcov.info"
+    ]
+  },
+  "strong_areas": [
+    "cadence-core/bin/git-publish.mjs",
+    "cadence-core/bin/lib/publish-authorization.mjs",
+    "cadence-core/bin/lib/publish-decision.mjs",
+    "cadence-core/bin/git-guard.mjs",
+    "cadence-core/bin/lib/git-segments.mjs",
+    "cadence-core/bin/land-cleanup.mjs",
+    "cadence-core/bin/lib/config-merge.mjs",
+    "cadence-core/bin/review-provider.mjs",
+    "cadence-core/bin/planning/testing-policy.mjs",
+    "cadence-core/templates/coverage-report-check.mjs"
+  ],
+  "required_jobs": [
+    "node-test",
+    "coverage",
+    "self-verify",
+    "typecheck",
+    "plugin-validate"
+  ]
+}
