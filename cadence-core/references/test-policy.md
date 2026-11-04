@@ -5,6 +5,25 @@ writes, reviews, debugs, measures or verifies tests in a project whose
 `testing.scope` is set. A project that accepted no policy never reads it and
 behaves as it did before the policy existed.
 
+## This project's policy
+
+Read the values this project accepted, once, along with this file:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
+  testing.scope testing.coverage.lines testing.coverage.branches testing.coverage.statements \
+  testing.coverage.include testing.coverage.exclude testing.coverage.commands \
+  testing.strong_areas testing.required_jobs review.triggers.risk_surface.surfaces
+```
+
+The scope sets how deep the tests go:
+
+- **`focused`:** Unit and component tests, with integration tests only where the interaction itself needs proving.
+- **`integrated`:** `focused` plus integration tests across the main paths, with provisioned services where needed.
+- **`thorough`:** Deeper failure and limit testing wherever a concrete requirement or plausible consequential defect calls for it.
+
+`testing.strong_areas` names project paths with a concrete requirement or plausible consequential defect that justifies deeper tests, and answered risk surfaces count as well. A task that touches one states those deeper tests in its testing scope, whichever scope was accepted. The completion rule below still bounds them.
+
 ## The rules
 
 - **Unattended:** Every required test runs in GitHub Actions, including dependency setup, fixtures, required services and cleanup. Automatically provisioned test services are fine.
