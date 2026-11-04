@@ -10,5 +10,8 @@ build-dir = "book"
 create-missing = false
 
 [output.html]
+default-theme = "light"
+preferred-dark-theme = "coal"
+additional-css = ["theme/cadence.css"]
 git-repository-url = "https://github.com/crenshawdev/cadence"
 site-url = "/cadence/"
