@@ -205,7 +205,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'deferred-reads-register',
     holder: 'tests/deferred-reads.test.mjs',
-    counts: "the register's 10 rows, pinned alongside a byte-identical slice of "
+    counts: "the register's 9 rows, pinned alongside a byte-identical slice of "
       + "the export's own source",
     asserted_by: 'the test named `register: the surviving cut rows are '
       + 'byte-identical, and the register is exactly the rows the cuts made`',

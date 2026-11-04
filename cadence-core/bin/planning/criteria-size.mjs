@@ -30,8 +30,8 @@ import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 //
 // The four ceilings are the CALLER's literal numbers, arriving as flags, and
 // are NOT config keys (D-04) - the same rule `plan-size` states above, for the
-// same reason: two keys would each need a config.schema.json entry, a
-// config-catalog row and a config-reach row to express a shape rule about
+// same reason: two keys would each need a config.schema.json entry, with its walk
+// question, and a config-reach row to express a shape rule about
 // planning documents rather than a per-project preference.
 //
 // A REPORT, never a gate: `over` names the phase, its measured count and the

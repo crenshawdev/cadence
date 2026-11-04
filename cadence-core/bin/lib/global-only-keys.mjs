@@ -186,7 +186,7 @@ export function stripGlobalOnly(layer, file) {
  *
  * - `missing-global-only-marker` - a key the merge strips whose spec carries no
  *   `src: "global"`. The scope is then enforced and invisible: neither the
- *   schema nor the catalog derived from it shows a user why their value is
+ *   schema nor the walk's text read from it shows a user why their value is
  *   ignored. A key the schema does not hold AT ALL reads here too, and says so.
  * - `undeclared-global-only-key` - a key the schema marks that the merge does
  *   not strip. The marker is a promise nothing keeps: a repo layer still sets

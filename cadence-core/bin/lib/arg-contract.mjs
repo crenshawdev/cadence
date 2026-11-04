@@ -1164,7 +1164,11 @@ export const CONTRACTS = {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    keys: {},
+    // `--walk` narrows the read to the keys that hold a `question`; bare `keys`
+    // still returns the whole map. `boolean` is presence-only, like `--global`.
+    keys: {
+      '--walk': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
   },
   'git-branch.mjs': {
     '*': {

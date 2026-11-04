@@ -19,6 +19,10 @@
 //                    restated (D-06). This side reads its flag NAMES through
 //                    `flagNames`; the scripts' own tests keep it honest.
 //   3. paths         every ${CLAUDE_PLUGIN_ROOT}/<path> must exist in-repo.
+//                    Checks 1 to 3 also read the schema's own walk text - each
+//                    key's `question`, `explain` entry text and `hint`, never
+//                    `purpose` (D-12) - filed against the schema with the key
+//                    named, and that text does not count as a reader for 1b.
 //   3b. internals    every backticked repo path cited in INTERNALS.md (the
 //                    deep-dive "Read the code" pointers) must exist in-repo.
 //   6. agent skills  every skill an agent preloads via `skills:` frontmatter
@@ -273,6 +277,16 @@
 //                    files preload it, and files the problem against the
 //                    contract's SKILL.md. It takes no CONTRACTS row, for the
 //                    reason check 14 states about `lib/*.mjs`.
+//  28. setting       every `explain` entry on a config.schema.json key must be
+//      explanations  a value the key accepts, answered exactly as `validate`
+//                    does, and every `values` member of a key that holds a
+//                    `question` (`true` and `false` for a bool) must have an
+//                    entry. The walk and any config panel offer these entries
+//                    as answers, so one the key refuses fails on write and a
+//                    missing one is an option nobody is shown. Text on an entry
+//                    is not required (D-13). The rule is
+//                    lib/setting-explanations.mjs; it takes no CONTRACTS row,
+//                    for the reason check 14 states about `lib/*.mjs`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -289,6 +303,7 @@ import {
   RUNG_FILES, RUNG_ORDER,
 } from './lib/rung-agent.mjs';
 import { gateAgreementIssues } from './lib/gate-agreement.mjs';
+import { settingExplanationIssues } from './lib/setting-explanations.mjs';
 import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
 import { globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
 import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
@@ -662,33 +677,14 @@ function run(root) {
     }
   }
 
-  for (const { file, unreadable } of mdFiles(root)) {
-    const rel = relative(root, file);
-    // A directory the walker could not list: report THAT path with the errno
-    // its own readdirSync threw, before any read is attempted on it.
-    if (unreadable) {
-      problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
-      continue;
-    }
-    let text;
-    try {
-      text = readFileSync(file, 'utf8');
-    } catch (e) {
-      // Name the link target when there is one - costs one line here and
-      // saves the operator an `ls -l` on a rare failure. Use e.code rather
-      // than the full message when a target is known, so the detail stays
-      // free of machine-specific absolute paths.
-      let target = null;
-      try {
-        target = readlinkSync(file);
-      } catch { /* not a symlink, or target unreadable too */ }
-      const detail = target
-        ? `unreadable symlink -> ${target} (${e.code || e.message})`
-        : (e.code || e.message);
-      problems.push({ kind: 'unreadable-surface', file: rel, detail });
-      continue;
-    }
-
+  // Checks 1 to 3 over one piece of text: the config-key scan, the script
+  // invocations against CONTRACTS, and the ${CLAUDE_PLUGIN_ROOT} paths. Prose
+  // files and the schema's own question, explanation and hint text (D-12) both
+  // run through it. `feedSeen` says whether the tokens count as a reader for
+  // check 1b: the reach table and the schema text do not, or an
+  // inert-config-key could never fire on a key only they mention. `tag`
+  // prefixes each detail - empty for prose, the schema key for schema text.
+  const lintProse = (text, rel, feedSeen, tag) => {
     // 1. config-key tokens: family-rooted dotted identifiers.
     // Scanned over a copy with every URL masked out, because a HOSTNAME is
     // shaped exactly like a config key: `https://git.jcrenshaw.dev/...` reads
@@ -716,7 +712,7 @@ function run(root) {
       // (unknown-reach-key) inspects the Key column only, so a dead token in
       // that file's prose or an `Honoured by` cell would otherwise be scanned
       // by nothing at all.
-      if (rel !== REACH_DOC) for (const t of expansions) seenTokens.add(t);
+      if (feedSeen) for (const t of expansions) seenTokens.add(t);
       // A token is known when it IS a key or stops at a boundary inside one.
       // The boundary arm is not cosmetic: this tokenizer's segment class is
       // [a-z_0-9<>], so a hyphenated key like `model.overrides.cad-planner`
@@ -727,14 +723,8 @@ function run(root) {
       const known = expansions.some((t) =>
         schemaKeys.some((k) => k === t
           || (k.startsWith(t) && !/[a-z0-9_]/.test(k.charAt(t.length)))));
-      if (!known) problems.push({ kind: 'unknown-config-key', file: rel, detail: raw });
+      if (!known) problems.push({ kind: 'unknown-config-key', file: rel, detail: tag + raw });
     }
-    if (rel !== REACH_DOC) {
-      for (const k of BARE_KEYS) {
-        if (new RegExp(`\\b${k}\\b`).test(text)) seenTokens.add(k);
-      }
-    }
-
     // 2. script invocations.
     // Join backslash continuations so multi-line commands read as one. The
     // `\r?` arm exists so a CRLF-checked-out prose file joins like an LF one.
@@ -773,7 +763,7 @@ function run(root) {
       const sub = subcommandKey([w1, w2], contract);
       if (!contract[sub]) {
         problems.push({ kind: 'unknown-subcommand', file: rel,
-          detail: `${script} ${bare ? '(bare form)' : sub}` });
+          detail: `${tag}${script} ${bare ? '(bare form)' : sub}` });
         continue;
       }
       const allowed = new Set([...flagNames(contract[sub]), ...flagNames(contract['*'])]);
@@ -784,7 +774,7 @@ function run(root) {
         : (sub.includes(' ') ? '' : ` ${w2 || ''}`) + restRaw;
       for (const f of rest.matchAll(/--[a-z-]+/g)) {
         if (!allowed.has(f[0])) {
-          problems.push({ kind: 'unknown-flag', file: rel, detail: `${script} ${sub} ${f[0]}` });
+          problems.push({ kind: 'unknown-flag', file: rel, detail: `${tag}${script} ${sub} ${f[0]}` });
         }
       }
     }
@@ -794,9 +784,45 @@ function run(root) {
       const p = m[1].replace(/[.,;:]+$/, '');
       if (p.includes('{')) continue; // templated path, not checkable
       if (!existsSync(join(root, p))) {
-        problems.push({ kind: 'missing-path', file: rel, detail: p });
+        problems.push({ kind: 'missing-path', file: rel, detail: tag + p });
       }
     }
+  };
+
+  for (const { file, unreadable } of mdFiles(root)) {
+    const rel = relative(root, file);
+    // A directory the walker could not list: report THAT path with the errno
+    // its own readdirSync threw, before any read is attempted on it.
+    if (unreadable) {
+      problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
+      continue;
+    }
+    let text;
+    try {
+      text = readFileSync(file, 'utf8');
+    } catch (e) {
+      // Name the link target when there is one - costs one line here and
+      // saves the operator an `ls -l` on a rare failure. Use e.code rather
+      // than the full message when a target is known, so the detail stays
+      // free of machine-specific absolute paths.
+      let target = null;
+      try {
+        target = readlinkSync(file);
+      } catch { /* not a symlink, or target unreadable too */ }
+      const detail = target
+        ? `unreadable symlink -> ${target} (${e.code || e.message})`
+        : (e.code || e.message);
+      problems.push({ kind: 'unreadable-surface', file: rel, detail });
+      continue;
+    }
+
+    lintProse(text, rel, rel !== REACH_DOC, '');
+    if (rel !== REACH_DOC) {
+      for (const k of BARE_KEYS) {
+        if (new RegExp(`\\b${k}\\b`).test(text)) seenTokens.add(k);
+      }
+    }
+
 
     // 10. dispatch phrasing: in a block claiming concurrency for a set, every
     // sentence that ISSUES the set - imperative mood, or a trailing colon -
@@ -901,6 +927,18 @@ function run(root) {
     }
   } else if (isFullTree) {
     problems.push({ kind: 'missing-input', file: 'INTERNALS.md', detail: 'always-expected input absent' });
+  }
+
+  // 1 to 3 over the schema's own walk text (D-12): each key's question, each
+  // explain entry's text and its hint. `purpose`, `_meta` and entry values stay
+  // out. Forward scan only, so it never feeds 1b below.
+  for (const key of schemaKeys) {
+    const spec = schema[key];
+    if (!spec || typeof spec !== 'object') continue;
+    const texts = [spec.question, ...(Array.isArray(spec.explain) ? spec.explain.map((e) => e && e.text) : []), spec.hint];
+    for (const t of texts) {
+      if (typeof t === 'string') lintProse(t, 'cadence-core/config.schema.json', false, `${key}: `);
+    }
   }
 
   // 1b. reverse: every schema key must be referenced by some prose token -
@@ -1287,6 +1325,12 @@ function run(root) {
     problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
   }
 
+  // 28. each key's `explain` entries against the key: a value it refuses, or a
+  // `values` member of a walk key left unexplained. Filed against the schema.
+  for (const { code, detail } of settingExplanationIssues(schema)) {
+    problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
+  }
+
   // 9. the config-key reach table, against config.schema.json in both
   // directions, plus the narrow-reach-must-be-stated rule. Root-relative like
   // config.schema.json and weight-budgets.json, so a --root fixture can supply
@@ -1505,7 +1549,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations', problems });
 } catch (e) {
   // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
