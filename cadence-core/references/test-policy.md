@@ -61,7 +61,7 @@ All roles share this rule:
 
 ## Enforcing coverage in CI
 
-The project's own tool enforces what it supports. The CI job is an ordinary plan task, and an existing workflow is extended through a plan, never overwritten. The task writes the accepted commands into `testing.coverage.commands`; Cadence only matches them as text against the workflow files and never runs them.
+The project's own tool enforces what it supports. The CI job is an ordinary plan task, and an existing workflow is extended through a plan, never overwritten. The task copies the accepted commands from `testing.coverage.commands` into the workflow with their thresholds filled in, and names its jobs from `testing.required_jobs`. It never changes those values. Cadence only matches them as text against the workflow files and never runs them.
 
 ### Accepted command shapes
 
@@ -81,7 +81,7 @@ Older Node needs c8, because `--test-coverage-include-all` arrived in v26.7.0.
 
 ### The report check
 
-For Python, Go and Rust branches on nightly, copy `cadence-core/templates/coverage-report-check.mjs` to `.github/cadence/coverage-report-check.mjs`. It imports `node:` builtins only, reads the thresholds, scope and accepted commands from `.github/cadence/coverage-policy.json`, and takes the format and report as arguments:
+For Python, Go and Rust branches on nightly, copy `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/coverage-report-check.mjs` to `.github/cadence/coverage-report-check.mjs`. It imports `node:` builtins only, reads the thresholds, scope and accepted commands from `.github/cadence/coverage-policy.json`, and takes the format and report as arguments:
 
 ```
 node .github/cadence/coverage-report-check.mjs --format python --report coverage.json
@@ -104,7 +104,7 @@ Every JavaScript shape carries the empty-scope guard, and Node and c8 also carry
 
 ### Known limit
 
-`check` doesn't read tool configuration files, so a setting like Jest's `coveragePathIgnorePatterns` could narrow the measurement unnoticed. The report check catches this on Python, but not on the JavaScript tools. `check` also confirms a command appears in a workflow file, not which job runs it. The CI task reads those files when it writes the commands, so an existing narrowing is visible at that point.
+`check` doesn't read tool configuration files, so a setting like Jest's `coveragePathIgnorePatterns` could narrow the measurement unnoticed. The report check catches this on Python, but not on the JavaScript tools. `check` also confirms a command appears in a workflow file, not which job runs it. The CI task reads those files when it writes the commands into the workflow, so an existing narrowing is visible at that point.
 
 ### Packaging
 
