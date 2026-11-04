@@ -1,8 +1,7 @@
 name: release
 
-# A tag is the trigger, so publishing is a consequence of tagging rather than a
-# separate thing to remember. Thirty tags between v2.3.0 and v3.7.1 shipped with
-# no release attached because nothing here watched for them.
+# Tagging is the trigger, so nobody has to remember to publish. Thirty tags between
+# v2.3.0 and v3.7.1 shipped with no release because nothing here watched for them.
 on:
   push:
     tags: ['v*']
@@ -12,23 +11,15 @@ permissions:
 
 jobs:
   guard:
-    # A tag is a movable pointer, and the `protect-release-tags` ruleset
-    # (id 19145547) carries `deletion`, `update` and `non_fast_forward` - none
-    # of which says WHERE a new tag may point. `test.yml` fires on `push` to main
-    # and on `pull_request`, never on tags. So until this job existed,
-    # `git tag v9.9.9 <any-sha> && git push origin v9.9.9` published an official
-    # release from a commit no CI had ever seen. Two conditions, both required:
-    # the tagged commit is ON main, and the suite is green for that exact SHA.
-    # Reachability alone is not enough (a red commit can sit on main); a green
-    # suite alone is not enough (any SHA can be made green in a fork).
+    # A tag is a movable pointer, and the `protect-release-tags` ruleset doesn't say where one
+    # may point. test.yml never runs on tags, so any SHA could be tagged and published.
+    # Two things have to hold: the commit is on main, and the suite is green for that exact SHA.
+    # Either alone isn't enough: a red commit can sit on main, and any SHA can go green in a fork.
     runs-on: ubuntu-latest
     steps:
-      # fetch-depth: 0 for two reasons: the reachability test below walks
-      # history, and `why-record.test.mjs` reads this repository's own log (not
-      # the tests repository's) as its fixture corpus and fails 23 arms on a
-      # depth-1 checkout. The step after it clones the cadence-tests repository
-      # into tests/, where the suite runs from, at the commit .github/tests-pin
-      # names (a plain clone, not a submodule - see test.yml).
+      # fetch-depth: 0 because the reachability test walks history, and why-record.test.mjs reads
+      # this repo's own log and fails 23 arms on a depth-1 checkout.
+      # tests/ is a plain clone of cadence-tests at the .github/tests-pin commit, not a submodule.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -54,13 +45,8 @@ jobs:
           fi
           echo "${SHA} is on main"
 
-      # The same condition for the suite itself. The pin is one SHA in
-      # .github/tests-pin, so a diff shows only two SHAs, and nothing about a
-      # SHA says which branch it came from, which lets a pin name a suite that
-      # never landed on cadence-tests' main (any SHA can be made green in a
-      # fork or on a side branch). Read the pin from the tagged commit's tree
-      # and require it to be reachable from cadence-tests' main, as the tag is
-      # from ours.
+      # Same rule for the suite. A pin is just a SHA and says nothing about which branch it came from,
+      # so read it from the tagged commit and require it to be reachable from cadence-tests main.
       - name: The pinned tests commit is reachable from cadence-tests main
         run: |
           set -euo pipefail
@@ -76,11 +62,8 @@ jobs:
         with:
           node-version: '22'
 
-      # The zero-dep gates, run against the tagged SHA itself rather than
-      # trusted from whatever `test.yml` did on some other commit. The suite
-      # is the cadence-tests commit that SHA's .github/tests-pin names. `typecheck`
-      # is deliberately not duplicated here: it needs an ephemeral `npm install`
-      # and so is the one arm of test.yml this gate does not reproduce.
+      # Run the gates against the tagged SHA itself, not whatever test.yml did on some other commit.
+      # typecheck is left out on purpose: it needs an ephemeral npm install.
       - run: node tests/test.mjs
       - run: node cadence-core/bin/self-verify.mjs
 
@@ -88,7 +71,7 @@ jobs:
     needs: guard
     runs-on: ubuntu-latest
     permissions:
-      # Scoped to this job alone; the workflow default above stays read-only.
+      # Only this job writes; the workflow default stays read-only.
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -110,8 +93,7 @@ jobs:
         run: |
           set -euo pipefail
           VER="${GITHUB_REF_NAME#v}"
-          # Everything between this version's heading and the next one, minus
-          # the link-reference block Keep a Changelog puts at the foot.
+          # This version's section, minus the link block Keep a Changelog puts at the foot.
           awk -v ver="$VER" '
             $0 ~ "^## \\[" ver "\\]" { f = 1; next }
             f && /^## \[/ { exit }
@@ -129,7 +111,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          # An -rc tag publishes as a pre-release and never takes Latest.
+          # -rc, -alpha and -beta tags publish as pre-releases and never take Latest.
           case "$TAG" in
             *-rc.*|*-alpha*|*-beta*) FLAGS="--prerelease --latest=false" ;;
             *)                       FLAGS="--latest" ;;

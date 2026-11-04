@@ -1,9 +1,8 @@
-# Dependabot version updates. Security updates do not come from this file:
-# they are a repository setting. Updates wait seven days before taking a new
-# version, so a release that turns out to be bad has a week to be pulled first.
+# Version updates only; security updates are a repository setting, not this file.
+# The seven-day wait gives a bad release a week to get pulled before we take it.
 version: 2
 updates:
-  # The action pins in the workflows, SHA and version comment together.
+  # Bumps the action pins in the workflows, SHA and version comment together.
   - package-ecosystem: github-actions
     directory: /
     schedule:
