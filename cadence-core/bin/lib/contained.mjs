@@ -1,14 +1,13 @@
 // @ts-check
-// contained.mjs - is a path inside a root? One statement of the check, so the
-// readers and writers that ask it all agree.
+// contained.mjs - is a path inside a root? One statement of the check, so every reader and writer that asks agrees.
 'use strict';
 
 import { realpathSync } from 'node:fs';
 import { sep } from 'node:path';
 
 /**
- * Is `p` the directory `root` or inside it? Segment-wise, so `.planning-old` is
- * not read as inside `.planning`. Both paths must already be resolved.
+ * Is `p` the directory `root` or inside it? Compares by segment, so `.planning-old` isn't inside
+ * `.planning`. Both paths must already be resolved.
  * @param {string} p @param {string} root @returns {boolean}
  */
 export function within(p, root) {
@@ -16,11 +15,9 @@ export function within(p, root) {
 }
 
 /**
- * Does `p` RESOLVE inside `root`? Judged on the real path, because a cloned
- * repo can ship a symlink that `mkdirSync(recursive)` or `readdirSync` would
- * follow out of the tree. A root that cannot be resolved keeps its literal
- * spelling, which can only refuse paths; a `p` that cannot be resolved answers
- * `false`, since it has not been shown to be contained.
+ * Does `p` resolve inside `root`? Judged on the real path, because a cloned repo can ship a symlink that
+ * `mkdirSync(recursive)` or `readdirSync` would follow out of the tree. A root that won't resolve keeps its
+ * literal spelling, which can only refuse more; a `p` that won't resolve is `false`, since nothing shows it's inside.
  * @param {string} root
  * @param {string} p
  * @returns {boolean}
