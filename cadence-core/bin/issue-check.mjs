@@ -1,106 +1,22 @@
 #!/usr/bin/env node
 // @ts-check
-// issue-check.mjs - the workflow-facing seam over lib/issue-decision.mjs. It
-// ADVISES /cad-land step 1 which issues this branch's commits reference, which
-// of them are still open, and which issues are open on the detected host - or,
-// on every path that cannot answer, the ONE line step 1 prints before carrying
-// on (LND-01). Like land-cleanup.mjs it only advises, and it is READ-ONLY in
-// the strongest sense available: no argv it can build closes, reopens or
-// comments on an issue. Landing closes nothing; closing stays an explicit ask.
-// One JSON line on stdout, and the `check` arm is ok:true on EVERY path it
-// reaches, including its failures - a tracker that cannot be read is a degraded
-// report, never a failed land. A malformed CALL never reaches that arm: an
-// empty or valueless --dir refuses at the dispatch (see the --dir line below),
-// which is a different thing from a tracker read going wrong. Three actions: `report` (the sentence), `skip` (ONE
-// degradation line the caller prints) and `off` (git.issue_check false - the
-// caller prints nothing at all).
-//
-// WHY THIS IS NOT land-cleanup.mjs. That seam is advisory over GIT state this
-// machine already holds: it can be wrong only if the repo changed under it.
-// This one reads a THIRD-PARTY CLI over a network, which is a different failure
-// and freshness class - absent binary, missing login, nonzero exit, a hang, a
-// paged response that looks complete - and each of those needs its own named
-// line. Folding them into a seam whose other subcommand gates an unattended
-// merge would put a network timeout on the same envelope as a merge decision.
-//
-// Subcommand (one, printing one JSON line):
-//   check [--dir <path>] [--base <name>] [--timeout-ms <n>]
-//     --dir is the planning root AND the repository every read is bound to.
-//     ABSENT means the process cwd; an EMPTY or valueless --dir REFUSES
-//     (`missing-flag-value`, exit 1) before any spawn (phase 2 D-01). That is
-//     not this seam failing a land: nothing was read, so there is no tracker
-//     verdict to degrade, and what has to be fixed is the caller's own argv.
-//     Base resolves from --base, else git.base_branch, else the
-//     first git.protected_branches entry - the same order land-cleanup.mjs
-//     cleanup uses. That RESOLVED base is checked (lib/base-ref.mjs) before any
-//     git read: one that begins with `-` or names no commit is a `skip` whose
-//     reason names it JSON-quoted, because git.base_branch is committed text and
-//     a flag-shaped one would be an option to `git log`. --timeout-ms overrides DEFAULT_TIMEOUT_MS below, which
-//     bounds each subprocess AND the whole per-issue resolve loop.
-//
-// THE FORGE IS THE ONE THIS REPOSITORY CONFIGURED, NEVER ONE DETECTED HERE
-// (phase 1 D-01, AC4). `git.forge_provider` picks the HOST_TABLE row,
-// `git.forge_repo` is the `--repo` selector, and on Forgejo `git.forge_host`
-// names the instance. The origin URL is not read for classification at all, and
-// `classifyOrigin` is not called from this seam: it builds the DEFAULTS
-// `bin/forge.mjs detect` offers at project setup, and once the user has
-// confirmed them, config is the answer. A repository that temporarily loses its
-// remote therefore reports what it reported yesterday instead of silently
-// degrading, and a repository that never answered says which keys to set.
-//
-// THE `tea login list` PROBE STAYS, WITH A DIFFERENT JOB. It used to guard a
-// classification - "does any login name this origin's host". It now turns the
-// persisted `git.forge_host` into the login NAME `tea --login` requires, which
-// is the only way a host reaches tea at all (measured on tea 0.15.1; see
-// HOST_TABLE's forgejo row). It runs on the forgejo arm alone and only when
-// `tea` is on PATH, so the absent-CLI line below still fires for its own reason
-// rather than being pre-empted by a probe that could not run.
-//
-// THE CALL IS BOUND TO THE REPOSITORY --dir NAMES, TWO WAYS TOGETHER: `cwd:
-// dir` on the spawn AND the explicit `--repo owner/name` selector the user
-// confirmed at setup. Neither alone is enough. `gh` and `glab` infer the repo from
-// the cwd's remote, so cwd alone reports another project's tracker the moment
-// --dir points elsewhere; `tea` infers nothing at all and exits `Error: remote
-// repository required: specify id via --repo` outside a configured checkout
-// (observed in this repo, 2026-08-15). The selector is asserted directly in
-// issue-check.test.mjs against a stub that records its argv.
-//
-// NO THIRD-PARTY OUTPUT REACHES THE ENVELOPE. A failed git read and a failed
-// forge CLI are reported by their own named reason line and NOTHING else: the
-// child's stderr is discarded at the spawn, and `detail` is null on every arm
-// of `check`. redactUrl covers credentials in URL POSITION and nothing else, so
-// a diagnostic carrying a bare token (`Authorization: Bearer ...`,
-// `GLAB_TOKEN=<a GitLab PAT>`) would pass through it intact onto a line /cad-land
-// prints - and the reason already says what went wrong, so the raw text buys
-// nothing to pay for that. Not a second regex; no third-party bytes at all.
-//
-// NO CADENCE ENV OVERRIDE AND NO --cli-dir. The forge binary is resolved on
-// PATH, in ONE place - `lib/on-path.mjs`, which this seam imports rather than
-// carries - because PATH is the OS's own lookup: a test injects a stub by
-// prepending a directory to the child's PATH and the PRODUCTION resolver is
-// what runs. A test-only override honoured in production is exactly what
-// review-provider.mjs:445-460 and EXP-01 refused, and that module reads no
-// Cadence variable of its own for the same reason. It moved to lib/ when
-// `detect-commands` needed the same question answered about a lint driver
-// (RCH-01): one rule, two callers, and no way for the seam that advises a land
-// and the seam that names an executor's command to disagree about "reachable".
+// issue-check.mjs - what /cad-land step 1 says about the issues this branch references: which are still open, or the
+// one line saying why we can't tell. Read-only, so no argv here can close an issue, and apart from land-cleanup.mjs
+// because it reads a CLI over a network and can hang. `check` is ok:true on every path it reaches, failures included:
+// a tracker we can't read is a degraded report, never a failed land. Only a malformed call refuses (empty or valueless --dir).
+// Actions: `report`, `skip` (one line for the caller to print) and `off` (git.issue_check false, so print nothing).
+// The forge is what git.forge_provider, git.forge_repo and git.forge_host say, never the origin URL, so a repo that loses
+// its remote reports what it did yesterday. The `tea login list` probe only turns forge_host into a login name.
+// Every call gets cwd plus an explicit --repo: gh and glab infer the repo from cwd, and tea infers nothing.
+// No git or forge stderr reaches the envelope: redactUrl only covers URL credentials, so a bare token would pass.
+// The forge binary comes from PATH in lib/on-path.mjs only, so a test's PATH-injected stub runs the production resolver.
 'use strict';
 
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
-// The argument contract (ARG-06). This file states no flag rule of its own any
-// more: what each flag may be, and what it costs when it is not, are DECLARED
-// rows in lib/arg-contract.mjs, and `requireFlag` raises the refusal in the
-// throwing form the catch arm at the foot of this file already renders. `--dir`
-// declares `refuse` (D-01) - it names the repository every read is bound to.
-// `--base` and `--timeout-ms` declare `fallback`, the latter deliberately
-// landing on DEFAULT_TIMEOUT_MS rather than refusing (D-04): this seam's whole
-// contract is that it never fails a land, and a contract that made every typed
-// flag refuse would hand it the power to fail one. The `int` type it declares
-// is lib/require-int.mjs's own classifier, consulted through the row rather
-// than called here.
+// Flag rules are rows in lib/arg-contract.mjs. --timeout-ms is `fallback` on purpose: a flag that could refuse could fail a land.
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 import { refuseBase } from './lib/base-ref.mjs';
@@ -110,45 +26,16 @@ import {
   HOST_TABLE, teaLoginNameForHost, scanIssueRefs, partitionIssues, decideIssueCheck,
 } from './lib/issue-decision.mjs';
 
-/**
- * The bound on EVERY subprocess this seam starts, AND the wall-clock budget for
- * the per-issue resolve loop as a whole (ISS-01). Those are one value on
- * purpose: the same number answers "how long may one call take" and "how long
- * may the resolve phase take", so a land's worst case here is this many
- * milliseconds rather than this many times MAX_RESOLVES. A land must not be
- * delayed by a forge CLI that never returns (LND-01, criterion 4), and this is
- * the first remote state /cad-land reads that is not git. It is a named
- * constant over a `--timeout-ms` flag rather than a config key on purpose: the
- * milestone licenses exactly one new key, and a bound reachable at the call
- * site is directly testable where a buried hardcoded one is not.
- */
+/** Bounds each subprocess and the whole resolve loop alike, so a hung forge CLI can't hold up a land. */
 const DEFAULT_TIMEOUT_MS = 10000;
 
-/**
- * The most per-issue resolves one land may make, on the hosts whose HOST_TABLE
- * row carries a `resolve` (forgejo alone today). The list call there names only
- * OPEN issues, because the server clamps a `--state all` page at 50 rows and an
- * honest incomplete read is all this seam could return otherwise - so a
- * referenced number the list did not answer needs one extra bounded call to
- * tell "closed" from "never existed".
- *
- * A named constant beside DEFAULT_TIMEOUT_MS rather than a config key, for the
- * same reason the bound above is one: a value reachable at the call site is
- * directly testable, and this requirement licenses no new key. Anything past
- * the cap reports `unresolved`, which is an honest non-answer.
- */
+/** Most per-issue lookups one land makes, for numbers the open-only forgejo list didn't answer. Past it they report `unresolved`. */
 const MAX_RESOLVES = 5;
 
 /**
- * Run a command, bounded, and never throw. `killSignal: 'SIGKILL'` because a
- * child that ignores SIGTERM would otherwise outlive its own timeout - the
- * whole point of the bound is that nothing the child does can extend it.
- *
- * The child's stderr is DISCARDED rather than captured (see the header): with
- * no `stdio` given, execFileSync would pass a failing CLI's stderr straight
- * through to /cad-land's terminal, which is the same leak as putting it on the
- * envelope. So the failure is reported as a boolean and a signal, never as the
- * third party's own text.
+ * Run a command, bounded, and never throw. SIGKILL because a child that ignores SIGTERM outlives its own timeout.
+ * Stderr is discarded: left alone, execFileSync passes a failing CLI's stderr to the terminal, which leaks the same as
+ * putting it on the envelope. A failure is a boolean and a signal, never the third party's text.
  * @param {string} bin @param {string[]} args
  * @param {{cwd:string, timeout:number}} opts
  * @returns {{ok:boolean, stdout:string, timedOut:boolean}}
@@ -171,15 +58,7 @@ function run(bin, args, { cwd, timeout }) {
 }
 
 /**
- * The logins a `tea login list --output json` reading names, as tea printed
- * them. Null when the reading cannot be parsed as a list at all, which
- * classifyOrigin reads as "tea could not be consulted" rather than "no login".
- *
- * Nothing is extracted from a login record here, because nothing needs to be:
- * classifyOrigin asks this reading for its LENGTH, and the query is bound to
- * the checkout's remote by `--remote origin` rather than to a login this seam
- * picked. The name/url/ssh_host parsing that stood here served a host-matching
- * rule that could not be made correct (see classifyOrigin), and it went with it.
+ * The logins in a `tea login list --output json` reading, or null when it isn't a list at all.
  * @param {string} text @returns {unknown[]|null}
  */
 function teaLogins(text) {
@@ -189,17 +68,11 @@ function teaLogins(text) {
   } catch { return null; }
 }
 
-/** The one not-reporting shape: a named line, and NOTHING claimed about issues.
+/** The one not-reporting shape: a named line and nothing claimed about issues.
  *
- * The core's `action` rides straight through, because the two non-query answers
- * mean different things to the caller: `skip` is a degradation whose reason
- * step 1 prints as one line, `off` is the user's own switch and step 1 prints
- * NOTHING for it. Deciding that here by inspecting the reason TEXT would put a
- * prose match in the caller's path; see decideIssueCheck's header.
- *
- * `detail` is always null on this arm, and that is the security property: the
- * reason line already names the degradation, so no git or forge-CLI stderr is
- * carried here for it to add to. See the header.
+ * `action` rides through as is. `skip` prints its reason as one line and `off` prints nothing, and telling them apart
+ * by matching the reason text would put a prose match in the caller's path.
+ * `detail` is always null so no git or forge stderr can ride the envelope.
  * @param {{action:string, reason:string}} decision
  * @param {{host?:string|null, repo?:string|null, warnings:string[]}} rest */
 function skip(decision, rest) {
@@ -213,25 +86,16 @@ function skip(decision, rest) {
 
 /** @param {string} dir @param {string|undefined} baseArg @param {number} timeout */
 function check(dir, baseArg, timeout) {
-  // warnings[] rides the envelope: git.issue_check, git.base_branch and the
-  // protected list all come off this merge, so a torn layer means this report
-  // ran on DEFAULTS - including the default that turns the report on - rather
-  // than on the user's settings.
+  // warnings[] rides the envelope: a torn layer means this ran on defaults, including the one that turns the report on.
   const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
   const enabled = git.issue_check !== false; // default true
 
-  // The key is consulted before ANY subprocess: `false` must spawn no forge
-  // CLI at all, not merely print nothing (the test asserts that with a marker
-  // file every stub writes to). It answers `off` rather than `skip`, which is
-  // what makes step 1 print nothing at all instead of a tracker line.
+  // Checked before any subprocess so `false` spawns nothing at all, and it answers `off`, not `skip`, so step 1 prints nothing.
   let decision = decideIssueCheck({ enabled });
   if (decision.action !== 'query') return skip(decision, { warnings });
 
-  // The persisted record, read off the merge this seam already performed - no
-  // origin URL, no classification (phase 1 D-01). The envelope's `host` is that
-  // record's own value, so it is null on `github` and `gitlab`, whose hosts are
-  // fixed and which name no instance key.
+  // Off the merge we already did, no origin URL. host is null on github and gitlab, which name no instance.
   const forge = {
     provider: git.forge_provider ?? null,
     repo: git.forge_repo ?? null,
@@ -245,11 +109,7 @@ function check(dir, baseArg, timeout) {
   const row = HOST_TABLE[forge.provider];
   const bin = row.bin;
 
-  // The forgejo arm alone needs a login NAME, and only `tea` can resolve one.
-  // Guarded on PATH so an absent `tea` reaches its own line below rather than
-  // being reported as a missing login. A probe that fails to run or to parse
-  // reads as `null` - no login serves this instance - which points at the same
-  // fix the empty-list case does.
+  // Only forgejo needs a login name, and only tea can resolve one. Guarded on PATH so a missing tea gets its own line.
   let loginName;
   if (forge.provider === 'forgejo' && onPath(bin)) {
     const probe = run(bin, ['login', 'list', '--output', 'json'], { cwd: dir, timeout });
@@ -260,9 +120,7 @@ function check(dir, baseArg, timeout) {
 
   const gitRead = (args) => run('git', ['-C', dir, ...args], { cwd: dir, timeout });
   const base = baseArg !== undefined ? baseArg : (git.base_branch || resolveProtectedBranches(git)[0]);
-  // The RESOLVED base, checked before it reaches a git argv (phase 1 D-10): a
-  // committed `git.base_branch` shaped like a flag would otherwise be an option
-  // to `git log`. A refusal is a skip, never a failed land (D-01).
+  // A committed git.base_branch shaped like a flag would be an option to `git log`, so it's a skip, never a failed land.
   const refused = refuseBase(dir, base, timeout);
   if (refused) return skip({ action: 'skip', reason: `${refused}: no tracker report` }, { host, repo, warnings });
   const log = gitRead(['log', `${base}..HEAD`, '--format=%B']);
@@ -287,28 +145,15 @@ function check(dir, baseArg, timeout) {
 
   const numbers = scanIssueRefs(log.stdout);
   const part = partitionIssues(numbers, fetched);
-  // partitionIssues answers null only over an incomplete fetch, which the
-  // decision above already turned into a skip; this is belt-and-braces so a
-  // future reordering cannot publish a not-found verdict nobody could read.
+  // Null only over an incomplete fetch, which was already skipped. Belt and braces against a reorder publishing an unreadable not-found.
   if (part === null) {
     return skip({ action: 'skip', reason: `${bin} returned a response this seam could not read as a complete issue list: no tracker report` },
       { host, repo, warnings });
   }
-  // Numbers the list itself could not answer, resolved on the rows that carry a
-  // resolver, under ONE wall-clock budget for the whole loop rather than one
-  // bound per call (ISS-01). The deadline is taken once, here, from the same
-  // resolved timeout every other subprocess is bound by, and each call is given
-  // only what is left of it - so no single resolve can outlive the budget and
-  // the loop cannot spend the budget more than once. That is the bound a
-  // per-call timeout could not deliver: a `tea` answering at just under the
-  // bound and exiting nonzero is never killed, so the old `if (one.timedOut)`
-  // exit never fired and MAX_RESOLVES calls each cost nearly the full bound.
-  //
-  // Three things end the loop and nothing else: the budget is spent, a resolve
-  // was killed at what remained of it, or MAX_RESOLVES calls have been made. A
-  // FAST nonzero exit does NOT end it - that is what tea answers for an issue
-  // that is not there, and a land may reference several of those and still need
-  // the states of the numbers behind them.
+  // One wall-clock budget for the whole loop, not one bound per call: a tea answering just under the bound and exiting
+  // nonzero is never killed, so per-call bounds let MAX_RESOLVES calls each cost nearly the full bound.
+  // The loop ends on budget spent, a kill at what remained, or MAX_RESOLVES. A fast nonzero exit doesn't end it: that's
+  // how tea says "no such issue", and the numbers behind it still need their states.
   /** @type {Map<number, string>} */
   const resolved = new Map();
   if (row.resolve && repo) {
@@ -325,11 +170,7 @@ function check(dir, baseArg, timeout) {
       if (s) resolved.set(n, s);
     }
   }
-  // `unresolved`, never `not-found`, for anything the resolver did not answer:
-  // the CLI exits nonzero both for an absent issue and for a failed read, and
-  // this seam discards child stderr, so not-found would be an affirmative claim
-  // about input it could not read. A host with no resolver keeps emitting
-  // `not-found`, which its `--state all` list is evidence for.
+  // `unresolved`, never `not-found`, when the resolver didn't answer: nonzero exit means an absent issue or a failed read, and stderr is gone.
   const state = (n) => {
     if (part.open.includes(n)) return 'open';
     if (part.closed.includes(n)) return 'closed';
@@ -344,41 +185,26 @@ function check(dir, baseArg, timeout) {
   });
 }
 
-// --- dispatch ----------------------------------------------------------------
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** This script's declared rows. A subcommand's own row wins over the `'*'` row,
- * where the flags allowed on every arm - here `--dir` - are declared once. */
+/** Declared rows. A subcommand's row wins over `'*'`, where the flags every arm takes (--dir) are declared once. */
 const ROWS = CONTRACTS['issue-check.mjs'];
-/** One flag of `sub`, read through its DECLARED row. The row owns the rule and
- * this binding owns nothing: it is an adapter over this file's own argv, never
- * a second statement of what a flag may be. */
+/** One flag read through its declared row. The row owns the rule; this is only an adapter over our own argv. */
 const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
   if (cmd === 'check') {
-    // `--timeout-ms` declares the `int` type with the `fallback` disposition on
-    // both axes, so a malformed, empty or valueless one reads as ABSENT and the
-    // constant answers - no refusal, ever. What the shared `int` type does NOT
-    // carry is positivity, so this seam's own extra term stays spelled here: an
-    // unbounded call is the one thing it may never do instead of refusing.
+    // --timeout-ms is `fallback`, so a bad one reads as absent. The int type carries no positivity, so that term stays here.
     const ms = arg('check', '--timeout-ms');
     const timeout = ms !== undefined && ms > 0 ? ms : DEFAULT_TIMEOUT_MS;
-    // `--dir` declares `refuse` on both axes: a genuinely ABSENT one still
-    // reads as undefined and the cwd default is unchanged, while the empty,
-    // valueless and flag-shaped spellings raise before any spawn and the
-    // e.seam arm names them. `--base` declares `fallback`, so a spelling
-    // carrying no usable value reads as absent and `git.base_branch` answers.
+    // --dir refuses on empty, valueless or flag-shaped values before any spawn; truly absent means cwd. --base falls back to git.base_branch.
     check(arg('check', '--dir') || process.cwd(), arg('check', '--base'), timeout);
   } else {
     emit({ ok: false, reason: 'usage', detail: 'subcommand: check [--dir <path>] [--base <name>] [--timeout-ms <n>]' });
   }
 } catch (e) {
-  // The seam arm is what a `refuse` row costs its bin (D-08/D-09): the raised
-  // refusal object carries no `message`, so without it a valueless --dir emits
-  // detail "[object Object]". Its detail is the flag name this file wrote,
-  // never third-party bytes, so the no-output-reaches-the-envelope rule holds.
+  // A `refuse` row's error has no message, so a valueless --dir would emit "[object Object]". The detail is our own flag name.
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
     hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
