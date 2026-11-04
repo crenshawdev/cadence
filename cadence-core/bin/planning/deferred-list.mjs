@@ -1,6 +1,5 @@
 // @ts-check
-// planning/deferred-list.mjs - `deferred list`: what is still queued, and the
-// one derivation every reader of that question runs.
+// planning/deferred-list.mjs - `deferred list`: what is still queued, and the one derivation every reader of that question runs
 'use strict';
 
 import { existsSync } from 'node:fs';
@@ -8,39 +7,7 @@ import { fail, ok, phaseSpellingCollision, readQueue } from './core.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
-// ---------------------------------------------------------------------------
-// deferred list - WHAT IS STILL QUEUED, and the one derivation every reader of
-// that question runs.
-//
-// MEMBERSHIP IS A FILE EXISTING (CONTEXT D-01), never absence-of-record: a
-// `DEFERRED-<trigger>-<discriminator>[-r<round>].json` whose `ADJUDICATION`
-// sibling - the name `recordName` resolves for the SAME trigger, discriminator
-// and round - is not beside it. Absence alone cannot be the test because every
-// advisory fire also leaves a REVIEW file with no record beside it, so "no
-// record here" describes the whole advisory arm as well as the queue.
-//
-// TWO HOMES AND NO THIRD. `.planning/phases/<N>/` is where a fire writes, and
-// `.planning/deferred/<N>/` is where `deferred carry` moves what a milestone
-// close is about to prune. An `_archive-<label>/` tree is deliberately out of
-// reach: `milestone-prune --mode archive` puts it at the planning ROOT rather
-// than under either home, and what it holds is a closed milestone's copy of
-// work that was already carried - counting it would refuse every land after a
-// close over findings that are no longer in the live tree.
-//
-// AN UNPROVABLE QUEUE IS NOT AN EMPTY ONE. A directory this cannot read, a
-// member whose bytes do not parse, a symlink wearing a member's name: each
-// lands on `unreadable` and the envelope answers `ok:false`, because the one
-// caller that matters is a REFUSAL and reporting "nothing deferred" about input
-// it could not read is the fail-open arm `decideGateHalt` already names for an
-// unreadable findings payload. The counts still ride the refusal, so the
-// operator sees what WAS provable beside what was not.
-//
-// NO FINDING BODIES CROSS THIS SEAM, only counts and identities - so the land
-// refusal and the progress line print the answer directly instead of routing
-// bulk reviewer text through a scratch file (RES-03). A triage reads the bodies
-// out of the member file itself, whose path this names.
-// ---------------------------------------------------------------------------
-
+// membership is a `DEFERRED-<trigger>-<discriminator>[-r<round>].json` existing with no ADJUDICATION sibling beside it, never absence of a record alone, since every advisory fire also leaves a REVIEW file with no record
 function cmdDeferredList(dir, opts) {
   let wantPhase = null;
   if ('phase' in opts) {
@@ -50,25 +17,21 @@ function cmdDeferredList(dir, opts) {
         'send a plain phase number, or drop --phase to list every finding still queued across the'
         + ' milestone');
     }
-    // The tree-aware collision check, before `readQueue` selects a directory
-    // under `phases/` by exact name. This face echoes nothing numeric, which is
-    // why it earns the wire anyway: `wantPhase` IS the directory component, so
-    // on a tree holding both spellings a caller asking about one phase's queue
-    // would be answered about the other's, under a `phase:` key echoing what
-    // they typed.
+    // wantPhase is the directory component, so on a tree holding both spellings a caller asking about one phase's queue would be answered about the other's
     const collision = phaseSpellingCollision(dir, parsed);
     if (collision) {
       return fail('bad-args', `deferred list ${collision}`,
         're-run the list with one of the two spellings the detail names - nothing was read');
     }
-    // The caller's OWN spelling, the way every other phase-addressed read in
-    // this file works: the value is a directory component before it is
-    // anything arithmetic, and `String(Number('08'))` names a different phase.
+    // the caller's own spelling, like every other phase-addressed read here: it's a directory component before it's arithmetic, and String(Number('08')) names a different phase
     wantPhase = parsed.raw;
   }
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
 
+  // two homes and no third: phases/<N>/ is where a fire writes and deferred/<N>/ is where `deferred carry` moves it
+  // the archive tree is out of reach on purpose, because it holds a closed milestone's copy of work already carried and counting it would refuse every land over findings no longer live
   const q = readQueue(dir, wantPhase);
+  // no finding bodies cross this seam, only counts and identities, so the land refusal prints the answer directly and doesn't route bulk reviewer text through a scratch file
   const answer = {
     ...(wantPhase !== null ? { phase: wantPhase } : {}),
     members: q.members,
@@ -76,9 +39,7 @@ function cmdDeferredList(dir, opts) {
     unreadable: q.unreadable,
   };
   if (q.unreadable.length) {
-    // ok:false, carrying the counts anyway. The question this seam answers is
-    // "is anything still queued", and it could not answer it - so it says so
-    // rather than handing a refusal surface a number that is only a floor.
+    // an unprovable queue is not an empty one: "nothing deferred" about input it couldn't read is the fail-open arm decideGateHalt names, so it's ok:false, and the counts ride along so the operator sees what was provable
     return emit({
       ok: false,
       reason: 'unprovable-queue',
