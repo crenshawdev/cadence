@@ -1,20 +1,7 @@
 // @ts-check
-// read-trace.mjs - the PostToolUse hook that records what a dispatch OPENED.
-//
-// The disk half of lib/read-trace.mjs: resolve the Cadence project from the
-// hook's cwd, shape the payload, append one line. It also hands the lib the
-// plugin's own root, so a path target is recorded as project, plugin-relative
-// or `outside` and never as an absolute path elsewhere on the machine. The
-// rule - which tools count, what may be recorded, and the guarded append -
-// lives in the lib and is tested there without a hook, the same split
-// lib/deferred-reads.mjs and lib/merge-warnings.mjs already use.
-//
-// Contract: stdin carries the hook JSON; this hook emits NOTHING on any stream
-// and exits 0 unconditionally. PostToolUse runs after the tool has already
-// returned, so there is no decision left to influence and nothing this process
-// can usefully say - but a nonzero exit or stray stdout from a hook is fed back
-// to the model as feedback, so a recorder that spoke would be editing the
-// conversation it exists to measure.
+// PostToolUse hook that records what a dispatch opened.
+// The rules live in lib/read-trace.mjs; this half finds the project and appends.
+// It prints nothing and always exits 0: a hook that talks or fails gets fed back to the model.
 'use strict';
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -22,9 +9,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { planningRoot } from './lib/git-segments.mjs';
 
-// The existence predicate `filesOf` runs its candidates through - the whole
-// safety argument for reading a Bash command's arguments at all. A regular
-// FILE only: a directory is not a read, and a stat that throws is a no.
+// regular files only, so a Bash argument that isn't one never counts as a read
 function isFile(p) {
   try { return statSync(p).isFile(); } catch { return false; }
 }
@@ -32,28 +17,19 @@ function isFile(p) {
 try {
   const input = JSON.parse(readFileSync(0, 'utf8'));
   const cwd = String(input?.cwd || process.cwd());
-  // Walk up from cwd, stopping at the repo root: a session opened in a
-  // subdirectory still bills the project. lib/git-segments.mjs holds the walk,
-  // the one git-guard and subagent-trace use too.
+  // walk up from cwd so a session opened in a subdirectory still bills the project
   const project = planningRoot(cwd, (dir, name) => existsSync(join(dir, name)));
   const root = project === null ? null : join(project, '.planning');
   if (root) {
-    // Loaded only inside a Cadence project, since this hook runs on every tool
-    // call in every session.
+    // lazy, because this hook fires on every tool call in every session
     const { recordFromHook, appendRead } = await import('./lib/read-trace.mjs');
-    // `root` is `<project>/.planning`; the tree paths are billed against is its
-    // parent, and confinement to it is what keeps a path elsewhere on the
-    // machine out of the record.
-    // `pluginRoot` is this plugin's own directory, found from this file's
-    // location (two above cadence-core/bin) and never from an environment
-    // variable: it is what tells a plugin file from any other path outside the
-    // project, which is recorded only as `outside`.
+    // paths are confined to the project, so nothing elsewhere on the machine lands in the record
+    // pluginRoot comes from this file's location, not an env var, to tell a plugin file from any other outside path
     const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
     const rec = recordFromHook(input, undefined, { root: dirname(root), cwd, isFile, pluginRoot });
     if (rec) appendRead(root, rec);
   }
 } catch {
-  // Every failure is silent by contract: a broken recorder must never disturb
-  // normal work, and there is no stream it may report on.
+  // a broken recorder must never disturb the session, so swallow everything
 }
 process.exit(0);
