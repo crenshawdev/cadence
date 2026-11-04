@@ -1,94 +1,31 @@
 #!/usr/bin/env node
-// Cadence cross-model review/detect provider. Zero-dependency Node.
-//
-// This is the ONLY place a direct provider HTTPS call happens. The
-// call-review-provider seam (references/seams.md) binds to invoking this
-// script; SKILL.md workflows never inline provider specifics. Three jobs:
-//
-//   review        single-shot structured-output critique of an artifact ->
-//                 normalized findings JSON on stdout.
-//   consult       reactive dead-end help: a stuck situation in -> angles to
-//                 try out (hypotheses, never a decision). Decision-support only.
-//   detect-models enumerate the model IDs the resolved key can access ->
-//                 {models:[...]} on stdout (feeds cad-config assignment).
-//
-// Design contract (DESIGN.md §6):
-//   - Structured output is ENFORCED by the provider (OpenAI json_schema /
-//     Gemini responseSchema), never scraped - EXCEPT DeepSeek, whose only
-//     structured mode is json_object (no server-side schema), so its adapter
-//     injects the schema into the prompt instead. Either way we assert the
-//     shape on return, so an unenforced or schema-ignoring model degrades to a
-//     structured bad-shape, never bad data.
-//   - Keys resolve env-first, then a shared env file whose mode is checked
-//     (a group- or world-readable file warns on the envelope, never refuses). Lazy, never
-//     logged. A missing key is not fatal: we emit {ok:false, reason:"no-key"}
-//     so the caller falls back to claude-subagent.
-//   - Any failure (offline, bad key, http error, bad shape) degrades to a
-//     structured {ok:false, reason, detail} on stdout with a nonzero exit -
-//     the review subsystem never crashes the spine on a provider problem.
-//   - review and consult are the two PAID commands, so both are bounded by
-//     `review.max_prompt_tokens` (chars/4 estimated, default 120000). An
-//     over-cap payload is REFUSED - {ok:false, reason:"over-cap"} before any
-//     request is issued - never truncated and never merely warned about. A
-//     non-string payload field is refused as bad-payload first, since an
-//     unmeasurable field is an unbounded one. The free claude-subagent
-//     reviewer never runs this script and is exempt.
-//   - The outbound PAYLOAD is fenced (#167): every string field crosses
-//     `fence()` - `redactUrl` composed with `redactCredentials`, the same shared
-//     helper the inbound excerpt uses - after the shape gate and before the cap,
-//     so what is measured is what is sent and no raw field reaches the request.
-//     The fence is by SHAPE, never by a known-token prefix list, so it lowers
-//     the exposure of a path that had none rather than making the payload safe
-//     to fill with secrets. How many spans it removed rides the `ok` envelope
-//     and the `provider/request` event as `redactions`, non-zero only: a
-//     reviewer reading `<redacted>` saw less than the caller composed, and the
-//     record has to be able to say so.
-//   - The RESPONSE is bounded too, by bytes rather than by the host's wrapping
-//     command timeout (RVP-01): every command's read path crosses one counter
-//     inside `request()`, and a body past `MAX_RESPONSE_BYTES` destroys the
-//     request and degrades to {ok:false, reason:"over-response"} rather than
-//     being concatenated whole into memory. The `http` failure envelope's
-//     `detail.body` is ALWAYS a string on the same reasoning: sanitized through
-//     both lib/redact-url.mjs exports and capped at 1024 bytes by `redactAndCap`, never
-//     the whole body and never a parsed object for a small one.
+// Cadence cross-model review/detect provider, zero-dependency Node, and the only place a direct provider HTTPS call happens. Three jobs: review (a structured critique of an artifact), consult (angles to try when stuck, hypotheses and never a decision) and detect-models (the model ids the key can reach)
+// Structured output is enforced by the provider and never scraped, except DeepSeek, whose only mode is json_object, so its adapter injects the schema into the prompt. Either way the shape is asserted on return, so a schema-ignoring model degrades to bad-shape and never to bad data
+// Keys resolve from the environment first, then a shared env file whose mode is checked (a group- or world-readable file warns on the envelope and never refuses). A missing key is {ok:false, reason:"no-key"} so the caller falls back to claude-subagent, and any failure degrades to a structured {ok:false, reason, detail} with a nonzero exit instead of crashing the spine
+// review and consult are the paid commands, so both are capped by review.max_prompt_tokens (chars/4, default 120000): over the cap is refused as over-cap before any request and never truncated or merely warned about. A non-string payload field is bad-payload first, because an unmeasurable field is an unbounded one
+// Every outbound string field crosses fence() (redactUrl composed with redactCredentials) after the shape gate and before the cap, so what's measured is what's sent. It works by shape and not by a prefix list, so it lowers exposure and doesn't make a payload safe to fill with secrets. The redaction count rides the ok envelope and the trace event, because a reviewer reading <redacted> saw less than the caller composed
+// The response is bounded by bytes too: past MAX_RESPONSE_BYTES the request is destroyed and degrades to over-response. An http failure's detail.body is always a string, redacted and capped at 1024 bytes by redactAndCap
 //
 // Usage:
 //   review-provider.mjs review  --provider <openai|gemini|deepseek> --model <id>
 //                               [--effort <level>] [--payload <file>|-]
 //                               [--key-file <path>] [--trigger <name>]
 //       payload (stdin/file): {instruction, artifact} -> {ok, findings[]}
-//       --trigger names the review trigger this call was fired for, and rides
-//       the provider trace event so the call JOINS to its fire through the
-//       correlation id both already derive (RVW-02). Optional: a call without
-//       it writes exactly the event shape it wrote before.
+//       --trigger names the review trigger this call was fired for and rides the provider trace event, so the call joins to its fire by the correlation id both derive. Optional: without it the event is unchanged.
 //   review-provider.mjs consult --provider <openai|gemini|deepseek> --model <id>
 //                               [--effort <level>] [--payload <file>|-]
 //                               [--key-file <path>]
 //       payload (stdin/file): {situation} -> {ok, angles[]}  (dead-end help)
 //   review-provider.mjs detect-models --provider <openai|gemini|deepseek> [--key-file <path>]
-//
 // --key-file overrides the shared env-file path (config review.key_file); an
 // env-set key still wins over it. Omitted -> the XDG default.
-//
 // The review payload (JSON, from --payload file or stdin) is:
 //   { "instruction": "<what to critique and how>",
 //     "artifact": "<the plan / diff / files to review>" }
 //
-// mergeLayers warnings[]: the ONE surfacing for this file is `reviewConfig()`
-// (:360), which binds the warnings of the same `.planning/config.json` layer and
-// puts their COUNT on the provider trace event as `config_warnings` - a count,
-// not the warning text, and only when there is at least one, and only on an
-// event that was written at all (a run with no `.planning` cursor writes none).
-// So this is a signal that the layer was torn beside the call it bounded, not a
-// carrier of the warnings themselves. The two OTHER
-// reads here - `requestTimeoutMs()` and `maxPromptTokens()` - are memoized
-// SCALAR helpers that cache a number and discard the config object, so there is
-// nothing at those two callsites to surface: the value they lose to a torn layer
-// is a request timeout and a prompt cap, each degrading to a stated default, and
-// the fact that the layer was torn is already in the trace beside the request
-// those bounds applied to. What the CALLER sees is the seam's own envelope -
-// `{ok:false, reason}` with the fail reason - and no config warning can change
-// which reason that is.
+// mergeLayers warnings[]: the one surfacing here is reviewConfig(), which puts the count of the .planning/config.json layer's warnings on the provider trace event as config_warnings, only when there is one and only on an event that gets written at all (no .planning cursor, no event)
+// requestTimeoutMs and maxPromptTokens cache a bare number and discard the config object, so there's nothing at those two reads to surface: a torn layer costs them a default, and the trace beside the request already shows the layer was torn
+// the caller sees the seam's own {ok:false, reason} envelope and no config warning changes which reason that is
 'use strict';
 
 import fs from 'node:fs';
@@ -107,39 +44,20 @@ import { isModelId } from './lib/model-id.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// ---------------------------------------------------------------------------
-// Output helpers. Everything the caller consumes is a single JSON object on
-// stdout so the main-model adjudicator parses one blob, never stderr scrapes.
-// The convention (one line, exitCode mirrors ok, no process.exit after the
-// write) lives in lib/seam-io.mjs.
-// ---------------------------------------------------------------------------
+// everything the caller reads is one JSON object on stdout, so the adjudicator parses one blob and never scrapes stderr
 function ok(obj) { emit({ ok: true, ...obj }); throw DONE; }
 
-// The subject of the provider trace event for the call currently running, set
-// as each command's FIRST act (`beginProviderCall`) and read by `fail()` below.
-// It is module-level because `fail()` is reached from sites that never see the
-// command's own locals: `resolveProvider` (`bad-provider`, `bad-args`,
-// `no-key`), `readPayload` and the two shape checks (`bad-payload`) and
-// `assertUnderCap` (`over-cap`) all unwind BEFORE a request is built, and those
-// five are the drop-outs that fire most in practice - a reviewer whose key is
-// missing on this machine drops out of a fired trigger exactly as hard as one
-// the wire refused. `null` means no command has begun, so `fail('bad-command')`
-// from `main()` records nothing by construction rather than by a check.
+// the subject of the provider trace event for the running call, set first thing in each command and read by fail(). It's module-level because fail() is reached from sites that never see the command's locals, and the pre-request refusals (no-key, bad-payload, over-cap) are the drop-outs that fire most. null means no command has begun, so fail('bad-command') from main records nothing by construction
 /** @type {{command: string, provider: any, model: any, effort: any,
  *   trigger?: any, started: number, redactions?: number,
  *   usage?: ProviderUsage}|null} */
 let activeMeta = null;
 
-// Exactly one event per call, whichever site records first. The explicit
-// `traceProvider` calls in `callStructured` and at the two `bad-shape` sites run
-// first and carry better detail than `fail()`'s would (`HTTP 404`, the named
-// schema defect), so they set this and `fail()` then adds nothing.
+// one trace event per call, whichever site records first: the explicit traceProvider calls in callStructured and at the bad-shape sites carry better detail than fail() would, so they set this and fail() adds nothing
 let traceRecorded = false;
 
 /**
- * Open the trace bracket for one command, before anything can refuse. Returns
- * the meta so the command's own `traceProvider` calls keep taking it as an
- * argument rather than reading module state.
+ * Open the trace bracket for one command, before anything can refuse. Returns the meta so each command's traceProvider calls keep taking it as an argument and not module state.
  * @param {string} command
  * @param {{provider: any, model: any, effort: any, trigger?: any}} subject
  */
@@ -149,31 +67,18 @@ function beginProviderCall(command, subject) {
   return activeMeta;
 }
 
-// `hint` is the third argument and rides as a conditional key, so an absent
-// hint adds no key and no shipped assertion moves (phase-1 D-09/D-10). It is
-// deliberately NOT passed to `traceProvider`: the trace records the
-// degradation for whoever reads the bracket instead of the envelope, and its
-// three arguments are the shipped record's shape - a hint is advice to the
-// person at the terminal, not a fact about what happened.
+// hint rides as a conditional key, so an absent one adds no key. It stays out of traceProvider on purpose: a hint is advice for whoever's at the terminal, not a fact about what happened
 function fail(reason, detail, hint) {
-  // The degradation is recorded before the envelope is emitted, and never
-  // instead of it: `traceProvider` never throws and never speaks, so this line
-  // cannot change what the caller reads or when.
+  // trace first, then emit: traceProvider never throws or speaks, so the caller reads the same thing either way
   if (activeMeta && !traceRecorded) {
-    // `detail` is a string at every fail() site except `http`, whose object
-    // detail would render `[object Object]` - and that site records itself
-    // first, so this renders a real string or falls back to the reason.
+    // detail is a string everywhere except http, whose object would render [object Object], and that site records itself first
     traceProvider(activeMeta, reason, typeof detail === 'string' && detail ? detail : reason);
   }
   emit({ ok: false, reason, detail: detail || null, ...(hint ? { hint } : {}) });
   throw DONE;
 }
 
-// ok()/fail() throw the DONE sentinel to unwind the current command; the
-// entry point swallows it. Any OTHER throw is an unforeseen bug - the
-// top-level handlers below convert it to a structured
-// {ok:false,reason:"internal"} so a provider/adapter surprise never crashes
-// the spine with a raw stack.
+// ok and fail throw the DONE sentinel to unwind the command and the entry point swallows it. Anything else thrown is a bug, and these handlers turn it into {ok:false,reason:"internal"} instead of a raw stack
 process.on('unhandledRejection', (/** @type {any} */ e) => {
   if (e === DONE) return;
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
@@ -183,31 +88,10 @@ process.on('uncaughtException', (/** @type {any} */ e) => {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 });
 
-// ---------------------------------------------------------------------------
-// Arg parsing: a leading subcommand, then each declared flag read through its
-// row in lib/arg-contract.mjs (ARG-06).
-//
-// THE DEFECT THIS ENDS. The loop this replaced did `opts[a.slice(2)] =
-// rest[i + 1]` with no flag-shape test, so a valueless flag ate the flag after
-// it and the one after that was skipped: measured 2026-08-19,
-// `review-provider.mjs consult --payload --provider openai` returned
-// `{"ok":false,"reason":"bad-provider","detail":"unknown provider: undefined"}`
-// - a refusal about a flag the caller DID pass, naming the wrong problem.
-//
-// THE VALUE DOOR ONLY. A flag PRESENT with a missing, empty or flag-shaped
-// value is refused here by name; a flag genuinely ABSENT is not, even where its
-// row says `required: true`. Presence belongs to the command handlers that own
-// the wording - `resolveProvider` answers an absent `--provider` with
-// `bad-provider` and an absent `--model` with `${cmd} needs --model`, and
-// references/seams.md publishes both - so answering presence here would change
-// which reason a caller sees for an input this phase was never about.
-//
-// PURE, and it stays that way: this function is exported and the test file
-// imports it, so it emits nothing and throws nothing. A refusal rides back as
-// `badArg`, a third field beside the `{cmd, opts}` shape its callers destructure,
-// and `main` renders it as this bin's own `bad-args` - the contract mints no
-// reason code (D-07) and references/seams.md already publishes that one.
-// ---------------------------------------------------------------------------
+// each declared flag is read through its row in lib/arg-contract.mjs, after a leading subcommand
+// the loop this replaced did opts[a.slice(2)] = rest[i + 1] with no flag-shape test, so a valueless flag ate the next one: `consult --payload --provider openai` came back bad-provider "unknown provider: undefined", blaming a flag the caller did pass
+// only a flag that's present with a missing, empty or flag-shaped value is refused here. An absent one isn't, even when its row says required, because resolveProvider owns that wording and references/seams.md publishes both
+// pure on purpose: it's exported and the tests import it, so it emits and throws nothing. A refusal rides back as badArg and main renders it as bad-args, since the contract mints no reason code
 
 /** What each flag needs after it, in this bin's own wording. */
 const NEEDS = {
@@ -223,9 +107,7 @@ export function parseArgs(argv) {
   const [cmd, ...rest] = argv;
   const opts = {};
   const script = CONTRACTS['review-provider.mjs'];
-  // The subcommand's own row plus the script-global one. An unrecognised
-  // subcommand declares nothing and reads nothing; `main` answers it with
-  // `bad-command`, exactly as it did before.
+  // the subcommand's own row plus the script-global one. An unrecognised subcommand declares nothing and main answers bad-command
   const rows = { ...(script[cmd] || {}), ...script['*'] };
   let badArg;
   for (const flag of Object.keys(rows)) {
@@ -237,23 +119,16 @@ export function parseArgs(argv) {
   return { cmd, opts, ...(badArg ? { badArg } : {}) };
 }
 
-// ---------------------------------------------------------------------------
-// Key resolution: env var first (an env-set key always wins), then a single
-// shared env file at ${XDG_CONFIG_HOME:-~/.config}/cadence/providers.env.
-// Config stores only the path, never the value. Lazy + never logged.
-// ---------------------------------------------------------------------------
+// env var first, then one shared env file at ${XDG_CONFIG_HOME:-~/.config}/cadence/providers.env. Config stores only the path, never the value
 const ENV_VAR = { openai: 'OPENAI_API_KEY', gemini: 'GEMINI_API_KEY', deepseek: 'DEEPSEEK_API_KEY' };
 
-// The shared env-file path: an explicit --key-file override (config
-// `review.key_file`, passed through by the seam) else the XDG default.
 function providersEnvPath(override) {
   if (override) return override.replace(/^~(?=\/|$)/, os.homedir());
   const base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
   return path.join(base, 'cadence', 'providers.env');
 }
 
-// Parse a dotenv-style file: KEY=VALUE per line, # comments, optional quotes,
-// ignores blank lines and a leading `export `. Intentionally tiny.
+// dotenv-style: KEY=VALUE per line, # comments, optional quotes, a leading `export `. Tiny on purpose
 /** @param {string} text @returns {Record<string, string>} */
 export function parseEnvFile(text) {
   const out = {};
@@ -274,11 +149,7 @@ export function parseEnvFile(text) {
   return out;
 }
 
-// A key taken from the file whose group or other read bits are set is a key
-// other local users can read: said on the envelope, never refused (D-15). Only
-// a key that CAME from the file is checked - an env-supplied key never reaches
-// here - and win32 has no such mode bits. A stat failure adds nothing: the read
-// above it already succeeded.
+// a key from the file with group or other read bits set is readable by other local users: said on the envelope and never refused. An env-supplied key never gets here, win32 has no such bits, and a stat failure adds nothing since the read above it worked
 /** @param {string} file @returns {string[]} */
 function keyFileWarnings(file) {
   if (process.platform === 'win32') return [];
@@ -300,84 +171,31 @@ function resolveKey(provider, keyFile) {
   return { key: null, where: `env $${name} or ${file}`, warnings: [] };
 }
 
-// ---------------------------------------------------------------------------
-// HTTPS helper. Resolves { status, json } or rejects on transport error.
-// Zero-dep: node:https only. body omitted -> GET. A hard timeout guarantees a
-// stalled/black-hole connection (TCP accepted, no bytes) still rejects, so the
-// caller degrades to a structured {ok:false} instead of hanging the spine.
-// ---------------------------------------------------------------------------
-// node's `timeout` is a socket INACTIVITY timeout, and a provider response is
-// not streamed - no bytes arrive until the model stops thinking - so this
-// effectively caps total thinking time. 120000 was below what a high-effort
-// review actually costs (measured: 292s for a flagship model on a 12.7KB diff),
-// which silently dropped cross-model reviewers from the blocking gates. Hence
-// the higher default and the config override.
-// The execution host bounds this from above and we cannot exceed it: the Bash
-// tool that runs this seam caps a command at 600000ms. So MAX is that ceiling,
-// and the default sits a minute under it, because whoever aborts first owns the
-// output - if the host kills us we print NOTHING and the caller's "read the one
-// JSON line" gets an empty string, strictly worse than the {ok:false,
-// reason:"transport"} we are supposed to degrade to. The host's DEFAULT is only
-// 120000, so fire() must pass an explicit Bash timeout (see
-// references/review-triggers.md); this constant alone cannot buy the time.
+// node's timeout is a socket inactivity timeout and a provider response isn't streamed, so this effectively caps total thinking time. 120000 was below what a high-effort review costs (292s on a flagship model), which silently dropped cross-model reviewers from the blocking gates
+// the Bash tool that runs this caps a command at 600000ms, so that's the max and the default sits a minute under: if the host kills us we print nothing, which is worse than the {ok:false, reason:"transport"} we owe the caller. The host default is only 120000, so the caller must pass an explicit Bash timeout (references/review-triggers.md)
 const DEFAULT_REQUEST_TIMEOUT_MS = 540000;
 const MAX_REQUEST_TIMEOUT_MS = 600000;
 
-// The prompt-token cap (#16, REV-03), bounding the two PAID commands - review
-// and consult - and nothing else. The free `claude-subagent` reviewer never
-// runs this script, so it is exempt by construction rather than by omission;
-// that arm's own payload bound, if the host has one, is the host's.
-// 120000 estimated tokens because of the three shipped providers DeepSeek's
-// context window is the tightest at ~128k: the default sits just under the
-// smallest window a configured payload could be sent to, and `chars/4` is an
-// estimate rather than a tokenizer, so the margin is deliberate.
+// the prompt-token cap for the two paid commands. The free claude-subagent reviewer never runs this script, so it's exempt by construction
+// 120000 because DeepSeek's ~128k window is the tightest of the three providers, and chars/4 is an estimate and not a tokenizer, so the margin is deliberate
 const DEFAULT_MAX_PROMPT_TOKENS = 120000;
 
-// The RESPONSE byte ceiling (RVP-01, #143), the other side of the same bound.
-// `review.max_prompt_tokens` bounds what we SEND; nothing bounded what we HOLD,
-// so a proxy error page or a runaway answer was concatenated whole into one
-// string and the only thing stopping it was the execution host's wrapping
-// command timeout - a bound Cadence does not own.
-//
-// Derived rather than round. The shipped request-side bound is 120000 estimated
-// tokens, which is 480000 chars under the chars/4 proxy this file already uses,
-// and a structured-output response is smaller than the artifact that produced it
-// in every observed run. So 4 MiB sits at roughly 8.7x the largest payload this
-// seam will ever send, and the finding bounds local validation enforces put the
-// largest response it can ever ACCEPT near 0.5 MB, about 8x under this. A body
-// that crosses this is not a review; it is something else wearing a 200.
-//
-// Not a config key (D-03): a knob nothing needs is what v2.7.0 deleted
-// `workflow.subagent_timeout` for.
+// the response byte ceiling, the other side of the prompt cap: nothing bounded what we hold, so a proxy error page or a runaway answer was concatenated whole and only the host's command timeout stopped it
+// 4 MiB is about 8.7x the largest payload this seam sends (480000 chars) and about 8x the largest response local validation accepts (~0.5 MB). A body past it is something else wearing a 200
+// not a config key: a knob nothing needs is just surface to maintain
 const MAX_RESPONSE_BYTES = 4194304;
 
-// The tag that makes a ceiling crossing DISTINGUISHABLE from an ordinary socket
-// error at the two catch arms below. A symbol on the error object, never a match
-// on its message: a diagnostic string that decides control flow is a parser, and
-// the message is free text nobody promised to keep.
+// tags a ceiling crossing so the two catch arms can tell it from an ordinary socket error. A symbol and never a match on the message, because a diagnostic string that decides control flow is a parser
 const OVER_RESPONSE = Symbol('cadence-over-response');
 
-// Pure so the unit tests can exercise it without touching config or the network.
-// Anything unusable - absent, non-numeric, non-integer, zero, negative - falls
-// back to the default rather than throwing: a bad timeout must never sink a
-// review, same degrade-never-crash contract as the rest of this seam.
-//
-// An oversized value is CLAMPED, not rejected, and this is the load-bearing
-// half: node stores a socket timeout in a 32-bit signed int, so anything past
-// 2147483647 is truncated there and the timer effectively never fires - a
-// black-hole connection would hang ~24.8 days instead of rejecting, defeating
-// the exact guarantee this timeout exists to provide. The schema enforces only
-// `min`, so `set review.request_timeout_ms=600000000` (a plausible extra zero)
-// validates clean; the bound has to live here.
+// pure so the unit tests can call it without config or network. Anything unusable falls back to the default and never throws, since a bad timeout must not sink a review
+// an oversized value is clamped, not rejected: node keeps a socket timeout in a 32-bit signed int, so past 2147483647 it truncates and the timer never fires, and a black-hole connection would hang ~24.8 days. The schema only enforces min, so an extra zero on request_timeout_ms validates clean and the bound has to live here
 export function resolveTimeoutMs(configured) {
   if (!Number.isInteger(configured) || configured <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
   return Math.min(configured, MAX_REQUEST_TIMEOUT_MS);
 }
 
-// Lazy + memoized on purpose: review-provider.test.mjs imports the pure helpers
-// straight from this module, so a module-level read would do config I/O inside
-// unit tests. One read per process, and a broken config layer degrades to the
-// default (mergeLayers already skips a non-object layer).
+// lazy and memoized because review-provider.test.mjs imports the pure helpers, and a module-level read would do config I/O inside unit tests. A broken config layer degrades to the default
 let timeoutCache = null;
 function requestTimeoutMs() {
   if (timeoutCache === null) {
@@ -391,10 +209,7 @@ function requestTimeoutMs() {
   return timeoutCache;
 }
 
-// Same pure/lazy split as the timeout above, and the same degrade-never-crash
-// contract: anything unusable falls back to the default rather than throwing.
-// UNLIKE the timeout it is not clamped from above - there is no host ceiling to
-// overflow here, and a user who raises the cap has made that call in writing.
+// same pure/lazy split and degrade-never-crash rule as the timeout, but not clamped from above: there's no host ceiling to overflow, and a user who raises the cap made that call in writing
 export function resolveMaxPromptTokens(configured) {
   if (!Number.isInteger(configured) || configured <= 0) return DEFAULT_MAX_PROMPT_TOKENS;
   return configured;
@@ -413,63 +228,18 @@ function maxPromptTokens() {
   return maxPromptCache;
 }
 
-// The repo's existing deterministic chars/4 proxy, reused rather than
-// reimplemented: zero runtime deps forbids a real tokenizer, and both #16 and
-// REV-03 ask for a TOKEN cap, so a byte key would rename what was asked for.
-// Only the payload is measured. The adapters' schema-injection bytes are a
-// small fixed per-provider constant and counting them would make one payload
-// cap differently per provider - the number stays reproducible from the
-// payload alone.
-// The non-string filter is a safety net, NOT the type gate: a non-string part
-// measures as nothing, so if the filter were the only guard a `{blob: <480KB>}`
-// artifact would estimate ~0 tokens, clear the cap, and still be serialized
-// into the request by JSON.stringify. Both callers therefore reject a
-// non-string field as `bad-payload` BEFORE calling this - the cap can only
-// bound what it can measure.
+// the repo's chars/4 proxy: zero deps rules out a real tokenizer, and the ask was a token cap so a byte key would rename it
+// only the payload is measured, since the adapters' schema-injection bytes are a small per-provider constant and counting them would make one payload cap differently per provider
+// the non-string filter is a safety net and not the type gate: a non-string part measures as nothing, so a {blob: <480KB>} artifact would clear the cap and still be serialized into the request. Both callers refuse non-strings as bad-payload first
 export function estimatePromptTokens(...parts) {
   return measure(parts.filter((p) => typeof p === 'string').join('')).estTokens;
 }
 
-// The OUTBOUND secret fence (#167). The payload is raw repository contents - a
-// plan, a diff, whole files - and it leaves this machine for a third party the
-// moment a project configures a cross-model reviewer, which is the shipped
-// default here. Every byte of it crosses this function first.
-//
-// The redaction machinery already existed and ran the WRONG WAY: `bodyExcerpt`
-// below sanitizes the INBOUND response body through the same two exports. This
-// is the same read-then-send rule pointed at the direction that actually
-// carries the repository off the machine.
-//
-// COMPOSED, not reimplemented. `lib/redact-url.mjs`'s header states that
-// neither export is a superset of the other and that a caller wanting both
-// composes them; D-14 states that a security-relevant regex duplicated across
-// sites is how the copies drift. So no pattern is added here, and widening the
-// fence is a change to that one file, which its own tests already own.
-//
-// WHAT IT CANNOT DO, stated where the call is rather than left to be
-// rediscovered: redaction is by SHAPE - a credential-shaped NAME beside its
-// value, a userinfo POSITION in a URL, an `authorization` echo - and never by a
-// known-prefix list, because a prefix list is a list of the credentials somebody
-// already thought of. A bare Anthropic key sitting in a diff with no
-// credential-shaped name beside it is NOT caught. This lowers the exposure of a
-// path that had none; it does not license sending a secrets file to a reviewer.
-//
-// The count comes back with the text because a fenced payload is a SMALLER
-// artifact than the caller composed: a reviewer reading `<redacted>` where a
-// value was is working from less than it was handed, and both the envelope and
-// the run record have to be able to say so.
-//
-// The count is a LOWER BOUND, and the floor is what makes it honest. Net marks
-// added is not the same as spans removed: an artifact that already contains the
-// literal `<redacted>` - a diff of this fence, a log that was already
-// sanitized - can have a credential span collapse onto an existing mark, so the
-// arithmetic comes back 0 or negative on a payload that WAS altered, and both
-// the envelope and the trace would then report a full artifact. So the change
-// is decided by comparing the STRINGS, which cannot be fooled, and the count is
-// floored at 1 whenever they differ. Exactness would mean the redactors
-// counting their own replacements, which is a wider change to a file two other
-// callers depend on; a number that can under-state by a mark is worth less than
-// a zero that can be false.
+// the outbound secret fence (#167): the payload is raw repository contents and leaves the machine for a third party, so every byte crosses this first
+// composed and not reimplemented: neither redact-url export is a superset of the other, and a security regex duplicated across sites is how the copies drift. Widen the fence in that file, not here
+// it works by shape (a credential-shaped name beside its value, userinfo in a URL, an authorization echo) and never by a prefix list, so a bare Anthropic key with no name beside it isn't caught. That lowers exposure; it doesn't license sending a secrets file to a reviewer
+// the count comes back with the text because a fenced payload is smaller than what the caller composed, and the envelope and the run record both have to be able to say so
+// the count is a lower bound: marks added isn't spans removed, since a credential span can collapse onto an existing `<redacted>` and net to 0 or less on an altered payload. So the change is decided by comparing the strings and the count floors at 1, because a count that can under-state by a mark beats a zero that can be false
 /**
  * @param {string} s @returns {{text: string, redactions: number}}
  */
@@ -480,9 +250,7 @@ function fence(s) {
   return { text, redactions: net > 0 ? net : 1 };
 }
 
-// Counted rather than `split().length - 1`, which allocates a copy of an
-// artifact that may be the whole cap. `indexOf` from a moving offset is one
-// linear pass and holds no second string.
+// counted with indexOf from a moving offset: split().length - 1 would allocate a copy of an artifact that may be the whole cap
 /** @param {string} hay @param {string} needle @returns {number} */
 function occurrences(hay, needle) {
   let n = 0;
@@ -490,13 +258,8 @@ function occurrences(hay, needle) {
   return n;
 }
 
-// The refusal both paid commands share. It happens BEFORE any request is
-// issued and is neither a truncation nor a warning: truncating still pays the
-// provider and returns findings on a fragment while reporting as though it saw
-// the whole artifact, which is worse than the unbounded bill, and
-// warn-and-send changes no outcome at all. No new caller machinery is needed -
-// references/review-triggers.md step 4 already handles any {ok:false} (name
-// the reason, drop the reviewer, fall back if the set empties).
+// the refusal both paid commands share, before any request. Truncating still pays the provider and reviews a fragment as though it saw the whole, which is worse than the bill, and warn-and-send changes no outcome
+// the caller already handles any {ok:false} (references/review-triggers.md: name the reason, drop the reviewer, fall back if the set empties)
 function assertUnderCap(...parts) {
   const est = estimatePromptTokens(...parts);
   const cap = maxPromptTokens();
@@ -506,32 +269,12 @@ function assertUnderCap(...parts) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// The provider family of the joined run record (.planning/trace.jsonl). A
-// reviewer that drops out of a fired trigger is supposed to be NAMED to the
-// user, and references/review-triggers.md already mandates that visible line -
-// that mandate is the thing that failed, twice. So the seam records the
-// degradation itself: the panel's actual composition is in the record whether or
-// not the orchestrator relays the line.
-//
-// The record brackets a CALL, not a REQUEST (corrected 2026-08-08, phase 1
-// QW-05). The first form recorded only what happened past `request()`, which
-// left the five drop-outs that need no network at all - `no-key`,
-// `bad-provider`, `bad-args`, `bad-payload`, `over-cap` - writing nothing, and
-// they are the ones that actually fire: a panel that silently shrank because a
-// key was missing read as a panel that was always that size. `fail()` above is
-// where that is closed, and `activeMeta` is why it can be.
-// ---------------------------------------------------------------------------
+// the provider family of the joined run record (.planning/trace.jsonl). A reviewer that drops out of a fired trigger has to be named, and the prose mandate for that line failed twice, so the seam records the degradation itself
+// the record brackets a call and not a request: the first form only recorded what happened past request(), so the five drop-outs that need no network (no-key, bad-provider, bad-args, bad-payload, over-cap) wrote nothing and a panel that silently shrank read as one that was always that size. fail() closes that, and activeMeta is why it can
 
-// The repo+global config, read once per process and bound with its `warnings`.
-//
-// mergeLayers warnings[]: a torn config layer is why a tier reverse lookup can
-// come back null and why the timeout and the prompt cap fall back to their
-// defaults, so how MANY warnings there were rides the provider trace event
-// (`config_warnings`, a count and only when non-zero) rather than the read
-// dropping the fact entirely. Deliberately its OWN read: the two
-// reads above are memoized SCALAR helpers that cache a number and discard the
-// config object, so there is nothing there to take a config off.
+// the repo+global config, read once per process and bound with its warnings
+// mergeLayers warnings[]: a torn config layer is why a tier reverse lookup can come back null and the timeout and cap fall back to defaults, so how many warnings there were rides the provider trace event as config_warnings (a count, only when non-zero) and not dropped
+// its own read on purpose: the two memoized helpers above cache a number and discard the config object, so there's nothing there to take one off
 let reviewConfigCache = null;
 function reviewConfig() {
   if (reviewConfigCache === null) {
@@ -549,13 +292,8 @@ function reviewConfig() {
 }
 
 /**
- * The trigger TIER this model id was resolved from, by REVERSE LOOKUP over
- * `review.providers.<name>.tiers`. The seam is never told the tier: the caller
- * resolves `tiers[trigger.tier]` and passes only `--model`
- * (references/review-triggers.md), so the mapping is inverted here rather than
- * added as a `--tier` flag, which would change the CLI contract at every prose
- * callsite. `null` when the map has no such value - a hand-passed model, or
- * `detect-models`, which carries no model at all. Never a guess.
+ * The trigger tier this model id was resolved from, by reverse lookup over `review.providers.<name>.tiers`. The seam is never told the tier (the caller resolves `tiers[trigger.tier]` and passes only --model), and a --tier flag would change the CLI contract at every prose callsite.
+ * `null` when no tier has this value, which is a hand-passed model or detect-models. Never a guess.
  * @param {any} provider @param {any} model @returns {string|null}
  */
 function tierOf(provider, model) {
@@ -571,11 +309,7 @@ function tierOf(provider, model) {
 }
 
 /**
- * Record one `provider`/`request` event. `detail` is what makes it a DEGRADATION:
- * present means this reviewer dropped out and the panel is smaller than the
- * trigger asked for. An empty findings set is NOT one - it is `ok` with no
- * detail, because a reviewer that legitimately found nothing must not be
- * recorded as a drop-out (D-22).
+ * Record one `provider`/`request` event. `detail` is what makes it a degradation: present means this reviewer dropped out and the panel is smaller than the trigger asked for. An empty findings set isn't one, since a reviewer that found nothing must not be recorded as a drop-out.
  *
  * Never throws, never writes to a stream, never touches the caller's envelope.
  * @param {{command: string, provider: any, model: any, effort: any,
@@ -585,16 +319,12 @@ function tierOf(provider, model) {
  * @param {string} [detail]
  */
 function traceProvider(meta, outcome, detail) {
-  // Marked before the attempt, not after it: the contract is one event per
-  // call, so a write this seam could not complete must not license a second
-  // attempt from `fail()` with a poorer detail string.
+  // marked before the attempt, not after: one event per call, so a write we couldn't complete mustn't license a second attempt from fail() with a poorer detail string
   traceRecorded = true;
   try {
     const root = '.planning';
     const phase = cursorPhase(root);
-    // No cursor: an event keyed to no phase joins nothing and the id it would
-    // derive is the empty string, so nothing is recorded rather than a line
-    // that cannot be read back.
+    // no cursor means no phase, an event keyed to none joins nothing and its id would be empty, so record nothing
     if (phase === null) return;
     const { warnings } = reviewConfig();
     appendEvent(root, {
@@ -605,13 +335,7 @@ function traceProvider(meta, outcome, detail) {
       provider: typeof meta.provider === 'string' ? meta.provider : null,
       model: typeof meta.model === 'string' ? meta.model : null,
       effort: typeof meta.effort === 'string' ? meta.effort : null,
-      // WHICH trigger fired this call, so a cross-model review and a subagent
-      // review of the same phase stop being one shape in the record. Emitted
-      // only when the caller named one - absent otherwise, so a call made
-      // without the flag writes byte-for-byte the event it wrote before. No
-      // SECOND event: a duplicate would double-count every cross-model review
-      // in renderTrace's `counts.provider`, and would let the seam-written and
-      // model-written records disagree about one call (D-06).
+      // which trigger fired this call, so a cross-model review and a subagent review of the same phase aren't one shape in the record. Absent when the caller named none, and never a second event: a duplicate would double-count every cross-model review in renderTrace's counts.provider
       ...(typeof meta.trigger === 'string' && meta.trigger.trim()
         ? { trigger: meta.trigger.trim() } : {}),
       tier: tierOf(meta.provider, meta.model),
@@ -619,21 +343,10 @@ function traceProvider(meta, outcome, detail) {
       outcome,
       ...(detail ? { degraded: true, detail: String(detail).slice(0, 200) } : {}),
       ...(warnings.length ? { config_warnings: warnings.length } : {}),
-      // HOW MANY spans the outbound fence removed from this payload, and only
-      // when it removed any - the same non-zero-only shape `config_warnings`
-      // uses one line up, so a call over an artifact carrying no credential
-      // writes byte-for-byte the event it wrote before. A count, never the
-      // spans: the whole point of the fence is that those bytes stop here, and
-      // a record that carried them would be the leak wearing a different hat.
+      // how many spans the outbound fence removed, only when it removed any, so a call over a clean artifact writes the event it always did. A count and never the spans: those bytes stop here, and a record carrying them would be the leak itself
       ...(typeof meta.redactions === 'number' && meta.redactions > 0
         ? { redactions: meta.redactions } : {}),
-      // WHAT THE PROVIDER SAYS THIS CALL COST, on the same written-only-when-
-      // real rule the two keys above take: a response that carried no usage
-      // writes NEITHER key, so every event written before this existed keeps
-      // reading as a call whose cost is unknown rather than one that cost zero
-      // (D-11). `usage` is the normalized input/output pair, `usage_raw` the
-      // provider's own object. This figure never reaches `roles` and is never
-      // summed with a host token total - it is a different denomination (D-01).
+      // what the provider says the call cost, written only when real: a response with no usage writes neither key, so older events read as cost unknown and not zero. usage is the normalized input/output pair and usage_raw the provider's own object, a different denomination from the host's token total and never summed with it
       ...(meta.usage ? { usage: meta.usage.normalized } : {}),
       ...(meta.usage && meta.usage.raw !== undefined
         ? { usage_raw: meta.usage.raw } : {}),
@@ -641,36 +354,11 @@ function traceProvider(meta, outcome, detail) {
   } catch { /* a record of a call may never change the call */ }
 }
 
-// ---------------------------------------------------------------------------
-// The transport reference, and the ONE test seam that moves it (QW-05).
-//
-// Every failure mode this seam degrades on - timeout, HTTP status, truncated
-// body, no output - lives PAST the call below, so exercising them needs a way to
-// stand in for the wire. That way is a module-private reference a test replaces
-// by IMPORTING this module, reachable only from inside the running process.
-//
-// There is deliberately NO environment variable, no flag and no config key that
-// redirects it. The request this transport carries holds a resolved provider key
-// in an `authorization` header, so an out-of-process switch on the destination
-// would be a credential-read primitive: one attacker-settable variable (a
-// `.envrc` in a cloned repo, a devcontainer env block, a compromised npm script)
-// would make an ordinary run read the user's real on-disk key and hand it to a
-// listener of the attacker's choosing. Loopback is not a privilege boundary -
-// any unprivileged local process that binds the port first receives the
-// credential - so the fence is that the surface does not exist. This overturns
-// CONTEXT D-11, which picked an env override on `CADENCE_*` precedent; that
-// precedent does not hold for a variable that redirects a CREDENTIALED request.
-//
-// The default is `node:https` and nothing else can be reached in production:
-// with the seam untouched, `transport` is `HTTPS_TRANSPORT` for the life of the
-// process, and the three adapter bases stay hardcoded `https:` URLs.
-// ---------------------------------------------------------------------------
+// the transport reference, and the one test seam that moves it. Every failure we degrade on (timeout, HTTP status, truncated body, no output) lives past the call, so tests need a stand-in for the wire: a module-private reference they replace by importing this module
+// there is deliberately no env var, flag or config key that redirects it. The request carries the provider key in an authorization header, so an out-of-process switch on the destination is a credential-read primitive: one attacker-settable variable (a .envrc in a cloned repo, a devcontainer env block) would hand the user's real key to a listener of the attacker's choosing, and loopback isn't a privilege boundary since any local process that binds the port first gets it
+// untouched, transport is HTTPS_TRANSPORT for the life of the process and the three adapter bases stay hardcoded https: URLs
 
-// The signature is the `https.request(url, options, cb)` shape and is typed at
-// the WIRE types, not at `any`: `req` below is a real `ClientRequest`, so a
-// misspelled listener (`req.onnn('error', ...)`) stays a tsc error exactly as it
-// was when this line read `https.request(...)` directly. A loose return here
-// would silently un-check all six `req.*` uses in `request()`.
+// typed at the wire types and not any: req is a real ClientRequest, so a misspelled listener stays a tsc error, and a loose return would silently un-check all six req.* uses in request()
 /**
  * @typedef {(
  *   url: URL,
@@ -686,9 +374,7 @@ const HTTPS_TRANSPORT = (url, options, cb) => https.request(url, options, cb);
 let transport = HTTPS_TRANSPORT;
 
 /**
- * TEST-ONLY. Replace the transport for the CURRENT PROCESS. Nothing in the
- * plugin calls this; the only caller is `review-provider.test.mjs`, which
- * imports this module to drive the six failure modes with no socket at all.
+ * TEST-ONLY. Replace the transport for the current process. Only review-provider.test.mjs calls it, to drive the six failure modes with no socket.
  * Pass `null` (or call the returned restore) to put `node:https` back.
  * @param {Transport|null} fn
  * @returns {() => void} restore
@@ -714,17 +400,10 @@ function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
       let data = '';
       let bytes = 0;
       res.on('data', (c) => {
-        // Real BYTES, not string length: no encoding is set on `res`, so a chunk
-        // is a Buffer in production and a string in the fake, and
-        // `Buffer.byteLength` is correct for both where `.length` is correct for
-        // neither. Counted BEFORE the append, so the ceiling bounds what this
-        // process holds rather than what it held one chunk ago.
+        // count real bytes, not string length: no encoding is set on res, so a chunk is a Buffer in production and a string in the fake, and Buffer.byteLength is right for both. Counted before the append so the ceiling bounds what we hold
         bytes += Buffer.byteLength(c);
         if (bytes > MAX_RESPONSE_BYTES) {
-          // `req.destroy(err)` is the same abort the timeout handler below uses:
-          // it forces an 'error' so the promise rejects down the one path the
-          // callers already handle, and it stops the wire rather than reading a
-          // body we have already refused.
+          // the same abort the timeout handler uses: it forces an 'error' so the promise rejects down the path the callers already handle, and it stops the wire
           req.destroy(Object.assign(
             new Error(`response body over ${MAX_RESPONSE_BYTES} bytes (read ${bytes})`),
             { [OVER_RESPONSE]: true },
@@ -733,11 +412,7 @@ function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
         }
         data += c;
       });
-      // `req.destroy(err)` above (and the 'timeout' handler below) aborts an
-      // ACTIVE response, and an aborted IncomingMessage emits its own 'error'.
-      // Without this listener that is an unhandled 'error' event - the ceiling
-      // would crash the process instead of degrading to `over-response`.
-      // `reject` is first-wins, so whichever of req/res errors first decides.
+      // an aborted response emits its own 'error', and without this listener that's unhandled and the ceiling would crash the process instead of degrading to over-response. reject is first-wins
       res.on('error', reject);
       res.on('end', () => {
         let json = null;
@@ -746,8 +421,7 @@ function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
       });
     });
     req.on('error', reject);
-    // 'timeout' fires on inactivity but does not abort; destroy to force an
-    // 'error' (ECONNRESET-style) so the promise rejects down the transport path.
+    // 'timeout' fires on inactivity but doesn't abort, so destroy to force an 'error' down the transport path
     req.on('timeout', () => req.destroy(new Error(`request timed out after ${timeoutMs}ms`)));
     if (payload) req.write(payload);
     req.end();
@@ -755,80 +429,41 @@ function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
 }
 
 /**
- * The ONE mapping from a rejected `request()` to its degradation reason, shared
- * by the two callers so a third read path cannot be left knowing only
- * `transport`. A rejection the response ceiling tagged is `over-response`;
- * everything else is an ordinary socket failure and stays `transport` exactly as
- * before.
- *
- * The two words are deliberately distinct (D-02). Riding `transport` would leave
- * the trace, the caller and workflows/config-review.md unable to tell a provider
- * that flooded us from a socket that died, which are different conditions with
- * different recoveries - one is retryable, the other says this provider is
- * returning something that is not a review.
- *
- * Never returns in practice: `fail` throws the DONE sentinel, exactly as the
- * inline arms this replaced did.
+ * The one mapping from a rejected request() to its degradation reason, shared by both callers so a third read path can't be left knowing only `transport`. A rejection the response ceiling tagged is `over-response`; anything else is a socket failure and stays `transport`.
+ * They're distinct because riding `transport` would leave the trace, the caller and workflows/config-review.md unable to tell a provider that flooded us (not a review) from a socket that died (worth a retry).
+ * Never returns in practice: fail throws DONE.
  * @param {any} meta @param {any} e
  */
 function failRequest(meta, e) {
   const over = !!(e && e[OVER_RESPONSE]);
   const reason = over ? 'over-response' : 'transport';
   traceProvider(meta, reason, e.message);
-  // The hint splits where the two words split: one condition is retryable and
-  // the other says this provider is returning something that is not a review,
-  // and a single sentence covering both would name neither recovery.
+  // the hint splits where the two words split: one condition is retryable, the other says this provider returns something that isn't a review, and one sentence covering both would name neither recovery
   fail(reason, e.message, over
     ? 'this provider sent back more than the seam will read - ask it for less (a smaller artifact, or a lower effort), or name a different model for this reviewer, then re-run'
     : 'check the network reaches this provider and re-run - a transport failure is worth one retry, and one that repeats on a slow model wants review.request_timeout_ms raised');
 }
 
 /**
- * The next step for an `http` refusal, written once because both commands that
- * issue a request reach it. It reads the STATUS back to the user as an action
- * rather than restating the number the envelope already carries: the status is
- * the only part of an HTTP failure that says which of the three things is
- * wrong, and a caller who cannot map 401 to "the key" is exactly who this
- * phase exists for.
+ * The next step for an `http` refusal, written once because both request-issuing commands reach it. It turns the status into an action: the status says which of three things is wrong, and a caller who can't map 401 to "the key" is who this is for.
  */
 const HTTP_HINT = 'the provider refused the request: 401 or 403 means the key, '
   + '404 means the model id, 429 or a 5xx is worth re-running in a minute';
 
 /**
- * The `body` of every `http` failure envelope: a sanitized, capped STRING.
- *
- * A delegate to `redactAndCap` in lib/redact-url.mjs, where the whole design
- * record now lives (sanitize BEFORE the cut, the bounded window and why, the
- * byte cap and the code-point-safe trim). It keeps its name and its export
- * because review-provider.test.mjs reads it off the namespace import and its
- * re-watch recipes depend on the name. The two `fail('http', ...)` sites below
- * are its only callers in this file; git-publish.mjs's push-failed detail
- * shares the same helper (D-13).
+ * The `body` of every `http` failure envelope: a sanitized, capped string.
+ * A delegate to `redactAndCap` in lib/redact-url.mjs, where the design lives. It keeps its name and export because review-provider.test.mjs reads it off the namespace import, and git-publish.mjs shares the same helper for its push-failed detail.
  * @param {unknown} raw @returns {string}
  */
 export function bodyExcerpt(raw) {
   return redactAndCap(raw);
 }
 
-// ---------------------------------------------------------------------------
-// The normalized finding shape every provider adapter must return. Kept in
-// one place so the JSON schema we send and the shape we assert never drift.
-// ---------------------------------------------------------------------------
+// the normalized finding shape every adapter must return, in one place so the schema we send and the shape we assert can't drift
 const SEVERITY = ['blocker', 'high', 'medium', 'low'];
 
-// The bounds the finding shape has always implied and never stated (RVP-02).
-// Sized against what this tree has actually produced rather than picked round:
-// the longest values in the one committed findings file
-// (.planning/phases/1/REVIEW-risk_surface-plan-1.md) are file 39 chars, claim
-// 159 and failure_scenario 376, and the largest `raised` count across the 19
-// adjudication events in .planning/trace.jsonl is 9 - from a PANEL, the union
-// of every reviewer. So each bound sits an order of magnitude above the
-// observed longest, and their product caps what local validation can accept at
-// roughly 0.5 MB, well inside the 4 MiB response ceiling.
-//
-// There is deliberately NO `minItems`: an empty findings array is what a
-// reviewer that found nothing returns, and refusing it would turn a clean
-// review into a `bad-shape` degradation.
+// bounds sized against what this tree has produced and not picked round: the longest observed file is 39 chars, claim 159 and failure_scenario 376, and the largest `raised` count in the adjudication events is 9 (from a panel). Each bound sits an order of magnitude above that, and their product caps what validation accepts near 0.5 MB, well inside the 4 MiB response ceiling
+// no minItems on purpose: an empty findings array is what a reviewer that found nothing returns, and refusing it would turn a clean review into bad-shape
 const MIN_LINE = 1;
 const MAX_FILE_CHARS = 1024;
 const MAX_TEXT_CHARS = 2000;
@@ -859,12 +494,8 @@ export const FINDING_SCHEMA = {
   },
 };
 
-// Consult is a different job from review: not "critique this artifact" but
-// "the primary engineer is stuck - what would you try?" It returns angles to
-// investigate, never a decision. Decision-support only; the main model grounds
-// each angle and the user decides (DESIGN §6).
-// Consult's bounds (D-16): a reply is refused past them, never truncated. Gemini
-// drops `maxItems` through stripForGemini and keeps `maxLength`.
+// consult is a different job: "the engineer is stuck, what would you try?". It returns angles to investigate and never a decision; the main model grounds each one and the user decides
+// a reply past these bounds is refused and never truncated. Gemini drops maxItems through stripForGemini and keeps maxLength
 const MAX_ANGLES = 10;
 const CONSULT_KEYS = ['hypothesis', 'rationale', 'how_to_check'];
 const CONSULT_SCHEMA = {
@@ -889,15 +520,7 @@ const CONSULT_SCHEMA = {
   },
 };
 
-// Deep-copy a JSON schema into Gemini's dialect: every key in GEMINI_STRIPPED
-// removed, at every depth. OpenAI strict mode requires `additionalProperties`;
-// Gemini's OpenAPI-subset responseSchema rejects it. Gemini takes `maxItems`
-// on a small array, but on an array of objects it refuses a large bound with a
-// bare 400 "Request contains an invalid argument": FINDING_SCHEMA's 100 was
-// refused on gemini-3.5-flash-lite and gemini-3.1-pro-preview, and on
-// flash-lite 50 was refused and 20 passed, with or without the string bounds
-// (measured 2026-10-23). The cap still holds for Gemini: validateFindings
-// refuses a reply past MAX_FINDINGS. One schema, two dialects.
+// deep-copy a JSON schema into Gemini's dialect, with every GEMINI_STRIPPED key removed at every depth. OpenAI strict mode requires additionalProperties and Gemini's responseSchema rejects it. Gemini also refuses a large maxItems on an array of objects with a bare 400 "Request contains an invalid argument" (FINDING_SCHEMA's 100 failed on gemini-3.5-flash-lite and gemini-3.1-pro-preview, and on flash-lite 50 failed and 20 passed), so validateFindings enforces the cap instead
 const GEMINI_STRIPPED = new Set(['additionalProperties', 'maxItems']);
 
 /** @param {any} node @returns {any} */
@@ -914,30 +537,10 @@ export function stripForGemini(node) {
   return node;
 }
 
-// ---------------------------------------------------------------------------
-// What the provider says the call cost (CST-04).
-//
-// A DIFFERENT denomination from the host's `roles.tokens`, and it stops at the
-// `provider/request` event: the host figure is a final-window proxy measured by
-// the execution host, this is an input+output count off the wire, and summing
-// the two would denominate `roles.cad-reviewer.tokens` in nothing (D-01).
-//
-// Two keys, always together, and NEITHER of them written when the response
-// carried no usage - never a zero, which is what every event written before
-// this existed would otherwise read as (D-11). `usage` is the NORMALIZED pair a
-// reader sums across a mixed-provider panel; `usage_raw` is the provider's own
-// object, which an auditor joins straight back to the wire response with no
-// translation table (D-02).
-// ---------------------------------------------------------------------------
+// what the provider says the call cost. It's a different denomination from the host's roles.tokens, a final-window proxy the host measures, and summing the two would denominate the reviewer's tokens in nothing, so it stops at the provider/request event
+// usage and usage_raw are written together, and neither when the response carried no usage, never a zero that older events would read as. usage is the normalized pair to sum across a mixed panel; usage_raw is the provider's own object, so an auditor can join it to the wire response untranslated
 
-// The bound on `usage_raw`. The usage object is bytes a PROVIDER chose, and the
-// event carrying it is appended to a record whose whole ceiling is
-// `MAX_TRACE_BYTES` (1 MiB) - so an unbounded copy of it would let one hostile
-// or broken response rotate the run record away on every append and take the
-// history with it. Every shipped provider's usage object is well under 400
-// bytes; over this bound the normalized pair still rides and the raw object is
-// dropped, because the pair is the figure a reader needs and the raw object is
-// the convenience.
+// the bound on usage_raw. A provider chose those bytes and the event lands in a record capped at MAX_TRACE_BYTES (1 MiB), so an unbounded copy would let one hostile or broken response rotate the history away on every append. Over it the normalized pair still rides and the raw object drops
 const MAX_USAGE_RAW_CHARS = 2048;
 
 /**
@@ -954,10 +557,7 @@ function tokenCount(v) {
  */
 
 /**
- * Build the usage an adapter read into the shape the event carries, or
- * `undefined` when there is nothing real to record. `undefined` is what makes
- * the two keys absent rather than zero, so it is returned for every shape that
- * is not a usage object with at least one usable count in it.
+ * Build the usage an adapter read into the shape the event carries, or undefined when there is nothing real to record, which is what makes the two keys absent and not zero.
  * @param {any} usage the provider's own usage object, as returned
  * @param {any} input @param {any} output
  * @returns {ProviderUsage|undefined}
@@ -970,30 +570,9 @@ function usageOf(usage, input, output) {
   let raw;
   try {
     const rendered = JSON.stringify(usage);
-    // TWO gates, and the raw object rides only past both. The size bound above
-    // is the first, and it is checked FIRST so the fence below never runs on
-    // more than `MAX_USAGE_RAW_CHARS` characters.
-    //
-    // The second is the SAME fence the outbound payload crosses - `fence()`,
-    // `redactUrl` composed with `redactCredentials`, never a second copy of
-    // either rule (D-14) - read here for its VERDICT rather than its text. A
-    // usage object is bytes a PROVIDER chose and this one is copied verbatim
-    // into an event that persists, so a hostile or compromised gateway
-    // answering 200 with `{"input_tokens":10,"api_key":"<a live key>"}` would
-    // otherwise land a credential in `.planning/trace.jsonl` for good - and the
-    // outbound fence cannot see it, because it runs on the instruction and the
-    // artifact, which are what LEAVES the machine, not on what comes back.
-    //
-    // Dropped WHOLE rather than kept as the fenced text, for two reasons. The
-    // credential rule removes the NAME with its value, so a fenced usage object
-    // is no longer JSON (`{"a":1,<redacted>}`) and would have to be re-parsed to
-    // ride as an object at all. And a usage object is a small fixed set of
-    // counts - every shipped provider's is numbers and nested numbers - so a
-    // credential-shaped span inside one is not usage, and what an auditor would
-    // be joining back to the wire is a response no auditor should trust. Same
-    // arm the size bound already takes: the normalized pair still rides, and
-    // that pair is numbers alone (`tokenCount` refuses every non-number), so
-    // nothing it carries can be a credential.
+    // two gates, and the raw object rides only past both. The size bound comes first so the fence never runs on more than MAX_USAGE_RAW_CHARS characters
+    // the second is the same fence the outbound payload crosses, read for its verdict: a hostile gateway answering 200 with {"input_tokens":10,"api_key":"<a live key>"} would otherwise land a credential in .planning/trace.jsonl for good, and the outbound fence can't see it because it only runs on what leaves
+    // dropped whole and not kept fenced: the credential rule removes the name with its value so the fenced text is no longer JSON, and a credential-shaped span in a usage object means it isn't usage and can't be trusted. The normalized pair is numbers alone, so it still rides
     if (typeof rendered === 'string' && rendered.length <= MAX_USAGE_RAW_CHARS
       && fence(rendered).redactions === 0) raw = usage;
   } catch { /* unserializable (a cycle, a BigInt): the normalized pair still rides */ }
@@ -1006,20 +585,13 @@ function usageOf(usage, input, output) {
   };
 }
 
-// ===========================================================================
-// Provider adapters. The ONLY provider-specific bytes live here: endpoint,
-// auth, request builders, and response extractors. Everything above is shared.
-// Wire details are pinned in references/provider-api.md (verified against the
-// live docs); update both together if a provider changes its API.
-// ===========================================================================
+// provider adapters: the only provider-specific bytes live here (endpoint, auth, request builders, response extractors). Wire details are pinned in references/provider-api.md, so update both together if a provider changes its API
 export const ADAPTERS = {
   openai: {
     // OpenAI Responses API. reasoning.effort is a first-class per-call param.
     base: 'https://api.openai.com',
     authHeaders: (key) => ({ authorization: `Bearer ${key}` }),
-    // One structured-output call, shared by review and consult - only the
-    // schema and prompt differ. Wire output for review is byte-identical to
-    // before this was generalized.
+    // one structured-output call shared by review and consult, only the schema and prompt differ
     structuredRequest({ model, effort, system, user, schema, schemaName }) {
       const body = {
         model,
@@ -1034,8 +606,7 @@ export const ADAPTERS = {
       if (effort) body.reasoning = { effort };
       return { path: '/v1/responses', method: 'POST', body };
     },
-    // Responses API returns output items; the text lives in output_text or in
-    // the assistant message content. Handle both to be robust across versions.
+    // the text is in output_text or in the assistant message content depending on version, so handle both
     extractText(json) {
       let text = json.output_text;
       if (!text && Array.isArray(json.output)) {
@@ -1049,11 +620,7 @@ export const ADAPTERS = {
       }
       return text;
     },
-    // Responses API `usage` (verified against the live openapi spec 2026-09-01):
-    // `{input_tokens, output_tokens, total_tokens, input_tokens_details:
-    // {cached_tokens, cache_write_tokens}, output_tokens_details:
-    // {reasoning_tokens}}`. `output_tokens` already INCLUDES the reasoning
-    // tokens - the details object is a breakdown of it, not an addition to it.
+    // Responses API usage: {input_tokens, output_tokens, total_tokens, input_tokens_details, output_tokens_details}. output_tokens already includes the reasoning tokens, the details object is a breakdown and not an addition
     extractUsage(json) {
       const u = json?.usage;
       return usageOf(u, u?.input_tokens, u?.output_tokens);
@@ -1069,12 +636,7 @@ export const ADAPTERS = {
     structuredRequest({ model, effort, system, user, schema }) {
       const generationConfig = {
         responseMimeType: 'application/json',
-        // Gemini responseSchema is an OpenAPI-3.0 subset that rejects the
-        // `additionalProperties` keyword (which OpenAI strict mode requires)
-        // and the findings array's `maxItems`, so strip both for Gemini only
-        // (stripForGemini says why). thinkingLevel is the Gemini 3.x effort
-        // dial (minimal|low|medium|high); omitted when no effort is set, and
-        // the shared enum's `xhigh` goes as `high`, the dial's top.
+        // responseSchema is an OpenAPI-3.0 subset that rejects additionalProperties and the findings array's maxItems, so both are stripped for Gemini only. thinkingLevel is the Gemini 3.x effort dial (minimal|low|medium|high), omitted when no effort is set, and xhigh goes as high, the dial's top
         responseSchema: stripForGemini(schema),
       };
       if (effort) generationConfig.thinkingConfig = { thinkingLevel: effort === 'xhigh' ? 'high' : effort };
@@ -1083,9 +645,7 @@ export const ADAPTERS = {
         contents: [{ role: 'user', parts: [{ text: user }] }],
         generationConfig,
       };
-      // The model segment only is percent-encoded: the id is operator-supplied
-      // and `/`, `?` and `#` would otherwise redirect the request inside the
-      // host. The `:generateContent` suffix stays raw, it is the method (D-19).
+      // only the model segment is percent-encoded: the id is operator-supplied and /, ? or # would redirect the request inside the host. The :generateContent suffix stays raw, it's the method
       return { path: `/v1beta/models/${encodeURIComponent(model)}:generateContent`, method: 'POST', body };
     },
     extractText(json) {
@@ -1095,15 +655,7 @@ export const ADAPTERS = {
       }
       return undefined;
     },
-    // Gemini reports usage under `usageMetadata`, not `usage` (verified against
-    // the live v1beta discovery document 2026-09-01): `{promptTokenCount,
-    // candidatesTokenCount, thoughtsTokenCount, totalTokenCount,
-    // cachedContentTokenCount, ...Details[]}`. `candidatesTokenCount` EXCLUDES
-    // thinking tokens where OpenAI's `output_tokens` and DeepSeek's
-    // `completion_tokens` both include them, so the normalized output adds
-    // `thoughtsTokenCount` back - without it a thinking reviewer's output reads
-    // short against the same work on either other provider, which is exactly
-    // the comparison the normalized pair exists to serve.
+    // Gemini reports usage under usageMetadata, and candidatesTokenCount excludes thinking tokens where OpenAI's output_tokens and DeepSeek's completion_tokens include them. So output adds thoughtsTokenCount back, or a thinking reviewer reads short against the same work on another provider, which is the comparison the normalized pair exists for
     extractUsage(json) {
       const u = json?.usageMetadata;
       const answer = tokenCount(u?.candidatesTokenCount);
@@ -1123,22 +675,12 @@ export const ADAPTERS = {
   },
 
   deepseek: {
-    // DeepSeek Chat Completions API - OpenAI-compatible surface, but the
-    // Chat Completions shape (choices[].message), NOT the Responses API the
-    // openai adapter uses. Its only structured mode is
-    // response_format:{type:'json_object'} (no server-side json_schema), so
-    // the schema is injected into the system prompt and the shape is asserted
-    // on return by validateFindings/validateConsult - the guard every adapter
-    // already passes through. json_object mode also requires the word "json"
-    // in the prompt, which the injected schema instruction supplies. Effort
-    // maps to the first-class `reasoning_effort` param (honored by thinking
-    // models; ignored by non-thinking ones).
+    // DeepSeek Chat Completions: OpenAI-compatible but the choices[].message shape, not the Responses API the openai adapter uses. Its only structured mode is response_format json_object with no server-side schema, so the schema is injected into the system prompt and validateFindings/validateConsult assert the shape on return
+    // json_object mode also needs the word "json" in the prompt, which the injected schema instruction supplies. Effort maps to the first-class reasoning_effort param (honored by thinking models, ignored by others)
     base: 'https://api.deepseek.com',
     authHeaders: (key) => ({ authorization: `Bearer ${key}` }),
     structuredRequest({ model, effort, system, user, schema }) {
-      // Inject the BARE schema (the object the model must produce), not a
-      // {name, schema} wrapper - a wrapper invites the model to echo
-      // {name, schema} back instead of the required top-level shape.
+      // inject the bare schema, not a {name, schema} wrapper, which invites the model to echo the wrapper back instead of the required shape
       const sys = `${system}\n\nRespond with ONLY a single JSON object that` +
         ` conforms to this JSON schema - the object itself is the result, not` +
         ` the schema; no prose, no markdown fences:\n` + JSON.stringify(schema);
@@ -1150,10 +692,7 @@ export const ADAPTERS = {
         ],
         response_format: { type: 'json_object' },
       };
-      // DeepSeek's reasoning_effort accepts low|medium|high only; the shared
-      // config effort enum also allows `minimal` and `xhigh`, which DeepSeek
-      // 400s on - so clamp each to the nearest it takes rather than drop the
-      // reviewer on a 400.
+      // reasoning_effort takes low|medium|high only, and the shared enum also allows minimal and xhigh, which DeepSeek 400s on, so clamp to the nearest it takes and don't drop the reviewer
       const eff = effort === 'minimal' ? 'low' : effort === 'xhigh' ? 'high' : effort;
       if (eff) body.reasoning_effort = eff;
       return { path: '/chat/completions', method: 'POST', body };
@@ -1162,11 +701,7 @@ export const ADAPTERS = {
       const content = json?.choices?.[0]?.message?.content;
       return typeof content === 'string' ? content : undefined;
     },
-    // Chat Completions `usage` (verified against the live DeepSeek API docs
-    // 2026-09-01): `{prompt_tokens, completion_tokens, total_tokens,
-    // prompt_cache_hit_tokens, prompt_cache_miss_tokens,
-    // completion_tokens_details:{reasoning_tokens}}`. Like OpenAI's,
-    // `completion_tokens` already includes the reasoning tokens.
+    // Chat Completions usage: {prompt_tokens, completion_tokens, total_tokens, prompt_cache_hit_tokens, prompt_cache_miss_tokens, completion_tokens_details}. Like OpenAI's, completion_tokens already includes the reasoning tokens
     extractUsage(json) {
       const u = json?.usage;
       return usageOf(u, u?.prompt_tokens, u?.completion_tokens);
@@ -1176,18 +711,11 @@ export const ADAPTERS = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Assert the model returned our exact shape. Enforced output should already
-// match; we still guard so a schema-ignoring model degrades cleanly.
-// ---------------------------------------------------------------------------
+// assert the model returned our exact shape. Enforced output should already match, but a schema-ignoring model has to degrade cleanly
 
 /**
- * String length in Unicode CODE POINTS, which is what JSON Schema's
- * `minLength`/`maxLength` count. JavaScript's `.length` counts UTF-16 code
- * units, so one astral character (an emoji, most CJK extension blocks) reads
- * as 2 and a `maxLength` check written on it refuses a string the schema
- * accepts. `lib/schema-eval.mjs` counts the same way for the same reason, and
- * the agreement test pins both against a non-BMP fixture.
+ * String length in Unicode code points, which is what JSON Schema's `minLength`/`maxLength` count. JavaScript's `.length` counts 16-bit code units, so an astral character (an emoji, most CJK extension blocks) reads as 2 and a check written on it refuses a string the schema accepts.
+ * lib/schema-eval.mjs counts the same way and the agreement test pins both against a non-BMP fixture.
  * @param {string} s @returns {number}
  */
 function codePoints(s) {
@@ -1197,20 +725,8 @@ function codePoints(s) {
 }
 
 /**
- * Mirror of FINDING_SCHEMA's constraints, one named diagnostic each. Every
- * refusal here is a refusal the canonical schema also makes - `line` below 1,
- * an empty or over-long `file`/`claim`/`failure_scenario`, a findings array
- * past `maxItems`, and an unknown key at either level, since
- * `additionalProperties:false` sits at both. The two sides are checked against
- * each other by test (the agreement table in review-provider.test.mjs runs
- * every fixture through this function AND through a keyword-limited evaluator
- * against the live schema), so the pairing is enforced rather than remembered:
- * a keyword added to FINDING_SCHEMA without a mirror here reddens that test.
- *
- * The diagnostic is never a shared "invalid finding" string, because it is what
- * reaches the user as `{ok:false, reason:"bad-shape", detail}` and a
- * degradation the user cannot act on is the silent drop this guard exists to
- * end. Pure and total: returns null or a string, never throws.
+ * Mirror of FINDING_SCHEMA's constraints, one named diagnostic each: every refusal here is one the canonical schema also makes. The agreement table in review-provider.test.mjs runs every fixture through this and through a keyword-limited evaluator against the live schema, so a keyword added to FINDING_SCHEMA without a mirror here reddens that test.
+ * The diagnostic is never a shared "invalid finding" string, because it reaches the user as bad-shape detail and a degradation they can't act on is the silent drop this guard exists to end. Pure and total: returns null or a string, never throws.
  *
  * @param {any} obj @returns {string|null} null when valid, else the defect
  */
@@ -1258,9 +774,6 @@ export function validateConsult(obj) {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Commands.
-// ---------------------------------------------------------------------------
 async function readPayload(opts) {
   const src = opts.payload;
   try {
@@ -1280,8 +793,7 @@ function resolveProvider(opts, cmdName) {
     `pass --provider as one of: ${Object.keys(ADAPTERS).join(', ')}`);
   if (!opts.model) fail('bad-args', `${cmdName} needs --model`,
     'pass --model with an id this provider serves - `review-provider.mjs detect-models --provider <name>` lists them');
-  // Before the key is read and before any request: the id lands in a request
-  // path and a command line, so a malformed one is a malformed CALL (D-17).
+  // before the key is read and before any request: the id lands in a request path and a command line, so a malformed one is a malformed call
   if (!isModelId(opts.model)) fail('bad-args',
     `${cmdName} --model ${JSON.stringify(opts.model)} is not a model id`,
     'pass --model with an id this provider serves - `review-provider.mjs detect-models --provider <name>` lists them');
@@ -1291,15 +803,8 @@ function resolveProvider(opts, cmdName) {
   return { provider, adapter, key, warnings };
 }
 
-// Run a structured-output request through the transport, extract, and parse.
-// Returns the parsed JSON object or degrades via fail(). Schema validation is
-// the caller's job (review and consult assert different shapes).
-//
-// `meta` is the provider trace event's subject, stamped with `started` by the
-// caller so ONE event covers the whole call. Each degrading exit records itself
-// here, immediately BEFORE the fail() that unwinds the command; the success path
-// records nothing, leaving the final outcome (ok, or a bad-shape the caller
-// detects) to the caller. Exactly one event per call, either way.
+// run a structured-output request through the transport, extract and parse; returns the parsed object or degrades via fail(). Schema validation is the caller's, since review and consult assert different shapes
+// meta is the trace event's subject, stamped with started by the caller so one event covers the whole call. Each degrading exit records itself right before the fail() that unwinds, and success records nothing and leaves the final outcome to the caller
 async function callStructured(adapter, key, reqSpec, meta) {
   const { path: p, method, body } = reqSpec;
   let res;
@@ -1313,16 +818,7 @@ async function callStructured(adapter, key, reqSpec, meta) {
     fail('http', { status: res.status, body: bodyExcerpt(res.raw) },
       HTTP_HINT);
   }
-  // BEFORE the three degrading exits below, not after them: a call that burned
-  // its budget and came back unusable is exactly the one whose cost must still
-  // reach the record (D-04), and `no-output`, `bad-json` and the caller's
-  // `bad-shape` all record through this same `meta`. Read off the RAW response,
-  // which this frame is the only one holding - `extractText` consumes it and
-  // the frame then discards it, and `traceProvider` is handed `meta` alone and
-  // never sees a response at all (D-03). Carried on `meta` the way
-  // `redactions` already is, so the one event per call keeps being written by
-  // whichever site records first. `http` and every pre-request refusal reach no
-  // response and so set nothing here.
+  // before the three degrading exits, not after: a call that burned its budget and came back unusable is the one whose cost must still reach the record, and no-output, bad-json and the caller's bad-shape all record through this meta. It reads the raw response because this frame is the only one holding it, and carries it on meta the way redactions is. http and pre-request refusals reach no response and set nothing
   meta.usage = adapter.extractUsage(res.json);
   const text = adapter.extractText(res.json);
   if (typeof text !== 'string') {
@@ -1340,10 +836,7 @@ async function callStructured(adapter, key, reqSpec, meta) {
 }
 
 async function cmdReview(opts) {
-  // FIRST act, before anything can refuse: `resolveProvider` and the payload
-  // checks below both unwind through fail(), which needs the subject to name.
-  // The provider is `opts.provider` and not the resolved one for the same
-  // reason - on the `bad-provider` path there is no resolved one.
+  // first act, before anything can refuse: resolveProvider and the payload checks both unwind through fail(), which needs the subject to name. It's opts.provider and not the resolved one because bad-provider has no resolved one
   const meta = beginProviderCall('review',
     { provider: opts.provider, model: opts.model, effort: opts.effort,
       trigger: opts.trigger });
@@ -1353,10 +846,7 @@ async function cmdReview(opts) {
     fail('bad-payload', 'payload needs {instruction, artifact}, both strings',
       'fix the file --payload names so it holds both keys as strings, then re-run - a caller that hand-built this file is the usual cause');
   }
-  // Fenced AFTER the string gate above and BEFORE the cap: the cap has to
-  // measure what is actually sent, and the request below is built from the
-  // fenced strings only - a second reference to `payload.artifact` past this
-  // point would route the raw bytes around the fence.
+  // fenced after the string gate and before the cap, because the cap has to measure what's sent. The request is built from the fenced strings only: a second reference to payload.artifact past here would route raw bytes around the fence
   const instruction = fence(payload.instruction);
   const artifact = fence(payload.artifact);
   meta.redactions = instruction.redactions + artifact.redactions;
@@ -1372,13 +862,9 @@ async function cmdReview(opts) {
     fail('bad-shape', bad,
       'the provider parsed as JSON but not as a findings list - re-run once, and name a different model for this reviewer if it repeats');
   }
-  // An EMPTY findings set is `ok` and carries no `degraded` flag (D-22):
-  // a reviewer that legitimately found nothing is not a drop-out.
+  // an empty findings set is ok with no degraded flag: a reviewer that found nothing isn't a drop-out
   traceProvider(meta, 'ok');
-  // `redactions` rides the envelope on the same non-zero-only rule the trace
-  // event uses, so the caller relaying this can say the reviewer read a fenced
-  // artifact. references/review-triggers.md reads `{ok:false}` reasons; this is
-  // an additive key on the `ok` side and no existing arm moves without it.
+  // redactions rides the envelope on the same non-zero-only rule as the trace event, so the caller can say the reviewer read a fenced artifact. It's an additive key on the ok side and no existing arm moves
   ok({ provider, model: opts.model, findings: parsed.findings,
     ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}),
     ...(warnings.length ? { warnings } : {}) });
@@ -1421,10 +907,7 @@ async function cmdConsult(opts) {
 
 async function cmdDetect(opts) {
   const provider = opts.provider;
-  // `detect-models` carries no model and no effort at all, so its `tier` is
-  // null by construction rather than by a failed lookup - the two fields stay
-  // pinned to null here rather than reading `opts`, which would start recording
-  // a `--model` this command never sends.
+  // detect-models carries no model or effort, so tier is null by construction; they stay pinned to null here and don't read opts, which would start recording a --model this command never sends
   const meta = beginProviderCall('detect-models', { provider, model: null, effort: null });
   const adapter = ADAPTERS[provider];
   if (!adapter) fail('bad-provider', `unknown provider: ${provider}`,
@@ -1453,12 +936,8 @@ async function cmdDetect(opts) {
   ok(warnings.length ? { ...env, warnings } : env);
 }
 
-// Load references/model-hints.json, distinguishing a legitimately-absent
-// file (silent, per D-01) from one that exists but fails to parse (surfaced
-// via `warning`, naming the file). Either way `hints` degrades to {} so the
-// caller still classifies everything unknown, nothing excluded - a broken
-// hints file is a visibility problem, never a fatal one.
-// hintsFile is injectable for tests; production always uses the shipped table.
+// load references/model-hints.json: a missing file is silent and one that exists but fails to parse is surfaced via warning, naming the file. Either way hints degrades to {} so everything classifies unknown and nothing is excluded, because a broken hints file is a visibility problem and never fatal
+// hintsFile is injectable for tests; production uses the shipped table
 /** @param {string} [hintsFile] @returns {{hints: any, warning: string|null}} */
 export function readModelHints(hintsFile) {
   const file = hintsFile || path.join(HERE, '..', 'references', 'model-hints.json');
@@ -1470,13 +949,7 @@ export function readModelHints(hintsFile) {
   }
 }
 
-// Tag each detected id with a tier hint (references/model-hints.json). First
-// drop non-text modalities (embeddings, audio, image, ...) that can't do text
-// review, so the candidate list is review-usable. Then: known id ->
-// {tier, high_effort}; unknown text id -> tier:null so cad-config asks the user
-// to place it. Missing/broken hint file degrades to all-unknown, never errors
-// (fail-safe preserved - the exclude filter and candidate array are unaffected;
-// only detectEnvelope's warnings[] differs for a malformed vs. absent file).
+// tag each detected id with a tier hint. Non-text modalities (embeddings, audio, image) are dropped first since they can't review text. A known id gets {tier, high_effort}, an unknown text id gets tier:null so cad-config asks the user to place it, and a missing or broken hint file degrades to all-unknown and never errors
 /** @param {string} provider @param {string[]} ids @param {string} [hintsFile] */
 export function classify(provider, ids, hintsFile) {
   const { hints } = readModelHints(hintsFile);
@@ -1494,16 +967,11 @@ export function classify(provider, ids, hintsFile) {
     });
 }
 
-// The exact envelope shape cmdDetect returns, factored out pure so the
-// warnings[] contract (AC3) is provable hermetically - detect-models itself
-// needs a live key + network, which the suite forbids.
+// the exact envelope cmdDetect returns, pure so the warnings[] contract is provable without a live key and network, which the suite forbids
 /** @param {string} provider @param {string[]} ids @param {string} [hintsFile] */
 export function detectEnvelope(provider, ids, hintsFile) {
   const { warning } = readModelHints(hintsFile);
-  // A non-conforming id is dropped before classify and NAMED: the config-review
-  // workflow writes surviving ids into a single-quoted `config.mjs set` line,
-  // where a quote or a space must never arrive, and a wrongly refused id has to
-  // be visible rather than silent (D-17).
+  // a non-conforming id is dropped before classify and named: the config-review workflow writes surviving ids into a single-quoted config.mjs set line, where a quote or space must never arrive, and a wrongly refused id has to be visible
   const kept = ids.filter(isModelId);
   const warnings = ids.filter((id) => !isModelId(id))
     .map((id) => `dropped ${JSON.stringify(id)}: not a model id`);
@@ -1512,21 +980,13 @@ export function detectEnvelope(provider, ids, hintsFile) {
   return warnings.length ? { provider, models, warnings } : { provider, models };
 }
 
-// ---------------------------------------------------------------------------
-// Entry.
-// ---------------------------------------------------------------------------
 /** @param {string[]} [argv] */
 async function main(argv) {
-  // Cleared per invocation. Production runs one command per process, but the
-  // in-process test harness runs several, and a bracket left over from the
-  // previous one would let `fail('bad-command')` record an event against a
-  // subject this call never had.
+  // cleared per invocation: production runs one command per process but the in-process test harness runs several, and a leftover bracket would let fail('bad-command') record an event against a subject this call never had
   activeMeta = null;
   traceRecorded = false;
   const { cmd, opts, badArg } = parseArgs(argv || process.argv.slice(2));
-  // The argument-shape refusal comes first: a flag present with nothing usable
-  // after it is a malformed CALL, and answering it as a domain problem
-  // (`bad-provider: unknown provider: undefined`) is what this closes.
+  // the argument-shape refusal comes first: a flag present with nothing usable after it is a malformed call, and answering it as bad-provider "unknown provider: undefined" is what this closes
   if (badArg) fail('bad-args', badArg,
     'the detail names the flag and the form it takes - supply it and re-run the command');
   else if (cmd === 'review') await cmdReview(opts);
@@ -1547,22 +1007,14 @@ function unwind(e) {
 }
 
 /**
- * TEST-ONLY. Run one command IN THIS PROCESS through the same entry unwind the
- * CLI uses, so a test that replaced the transport (`__setTransportForTests`)
- * asserts on the one JSON line and the exit code a caller actually sees. Nothing
- * in the plugin calls this - the shipped entry is the `isRunAsScript()` arm below.
+ * TEST-ONLY. Run one command in this process through the same unwind the CLI uses, so a test that replaced the transport asserts on the one JSON line and exit code a caller sees. The shipped entry is the isRunAsScript arm below.
  * @param {string[]} argv
  * @returns {Promise<void>}
  */
 export function __runCommandForTests(argv) {
   return main(argv).catch(unwind);
 }
-// Run only when executed as a script - importing the module (tests) exports
-// the pure helpers without side effects. Compares realpaths (not just
-// path.resolve, which normalizes but does not follow symlinks) so a
-// symlinked plugin install still detects itself as the entry script; a
-// realpathSync failure on either side (e.g. ENOENT on an odd argv[1])
-// degrades to the normalized comparison rather than throwing.
+// run only when executed as a script, so importing the module (tests) exports the pure helpers with no side effects. Realpaths are compared because path.resolve doesn't follow symlinks and a symlinked plugin install has to still detect itself; a realpath failure degrades to the normalized comparison
 function canonicalize(p) {
   try {
     return fs.realpathSync(p);
