@@ -1,111 +1,34 @@
 // @ts-check
-// text-transport.mjs - the register of every prose site that hands a seam a
-// free-text value, and the pure rule self-verify runs over it (check 19).
-//
-// THE RULE ITSELF IS NOT HERE. `references/conventions.md` states it once - a
-// value derived from agent output or repository content reaches the seam as a
-// PATH, because a double-quoted shell word carrying `$(...)` or a backtick
-// executes before Node starts and a path cannot - and every converted site
-// cites that file. `lib/text-flag-file.mjs` carries the transport out at the
-// seam. This module carries the ENUMERATION and the check that holds prose to
-// it, the same split `lib/deferred-reads.mjs` uses: hand-maintained register,
-// mechanical enforcement.
-//
-// WHY A HAND-MAINTAINED REGISTER. Whether a value is caller-derived is not
-// derivable from the prose: `--next "/cad-execute {N}"` and
-// `--next "<resume pointer>"` are the same shape, and only one of them can
-// carry a `$(...)` the workflow never authored. Something has to state the
-// judgement, and a judgement stated in a markdown table is a judgement no check
-// reads - which is how the enumeration and the enforcement drift apart. So the
-// rows are here, beside the rule that consumes them, and a site the register
-// does not classify is a REPORTED problem rather than a silent pass.
-//
-// THE KEY IS `{surface, flag, value}`, NOT A LINE NUMBER. Line numbers rot on
-// the first paragraph anyone inserts, and the classification is a property of
-// the VALUE a site passes, not of where it sits. Keying on the value is also
-// what keeps two uses of one flag in one surface apart:
-// `cadence-core/workflows/progress.md` carries a composed `--next` (the routed
-// action, which on the paused row is the user's own pause note) and a literal
-// `--next "/cad-phase add"` five lines below it, and a per-flag key would have
-// to call both the same thing. Two occurrences of an IDENTICAL value in one
-// surface (`workflows/plan.md` prescribes the same close detail at two steps)
-// are one row: they are one prescription written twice, and a second row would
-// be a duplicate no reader could tell from a mistake.
-//
-// A ROW OUTLIVES ITS OCCURRENCE. Once a site is converted, its `--detail "..."`
-// is gone from the prose and the row it left behind matches nothing - and it
-// STAYS, because the row is the record of the classification and it is what
-// makes the inline form coming back a reported problem instead of an
-// unclassified one. Deleting a converted row does not make the tree cleaner; it
-// makes the next reintroduction read as site seventeen.
-//
-// WHY NOT check 2's INVOCATION PARSER. Check 2 joins a `<script>.mjs <word>`
-// prefix and skips any line without one (`self-verify.mjs`, `if (!contract)
-// continue`). Of the qualifying flag mentions in this tree, thirty sit in prose
-// fragments with no such prefix - "adds `--detail \"<what failed>\"` to that
-// same line" is a sentence, not an invocation - so a check built on that parser
-// would see barely half of the sites and call the tree clean (D-09).
-//
-// THE DISCRIMINATOR IS THE IMMEDIATELY FOLLOWING QUOTED VALUE (D-10). Prose
-// that NAMES a flag - "OMIT `--detail` for a `PLAN COMPLETE` return", "the
-// RAISED count travels on the `--raised` FLAG and never inside `--detail`" -
-// prescribes no value and needs no row, and that is not a courtesy: a rule that
-// demanded a row for every mention would make the register grow with every
-// sentence that mentions a flag in order to FORBID it. So a flag followed by a
-// backtick, a word, or a sentence is silent; a flag followed by a quote is a
-// prescription and must be classified.
-//
-// AND WHAT IT CANNOT DELIMIT IS REPORTED, NEVER SKIPPED (D-11). An unquoted
-// placeholder (`--label <label>`), a value that opens a quote and closes it on
-// the next line (`workflows/verify.md`'s two-line `--next`), a flag ending its
-// line: the scan cannot read those values, and a scan that quietly passed over
-// what it cannot read would be exactly as reassuring as one that read
-// everything. A register row for that surface and flag SETTLES such an
-// occurrence - the register is the authority, the scan is only how it is
-// applied - and when no row exists it is its own reported kind.
-//
-// `git tag -m` IS WATCHED TOO, on a `git tag` line only. It is the one site in
-// the tree that provably puts repository content - a milestone name read out of
-// PROJECT.md - into a double-quoted shell word (D-03), and it takes `-F <path>`
-// for the same reason every seam flag here takes `--<field>-file <path>`. It
-// is scoped to `git tag` because `-m` alone is `git commit -m`, which prose
-// names constantly and which carries a message the workflow authors.
-//
-// Pure rule: no disk, no emit, no exit, no Date, no randomness. The caller
-// (self-verify.mjs) owns the walk and the envelope.
+// text-transport.mjs - every prose site that hands a seam free text, and self-verify's check 19 over them
+// the rule is in references/conventions.md: agent or repo text reaches a seam as a path, since "$(...)" runs first
+// hand-maintained: caller-derived isn't visible in the prose, "/cad-execute {N}" and "<resume pointer>" read alike
+// an unclassified site is reported, never passed silently; keyed on surface, flag and value because line numbers rot
+// one row per identical value in a surface, and a row outlives its occurrence, so a returning inline form isn't "new"
+// check 2's invocation parser can't do this: about thirty of the mentions have no script prefix
+// only a quoted value right after the flag prescribes anything; a flag named to forbid it needs no row
+// what the scan can't delimit (unquoted placeholder, quote closing next line) is reported unless a row settles it
+// git tag -m is watched on a git tag line only: it carries a milestone name from PROJECT.md, and bare -m is git commit
+// pure: no disk or emit; the caller owns the walk and the envelope
 'use strict';
 
 /** The problem codes this rule files. */
 export const CODES = Object.freeze({
-  // The register says this value is caller-derived and the site still
-  // prescribes the inline form.
+  // the register says this value is caller-derived and the site still prescribes it inline
   inline: 'text-transport-inline',
-  // Site seventeen: a prescribed value no register row classifies at all.
+  // a prescribed value no register row classifies at all
   unregistered: 'text-transport-unregistered',
-  // The scan can classify the occurrence as neither safe nor unsafe, and no row
-  // for that surface and flag settles it.
+  // the scan can't classify the occurrence, and no row for that surface and flag settles it
   unclear: 'text-transport-unclear',
 });
 
 /**
- * The seam flags whose value is free text - every one has a `--<field>-file`
- * sibling (or, for `uat record`'s five, one shared `--fields-file`). Flags the
- * seam validates against a closed enum or an integer grammar are deliberately
- * absent: `--phase`, `--status`, `--result`, `--severity`, `--origin`,
- * `--family`, `--event` and `--tokens` carry values that cannot be arbitrary
- * repository prose, so no transport can protect them from anything (D-01).
- *
- * PATH-CSV FLAGS ARE EXCLUDED BY CONSTRUCTION, and this is the record of it.
- * `--bracket-read` (eight prose sites) and `--payload` (one) take a path or a
- * comma-separated path list the WORKFLOW builds - a plan file it named, a
- * scratch file it just wrote - never a value lifted from agent output or
- * repository content. They are already the file transport, so there is nothing
- * for a `-file` sibling to move them onto, and watching them would report every
- * site as unsafe against a rule none of them can break. `--read` is watched and
- * NOT by contradiction: its inline form takes the read-set as prose the caller
- * composed, which is why the register carries out-of-scope rows for the
- * workflow-authored ones rather than omitting them. The test is the VALUE's
- * provenance, never the flag's shape.
+ * The seam flags whose value is free text, each with a `--<field>-file`
+ * sibling (or the one shared `--fields-file` for `uat record`'s five).
+ * Flags validated against a closed enum or an integer (--phase, --status, --result, --severity, --origin,
+ * --family, --event, --tokens) can't carry repo prose, so a transport protects nothing there.
+ * Path-list flags are out by construction: --bracket-read and --payload take paths the workflow builds, which
+ * already are the file transport. --read stays watched, its inline form takes a read-set the caller composed.
+ * The test is where the value comes from, never the flag's shape.
  */
 export const TEXT_FLAGS = Object.freeze([
   'detail', 'read', 'text', 'label', 'next',
@@ -113,23 +36,17 @@ export const TEXT_FLAGS = Object.freeze([
 ]);
 
 /**
- * The register: one row per examined site.
- *
- * `surface` is the root-relative POSIX path, `flag` the flag as written
- * (`--detail`, or `-m` for the git-tag site), `value` the text the site passes
- * VERBATIM between its quotes, `derived` the classification, and `reason` the
- * required justification on every row that is not derived.
- *
- * `derived: true` does NOT mean the site is broken - it means the value is the
- * caller's, so the site must hand the seam a path. Rows converted by this phase
- * keep `derived: true` and simply no longer match any inline occurrence.
+ * The register: one row per examined site. surface is a root-relative POSIX path, flag the flag as
+ * written (-m for the git tag site), value the text the site passes between its quotes verbatim,
+ * derived the classification, and reason the justification every non-derived row needs.
+ * derived: true doesn't mean the site is broken, only that the value is the caller's and must reach
+ * the seam as a path. Converted rows keep it and just stop matching an inline occurrence.
  * @type {ReadonlyArray<{surface: string, flag: string, value: string,
  *   derived: boolean, reason?: string}>}
  */
 export const TEXT_TRANSPORT = Object.freeze([
   // --- lifecycle close details: what the dispatch said when it failed --------
-  // Every one of these is a line the failed SUBAGENT produced, quoted into the
-  // orchestrator's next shell command. That is agent output by definition.
+  // each is a line the failed subagent produced, quoted into the orchestrator's next shell command
   Object.freeze({
     surface: 'cadence-core/workflows/verify-deep.md',
     flag: '--detail', value: '<what failed>', derived: true,
@@ -151,8 +68,7 @@ export const TEXT_TRANSPORT = Object.freeze([
     flag: '--detail', value: '<what failed>', derived: true,
   }),
   Object.freeze({
-    // ONE row, TWO occurrences (`handle_return` and the checker's close): the
-    // same prescription written at two steps, not two prescriptions.
+    // one row, two occurrences (handle_return and the checker's close): the same prescription written twice
     surface: 'cadence-core/workflows/plan.md',
     flag: '--detail', value: '<empty or unmarked return>', derived: true,
   }),
@@ -169,10 +85,8 @@ export const TEXT_TRANSPORT = Object.freeze([
     flag: '--detail', value: '<one line>', derived: true,
   }),
   Object.freeze({
-    // The composite the phase exists for: a trigger name and a count, joined to
-    // a voice list the MODEL composes from which reviewers actually ran. The
-    // receipt cold-split out of `review-triggers.md` step 5 in LOD-06; the row
-    // moved with the prescription rather than being re-derived.
+    // a trigger name and a count joined to a voice list the model composes from which reviewers ran
+    // cold-split out of review-triggers.md, and the row moved with its prescription
     surface: 'cadence-core/references/review-record.md',
     flag: '--detail',
     value: '<trigger>: <n> survivors; voices <the reviewers that actually ran>',
@@ -244,8 +158,7 @@ export const TEXT_TRANSPORT = Object.freeze([
     flag: '--next', value: '<resume pointer>', derived: true,
   }),
   Object.freeze({
-    // The route table's first row resumes "at the cursor's next action" - which
-    // is the pause note above, the user's own sentence, copied forward.
+    // the route table's first row resumes at the cursor's next action, which is the user's pause note copied forward
     surface: 'cadence-core/workflows/progress.md',
     flag: '--next', value: '<routed action from below>', derived: true,
   }),
@@ -295,8 +208,7 @@ export const TEXT_TRANSPORT = Object.freeze([
     reason: 'the slash command that re-runs the phase from the status this same call sets - /cad-plan <N> after a full revert, /cad-execute <N> after a partial one - so it is the same workflow-authored routing pointer as the seven literal sites, written as a placeholder because the status picks which one',
   }),
   Object.freeze({
-    // The scan cannot delimit this one: the value opens on `:306` and closes on
-    // `:307`. This row is what settles it (D-11).
+    // the scan can't delimit this one, the value opens on one line and closes on the next, so this row settles it
     surface: 'cadence-core/workflows/verify.md',
     flag: '--next',
     value: "<next phase's /cad-context, or /cad-milestone if this was the last - the audit gate precedes any ship>",
@@ -305,9 +217,8 @@ export const TEXT_TRANSPORT = Object.freeze([
   }),
 
   // --- the two sites that name `--text` in order to FORBID it ---------------
-  // Both already prescribe `--text-file`; the inline form appears only in the
-  // sentence explaining why it is not used. They are registered rather than
-  // exempted so the enumeration stays complete.
+  // both already prescribe --text-file and name the inline form only to say
+  // why it isn't used; registered so the enumeration stays complete
   Object.freeze({
     surface: 'cadence-core/workflows/execute.md',
     flag: '--text', value: '<item>', derived: false,
@@ -321,14 +232,12 @@ export const TEXT_TRANSPORT = Object.freeze([
 
   // --- the milestone label, one value at two sites --------------------------
   Object.freeze({
-    // Unquoted at the site, so the scan cannot delimit it either; this row is
-    // what settles it, and it settles it as the value the phase exists for.
+    // unquoted at the site, so the scan can't delimit it; this row settles it, as the value the check exists for
     surface: 'cadence-core/workflows/milestone.md',
     flag: '--label', value: '<label>', derived: true,
   }),
   Object.freeze({
-    // The goal statement's own example (D-03): a milestone name read out of
-    // PROJECT.md, quoted into a shell word.
+    // a milestone name read out of PROJECT.md, quoted into a shell word
     surface: 'skills/cad-land/SKILL.md',
     flag: '-m', value: '<milestone label>', derived: true,
   }),
@@ -387,9 +296,8 @@ export function textTransportIssues(surface, text, rows = TEXT_TRANSPORT) {
       const seen = following(rest);
       if (seen.shape === 'named') continue;
       const forFlag = here.filter((r) => r.flag === flag);
-      // A delimited value is matched on the value itself; an undelimitable one
-      // falls back to the rows for that flag, which is the register acting as
-      // the authority the scan could not be.
+      // a delimited value is matched on itself; an undelimitable one falls back to that
+      // flag's rows, the register acting as the authority the scan couldn't be
       const matched = seen.shape === 'value'
         ? forFlag.filter((r) => r.value === seen.value)
         : forFlag;

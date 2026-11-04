@@ -1,136 +1,32 @@
 // @ts-check
-// bulk-output.mjs - the register of every prose site that PRESCRIBES a tool
-// call whose response is bulk, and the pure rule self-verify runs over it
-// (check 20).
-//
-// THE RULE ITSELF IS NOT HERE. `references/conventions.md` states it once - a
-// prescribed call whose measured response crosses the stated byte threshold
-// sends that output to a scratch file and hands the transcript a digest of
-// what the step actually needs, because a response sitting in the transcript
-// is re-paid on every later turn at the cache-read rate - and every converted
-// site cites that file. There is no seam and no flag to carry it out: the
-// transport is a shell redirect plus a targeted read-back, which is why this
-// module has no `lib/*-file.mjs` sibling the way `lib/text-transport.mjs` has
-// `lib/text-flag-file.mjs`. This module carries the ENUMERATION and the check
-// that holds prose to it, the same split `lib/text-transport.mjs` and
-// `lib/deferred-reads.mjs` use: hand-maintained register, mechanical
-// enforcement.
-//
-// WHY A HAND-MAINTAINED REGISTER. Whether a call's response is bulk is not
-// derivable from the prose. `planning.mjs trace render --phase <N>` returned
-// 14,857 B on this repository and `planning.mjs reads --join` 1,507 B, and the
-// two lines look identical; the difference is a MEASUREMENT, taken once,
-// against a record that exists. Something has to state it, and a measurement
-// stated in a markdown table is a measurement no check reads - which is how
-// the enumeration and the enforcement drift apart. So the rows are here,
-// beside the rule that consumes them, and a site the register does not
-// classify is a REPORTED problem rather than a silent pass.
-//
-// THE KEY IS `{surface, shape, call}`, NOT A LINE NUMBER, for the reason
-// `lib/text-transport.mjs` states about keying on the VALUE: line numbers rot
-// on the first paragraph anyone inserts, and the classification is a property
-// of the CALL a site prescribes rather than of where it sits. Keying on the
-// call is also what keeps two prescriptions of one shape in one surface apart:
-// `references/review-triggers.md` prescribes `git diff <base_ref>..<head_ref>`
-// with a redirect at its payload composition and DESCRIBES
-// `git diff <pre-plan HEAD>..HEAD` as a file another workflow already wrote,
-// and a per-shape key would have to call both the same thing. Two occurrences
-// of an IDENTICAL call in ONE surface are one row: they are one prescription
-// written twice, and a second row would be a duplicate no reader could tell
-// from a mistake. `git diff --cached` was that case until LOD-06 -
-// `review-triggers.md` named it at shape (b) and again where shape (b)
-// redirects it - and the cold split put the two occurrences in DIFFERENT files,
-// so it is two rows now. That is the key doing its job rather than an
-// exception to it: the key is `{surface, shape, call}`, and a check that reads
-// per surface has nothing to settle the second file's occurrence with.
-//
-// A ROW OUTLIVES ITS OCCURRENCE. Once a site is converted, its inline form is
-// gone from the prose and the row it left behind matches only the redirected
-// call - and it STAYS, because the row is the record of the classification and
-// it is what makes the inline form coming back a reported problem instead of
-// an unclassified one. Deleting a converted row does not make the tree
-// cleaner; it makes the next reintroduction read as a new site.
-//
-// THE DISCRIMINATOR IS AN INVOCATION LINE, NOT A PROSE MENTION. For the two
-// `planning.mjs` shapes the test is the one `bin/trace.test.mjs`'s `traceCalls`
-// helper already applies: an occurrence counts only on a line that ALSO names
-// `planning.mjs`. That is what keeps `workflows/execute.md`'s and
-// `workflows/plan.md`'s sentences ABOUT what `trace render` reports silent -
-// they prescribe nothing, and a rule that demanded a row for every sentence
-// mentioning a seam would make the register grow with the prose that explains
-// it. `git diff` has no such second token, so its prose mentions are settled by
-// rows carrying the reason (`references/conventions.md`'s parallel-work
-// illustration is one), which is the register acting as the authority the scan
-// could not be.
-//
-// AND WHAT FOLLOWS THE CALL DECIDES WHETHER IT IS ONE. A call closed
-// immediately by a backtick or by sentence punctuation - "`planning.mjs
-// recall`. Every claim below", the `config-reach.md` table cell - is being
-// NAMED and prescribes nothing. A call followed by arguments is a prescription
-// and must be classified.
-//
-// WHAT THE SCAN CANNOT DELIMIT IS REPORTED, NEVER SKIPPED. A call whose
-// arguments wrap onto the next line (`workflows/coverage.md` wraps
-// `git diff <phase-start>..<phase-end>` mid-call) ends its line with nothing
-// after it, so the scan can read neither its form nor whether a redirect
-// follows - and a scan that quietly passed over what it cannot read would be
-// exactly as reassuring as one that read everything. A register row for that
-// surface and SHAPE settles such an occurrence, and when no row exists it is
-// its own reported kind.
-//
-// THE OUTPUT-BOUNDING `git diff` FLAGS ARE EXCLUDED BY CONSTRUCTION, and this
-// is the record of it. `--stat`, `--shortstat`, `--numstat`, `--quiet`,
-// `--name-only` and `--name-status` each replace the patch with a summary the
-// caller asked for, so the form cannot break the rule at all; watching it would
-// report every such site as unsafe against a rule none of them can break,
-// exactly as `lib/text-transport.mjs` records its path-CSV exclusion. A
-// `git diff` that is neither a whole range (`<a>..<b>`) nor `--cached` is out
-// of the watched set for the same reason: `references/plan-revision.md`'s
-// path-scoped PLAN diff is bounded by the paths it names.
-//
-// `weight.mjs` AND `weight.mjs resident` ARE NOT WATCHED, at 8,513 B and
-// 20,206 B measured 2026-08-17. The only surface prescribing either is
-// `docs/EVIDENCE.md`, a human-run measurement recipe that is not on
-// self-verify's prose walk and whose output goes to a terminal rather than
-// into a model's context. A rule about what a MODEL is handed has nothing to
-// say about a command a person runs.
-//
-// TWO STATED LIMITS. (1) The scan reads one physical line at a time and joins
-// no backslash continuations: measured over this tree on 2026-08-17, no
-// watched call is written in a continued form, so the join `self-verify.mjs`'s
-// check 2 performs would buy nothing here - a continuation introduced later is
-// invisible to the scan rather than reported, which is the cost of not
-// carrying it. (2) A redirect is recognized as whitespace followed by `>` or
-// `>>` and then a non-space, so an angle-bracket placeholder (`--phase <N>`,
-// `<base_ref>..<head_ref>`) is never read as one; a redirect written with no
-// space before the `>` would be missed.
-//
-// Pure rule: no disk, no emit, no exit, no Date, no randomness. The caller
-// (self-verify.mjs) owns the walk and the envelope.
+// bulk-output.mjs - every prose site that prescribes a bulk-response tool call, and self-verify's check 20 over them
+// the rule is in references/conventions.md: bulk output goes to a scratch file and the transcript gets a digest
+// a response in the transcript is re-paid every later turn; the transport is a redirect plus a targeted read-back
+// hand-maintained, because bulk is a measurement the prose can't show: trace render and reads --join look identical
+// keyed on surface, shape and call: one row for a call written twice in a surface, two when the files differ
+// a row outlives its occurrence, so the inline form returning is a reported regression and not a new site
+// an invocation, not a mention: planning.mjs shapes need that token on the line, and rows settle git diff mentions
+// a call closed by a backtick or punctuation is only named; a wrapped one is reported unless a row settles it
+// excluded: git diff with a bounding flag (--stat, --numstat, --name-only and kin), or neither a range nor --cached
+// limits: one line at a time with no continuations joined, and a redirect needs whitespace before the >
 'use strict';
 
 /** The problem codes this rule files. */
 export const CODES = Object.freeze({
-  // The register says this site owes the file transport and it is prescribing
-  // the call with its output riding the transcript again.
+  // the register says this site owes the file transport and prescribes the call with its output in the transcript
   inline: 'bulk-output-inline',
-  // A prescribed watched call no register row classifies at all.
+  // a prescribed watched call no register row classifies
   unregistered: 'bulk-output-unregistered',
-  // The scan cannot delimit the occurrence, and no row for that surface and
-  // shape settles it.
+  // the scan can't delimit the occurrence, and no row for that surface and shape settles it
   unclear: 'bulk-output-unclear',
 });
 
 /**
- * The watched call shapes: the ones MEASURED over the 10,000-byte threshold
- * `references/conventions.md` states, or - for `git diff` - unbounded by
- * construction and therefore over it for any range large enough.
- *
- * `seam` is the token that must also appear on the line for the occurrence to
- * be an invocation rather than a sentence about one; `null` means the shape
- * needs no second token. `bounded` are the flags that make the form incapable
- * of breaking the rule. `forms` are the argument shapes that keep it in the
- * watched set; an empty `forms` watches every argument shape.
+ * The watched call shapes: measured over the byte threshold in
+ * references/conventions.md or, for git diff, unbounded by construction.
+ * seam is the token that must also be on the line for an occurrence to be an invocation and not a
+ * sentence about one (null needs none); bounded are the flags that make the form unable to break the
+ * rule; forms are the argument shapes that keep it watched, and empty watches every shape.
  * @type {ReadonlyArray<{shape: string, token: RegExp, seam: string|null,
  *   bounded: ReadonlyArray<string>, forms: ReadonlyArray<RegExp>, why: string}>}
  */
@@ -162,35 +58,21 @@ export const BULK_SHAPES = Object.freeze([
 ]);
 
 /**
- * The register: one row per examined site.
- *
- * `surface` is the root-relative POSIX path, `shape` the watched shape's id,
- * `call` the call as the site writes it with any redirect stripped, `bytes` the
- * measured response size or `'unbounded'` where the response is the range's
- * rather than the site's, `measured` the date that figure was taken, and
- * `transport` how the site meets the rule:
- *
- *   `redirect` - the site prescribes the call with a shell redirect on its own
- *                line. This is the only value the scan ENFORCES: the same call
- *                written without the redirect is a reported regression.
- *   `file`     - the output reaches a file, but the destination is named in
- *                prose off the call's own line, so the register is what settles
- *                the occurrence rather than the scan.
- *   `none`     - no transport owed. Requires a reason.
- *
- * `reason` is REQUIRED on every row that is not `redirect`, for the reason
- * `lib/text-transport.mjs` requires one on every non-derived row: an
- * unexplained exemption is indistinguishable from an oversight.
+ * The register: one row per examined site. surface is a root-relative POSIX path, shape the
+ * watched shape's id, call the call as written with any redirect stripped, bytes the measured
+ * response size or 'unbounded' where the range sets it, measured the date of that figure.
+ * transport says how the site meets the rule: redirect (a shell redirect on the call's own line, the
+ * only value the scan enforces), file (the output reaches a file but the destination is in prose off
+ * the call's line, so the register settles it), none (no transport owed, needs a reason).
+ * reason is required on every row that isn't redirect, because an unexplained exemption looks like an oversight.
  * @type {ReadonlyArray<{surface: string, shape: string, call: string,
  *   bytes: number|'unbounded', measured: string,
  *   transport: 'redirect'|'file'|'none', reason?: string}>}
  */
 export const BULK_OUTPUT = Object.freeze([
-  // --- trace render: the three sites TRN-02 converted ------------------------
-  // Each redirects into a scratch path and reads back only the fields its step
-  // prints or branches on. The rows keep matching the converted call, which is
-  // what makes deleting the redirect a reported regression rather than a new,
-  // unclassified site.
+  // --- trace render: the three converted sites ------------------------------
+  // each redirects to a scratch path and reads back only what its step prints or branches on; the
+  // rows keep matching the converted call, so deleting the redirect is a reported regression
   Object.freeze({
     surface: 'cadence-core/references/triage-gate.md',
     shape: 'trace render', call: 'trace render --phase <N>',
@@ -235,9 +117,8 @@ export const BULK_OUTPUT = Object.freeze([
 
   // --- git diff: the four that already write to a file -----------------------
   Object.freeze({
-    // The cross-model arm cold-split out of `review-triggers.md` step 4 in
-    // LOD-06 and took its composition block with it; the row moved rather than
-    // being re-measured, because the prescription is byte-identical.
+    // the cross-model arm was cold-split out of review-triggers.md with its
+    // composition block; the row moved, the prescription is byte-identical
     surface: 'cadence-core/references/review-cross-model.md',
     shape: 'git diff', call: 'git diff <base_ref>..<head_ref>',
     bytes: 'unbounded', measured: '2026-08-17', transport: 'redirect',
@@ -261,12 +142,11 @@ export const BULK_OUTPUT = Object.freeze([
     reason: 'the step writes it to `.planning/tasks/{slug}/risk-task-{slug}.diff` and fires with that path, exactly as execute.md does',
   }),
 
-  // --- git diff: the three that describe a call ANOTHER agent runs -----------
-  // A Task-dispatched reviewer inherits the parent's cwd and re-runs the
-  // command in its OWN context, so the bytes never enter this side's
-  // transcript at all. They are registered rather than omitted precisely
-  // because a row outlives its occurrence: re-inlining the biggest transport in
-  // the tree has to read as a reported regression, not as a new site.
+  // --- git diff: the three that describe a call another agent runs -----------
+  // a Task-dispatched reviewer inherits the cwd and re-runs the command in
+  // its own context, so the bytes never reach this transcript
+  // registered anyway, because a row outlives its occurrence and
+  // re-inlining the biggest transport has to read as a regression
   Object.freeze({
     surface: 'cadence-core/references/review-triggers.md',
     shape: 'git diff', call: 'git diff --cached',
@@ -274,12 +154,9 @@ export const BULK_OUTPUT = Object.freeze([
     reason: 'shape (b) names the command the REVIEWER re-runs in the cwd it inherits, so this surface issues nothing; the second occurrence moved to references/review-cross-model.md with the cold split and carries its own row there',
   }),
   Object.freeze({
-    // The SECOND half of what used to be one row's two occurrences. The
-    // LOD-06 cold split moved the sentence describing shape (b)'s redirect
-    // into `review-cross-model.md` while shape (b)'s own definition stayed in
-    // `review-triggers.md` step 2, so one prescription written twice now spans
-    // two files - and the key is `{surface, shape, call}`, so each file needs
-    // its own row.
+    // the other half of what used to be one row's two occurrences: the cold split put the sentence
+    // describing shape (b)'s redirect in review-cross-model.md and left the definition in
+    // review-triggers.md, and each file needs its own row since the key is surface, shape and call
     surface: 'cadence-core/references/review-cross-model.md',
     shape: 'git diff', call: 'git diff --cached',
     bytes: 'unbounded', measured: '2026-08-17', transport: 'none',
@@ -312,8 +189,8 @@ export const BULK_OUTPUT = Object.freeze([
     reason: 'the parallel-work rule\'s own illustration of a call that must be serialized - it prescribes no step and issues nothing, and `git diff` carries no second token the scan could use to tell an illustration from an invocation',
   }),
   Object.freeze({
-    // The scan cannot delimit this one: the call opens at the end of one line
-    // and its range closes on the next. This row is what settles it.
+    // the scan can't delimit this one, the call opens at the end of one
+    // line and its range closes on the next; this row settles it
     surface: 'cadence-core/workflows/coverage.md',
     shape: 'git diff', call: 'git diff <phase-start>..<phase-end>',
     bytes: 'unbounded', measured: '2026-08-17', transport: 'none',
@@ -337,8 +214,7 @@ function following(rest) {
     return { form: 'unclear', why: 'the call ends its line, so its arguments are on another one' };
   }
   if (NAMED_RE.test(rest)) return { form: 'named' };
-  // A call written inside inline code ends at the closing backtick; one in a
-  // fenced block runs to the end of the line.
+  // inside inline code a call ends at the closing backtick; in a fenced block it runs to the end of the line
   const span = rest.split('`')[0];
   if (span.trim() === '') return { form: 'named' };
   const redirected = REDIRECT_RE.test(span);
@@ -374,9 +250,8 @@ export function bulkOutputIssues(surface, text, rows = BULK_OUTPUT) {
         continue;
       }
       const call = `${m[0].replace(/\s+/g, ' ')}${seen.args ? ` ${seen.args.trimStart()}` : ''}`;
-      // A form its own flags already bound cannot break the rule, and a shape
-      // whose watched forms none of these arguments match is not the call this
-      // register is about.
+      // a form its own flags already bound can't break the rule, and a shape whose
+      // watched forms these arguments miss isn't the call this register is about
       if (shape.bounded.some((f) => new RegExp(`${f}\\b`).test(seen.args))) continue;
       if (shape.forms.length && !shape.forms.some((f) => f.test(seen.args))) continue;
       const matched = forShape.filter((r) => r.call === call);
