@@ -97,13 +97,26 @@ function fill(testing) {
 }
 
 /**
+ * Why the config can't say whether a policy was accepted, or null. A torn layer
+ * and a scope outside the enum must not read as "none was".
+ * @param {{warnings: string[], tornLayers: string[], invalidScope: unknown}} config
+ */
+function unusableConfig({ warnings, tornLayers, invalidScope }) {
+  if (tornLayers.length > 0) return { reason: 'config-unreadable', detail: warnings.join('; ') };
+  if (invalidScope === null) return null;
+  return { reason: 'invalid-scope', detail: `testing.scope is ${JSON.stringify(invalidScope)}, which is not focused, integrated or thorough, so no policy is accepted` };
+}
+
+const UNUSABLE_HINT = 'repair the config file the detail names, or run /cad-config --testing to set testing.scope, then re-run';
+
+/**
  * The accepted policy with defaults filled - or null when the project accepted
- * none - and the forge the project names.
+ * none - the forge the project names, and why the config is unusable, if it is.
  * @param {string} root
  */
 function effectivePolicy(root) {
-  const { testing, accepted, forgeProvider } = readTestingPolicy(join(root, '.planning', 'config.json'));
-  return { policy: accepted ? fill(testing) : null, forgeProvider };
+  const config = readTestingPolicy(join(root, '.planning', 'config.json'));
+  return { policy: config.accepted ? fill(config.testing) : null, forgeProvider: config.forgeProvider, unusable: unusableConfig(config) };
 }
 
 const NO_POLICY_HINT = 'run /cad-config --testing to accept a testing policy first - until then the project behaves as it did before the policy existed';
@@ -112,7 +125,8 @@ const NO_POLICY_HINT = 'run /cad-config --testing to accept a testing policy fir
  * @param {string} root
  */
 function cmdRender(root) {
-  const { policy } = effectivePolicy(root);
+  const { policy, unusable } = effectivePolicy(root);
+  if (unusable) return fail(unusable.reason, unusable.detail, UNUSABLE_HINT);
   if (!policy) {
     return fail('no-policy', 'testing.scope is unset, so no policy was accepted and there is nothing to render', NO_POLICY_HINT);
   }
@@ -191,8 +205,12 @@ function againstRef(root, ref, now) {
  * @param {unknown} base
  */
 function cmdCheck(root, base) {
-  const { policy, forgeProvider } = effectivePolicy(root);
+  const { policy, forgeProvider, unusable } = effectivePolicy(root);
   const publish_authorized = publishAuthorized(root);
+  if (unusable) {
+    return emit({ ok: false, ...unusable, hint: UNUSABLE_HINT, accepted: null, enforcement: 'unavailable', gate_found: null,
+      problems: [unusable.detail], publish_authorized, note: unusable.detail });
+  }
   if (!policy) {
     return ok({ accepted: false, publish_authorized,
       detail: 'testing.scope is unset, so no policy was accepted and there is nothing to check', hint: NO_POLICY_HINT });
@@ -335,7 +353,10 @@ function cmdCiStatus(dir, root, opts) {
     phase = parsed;
   }
 
-  const { testing, accepted, forgeProvider, forgeRepo } = readTestingPolicy(join(root, '.planning', 'config.json'));
+  const config = readTestingPolicy(join(root, '.planning', 'config.json'));
+  const { testing, accepted, forgeProvider, forgeRepo } = config;
+  const unusable = unusableConfig(config);
+  if (unusable) return fail(unusable.reason, unusable.detail, UNUSABLE_HINT);
   if (!accepted) return fail('no-policy', 'testing.scope is unset, so no policy was accepted and there are no required jobs to read', NO_POLICY_HINT);
   const required = Array.isArray(testing.required_jobs) ? testing.required_jobs : [];
   const answer = (/** @type {string} */ a, /** @type {Record<string, any>} */ more) => ({ commit: sha.toLowerCase(), answer: a, jobs: [], ...more });

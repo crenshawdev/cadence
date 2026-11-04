@@ -53,7 +53,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy check --r
 
 Hold `gate_found`. A project with no gate yet gets `ok:false` with
 `gate_found: false`, the answer the setup steps say to expect, so it is not a
-stop. Unset, make no call.
+stop. Any other failing answer has `gate_found: null`: relay its `detail` and
+plan without the CI task until it is fixed. Unset, make no call.
 
 Then size the phase, BEFORE spending a planner dispatch on it:
 

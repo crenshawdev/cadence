@@ -126,7 +126,7 @@ Check, then report - do not fix without asking.
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy check --root .`
      and report its answer, on a failing answer too. `accepted:false` -> the
      one line "No testing policy accepted - `/cad-config --testing` sets one
-     up", no issue. Accepted -> each entry in `problems` is an issue naming its
+     up", no issue. Otherwise -> each entry in `problems` is an issue naming its
      fix (the `hint`), and `enforcement:"unavailable"` is a note quoting the
      answer's `note`, not an issue. Always print whether verification
      publishing is authorized here, read off the same answer's

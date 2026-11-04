@@ -284,6 +284,9 @@ export function mergeLayers(repoFile, opts = {}) {
       ...(isPlainObject(config.workflow) ? config.workflow : {}),
       ...Object.fromEntries(LEGACY_TEST_SWITCHES.map((sw) => [sw, false])),
     } };
+  } else if (!asGlobal && repoValue && isPlainObject(repoValue.testing) && repoValue.testing.scope != null) {
+    scopeWarnings.push(`config key "testing.scope" is ${JSON.stringify(repoValue.testing.scope)} in ${repoFile}, `
+      + 'which is not focused, integrated or thorough, so no testing policy is accepted');
   }
   return {
     config,
@@ -303,7 +306,8 @@ export function mergeLayers(repoFile, opts = {}) {
 /**
  * The ONE read of the testing policy keys: for a config file, the merged
  * `testing` section, the two forge keys the policy checks address, whether the
- * accepted-scope predicate above holds for it, and the merge's `warnings`.
+ * accepted-scope predicate above holds for it, a scope outside that predicate,
+ * and the merge's `warnings` and `tornLayers`.
  * `test-evidence` and the `test-policy` seam both read through here, so there is
  * a single answer to "was a policy accepted" (D-17). It lives in this file, not
  * a new one, so self-verify's merge census (check 12) keeps its count.
@@ -314,13 +318,16 @@ export function mergeLayers(repoFile, opts = {}) {
  * @param {string} file
  */
 export function readTestingPolicy(file) {
-  const { config, layers, warnings } = mergeLayers(file);
+  const { config, layers, warnings, tornLayers } = mergeLayers(file);
   const repoTesting = layers.repo && layers.repo.testing;
+  const scope = isPlainObject(repoTesting) ? repoTesting.scope : null;
   return {
     testing: isPlainObject(config.testing) ? config.testing : {},
     forgeProvider: isPlainObject(config.git) && config.git.forge_provider !== undefined ? config.git.forge_provider : null,
     forgeRepo: isPlainObject(config.git) && config.git.forge_repo !== undefined ? config.git.forge_repo : null,
-    accepted: isPlainObject(repoTesting) && isAcceptedTestScope(repoTesting.scope),
+    accepted: isAcceptedTestScope(scope),
+    invalidScope: scope === null || scope === undefined || isAcceptedTestScope(scope) ? null : scope,
     warnings,
+    tornLayers,
   };
 }
