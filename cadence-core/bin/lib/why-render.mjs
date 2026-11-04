@@ -1,141 +1,25 @@
 // @ts-check
-// why-render.mjs - the deterministic renderer and the entry cap for
-// `/cad-why` (WHY-01, phase 1 plan 1). A second pure module beside
-// lib/why-query.mjs: no disk, no emit, no exit, no Date.now, no randomness.
-// It turns an array of chain entries into the ONE `text` string the seam
-// emits (CONTEXT D-02) plus the counts the envelope carries.
-//
-// ORDERING IS EXPLICIT, NEVER INHERITED (D-17). `renderChain` sorts a COPY of
-// its input by commit date, then by full 40-character sha, both descending -
-// newest first, and a full-sha comparison as the tiebreak rather than trusting
-// git's own order or a filesystem listing. That is what makes two entries
-// sharing one commit date, or the same array handed in reversed, render
-// byte-identically: the order is a property of the DATA, computed here, and
-// never of the order the caller happened to collect it in.
-//
-// FULL SHAS TRAVEL, THE ABBREVIATION IS DERIVED. Each entry carries its full
-// 40-character sha; the rendered commit line shows both the full sha and an
-// 8-character abbreviation a reader can type back - 8 rather than a shorter
-// prefix because that is the length the newest SUMMARY convention already
-// uses (CONTEXT D-08), so a sha this command prints and a sha a SUMMARY's
-// `## Commits` table prints are the same number of characters to eyeball
-// against each other.
-//
-// EVERY JOIN FIELD IS EXPLICITLY STATED, NEVER OMITTED. `phase`, `task`,
-// `decision`, `deviation` and `review` are each optional on an entry; when one
-// is absent this module renders a FIXED stated-absence line for it rather than
-// dropping the line, because AC5 requires a chain with no `.planning/` join to
-// come back with each field stated absent - never a shorter entry and never an
-// empty chain. Plans 2 and 3 fill these fields with quoted record text; this
-// plan ships the five placeholder lines they will replace.
-//
-// THE ENTRY CAP IS D-13'S SECOND ARM. Raw `git log` bytes already cross the
-// 10,000-byte threshold `cadence-core/references/conventions.md` states on two
-// of four sampled paths, and every join field an entry carries adds bytes per
-// entry - so the entry COUNT is truncated rather than the bytes being
-// relocated to a file, which is what `lib/bulk-output.mjs`'s register does for
-// the three call shapes it watches (none of which is this seam). The shape is
-// `cmdRecall`'s `--top`: a stated default plus the untruncated `total` riding
-// beside the `shown` count, so a truncated answer stays legible as truncated.
-//
-// WHAT THE CAP DOES NOT DO IS BOUND THE RESPONSE IN BYTES, and this comment
-// said it did until the phase-1 UAT deep pass measured it. The cap bounds ENTRY
-// COUNT; the join fields an entry carries are UNBOUNDED, so a path with few
-// commits and heavy join fields crosses the line at any cap that shows its
-// history at all. Swept every tracked path 2026-08-23, git 2.55.0, as the UTF-8
-// byte length of the emitted `text` at the shipped default: 548 paths rendered,
-// median 5,569 B, and 63 of them (11.5%) at or over 10,000 B. The worst are
-// `design-notes/sweep-2026-08-10-context-weight.md` at 30,825 B,
-// `why-record.test.mjs` at 29,378 B (a path then in `cadence-core/bin`, since
-// moved to the cadence-tests repository; 6 of 6 entries shown, 1 excluded - so
-// those are join bytes, not the exclusion block) and `.gitignore`
-// at 28,888 B. Lowering the cap does not fix that tail: holding
-// `why-record.test.mjs` under the line takes one or two entries, which hides
-// the history a reader asked for. Relocating the bytes the way
-// `lib/bulk-output.mjs` does is the fix that would, and it is not this cap's
-// job. Read the maximality claim below as scoped to the three paths it names,
-// because that is all it is.
-//
-// AND THE DEFAULT IS THE LARGEST CAP MEASUREMENT SUPPORTS, not a band estimated
-// from a bytes-per-commit ratio - which is what the shipped comment did, and how
-// this constant came to carry a claim nothing had measured (WHY-03, v3.6.1
-// phase 1 D-02). Measured 2026-08-23 on this repository, git 2.55.0, with all
-// six join edges filled AND the exclusion block above rendering, as the UTF-8
-// byte length of the `text` the seam emits:
-//
-//                              at --top 6     at --top 7
-//   lib/capture-file.mjs         9,129 B       10,343 B   (8 commits, 2 excluded)
-//   lib/issue-decision.mjs       8,158 B        9,474 B   (12 commits, 5 excluded)
-//   planning.mjs                 8,526 B        9,764 B   (152 commits, 39 excluded)
-//
-// The claim, stated so it can be falsified: SIX is the LARGEST cap under which
-// the worst of those paths stays under the 10,000-byte line, with 871 B of
-// headroom on `lib/capture-file.mjs`; at seven that same path renders 10,343 B
-// and is over it. Lowering the cap has its own cost - a smaller default hides
-// history a reader asked for - and that cost is what makes MAXIMALITY the claim
-// rather than mere safety.
-//
+// Deterministic renderer and entry cap for /cad-why. Pure: no disk, no emit, no exit, no Date.now, no randomness. It turns chain entries into the one `text` string the seam emits plus the counts its envelope carries.
+// Ordering is explicit, never inherited: renderChain sorts a copy by commit date then full sha, both descending, so two entries sharing a date, or the same array reversed, render byte-identically.
+// Every join field is stated, never omitted. When phase, task, decision, deviation or review is absent the entry renders a fixed stated-absence line instead of dropping it, so a chain with no .planning/ join is never a shorter entry or an empty chain.
+// The join attaches in one place, entry.join: a plain serializable object the seam hangs off each entry, which the field* functions turn into label lines. Every later edge adds a key and a formatter, never a second traversal. A literal string on the entry still wins, so hand-built entries work unchanged.
+// The cap truncates entry count because raw git log bytes already cross the 10,000-byte threshold in conventions.md on two of four sampled paths, and every join field adds more. It follows cmdRecall's --top: a stated default plus the untruncated total beside shown, so a truncated answer reads as truncated.
+// The cap doesn't bound the response in bytes. Join fields are unbounded, so a path with few commits and heavy joins crosses the line at any cap that shows its history at all. Lowering the cap only hides the history a reader asked for; relocating the bytes is the real fix and isn't this cap's job.
+// Six is the largest cap under which the worst of the three paths measured (capture-file.mjs, issue-decision.mjs, planning.mjs) stays under the 10,000-byte line, with all six join edges filled and the exclusion block rendering; at seven the worst renders over it.
 // MEASURED CAP: 6 entries, 2026-08-23.
-//
-// That last line is not decoration. `why-render.test.mjs` PARSES it and asserts
-// it equals `DEFAULT_TOP`, and renders the frozen worst case in
-// `fixtures/why.chain-worst.json` at the default and at one above it - so the
-// pin reddens when the number and its stated reason disagree, which is exactly
-// what nothing checked when this comment claimed ten.
-//
-// THE TRUNCATION NOTE LIVES INSIDE `text`, not only in the envelope. D-02 has
-// the skill relay `text` verbatim and reformat nothing, so a truncated answer
-// that only the JSON envelope's `shown`/`total` fields recorded would never
-// reach a reader - the skill never prints those fields. The note is therefore
-// the last line of `text` itself when the chain was actually cut.
-//
-// AND SO DOES THE EXCLUSION BLOCK (WHY-02, v3.6.1 phase 1 D-01), for exactly
-// that reason. The bare arm keeps `--follow` and therefore keeps git's default
-// history simplification; the seam runs a second `--full-history` query and
-// hands the difference here, and this module states it in `text` because a gap
-// only the envelope recorded would never reach a reader - which is the defect
-// WHY-02 closes, a chain that was silently 7-of-10. It renders BEFORE the
-// truncation note so the `Pass --top` line stays last, and an absent or EMPTY
-// report renders nothing at all: a line stating a non-event would be bytes on
-// every query for no information, and they would land on the cap above.
-//
-// ---------------------------------------------------------------------------
-// PLAN 2 ADDS THE JOIN, AND IT ATTACHES IN EXACTLY ONE PLACE: `entry.join`.
-//
-// The seam resolves each commit against `lib/why-corpus.mjs`'s index and hangs
-// ONE plain, serializable object off the entry; the `field*` functions below
-// turn that object into the label lines. Every later edge - the D-NN decision,
-// the deviation bullets, the surviving review finding, the declaring task -
-// adds a KEY to that object and a formatter here, never a second traversal of
-// the chain and never a second attach point.
-//
-// A LITERAL STRING ON THE ENTRY STILL WINS. `entry.phase` and its four siblings
-// are read FIRST and the join is only consulted when they are absent, so a
-// caller holding a rendered string (the plan-1 shape, and every test that
-// builds an entry by hand) keeps working unchanged. That is not back-compat
-// ceremony: it is what keeps this module's contract "a field is a string or it
-// is stated absent", with the join as one way to compute the string rather than
-// a second rendering path.
-//
-// AND THE STATED ABSENCE IS UNCHANGED. A field the join cannot fill still
-// renders `not yet joined` rather than disappearing, because AC5 requires a
-// path in history with no `.planning/` join to come back as a chain with each
-// field stated absent - never a shorter entry, and never an empty chain.
+// why-render.test.mjs parses that line and asserts it equals DEFAULT_TOP, then renders the frozen worst case in fixtures/why.chain-worst.json at the default and one above, so it goes red when the number and its stated reason disagree.
+// The truncation note and the exclusion block live inside text, not only the envelope, because the skill relays text verbatim and never prints the envelope fields. The exclusion block goes before the truncation note so the Pass --top line stays last, and an absent or empty report renders nothing, since a line stating a non-event is bytes on every query for no information.
 'use strict';
 
 import { MARKER_GAP } from './why-record.mjs';
 
-/** The default entry cap: the largest one measurement supports (D-13, then
- * v3.6.1 phase 1 D-02). See the MEASURED CAP line in this module's header,
- * which `why-render.test.mjs` parses and pins against this number. */
+/** The default entry cap, the largest one measurement supports. See the MEASURED CAP line in this module's header, which why-render.test.mjs parses and pins against this number. */
 export const DEFAULT_TOP = 6;
 
-/** The fixed text an absent join field renders as, rather than dropping the
- * line. A field the record does not carry says so; it is never dropped. */
+/** The fixed text an absent join field renders as; a field the record doesn't carry says so and is never dropped. */
 const NOT_JOINED = 'not yet joined';
 
-/** Characters of the full sha the rendered commit line's abbreviation carries
- * (D-08: the length the newest SUMMARY convention already uses). */
+/** Characters of the full sha in the rendered abbreviation: the length the newest SUMMARY convention uses, so the two are easy to eyeball against each other. */
 const ABBREV_LEN = 8;
 
 /**
@@ -161,22 +45,15 @@ const ABBREV_LEN = 8;
 const candidate = (/** @type {JoinMatch} */ m) =>
   `${m.label} (plan ${m.plan || '-'}, task ${m.task || '-'})`;
 
-/** How many `.planning/ARCHIVE.md` residue rows and touched paths an
- * unresolved entry prints before it states how many more there are. Both are
- * unbounded in the corpus - v3.5.9's archive section alone is 38 rows - and
- * D-13 bounds this response by counting, not by relocating bytes. */
+/** How many ARCHIVE.md residue rows and touched paths an unresolved entry prints before it counts the rest. Both are unbounded in the corpus, and the response is bounded by counting, not by relocating bytes. */
 const GAP_ROWS = 3;
 const GAP_PATHS = 10;
 
-/** The sentence an unresolved entry leads with. It names WHICH lookups failed,
- * because "not joined" alone does not say whether the record is missing or the
- * reader is. */
+/** The sentence an unresolved entry leads with. It names which lookups failed, because "not joined" alone doesn't say whether the record is missing or the reader is. */
 const GAP = 'NOT RESOLVED - no phase directory on disk and no summary recovered from git '
   + 'history names this commit, so the record does not say which phase produced it';
 
-/** How many excluded commits the block names before it counts the rest. The
- * same disposition `GAP_ROWS` takes: D-13 bounds this response by counting,
- * and the block names the invocation a reader runs to see all of them. */
+/** How many excluded commits the block names before it counts the rest, the same disposition as GAP_ROWS; the block names the invocation a reader runs to see all of them. */
 const EXCLUDED_ROWS = 3;
 
 /** One capped list, with the remainder counted rather than dropped. */
@@ -187,10 +64,7 @@ function capped(items, limit) {
 }
 
 /**
- * The gap block (AC4's second half). Everything here is either a fact git
- * carries or a fact the record carries under a LABEL; no line of it names a
- * phase number, and the one number that looks like one - the commit-message
- * scope - is printed with the statement that it is not the answer (D-06).
+ * The gap block. Everything in it is either a fact git carries or a fact the record carries under a label. No line names a phase number, and the one number that looks like one, the commit-message scope, is printed with the statement that it's not the answer.
  * @param {any} g @returns {string}
  */
 function gapLines(g) {
@@ -220,22 +94,9 @@ function gapLines(g) {
 }
 
 /**
- * What git's default history simplification left out, stated in `text` and not
- * only in the envelope (WHY-02, v3.6.1 phase 1 D-01).
- *
- * IT LIVES INSIDE `text` FOR THE REASON THE TRUNCATION NOTE DOES. D-02 has the
- * skill relay `text` verbatim and print no envelope field, so a gap only the
- * JSON recorded would never reach a reader - which is the whole defect WHY-02
- * closes, a chain that was silently 7-of-10.
- *
- * AND AN EMPTY REPORT RENDERS NOTHING AT ALL. A chain with nothing excluded must
- * not grow a line stating a non-event: that would be bytes on every query for no
- * information, and they would land on the entry cap D-02 measures.
- *
- * The merge count is COUNTED from the parent lists the report carries, never
- * asserted - `--full-history` buys merges on every path measured, but a block
- * that said so without counting would be repeating the measurement rather than
- * making it.
+ * What git's default history simplification left out, stated in `text` and not only the envelope, for the same reason the truncation note is: the skill relays `text` verbatim, so a gap only the JSON recorded would never reach a reader.
+ * An empty report renders nothing at all. A chain with nothing excluded must not grow a line stating a non-event, which is bytes on every query for no information and lands on the entry cap.
+ * The merge count is counted from the parent lists the report carries, never asserted: a block saying `--full-history` buys merges without counting would be repeating a measurement instead of making it.
  * @param {{sha: string, parentCount: number}[]} excluded
  * @param {string} [path] the queried path, named in the invocation line
  * @returns {string}
@@ -253,18 +114,8 @@ function excludedBlock(excluded, path) {
 }
 
 /**
- * The `phase:` line - the milestone and the phase number READ OFF the resolved
- * directory's own name, never derived from the commit's conventional-commit
- * scope (D-06). An ambiguous resolution names every candidate rather than
- * picking one, because picking is the invisible failure the index exists to
- * remove.
- *
- * AND A RESOLVED TASK IS NOT A PHASE. A commit the off-roadmap tasks tier
- * answered names its SLUG and says so in words, and prints no phase number and
- * no milestone at all (FST-01, phase 3 D-02). That is the whole of the arm: the
- * failure D-02 rejects is a task directory rendering as `tasks phase <slug>`,
- * which READS as a phase and so is a wrong answer rather than a missing one -
- * strictly worse than the gap block, because a reader has no way to tell.
+ * The `phase:` line: the milestone and phase number read off the resolved directory's own name, never derived from the commit's conventional-commit scope. An ambiguous resolution names every candidate instead of picking one, because picking is the invisible failure the index exists to remove.
+ * A resolved task is not a phase. A commit the off-roadmap tasks tier answered names its slug and says so in words, with no phase number or milestone, because a task directory rendering as `tasks phase <slug>` reads as a phase and is a wrong answer instead of a missing one.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldPhase(j) {
@@ -275,31 +126,17 @@ function fieldPhase(j) {
   }
   if (j.state === 'unresolved') return /** @type {any} */ (j).gap ? gapLines(/** @type {any} */ (j).gap) : undefined;
   if (j.state !== 'resolved') return undefined;
-  // The `slug` MARKER, never a label prefix: `buildTaskIndex` puts it on the
-  // directory descriptor precisely so this arm needs no opinion about how a
-  // label is spelled. `j.phase` and `j.milestone` are `null` on this tier, so
-  // the resolved-phase line below could not render them anyway - which is the
-  // point of their being null rather than a placeholder.
+  // the slug marker, never a label prefix: buildTaskIndex puts it on the directory descriptor so this arm needs no opinion about how a label is spelled. phase and milestone are null on this tier, so the line below couldn't render them anyway
   if (j.slug) return `off-roadmap task ${j.slug} - a /cad-task run, not a roadmap phase (${j.label})`;
-  // A RECOVERED resolution says where it was recovered FROM, because the
-  // directory it names no longer exists and a reader who cannot tell the two
-  // apart has no way to go check. The milestone label rides beside the phase
-  // number for the same reason on both tiers: `v3.5.9 phase 1` and
-  // `the open milestone phase 1` are different phases wearing one number, which
-  // is precisely the invisible failure D-06 names.
+  // a recovered resolution says where it was recovered from, since the directory no longer exists and a reader couldn't otherwise tell the two apart. The milestone rides beside the phase number on both tiers because one number under two milestones is two different phases wearing the same label
   const where = /** @type {any} */ (j).recovered;
   if (where) return `${j.milestone} phase ${j.phase} (recovered from ${where.parent.slice(0, 8)}:${where.tree})`;
   return `${j.milestone} phase ${j.phase} (${j.label})`;
 }
 
 /**
- * The `plan task:` line - the commits table's own plan, task and description
- * cells, quoted as the record wrote them. The task cell is NEVER integerized:
- * `fix 1` is a real value in shipped summaries.
- *
- * NO ARM IS NEEDED FOR A TASK RECORD: its table has no Plan column at all, so
- * `j.plan` is `''` and the `plan ` prefix is already dropped by the same
- * three-column rule the pre-numbered-plan SUMMARY era needs.
+ * The `plan task:` line: the commits table's own plan, task and description cells, quoted as the record wrote them. The task cell is never integerized, since `fix 1` is a real value in shipped summaries.
+ * No arm is needed for a task record: its table has no Plan column, so `j.plan` is `''` and the `plan ` prefix drops by the same rule the three-column SUMMARY era needs.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldTask(j) {
@@ -311,18 +148,14 @@ function fieldTask(j) {
 }
 
 /**
- * A label line followed by the record's OWN lines, indented under it. The
- * indent is the only byte this module adds to a quoted line: it is what keeps a
- * multi-line quote readable as one field's value rather than as five more
- * fields, and it is fixed rather than computed so two runs render it the same.
+ * A label line followed by the record's own lines, indented under it. The indent is the only byte this module adds to a quoted line; it keeps a multi-line quote readable as one field's value instead of five more fields, and it's fixed so two runs render it the same.
  * @param {string} label @param {string[]} lines @returns {string}
  */
 function quoted(label, lines) {
   return [label, ...lines.map((l) => `  ${l}`)].join('\n');
 }
 
-/** How each decision scope announces itself. `phase` is the one that must not
- * pass itself off as a task-level fact (D-10). */
+/** How each decision scope announces itself. `phase` must not pass itself off as a task-level fact. */
 const DECISION_SCOPE = Object.freeze({
   task: (/** @type {string[]} */ ids) => `cited by this task (${ids.join(', ')})`,
   plan: (/** @type {string[]} */ ids) => `PHASE-SCOPED - cited by the plan's ## Context, not by this task (${ids.join(', ')})`,
@@ -330,9 +163,7 @@ const DECISION_SCOPE = Object.freeze({
 });
 
 /**
- * The `decision:` line (D-10). The scope is announced BEFORE the quoted lines,
- * because a phase-scoped answer presenting itself as a task-level one is the
- * specific wrong this edge exists to avoid.
+ * The `decision:` line. The scope is announced before the quoted lines, because a phase-scoped answer presenting itself as a task-level one is the specific wrong this edge exists to avoid.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldDecision(j) {
@@ -343,17 +174,11 @@ function fieldDecision(j) {
   return quoted(announce(d.ids || []), d.lines);
 }
 
-/** What an entry says when its phase recorded no deviation at all. It is a
- * statement about the SUMMARY, never about whether a decision was refuted -
- * `MARKER_GAP`, printed beside it, is what carries that. */
+/** What an entry says when its phase recorded no deviation: a statement about the SUMMARY, never about whether a decision was refuted. MARKER_GAP, printed beside it, carries that. */
 const NO_DEVIATION_BULLETS = "(this phase's SUMMARY records no deviation)";
 
 /**
- * The `deviation:` line (D-09). ALWAYS phase-scoped and ALWAYS carrying
- * `MARKER_GAP`: the deviation-refutes-a-decision edge does not exist in
- * machine-readable form, and an entry that quietly printed "none" would be
- * reporting the absence of a refutation when what is actually absent is the
- * marker that could have recorded one.
+ * The `deviation:` line: always phase-scoped and always carrying MARKER_GAP. The deviation-refutes-a-decision edge doesn't exist in machine-readable form, and an entry that quietly printed "none" would report the absence of a refutation when what's absent is the marker that could have recorded one.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldDeviation(j) {
@@ -364,23 +189,9 @@ function fieldDeviation(j) {
 }
 
 /**
- * One surviving finding, quoted in the reviewer's own returned words (D-11).
- * `counter_evidence` is optional in the record and is omitted when absent
- * rather than rendered empty - it is the adjudicator's note, not a field every
- * entry has.
- *
- * `fix:` IS PRINTED ON EVERY SURVIVOR, absent value and all, which is the one
- * line here that is not omitted when the record carries nothing. A survived
- * finding raised at blocker or high names the commit that fixed it; one raised
- * below them was confirmed and NOT fixed and carries no commit id because none
- * exists. Both are the same ruling, so without this line the two render
- * identically and a reader cannot tell a fix that landed from a finding the
- * gate confirmed and moved past. Omitting the line on the second would make
- * absence the statement, and absence is not a statement a reader can act on -
- * "this was left standing" is exactly the fact `/cad-why` exists to surface.
- * The commit id itself is printed where one exists, because an auditor runs
- * `git show` on it, which is why lib/adjudication-record.mjs validates the
- * value at all rather than merely its presence.
+ * One surviving finding, quoted in the reviewer's own returned words. `counter_evidence` is the adjudicator's note and is omitted when absent instead of rendered empty.
+ * `fix:` is printed on every survivor, absent value and all, the one line here not omitted when the record carries nothing. A survived finding raised at blocker or high names the commit that fixed it; one raised below was confirmed and not fixed and has no commit id. Same ruling, so without this line the two render identically and a reader can't tell a fix that landed from a finding the gate confirmed and moved past. Omitting it would make absence the statement, and "this was left standing" is exactly the fact /cad-why exists to surface.
+ * The commit id is printed where one exists because an auditor runs `git show` on it, which is why adjudication-record.mjs validates the value and not merely its presence.
  * @param {any} f @returns {string[]}
  */
 function findingLines(f) {
@@ -396,23 +207,8 @@ function findingLines(f) {
 }
 
 /**
- * The `review:` line (D-11). Three distinct answers, because they are three
- * different facts: this phase kept no adjudication record; it kept records and
- * none of their survivors covers this commit; and a survivor exists whose
- * `base_id..head_id` does not resolve in this clone, so whether it covers this
- * commit is UNKNOWN. The third is never collapsed into the second - a finding
- * dropped for want of a resolvable range would read as a finding that does not
- * apply.
- *
- * WHETHER A SURVIVOR WAS FIXED IS A FOURTH DISTINCTION AND NOT A FOURTH
- * ANSWER. It is drawn one level down, on the survivor line itself, where
- * `findingLines` prints `fix:`. This line's count is unchanged by it: a
- * confirmed-and-unfixed finding still COVERS this commit and still belongs in
- * `kept`, so the head sentence says the same thing it said before. What changed
- * is what each survivor says about ITSELF - the three answers above are about
- * whether a finding applies here, and the fix state is about what was then done
- * with it, which is a different question and would be a wrong reason to move a
- * finding between these three.
+ * The `review:` line. Three distinct answers, because they're three different facts: this phase kept no adjudication record; it kept records and none of their survivors covers this commit; and a survivor exists whose `base_id..head_id` doesn't resolve in this clone, so whether it covers this commit is unknown. The third is never collapsed into the second, since a finding dropped for want of a resolvable range would read as one that doesn't apply.
+ * Whether a survivor was fixed isn't a fourth answer. It's drawn one level down, on the survivor line, where findingLines prints `fix:`. A confirmed-and-unfixed finding still covers this commit and belongs in `kept`, so the head sentence is unchanged.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldReview(j) {
@@ -438,10 +234,7 @@ function fieldReview(j) {
 }
 
 /**
- * The `declared by:` line (D-12) - which task's `- **Files:**` line claimed the
- * queried path, and through which declaration, since a directory lease claims a
- * file it does not name. It is a SIXTH join field, and it obeys the same rule
- * as the other five: stated when known, stated absent when not, never dropped.
+ * The `declared by:` line: which task's `- **Files:**` line claimed the queried path, and through which declaration, since a directory lease claims a file it doesn't name. It's the sixth join field and obeys the same rule as the other five: stated when known, stated absent when not, never dropped.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldDeclared(j) {
@@ -474,8 +267,7 @@ function decorate(e) {
 }
 
 /**
- * Sort a COPY of `entries` newest first: commit date descending, full sha
- * descending as the tiebreak. Never mutates its argument.
+ * Sort a copy of `entries` newest first: commit date descending, full sha descending as the tiebreak. Never mutates its argument.
  * @param {ChainEntry[]} entries @returns {ChainEntry[]}
  */
 function sortEntries(entries) {
@@ -506,16 +298,8 @@ function renderEntry(raw) {
 }
 
 /**
- * Render `entries` into the one `text` string the seam emits, plus the counts
- * its envelope carries beside it and the SORTED, CAPPED entries themselves -
- * why.mjs (task 3) carries both `text` and `entries` on its envelope (D-02),
- * and returning the already-sorted slice here is what keeps the sort a single
- * computation rather than a second copy of it in the seam.
- *
- * `excluded` is the seam's simplification report (WHY-02): the commits a
- * `--full-history` comparand carries and this chain does not. Absent or empty
- * renders NOTHING, and when it renders it goes BEFORE the truncation note, so
- * the `Pass --top` line stays the last line of a truncated chain.
+ * Render `entries` into the one `text` string the seam emits, plus the counts its envelope carries and the sorted, capped entries themselves. Returning the already-sorted slice is what keeps the sort one computation instead of a second copy in the seam.
+ * `excluded` is the seam's simplification report: the commits a `--full-history` comparand carries and this chain doesn't. Absent or empty renders nothing, and when it renders it goes before the truncation note so the `Pass --top` line stays last on a truncated chain.
  *
  * @param {ChainEntry[]} entries
  * @param {{top?: number, excluded?: {sha: string, parentCount: number}[]|null, path?: string}} [opts]
