@@ -15,7 +15,10 @@
 //   get [--file <path>] [key ...]             EFFECTIVE values (repo > global > schema
 //                                             defaults); no keys = all. The only correct
 //                                             way for a workflow to read config.
-//   keys                                      dump the schema keys (for menu/catalog derivation)
+//   keys                                      dump the whole schema key map
+//   keys --walk                               only the keys that hold a `question`, in `position`
+//                                             order, grouped by `section`: what the /cad-config
+//                                             walk asks, in a size that fits one tool result
 //
 // Default --file is .planning/config.json relative to cwd. --global targets the
 // user-global layer (auto-created on set); route.mjs merges global under repo at
@@ -519,6 +522,31 @@ function get(file, keys, asGlobal) {
   out({ ok: true, values, source, ...(allWarnings.length ? { warnings: allWarnings } : {}) });
 }
 
+// --- the walk's read ---------------------------------------------------------
+
+// Groups by section so the section name is said once, and writes each entry as
+// [value, text?] so `null` and the booleans keep their JSON type without an
+// object per option - the object-per-option shape ran past 25,000 B. `type` and
+// the scope markers ride along because the walk converts an `Other` answer by
+// type and says which layer takes a key by the markers.
+function walkRead() {
+  const asked = Object.entries(SCHEMA).filter(([, spec]) => typeof spec.question === 'string')
+    .sort((a, b) => a[1].position - b[1].position);
+  const groups = [];
+  for (const [key, spec] of asked) {
+    if (groups.length === 0 || groups[groups.length - 1].section !== spec.section) groups.push({ section: spec.section, keys: [] });
+    /** @type {Record<string, unknown>} */
+    const row = { key, type: spec.type };
+    if (spec.src !== undefined) row.src = spec.src;
+    if (spec.repo_only !== undefined) row.repo_only = spec.repo_only;
+    row.question = spec.question;
+    if (spec.explain) row.explain = spec.explain.map((/** @type {{value: unknown, text?: string}} */ e) => (e.text === undefined ? [e.value] : [e.value, e.text]));
+    if (spec.hint !== undefined) row.hint = spec.hint;
+    groups[groups.length - 1].keys.push(row);
+  }
+  return groups;
+}
+
 // --- dispatch ----------------------------------------------------------------
 
 const argv = process.argv.slice(2);
@@ -605,7 +633,10 @@ try {
   // has resolved it to a path.
   else if (cmd === 'unset') { const { file, tokens } = optFile(rest); unset(file, tokens); }
   else if (cmd === 'get') { const { file, tokens, global } = optFile(rest); get(file, tokens, global); }
-  else if (cmd === 'keys') { out({ ok: true, keys: SCHEMA }); }
+  else if (cmd === 'keys') {
+    if (evaluateFlag(rest, '--walk', CONTRACTS['config.mjs'].keys['--walk']).value === true) out({ ok: true, walk: walkRead() });
+    else out({ ok: true, keys: SCHEMA });
+  }
   else fail('usage', 'subcommand: validate | check | set | unset | get | keys');
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
