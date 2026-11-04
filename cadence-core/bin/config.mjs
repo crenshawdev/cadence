@@ -1,29 +1,15 @@
 #!/usr/bin/env node
 // @ts-check
-// config.mjs - zero-dep validator seam for .planning/config.json.
-// The schema in ../config.schema.json is the single source of truth; the
-// cad-config workflow (interactive menu + direct-set) calls this so no invalid
-// value is ever written. Never blocks the spine: callers degrade on {ok:false}.
-//
-// Subcommands (all print one JSON line on stdout):
-//   validate [--file <path>|--global]        validate a whole config file
-//   check <key=value> ...                     validate one or more dotted key=value pairs
-//   set [--file <path>|--global] <key=value>  validate pairs, then write them into the file
-//   unset [--file <path>|--global] <key> ...  remove those keys from that ONE file (never the
-//                                             merged view). Accepts any dotted path, schema key
-//                                             or not; a key the file does not hold writes nothing
-//   get [--file <path>] [key ...]             EFFECTIVE values (repo > global > schema
-//                                             defaults); no keys = all. The only correct
-//                                             way for a workflow to read config.
-//   keys                                      dump the whole schema key map
-//   keys --walk                               only the keys that hold a `question`, in `position`
-//                                             order, grouped by `section`: what the /cad-config
-//                                             walk asks, in a size that fits one tool result
-//
-// Default --file is .planning/config.json relative to cwd. --global targets the
-// user-global layer (auto-created on set); route.mjs merges global under repo at
-// read time (precedence repo > global > defaults). Each file is validated on its
-// own - every layer must be independently valid.
+// config.mjs - zero-dep validator seam for .planning/config.json. Every subcommand prints one JSON line.
+// The schema in ../config.schema.json is the single source of truth, and the cad-config workflow calls this so
+// no invalid value gets written. Never blocks the spine: callers degrade on {ok:false}.
+//   validate [--file <path>|--global]         validate a whole config file
+//   check <key=value> ...                     validate dotted key=value pairs
+//   set [--file <path>|--global] <key=value>  validate, then write into the file
+//   unset [--file <path>|--global] <key> ...  remove keys from that one file, never the merged view; any dotted path
+//   get [--file <path>] [key ...]             effective values (repo > global > defaults), the way a workflow reads config
+//   keys [--walk]                             the schema key map; --walk is only keys holding a `question`, by section
+// --file defaults to .planning/config.json. --global is the user-global layer, which set creates and route.mjs merges.
 
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -37,50 +23,31 @@ import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { checkValue, checkGrammar } from './lib/config-value.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// SCHEMA is loaded lazily, inside the dispatch try block below, so a missing
-// or malformed shipped config.schema.json degrades to {ok:false} instead of
-// crashing at import time. CADENCE_CONFIG_SCHEMA overrides the path ONLY when
-// the `CADENCE_TEST_SEAM` sentinel holds (lib/test-seam.mjs); without it the
-// variable is ignored and the shipped file is read, silently - this constant
-// resolves at module load, before any dispatch exists to carry a warning. The
-// gate is the point: the schema decides which keys are known and which carry
-// the `src: "global"` marker, so an ungated override re-opens CFG-02.
+// loaded inside the dispatch try below, so a missing or broken schema answers {ok:false} instead of crashing at import
 let SCHEMA;
+// The override only counts under the `CADENCE_TEST_SEAM` sentinel and is ignored silently otherwise (no dispatch
+// exists yet to carry a warning). The gate matters: the schema decides which keys are known and which are `src: "global"`.
 const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
   || join(HERE, '..', 'config.schema.json');
 
-// Seam convention lives in lib/seam-io.mjs. fail() throws DONE so the
-// dispatch unwinds without process.exit().
+// fail throws DONE so the dispatch unwinds without process.exit().
 const out = emit;
-// `hint` is the third argument and rides as a conditional key: an absent hint
-// adds no key, so no shipped assertion moves (phase-1 D-09/D-10).
+// hint is a conditional key, so a call without one adds no key and no shipped assertion moves.
 const fail = (reason, detail, hint) => {
   out({ ok: false, reason, detail, ...(hint ? { hint } : {}) });
   throw DONE;
 };
 
-// Parse a CLI value token: JSON where it parses (true/false/12/null/"s"/[...]),
-// otherwise a bare string (so `mode=interactive` -> "interactive").
+// JSON where it parses (true, 12, null, "s", [...]), else a bare string, so mode=interactive is "interactive".
 function parseToken(raw) {
   try { return JSON.parse(raw); } catch { return raw; }
 }
 
-// Flatten a config object to dotted leaf paths. Arrays and null are leaves.
-//
-// The skip is exactly `_meta` and never every `_`-prefixed key. It exists for
-// the annotation block config.schema.json:2-5 documents and the repo's own
-// template idiom encourages, so it cannot be deleted - but as a PREFIX rule it
-// also swallowed `__proto__`, which is how `validate` answered
-// {"ok":true,"checked":0,"errors":[]} on a hostile config the guard was already
-// obeying: inspection reported a file clean that enforcement read as settings.
-//
-// And the accumulation defines an own property rather than assigning `acc[path]`,
-// for the same reason the merge does (lib/config-merge.mjs): a TOP-LEVEL leaf
-// named `__proto__` assigned at that key runs Object.prototype's setter, which
-// reparents the accumulator instead of recording a key - leaving `checked` at 0
-// again for the scalar spelling, one narrowing later. (An object-valued
-// `__proto__` recurses to dotted paths that never touch `acc`'s own `__proto__`,
-// so the scalar form is the one that shows this.)
+// Flattens a config object to dotted leaf paths. Arrays and null are leaves.
+// The skip is exactly `_meta`, not every `_`-prefixed key: a prefix rule also swallowed `__proto__`, so validate
+// said {"ok":true,"checked":0} about a hostile config the guard was already obeying.
+// Accumulating with defineProperty matters for the same reason: assigning a top-level leaf named `__proto__`
+// runs Object.prototype's setter and reparents acc instead of recording a key.
 /** @param {Record<string, any>} obj @param {string} prefix @param {Record<string, any>} acc */
 function flatten(obj, prefix, acc) {
   for (const [k, v] of Object.entries(obj)) {
@@ -115,10 +82,7 @@ function validate(file) {
   const leaves = flatten(cfg, '', {});
   const errors = [];
   for (const [path, v] of Object.entries(leaves)) {
-    // hasOwn, not a bare `SCHEMA[path]`: the narrowed flatten above now reports
-    // a leaf literally named `__proto__`, and a bare lookup answers that with
-    // Object.prototype - a truthy "spec" carrying no `type`, which reached the
-    // user as "unknown schema type undefined" instead of naming the unknown key.
+    // hasOwn, not SCHEMA[path]: a `__proto__` leaf found Object.prototype and read as "unknown schema type undefined"
     const spec = Object.hasOwn(SCHEMA, path) ? SCHEMA[path] : undefined;
     if (!spec) { errors.push({ key: path, error: 'unknown key' }); continue; }
     const msg = checkValue(spec, v);
@@ -127,13 +91,10 @@ function validate(file) {
   out({ ok: errors.length === 0, file, checked: Object.keys(leaves).length, errors });
 }
 
-// Validate key=value pairs. Returns {pairs, errors}.
-//
-// `targetsGlobal` is the RESOLVED target layer, never a flag: the caller has
-// already asked whether the file it is about to write IS the user-global layer
-// (`set` below), so a `--file <that same path>` spelling reaches the scope
-// check exactly as `--global` does. `check` passes what its own `--global`
-// says, which is how the inspect face reports what the write face refuses.
+// Validates key=value pairs. Returns {pairs, errors}.
+// targetsGlobal is the resolved target layer, not a flag: set asks whether the file IS the user-global one, so
+// `--file <that path>` reaches the scope check the same as --global. check passes its own --global, which is
+// how the inspect face reports what the write face refuses.
 /** @param {string[]} tokens @param {boolean} [targetsGlobal] */
 function checkPairs(tokens, targetsGlobal) {
   const pairs = [];
@@ -142,39 +103,20 @@ function checkPairs(tokens, targetsGlobal) {
     const kv = splitPair(tok);
     if (!kv) { errors.push({ key: tok, error: 'not a key=value pair' }); continue; }
     const [key, raw] = kv;
-    // BEFORE the schema lookup, deliberately: a retired key is one the schema
-    // no longer holds, so the `!spec` arm below would answer a rename with the
-    // generic 'unknown key' and leave the user to find the replacement. This
-    // runs inside checkPairs, which both `set` and `check` reach before any
-    // read or write, so the refusal stays atomic.
+    // before the schema lookup: a retired key is gone from it, so unknown-key would hide the replacement
     const retired = retiredKeyError(key);
     if (retired) { errors.push({ key, error: retired }); continue; }
-    // hasOwn, the third of the same guard (:142 in validate, :284 in get): a
-    // bare `SCHEMA[key]` answers `constructor` or any other Object.prototype
-    // member with a truthy "spec" carrying no `type`, which checkValue below
-    // reported as "unknown schema type undefined" instead of naming the key
-    // the schema does not hold. The retired lookup above carries its own half
-    // of this guard, inside retiredKeyError.
+    // hasOwn again, so `constructor` and friends don't pass as a spec with no type. retiredKeyError has its own half of this.
     const spec = Object.hasOwn(SCHEMA, key) ? SCHEMA[key] : undefined;
     if (!spec) { errors.push({ key, error: 'unknown key' }); continue; }
     const value = parseToken(raw);
     const msg = checkValue(spec, value);
     if (msg) { errors.push({ key, error: msg, value }); continue; }
-    // AFTER checkValue, deliberately, and unlike the retired-key check above: a
-    // pair that is both out-of-scope and type-invalid reports the TYPE, because
-    // the type is wrong in either layer while the layer is only wrong in this
-    // one (D-11).
-    //
-    // The marker is `repo_only`, never `src`. `src: "repo"` means "settable in
-    // either layer" and 32 keys carry it, `granularity` and `review.mode` among
-    // them - the keys a user legitimately pins machine-wide - so keying a layer
-    // refusal on `src` would refuse exactly the wrong set. `repo_only`
-    // asks the narrower question config.schema.json's _meta.note states: would a
-    // user-global value AUTHORIZE a change to a repository that never opted in.
-    // Read off the SCHEMA object the dispatch loaded, through the same
-    // `Object.hasOwn` guard `spec` came through six lines up - never a
-    // hand-maintained key list, so a second marked key is a schema edit and no
-    // line of this rule moves.
+    // after checkValue on purpose: a pair that's both out of scope and the wrong type reports the type, because
+    // that's wrong in either layer. The marker is `repo_only`, never `src`: keys with `src: "repo"` (granularity,
+    // review.mode) are ones users legitimately pin machine-wide. repo_only asks the narrower question from
+    // config.schema.json: would a user-global value authorize a change to a repo that never opted in. It's read
+    // off SCHEMA with no key list, so a second marked key is a schema edit and nothing here moves.
     if (targetsGlobal && spec.repo_only === true) {
       errors.push({
         key,
@@ -190,12 +132,9 @@ function checkPairs(tokens, targetsGlobal) {
   return { pairs, errors };
 }
 
-// A dotted key writes through intermediate containers. Auto-vivifying one that
-// is ABSENT (missing, or an explicit null holding no data) is the point of
-// `set`; silently replacing one that already holds an array or a scalar throws
-// its contents away, which is the same data loss the `(root)` check refuses at
-// depth 0. checkPaths refuses it the same way and BEFORE any pair is applied,
-// so a multi-pair set is all-or-nothing rather than half-written.
+// A dotted key writes through containers. Creating an absent one (missing or null) is the point of set, but
+// replacing an array or scalar throws its contents away, so refuse that before any pair is applied and a
+// multi-pair set stays all-or-nothing.
 function checkPaths(cfg, pairs) {
   const errors = [];
   for (const { key } of pairs) {
@@ -229,26 +168,16 @@ function setInto(obj, dotted, value) {
   node[parts[parts.length - 1]] = value;
 }
 
-// `create` (the --global path) starts from an empty config and makes the parent
-// dir if the file does not exist yet; a corrupt existing file still fails.
+// `create` (the --global path) starts from an empty config and makes the parent dir; a corrupt file still fails.
 function set(file, tokens, create) {
-  // WHICH LAYER this write lands in, resolved off the target FILE and not off
-  // the flag (D-04). `create` is optFile's `global`, so `--global` is direct;
-  // the second arm is `--file <the user-global config's own path>`, which
-  // returns `global:false` and wrote straight through a flag-only rule.
-  // Identity, not string equality: `--file <global-dir>/./config.json` is what
-  // forced the realpath hardening the first time (8063832d), and a symlink, a
-  // relative spelling or a trailing slash open the same door. It is
-  // `layerIdentity` from the merge lib rather than a local copy, because that
-  // is the same "one file, both layers" question the read face answers and two
-  // copies of it drift. An UNRESOLVABLE identity (null) equals nothing,
-  // including another null, and GLOBAL_CONFIG is deliberately '' where
-  // homedir() throws - '' must never match a real target.
+  // The layer comes from the target file, not the flag: `--file <the user-global path>` returns global:false and
+  // wrote straight through a flag-only rule. layerIdentity, not string equality, because `./` spellings,
+  // symlinks and trailing slashes open the same door (8063832d). An unresolvable identity (null) equals nothing,
+  // and GLOBAL_CONFIG is '' where homedir throws, so '' must never match a real target.
   const fileId = layerIdentity(file);
   const targetsGlobal = create
     || (Boolean(GLOBAL_CONFIG) && fileId !== null && fileId === layerIdentity(GLOBAL_CONFIG));
-  // Ahead of every read and every write below, so a multi-pair set carrying one
-  // marked key leaves the target file untouched.
+  // ahead of every read and write, so a multi-pair set with one marked key leaves the file untouched
   const { pairs, errors } = checkPairs(tokens, targetsGlobal);
   if (errors.length) fail('invalid', errors,
     'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts');
@@ -266,42 +195,23 @@ function set(file, tokens, create) {
     `edit ${file} by hand to free the path each error names, then re-run`);
   for (const { key, value } of pairs) setInto(cfg, key, value);
   if (create) mkdirSync(dirname(file), { recursive: true });
-  // atomicWrite (temp + rename), not a bare write: config is a live layer
-  // every other seam reads mid-session; a crash must never leave it torn.
+  // atomicWrite, not a bare write: every other seam reads this layer mid-session and a crash can't leave it torn
   atomicWrite(file, JSON.stringify(cfg, null, 2) + '\n');
   out({ ok: true, file, changed: pairs });
 }
 
-// Remove dotted paths from exactly ONE layer file - never the merged view. "The
-// key is gone from the file afterwards" is a claim about a file, and the merged
-// view is not one.
-//
-// IT VALIDATES NOTHING, on purpose. Every other write path here runs checkPairs
-// first; this one accepts any dotted path - a schema key, a retired key, an
-// unknown one - because removing what `validate` refuses is its entire job, and
-// `workflows/config.md` closes the only other route ("Never write config JSON by
-// hand; go through the seam"). A write face that refused a retired key here
-// would leave a migration with no seam at all (D-06).
-//
-// NOTHING REMOVED MEANS NOTHING WRITTEN, not a rewrite that happens to match.
-// atomicWrite re-serializes at two-space indent with a trailing newline, so a
-// no-op that still wrote would reformat a hand-spaced layer and move its sha256
-// while reporting `removed: []`. An ABSENT file is the same answer for the same
-// reason and creates nothing - only `set --global` auto-creates, because only a
-// set has a value that has to land somewhere.
-//
-// An emptied container is NOT pruned. `flatten` above skips an object with no
-// entries, so `{"risk":{"override":{}}}` contributes no leaf and `validate`
-// passes over it; a second walk to delete it would earn nothing.
+// Removes dotted paths from exactly one layer file, never the merged view: "gone from the file" is a claim about a file.
+// It validates nothing on purpose. Removing what validate refuses is its whole job, and the workflow forbids
+// hand-editing config JSON, so refusing a retired key here would leave a migration with no seam.
+// Nothing removed means nothing written: atomicWrite re-serializes at two-space indent, so a no-op write would
+// reformat a hand-spaced layer and move its sha256 while reporting `removed: []`. An absent file answers the
+// same and creates nothing, because only set has a value that has to land somewhere.
+// An emptied container isn't pruned: flatten skips an object with no entries, so validate passes over it.
 function unset(file, keys) {
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
   catch (e) {
-    // ENOENT is the "nothing to remove" arm rather than a failure: a layer that
-    // does not exist already holds none of these keys, and reporting `read`
-    // would fail a migration step on every project that never wrote a repo
-    // config. A file that exists and cannot be PARSED is still refused - the
-    // keys may well be in there.
+    // ENOENT is "nothing to remove": failing here would break a migration on every project with no repo config
     if (e.code === 'ENOENT') return out({ ok: true, file, removed: [] });
     return fail('read', `cannot read/parse ${file}: ${e.message}`,
       'repair the JSON in the file the detail names and re-run - unset will not overwrite a layer it could not read');
@@ -313,20 +223,13 @@ function unset(file, keys) {
     const parts = key.split('.');
     let node = cfg;
     let depth = 0;
-    // hasOwn at every hop, for the reason `validate` and `get` each state on
-    // their own face: a bare `node[part]` walks the prototype chain, so
-    // `unset toString` would find a function to delete and `unset
-    // constructor.prototype.x` would reach into Object itself. An own-property
-    // walk can only ever touch data this file actually holds - and JSON.parse
-    // DEFINES a literal `"__proto__"` key as an own property, so the one
-    // spelling that really can sit in a config file is still reachable.
+    // hasOwn at every hop: a bare node[part] walks the prototype chain, so `unset toString` would find a function to delete
     for (; depth < parts.length - 1; depth++) {
       const next = Object.hasOwn(node, parts[depth]) ? node[parts[depth]] : undefined;
       if (!isPlainObject(next)) break;
       node = next;
     }
-    // Fell out of the walk early, so the path runs through something this file
-    // does not hold (or through a scalar) - absent, not an error.
+    // fell out of the walk early: the path runs through something this file doesn't hold, so it's absent, not an error
     if (depth !== parts.length - 1) continue;
     if (!Object.hasOwn(node, parts[depth])) continue;
     delete node[parts[depth]];
@@ -336,86 +239,46 @@ function unset(file, keys) {
   out({ ok: true, file, removed });
 }
 
-// The effective value set: schema defaults, overlaid by the global then the
-// repo layer (shared merge lib - identical semantics to route.mjs). Output is
-// a flat dotted-key map, so callers read values without re-flattening.
-// `asGlobal` is the --global arm saying so: that path hands GLOBAL_CONFIG in as
-// the file to read, which makes one file BOTH layers, and only the caller knows
-// the read was addressed at the user-global layer rather than at a repo config
-// the global env happens to alias. It moves the `source` label, nothing else.
+// The effective value set: schema defaults, then the global layer, then the repo layer (the shared merge lib,
+// same as route.mjs). Output is a flat dotted-key map so callers don't re-flatten.
+// asGlobal is the --global arm: it hands GLOBAL_CONFIG in as the file, which makes one file both layers, and
+// only the caller knows the read was aimed at the global layer. It moves the `source` label, nothing else.
 function get(file, keys, asGlobal) {
   const { config, source, warnings, layers, scopeWarnings } = mergeLayers(file, { asGlobal });
-  // A key the schema dropped is invisible to the read below - it resolves at
-  // the default and looks configured. Naming it here is what keeps an upgraded
-  // repo from silently routing on a value nothing reads.
-  //
-  // `scopeWarnings` rides here for the same reason and by the same route: `get`
-  // is the read face everything reaches these keys through, so folding it in
-  // once is the whole wiring (D-03). It stays OFF `mergeLayers`'s own
-  // `warnings[]`, which git-publish reads as a refusal to mutate (D-05).
+  // A key the schema dropped resolves at its default and looks configured, so name it. Otherwise an upgraded
+  // repo quietly routes on a value nothing reads. scopeWarnings rides in the same way: get is the read face,
+  // so folding it in once is the whole wiring. It stays off mergeLayers's own warnings, which git-publish reads
+  // as a refusal to mutate.
   const allWarnings = [...(warnings || []), ...retiredKeysIn(config), ...(scopeWarnings || [])];
   const layered = flatten(config, '', {});
   /** @type {Record<string, any>} */
   const values = {};
   const wanted = keys.length ? keys : Object.keys(SCHEMA);
-  // hasOwn, not a bare `SCHEMA[k]` - the guard `validate` already carries at
-  // :138-142, for the same reason one face over. A bare lookup answers a
-  // requested key named `__proto__`, `constructor`, `toString` or any other
-  // Object.prototype member with Object.prototype itself: a truthy "spec"
-  // carrying no `type` and no `default`, so the key passed this filter as
-  // though the schema held it. The value line below then read `.default` off
-  // that (undefined), and assigning it into `values` at the name `__proto__`
-  // ran the object's own setter and stored NOTHING - which is how
-  // `get __proto__` answered {"ok":true,"values":{}} at exit 0, and
-  // `get granularity __proto__` answered about one key of the two asked for with
-  // nothing saying the other had gone missing. `fail('unknown-key', ...)` was
-  // always the right answer; the whole fix is that a prototype member now
-  // reaches it.
+  // hasOwn, not a bare SCHEMA[k], same as validate: a requested `__proto__` or `toString` found Object.prototype
+  // and passed this filter as a spec, and assigning into values at `__proto__` stored nothing, so
+  // `get __proto__` answered ok with empty values. unknown-key was always the right answer.
   const unknown = wanted.filter((k) => !Object.hasOwn(SCHEMA, k));
   if (unknown.length) fail('unknown-key', unknown,
     'run `config.mjs keys` for the keys this schema carries, then ask for one of those');
   for (const k of wanted) {
-    // Guarded for the same reason, though the filter above now makes every `k`
-    // an own schema key: the keyless arm walks Object.keys(SCHEMA) and the
-    // explicit arm is refused, so nothing reaches here off the prototype
-    // chain today. A future caller path that builds `wanted` some third way
-    // would inherit the hole, and this is the read the hole is spent through.
+    // redundant given the filter today, but a future path that builds wanted another way would inherit the hole
     const spec = Object.hasOwn(SCHEMA, k) ? SCHEMA[k] : undefined;
     values[k] = layered[k] !== undefined ? layered[k] : spec && spec.default;
-    // A tier id is pasted into a `review-provider.mjs --model` line by prose that
-    // reads it HERE, and a hand-edited or cloned layer never went through `set`'s
-    // grammar. A stored value that is not a model id answers null - the "non-null
-    // model id" gate those workflows already hold then drops it - and the key is
-    // named so a wrongly refused id is visible rather than silent (D-17).
+    // a hand-edited layer never went through set's grammar, so a stored non-model-id answers null and the key is named
     if (spec && spec.grammar === 'model_id' && checkGrammar(spec, values[k]) !== null) {
       allWarnings.push(`${k}: the stored value is not a model id and was read as null`);
       values[k] = null;
     }
-    // The twelve `review.triggers.<t>.{gate,tier,effort}` keys used to answer
-    // with a warning here saying "no layer pins this, so the stakes level
-    // decides it". That sentence went with the level: those rows carry real
-    // schema defaults now (D-01), so an unset one is answered the way every
-    // other defaulted key is answered, and a warning saying something else
-    // decides - beside a value that IS the answer - would be a contradiction.
-    //
-    // `stakes` used to keep a two-state read of its own here - the one key on
-    // this face whose unset state no schema default could answer, because the
-    // level was computed per phase rather than read. The key is retired
-    // (v3.7.12), so there is no two-state read left: every key this face answers
-    // now either carries a layered value or carries a schema default, and a
-    // config that still holds `stakes` is named by the retired-key warnings
-    // folded in above rather than by a special case here.
+    // no special case for the review.triggers rows or retired `stakes`: a layered value or a schema default always answers
   }
   out({ ok: true, values, source, ...(allWarnings.length ? { warnings: allWarnings } : {}) });
 }
 
 // --- the walk's read ---------------------------------------------------------
 
-// Groups by section so the section name is said once, and writes each entry as
-// [value, text?] so `null` and the booleans keep their JSON type without an
-// object per option - the object-per-option shape ran past 25,000 B. `type` and
-// the scope markers ride along because the walk converts an `Other` answer by
-// type and says which layer takes a key by the markers.
+// Grouped by section so the name is said once, and entries are [value, text?] so `null` and the booleans keep
+// their JSON type without an object per option (that shape ran past 25,000 B). `type` and the scope markers
+// ride along because the walk converts an `Other` answer by type and says which layer takes a key.
 function walkRead() {
   const asked = Object.entries(SCHEMA).filter(([, spec]) => typeof spec.question === 'string')
     .sort((a, b) => a[1].position - b[1].position);
@@ -440,18 +303,10 @@ const argv = process.argv.slice(2);
 const cmd = argv[0];
 const rest = argv.slice(1);
 function optFile(tokens) {
-  // `--global` reads through its DECLARED row too, and reading it off the row
-  // is what makes this class unrepeatable at this seam: a subcommand that
-  // ACCEPTS a `--global` it does not declare stops being possible, because the
-  // read needs the row to exist. It was live on `get` while only `validate`
-  // and `set` declared it, and self-verify stayed green only because no
-  // workflow prose spelled that pair - the moment any did, correct prose would
-  // be reported `unknown-flag`.
-  //
-  // Tested FIRST and short-circuiting to the global file before `--file` is
-  // looked at, exactly as the hand-written probe did. The row is `boolean`,
-  // whose whole grammar is presence, so neither disposition can fire and the
-  // three flag spellings a valued row separates do not arise.
+  // --global reads through its declared row too, so a subcommand can't accept a --global it never declared.
+  // That was live on get while only validate and set declared it, and self-verify stayed green because no
+  // workflow prose spelled the pair. It's tested first and short-circuits before --file is looked at; the row
+  // is boolean, so presence is the whole grammar.
   const globalRow = CONTRACTS['config.mjs'][cmd]['--global'];
   const gi = tokens.indexOf('--global');
   if (globalRow !== undefined && evaluateFlag(tokens, '--global', globalRow).value === true) {
@@ -459,27 +314,13 @@ function optFile(tokens) {
   }
   const i = tokens.indexOf('--file');
   if (i < 0) return { file: '.planning/config.json', global: false, tokens };
-  // `--file` reads through its DECLARED row in lib/arg-contract.mjs (ARG-06)
-  // rather than through a hand-written value rule. The row is per SUBCOMMAND -
-  // `validate`, `set` and `get` each declare one - and is read at the call
-  // rather than at module load, because `check` and `keys` declare none and
-  // never reach this function.
-  //
-  // WHAT THE ROW CATCHES THAT THE HAND-WRITTEN RULE DID NOT. `if (!tokens[i+1])`
-  // covered the two spellings an interpolated `--file $VAR` produces on an unset
-  // variable - unquoted drops the token entirely, quoted `"$VAR"` passes an
-  // EMPTY one - and left alone those fell through as `file: undefined`, so `set`
-  // degraded to reason:"internal" with a raw Node type error, `validate` said
-  // "cannot read/parse undefined", and `get` answered ok:true with a full
-  // effective read of the user-global layer alone. What it missed is the
-  // FLAG-SHAPED token: measured 2026-08-19, `config.mjs validate --file
-  // --nonsense` returned `{"ok":false,"reason":"read","detail":"cannot
-  // read/parse --nonsense: ENOENT ..."}` - answering about a file the caller
-  // never named, which is the same class one spelling further out. One rule now
-  // refuses all three.
-  //
-  // The refusal keeps this bin's own `usage` and its published wording (D-07);
-  // the contract mints no reason code.
+  // --file reads through its declared row in lib/arg-contract.mjs. The row is per subcommand and read at the
+  // call, not at load, since check and keys declare none and never get here.
+  // It catches what the hand-written rule missed. An unset `--file $VAR` gives no token or an empty one, and
+  // both fell through as file: undefined, so set died as internal, validate said "cannot read/parse undefined"
+  // and get read the global layer alone. A flag-shaped token did the same: `validate --file --nonsense` answered
+  // about a file nobody named.
+  // The refusal keeps this bin's own usage wording; the contract mints no reason code.
   const parsed = evaluateFlag(tokens, '--file', CONTRACTS['config.mjs'][cmd]['--file']);
   if (!parsed.ok) {
     fail('usage', '--file needs a path after it: --file <config file> (or --global)');
@@ -496,28 +337,20 @@ try {
   }
   if (cmd === 'validate') { const { file } = optFile(rest); validate(file); }
   else if (cmd === 'check') {
-    // `--global` read off its DECLARED row, exactly as optFile reads the same
-    // flag - but never THROUGH optFile: that function falls through to
-    // `CONTRACTS['config.mjs'][cmd]['--file']` the moment a `--file` token
-    // appears, and `check` declares no such row, so it would hand `undefined`
-    // to evaluateFlag and reach the user as reason:"internal". The row is
-    // `boolean`, whose whole grammar is presence, so the flag token is dropped
-    // from what checkPairs is handed rather than read as a pair.
+    // --global comes off its declared row like optFile reads it, but not through optFile: that falls through to
+    // the --file row once a --file token shows up, check declares none, and undefined would reach evaluateFlag
+    // as reason:"internal". The flag token is dropped before checkPairs so it isn't read as a pair.
     const gi = rest.indexOf('--global');
     const asGlobal = evaluateFlag(rest, '--global', CONTRACTS['config.mjs'].check['--global']).value === true;
-    // The same failure contract `set` speaks (and workflows/config.md
-    // documents): one shape for both faces, so a caller reads `detail` once -
-    // and now the same per-pair entry, so the inspect face reports the scope
-    // refusal the write face gives rather than blessing a pair `set` refuses.
+    // Same failure shape as set, with the same per-pair entry, so a caller reads detail once and the inspect
+    // face reports the scope refusal the write face gives.
     const { errors } = checkPairs(asGlobal ? rest.filter((_, j) => j !== gi) : rest, asGlobal);
     if (errors.length) out({ ok: false, reason: 'invalid', detail: errors,
       hint: 'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts' });
     else out({ ok: true });
   }
   else if (cmd === 'set') { const { file, tokens, global } = optFile(rest); set(file, tokens, global); }
-  // No `global` argument: which layer is answered by the FILE alone here, and
-  // `unset` never creates one, so the flag has nothing left to say once optFile
-  // has resolved it to a path.
+  // no global argument: the file alone says which layer, and unset never creates one
   else if (cmd === 'unset') { const { file, tokens } = optFile(rest); unset(file, tokens); }
   else if (cmd === 'get') { const { file, tokens, global } = optFile(rest); get(file, tokens, global); }
   else if (cmd === 'keys') {
