@@ -1,12 +1,6 @@
 // @ts-check
-// planning/status.mjs - `status`: where the project is, derived from the phase
-// artifacts on disk and reconciled against the STATE.md cursor.
-//
-// The drift walk over the phase-directory grammar (`phaseDirGrammarDrift`) and
-// the cursor/derived agreement table (`AGREE`) live here because nothing else
-// reads them - phase 4's D-05 partition puts a single-use helper beside its
-// handler and leaves the multi-family readers in planning/core.mjs. The grammar
-// itself (`PHASE_DIR_NAME`) is one of those readers and is imported from there.
+// planning/status.mjs - `status`: where the project is, derived from the phase artifacts on disk and reconciled against the STATE.md cursor.
+// phaseDirGrammarDrift and AGREE live here because nothing else reads them, and the grammar itself is in core.mjs because several readers share it.
 'use strict';
 
 import { existsSync, readdirSync } from 'node:fs';
@@ -18,22 +12,9 @@ import { classifyPhaseList, parseCursor, parseRequirements } from '../lib/planni
 import { emit } from '../lib/seam-io.mjs';
 
 /**
- * Every `phases/` entry outside `PHASE_DIR_NAME`, as one drift entry per
- * colliding group.
- *
- * ONE kind covers named, zero-padded and prefix-colliding entries (D-08). There
- * is deliberately no second "shadowing" diagnostic: every writer builds its path
- * as `join(dir, 'phases', <spelling>)`, which can never PRODUCE
- * `14-data-depth-x`, so a shadowing rule would report a hazard no code path
- * reaches. What is worth reporting instead is the collision the reader would
- * otherwise have to notice for themselves - `08` beside a legal `8` - so
- * entries sharing a leading numeric prefix are named together in one entry, and
- * the legal directory of that prefix is named in the detail.
- *
- * An absent `phases/` is data, never a throw. A stray FILE is not a phase
- * directory and is not reported: `.DS_Store` would only make the diagnostic
- * noise. Entries that are entirely legal produce NOTHING, so `drift` stays
- * absent on a clean tree and a legal name is never itself listed in `entries`.
+ * Every `phases/` entry outside `PHASE_DIR_NAME`, as one drift entry per colliding group.
+ * One kind covers named, zero-padded and prefix-colliding entries, since every writer builds `join(dir, 'phases', <spelling>)` and can never produce `14-data-depth-x`. What's worth reporting is a collision like `08` beside a legal `8`.
+ * An absent `phases/` is data, stray files aren't phase directories, and entirely legal entries produce nothing, so `drift` stays absent on a clean tree.
  * @param {string} dir @returns {Array<{kind: string, entries: string[], detail: string}>}
  */
 function phaseDirGrammarDrift(dir) {
@@ -45,9 +26,7 @@ function phaseDirGrammarDrift(dir) {
   for (const ent of listing) {
     if (!ent.isDirectory() && !ent.isSymbolicLink()) continue;
     const lead = ent.name.match(/^\d+/);
-    // The leading digit run READ AS A NUMBER, so `08`, `08-meteogram-legend` and
-    // `8-foo` all group with a legal `8`. A name with no leading digits at all
-    // collides with no phase and gets a group to itself.
+    // 08, 08-meteogram-legend and 8-foo all group with a legal 8; a name with no leading digits gets a group to itself
     const n = lead ? Number(lead[0]) : null;
     const k = n === null ? `x:${ent.name}` : `n:${n}`;
     const g = groups.get(k) || { n, bad: [], legal: [] };
@@ -70,30 +49,16 @@ function phaseDirGrammarDrift(dir) {
     if (legal.length) {
       detail += `; ${legal.map((e) => `phases/${e}`).join(', ')} is the phase they collide with`;
     }
-    // NO `phase` key, the same reason `unpicked` omits one: there is no phase
-    // number to report, and inventing one would make this indistinguishable from
-    // the drift kinds that legitimately have one.
+    // no phase key: there's no phase number to report, and inventing one would pass for the drift kinds that have one
     out.push({ kind: 'phase-dir-grammar', entries, detail });
   }
   return out;
 }
 
 /**
- * The legal phase-directory names on this tree that PARSE TO THE SAME NUMBER,
- * one drift entry per colliding group.
- *
- * `roadmap-phases.md` makes `1.1` and `1.10` both legal and DIFFERENT phases -
- * sub-phase one and sub-phase ten - while `Number` collapses them onto `1.1`.
- * Every reader that reports a phase identity numerically is therefore ambiguous
- * on a tree holding both, and the ambiguity is not fixable inside any one
- * reader: the two directories are equally legal, so there is nothing to prefer
- * and nothing to refuse. What is left is to REPORT it, which is the same answer
- * `phase-dir-grammar` gives an illegal name - unsupported and named, never
- * migrated, and renaming is the user's call.
- *
- * Distinct from `phase-dir-grammar` on purpose: every name here is LEGAL, so
- * folding these into that kind would tell a user to fix a spelling the grammar
- * accepts. A tree with no collision produces nothing.
+ * The legal phase-directory names on this tree that parse to the same number, one drift entry per colliding group.
+ * `1.1` and `1.10` are both legal and different phases but `Number` collapses them, so no reader can tell them apart. There's nothing to prefer or refuse, so this reports it and renaming is the user's call.
+ * Separate from `phase-dir-grammar` because folding them in would tell a user to fix a spelling the grammar accepts.
  * @param {string[]} legalNames @returns {Array<{kind: string, phase: number, entries: string[], detail: string}>}
  */
 function phaseDirNumericCollisions(legalNames) {
@@ -124,16 +89,11 @@ const AGREE = {
   executed: ['executed'],
 };
 
-// ---------------------------------------------------------------------------
-// status
-// ---------------------------------------------------------------------------
 function cmdStatus(dir) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
   const roadmapText = read(join(dir, 'ROADMAP.md'));
   if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`, '/cad-new-project');
-  // The phase-list grammar (references/roadmap-phases.md). An empty section is
-  // a DERIVED closed milestone, not a parse failure; a phase-shaped line that
-  // is not a canonical entry is reported per line with its own code.
+  // an empty section is a derived closed milestone, not a parse failure
   const classified = classifyPhaseList(roadmapText);
   if (classified.state === 'no-section') {
     return fail('unparseable-roadmap', 'no `## Phases` section in ROADMAP.md',
@@ -141,9 +101,7 @@ function cmdStatus(dir) {
       + ' is that heading with nothing under it, never a missing heading');
   }
   if (classified.state === 'out-of-grammar') {
-    // Emitted directly rather than through fail(), which has no channel for
-    // the issue list. The detail names the FIRST offending line, so the
-    // diagnostic identifies what to fix instead of restating the grammar.
+    // emitted directly because fail has no channel for the issue list
     const first = classified.issues[0];
     return emit({
       ok: false, reason: 'unparseable-roadmap',
@@ -169,32 +127,17 @@ function cmdStatus(dir) {
     }
   }
 
-  // Interrupted-close corroboration: a closed milestone whose `phases/<N>/`
-  // directories are still on disk. Kept OUT of the classifier on purpose - the
-  // verdict is text-only and pure (D-05); this is the filesystem half, and it
-  // reports the accurate PAIR (closed state AND drift) rather than letting one
-  // orphan directory disprove the close.
+  // an interrupted close leaves phases/<N>/ on disk; kept out of the classifier (text-only, pure) so we report both the closed state and the drift
   if (closed) {
     let entries = [];
     try { entries = readdirSync(join(dir, 'phases')); } catch { /* absence is data */ }
-    // The GRAMMAR, not a looser numeric shape: with `/^\d+(\.\d+)?$/` here a
-    // tree holding `phases/8` and `phases/08` emitted TWO `phase-dir` entries
-    // both carrying `phase: 8`, since `Number` collapses the padding the filter
-    // let through. An illegal name is reported by `phaseDirGrammarDrift` under
-    // its own kind and is not a surviving phase directory (D-04).
-    // The tie-break is NOT decoration: `Number('1.1') === Number('1.10')`, so a
-    // numeric-only comparator leaves two legal siblings in whatever order the
-    // filesystem handed them back, and a drift list that reshuffles between runs
-    // is unreadable as a diff. The name breaks the tie the number cannot.
+    // the grammar and not a looser numeric shape (phases/8 beside phases/08 gave two entries for `phase: 8`), and the name breaks ties since Number('1.1') === Number('1.10')
     const surviving = entries.filter((e) => PHASE_DIR_NAME.test(e))
       .sort((a, b) => (Number(a) - Number(b)) || (a < b ? -1 : a > b ? 1 : 0));
     for (const e of surviving) {
       const { plans } = listPlanFiles(join(dir, 'phases', e));
       drift.push({
-        // `dir` is the SPELLING, `phase` the number it parses to, and they are
-        // two facts rather than one: `1.1` and `1.10` are different phases that
-        // parse to the same number, so a record carrying only `phase` cannot say
-        // which directory it describes. The collision itself is reported below.
+        // dir is the spelling and phase the number it parses to; 1.1 and 1.10 share a number, so phase alone can't say which directory
         kind: 'phase-dir', phase: Number(e), dir: e,
         detail: `phases/${e}/ survives the milestone close (${plans.length} plan files)`,
       });
@@ -202,13 +145,10 @@ function cmdStatus(dir) {
     drift.push(...phaseDirNumericCollisions(surviving));
   }
 
-  // The phase-directory grammar, checked in EVERY state and not only after a
-  // close: a directory Cadence cannot address is wrong while the cycle is open,
-  // which is when it can still be renamed cheaply.
+  // checked in every state, not only after a close: a directory Cadence can't address is cheapest to rename while the cycle is open
   drift.push(...phaseDirGrammarDrift(dir));
 
-  // Requirements drift (optional file; Deferred rows and unmapped rows are
-  // audit's concern, not drift).
+  // optional file; Deferred and unmapped rows are audit's concern, not drift
   const reqText = read(join(dir, 'REQUIREMENTS.md'));
   if (reqText !== null) {
     const byN = new Map(derived.map((p) => [p.n, p.status]));
@@ -223,25 +163,19 @@ function cmdStatus(dir) {
     }
   }
 
-  // Cursor: a hint, compared against the derivation (derivation wins).
+  // the cursor is a hint, the derivation wins
   const cursorText = read(join(dir, 'STATE.md'));
   const parsed = cursorText !== null ? parseCursor(cursorText) : null;
   let cursor;
   if (parsed) {
     let agrees;
     if (parsed.status === 'paused') agrees = true; // legal at any point
-    // A closed milestone: `phase complete` and `ready to plan` both agree, so
-    // `planned`/`executed`/`context gathered` stay drift - detection must NOT
-    // die in the one state where the cursor is the only surviving evidence.
-    // The phase NUMBER is not compared: a zero-phase roadmap gives it nothing
-    // to agree with.
+    // closed: only phase complete and ready to plan agree, and the number isn't compared since a zero-phase roadmap has none; the cursor is the only evidence left here
     else if (closed) agrees = parsed.status === 'phase complete' || parsed.status === 'ready to plan';
     else if (current === null) agrees = parsed.status === 'phase complete';
     else agrees = parsed.phase === current &&
       (AGREE[currentEntry.status] || []).includes(parsed.status);
-    // `plan` is the cursor's own `Plan:` line as written, present only when it
-    // has one (D-06). It is not compared with the derived position: a mismatch
-    // is not drift (D-12), so `agrees` stays phase and status alone.
+    // plan is the cursor's own Plan: line when it has one; a mismatch with the derived position isn't drift
     cursor = {
       phase: parsed.phase, status: parsed.status, next: parsed.next, updated: parsed.updated, agrees,
       ...(parsed.plan ? { plan: parsed.plan } : {}),
@@ -254,12 +188,7 @@ function cmdStatus(dir) {
             : current === null ? 'all complete' : `phase ${current} ${currentEntry.status}`),
       });
     }
-    // A stale `of <M>` against a zero-phase roadmap, reported INDEPENDENTLY of
-    // `agrees` (which the mapping above governs alone - a `phase complete`
-    // cursor still agrees). This is the case the phase-dir drift cannot see: a
-    // tagged close deletes `phases/<N>/`, so when the prune commits and the
-    // cursor rewrite never runs, the stale total is literally the only
-    // surviving evidence.
+    // a stale "of <M>" on a zero-phase roadmap is reported on its own: a tagged close deletes phases/<N>/, so if the cursor rewrite never ran this total is the only evidence the close didn't finish
     if (closed && parsed.total !== 0) {
       drift.push({
         kind: 'cursor', phase: parsed.phase,
@@ -269,48 +198,14 @@ function cmdStatus(dir) {
     }
   }
 
-  // THE DEFERRED QUEUE, off the one derivation `deferred list` answers from, so
-  // /cad-progress and /cad-land cannot disagree about what is queued.
-  //
-  // ALWAYS PRESENT, unlike `cycle` and `drift` beside it, which appear only in
-  // their own states. This key is read by a REFUSAL surface: a caller has to be
-  // able to tell "nothing is deferred" from "this seam predates the queue", and
-  // a key that is absent in the empty state collapses those two into one answer
-  // - the fail-open one, on the gate whose whole job is to refuse.
-  //
-  // NOT a cursor status and NOT a drift kind (D-05). A `Status:` value outside
-  // `AGREE` above is reported as `cursor` drift and rewritten by the very next
-  // /cad-progress, so a queue recorded there would stop being recorded one
-  // command after it was written.
+  // off the one derivation deferred list uses, so /cad-progress and /cad-land agree on what's queued
+  // always present: a refusal surface reads it and has to tell "nothing deferred" from "seam predates the queue"; not a cursor status or drift kind, the next /cad-progress would rewrite it away
   const queue = readQueue(dir, null);
 
-  // THE OUTSTANDING SET - the plans this phase still has work for, off the SAME
-  // `readPlanReports` definition `replay-check` builds its `dispatch_set` from
-  // (D-04), so the command that ROUTES and the command that DISPATCHES cannot
-  // disagree about what a phase still owes. A SUMMARY is the end of a run, not
-  // the end of the work: a phase that gained a gap plan after its SUMMARY is
-  // derived `executed` and appears here, which is the whole point of the key.
-  //
-  // ALWAYS PRESENT on an ok:true answer and `[]` rather than absent when
-  // nothing is outstanding, the same rule `deferred` above carries and for the
-  // same reason: a caller has to be able to tell "nothing is outstanding" from
-  // "this seam predates the field", and a key that vanishes in the empty state
-  // collapses those into the fail-open answer on a surface that decides
-  // routing.
-  //
-  // Read HERE rather than by spawning `replay-check` per phase (D-03):
-  // /cad-progress's route table scans ALL phases lowest-first, so a per-phase
-  // spawn would cost one process per executed phase on every run.
-  //
-  // NOT a new cursor status and NOT a new derived phase status (D-02): minting
-  // one moves `status`, `audit`, `phase-done` and the cursor at once, and makes
-  // every cursor a prior Cadence version wrote read as drift.
-  //
-  // The phase directory resolves through the SAME `String(p.n)` expression
-  // `derivePhases` builds, so a `phases/1.10` tree resolves to `phases/1.1`
-  // exactly as `status` already reports it under `phase-dir-collision` drift.
-  // Widening that to resolve by spelling would change `status` and `audit`
-  // behaviour on collision trees at once and is not this phase's call (D-06).
+  // plans a phase still owes, off the same readPlanReports replay-check dispatches from, so routing and dispatch can't disagree; a SUMMARY ends a run, not the work, so a phase with a later gap plan shows up here
+  // always present, [] when empty, like deferred: an absent key would read as "seam predates the field" on a routing surface
+  // read here, not by spawning replay-check per phase; not a new cursor or phase status, which would turn every older cursor into drift
+  // the dir resolves through the same String(p.n) as derivePhases, so phases/1.10 reads as phases/1.1 as it already does under phase-dir-collision
   const outstanding = [];
   for (const p of derived) {
     const plans = readPlanReports(join(dir, 'phases', String(p.n)), p.plans)
@@ -322,14 +217,11 @@ function cmdStatus(dir) {
     current, total: derived.length,
     deferred: queue,
     outstanding,
-    // Additive, and present ONLY in the closed state: a caller branching on
-    // `current === null` alone would otherwise read a closed milestone as
-    // "all phases complete" and route back to /cad-milestone.
+    // only when closed: a caller branching on current === null alone would read a closed milestone as all complete and route back to /cad-milestone
     ...(closed ? { cycle: 'none' } : {}),
     phases: derived.map((p) => ({
       n: p.n, name: p.name, status: p.status,
-      // The plan to run next, off the helper `cursor set` writes its `Plan:`
-      // line from; absent with no plan files or every plan complete (D-03).
+      // the plan to run next, from the helper cursor set writes Plan: from; absent when none or all complete
       ...planPositionEntry(dir, p.n),
       // plans listed only when they deviate from a single PLAN.md
       ...(p.plans.length > 1 || (p.plans.length === 1 && p.plans[0] !== 'PLAN.md')

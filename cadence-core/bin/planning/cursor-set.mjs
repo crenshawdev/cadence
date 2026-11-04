@@ -1,11 +1,6 @@
 // @ts-check
 // planning/cursor-set.mjs - `cursor set`: the write face for .planning/STATE.md.
-//
-// Every field is validated before anything is rendered, and the cursor holds the
-// NUMERIC phase on purpose - `renumber`'s shift arithmetic, `status`'s
-// agreement test and phase-plans.mjs' `cursorPhase` all consume the number, so
-// the raw spelling a caller passed is refused here rather than stored (see
-// `phaseSpellingRefusal` in planning/core.mjs) instead of being written through.
+// every field is validated before anything renders, and the cursor holds the numeric phase on purpose (renumber, status and cursorPhase all read it), so a raw spelling is refused here and not stored.
 'use strict';
 
 import { existsSync } from 'node:fs';
@@ -24,16 +19,7 @@ function cmdCursorSet(dir, opts) {
     return fail('bad-args', 'cursor set needs --phase <N>',
       'pass --phase <N> for the phase this cursor points at, then re-run');
   }
-  // The shared reader, for the refusal WORDING - and the cursor keeps holding
-  // the numeric value on purpose. `parseCursor` returns a Number that
-  // `renumber`'s shift arithmetic, `cmdStatus`'s `parsed.phase === current`
-  // agreement test and `phase-plans.mjs`' `cursorPhase` all consume, so a
-  // raw-spelled cursor is a wider change than the `--phase` directory fix, and
-  // a half-raw cursor would be worse than a numeric one. What used to be the
-  // stated cost of that - a cursor set at `--phase 1.10` rendering
-  // `Phase: 1.1`, the OTHER phase's name - is REFUSED at the door now (D-07)
-  // rather than carried. The raw spelling still addresses `phases/<raw>/` at
-  // the reads in this file that are not these two write faces.
+  // the cursor keeps the numeric phase (renumber, status and cursorPhase read it), so a 1.10 spelling would render as 1.1 with the other phase's name; that's refused instead
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) {
     return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)',
@@ -47,11 +33,7 @@ function cmdCursorSet(dir, opts) {
       + ' trip can be written');
   }
   const phase = parsedPhase.value;
-  // `--next-file` is the path transport for a resume pointer the CALLER
-  // composed - /cad-pause and `progress` build theirs from what the run was
-  // doing, which is agent-derived text in a double-quoted shell word
-  // (lib/text-flag-file.mjs, references/conventions.md). The seven sites that
-  // pass a literal `/cad-<command> N` keep the inline form; nothing is deleted.
+  // --next-file carries a resume pointer the caller composed (/cad-pause and progress build theirs from agent-derived text); literal /cad-<command> N sites keep the inline form
   const resolvedNext = resolveTextFlag(opts, 'next', 'cursor set');
   if (!resolvedNext.ok) {
     return fail('bad-args', resolvedNext.detail,
@@ -64,14 +46,7 @@ function cmdCursorSet(dir, opts) {
       `pass both: --status <one of ${CURSOR_STATUSES.join(' | ')}> and --next "<the command to run`
       + ' next>", then re-run');
   }
-  // ONE refusal the inline form never needed: `renderCursor` writes `next` into
-  // the cursor's `Next:` line unflattened, and references/conventions.md states
-  // the cursor is four required lines plus an optional `Plan:` line - a wrapped
-  // resume pointer would add a line `parseCursor` cannot read back, so the very
-  // next `cursor get` would answer `unparseable-cursor`. A file is the transport
-  // that can carry a newline, so this is where the structural term belongs. It
-  // REFUSES rather than flattening, mirroring `milestone-prune --label`'s table
-  // term: a malformed value is a malformed CALL and nothing is written.
+  // the one refusal the inline form never needed: a wrapped Next: line can't be read back by parseCursor, so the next cursor get would say unparseable-cursor; refused, not flattened, so nothing is written
   if (typeof next === 'string' && /[\r\n]/.test(next)) {
     return fail('bad-args',
       'cursor set --next cannot contain a newline - the cursor is four required lines plus an optional `Plan:` line',
@@ -97,28 +72,14 @@ function cmdCursorSet(dir, opts) {
     total = parsed.value;
   }
   if (name === undefined || total === undefined) {
-    // The same phase-list grammar `status` reads (references/roadmap-phases.md).
-    // `closed` fills `no active cycle` / 0, so the seam succeeds against a
-    // pruned roadmap BY CONSTRUCTION and /cad-milestone step 6 runs on the tree
-    // its own step 3 produces. `out-of-grammar` and `no-section` deliberately
-    // keep today's behavior - a roadmap holding unrecognized phase-shaped lines
-    // is broken, not closed, and writing `of 0` there would erase a live
-    // cycle's total.
+    // closed fills no active cycle and 0 so this succeeds on a pruned roadmap; out-of-grammar and no-section keep the old behavior, since writing `of 0` there would erase a live cycle's total
     const { state, phases } = classifyPhaseList(read(join(dir, 'ROADMAP.md')) || '');
     const entry = phases.find((p) => p.n === phase);
     if (name === undefined && entry) name = entry.name;
     if (total === undefined && phases.length) total = phases.length;
     if (state === 'closed') {
-      // Before the prior-cursor fallback below on purpose: inheriting a stale
-      // total writes `Phase: 1 of 5` against a zero-phase roadmap, which reads
-      // as an `of M` mismatch to /cad-health.
-      //
-      // `paused` is the one exception, and it is a hold rather than a
-      // transition: /cad-pause calls this flaglessly, so deriving 0 here would
-      // erase the stale `of <M>` that cmdStatus treats as the ONLY surviving
-      // evidence of an unfinished close (a tagged close deletes `phases/<N>/`,
-      // so the phase-dir drift cannot see it either). Pausing must not destroy
-      // the signal that says the close never finished.
+      // before the prior-cursor fallback on purpose: a stale total would write `Phase: 1 of 5` against a zero-phase roadmap
+      // paused is the exception, it's a hold: deriving 0 would erase the stale `of <M>` that status treats as the only evidence an unfinished close left behind
       const prior = opts.status === 'paused'
         ? parseCursor(read(join(dir, 'STATE.md')) || '') : null;
       if (prior && prior.total && prior.phase === phase) {
@@ -142,10 +103,7 @@ function cmdCursorSet(dir, opts) {
       + ' so both can be derived from it');
   }
 
-  // The plan line is a derivation from disk on every write, with no flag
-  // (D-02): the lowest-numbered plan not `PLAN COMPLETE`, absent when the phase
-  // has no plan files or every plan is complete (D-03). The directory is the
-  // canonical spelling `phaseSpellingRefusal` passed above.
+  // the plan line is derived from disk on every write: the lowest-numbered plan not `PLAN COMPLETE`, absent with no plans or all complete; the dir is the canonical spelling
   const plan = planPosition(join(dir, 'phases', String(opts.phase)));
   const cursor = {
     phase, total, name, status: opts.status, next,
