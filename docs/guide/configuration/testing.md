@@ -75,31 +75,3 @@ Project paths that justify deeper testing because of a concrete requirement or p
 **Default:** `[]` · **Type:** list of strings · **Scope:** repository only.
 
 GitHub Actions job names that must succeed for a commit to be recorded as CI-verified. The active policy needs at least one required job; `[]` cannot establish a CI pass.
-
-## Legacy switches
-
-These four switches remain for compatibility in 3.11.0. Under an accepted testing policy they all read `false`, regardless of the stored values. Without a policy, enabling any one brings in the legacy evidence map and per-task test tables.
-
-### `workflow.test_attack`
-
-**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
-
-Legacy: have plan review look for wrong implementations that would pass each listed test. It applies only when the plan-review gate is enabled.
-
-### `workflow.test_evidence`
-
-**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
-
-Legacy: require red-run and negative-control evidence in executor reports under `/cad-execute`. It does not apply to `/cad-task`.
-
-### `workflow.check_inspection`
-
-**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
-
-Legacy: ask you to confirm the listed checks at each plan's completion under `/cad-execute`. It does not apply to `/cad-task`.
-
-### `workflow.independent_rerun`
-
-**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
-
-Legacy: have `/cad-verify` rerun the listed checks itself and record the results instead of accepting the executor's report.
