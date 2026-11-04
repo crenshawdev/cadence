@@ -1,43 +1,12 @@
 // @ts-check
-// planning/testing-policy.mjs - `test-policy render`: the committed form of the
-// project's accepted testing policy.
-//
-// THE FILE NAME. `testing-policy`, not `test-policy` like the subcommand: Node's
-// default coverage exclusion skips files named `test-*`, which kept this module
-// outside the 95/88 gate.
-//
-// WHY A FILE. The policy lives in `.planning/config.json`, which a project may
-// keep out of its repository, and GitHub Actions can only read what is
-// committed. `render` writes `.github/cadence/coverage-policy.json` from the
-// config so CI and the config can be compared (`check`, below it) and a lowered
-// threshold can be named against a ref.
-//
-// THE SHAPE is the `testing` section's own (scope, coverage, strong_areas,
-// required_jobs), keys in config.schema.json's order, two-space JSON and a
-// trailing newline: a re-render of the same config is byte-identical, and a
-// reader of the file finds the names the config uses. Unset keys take the
-// schema's default; the schema is located the way config.mjs and route.mjs
-// locate it and its defaults are never restated here.
-//
-// `check` compares TEXT: the config, that file, and the workflow files directly
-// under `.github/workflows/`. It parses no tool configuration and never runs an
-// accepted command (D-03) - a config that arrives with a clone must not choose
-// what Cadence runs.
-//
-// `check --base <ref>` also reads the committed file at a ref and NAMES what the
-// config now weakens against it. Those are reported, not failed: an explicit
-// adjustment is legal, and `/cad-land` decides what to do with them.
-//
-// `ci-status --commit <sha>` reads one commit's check runs from GitHub with
-// `gh api`, by argv and under a timeout, and answers pass, fail or pending for
-// the required jobs. It runs from the main session, never the verifier
-// subagent, whose contract forbids network use. Pass is never inferred: no
-// matching run, no `gh`, a failing call or another forge all read pending.
-// Only on an overall pass, and only with `--phase` named, does it write that
-// commit to the phase UAT's `ci` field - the one writer that field has.
-//
-// `--root` is the PROJECT root, deliberately NOT `--dir`, which this script
-// defines as the planning directory.
+// planning/testing-policy.mjs - `test-policy render`: the committed form of the project's accepted testing policy
+// the file is named testing-policy and not test-policy like the subcommand because node's default coverage exclusion skips files named test-*, which kept this module outside the 95/88 gate
+// it's a file because the policy lives in .planning/config.json, which a project may keep out of its repository, and GitHub Actions can only read what's committed. render writes .github/cadence/coverage-policy.json from the config so CI and the config can be compared (check) and a lowered threshold named against a ref
+// the shape is the testing section's own (scope, coverage, strong_areas, required_jobs) in config.schema.json's order, two-space JSON and a trailing newline, so a re-render is byte-identical. Unset keys take the schema's default, located the way config.mjs and route.mjs locate it, and its defaults are never restated here
+// check compares text: the config, that file and the workflow files directly under .github/workflows/. It parses no tool configuration and never runs an accepted command, because a config that arrives with a clone must not choose what Cadence runs
+// check --base <ref> also reads the committed file at a ref and names what the config now weakens against it; those are reported and not failed, since an explicit adjustment is legal and /cad-land decides what to do with them
+// ci-status --commit <sha> reads one commit's check runs from GitHub with `gh api`, by argv and under a timeout, and answers pass, fail or pending for the required jobs. It runs from the main session and never the verifier subagent, whose contract forbids network use. Pass is never inferred: no matching run, no gh, a failing call or another forge all read pending. Only on an overall pass with --phase named does it write that commit to the phase UAT's ci field, the one writer that field has
+// --root is the project root, deliberately not --dir, which this script defines as the planning directory
 'use strict';
 
 import { execFileSync } from 'node:child_process';
@@ -56,8 +25,7 @@ import { sleep } from '../lib/text-util.mjs';
 import { fail, ok, phaseSpellingCollision, read } from './core.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// The exact shape config.mjs's SCHEMA_PATH has: the same file, the same
-// CADENCE_CONFIG_SCHEMA override, the same gate.
+// the same shape as config.mjs's SCHEMA_PATH: the same file, the same CADENCE_CONFIG_SCHEMA override, the same gate
 const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
   || join(HERE, '..', '..', 'config.schema.json');
 
@@ -281,7 +249,6 @@ function cmdCheck(root, base) {
     ...answer });
 }
 
-// --- ci-status ----------------------------------------------------------------
 
 // The longest one call keeps re-reading: under the host's 600-second ceiling on
 // a foreground command, with room for the final read.
