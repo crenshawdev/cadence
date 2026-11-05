@@ -132,8 +132,9 @@ const viaProvider = (voice) => {
     .then((r) => {
       if (!r) return none(voice, 'the provider wrapper returned nothing', kept);
       if (r.ok !== true) return none(voice, text(r.reason) ? `the provider reported ${r.reason}` : 'the provider reported ok:false with no reason', kept);
+      if (!Array.isArray(r.findings)) return none(voice, 'the provider wrapper returned ok:true with no findings array', kept);
       return {
-        voice, ran: true, model: p.model, result: { findings: Array.isArray(r.findings) ? r.findings : [] }, rulings: [], envelope: p.envelope,
+        voice, ran: true, model: p.model, result: { findings: r.findings }, rulings: [], envelope: p.envelope,
         ...(r.redactions > 0 ? { redactions: r.redactions } : {}), ...(Array.isArray(r.warnings) && r.warnings.length ? { warnings: r.warnings } : {}),
       };
     });
