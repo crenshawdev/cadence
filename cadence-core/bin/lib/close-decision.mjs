@@ -1,15 +1,13 @@
 // @ts-check
-// close-decision.mjs - the pure core of land-cleanup and the autonomous close: three total functions that decide, from
-// config and state, whether a land cleans up (return to base, pull, reap), which branch to reap, and whether an autonomous
-// close halts before merge on a genuinely-unfixed risk_surface finding.
-// No live git and no I/O: land-cleanup.mjs supplies the `git branch --merged` list and the already-classified halting
-// findings, and cad-land prose runs the checkout, pull and branch -D. Unknown or missing input never throws.
+// close-decision.mjs - the pure core of land-cleanup and the autonomous close: three total functions that decide
+// whether a land cleans up, which branch to reap, and whether an autonomous close halts on an unfixed finding.
+// No live git and no I/O: land-cleanup.mjs supplies the readings. Unknown or missing input never throws.
 
 /**
- * Pick which branch cleanup reaps, from the derived integration-branch name and the branches `git branch --merged <base>` reported.
- * - the derived name when it's a non-empty string in the merged list (the normal case: the just-shipped `cadence/<version>`);
- * - else the sole `cadence/*` entry of the merged list, for when PROJECT.md `### Active` already moved on to the next
- *   version or the name derived null, so re-derivation misses but exactly one cadence branch merged;
+ * Pick which branch cleanup reaps, from the derived integration-branch name and `git branch --merged <base>`.
+ * - the derived name when it's a non-empty string in the merged list (the normal case);
+ * - else the sole `cadence/*` entry of the merged list, for when PROJECT.md already moved on to the next version or
+ *   the name derived null;
  * - else null: zero or several matches reap nothing, never guess.
  *
  * @param {string | null | undefined} derivedName
@@ -27,9 +25,9 @@ export function resolveReapBranch(derivedName, mergedBranches) {
 
 /**
  * Decide whether a land cleans up. Total: any `onLandCleanup` other than the literal `true` leaves work in place.
- * With it on, return to base and pull, and reap only when `mergedIntoBase === true` and a branch name resolved. An
- * unmerged branch is never deleted and `git branch -D` is never handed a null (GitHub's auto_close deletes the branch at
- * merge, so re-derivation resolves null).
+ * With it on, return to base and pull, and reap only when `mergedIntoBase === true` and a branch name resolved.
+ * An unmerged branch is never deleted and `git branch -D` is never handed a null (GitHub's auto_close deletes the
+ * branch at merge, so re-derivation resolves null).
  *
  * @param {{ onLandCleanup?: boolean, mergedIntoBase?: boolean, branch?: string|null }} args
  * @returns {{ action:'cleanup'|'skip', returnToBase:boolean, pull:boolean, reap:boolean, branch:string|null, reason:string }}
@@ -56,10 +54,10 @@ export function decideCleanup({ onLandCleanup, mergedIntoBase, branch } = {}) {
 const NAMED_UNRULED = 5;
 
 /**
- * How an `unruled` halt names what it holds without letting a caller-supplied payload write the reason string. `unruled`
- * arrives off stdin, so it's untrusted: only non-blank strings are named, at most `NAMED_UNRULED`, since an object would
- * render as `[object Object]` and a long list would make the reason unbounded. The count comes from the array's real
- * length, so a member too odd to name still halts, which fails closed.
+ * How an `unruled` halt names what it holds without letting a caller-supplied payload write the reason string.
+ * `unruled` arrives off stdin, so it's untrusted: only non-blank strings are named, at most `NAMED_UNRULED`, or an
+ * object would render as `[object Object]` and a long list would make the reason unbounded.
+ * The count comes from the array's real length, so a member too odd to name still halts: it fails closed.
  *
  * @param {unknown[]} reviews
  * @returns {string}
@@ -72,16 +70,12 @@ function nameSome(reviews) {
 }
 
 /**
- * Decide whether an autonomous close halts before merge. Total: a non-array `findings`, `unruled` or `overridden` coerces to [].
- * `findings` is already decided: the genuinely-unfixed halting set land-cleanup.mjs classified out of the branch's
- * ADJUDICATION records, so this reads no `severity` and a non-empty list halts. With `auto_close` off every arm proceeds.
- * `unreadable` names why the findings couldn't be read at all. Without it a payload nobody could parse coerced to [] and
- * came back `proceed`, a claim about input never seen. The names `readFindings` passes are `stdin-unreadable`, `stdin-empty`
- * (the gate wants an explicit `{"findings":[]}`, since a forgotten pipe looks like "adjudication killed everything"),
- * `malformed-json` and `not-a-findings-payload`. `unruled` is a fifth state beside those: a `REVIEW-risk_surface*.md` with no
- * sibling `ADJUDICATION-*.json`, so the fire happened and nothing ruled it. It halts as `unruled-review`, not as `unreadable`.
- * Arm order is `unreadable`, `unruled`, then the halting list. `overridden` is what a person already cleared: it rides the
- * result unchanged and never moves `action`, since folding it into `findings` re-adds the false halt.
+ * Decide whether an autonomous close halts before merge. Total: a non-array input is [].
+ * `findings` is the unfixed halting set land-cleanup.mjs already classified. With `auto_close` off every arm proceeds.
+ * `unreadable` names why the findings couldn't be read, or an unparseable payload would come back `proceed`.
+ * `stdin-empty` is a name because a forgotten pipe looks like "adjudication killed everything".
+ * `unruled` is a review with no ADJUDICATION record; it halts as `unruled-review`.
+ * Arm order: `unreadable`, `unruled`, then the halting list. `overridden` rides the result and never moves `action`.
  *
  * @param {{ autoClose?: boolean, findings?: Array<Record<string, any>>,
  *   unreadable?: string|null, unruled?: unknown, overridden?: unknown }} args

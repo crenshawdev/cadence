@@ -1,22 +1,18 @@
 #!/usr/bin/env node
 // @ts-check
-// issue-check.mjs - what /cad-land step 1 says about the issues this branch references: which are still open, or the
-// one line saying why we can't tell. Read-only, so no argv here can close an issue, and apart from land-cleanup.mjs
-// because it reads a CLI over a network and can hang. `check` is ok:true on every path it reaches, failures included:
-// a tracker we can't read is a degraded report, never a failed land. Only a malformed call refuses (empty or valueless --dir).
-// Actions: `report`, `skip` (one line for the caller to print) and `off` (git.issue_check false, so print nothing).
-// The forge is what git.forge_provider, git.forge_repo and git.forge_host say, never the origin URL, so a repo that loses
-// its remote reports what it did yesterday. The `tea login list` probe only turns forge_host into a login name.
-// Every call gets cwd plus an explicit --repo: gh and glab infer the repo from cwd, and tea infers nothing.
-// No git or forge stderr reaches the envelope: redactUrl only covers URL credentials, so a bare token would pass.
-// The forge binary comes from PATH in lib/on-path.mjs only, so a test's PATH-injected stub runs the production resolver.
+// issue-check.mjs - what /cad-land step 1 says about the issues this branch references: which are open, or why we
+// can't tell. Read-only, and apart from land-cleanup.mjs because it calls a networked CLI.
+// `check` is ok:true on every path: an unreadable tracker is a degraded report, never a failed land.
+// Actions: `report`, `skip` (one line to print) and `off` (git.issue_check false, so print nothing).
+// The forge is what the git.forge_* keys say, never the origin URL; every call gets an explicit --repo.
+// No git or forge stderr reaches the envelope: redactUrl only covers URLs, so a bare token would leak.
 'use strict';
 
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
-// Flag rules are rows in lib/arg-contract.mjs. --timeout-ms is `fallback` on purpose: a flag that could refuse could fail a land.
+// --timeout-ms is `fallback` on purpose: a flag that could refuse could fail a land
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 import { refuseBase } from './lib/base-ref.mjs';
@@ -29,13 +25,13 @@ import {
 /** Bounds each subprocess and the whole resolve loop alike, so a hung forge CLI can't hold up a land. */
 const DEFAULT_TIMEOUT_MS = 10000;
 
-/** Most per-issue lookups one land makes, for numbers the open-only forgejo list didn't answer. Past it they report `unresolved`. */
+/** Most per-issue lookups one land makes, for numbers the open-only forgejo list missed; past it, `unresolved`. */
 const MAX_RESOLVES = 5;
 
 /**
  * Run a command, bounded, and never throw. SIGKILL because a child that ignores SIGTERM outlives its own timeout.
- * Stderr is discarded: left alone, execFileSync passes a failing CLI's stderr to the terminal, which leaks the same as
- * putting it on the envelope. A failure is a boolean and a signal, never the third party's text.
+ * Stderr is discarded, since the default passes a failing CLI's stderr to the terminal and leaks it.
+ * A failure is a boolean and a signal, never the third party's text.
  * @param {string} bin @param {string[]} args
  * @param {{cwd:string, timeout:number}} opts
  * @returns {{ok:boolean, stdout:string, timedOut:boolean}}
@@ -70,8 +66,8 @@ function teaLogins(text) {
 
 /** The one not-reporting shape: a named line and nothing claimed about issues.
  *
- * `action` rides through as is. `skip` prints its reason as one line and `off` prints nothing, and telling them apart
- * by matching the reason text would put a prose match in the caller's path.
+ * `action` rides through as is: `skip` prints its reason and `off` prints nothing, and matching the reason text to tell
+ * them apart would put a prose match in the caller's path.
  * `detail` is always null so no git or forge stderr can ride the envelope.
  * @param {{action:string, reason:string}} decision
  * @param {{host?:string|null, repo?:string|null, warnings:string[]}} rest */
@@ -86,16 +82,16 @@ function skip(decision, rest) {
 
 /** @param {string} dir @param {string|undefined} baseArg @param {number} timeout */
 function check(dir, baseArg, timeout) {
-  // warnings[] rides the envelope: a torn layer means this ran on defaults, including the one that turns the report on.
+  // warnings[] rides the envelope: a torn layer means this ran on defaults, including the one that turns the report on
   const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
   const enabled = git.issue_check !== false; // default true
 
-  // Checked before any subprocess so `false` spawns nothing at all, and it answers `off`, not `skip`, so step 1 prints nothing.
+  // checked before any subprocess so `false` spawns nothing, and answers `off`, not `skip`, so step 1 prints nothing
   let decision = decideIssueCheck({ enabled });
   if (decision.action !== 'query') return skip(decision, { warnings });
 
-  // Off the merge we already did, no origin URL. host is null on github and gitlab, which name no instance.
+  // off the merge already done, no origin URL; host is null on github and gitlab
   const forge = {
     provider: git.forge_provider ?? null,
     repo: git.forge_repo ?? null,
@@ -109,7 +105,7 @@ function check(dir, baseArg, timeout) {
   const row = HOST_TABLE[forge.provider];
   const bin = row.bin;
 
-  // Only forgejo needs a login name, and only tea can resolve one. Guarded on PATH so a missing tea gets its own line.
+  // only forgejo needs a login name, and only tea can resolve one; guarded on PATH so a missing tea gets its own line
   let loginName;
   if (forge.provider === 'forgejo' && onPath(bin)) {
     const probe = run(bin, ['login', 'list', '--output', 'json'], { cwd: dir, timeout });
@@ -120,7 +116,7 @@ function check(dir, baseArg, timeout) {
 
   const gitRead = (args) => run('git', ['-C', dir, ...args], { cwd: dir, timeout });
   const base = baseArg !== undefined ? baseArg : (git.base_branch || resolveProtectedBranches(git)[0]);
-  // A committed git.base_branch shaped like a flag would be an option to `git log`, so it's a skip, never a failed land.
+  // a committed git.base_branch shaped like a flag would be an option to `git log`, so skip, never fail the land
   const refused = refuseBase(dir, base, timeout);
   if (refused) return skip({ action: 'skip', reason: `${refused}: no tracker report` }, { host, repo, warnings });
   const log = gitRead(['log', `${base}..HEAD`, '--format=%B']);
@@ -145,15 +141,13 @@ function check(dir, baseArg, timeout) {
 
   const numbers = scanIssueRefs(log.stdout);
   const part = partitionIssues(numbers, fetched);
-  // Null only over an incomplete fetch, which was already skipped. Belt and braces against a reorder publishing an unreadable not-found.
+  // null only over an incomplete fetch, which was already skipped; guards a reorder publishing an unreadable not-found
   if (part === null) {
     return skip({ action: 'skip', reason: `${bin} returned a response this seam could not read as a complete issue list: no tracker report` },
       { host, repo, warnings });
   }
-  // One wall-clock budget for the whole loop, not one bound per call: a tea answering just under the bound and exiting
-  // nonzero is never killed, so per-call bounds let MAX_RESOLVES calls each cost nearly the full bound.
-  // The loop ends on budget spent, a kill at what remained, or MAX_RESOLVES. A fast nonzero exit doesn't end it: that's
-  // how tea says "no such issue", and the numbers behind it still need their states.
+  // one wall-clock budget for the whole loop: per-call bounds let MAX_RESOLVES calls each cost nearly the full bound
+  // a fast nonzero exit doesn't end it: that's how tea says "no such issue", and the rest still need their states
   /** @type {Map<number, string>} */
   const resolved = new Map();
   if (row.resolve && repo) {
@@ -170,7 +164,7 @@ function check(dir, baseArg, timeout) {
       if (s) resolved.set(n, s);
     }
   }
-  // `unresolved`, never `not-found`, when the resolver didn't answer: nonzero exit means an absent issue or a failed read, and stderr is gone.
+  // `unresolved`, never `not-found`, when the resolver didn't answer: nonzero exit is an absent issue or a failed read
   const state = (n) => {
     if (part.open.includes(n)) return 'open';
     if (part.closed.includes(n)) return 'closed';
@@ -188,23 +182,23 @@ function check(dir, baseArg, timeout) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Declared rows. A subcommand's row wins over `'*'`, where the flags every arm takes (--dir) are declared once. */
+/** Declared rows. A subcommand's row wins over `'*'`, which holds the flags every arm takes. */
 const ROWS = CONTRACTS['issue-check.mjs'];
-/** One flag read through its declared row. The row owns the rule; this is only an adapter over our own argv. */
+/** One flag read through its declared row; the row owns the rule. */
 const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
   if (cmd === 'check') {
-    // --timeout-ms is `fallback`, so a bad one reads as absent. The int type carries no positivity, so that term stays here.
+    // --timeout-ms is `fallback`, so a bad one reads as absent; the int type carries no positivity, so that stays here
     const ms = arg('check', '--timeout-ms');
     const timeout = ms !== undefined && ms > 0 ? ms : DEFAULT_TIMEOUT_MS;
-    // --dir refuses on empty, valueless or flag-shaped values before any spawn; truly absent means cwd. --base falls back to git.base_branch.
+    // --dir refuses on empty, valueless or flag-shaped values before any spawn; absent means cwd
     check(arg('check', '--dir') || process.cwd(), arg('check', '--base'), timeout);
   } else {
     emit({ ok: false, reason: 'usage', detail: 'subcommand: check [--dir <path>] [--base <name>] [--timeout-ms <n>]' });
   }
 } catch (e) {
-  // A `refuse` row's error has no message, so a valueless --dir would emit "[object Object]". The detail is our own flag name.
+  // a `refuse` row's error has no message, so a valueless --dir would emit "[object Object]"
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
     hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });

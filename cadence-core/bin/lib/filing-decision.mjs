@@ -1,11 +1,8 @@
 // @ts-check
-// filing-decision.mjs - the pure core of the filing question: when a gate won't fix a finding now, which findings reach
-// the user's ask and how each one is recognized again on a later fire. Node builtins only (`node:crypto`'s createHash, for
-// the fingerprint), no filesystem, no spawns, no `process`: bin/issue-filing.mjs supplies the live readings. Unknown input never throws.
-// The payload is the only input. The ask is read off the structured `{voices: [...]}` adjudication payload and never
-// re-parsed from REVIEW prose, so no function here takes prose and "the ask follows the payload" is a property of the signature.
-// The entries are buildEntries's, not a second walk: adjudication-record.mjs already validates the payload and pairs each
-// finding with its ruling, and a second reader of one grammar would disagree first on exactly the inputs one reader rejects.
+// filing-decision.mjs - the pure core of the filing question: when a gate won't fix a finding now, which findings
+// reach the user's ask and how each is recognized again on a later fire. No filesystem, no spawns.
+// The payload is the only input, and the ask is never re-parsed from REVIEW prose.
+// The entries are buildEntries's, not a second walk: two readers of one grammar disagree on exactly what one rejects.
 'use strict';
 
 import { createHash } from 'node:crypto';
@@ -13,23 +10,21 @@ import { buildEntries } from './adjudication-record.mjs';
 import { redactUrl, redactCredentials } from './redact-url.mjs';
 
 /**
- * The two raised severities a `blocking` gate halts over. Everything else is that arm's remainder, which this module files rather than parks.
- * A `survived` finding below this pair is one that was confirmed and not fixed, with no commit id because none exists, and
- * adjudication-record.mjs stores it as it is. Before it could, the only way to write the remainder down was to downgrade
- * the finding, which records "the adjudicator lowered it" over "it stood and nobody fixed it".
+ * The two raised severities a `blocking` gate halts over. Everything else is that arm's remainder, which gets filed.
+ * A `survived` finding below this pair is one that was confirmed and not fixed, with no commit id because none exists.
+ * The only other way to write it down was to downgrade the finding, which records "the adjudicator lowered it".
  */
 export const HALTING_SEVERITIES = Object.freeze(['blocker', 'high']);
 
-/** A copy of adjudication-record.mjs's `FIX_COMMIT`, which isn't exported, pinned against it by adjudication-record.test.mjs. The test is what stops the two drifting. */
+/** A copy of adjudication-record.mjs's unexported `FIX_COMMIT`; its test is what stops the two drifting. */
 const FIX_COMMIT = /^[0-9a-fA-F]{7,40}$/;
 
 /**
  * Whether `value` is a fix commit this module will read as a landed fix.
- * The shape is checked here although adjudication-record.mjs refuses a malformed one at composition time, because `halting`
- * rests on this answer and it's the rail over records that module never validated: another tool's, a hand edit, an older
- * artifact. If any non-blank string counted, `fix_commit: 'not-a-commit'` on an unoverridden blocker that stood would read
- * as fixed and the close a person should have been stopped at would proceed.
- * A shape check and nothing more, since this module never does I/O: a well-formed id naming no commit still reads as usable.
+ * Checked here too although adjudication-record.mjs refuses a malformed one, because `halting` is the rail over records
+ * that module never validated. If any non-blank string counted, `fix_commit: 'not-a-commit'` on a blocker that stood
+ * would read as fixed and the close would proceed.
+ * A shape check and nothing more: a well-formed id naming no commit still reads as usable.
  *
  * @param {unknown} value an entry's `fix_commit`, or whatever stood in for one
  * @returns {boolean}
@@ -37,15 +32,12 @@ const FIX_COMMIT = /^[0-9a-fA-F]{7,40}$/;
 export const usableFixCommit = (value) => typeof value === 'string' && FIX_COMMIT.test(value);
 
 /**
- * The one statement of what a record's entries mean to a fire that is settling: which reach the user's ask (`filing`),
- * which cleared halt a caller has to see (`haltingSurvivors`) and which stop a close (`halting`). It takes the entries
- * `buildEntries` returns, the array a written ADJUDICATION-*.json stores, so a reader of the record asks what the composer does.
+ * What a record's entries mean to a fire that is settling: which reach the user's ask (`filing`), which cleared halt
+ * a caller has to see (`haltingSurvivors`) and which stop a close (`halting`).
  * A usable `fix_commit` is asked first and ends the question: a fixed entry is in none of the three sets, even with
- * `overridden: true`. The schema allows both, and leaving the precedence to filter order is how one entry becomes a permanent override.
- * `haltingSurvivors` are survived at blocker or high with no commit and `overridden`. They're in `filing` too: nobody is
- * fixing them, and reading ruling and severity alone would drop them silently, never fixed, filed, declined or asked.
- * `halting` is the fail-closed rail. `buildEntries` refuses that shape at composition, so it's non-empty only over a record
- * another tool wrote, a hand edit or an older artifact, which is the input a close has to stop on.
+ * `overridden: true`, or filter order would make one a permanent override.
+ * `haltingSurvivors` are survived at blocker or high with no commit and `overridden`; they're in `filing` too.
+ * `halting` is the fail-closed rail, only non-empty over a record another tool wrote or a hand edit.
  *
  * @param {unknown} entries a built record's `entries[]`
  * @returns {{filing: Array<Record<string, any>>,
@@ -71,10 +63,9 @@ export function unfixedFromEntries(entries) {
 }
 
 /**
- * Every finding in `payload` that the gate will not fix now: the payload face of `unfixedFromEntries`, read off that one statement.
- * A payload `buildEntries` refuses comes back as a refusal, never an empty set. "Nothing to ask about" ends the step and
- * "this payload is unreadable" must stop it, and an empty array collapses the two. The refusal carries `buildEntries`'s own
- * `detail`, which names the offending entry.
+ * Every finding in `payload` that the gate will not fix now: the payload face of `unfixedFromEntries`.
+ * A payload `buildEntries` refuses comes back as a refusal, never an empty set: "nothing to ask about" ends the step,
+ * "this payload is unreadable" must stop it, and an empty array collapses the two.
  *
  * @param {unknown} payload the composed `{voices: [...]}` adjudication payload
  * @returns {{ok: true, detail: string, findings: Array<Record<string, any>>}
@@ -86,22 +77,19 @@ export function unfixedFindings(payload) {
   return { ok: true, detail: '', findings: unfixedFromEntries(built.entries).filing };
 }
 
-/** Hex characters of the digest a fingerprint token is. A collision would mistake a new finding for one the user already
- * declined, so 16 (64 bits) is chosen against that: at 2^16 declined findings on one tracker the odds of any collision are under 2.4e-10. */
+/** Hex characters of the digest a fingerprint token is. A collision would mistake a new finding for a declined one,
+ * and at 16 (64 bits) the odds of any collision over 2^16 findings are under 2.4e-10. */
 export const FINGERPRINT_CHARS = 16;
 
-/** The join byte as an escape: self-verify refuses a literal U+0000 anywhere under `cadence-core/bin/`. */
+/** The join byte as an escape, since self-verify refuses a literal U+0000 anywhere under `cadence-core/bin/`. */
 const NUL = '\0';
 
 /**
  * The `(file, claim)` fingerprint of a finding, as a fixed-width lowercase hex token.
- * `line` is left out on purpose. convergenceKey joins `(file, line, claim)` to ask whether two voices raised the same
- * thing in one fire. A decline outlives its fire and is read back against an edited file, so a fingerprint carrying the
- * line forgets itself when the file shifts and puts the declined finding back in front of the user forever.
- * NUL-joined like convergenceKey: a separator that can't appear in a path or claim, so `("a b", "c")` and `("a", "b c")`
- * don't digest alike.
- * Nothing is added to the finding to carry it: findingIssue in adjudication-record.mjs refuses any key outside
- * `FINDING_KEYS`, so a `fingerprint` field would fail every existing payload. It's derived at each use.
+ * `line` is left out on purpose: a decline outlives its fire and is read back against an edited file, so a line in
+ * the fingerprint would put the declined finding back in front of the user when the file shifts.
+ * NUL-joined, since it can't appear in a path or claim: `("a b", "c")` and `("a", "b c")` must not digest alike.
+ * Derived at each use, not stored on the finding: findingIssue in adjudication-record.mjs refuses unknown keys.
  * Total: a missing or non-string `file` or `claim` reads as '' rather than throwing.
  *
  * @param {unknown} finding anything carrying `file` and `claim`
@@ -117,50 +105,45 @@ export function fingerprint(finding) {
 }
 
 /**
- * The label a declined finding's issue carries.
- * A fact of the table, like `--private` in `CREATE_TABLE`: one frozen literal, never caller text, which would put free text on a command line and could split the decline set with a second spelling.
- * Nothing reads it back any more. The lookup is title-scoped now, because an accepted issue never carries the label and a label filter was blind to it. It's still written on a declined create, for a human on the tracker.
- * No colon, `::` or space: GitLab reads `::` as a scoped label with mutual exclusion, and a label a forge interprets behaves differently per provider.
+ * The label a declined finding's issue carries: one frozen literal, never caller text on a command line.
+ * Nothing reads it back; the lookup is title-scoped, since an accepted issue never carries the label.
+ * No colon, `::` or space: GitLab reads `::` as a scoped label with mutual exclusion.
  */
 export const DECLINE_LABEL = 'cadence-declined';
 
-/** Not a measured cap: it sits well under every documented title limit and stays legible in a list view. A longer claim is clipped, which changes the title and never the fingerprint. */
+/** Not a measured cap, just well under every documented title limit. Clipping a claim never changes the fingerprint. */
 const TITLE_MAX = 200;
 
 /**
  * How many fingerprints one `lookup` query may carry.
  * Six, because six terms joined by ` OR ` is five boolean operators, the ceiling GitHub's search docs state. Seven and
- * eight were measured working against `crenshawdev/cadence` on 2026-09-03, but the number isn't set from that: a documented
- * limit the index starts enforcing later truncates a page silently, and a silent truncation here re-files an issue that
- * already exists. An extra round trip costs latency and nothing else.
+ * eight worked when measured, but a documented limit the index starts enforcing later truncates a page silently, and
+ * that re-files an issue that exists. An extra round trip costs only latency.
  * Exported so the table's builders and issue-filing.mjs's chunking loop can't disagree.
  */
 export const LOOKUP_CHUNK = 6;
 
-/** The prefix that marks a title as a Cadence filing, and the capture that recovers its fingerprint. One spelling for writing and reading, so they can't drift. */
+/** The prefix marking a title as a Cadence filing, and the capture that recovers its fingerprint, spelled once. */
 const TITLE_PREFIX = 'cadence';
 const TITLE_TOKEN = new RegExp(`^\\[${TITLE_PREFIX} ([0-9a-f]{${FINGERPRINT_CHARS}})\\] `);
 
-/** Newlines and whitespace runs collapse to single spaces: a title with an embedded newline has a tail no list view shows. */
+/** Whitespace runs collapse to single spaces: a title with an embedded newline has a tail no list view shows. */
 const flatten = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
 
-/** `flatten`, then the two credential strips: redactUrl first so a userinfo URL goes whole, then redactCredentials for a
- * name/value pair or an Authorization scheme. Applied to every finding-derived span of a title or body, since a finding is
- * third-party text that can quote a secret from the code and the title lands in the committed FILED.md and DECLINED.md.
- * Flatten first so a credential split by a newline is one span.
+/** `flatten`, then the two credential strips: redactUrl first so a userinfo URL goes whole, then redactCredentials.
+ * Applied to every finding-derived span of a title or body: a finding is third-party text that can quote a secret,
+ * and the title lands in the committed FILED.md and DECLINED.md. Flatten first so a split credential is one span.
  *
  * redactUrl reads the end of its input as a possible cut, so a trailing `src/a.mjs:42` or `{ok:false}` would go as a
- * `user:secret` fragment. A finding field is whole, not a window, so a space is added behind it and the cut rules match
- * nothing. Only a span that carries its `@` is userinfo here. */
+ * `user:secret` fragment. A finding field is whole, so a space behind it keeps the cut rules from matching.
+ */
 const clean = (v) => redactCredentials(redactUrl(`${flatten(v)} `)).trim();
 
 /**
  * The issue title for a finding: the fingerprint token, then the claim.
- * The token is in the title because it's the only field the lookup can ask all three CLIs for in one bounded list call
- * (`gh --json number,title`, `glab --output json`, `tea --fields index,title`), and reading a body back would be one call per issue.
- * The claim is redacted before the prefix is joined and before the clip, so the prefix stays byte-exact for
- * fingerprintInTitle and a credential can't survive as a clipped half no pattern matches. The fingerprint isn't redacted:
- * it digests the raw `(file, claim)`, so a row an earlier version wrote still matches and nothing is re-filed.
+ * The token is in the title because it's the only field all three CLIs return in one bounded list call.
+ * The claim is redacted before the prefix is joined and before the clip, so the prefix stays byte-exact and a
+ * credential can't survive as a clipped half. The fingerprint digests the raw `(file, claim)`, so an older row matches.
  *
  * @param {unknown} finding @returns {string}
  */
@@ -173,9 +156,8 @@ export function issueTitle(finding) {
 
 /**
  * The fingerprint token an issue title carries, or `null` when it carries none.
- * Null isn't a failure: a label is something a human can apply by hand on any forge, and an issue labelled that way is
- * not a decline record. So the normalizer skips an unrecognized title, the opposite of a missing `title` field, which means
- * the CLI's output shape changed and nothing in the response can be trusted.
+ * Null isn't a failure: a human can label any issue by hand, so the normalizer skips an unrecognized title. A missing
+ * `title` field is the opposite: the CLI's shape changed and nothing in the response can be trusted.
  *
  * @param {unknown} title @returns {string|null}
  */
@@ -187,13 +169,11 @@ export function fingerprintInTitle(title) {
 
 /**
  * The issue body for a finding.
- * Every row's argv supplies one: `gh issue create` prompts for a body without `--body` ("Supply a body. Will prompt for
- * one otherwise.", gh 2.98.0) and `glab issue create` opens an editor without `--description`, and either blocks a child
- * inside a gate step forever.
+ * Every row's argv supplies one: `gh issue create` prompts without `--body` and `glab issue create` opens an editor
+ * without `--description`, and either blocks a child inside a gate step forever.
  * It carries the finding and nothing else: no CLI output, envelope, host or login. `failure_scenario` is in because an
  * issue without it is the finding with its argument removed.
- * Every field taken from the finding is redacted, file and ruling included, since the body is posted to a tracker that may
- * be public. The fingerprint at the foot is a hash of the raw text, not a way back to it.
+ * Every field from the finding is redacted, file and ruling included, since the tracker may be public.
  *
  * @param {unknown} finding @returns {string}
  */
@@ -214,16 +194,12 @@ export function issueBody(finding) {
 }
 
 /**
- * One decline-lookup response -> the fingerprint tokens it carries, plus whether the read is complete. Total, and an
- * incomplete answer carries no tokens.
- * Written here rather than imported, and the readers stay separate on purpose: `normalizeList` in issue-decision.mjs
- * reads `state` for the land report, which asks for `number,state`, and this one reads `title`. Folding them would put a
- * `title` requirement on that report or make this one demand a `state` it never uses.
- * A response that fills its page is incomplete and carries nothing, and it's worse here: Forgejo clamps `tea issues list`
- * at 50 rows whatever `--limit` asks, and a truncated decline set read as whole puts declined findings back in front of the user.
- * A row that isn't an object, or whose `title` isn't a string, fails the whole read: a renamed field means the CLI's shape
- * moved. A row whose title carries no Cadence token is skipped.
- * `detail` is a fixed phrase, never a slice of the response: a forge CLI's bytes aren't ours to put in an envelope.
+ * One decline-lookup response -> the fingerprint tokens it carries, plus whether the read is complete.
+ * Separate from `normalizeList` in issue-decision.mjs, which reads `state` where this reads `title`.
+ * A response that fills its page is incomplete: Forgejo clamps `tea issues list` at 50 rows whatever `--limit` asks,
+ * and a truncated decline set read as whole puts declined findings back in front of the user.
+ * A non-object row or a non-string `title` fails the whole read: the CLI's shape moved.
+ * `detail` is a fixed phrase, never a slice of the response: a CLI's bytes aren't ours to put on an envelope.
  *
  * @param {unknown} text the CLI's stdout
  * @param {number} limit the page size the argv asked for
@@ -252,10 +228,8 @@ export function normalizeDeclines(text, limit) {
 
 /** An issue number however its CLI spells it, or null when the field carries no readable one.
  *
- * `tea issues list` prints `index` as a string and gh prints `number` as a number, so both shapes answer. Written here
- * because issue-decision.mjs's own helper isn't exported.
- * Positive only, and outside the safe-integer range is no number: `0` isn't an issue on any of the three, and
- * `9007199254740993` reads back as `...992`, which names a different issue than the tracker holds.
+ * `tea issues list` prints `index` as a string and gh prints `number` as a number, so both shapes answer.
+ * Positive only, and outside the safe-integer range is no number: `9007199254740993` reads back as `...992`.
  * @param {unknown} raw @returns {number|null} */
 function issueNumber(raw) {
   const n = typeof raw === 'number' ? raw
@@ -264,15 +238,12 @@ function issueNumber(raw) {
 }
 
 /**
- * One title-scoped lookup response -> the (fingerprint, issue number) pairs it carries, plus whether the read is complete.
- * Beside normalizeDeclines, not a widening of it, because this one exists for the number: a fire that finds a fingerprint
- * already on the tracker has to report which issue holds it, and no create face prints one, so the lookup is the only source.
- * A response that fills its page is incomplete, as in normalizeDeclines. Here a truncated page read as whole says "not
- * filed" about an issue that is filed, and the duplicate that follows is the defect this closes.
- * A row that isn't an object or whose `title` isn't a string fails the whole read, and so does one with a Cadence token but
- * no readable number: a token without its number is half a record. A row with no token is skipped.
- * `state` is never read, on purpose: an existing issue suppresses whether open or closed. The fingerprint doesn't change
- * when the code is fixed, so a finding filed, fixed and closed is never filed again.
+ * One title-scoped lookup response -> the (fingerprint, issue number) pairs it carries, and whether it's complete.
+ * Beside normalizeDeclines because this one exists for the number: a fire that finds a fingerprint already filed
+ * has to report which issue holds it, and no create face prints one.
+ * A response that fills its page is incomplete: read as whole, it says "not filed" about a filed issue.
+ * A non-object row, a non-string `title`, or a token without a readable number fails the whole read.
+ * `state` is never read, on purpose: a finding filed, fixed and closed must never be filed again.
  *
  * @param {unknown} text the CLI's stdout
  * @param {number} limit the page size the argv asked for
@@ -306,30 +277,23 @@ export function normalizeLookup(text, limit, numberKey) {
 }
 
 /**
- * How each provider's CLI is told to create an issue and look one up: a row per provider, with a builder returning the
- * argv and stated facts beside it, as `CREATE_TABLE` in forge-decision.mjs does. The flags were read from each CLI's own
- * `--help` on 2026-09-03 (gh 2.99.0, glab 1.116.0, tea 0.15.1), not recalled. The keys are `PROVIDER_TABLE`'s, since the
- * persisted `git.forge_provider` is the key directly.
+ * How each provider's CLI is told to create an issue and look one up: a row per provider, with an argv builder and
+ * stated facts beside it, as `CREATE_TABLE` in forge-decision.mjs does. The flags were read from each CLI's `--help`.
  * No row reads an issue number back from a create, because none of the three prints anything machine-readable.
- * `limit` is the page size `HOST_TABLE` in issue-decision.mjs states and `numberKey` the field each CLI puts the number
- * in, so no seam has to know which provider it's talking to.
- * `visibility` builds the read-only argv asking whether the repo is public, private or internal, or is null where the CLI
- * has no such query. Unreadable reads as public, the safe direction: the question that follows is asked harder for a public repo.
- * Whether a forge refuses a label it doesn't hold on create is unsettled, and only a live create against each answers it.
+ * `limit` is the page size `HOST_TABLE` in issue-decision.mjs states, and `numberKey` the field holding the number.
+ * `visibility` is the argv asking public, private or internal, or null where the CLI can't; unreadable reads as public.
  */
 export const FILING_TABLE = Object.freeze({
   forgejo: Object.freeze({
-    // An unqualified `tea --repo` falls back to config file order, so a stranger's tracker would answer and be written to.
+    // an unqualified `tea --repo` falls back to config file order, so a stranger's tracker would get the write
     needsLogin: true,
     limit: 50,
     numberKey: 'index',
     lookupMeasured: true,
     visibilityMeasured: false,
-    /** No query. tea's docs list the printable fields of `repos` (description, forks, id, name, owner, stars, ssh, updated,
-     *  url, permission, type) with no visibility, and no command that views one repository. `repos search --private`
-     *  answers "no row" for both "not that kind" and "no such name", which isn't a reading. So this is unreadable and the ask
-     *  face shows public. If a later tea adds a query, the argv goes here and the flag flips only after a live run against
-     *  a public and a private repository.
+    /** No query: tea's docs list no visibility field and no command that views one repository, and `repos search
+     *  --private` answers "no row" for both "not that kind" and "no such name". So the ask face shows public.
+     *  If a later tea adds a query, flip the flag only after a live run against a public and a private repository.
      *  @type {null} */
     visibility: null,
     /** @param {string} slug
@@ -338,11 +302,10 @@ export const FILING_TABLE = Object.freeze({
     create: (slug, issue, login) => ['issues', 'create', '--repo', slug,
       '--login', login, '--title', issue.title, '--description', issue.body,
       ...(issue.declined ? ['--labels', DECLINE_LABEL] : [])],
-    /** Measured live 2026-09-03 against `crenshawdev/cadence` on a Forgejo instance, which is what `lookupMeasured: true`
-     *  records. `--keyword` on one token returned the issue whose title carried it as `[cadence <hex>] ...`, and two tokens
-     *  joined with a space returned both issues, so tea reads a space-joined list as more than one term. A token no title
-     *  carried returned `[]`, so an empty answer is real evidence: a complete miss is final and overrules a confirmed
-     *  FILED.md row, as on github. Space-joining is the only spelling tea offers (one search string, no OR), and now it's measured.
+    /** Measured live on a Forgejo instance, which is what `lookupMeasured: true` records. `--keyword` on one token
+     *  found its issue, and two space-joined tokens found both, so tea reads that as more than one term.
+     *  A token no title carried returned `[]`, so an empty answer is real evidence: a complete miss is final and
+     *  overrules a confirmed FILED.md row, as on github. Space-joining is the only spelling tea offers (no OR).
      *  @param {string} slug @param {number} limit @param {string[]} fingerprints
      *  @param {string} login @returns {string[]} */
     lookup: (slug, limit, fingerprints, login) => ['issues', 'list', '--repo', slug,
@@ -355,7 +318,7 @@ export const FILING_TABLE = Object.freeze({
     numberKey: 'number',
     lookupMeasured: true,
     visibilityMeasured: true,
-    /** Measured 2026-10-26 on gh 2.45.0 against `crenshawdev/cadence`, which answered `{"visibility":"PUBLIC"}`.
+    /** Measured against a live repo, which answered `{"visibility":"PUBLIC"}`.
      *  gh's value is upper case (PUBLIC, PRIVATE, INTERNAL); `normalizeVisibility` folds the case.
      *  @param {string} slug @returns {string[]} */
     visibility: (slug) => ['repo', 'view', slug, '--json', 'visibility'],
@@ -365,11 +328,9 @@ export const FILING_TABLE = Object.freeze({
     create: (slug, issue) => ['issue', 'create', '--repo', slug,
       '--title', issue.title, '--body', issue.body,
       ...(issue.declined ? ['--label', DECLINE_LABEL] : [])],
-    /** Measured live (2026-09-03, crenshawdev/cadence): `in:title` then the tokens joined with ` OR ` returned exactly the
-     *  issues whose titles carry them. Bare tokens also matched a body: `--search 084c9ce03c072e0b` returned three issues,
-     *  one a bug report quoting the token, where `in:title` returned the two duplicates. A body match is a discussion of a
-     *  finding, not a filing of it. That reading is what `lookupMeasured: true` records, so a complete miss here is
-     *  trusted over a confirmed ledger row, and no other row's miss is.
+    /** Measured live: `in:title` plus the tokens joined with ` OR ` returned exactly the issues titled with them.
+     *  Bare tokens also matched a body, and a body match is a discussion of a finding, not a filing of it.
+     *  That is what `lookupMeasured: true` records, so a complete miss here is trusted over a confirmed ledger row.
      *  @param {string} slug @param {number} limit @param {string[]} fingerprints
      *  @returns {string[]} */
     lookup: (slug, limit, fingerprints) => ['issue', 'list', '--repo', slug,
@@ -382,9 +343,8 @@ export const FILING_TABLE = Object.freeze({
     numberKey: 'iid',
     lookupMeasured: false,
     visibilityMeasured: false,
-    /** Not measured. `glab repo view <repo> --output json` is documented and prints the project object, whose `visibility`
-     *  is `public`, `internal` or `private`. Whether glab's JSON keeps that key is open; if it doesn't, the answer is
-     *  unparseable and reads as public.
+    /** Not measured: `glab repo view --output json` is documented to print the project object, whose `visibility` is
+     *  `public`, `internal` or `private`. If glab's JSON drops that key, the answer reads as public.
      *  @param {string} slug @returns {string[]} */
     visibility: (slug) => ['repo', 'view', slug, '--output', 'json'],
     /** `-y` isn't optional: without it glab asks for confirmation and the child blocks inside a gate step.
@@ -394,13 +354,11 @@ export const FILING_TABLE = Object.freeze({
     create: (slug, issue) => ['issue', 'create', '--repo', slug,
       '--title', issue.title, '--description', issue.body, '-y',
       ...(issue.declined ? ['--label', DECLINE_LABEL] : [])],
-    /** Assumed, not measured, and the only row that is: that `--search` with `--in title` matches a bracketed hex token in
-     *  a title, and that space-joined tokens read as more than one term. glab offers one search string and no OR, like tea,
-     *  but tea's was run live. Wrong either way this returns nothing for an issue that exists, so `lookupMeasured` is
-     *  false: an empty answer isn't evidence, and a confirmed FILED.md row keeps suppressing over it, or the lookup would
-     *  make duplicates likelier than before it existed. To measure it, put an issue titled `[cadence <hex>] ...` on a live
-     *  GitLab project, run this argv for one token and then two, and flip the flag only if both come back. `--in title`
-     *  keeps body matches out, where glab's default is `title,description`.
+    /** Assumed, not measured, and the only row that is: that `--search` with `--in title` matches a bracketed hex
+     *  token, and that space-joined tokens read as more than one term. Wrong either way it returns nothing for an
+     *  issue that exists, so `lookupMeasured` is false and a confirmed FILED.md row keeps suppressing.
+     *  To measure it, file an issue titled `[cadence <hex>] ...` on a live GitLab project, run this argv for one
+     *  token and then two, and flip the flag only if both come back. `--in title` keeps body matches out.
      *  @param {string} slug @param {number} limit @param {string[]} fingerprints
      *  @returns {string[]} */
     lookup: (slug, limit, fingerprints) => ['issue', 'list', '--repo', slug,
@@ -414,10 +372,9 @@ const VISIBILITY_WORDS = Object.freeze(['public', 'private', 'internal']);
 
 /**
  * One visibility query's stdout -> `{visibility, read}`, always one of three fixed words.
- * `read` says whether the word came off the forge. Anything that isn't a JSON object holding a `visibility` string naming
- * one of the three (unparseable stdout, a missing key, an unknown word) is `public` with `read: false`, the direction that
- * asks harder rather than softer. A nonzero exit or a timeout never reaches here; the caller answers those with the same
- * pair. gh spells the word upper case and GitLab lower, so the case is folded.
+ * `read` says whether the word came off the forge. Anything else (unparseable stdout, a missing key, an unknown word)
+ * is `public` with `read: false`, the direction that asks harder. The caller answers a nonzero exit or timeout the
+ * same way. gh spells the word upper case and GitLab lower, so the case is folded.
  *
  * @param {unknown} stdout
  * @returns {{visibility: 'public'|'private'|'internal', read: boolean}}
