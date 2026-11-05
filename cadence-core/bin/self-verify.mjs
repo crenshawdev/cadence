@@ -483,7 +483,7 @@ function run(root) {
         continue;
       }
       const budget = budgets[surface];
-      // CADENCE-CENSUS: weight-budgets | asserts: weight-budgets.json holds a UTF-8 byte CEILING for every budgeted prose surface
+      // CADENCE-CENSUS: weight-budgets | asserts: weight-budgets.json has a byte ceiling for each budgeted surface
       if (bytes > budget) {
         problems.push({ kind: 'budget-overrun', file: surface,
           detail: `${bytes}B exceeds budget ${budget}B by ${bytes - budget}B` });
