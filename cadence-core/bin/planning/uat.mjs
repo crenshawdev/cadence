@@ -81,7 +81,7 @@ function cmdUat(dir, sub, opts) {
         'use one of the values the detail lists, or leave `origin` off the item - it records where'
         + ' the item came from, so a guessed value misreports its provenance');
     }
-    // origin is never derived from criterion: a present criterion is already its own marker, and a second would skew the backfilled checklists
+    // origin is never derived from criterion: that is already a marker, and a second skews backfilled checklists
     const build = (it, k) => ({ k, name: it.name, expected: it.expected,
       ...(it.criterion ? { criterion: it.criterion } : {}),
       ...(it.origin ? { origin: it.origin } : {}),
@@ -155,7 +155,7 @@ function cmdUat(dir, sub, opts) {
         'send one of the values the detail lists, or drop --origin; nothing was written, so UAT.md'
         + ' is byte-unchanged');
     }
-    // the repair form re-records the current status, since record has no field-only mode; `--origin` here would write an id-less marker
+    // the repair form re-records the current status (no field-only mode); `--origin` here would write an id-less marker
     if (opts.criterion !== undefined && !/^AC\d+$/.test(String(opts.criterion))) {
       return fail('bad-args', `--criterion must be AC<N> (got: ${opts.criterion})`,
         "spell it --criterion AC<N>, matching an acceptance-criterion id in this phase's CONTEXT.md"
@@ -270,7 +270,7 @@ function cmdUat(dir, sub, opts) {
     if (!uat) return;
     // an entry with no usable name used to land as "### N. undefined", a phantom that blocks completion for good
     const usableName = (e) => (typeof e.name === 'string' && e.name.trim() ? e.name.trim() : null);
-    // same normalizer as the append path: raw matching missed "Login works " and appended a duplicate nothing could reach
+    // same normalizer as the append path: raw matching missed "Login works " and appended an unreachable duplicate
     const find = (ref) => uat.items.find((i) => {
       if (ref.k !== undefined && Number(i.k) === Number(ref.k)) return true;
       const name = usableName(i);
@@ -331,7 +331,7 @@ function cmdUat(dir, sub, opts) {
     for (const h of f.human_checks || []) {
       const match = find(h);
       if (match) {
-        // no counter moves here, a gap left open, but the row still goes in FINDINGS.json so nothing discarded disappears
+        // no counter moves, the gap stays open, but the row still goes in FINDINGS.json so nothing discarded disappears
         skippedEntries.push({ list: 'human_checks', reason: 'already-recorded',
           item: Number(match.k), status: String(match.status), entry: h });
         continue;
@@ -350,7 +350,7 @@ function cmdUat(dir, sub, opts) {
       added++;
     }
     writeUat(dir, n, uat);
-    // own file, never a UAT.md section: the next uat record would drop a "## Verifier findings" block and look durable doing it
+    // own file, not a UAT.md section: the next uat record would drop a "## Verifier findings" block and look durable
     // written on every successful merge, even all-zero, so no file means no merge ran
     const findingsRel = `phases/${n}/FINDINGS.json`;
     let findingsError = null;
