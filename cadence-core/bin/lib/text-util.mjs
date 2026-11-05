@@ -1,5 +1,5 @@
 // @ts-check
-// text-util.mjs - small pure helpers. No imports and no I/O, so a module that mustn't touch the filesystem can use them.
+// text-util.mjs - small pure helpers. No imports, no I/O, so a module barred from the filesystem can use them.
 'use strict';
 
 /** @param {unknown} s @returns {string} `s` with every RegExp metacharacter escaped */

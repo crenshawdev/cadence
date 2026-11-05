@@ -48,14 +48,11 @@ jobs:
       - run: node tests/test.mjs ${{ matrix.group }}
 
   coverage:
-    # The whole suite in one run with Node's coverage, written as LCOV for SonarQube. The scan runs
-    # in this job so no artifact has to pass between jobs.
-    # node --test runs the files directly because test.mjs passes no runner flags through, so the
-    # env line does test.mjs's job and points the suite at a user-global config that doesn't exist.
-    # Node 26 because --test-coverage-include-all needs 26.7; it counts files no test loads, and the
-    # two guards catch an empty scope and a file that never loaded.
-    # fetch-depth: 0 for why-record.test.mjs and for the scan's blame.
-    # persist-credentials: false keeps the job token out of .git/config, where the scan action could read it.
+    # whole suite in one run with coverage, written as LCOV for SonarQube; the scan runs here so no artifact hops jobs
+    # node --test runs the files directly (test.mjs passes no runner flags), so the env line does test.mjs's job
+    # Node 26 because --test-coverage-include-all needs 26.7; the two guards catch empty scope and unloaded files
+    # fetch-depth: 0 for why-record.test.mjs and the scan's blame
+    # persist-credentials: false keeps the job token out of .git/config, where the scan action could read it
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -148,7 +145,7 @@ jobs:
     # config.mjs launched from outside it, with no secret or credential in any step, the way a user gets it.
     # The CLI pin is the one version those commands were tried on and moves by hand.
     # An unpinned global install has no lockfile, which is what zizmor's adhoc-packages audit flags.
-    # --ignore-scripts stops every install script; Claude Code's only links its native binary, so that one is run by name.
+    # --ignore-scripts stops every install script; Claude Code's only links its native binary, so it runs by name
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
