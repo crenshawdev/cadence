@@ -173,7 +173,7 @@ Keep the printed path: the call on the notice runs in another Bash invocation, w
 Claim before the launch, labelled `analyzer-<N>`:
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-claim take --fire analyzer-<N>`.
 `launch: true` goes on, which is every call with multi-workflow on, and a win prints the
-claim's `id`: keep it as a literal for the release, which runs in a later turn. On `launch:
+claim's `id`: keep it as a literal for the release, which runs in a later turn. With the setting on no id is printed and there is nothing to release. On `launch:
 false` the seam names the `holder`, its `holder_id` and its `age_seconds`. If a run of this
 session holds it, wait for that run's notice and claim again. Otherwise name the
 holder and its age and ask through the ask-user seam: check again, or run the

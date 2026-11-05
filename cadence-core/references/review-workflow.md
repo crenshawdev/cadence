@@ -26,7 +26,7 @@ Every workflow launch claims first. The label is `<trigger>-<discriminator>`, th
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-claim take --fire <trigger>-<discriminator>
 ```
 
-The seam reads the multi-workflow setting from both config layers itself, so never answer for it from memory. `launch: true` means go on, and a win prints the claim's `id`: keep it as a literal, since the release runs in a later turn where nothing is remembered. `launch: false` names the `holder`, its `holder_id` and its `age_seconds`:
+The seam reads the multi-workflow setting from both config layers itself, so never answer for it from memory. `launch: true` means go on, and a win prints the claim's `id`: keep it as a literal, since the release runs in a later turn where nothing is remembered. With the setting on a take holds no claim and prints no id, so there is nothing to release for that fire. `launch: false` names the `holder`, its `holder_id` and its `age_seconds`:
 
 - This session holds it, because a fire of yours is awaiting its notice: queue this fire, launch nothing, and run this step again right after that notice's release below.
 - Another session holds it, or this session holds nothing awaiting a notice, so the holder may be dead: name the holder and its age, and ask through the ask-user seam. The choices are to check again, or to take today's path for this fire. An old claim from a dead session is cleared through that same ask: release it with `workflow-claim release --fire <holder> --id <holder_id>`, the id the losing take printed, then take the claim again. A holder whose `holder_id` is null predates ids: clear it the same way with `--stale` in place of `--id`.

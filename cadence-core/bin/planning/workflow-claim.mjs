@@ -34,8 +34,9 @@ function cmdWorkflowClaim(dir, sub, opts) {
       'pass the id from the winning take, or the holder id a losing take printed; --stale only for a holder with no id');
   }
   const root = dirname(resolve(dir));
-  if (workflowLayers(root).keys[WORKFLOW_KEYS.multi].on) {
-    return ok(sub === 'take' ? { action: 'take', launch: true, held: false } : { action: 'release', released: false, held: false });
+  // only a take is skipped: a claim taken while the setting was off must still be freed once it is on
+  if (sub === 'take' && workflowLayers(root).keys[WORKFLOW_KEYS.multi].on) {
+    return ok({ action: 'take', launch: true, held: false });
   }
   let gitDir;
   try {
