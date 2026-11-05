@@ -1,6 +1,7 @@
 // @ts-check
 // planning/lease-check.mjs - `lease-check`: the file lease a plan declares, enforced at the commit step
-// repoRel, splitNul, quoteRawPath and parseStagedNameStatus are reached from this handler alone, so they travel with it; the lockfile-lease row in prose-agreement.test.mjs reads this file's bytes for the `undeclared-files` reason at its emitting site
+// repoRel, splitNul, quoteRawPath and parseStagedNameStatus live here because this handler is their only caller
+// prose-agreement.test.mjs reads this file's bytes for the `undeclared-files` reason at its emitting site
 'use strict';
 
 import { execFileSync } from 'node:child_process';
@@ -16,14 +17,11 @@ import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { appendEvent } from '../lib/trace.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
-// a plan's `files:` list is what the parallel-safety gate proves independence from, and nothing stopped an executor staging a path its plan never named, which silently invalidates that proof for every other plan in the phase
-// a seam and not a PreToolUse hook on Write/Edit: the hook fires on every write in every project the plugin is installed in and can't reliably tell which plan is writing (the branch name is the only signal, and it's absent on the sequential path and on orchestrator writes). A rail that fires wrong gets deleted, not tuned
-// the reader is parsePlanFiles, the one cmdPlanOverlap uses, and containment is lib/lease-grammar.mjs, so a path the overlap gate admitted can't be refused here. That used to be true of the reader alone: the gate compared declared lists by exact string while this step read a trailing slash as a directory prefix, so `src/` in one plan and `src/auth.js` in another passed the gate and were then refused here. declaredPhaseFiles is the wrong reader, since it unions across the phase and would let one plan stage a file only another declared
-// an unprovable lease is never a pass: a missing plan, an unreadable staged set and a `files:` list that couldn't be read are all ok:false, because a lease nobody can read licenses nothing and ok:true over it reports a gate that examined an empty list as a gate that found nothing wrong
-// the clean-starting-index check isn't here either: only the orchestrator can see a clean index, because it runs once before anything stages anything. This seam reads the whole staged index with no provenance, so it can't tell a path the user staged before the run from one this executor staged undeclared, and a gate here could only refuse the user's work or excuse an unknown path. Start the index clean and every later `undeclared-files` refusal is provably the executor's own doing
-// the staged set is read with `--name-status -z -M` and each is load-bearing. -z so git emits paths verbatim and unquoted: at the default `core.quotePath` a declared `src/café.js` comes back as `"src/caf\303\251.js"` and the lease would refuse a path it was handed. --name-status because a rename carries both sides, where `--name-only` reports only the destination, so `git mv src/other.js a.txt` would read as a clean lease while destroying another plan's file. -M explicit, because `diff.renames` is user config and a gate whose coverage depends on the caller's git config is not a gate
-// the stream is read as bytes and split on 0x00, because execFileSync with utf8 maps every invalid UTF-8 byte to U+FFFD and undoes -z one layer down: a rename from `src/caf<0xE9>.js` to `src/caf<0xFF>.js` is emitted and paired correctly, then both sides decode to the same string, collapse in the dedup, and the source, another plan's file, is licensed by the destination's declaration
-// so every path has to round-trip (`Buffer.from(s,'utf8').equals(raw)`), and one that doesn't is a refusal naming that path and not a guess. The declared side is read from a utf8 plan file and can't represent such a path either, so admitting it on the U+FFFD spelling would license every sibling differing only in its invalid bytes. Making the declared side byte-aware was rejected: the frontmatter reader is shared with the overlap gate and that's a wider change than this gate
+// the `files:` list is what the parallel gate proves independence from; an unnamed staged path voids it
+// a seam, not a Write/Edit hook: a hook can't tell which plan is writing, and a misfiring rail gets deleted
+// an unprovable lease is never a pass: a missing plan, unreadable staged set or unreadable `files:` is ok:false
+// staged set via `--name-status -z -M`: verbatim paths, both rename sides, and -M since diff.renames is user config
+// split on 0x00 bytes, never decoded: invalid UTF-8 folds to U+FFFD; a path failing the round trip is refused by name
 
 /** A path made repo-relative and separator-normalized, for comparison with git. */
 function repoRel(top, p) {
@@ -49,7 +47,7 @@ function splitNul(buf) {
 }
 
 /**
- * The one honest way to name a path whose bytes no JSON string can carry: C-style double quotes with every byte outside printable ASCII as a three-digit octal escape, the spelling git's own `core.quotePath` uses for high bytes, so `src/caf<0xE9>.js` reads back as `"src/caf\351.js"`.
+ * A path no JSON string can carry, in git's `core.quotePath` spelling: `src/caf<0xE9>.js` is `"src/caf\351.js"`.
  *
  * @param {Buffer} raw
  * @returns {string}
@@ -66,9 +64,10 @@ function quoteRawPath(raw) {
 
 /**
  * Parse a `git diff --cached --name-status -z -M` stream into staged entries.
- * The records are NUL-separated fields and not lines: a status starting with `R` (rename) or `C` (copy) consumes two paths, source then destination, and every other status consumes one.
- * The input is a buffer split on the 0x00 byte, since decoding first would fold every invalid UTF-8 byte onto U+FFFD and make two different paths read as one. Each path is decoded and checked to round-trip, and the ones that don't come back under `unrepresentable`, already in their quoteRawPath spelling, for the caller to refuse by name.
- * Returns null on a truncated or unparseable stream, which the caller turns into `no-staged-set`, since an unprovable lease is never a pass.
+ * Records are NUL-separated fields, not lines: `R` (rename) and `C` (copy) take two paths, every other status one.
+ * Takes a buffer split on 0x00, since decoding first folds invalid UTF-8 onto U+FFFD and merges two paths into one.
+ * Paths that don't round-trip come back under `unrepresentable`, in quoteRawPath spelling, for the caller to refuse.
+ * Returns null on a truncated or unparseable stream, which the caller turns into `no-staged-set`.
  *
  * @param {Buffer} out
  * @returns {{
@@ -103,7 +102,7 @@ function parseStagedNameStatus(out) {
     if (rawPath.length === 0 || (rawSource !== null && rawSource.length === 0)) return null;
     const source = rawSource === null ? null : decodePath(rawSource);
     const path = decodePath(rawPath);
-    // a path that didn't round-trip is already recorded under `unrepresentable`, and keeping a U+FFFD spelling in `entries` beside it is the guess this refuses to make
+    // a path that didn't round-trip is in `unrepresentable` already; a U+FFFD spelling in `entries` would be a guess
     if (path === null || (rawSource !== null && source === null)) continue;
     entries.push({ path, status, source });
   }
@@ -111,8 +110,9 @@ function parseStagedNameStatus(out) {
 }
 
 /**
- * Whether the project root is Cadence's own repository: its `.claude-plugin/plugin.json` parses and names `cadence`. An absent, unreadable or unparsable manifest, or any other name, is false.
- * CENSUSES holds Cadence's own hand-maintained counts, and many of its holders sit under `tests/`, a common path in user projects. Applying the table everywhere would refuse a user's `tests/trace.test.mjs` as a census file, the way the `weight-budgets` row's `agents/` and `skills/` subjects already reached user paths. The check lives here and not in lib/census-registry.mjs, which is pure and leaves file reads to its caller.
+ * Whether the project root is Cadence's own repository: its `.claude-plugin/plugin.json` parses and names `cadence`.
+ * CENSUSES holds Cadence's own counts, and its holders sit under `tests/`, a common path in user projects.
+ * The check lives here, not in lib/census-registry.mjs, which is pure and leaves file reads to its caller.
  * @param {string} root
  * @returns {boolean}
  */
@@ -131,7 +131,7 @@ function cmdLeaseCheck(dir, opts) {
     return fail('bad-args', 'lease-check needs --phase <N>',
       'pass --phase <N> for the phase the plan being committed belongs to, then re-run');
   }
-  // the tree-aware collision check goes before any read of the phase directory, the rail this file already holds that a flag is validated ahead of the work it names (#42, #45). It refuses only when the normalized spelling names a directory that exists here, so `phases/1.10/` stays addressable on a tree with no `phases/1.1/`
+  // the tree-aware collision check runs before any phase-directory read; `phases/1.10/` stays addressable
   const collision = phaseSpellingCollision(dir, parsedPhase);
   if (collision) {
     return fail('bad-args', `lease-check ${collision}`,
@@ -144,11 +144,11 @@ function cmdLeaseCheck(dir, opts) {
   }
   const n = parsedPhase.value;
   const k = parsedPlan.value;
-  // the project root is the parent of the planning directory on both arms, so the plan-time arm still spawns no git; the census table is Cadence's own and applies only when that root is Cadence's repository
+  // the root is the planning dir's parent on both arms, so plan-time spawns no git; the census table is Cadence's own
   const applyCensuses = censusesApply(resolvePath(dir, '..'));
 
   // `k` is the number in PLAN-<k>.md, and 1 for a bare PLAN.md, same as the executor's report path
-  // the phase directory is the caller's own spelling: a phase spelled 1.10 once leased against `phases/1.1/PLAN.md` and passed a gate the wrong plan file declared. `common.phase` below stays the number
+  // the phase dir is the caller's own spelling: 1.10 once leased against `phases/1.1/PLAN.md`
   const pdir = join(dir, 'phases', parsedPhase.raw);
   let planFile = join(pdir, `PLAN-${k}.md`);
   let text = read(planFile);
@@ -162,12 +162,11 @@ function cmdLeaseCheck(dir, opts) {
   const { files: declared, issues } = parsePlanFiles(text);
   const frontmatter = issues.length ? { frontmatter_issues: issues } : {};
 
-  // the plan-time arm asks the same question before an executor runs: not "did this commit stage a path the plan never named" but "will the declared work move a hand-maintained count whose holding file the plan never named". The commit-time arm below catches that too late, with the census already red and the fix a lease amendment mid-run, which has been overridden rather than obeyed before
-  // it branches above the execFileSync block so the two arms share nothing below parsePlanFiles. No git call, no staged set, and deliberately no `no-staged-set` fail-closed rule: that's a statement about the staged side, and inheriting it would halt planning in any tree where `git diff --cached` fails, on a condition this arm doesn't measure. repoRel has no input here either, since registry subjects and lease declarations are already repo-relative and planFile comes from the caller's own `--dir`
-  // which censuses are at risk is lib/census-registry.mjs's answer and not this function's: the replay in planning-lease-check.test.mjs asks the same predicate once per historical plan without a seam invocation, and a second copy here is how the two readers come to disagree
-  // it fails closed on a lease it couldn't read, on two signals, because censusesAtRisk of an empty list is empty by construction and an unread lease looks the same as one that puts nothing at risk, so the gate would answer ok:true precisely when it read nothing. A garbage frontmatter line returns a non-empty file list beside one `unknown-line` issue, while a misspelled `filez:` key is a valid key line that returns an empty list with zero issues, so each signal catches the case the other misses. The frontmatter signal is read first, since it names why the lease couldn't be read
-  // two new reason tokens and not one token with a field naming which fired, because execute.md's choose_path already reads `frontmatter_issues` and an empty declared set as separate clauses. Neither existing token fits: the census refusal below is defined by a non-empty `censuses_at_risk`, empty here by construction, and `undeclared-files` is about the staged side this arm never reads
-  // refusing an empty declared set isn't a blanket refusal: the plans declaring nothing are `/cad-task` plans with no YAML frontmatter at all, which check_census never runs against
+  // plan-time asks before an executor runs whether the declared work moves a count whose holder the plan never named
+  // no git and no staged set on this arm, so it carries no `no-staged-set` rule: that's about the staged side
+  // fails closed on a lease it couldn't read: an empty file list looks like nothing at risk, so two signals cover it
+  // two reason tokens, not one with a field: execute.md's choose_path reads `frontmatter_issues` and an empty set apart
+  // an empty declared set refuses only where a lease exists: `/cad-task` plans have no frontmatter
   if (opts['plan-time']) {
     const planPath = planFile.split(sep).join('/');
     const base = {
@@ -197,11 +196,11 @@ function cmdLeaseCheck(dir, opts) {
           + ' measured against nothing - then re-run this check',
       });
     }
-    // the census table is Cadence's own: in another project's root it applies to nothing, and a readable lease answers ok:true
+    // the census table is Cadence's own: elsewhere it applies to nothing and a readable lease answers ok:true
     const atRisk = applyCensuses ? censusesAtRisk(declared) : [];
-    // a clean lease is a pass and not a silence, so the caller can tell "the check ran and found nothing" from "the check never ran"
+    // a clean lease is a pass, not a silence: the caller can tell "ran and found nothing" from "never ran"
     if (!atRisk.length) return ok(base);
-    // emitted directly for the same reason as the `undeclared-files` refusal below: fail has no channel for the offending list, and naming each missing file beside what its count counts and where it's asserted is what makes the remedy "declare these" and not "guess"
+    // emitted directly, as with `undeclared-files` below: fail has no channel for the offending list
     return emit({
       ok: false,
       reason: 'census-at-risk',
@@ -219,7 +218,7 @@ function cmdLeaseCheck(dir, opts) {
   try {
     top = execFileSync('git', ['rev-parse', '--show-toplevel'],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    // no `encoding` on this call, on purpose: paths are bytes, and decoding them here would undo -z (see the comment above)
+    // no `encoding` on this call, on purpose: paths are bytes, and decoding them here would undo -z
     stagedOut = execFileSync('git',
       ['-C', top, 'diff', '--cached', '--name-status', '-z', '-M'],
       { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -238,7 +237,7 @@ function cmdLeaseCheck(dir, opts) {
       + ' clean');
   }
   if (parsed.unrepresentable.length) {
-    // fail closed and name the path rather than guess: neither the staged side nor the declared side can spell these bytes, so the gate says so instead of matching two replacement characters
+    // neither side can spell these bytes, so refuse instead of matching two replacement characters
     return emit({
       ok: false,
       reason: 'unrepresentable-paths',
@@ -250,14 +249,14 @@ function cmdLeaseCheck(dir, opts) {
         + ' - rename or unstage them, then re-run',
     });
   }
-  // both sides of a rename are checked: only the destination is the executor's new file, and the source is the one another plan may have declared. `staged` counts distinct paths, so a rename counts as two
+  // both sides of a rename are checked: the source is the one another plan may have declared
   const staged = [...new Set(parsed.entries.flatMap(
     (e) => (e.source === null ? [e.path] : [e.source, e.path])))];
 
-  // exactly one exemption, the plan's own reports, which the contract requires the executor to write and no plan declares
-  // it used to be one name by byte equality, right while a plan had one report. Since rotation (#195) an executor holds `plan-<k>.md` and `plan-<k>.<n>.md` at once, so a re-run staging the rotated sibling during a task commit was refused `undeclared-files`, blocking the executor for obeying its own contract
-  // not a directory lease, and that distinction is the whole bound: `plan-<k>-risk.diff` and `plan-<k>-risk-task-<n>.diff` live in the same directory, and a risk_surface checkpoint deliberately leaves flagged changes staged, so a directory exemption would let a blocking gate's own evidence ride into a task commit unnamed. The test is two halves: the path sits directly in this plan directory's `reports/` (a further separator disqualifies it, so a nested `reports/old/plan-1.1.md` stays refused), and its final component is a name for this `k`
-  // which names those are is lib/report-rotation.mjs's answer and not this function's, since a second copy is how the rename picker ends up minting a name this gate then refuses
+  // exactly one exemption: the plan's own reports, which the contract has the executor write and no plan declares
+  // not a directory lease: the risk diffs sit in the plan dir, and a gate's evidence mustn't ride a task commit
+  // two halves: directly in this plan's `reports/` (nested ones stay refused), and a name for this `k`
+  // rotation keeps `plan-<k>.md` and `plan-<k>.<n>.md` at once, so a byte-equal match refused the rotated sibling
   const reportsDir = repoRel(top, join(pdir, 'reports'));
   const isOwnReport = (/** @type {string} */ p) => {
     if (!p.startsWith(`${reportsDir}/`)) return false;
@@ -265,8 +264,8 @@ function cmdLeaseCheck(dir, opts) {
     return !name.includes('/') && isReportName(k, name);
   };
 
-  // what a declaration covers is lib/lease-grammar.mjs's answer, the same module cmdPlanOverlap asks: a directory lease is a trailing slash, everything else is byte-identical, and `src/auth` must never license `src/authority.rs`. A second copy here is how the two seams came to disagree
-  // the staged side is not re-normalized on its way in: it arrives canonical through repoRel, and a second transform over paths that round-tripped through the byte-level guard above is how the non-ASCII hard block gets re-broken
+  // what a declaration covers is lib/lease-grammar.mjs's answer: a trailing slash is a directory, the rest exact
+  // the staged side isn't re-normalized: it arrives canonical through repoRel, and another pass re-breaks non-ASCII
   const undeclared = staged.filter((p) => !isOwnReport(p)
     && !declared.some((d) => covers(d, p)));
 
@@ -278,18 +277,18 @@ function cmdLeaseCheck(dir, opts) {
     declared: declared.length,
     ...frontmatter,
   };
-  // which of the undeclared paths hold a hand-maintained count, joined on the holding file by equality and not through `covers`: a staged path is one file and a holder is one file, so neither side has a directory lease to interpret
-  // the split is what separates the two refusals: an ordinary `undeclared-files` says a path rode a commit its plan never named, this one says the path is where a count lives, so the commit is about to leave a census red with no plan naming the file that would re-pin it. The remedy differs too (amend the lease and re-pin in the same commit), and a caller can't act on a difference the envelope doesn't carry
-  // Cadence's own table again: another project's `tests/trace.test.mjs` is refused as plain `undeclared-files` and appends no `census_undeclared`
+  // which undeclared paths hold a hand-maintained count, joined by equality and not `covers`: each side is one file
+  // two refusals: a path rode a commit, versus a census about to go red, where the remedy is amend and re-pin
+  // Cadence's own table again: another project's `tests/trace.test.mjs` stays plain `undeclared-files`
   const holders = new Map((applyCensuses ? CENSUSES : []).map((e) => [e.holder, e]));
   const censusFiles = undeclared.filter((p) => holders.has(p));
 
   if (undeclared.length) {
-    // emitted directly: fail's reason/detail/hint shape has no channel for the offending list, and the list is the point of the refusal
+    // emitted directly: fail has no channel for the offending list, and the list is the point of the refusal
     if (censusFiles.length) {
-      // appended before the envelope is emitted, the way risk-check does: appendEvent never throws and never speaks, its `{written, reason}` rides the envelope so an unwritten trace is reported, and it can't change the verdict
-      // on this arm alone, not the ordinary `undeclared-files` arm and not the plan-time arm: the append is the distinguishing signal, and widening it to every refusal destroys the distinction. The record carries the census identity, which a later reader joins on, and the envelope carries the file list and the hint, which the caller in front of the refusal acts on
-      // `phase` is the caller's own spelling, as a prose `trace append --phase` stores it, since the two must be one string or the records don't join
+      // appended before the envelope, as risk-check does: appendEvent never throws, its `{written, reason}` rides along
+      // this arm alone: the append is the distinguishing signal, and the record carries the census identity to join on
+      // `phase` is the caller's own spelling, as `trace append --phase` stores it, so the records join
       const res = appendEvent(dir, {
         phase: parsedPhase.raw,
         plan: k,

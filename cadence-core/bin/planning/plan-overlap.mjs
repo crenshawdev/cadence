@@ -8,7 +8,8 @@ import { intersects } from '../lib/lease-grammar.mjs';
 import { parsePlanFiles } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 
-// intersects the declared file lists of a phase's plans pairwise; cad-execute's choose_path requires empty overlaps before dispatching plans concurrently. Overlaps found is still ok:true, a successful check with a negative answer, and the caller branches on overlaps.length like it does on drift in status
+// pairwise intersection of a phase's declared file lists; choose_path needs empty overlaps to run plans concurrently
+// overlaps found is still ok:true, a successful check with a negative answer: branch on overlaps.length
 
 function cmdPlanOverlap(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
@@ -16,7 +17,7 @@ function cmdPlanOverlap(dir, opts) {
     return fail('bad-args', 'plan-overlap needs --phase <N>',
       "pass --phase <N> naming the phase whose plans should be compared, then re-run");
   }
-  // the tree-aware collision check goes before any read of the phase directory, the rail this file already holds that a flag is validated ahead of the work it names (#42, #45). It refuses only when the normalized spelling names a directory that exists here, so `phases/1.10/` stays addressable on a tree with no `phases/1.1/`
+  // the tree-aware collision check runs before any phase-directory read (#42, #45); `phases/1.10/` stays addressable
   const collision = phaseSpellingCollision(dir, parsedPhase);
   if (collision) {
     return fail('bad-args', `plan-overlap ${collision}`,
@@ -32,7 +33,7 @@ function cmdPlanOverlap(dir, opts) {
       + ' `files:` lists in the PLAN files that directory holds');
   }
 
-  // parsed before the fewer-than-two-plans early return, so a one-plan phase's grammar diagnostic still reaches this envelope and isn't skipped along with the intersection
+  // parsed before the fewer-than-two-plans early return, so a one-plan phase's grammar diagnostic still gets out
   const declared = planFiles.map((f) => {
     const { files, issues } = parsePlanFiles(read(join(pdir, f)) || '');
     return { plan: f, files, issues };
@@ -49,9 +50,9 @@ function cmdPlanOverlap(dir, opts) {
       ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
     });
   }
-  // containment is lib/lease-grammar.mjs's to answer: exact string equality here let a phase declaring `src/` in one plan and `src/auth.js` in another report an empty overlap, pass this gate, and then be refused plan by plan at lease-check, which reads the trailing slash as a directory prefix. Two readers of one declaration, one module
-  // both spellings of a collision ride `files` as separate strings, since the covering declaration and the covered one are different and the caller needs to see the pair it must resolve; an exact match contributes one string because `seen` is shared across the two passes
-  // emission order is plan i's declarations in declaration order, then plan j's, so the reported list is the same on every run
+  // containment is lib/lease-grammar.mjs's: exact equality passed `src/` and `src/auth.js` here, then failed later
+  // both spellings of a collision ride `files`, since the caller needs the pair; an exact match is one string
+  // emission order is plan i's declarations, then plan j's, so the list is the same on every run
   const collect = (from, against, into, seen) => {
     for (const f of from) {
       if (!against.some((g) => intersects(f, g))) continue;
@@ -75,7 +76,7 @@ function cmdPlanOverlap(dir, opts) {
     phase: n,
     plans: declared.map((d) => ({ plan: d.plan, files: d.files.length })),
     overlaps,
-    // a plan declaring no files can't be proven independent, so the check is only as strong as the declarations; the caller treats these as unsafe
+    // a plan declaring no files can't be proven independent; the caller treats these as unsafe
     ...(undeclared.length ? { undeclared } : {}),
     ...(nonconforming.length ? { nonconforming_plans: nonconforming } : {}),
     ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
