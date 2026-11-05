@@ -84,9 +84,9 @@ Assemble `{ instruction, artifact }` from the wiring table:
     shortfall. Another imaginable failure or alternative implementation is not a
     finding, and completed testing is not reopened without such evidence. A real
     defect, an uncovered requirement or a measured shortfall still draws a
-    finding. The findings schema is unchanged and `reviewer-brief.md` is not
-    edited, so the cross-model reviewers get the rule through `instruction`
-    alone and the local reviewer through `instruction` and its contract.
+    finding. The findings schema is unchanged. The brief and the contract state
+    their own rules at every gate, and this rule rides `instruction` for the
+    cross-model reviewers and the local reviewer alike.
 - `artifact` = a REFERENCE, never the material itself. Inlining a diff keeps
   every byte of it resident here for the rest of the run, when the reviewer can
   produce it in one command. Three shapes; every fire site names the one it uses:

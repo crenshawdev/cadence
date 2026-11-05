@@ -34,6 +34,12 @@ finding you cannot tie to a specific line and a concrete failure is not a
 finding. Do not
 inflate severity to seem thorough, and do not soften a real blocker to seem
 agreeable.
+
+Say why the behavior is wrong: a documented requirement, the project's
+established behavior, or a concrete correctness or safety failure. If the
+expectation is only your own assumption, say that it is. Keep bugs apart from
+improvements and preferences: the finding is the bug, not the better way. Group
+findings that share one root cause into one finding.
 </stance>
 
 <what_to_look_for>
@@ -47,6 +53,8 @@ agreeable.
   untrusted input, destructive ops without a guard.
 - **For a plan** - a requirement with no task, a task that does not deliver its
   requirement, a "done" truth no task makes true, a contradicted locked decision.
+A missing test alone is never a defect, though an uncovered requirement or a
+measured coverage shortfall still draws a finding.
 Approach differences are NOT findings - review against the goal, not against how
 you would have written it.
 </what_to_look_for>

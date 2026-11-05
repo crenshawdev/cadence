@@ -67,8 +67,8 @@ taken, and nothing else in the review subsystem reads it.
   refused before any request is issued, while bytes added in the seam would be
   invisible to it (the cap deliberately excludes the adapters'
   schema-injection bytes) and every provider's cap would under-report by the
-  brief. The cost is measured, not unknown: about 670 estimated tokens against
-  the 120,000 default `review.max_prompt_tokens`, ~0.6% of one payload.
+  brief. The cost is measured, not unknown: about 837 estimated tokens against
+  the 120,000 default `review.max_prompt_tokens`, ~0.7% of one payload.
   The composing step takes the artifact path as its THIRD argument and the
   payload path it WRITES as its fourth. Both are arguments, and that is what
   lets all three shapes share the step: shape (b) redirects `git diff --cached`
