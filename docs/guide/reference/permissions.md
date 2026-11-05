@@ -40,6 +40,10 @@ Context7 is used when it's installed and skipped when it's not, and Cadence does
 - `subagent-trace` reads the stopped subagent's own transcript, the file the host keeps for that agent, to price the dispatch in `.planning/trace.jsonl`.
 - `read-trace` logs the path of each project file a tool call opens to `.planning/reads.jsonl`. Paths only, never contents. A file inside the plugin is recorded relative to the plugin, and any other path outside the project is recorded only as `outside`.
 
+## The Workflow tool
+
+`/cadence:cad-plan`, `/cadence:cad-plan-review`, `/cadence:cad-execute`, `/cadence:cad-verify`, `/cadence:cad-task`, `/cadence:cad-debug` and `/cadence:cad-context` list `Workflow` in `allowed-tools`. It runs the review panel or the analyzer as a workflow, and only when `workflow.use_workflows` is true in both your repository's config and your user-global config, which is off by default. When it runs, Cadence reads the host's run file for that workflow, `workflows/<run id>.json` under the session directory, read-only, to price each agent and to take the result.
+
 ## Outside the project
 
 What Cadence writes outside your repository:
@@ -49,7 +53,7 @@ What Cadence writes outside your repository:
 - the `worktree.baseRef` key, merged into `.claude/settings.json` or `~/.claude/settings.json`, only after you pick the file at `/cadence:cad-config`;
 - scratch directories from `mktemp` under `TMPDIR`, or `/tmp` when it's unset.
 
-What it reads outside it: your user-global config, `providers.env` or the `review.key_file` file during a provider call, and `~/.claude/settings.json` and the platform's `managed-settings.json` to learn `worktree.baseRef` before running plans in parallel worktrees.
+What it reads outside it: your user-global config, the host's workflow run file under the session directory, `providers.env` or the `review.key_file` file during a provider call, and `~/.claude/settings.json` and the platform's `managed-settings.json` to learn `worktree.baseRef` before running plans in parallel worktrees.
 
 ## Shell commands
 

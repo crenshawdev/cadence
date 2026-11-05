@@ -422,7 +422,7 @@ export const CONTRACTS = {
     // A finished review-panel run to the record's payload and the review file's input. --run-file is the host's
     // `<session>/workflows/<run id>.json`, read whole because the completion notice cuts a long result short. --out-dir is
     // this run's scratch directory and must exist; the payload, the survivors and the kept answers land in it.
-    // --answers-file is the main session's answers (voice, index, then a ruling and/or fix_commit or overridden); each
+    // --answers-file is the main session's answers (voice, index, then a ruling and/or fix_commit, fix_file or overridden); each
     // call keeps what earlier ones were given in the out-dir, so a later answer replaces only its own finding's.
     'workflow-run': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
