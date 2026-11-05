@@ -73,7 +73,8 @@ function loadAnswers(outDir, answersFile) {
 /**
  * Write the run's brackets. A worker whose dispatch is on the record gets only its terminal, so a retry after a half-written
  * pair closes it, and one with both is skipped. When the run's `<run id>-notice` bracket is already there, an earlier call
- * billed the run's totals and billing it per agent as well would count it twice, so none are written.
+ * billed the run's totals and billing it per agent as well would count it twice, so none are written. The same holds the other
+ * way: with any `<run id>-` agent bracket on the record, the notice bracket is not written on top of them.
  * @param {string} dir the planning directory
  * @param {string} phase @param {string} runId @param {{plan: string, dispatch: any, terminal: any}[]} list
  * @returns {{written: number, already: number, failed: {plan: string, reason: string}[]}}
@@ -84,8 +85,10 @@ function writeBrackets(dir, phase, runId, list) {
   const closed = new Set(events.filter((e) => TERMINAL.includes(e.event)).map((e) => String(e.plan)));
   const out = { written: 0, already: 0, failed: /** @type {{plan: string, reason: string}[]} */ ([]) };
   const billedAsTotals = dispatched.has(`${runId}-notice`);
+  // the run file gone on a retry leaves only the notice's totals, and agents billed earlier already hold that spend
+  const billedPerAgent = [...dispatched].some((p) => p.startsWith(`${runId}-`) && p !== `${runId}-notice`);
   for (const b of list) {
-    if (closed.has(b.plan) || (billedAsTotals && b.plan !== `${runId}-notice`)) { out.already += 1; continue; }
+    if (closed.has(b.plan) || (billedAsTotals && b.plan !== `${runId}-notice`) || (billedPerAgent && b.plan === `${runId}-notice`)) { out.already += 1; continue; }
     for (const event of dispatched.has(b.plan) ? [b.terminal] : [b.dispatch, b.terminal]) {
       const r = appendEvent(dir, event);
       if (!r.written) { out.failed.push({ plan: b.plan, reason: r.reason || 'not-written' }); break; }
