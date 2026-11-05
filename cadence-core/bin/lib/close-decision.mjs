@@ -3,23 +3,44 @@
 // whether a land cleans up, which branch to reap, and whether an autonomous close halts on an unfixed finding.
 // No live git and no I/O: land-cleanup.mjs supplies the readings. Unknown or missing input never throws.
 
+/** The part of a branch name before its last `/`, or null for a name with no `/` (it has no namespace). */
+function namespaceOf(name) {
+  const i = name.lastIndexOf('/');
+  return i > 0 ? name.slice(0, i) : null;
+}
+
 /**
- * Pick which branch cleanup reaps, from the derived integration-branch name and `git branch --merged <base>`.
- * - the derived name when it's a non-empty string in the merged list (the normal case);
- * - else the sole `cadence/*` entry of the merged list, for when PROJECT.md already moved on to the next version or
- *   the name derived null;
- * - else null: zero or several matches reap nothing, never guess.
+ * Pick which branch cleanup reaps, from the configured name, the derived name and `git branch --merged <base>`.
+ * In order, the first step that finds anything decides (D-24):
+ * - the configured name, when it's in the merged list;
+ * - the sole merged branch in the configured name's own namespace (the part before its last `/`; a name with no `/`
+ *   skips this step);
+ * - the derived name, when it's in the merged list (the normal case);
+ * - the sole merged `cadence/*` entry, for when PROJECT.md already moved on to the next version or the name derived null.
+ * A step that finds nothing falls through. A step that finds several stops there and reaps nothing: several means the
+ * answer is unknown, so it never guesses and never tries another namespace.
+ * The caller passes `configured` only when it already passed the branch-name grammar.
  *
  * @param {string | null | undefined} derivedName
  * @param {string[]} mergedBranches
+ * @param {string | null | undefined} [configured]
  * @returns {string | null}
  */
-export function resolveReapBranch(derivedName, mergedBranches) {
-  const merged = Array.isArray(mergedBranches) ? mergedBranches : [];
+export function resolveReapBranch(derivedName, mergedBranches, configured) {
+  const merged = (Array.isArray(mergedBranches) ? mergedBranches : []).filter((b) => typeof b === 'string');
+  if (typeof configured === 'string' && configured) {
+    if (merged.includes(configured)) return configured;
+    const ns = namespaceOf(configured);
+    if (ns !== null) {
+      const siblings = merged.filter((b) => namespaceOf(b) === ns);
+      if (siblings.length === 1) return siblings[0];
+      if (siblings.length > 1) return null;
+    }
+  }
   if (typeof derivedName === 'string' && derivedName && merged.includes(derivedName)) {
     return derivedName;
   }
-  const cadence = merged.filter((b) => typeof b === 'string' && b.startsWith('cadence/'));
+  const cadence = merged.filter((b) => b.startsWith('cadence/'));
   return cadence.length === 1 ? cadence[0] : null;
 }
 

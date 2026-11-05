@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { emit } from './lib/seam-io.mjs';
-import { integrationBranchName } from './lib/branch-decision.mjs';
+import { integrationBranchName, configuredNameProblem } from './lib/branch-decision.mjs';
 import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-decision.mjs';
 // the one statement of what an entry means to a settling fire; here because lib/close-decision.mjs has no deps or I/O
 import { unfixedFromEntries } from './lib/filing-decision.mjs';
@@ -101,12 +101,18 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
       base, warnings });
   }
   const mergedList = readMergedBranches(dir, base);
+  // a hand-edited layer never met `config.mjs set`, so a name failing the grammar counts as unset and is named
+  // it would otherwise reach `git branch -D`
+  const nameProblem = configuredNameProblem(git.integration_branch_name);
+  if (nameProblem !== null) warnings.push(`${nameProblem}; cleanup treats it as unset`);
+  const configured = nameProblem === null && typeof git.integration_branch_name === 'string'
+    ? git.integration_branch_name : null;
   const derived = branchArg !== undefined ? branchArg
     : integrationBranchName(
       readText(join(dir, '.planning', 'PROJECT.md')),
       readText(join(dir, '.planning', 'ROADMAP.md')),
     );
-  const branch = resolveReapBranch(derived, mergedList);
+  const branch = resolveReapBranch(derived, mergedList, configured);
   const mergedIntoBase = mergedArg !== undefined
     ? mergedArg === 'true'
     : (branch !== null && mergedList.includes(branch));
