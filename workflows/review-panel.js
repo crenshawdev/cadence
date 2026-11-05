@@ -121,6 +121,8 @@ const viaProvider = (voice) => {
   const p = a.providers && typeof a.providers === 'object' ? a.providers[voice] : null;
   const usable = p && text(p.line) && text(p.envelope) && text(p.model) && Number.isSafeInteger(p.timeout_ms) && p.timeout_ms > 0 && text(a.wrapper_agent_type);
   if (!usable) return Promise.resolve(none(voice, `no usable seam line was passed for ${voice}, so ${voice} did not run`));
+  // the path goes into a shell command unquoted, so only the class the scratch-directory composer uses gets through
+  if (!/^[A-Za-z0-9._/-]+$/.test(p.envelope)) return Promise.resolve(none(voice, `the envelope path for ${voice} holds a character outside A-Z a-z 0-9 . _ / -, which the shell command can't take unquoted, so ${voice} did not run`));
   if (p.line.includes('CLAUDE_PLUGIN_ROOT')) return Promise.resolve(none(voice, `the seam line for ${voice} names CLAUDE_PLUGIN_ROOT, which is unset in a workflow agent, so ${voice} did not run`));
   const prompt = [
     `Run exactly this one command with the Bash tool and set its timeout to ${p.timeout_ms} milliseconds. Run nothing else and change nothing else.`,
