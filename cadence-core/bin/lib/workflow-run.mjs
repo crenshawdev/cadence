@@ -191,6 +191,9 @@ function parseCompleted(text) {
 /** What the analyzer arm writes its report to, in the scratch directory. */
 export const ANALYZER_FILE = 'analysis.md';
 
+/** The role every analyzer reader bills under, so `workflow.max_dispatch_tokens.cad-assumptions-analyzer` compares against each. */
+export const ANALYZER_ROLE = 'cad-assumptions-analyzer';
+
 /**
  * Parse a run file's text and judge whether it is a completed run of workflows/analyzer.js with a report in it. A run with
  * none is `analyzer-no-report`, naming the readers that returned nothing, so it never reads as an analysis with no assumptions.
@@ -495,12 +498,13 @@ function bracket(b) {
 /**
  * One bracket per agent row. The worker key carries the run id, so a second run in one phase can't fold into the first.
  * An agent that did not finish is a checkpoint naming its state, and still bills what it spent.
- * @param {any} run @param {{phase: string, runId: string, payloadRef: string}} at
+ * A `role` on `at` bills every row under it, as the analyzer arm does for its readers.
+ * @param {any} run @param {{phase: string, runId: string, payloadRef: string, role?: string}} at
  */
 export function agentBrackets(run, at) {
   return agentRows(run).map((row, i) => {
     const id = isText(row.agentId) ? row.agentId : `agent${i + 1}`;
-    const role = roleOfRow(row);
+    const role = at.role || roleOfRow(row);
     const label = typeof row.label === 'string' ? row.label : '';
     const state = typeof row.state === 'string' ? row.state : 'unknown';
     /** @type {Record<string, any>} */
@@ -520,7 +524,7 @@ export function agentBrackets(run, at) {
 
 /**
  * The one bracket for a run whose file gave no per-agent rows, carrying the notice's totals and saying why it is one.
- * @param {{phase: string, runId: string, payloadRef: string, why: string,
+ * @param {{phase: string, runId: string, payloadRef: string, role?: string, why: string,
  *   totals: {tokens?: number, turns?: number, duration_ms?: number}}} at
  */
 export function noticeBracket(at) {
@@ -528,7 +532,7 @@ export function noticeBracket(at) {
   const figures = {};
   for (const [key, v] of Object.entries(at.totals)) if (figure(v) !== undefined) figures[key] = v;
   return bracket({
-    phase: at.phase, plan: `${at.runId}-notice`, role: WORKFLOW_ROLE, read: at.payloadRef, figures,
+    phase: at.phase, plan: `${at.runId}-notice`, role: at.role || WORKFLOW_ROLE, read: at.payloadRef, figures,
     terminal: 'return',
     detail: `the run's totals from the completion notice, because ${at.why}`,
   });

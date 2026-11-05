@@ -15,7 +15,7 @@ import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { appendEvent, renderTrace, TERMINAL } from '../lib/trace.mjs';
 import {
-  ANALYZER_FILE, ANSWERS_FILE, MAX_ANSWERS_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
+  ANALYZER_FILE, ANALYZER_ROLE, ANSWERS_FILE, MAX_ANSWERS_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
   agentBrackets, agentRows, mapRun, mergeAnswers, noticeBracket, parseAnalyzerRun, parseAnswers, parseRun,
 } from '../lib/workflow-run.mjs';
 
@@ -146,8 +146,9 @@ function cmdWorkflowRun(dir, opts) {
   const runId = file && typeof file.runId === 'string' && file.runId ? file.runId : basename(opts['run-file'], '.json');
 
   // the brackets first: whatever happens to the result below, these agents spent real tokens
+  // the analyzer arm bills every reader under the analyzer's role, so its dispatch ceiling compares against each
   const analyzer = opts.analyzer === true;
-  const at = { phase: phase.raw, runId, payloadRef: opts['payload-ref'].trim() };
+  const at = { phase: phase.raw, runId, payloadRef: opts['payload-ref'].trim(), ...(analyzer ? { role: ANALYZER_ROLE } : {}) };
   const rows = agentRows(file);
   const fromFile = rows.length > 0;
   const why = runRead.text === null ? `the run file ${runRead.why}` : (file === null ? 'the run file is not JSON' : 'the run file holds no agent rows');
