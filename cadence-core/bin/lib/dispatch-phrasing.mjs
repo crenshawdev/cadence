@@ -1,14 +1,9 @@
 // @ts-check
-// dispatch-phrasing.mjs - the pure rule behind self-verify's `unbatched-dispatch` check (#88): a prose block that
-// claims concurrency for a set of dispatches must issue them "in one message", and every sentence in it that issues the
-// set has to hold to that. The disk half lives in self-verify.mjs.
-// Why: review-triggers.md step 4 once said "For each reviewer in the set, in parallel where the host allows:", a loop
-// in a capability hedge that produces the serial behaviour it forbids. Without a check the wording returns.
-// Blocks split at blank lines, headings, list items and table rows; sentences at a period or semicolon outside
-// brackets, never a colon, which would sever a batch statement from its list. Only a sentence that issues the set in
-// the imperative is judged, and one that merely affirms a batch is excused.
-// The claim scopes from the block because it often sits a sentence from its instruction. A heuristic: on a false
-// positive, narrow the pattern here and never bend a correct surface around it.
+// dispatch-phrasing.mjs - the pure rule behind self-verify's `unbatched-dispatch` check (#88): a block that claims
+// concurrency for a set of dispatches must say "in one message", and every sentence issuing the set must hold to it.
+// review-triggers.md step 4 once said "in parallel where the host allows", a hedge that makes the serial behaviour
+// it forbids. Sentences split at a period or semicolon, never a colon, which would sever a batch from its list.
+// A heuristic: on a false positive, narrow the pattern here and never bend a correct surface around it.
 'use strict';
 
 /** The one problem code this lib files. */
@@ -26,20 +21,16 @@ const SERIAL_SHAPE = new RegExp('\\b(?:for each|for every|one at a time|one by o
 const HOST_HEDGE = /\b(?:if|when|where)\s+the\s+host\s+(?:allows|supports|permits)\b/i;
 
 /**
- * A sentence in the imperative mood: a bare-form dispatch verb opening a clause, at the sentence start (past a list
- * marker), after `|`, `:`, `;`, `,`, `(`, `[`, or after a conjunction, modal or infinitive `to`. It separates a
- * sentence that issues work from one that reasons, forbids, describes or catalogues with the same vocabulary.
- * Bare form only: `issues` and `sent` in "every worktree issues its own findings" or a catalog row "after all worktree
- * batches are sent" are an inflected verb and a participle, reporting on dispatch already arranged. Clause-initial
- * only, and `never` and `not` are left out of the lead set on purpose, so a negation excludes itself from the shape it
- * forbids.
+ * A bare-form dispatch verb opening a clause, which tells a sentence that issues work from one that reasons or forbids.
+ * Bare form only: "every worktree issues its own findings" and "batches are sent" report dispatch already arranged.
+ * `never` and `not` stay out of the lead set on purpose, so a negation excludes itself from the shape it forbids.
  */
 const IMPERATIVE = new RegExp('(?:^\\s*(?:(?:[-*+]|\\d+[.)])\\s+)?'
   + '|[|:;,(\\[]\\s*'
   + '|\\b(?:and|or|then|also|next|first|to|must|should|will|can|may)\\s+)'
   + '(?:dispatch|issue|fire|spawn|launch|send)\\b', 'i');
 
-/** A trailing colon issues the list under it without the verb (the shape #88 filed); serial arm only, or a heading flags. */
+/** A trailing colon issues the list under it without the verb (the shape #88 filed); serial arm only. */
 const INTRODUCES = /:\s*$/;
 
 /** A marker that the dispatch covers a SET rather than a single target. */

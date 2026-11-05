@@ -1,14 +1,10 @@
 // @ts-check
-// resident-weight.mjs - what one command and one dispatch actually carry, composed from the tree. surface-weight.mjs
-// weighs files alone; this says which ride together.
-// Eager (per command): its SKILL.md plus every `@${CLAUDE_PLUGIN_ROOT}/<relpath>` include at the start of a line,
-// resolved one level only since no included file has one. Reachable: the eager set plus every
-// `cadence-core/{references,templates,workflows}` file the eager text names, one hop and never a closure, which
-// collapses to ~231 KB for every command and kills the ranking.
-// Dispatch (per role): one `agents/<file>.md` plus the SKILL.md of each contract it preloads via `skills:`. Command and
-// dispatch numbers are never summed (a total would grow with plan count). De-preloading a file drops its citations from
-// reachable though the model still reads them, so a drop isn't by itself a saving.
-// A command is a `skills/` directory without `user-invocable: false`, so the `*-contract` skills are out.
+// resident-weight.mjs - what one command and one dispatch carry; surface-weight.mjs weighs files alone.
+// Eager (per command): its SKILL.md plus every `@${CLAUDE_PLUGIN_ROOT}/<relpath>` include, one level only.
+// Reachable: eager plus every references, templates or workflows file its text names, one hop; a closure is ~231 KB.
+// Dispatch (per role): one `agents/<file>.md` plus the SKILL.md of each contract it preloads via `skills:`.
+// Command and dispatch numbers are never summed: a total would grow with plan count.
+// A command is a `skills/` directory without `user-invocable: false`, so contracts are out.
 'use strict';
 
 import { readFileSync, readdirSync, existsSync, realpathSync, statSync } from 'node:fs';
@@ -22,7 +18,7 @@ const BRANCHES = ['references', 'templates', 'workflows'];
 /** An `@`-include: the form the host expands, anchored to the line start. */
 const INCLUDE_RE = /^@\$\{CLAUDE_PLUGIN_ROOT\}\/([A-Za-z0-9_\-./]+)/gm;
 
-/** A named core surface, full or bare `<branch>/<file>`; the bare arm makes `(references/git-guard.md)` count as a reach. */
+/** A named core surface, full or bare `<branch>/<file>`; the bare arm counts `(references/git-guard.md)`. */
 const CITE_RE = /(?:\$\{CLAUDE_PLUGIN_ROOT\}\/)?(?:cadence-core\/)?\b(references|templates|workflows)\/([A-Za-z0-9_\-.]+)/g;
 
 /** `user-invocable: false` in a leading frontmatter block. */
@@ -151,15 +147,11 @@ function citedSurfaces(root, text) {
 }
 
 /**
- * Every user-invocable command's eager set, built once and shared with lib/include-consumers.mjs, which asks whether a
- * command's own eager prose names the surface it `@`-includes. Sharing the split keeps the two from disagreeing about
- * what "eager" means.
+ * Every user-invocable command's eager set, shared with lib/include-consumers.mjs so the two agree on "eager".
  * Compare on `surface`, the root-relative POSIX path, not `key`: that is a realpath dedupe key, so a self-citation
  * exclusion keyed on it never matches and the include-consumer check passes forever.
- * `includes` carries the raw relative paths off the `@${CLAUDE_PLUGIN_ROOT}/...` lines, in order with duplicates,
- * because that rule must judge an include whose target is absent from the root it's handed, which the weighing side
- * drops as zero bytes. The `user-invocable: false` filter is the one `residentWeight` applies, which keeps contract
- * skills under `roles`.
+ * `includes` keeps the raw paths off the `@${CLAUDE_PLUGIN_ROOT}/...` lines, in order with duplicates, because that
+ * rule must judge an include whose target is absent, which the weighing side drops as zero bytes.
  * @param {string} root
  * @returns {Array<{ command: string, skillFile: string, includes: string[],
  *   surfaces: Array<{ key: string, surface: string, bytes: number, text: string }> }>}
