@@ -1,7 +1,7 @@
 // @ts-check
 // the grammar of STATE.md's cursor, read side: four required lines plus an optional `Plan:` line
-// split out of planning-files so the Cadence module, removed in 3.9.0, could load it without `node:fs`; it stays apart because nothing gains from moving it back
-// planning-files re-exports `parseCursor`, so the seam and its tests still import it from there, and the writer and the status vocabulary stay with the code that writes the file
+// split from planning-files so the 3.9.0-removed module could load it without `node:fs`; moving it back gains nothing
+// planning-files re-exports `parseCursor`, so the seam and its tests import it from there; the writer stays put
 // imports nothing and touches no Node global
 'use strict';
 

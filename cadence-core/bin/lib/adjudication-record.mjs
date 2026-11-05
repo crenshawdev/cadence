@@ -1,14 +1,11 @@
 // @ts-check
-// what a gate fire's adjudication record may hold, and the one derivation of the counts a reader recomputes from it
+// what a gate fire's adjudication record may hold, and the one derivation of its counts
 //
-// the old summary (`<n> survivors of <m> raised`) left the bodies unwritten, so nobody could recount a survivor or check a refutation against the code it claimed to refute
-// one entry per finding per raising voice, with the claim and scenario as the reviewer returned them
-// each ruling restates the claim and scenario only so we can compare it byte for byte; a paraphrase is the whole tampering surface, so one differing byte is refused
-// two voices on the same finding stay two entries, convergence is derived, or a reviewer's hit rate can't be worked out
-// no stored counts: deriveCounts recounts on every read, and the check that matters is record against trace receipt
-// every unreadable input answers `ok: false` with a detail, never a partial list, or a record quietly misses the one malformed finding
-// pure: no fs, no git, no env. The seam that calls it owns the I/O and takes no CONTRACTS row, for the reason self-verify check 14 gives for `lib/*.mjs`
-// one flat return on both paths: CI typechecks with `strict: false`, so a union keyed on the boolean doesn't narrow and every caller would need a cast
+// bodies are stored, not a summary, so a survivor can be recounted and a refutation checked against its code
+// each ruling restates the claim and scenario only to compare byte for byte: a paraphrase is the tampering surface
+// two voices on the same finding stay two entries, so a reviewer's hit rate can be worked out
+// no stored counts: deriveCounts recounts on every read. Pure: no fs, no git, no env
+// one flat return on both paths: with `strict: false` in CI a union keyed on the boolean doesn't narrow
 'use strict';
 
 import { isPlainObject } from './text-util.mjs';
@@ -62,18 +59,10 @@ const MAX_FILE_CHARS = 1024;
 const MAX_TEXT_CHARS = 2000;
 
 /**
- * A fix commit an auditor can spend with `git show <value>`. Abbreviated is
- * fine, blank and non-hex are refused.
- *
- * The value check runs wherever the key is set, on every ruling and severity,
- * because a junk id fails `git show` the same on a refuted entry as a survived
- * one. Only the presence requirement is conditional: a survived finding raised
- * at a halting severity must carry the key, and a medium that names one still
- * gets it checked and stored.
- *
- * Presence means the key is set, not truthy: `''` and `null` are present and
- * malformed, and reading them as absent would drop the refusal on exactly the
- * values an auditor can't run.
+ * A fix commit an auditor can spend with `git show <value>`. Abbreviated is fine, blank and non-hex are refused.
+ * The value check runs wherever the key is set, on every ruling and severity, since a junk id fails `git show` the
+ * same on a refuted entry as a survived one. Only presence is conditional: a survived finding raised at a halting
+ * severity must carry the key. Presence means set, not truthy: `''` and `null` are present and malformed.
  */
 const FIX_COMMIT = /^[0-9a-fA-F]{7,40}$/;
 
@@ -209,7 +198,7 @@ export function buildEntries(payload) {
 
   /** @type {any[]} */
   const entries = [];
-  // the roster is separate because a fire where every voice returned nothing has no entries, and a record that can't say who ran proves nothing ran
+  // the roster is separate: a fire where every voice returned nothing has no entries, but the record must say who ran
   /** @type {any[]} */
   const roster = [];
   /** @type {Set<string>} */
@@ -269,7 +258,7 @@ export function buildEntries(payload) {
         return no(`${rat}.ruling must be one of ${RULINGS.join(' | ')}, got `
           + `${JSON.stringify(ruling.ruling)}`);
       }
-      // compare and discard: the entry is copied from the returned side either way, so a paraphrase is refused before one is built
+      // compare and discard: the entry is copied from the returned side, so a paraphrase is refused before one exists
       const f = findings[idx];
       for (const key of ['claim', 'failure_scenario']) {
         if (typeof ruling[key] !== 'string') {
@@ -286,7 +275,7 @@ export function buildEntries(payload) {
           + 'OVERRODE a blocking FAIL, so a truthy string would buy a clear nobody stated and '
           + 'false says the finding was not overridden, which absence already says');
       }
-      // checked on every ruling that sets the key, not just survived, or a downgraded or refuted entry could store a string `git show` can't use
+      // checked on every ruling that sets the key, or a refuted entry could store a string `git show` can't use
       // `!== undefined` and not truthiness: '' and null are set and malformed
       if (ruling.fix_commit !== undefined
         && (typeof ruling.fix_commit !== 'string' || !FIX_COMMIT.test(ruling.fix_commit))) {
@@ -315,7 +304,7 @@ export function buildEntries(payload) {
         }
       }
       if (ruling.ruling === 'survived') {
-        // gated on the raised severity off the finding, since a ruling carries no severity and a downgrade doesn't restate one
+        // gated on the finding's raised severity, since a ruling carries none and a downgrade doesn't restate it
         if (HALTING_SEVERITIES.includes(f.severity)
           && ruling.fix_commit === undefined && ruling.overridden !== OVERRIDE_MARKER) {
           return no(`${rat} survived and carries neither a usable fix_commit nor overridden: `
@@ -351,7 +340,7 @@ export function buildEntries(payload) {
         ...(ruling.counter_evidence ? { counter_evidence: ruling.counter_evidence } : {}),
         // `!== undefined`: the old truthiness read stored `fix_commit: ''` and null as absent under `ok: true`
         ...(ruling.fix_commit !== undefined ? { fix_commit: ruling.fix_commit } : {}),
-        // marker alone is legal and leaves no commit id; the override settle point has only a user's reason, so a SHA there would be fabricated
+        // marker alone is legal and leaves no commit id: an override has only a user's reason, so no SHA exists
         ...(ruling.overridden === OVERRIDE_MARKER ? { overridden: true } : {}),
       });
     }

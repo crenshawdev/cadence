@@ -1,9 +1,11 @@
 // @ts-check
 // which of the eight risk-surface categories a project's structure evidences
 //
-// "absent" isn't an answer here: a category is either evidenced or the structure says nothing about it, and silence is not absence. Narrowing on silence would shrink the one blocking review on a project whose risky code this can't see, which is this repo
-// no keyword grep of source text: it false-positived `auth` on every Claude session and `billing` on prose about token cost. Manifests, dependency names, directories and file types only
-// this answers which categories a project scopes, once, from structure, and returns all eight because narrowing is the user's; risk-diff answers whether a given range touched one
+// "absent" isn't an answer: silence is not absence, and narrowing on silence would shrink the one blocking review on
+// a project whose risky code this can't see, which is this repo
+// no keyword grep of source text: it false-positived `auth` on every Claude session and `billing` on prose about cost
+// this answers which categories a project scopes, once, from structure, and returns all eight because narrowing is the
+// user's; risk-diff answers whether a given range touched one
 // pure: the caller reads the tree
 'use strict';
 
@@ -172,7 +174,8 @@ export function scanTree(tree = {}) {
 
   const inconclusive = evidenced.length === 0;
 
-  // presence is provable from structure and absence isn't; framework built-in auth (Django contrib.auth, Rails has_secure_password) ships no dependency, so narrowing to the evidenced set would skip the only blocking review there
+  // absence isn't provable from structure: built-in auth (Django contrib.auth, Rails has_secure_password) ships no
+  // dependency, so narrowing to the evidenced set would skip the only blocking review there
   // `evidenced` still carries the reason the question states, and the narrowing is the user's
   const recommended = [...CATEGORIES];
 
@@ -187,21 +190,19 @@ export function scanTree(tree = {}) {
 export const OPTION_CAP = 4;
 
 /**
- * The ordered choices the one-time surface question offers, built here and not
- * composed by a model at the ask site (#206): the prose version offered the
- * same eight categories twice and no test had a list to read.
+ * The ordered choices the one-time surface question offers, built here and not composed by a model at the ask site
+ * (#206): the prose version offered the same eight categories twice.
  *
  *   1. `recommended`, all eight; it never narrows on what a scan missed.
  *   2. the answered set plus every evidenced category it misses.
  *   3. the answered set unchanged, because keeping it is an answer.
  *   4. the evidenced categories alone, the user's pick and never the default.
- * Empty sets and repeats are dropped, and every set is in `CATEGORIES` order so
- * two spellings of one set compare equal.
+ * Empty sets and repeats are dropped; every set is in `CATEGORIES` order so two spellings compare equal.
  *
  * @param {ReturnType<typeof scanTree> | any} scan a `scanTree` result
  * @param {readonly string[]} [answered] the categories a config layer already answered, empty if none
  * @returns {Array<{surfaces: string[], reason: string}>} at most `OPTION_CAP`
- *   choices, recommended first; `surfaces` is what picking one writes
+ *   choices, recommended first
  */
 export function interviewOptions(scan, answered = []) {
   const s = scan && typeof scan === 'object' ? scan : {};
@@ -236,7 +237,8 @@ export function interviewOptions(scan, answered = []) {
         : `the structure evidences ${naming(evidenced)}; the rest are silent rather `
           + 'than absent, so every category stays in scope',
     },
-    // needs an answered set and a gap: with no gap this set is the answered one under a reason naming nothing, and with nothing answered it equals `evidenced` and would beat choice 4 with a false "answered set plus"
+    // needs an answered set and a gap: without a gap it is the answered set under a reason naming nothing, and without
+    // an answered set it equals `evidenced` and would beat choice 4 with a false "answered set plus"
     ...(held.length && gap.length ? [{
       surfaces: order([...held, ...evidenced]),
       reason: `the answered set plus what the scan now evidences beyond it: ${naming(gap)}`,

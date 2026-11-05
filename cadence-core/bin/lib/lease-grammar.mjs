@@ -1,14 +1,11 @@
 // @ts-check
-// what a declared `files:` entry covers, as one statement two seams ask: plan-overlap intersected by exact string while lease-check read a trailing slash as a directory, so `src/` in one plan and `src/auth.js` in another passed the parallel-safety gate and were then refused at commit
+// what a declared `files:` entry covers: one statement for two seams that disagreed on a trailing slash
 //
-// a declaration ending in `/` is a directory lease and covers everything beneath it; every other declaration covers only the byte-identical path
-// no substring matching, or a plan declaring `src/auth` would license `src/authority.js`, a different file another plan may have declared, and the lease would license destroying it
-// non-path strings are accepted and match only themselves: parsePlanFiles unions the raw annotated form of a task line (`src/a.rs (edit)`) in beside its normalized twin
-// no filesystem, and three things deliberately not normalized:
-//   symlinks: resolving one needs the filesystem at gate time, and a plan declares files it hasn't created yet
-//   case folding: whether `SRC/a.js` and `src/a.js` are one path depends on the filesystem, so folding would resolve the same declarations differently on two machines
-//   `..`: climbing out of the repo root is a different defect from two readers disagreeing about a spelling
-// only the declared side is resolved; the staged side arrives canonical through `repoRel`, and a second transform over it is how the non-ASCII hard block gets re-broken
+// a declaration ending in `/` is a directory lease and covers everything beneath it; any other covers only itself
+// no substring matching, or a plan declaring `src/auth` would license `src/authority.js`
+// non-path strings match only themselves: parsePlanFiles adds each raw task line beside its twin
+// no filesystem, so no symlink resolution (plans declare files not yet created), no case folding, no `..` handling
+// only the declared side is resolved; the staged side arrives canonical through `repoRel`
 'use strict';
 
 /**

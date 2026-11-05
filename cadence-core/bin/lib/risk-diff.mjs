@@ -1,14 +1,11 @@
 // @ts-check
 // whether a set of files touched a risk-surface category, in two faces over one signal table
 //
-// `scanDiff` reads a committed range for `risk-check`; `scanDeclared` reads a declared file set for the plan-time risk floor, where no diff exists yet. One table and one ordering, or the floor raises on evidence the commit-time gate wouldn't fire on
-// surface-scan answers which categories a project scopes, once, from structure, and returns all eight. This answers whether a range touched one, every time a plan completes, and it can return nothing
-// it exists because detection used to be a prose list a model checked, so "the step was skipped" and "it ran and matched nothing" looked the same on the run record
-// silence is never a cleared range: a binary file, a body with no hunk or a submodule bump is `inconclusive`, independent of `matches`, and the caller fires on either because the gate defaults to blocking
-// signals are changed paths (whole segments, base names, extensions, never substrings) and anchored patterns over added and removed lines only; context lines are code the range didn't touch
-// no category-name keyword grep: it false-positived `auth` on every Claude session
-// the category vocabulary comes from the caller, so this file never becomes a second statement of the eight tokens
-// pure: the caller reads the range
+// `scanDiff` reads a committed range, `scanDeclared` a declared file set for the plan-time floor
+// one table and one ordering, or the floor raises on evidence the gate wouldn't fire on
+// silence is never a cleared range: a binary file, a body with no hunk or a submodule bump is `inconclusive`
+// signals are changed paths (never substrings) and anchored patterns over added and removed lines only
+// no category-name keyword grep (it false-positived `auth` on every Claude session); pure, the caller reads the range
 'use strict';
 
 /** @param {any} v @returns {string[]} */
@@ -145,18 +142,14 @@ function pathSets(/** @type {string[]} */ paths) {
 }
 
 /**
- * The first signal that evidences `category`, or null, in the one ordering both
- * faces share: path evidence before content, and segment before base name
- * before extension. A `signal` string is the reason a fire site quotes, so the
- * order decides which true sentence the user sees.
+ * The first signal that evidences `category`, or null, in the one ordering both faces share: path evidence before
+ * content, and segment before base name before extension. A `signal` is the reason a fire site quotes, so the order
+ * decides which true sentence the user sees.
  *
- * `lines` is what this may read: the added and removed lines for `scanDiff`,
- * the declared files' body lines for `scanDeclared`. Neither passes context.
+ * `lines` is what this may read: added and removed lines for `scanDiff`, body lines for `scanDeclared`. Never context.
  *
- * `contentPrefix` is the one thing the faces spell differently, `changed line`
- * for a range and `body line` for a current body with no diff. The label after
- * it is identical so a plan-time reason and a commit-time finding name the same
- * construct the same way.
+ * `contentPrefix` is the one thing the faces spell differently (`changed line` or `body line`); the label after it is
+ * identical so a plan-time reason and a commit-time finding name a construct alike.
  * @param {string} category
  * @param {{segments: Set<string>, bases: Set<string>, exts: Set<string>}} sets
  * @param {string[]} lines
@@ -236,7 +229,8 @@ function parseDiff(body) {
       sectionRead = true;
       continue;
     }
-    // a gitlink section is unreadable even though git emits a hunk for it: the hunk is commit ids, and a bumped submodule would otherwise read as judged clean over code this never opened
+    // a gitlink section is unreadable though git emits a hunk for it: the hunk is commit ids, so a bumped submodule
+    // would otherwise read as judged clean over code this never opened
     if (!inHunk && GITLINK_MODE.test(line)) { unreadable = true; continue; }
     if (!inHunk && line.startsWith('--- ')) { addPath(line.slice(4).replace(/^a\//, '')); continue; }
     if (!inHunk && line.startsWith('+++ ')) { addPath(line.slice(4).replace(/^b\//, '')); continue; }
@@ -272,8 +266,9 @@ function parseDiff(body) {
 export function scanDiff(body, categories) {
   const wanted = strs(categories);
 
-  // "git gave us nothing" and "git read the range and it was empty" used to look the same, and the empty one deadlocked the blocking gate: `risk-check status` filters on `checked` first, so no re-run could clear it
-  // a non-string body is what `cmdRiskCheckRun` leaves when `resolveRange` refused or the diff threw, and it keeps the unchecked answer
+  // "git gave us nothing" and "git read the range and it was empty" once looked the same, and the empty one deadlocked
+  // the blocking gate: `risk-check status` filters on `checked` first, so no re-run could clear it
+  // a non-string body is what `cmdRiskCheckRun` leaves when `resolveRange` refused or the diff threw: unchecked
   if (typeof body !== 'string') {
     return { checked: false, categories: wanted, matches: [], inconclusive: true, empty: false };
   }
@@ -337,17 +332,13 @@ function isDocument(/** @type {string} */ path) {
 }
 
 /**
- * The line kinds `scanDeclared` withholds from its content pass: an import,
- * which brings a name into scope, and a constant bound to a literal. Both name
- * a construct without doing it, and four raises on this repo's phases rested on
- * exactly those.
+ * The line kinds `scanDeclared` withholds from its content pass: an import, which brings a name into scope, and a
+ * constant bound to a literal. Both name a construct without doing it, and four raises on this repo's phases rested
+ * on exactly those.
  *
- * A line that calls something is still evidence. Every pattern is anchored at
- * line start and must reach the end of the line, so an import followed by a
- * call isn't withheld, and a constant bound to a parse of a file read isn't
- * either; exempting every `const` would make the floor depend on assignment
- * style. A dynamic `import` call is code. Only this face, and nothing here
- * reaches the table the commit-time gate shares.
+ * A line that calls something is still evidence. Every pattern is anchored at line start and must reach the end of
+ * the line, so an import followed by a call isn't withheld, and a constant bound to a parse of a file read isn't
+ * either. A dynamic `import` call is code. Only this face withholds; the commit-time gate's shared table is untouched.
  */
 const IMPORT_LINE_KINDS = Object.freeze([
   // ES modules, Java, Python `import x`; the lookahead leaves a dynamic import call as code
@@ -362,20 +353,20 @@ const IMPORT_LINE_KINDS = Object.freeze([
   /^\s*(?:const|let|var)\s[^=;]+=\s*require\s*\([^;]*\)\s*(?:;\s*)?$/,
 ]);
 
-// the constants capture the initializer untrimmed and the caller trims it, because trimming inside the regex let a long run of spaces backtrack
+// constants capture the initializer untrimmed and the caller trims it; trimming in the regex backtracked on spaces
 
 /** `const NAME = ...` and its cousins in other languages, up to the initializer. */
 const DECLARED_CONSTANT =
   /^\s*(?:(?:export|public|private|protected|readonly)\s+)*(?:const|static|final|val)\s+[A-Za-z_$][^=;]*=([^;]*)(?:;\s*)?$/;
 
-/** A SCREAMING_SNAKE name bound with no declaration keyword (Python, shell, Make), shaped like the name the credential pattern reads. */
+/** A SCREAMING_SNAKE name with no declaration keyword (Python, shell, Make), shaped like the credential pattern's. */
 const SHOUTING_CONSTANT = /^\s*[A-Z][A-Z0-9_]*\s*(?::[^=;]*)?=([^;]*)(?:;\s*)?$/;
 
-/** What an initializer may start with to be a literal; not `(`, which opens an arrow function or a grouped expression. */
+/** What an initializer may start with to be a literal; not `(`, which opens an arrow function or a group. */
 const LITERAL_INITIALIZER =
   /^(?:['"`]|[-+]?\d|\/[^/*]|[[{]|true\b|false\b|null\b|undefined\b|None\b|nil\b)/;
 
-/** An initializer that is only a regex literal, judged alone because its own parens are capture groups and not a call. */
+/** An initializer that is only a regex literal, judged alone because its parens are capture groups, not a call. */
 const REGEX_LITERAL = /^\/(?:[^/\\\n]|\\.)*\/[a-z]*$/;
 
 /** A call anywhere in an initializer, which keeps a literal-looking one that invokes something counting as evidence. */
@@ -401,22 +392,17 @@ function isIncidentalLine(/** @type {string} */ line) {
 }
 
 /**
- * What a declared file set touches, the plan-time face, where the change isn't
- * written yet and there is no diff.
+ * What a declared file set touches, the plan-time face, where the change isn't written yet and there is no diff.
  *
- * @param {any} files a list of `{path, body}` (body may be absent) or bare string paths; a null, a scalar or a non-list reports rather than throws
+ * @param {any} files a list of `{path, body}` (body may be absent) or bare string paths; anything else is reported
  * @param {any} categories the category vocabulary from the caller, as `scanDiff` takes it
  * @returns {{categories: string[], matches: Array<{category: string, signal: string}>,
  *   withheld: Array<{path: string, category: string}>}}
- *   `matches` has the same shape `scanDiff` returns. `withheld` is what the
- *   line-kind exemption cost per path: a category the file evidenced before the
- *   narrowing and doesn't after, because its only matching line was an import
- *   or a literal constant. `scanDiff` withholds nothing.
+ *   `matches` has the same shape `scanDiff` returns. `withheld` is what the line-kind exemption cost per path: a
+ *   category the file evidenced before the narrowing and doesn't after. `scanDiff` withholds nothing.
  *
- * A declared path with no readable body is not inconclusive, the one place this
- * face parts from `scanDiff`. At plan time the plan often creates the file, and
- * calling an absent body unjudgeable would raise every create-a-file plan. The
- * path signals still run.
+ * A declared path with no readable body is not inconclusive, the one place this face parts from `scanDiff`: the plan
+ * often creates the file, and calling an absent body unjudgeable would raise every create-a-file plan.
  */
 export function scanDeclared(files, categories) {
   const wanted = strs(categories);
@@ -444,7 +430,7 @@ export function scanDeclared(files, categories) {
     const dropped = [];
     for (const raw of body.split('\n')) {
       const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-      // the third exemption, per line: a line that names a construct without doing it isn't evidence the plan touches the surface
+      // the third exemption, per line: a line that names a construct without doing it isn't evidence of touching it
       if (isIncidentalLine(line)) { dropped.push(line); continue; }
       kept.push(line);
       lines.push(line);
@@ -461,7 +447,8 @@ export function scanDeclared(files, categories) {
     if (signal) matches.push({ category, signal });
   }
 
-  // ask signalIn twice of each file, over every line and over the kept lines; a category answering only the first rested on a withheld line. Path signals run in both, so a file evidenced by its path never appears here
+  // ask signalIn twice per file, over every line and over the kept lines; a category only the first answers rested
+  // on a withheld line. Path signals run in both, so a file evidenced by its path never appears here
   /** @type {Array<{path: string, category: string}>} */
   const withheld = [];
   for (const { path, kept, dropped } of split) {

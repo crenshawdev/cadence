@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
-// the cheap-read seam: source with comments stripped and line numbers intact, so an agent orients in a big file for about half the tokens and then Reads the exact range with the prose still there
-// the success path writes source text on stdout, not a JSON line, since JSON-escaping a big file would inflate the payload this exists to shrink. Failures and `--stats` still emit one JSON line
+// the cheap-read seam: source with comments stripped and line numbers intact, to orient in a big file cheaply
+// source goes to stdout, not JSON, as escaping a big file inflates what this shrinks. Failures and `--stats` emit JSON
 //
 // Usage: skim.mjs <file> [--stats] [--no-numbers]
 //        --stats       one JSON line of the byte/line figures, no source
@@ -24,7 +24,7 @@ try {
   } else {
     const ext = extname(file).toLowerCase();
     if (!(ext in SYNTAX) || SYNTAX[ext] === null) {
-      // refuse rather than guess: a wrong comment syntax deletes real code, and ok:false lets the caller fall back to Read
+      // refuse rather than guess: the wrong comment syntax deletes real code, and ok:false falls back to Read
       emit({
         ok: false, reason: 'unsupported-extension', ext: ext || '(none)',
         supported: Object.keys(SYNTAX).filter((k) => SYNTAX[k]),
@@ -35,7 +35,7 @@ try {
       const skimmed = skim(source);
       const stats = skimStats(source, skimmed);
       if (!stats.lines_match) {
-        // the one invariant worth aborting on: if the line count moved, every line reference taken from this output is wrong
+        // the one invariant worth aborting on: if the line count moves, every line reference from this output is wrong
         emit({ ok: false, reason: 'line-count-drift', file, ...stats,
           hint: 'read this file with the Read tool - the line numbers this seam would print do not match the file' });
       } else if (flags.has('--stats')) {

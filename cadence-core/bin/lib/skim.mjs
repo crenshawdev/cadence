@@ -1,8 +1,9 @@
 // @ts-check
-// strips comments from source and keeps the line numbers: a comment becomes nothing but its newlines survive on purpose, so line N of the output is line N of the file
-// that's what makes the two-step read work: skim to orient, then Read the exact range with the comments intact. Collapsing blank lines would break the only property that makes it useful
+// strips comments and keeps the line numbers: newlines stay, so line N of the output is line N of the file
+// that's what makes the two-step read work: skim to orient, then Read the range. Collapsing blank lines would break it
 // it never deletes a comment on disk, the prose is the design record
-// every ambiguity falls toward keeping bytes (an unterminated block comment, a `//` inside a template's `${}`, an unrecognized extension): keeping a comment costs tokens, dropping a line of real code hands an agent source that doesn't parse
+// ambiguity falls toward keeping bytes (an unterminated block comment, a `//` inside a template's `${}`, an unknown
+// extension): a kept comment costs tokens, a dropped line of real code hands an agent source that doesn't parse
 'use strict';
 
 /**
@@ -66,7 +67,7 @@ export function skim(source) {
     const d = source[i + 1];
 
     if (c === '"' || c === "'" || c === '`') {
-      // templates are consumed whole, `${}` included, so a `//` inside an interpolation survives: keep bytes, never break code
+      // templates are consumed whole, `${}` included, so a `//` inside an interpolation survives rather than break code
       const q = c;
       out += c;
       i++;

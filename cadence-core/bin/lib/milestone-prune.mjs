@@ -91,21 +91,21 @@ export function archiveRequirements(text, completed, label) {
   let lines = text.split('\n');
   const summaries = new Map();
 
-  // pull the whole bullet span, not the lead line: bullets wrap, and the lead-line version left the continuation lines behind as orphaned prose
-  // the lead match stays the narrow `- **<ID>**:` form, so a `- **Note**:` prose bullet whose id collides is never deleted
-  // bound the scan to `## Active` with sectionSpan, or an id also bulleted under a later hold section gets both deleted and the deferral note becomes the summary
-  // sectionSpan is fence-aware at both ends; the shipped template carries a fenced `## Active` example, and the old findIndex deleted a bullet out of that code block
+  // pull the whole bullet span, not the lead line: bullets wrap, and the lead line alone left orphaned prose behind
+  // the lead match stays the narrow `- **<ID>**:` form, so a `- **Note**:` prose bullet with a colliding id survives
+  // bound the scan to `## Active` with sectionSpan, or an id also bulleted under a later hold section is deleted twice
+  // sectionSpan is fence-aware at both ends: the template carries a fenced `## Active` example the old findIndex hit
   const { start: activeAt, end: activeEnd } = sectionSpan(lines, '## Active');
   if (activeAt !== -1) {
     let body = lines.slice(activeAt + 1, activeEnd);
     for (const { id } of shipped) {
-      // the tracker suffix is `(#<digits>)` and nothing else, so prose bullets still can't match; without it `- **ID** (#219):` was never removed
+      // the tracker suffix is `(#<digits>)` and nothing else, so prose bullets still can't match
       const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*(?: \\((#\\d+)\\))?:\\s*(.*)$`);
       const kept = [];
       for (let i = 0; i < body.length; i++) {
         const m = body[i].match(bulletRe);
         if (!m) { kept.push(body[i]); continue; }
-        // keep the summary byte-faithful apart from the whitespace join: lowercasing the lead word would mangle a proper noun or an identifier
+        // keep the summary byte-faithful apart from the whitespace join: lowercasing the lead word mangles identifiers
         // the tracker ref rides the summary, it's the bullet's only pointer back to the issue
         const parts = [m[1] ? `${m[1]}:` : '', m[2].trim()];
         let j = i + 1;
@@ -120,7 +120,7 @@ export function archiveRequirements(text, completed, label) {
     }
     lines = [...lines.slice(0, activeAt + 1), ...body, ...lines.slice(activeEnd)];
   }
-  // same sectionSpan bound as above; the old inTrace flag deleted rows out of a fenced example, and parseRequirements reads the table the same way so the two can't disagree
+  // same sectionSpan bound as above; the old inTrace flag deleted rows out of a fenced example
   const { start: traceAt, end: traceEnd } = sectionSpan(lines, '## Traceability');
   const shippedIds = new Set(shipped.map((r) => r.id));
   if (traceAt !== -1) {
@@ -132,14 +132,14 @@ export function archiveRequirements(text, completed, label) {
     lines = [...lines.slice(0, traceAt + 1), ...body, ...lines.slice(traceEnd)];
   }
 
-  // escape `|` here, not at capture: a bullet quoting `panel|single` would shift the table's columns, and --label gets the same guard
+  // escape `|` here, not at capture: a bullet quoting `panel|single` would shift the table's columns, and --label too
   const cell = (s) => s.replace(/\|/g, '\\|');
   const newRows = shipped.map(({ id, phase }) => {
     const s = summaries.get(id);
     return `| ${id}${s ? ` (${cell(s)})` : ''} | ${phase} | Complete | ${label} |`;
   });
 
-  // a fenced example `## Shipped` is not the section, so a template-shaped doc gets a real one created instead of rows appended inside a code block
+  // a fenced example `## Shipped` isn't the section, so a template-shaped doc gets a real one, not rows in a code block
   const { start: headingAt, end: shippedEnd } = sectionSpan(lines, '## Shipped');
   let createdSection = false;
   if (headingAt === -1) {
@@ -149,7 +149,7 @@ export function archiveRequirements(text, completed, label) {
     const insertAt = afterActive === -1 ? lines.length : afterActive;
     lines.splice(insertAt, 0, '## Shipped', ...SHIPPED_PREAMBLE, ...newRows, '');
   } else {
-    // the scan ends at the span's end, not a fresh `## ` break, or a fenced `## ` in a preamble cuts it short and rows land above existing ones
+    // the scan ends at the span's end, not a fresh `## ` break, or a fenced `## ` in a preamble cuts it short
     let last = headingAt;
     for (let i = headingAt + 1; i < shippedEnd; i++) {
       if (/^\|/.test(lines[i])) last = i;

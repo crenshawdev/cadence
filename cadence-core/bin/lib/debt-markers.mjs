@@ -1,7 +1,7 @@
 // @ts-check
 // the debt marker grammar, as a pure function; conventions.md states the convention and this is its one implementation
 // the token, an immediate colon, a one-line description, then ` | ceiling: ...` and ` | trigger: ...`
-// the colon has to follow the token immediately, so prose that names the token in backticks is never ingested as a marker
+// the colon has to follow the token immediately, so prose that names the token in backticks is never ingested
 // no I/O and no throw: the caller owns the tree walk and the envelope, so this is testable without a fixture directory
 'use strict';
 
@@ -42,7 +42,8 @@ export function debtMarkersIn(text) {
   const out = [];
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    // every occurrence on the line, each bounded by the next head: a single indexOf let a second marker's ceiling and trigger overwrite the first's, and a wrong ceiling in the queue is worse than a gap
+    // every occurrence on the line, each bounded by the next head: a single indexOf let a second marker's ceiling and
+    // trigger overwrite the first's, and a wrong ceiling in the queue is worse than a gap
     for (const seg of markerSegments(lines[i])) {
       const parts = seg.split('|');
       let ceiling = null;
