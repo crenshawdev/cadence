@@ -10,7 +10,8 @@ Make this fire's scratch directory first and print it: `D="$(mktemp -d "${TMPDIR
 
 One `args` object:
 
-- `trigger`, `instruction`, `artifact`: step 2's.
+- `trigger`, `instruction`: step 2's.
+- `artifact`: one string, since the script puts it straight into the reviewer's prompt, so compose it from step 2's shape. On a refs fire, where shape (a) is the object `{base_ref, head_ref}`, it is the text `git diff` then a space, then `<base_ref>..<head_ref>` with both filled in. On a staged scope it is the `git diff` call with `--cached` and its paths. On a path fire it is the path.
 - `reviewers`: step 3's set.
 - `agent_type`, `model`: the step-1 resolve's, `model` null when it answered none.
 - Each provider in the set, composed before you launch. Run `references/review-cross-model.md`'s composer as written, check the run token there, and take the model, tier and effort off the step-1 line. Then pass:
