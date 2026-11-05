@@ -9,8 +9,11 @@ The reviewers and one checker per finding per raising voice run inside `workflow
 One object:
 
 - `trigger`, `instruction`, `artifact`: step 2's.
-- `reviewers`: step 3's set. A name other than `claude-subagent` comes back as a voice that did not run, and the seam lists it as dropped.
+- `reviewers`: step 3's set.
 - `agent_type`, `model`: the step-1 resolve's, `model` null when it answered none.
+- Each provider in the set, composed before you launch. Run `references/review-cross-model.md`'s composer as written in this run's scratch directory, check the run token there, and take the model, tier and effort off the step-1 line. Then pass:
+  - `wrapper_agent_type`: the `agent_type` that `route.mjs agent-type --stem cad-reviewer-low` prints.
+  - `providers`: `{"<name>": {"line", "envelope", "timeout_ms", "model"}}`. `line` is that file's seam call whole, with `--trigger <trigger>` on it and every path absolute, `${CLAUDE_PLUGIN_ROOT}` written out, because the variable is unset in a workflow agent. `envelope` is a new path in the scratch directory, where the wrapper tees the provider's own output. `timeout_ms` covers `review.request_timeout_ms`, at most 600000. `model` is the provider's, for the record.
 - `checker_artifact`: a checker holds no Bash, so it opens one file with Read. Make this run's scratch directory first, `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")"`, and keep every file of this run in it. On a refs fire write the range's diff to a file there, the way step 2's shape (c) does, and pass its path. On a staged scope write the staged diff the same way. On a path fire pass the same path as `artifact`.
 
 ## 2. Launch
@@ -29,9 +32,12 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --phase 
 
 The same call bills the run, before it judges anything, so a killed or refused run still pays for its agents: one bracket per agent in the run file, each with its own tokens, turns and duration. Reviewers bill under `cad-reviewer`, checkers under `review-checker` and a provider wrapper under `review-provider-wrapper`, so `cad-reviewer`'s total still means the reviewers. An agent that did not finish closes as a checkpoint. Write no bracket by hand, and calling it again is safe: a run is billed once. When the run file cannot be read or holds no agent rows, pass the notice's totals (its tokens, tool uses and duration in ms, as plain whole numbers) and it bills them as one `review-workflow` bracket.
 
+A provider voice runs through a wrapper agent that only runs its line and retypes the envelope, and a retyping can change a byte. So the seam judges the voice on the envelope file, which wins. A finding whose copy its checker read differs from the file, or that the agent left out, keeps no ruling and lands in `unruled` with the nulls, and a retyped finding the file does not hold is dropped. With no readable envelope the seam uses the agent's own return. `notes` names each of these, `providers` says which source each voice came from, and a provider that reports `ok:false` is in `dropped` with its reason.
+
 It writes `payload.json` (the record's payload), `survivors.json` (the review file's input) and `answers.json` (what you have answered so far) into the scratch directory, and prints one envelope: `counts`, the `voices` that ran, the voices `dropped` with their reasons, `unruled`, `needs_answer`, `ready` and, when it is not, `not_ready`. It adds no ruling of its own.
 
-- **`unruled`** lists findings with no usable ruling: a checker returned nothing, or its ruling the record cannot store (a refutation with no counter-evidence file, a finding ruled neither with no next check, a blank heading). Open the cited code and rule each one yourself.
+- **`providers` and `notes`**: print each `notes` line as it stands. Say in one line how many credential-shaped spans a voice's `redactions` replaced before sending, and relay its `warnings`, as `references/review-cross-model.md` states.
+- **`unruled`** lists findings with no usable ruling: a checker returned nothing, a provider finding's checked copy differs from the envelope, or its ruling the record cannot store (a refutation with no counter-evidence file, a finding ruled neither with no next check, a blank heading). Open the cited code and rule each one yourself.
 - **`needs_answer`** lists survivors raised at `blocker` or `high`, which the record takes only with a fix commit or an override. A survivor ruled neither is marked `suspected`.
 - **Answers** are a file, `{"answers": [{"voice": ..., "index": ..., ...}]}`, with the voice and index the envelope names. A ruling is `ruling` (`survived`, `downgraded` or `refuted`) with `counter_evidence` for a refutation, a `severity` below the raised one for a downgrade, and any of the six texts the finding lacks. A settlement is `fix_commit` or `overridden: true`. Run the same call again with `--answers-file`: earlier answers are kept, and a later answer replaces only its own group on its own finding.
 

@@ -15,7 +15,7 @@ taken, and nothing else in the review subsystem reads it.
 
 - **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): an API
   call runs nothing, so this is the one backend that cannot resolve a reference
-  itself. **This arm still gets NO lifecycle bracket, deliberately.** It is the
+  itself. The workflow path composes the payload the same way and hands the seam call to a wrapper agent (`references/review-workflow.md`). **This arm still gets NO lifecycle bracket, deliberately**, though on that path the wrapper agent's own tokens get a bracket under its label, while the provider's usage stays on its event. It is the
   one place a real API-reported usage figure exists rather than a host-reported
   one, and the seam now reads it: every adapter extracts the provider's usage
   and the `provider/request` event carries it, absent only where the response

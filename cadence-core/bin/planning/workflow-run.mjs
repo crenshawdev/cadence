@@ -12,11 +12,14 @@ import { fail, ok } from './core.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { appendEvent, renderTrace } from '../lib/trace.mjs';
+import { appendEvent, renderTrace, TERMINAL } from '../lib/trace.mjs';
 import {
   ANSWERS_FILE, MAX_ANSWERS_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
   agentBrackets, agentRows, mapRun, mergeAnswers, noticeBracket, parseAnswers, parseRun,
 } from '../lib/workflow-run.mjs';
+
+/** A provider's teed envelope is one JSON line, so this is generous. */
+const MAX_ENVELOPE_BYTES = 1024 * 1024;
 
 /**
  * A regular file's text under a size cap, or why it can't be had (`tooLarge` apart from the rest).
@@ -67,24 +70,46 @@ function loadAnswers(outDir, answersFile) {
 }
 
 /**
- * Write the run's brackets, skipping any whose worker key the phase's record already holds.
+ * Write the run's brackets. A worker whose dispatch is on the record gets only its terminal, so a retry after a half-written
+ * pair closes it, and one with both is skipped. When the run's `<run id>-notice` bracket is already there, an earlier call
+ * billed the run's totals and billing it per agent as well would count it twice, so none are written.
  * @param {string} dir the planning directory
- * @param {string} phase @param {{plan: string, dispatch: any, terminal: any}[]} list
+ * @param {string} phase @param {string} runId @param {{plan: string, dispatch: any, terminal: any}[]} list
  * @returns {{written: number, already: number, failed: {plan: string, reason: string}[]}}
  */
-function writeBrackets(dir, phase, list) {
-  const have = new Set(renderTrace(dir, phase).events
-    .filter((e) => e.family === 'lifecycle' && e.event === 'dispatch').map((e) => String(e.plan)));
+function writeBrackets(dir, phase, runId, list) {
+  const events = renderTrace(dir, phase).events.filter((e) => e.family === 'lifecycle');
+  const dispatched = new Set(events.filter((e) => e.event === 'dispatch').map((e) => String(e.plan)));
+  const closed = new Set(events.filter((e) => TERMINAL.includes(e.event)).map((e) => String(e.plan)));
   const out = { written: 0, already: 0, failed: /** @type {{plan: string, reason: string}[]} */ ([]) };
+  const billedAsTotals = dispatched.has(`${runId}-notice`);
   for (const b of list) {
-    if (have.has(b.plan)) { out.already += 1; continue; }
-    for (const event of [b.dispatch, b.terminal]) {
+    if (closed.has(b.plan) || (billedAsTotals && b.plan !== `${runId}-notice`)) { out.already += 1; continue; }
+    for (const event of dispatched.has(b.plan) ? [b.terminal] : [b.dispatch, b.terminal]) {
       const r = appendEvent(dir, event);
       if (!r.written) { out.failed.push({ plan: b.plan, reason: r.reason || 'not-written' }); break; }
       if (event === b.terminal) out.written += 1;
     }
   }
   return out;
+}
+
+/**
+ * Each provider voice's envelope as parsed from the file the wrapper teed it to, null where it can't be read as JSON.
+ * @param {any} run a run `parseRun` accepted
+ * @returns {Map<string, any>}
+ */
+function readEnvelopes(run) {
+  const found = new Map();
+  for (const v of run.result.voices) {
+    if (!v.ran || typeof v.envelope !== 'string' || !v.envelope.trim()) continue;
+    const r = readCapped(v.envelope, MAX_ENVELOPE_BYTES);
+    /** @type {any} */
+    let parsed = null;
+    try { parsed = r.text === null ? null : JSON.parse(r.text); } catch { /* an unreadable envelope falls back to the agent's return */ }
+    found.set(v.voice, parsed);
+  }
+  return found;
 }
 
 function cmdWorkflowRun(dir, opts) {
@@ -125,7 +150,7 @@ function cmdWorkflowRun(dir, opts) {
   const why = runRead.text === null ? `the run file ${runRead.why}` : (file === null ? 'the run file is not JSON' : 'the run file holds no agent rows');
   const brackets = {
     source: fromFile ? 'run-file' : 'notice-totals',
-    ...writeBrackets(dir, phase.raw, fromFile ? agentBrackets(file, at) : [noticeBracket({ ...at, why, totals })]),
+    ...writeBrackets(dir, phase.raw, runId, fromFile ? agentBrackets(file, at) : [noticeBracket({ ...at, why, totals })]),
   };
   /** Every answer from here on says what was billed. @param {string} reason @param {string} [detail] @param {string} [hint] */
   const refuse = (reason, detail, hint) => emit({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}), brackets });
@@ -141,7 +166,7 @@ function cmdWorkflowRun(dir, opts) {
   if (!loaded.ok) return refuse(/** @type {string} */ (loaded.reason), loaded.detail, 'nothing was written but the brackets - repair the answers and re-run');
   const answers = loaded.answers || [];
 
-  const mapped = mapRun(parsed.run, answers);
+  const mapped = mapRun(parsed.run, answers, readEnvelopes(parsed.run));
   if (!mapped.ok) return refuse(/** @type {string} */ (mapped.reason), mapped.detail, 'no payload was written - this run cannot be turned into a record. Its agents were billed');
 
   const files = {

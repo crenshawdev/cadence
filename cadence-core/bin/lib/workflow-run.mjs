@@ -13,6 +13,11 @@
 // still means the reviewers: a label opening `checker ` is `review-checker`, one opening `provider ` is the provider
 // wrapper, `review-provider-wrapper`. No label and no rung agentType reads as `workflow-agent`. With no per-agent rows the
 // call bills the run as one `review-workflow` bracket from the notice's totals.
+// A PROVIDER VOICE carries `envelope`, the path the wrapper agent teed the provider's own output to. The agent retypes that
+// envelope, which can change a byte, so the seam takes `returned` from the file and the file wins. A ruling only counts for
+// the text its checker read: an envelope finding with no identical retyped copy keeps no ruling and lands with the nulls,
+// and a retyped finding the file does not hold is dropped and named. No readable envelope means the agent's own return,
+// and that is named too (D-16, D-20)
 // ANSWERS are the main session's, keyed by voice and index. Two groups, and a later answer replaces its group whole:
 //   ruling:      ruling (survived|downgraded|refuted), severity, counter_evidence, and the six texts
 //   settlement:  fix_commit, overridden
@@ -114,6 +119,57 @@ export function mergeAnswers(prior, incoming) {
 }
 
 /**
+ * The first thing wrong with a findings list's severities, or null. A severity that is not one of the four would crash the
+ * rank lookups, and a non-string one more so, so it is refused at the door.
+ * @param {any[]} findings @returns {string|null}
+ */
+function findingsProblem(findings) {
+  for (let i = 0; i < findings.length; i += 1) {
+    const f = findings[i];
+    if (isPlainObject(f) && !RAISED_SEVERITIES.includes(f.severity)) {
+      return `finding ${i} has a severity that is not one of ${RAISED_SEVERITIES.join(' | ')}`;
+    }
+  }
+  return null;
+}
+
+/** A finding as one comparable string, keys sorted, so two copies match only when every byte of every field does. @param {any} f */
+const canon = (f) => JSON.stringify(Object.keys(f).sort().map((k) => [k, f[k]]));
+
+/**
+ * The findings a provider voice is judged on and the notes about how they were got. The envelope on disk wins over the
+ * agent's retyped copy. Each envelope finding takes the verdict of the first unused retyped finding identical to it, or
+ * `orphan` when there is none. A retyped finding the envelope does not hold is reported apart.
+ * @param {any} voice a ran voice carrying `envelope` @param {any} env the parsed envelope file, or null when unreadable
+ * @returns {{drop?: string, findings: any[], from: number[], orphan: string[], stray: any[], source: string, note?: string}}
+ */
+function providerFindings(voice, env) {
+  const retyped = voice.result.findings;
+  const usable = isPlainObject(env) && env.ok === true && Array.isArray(env.findings) && !findingsProblem(env.findings);
+  if (isPlainObject(env) && env.ok === false) {
+    return { drop: `the provider's own output says ${isText(env.reason) ? env.reason : 'ok:false'}`, findings: [], from: [], orphan: [], stray: [], source: 'envelope' };
+  }
+  if (!usable) {
+    return {
+      findings: retyped, from: retyped.map((_, i) => i), orphan: [], stray: [], source: 'agent-return',
+      note: `${voice.voice}: no readable envelope at ${voice.envelope}, so the agent's own return was used and its bytes are unchecked`,
+    };
+  }
+  const used = new Set();
+  const from = [];
+  const orphan = [];
+  env.findings.forEach((f, i) => {
+    const j = isPlainObject(f) ? retyped.findIndex((x, k) => !used.has(k) && isPlainObject(x) && canon(x) === canon(f)) : -1;
+    if (j >= 0) used.add(j);
+    from.push(j);
+    orphan.push(j >= 0 ? '' : 'the provider\'s own text differs from the copy its checker read, or the agent left it out, so no checker ruling carries over');
+  });
+  const stray = retyped.map((f, k) => ({ f, k })).filter(({ k }) => !used.has(k))
+    .map(({ f }) => ({ voice: voice.voice, file: f && f.file, line: f && f.line, reason: 'the agent returned a finding the provider\'s own output does not hold, so it was dropped' }));
+  return { findings: env.findings, from, orphan, stray, source: 'envelope' };
+}
+
+/**
  * Parse a run file's text and judge whether it is a completed run of this script.
  * @param {string} text
  * @returns {{ok: boolean, reason?: string, detail?: string, run?: any}}
@@ -141,6 +197,9 @@ export function parseRun(text) {
     if (!isPlainObject(voice.result) || !Array.isArray(voice.result.findings)) {
       return refuse('run-bad-result', `${at} ran but holds no {findings: [...]} result`);
     }
+    const sev = findingsProblem(voice.result.findings);
+    if (sev) return refuse('run-bad-result', `${at}.result ${sev}`);
+    if (voice.envelope !== undefined && !isText(voice.envelope)) return refuse('run-bad-result', `${at}.envelope is not a path`);
     if (!Array.isArray(voice.rulings)) return refuse('run-bad-result', `${at}.rulings is not an array`);
     for (const ruling of voice.rulings) {
       const ok = isPlainObject(ruling) && Number.isSafeInteger(ruling.index) && ruling.index >= 0
@@ -180,10 +239,11 @@ function fromVerdict(finding, verdict) {
  * The one ruling for a finding, from the checker's verdict and the main session's answer for it. The answer's ruling
  * group lays over the verdict key by key, and its settlement is carried beside.
  * @param {any} finding @param {any} verdict @param {any} answer
+ * @param {string} [orphan] why the verdict is not this finding's, which leaves it with no checker ruling
  * @returns {{ok: boolean, why?: string, item?: any}}
  */
-function settle(finding, verdict, answer) {
-  const base = fromVerdict(finding, verdict);
+function settle(finding, verdict, answer, orphan) {
+  const base = orphan ? { ok: false, why: orphan, item: undefined } : fromVerdict(finding, verdict);
   let item = base.ok ? base.item : null;
   if (answer && answer.ruling !== undefined) {
     item = { ...(item || {}), suspected: false, ruling: answer.ruling };
@@ -214,9 +274,10 @@ function settle(finding, verdict, answer) {
  * Build the payload, the review input and what the main session still owes, from a parsed run.
  * @param {any} run a run `parseRun` accepted
  * @param {any[]} answers the accumulated answers
+ * @param {Map<string, any>} [envelopes] each provider voice's parsed envelope file, null where it could not be read
  * @returns {{ok: boolean, reason?: string, detail?: string, payload?: any, review?: any, summary?: any}}
  */
-export function mapRun(run, answers) {
+export function mapRun(run, answers, envelopes = new Map()) {
   /** @type {any[]} */
   const rows = Array.isArray(run.workflowProgress) ? run.workflowProgress : [];
   const modelOf = (/** @type {string} */ voice) => {
@@ -236,6 +297,10 @@ export function mapRun(run, answers) {
   const needsAnswer = [];
   /** @type {any[]} */
   const kept = [];
+  /** @type {any[]} */
+  const providers = [];
+  /** @type {any[]} */
+  const notes = [];
   const counts = { raised: 0, survived: 0, downgraded: 0, refuted: 0, unruled: 0 };
 
   for (const v of run.result.voices) {
@@ -243,15 +308,31 @@ export function mapRun(run, answers) {
       dropped.push({ voice: v.voice, reason: isText(v.reason) ? v.reason : 'it did not run' });
       continue;
     }
-    const model = modelOf(v.voice);
+    const model = isText(v.model) ? v.model : modelOf(v.voice);
     if (!model) return refuse('run-no-model', `the run file records no model for ${v.voice}, and the record owes one`);
     const verdicts = new Map();
     for (const r of v.rulings) if (!verdicts.has(r.index)) verdicts.set(r.index, r.ruling);
-    const block = { voice: v.voice, model, returned: v.result, rulings: /** @type {any[]} */ ([]) };
-    v.result.findings.forEach((finding, index) => {
+    // a provider voice is judged on its envelope; a local voice on what its reviewer returned
+    const env = isText(v.envelope) ? providerFindings(v, envelopes.get(v.voice) || null) : null;
+    if (env && env.drop) {
+      dropped.push({ voice: v.voice, reason: env.drop });
+      continue;
+    }
+    const findings = env ? env.findings : v.result.findings;
+    if (env) {
+      const disk = env.source === 'envelope' ? envelopes.get(v.voice) : v;
+      const redactions = Number.isSafeInteger(disk.redactions) && disk.redactions > 0 ? disk.redactions : undefined;
+      const warnings = Array.isArray(disk.warnings) ? disk.warnings.filter(isText).slice(0, 20).map((w) => w.slice(0, 300)) : [];
+      providers.push({ voice: v.voice, source: env.source, ...(redactions ? { redactions } : {}), ...(warnings.length ? { warnings } : {}) });
+      if (env.note) notes.push(env.note);
+      for (const s of env.stray) notes.push(`${s.voice}: ${s.reason} (${s.file}:${s.line})`);
+    }
+    const block = { voice: v.voice, model, returned: env ? { findings } : v.result, rulings: /** @type {any[]} */ ([]) };
+    findings.forEach((finding, index) => {
       counts.raised += 1;
+      const at = env ? env.from[index] : index;
       const done = isPlainObject(finding)
-        ? settle(finding, verdicts.has(index) ? verdicts.get(index) : null, answerFor(v.voice, index))
+        ? settle(finding, at >= 0 && verdicts.has(at) ? verdicts.get(at) : null, answerFor(v.voice, index), env && env.orphan[index] ? env.orphan[index] : undefined)
         : { ok: false, why: 'is not a finding object' };
       if (!done.ok || !done.item) {
         counts.unruled += 1;
@@ -312,6 +393,8 @@ export function mapRun(run, answers) {
       counts,
       voices: voices.map((b) => b.voice),
       dropped,
+      ...(providers.length ? { providers } : {}),
+      ...(notes.length ? { notes: cap(notes) } : {}),
       unruled: cap(unruled),
       ...(unruled.length > LIST_CAP ? { unruled_more: unruled.length - LIST_CAP } : {}),
       needs_answer: cap(needsAnswer),
