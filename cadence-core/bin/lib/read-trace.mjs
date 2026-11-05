@@ -1,9 +1,9 @@
 // @ts-check
 // reads.jsonl writer: one line per tool call, so billing can see what a dispatch opened after it started.
-// Its own file, not a trace.jsonl family: that file has one writer, a fixed set of families and a 1 MiB cap sized for tens of events.
-// Paths only, never payloads. A Bash command or grep pattern can carry a secret and /cad-report reads this file back into a model's context, so Bash records argv[0] and Grep records its scope.
-// With opts.root a path target is kept as given inside the project, becomes ${CLAUDE_PLUGIN_ROOT}/... inside the plugin and is the word `outside` anywhere else, so no home directory path reaches a report.
-// Never throws and exits 0 at the seam: this runs after every tool call and a recorder that can fail one is worse than none.
+// its own file, not a trace.jsonl family: that one has a single writer and a 1 MiB cap sized for tens of events
+// paths only, never payloads: a command or grep pattern can carry a secret, and a model reads this file back
+// outside the project, a path becomes ${CLAUDE_PLUGIN_ROOT}/... or `outside`, so no home directory reaches a report
+// never throws, exits 0: it runs after every tool call and a recorder that can fail one is worse than none
 'use strict';
 
 import {
@@ -18,7 +18,7 @@ import { sleep } from './text-util.mjs';
 
 export const READS_FILE = 'reads.jsonl';
 
-/** Bigger than MAX_TRACE_BYTES on purpose: one line per tool call would fill 1 MiB inside a phase and quietly stop recording. */
+/** Bigger than the trace cap on purpose: one line per tool call would fill 1 MiB inside a phase. */
 export const MAX_READS_BYTES = 8388608;
 
 /** The tools whose calls are worth billing. Anything else is not a read. */
@@ -27,7 +27,7 @@ export const RECORDED_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead'];
 /** The longest error text a record may carry. A cause, never a payload. */
 export const MAX_ERROR_TEXT = 200;
 
-/** Past a dozen a Bash call is a sweep (a glob, a `for f in *`), and an unbounded array would bloat a file that has to stay cheap to append to. */
+/** Past a dozen a Bash call is a sweep (a glob, a `for f in *`); cap it so the file stays cheap to append to. */
 export const MAX_FILES_PER_CALL = 12;
 
 /** @param {string} planningRoot */
@@ -35,15 +35,15 @@ export function readsPath(planningRoot) {
   return join(planningRoot, READS_FILE);
 }
 
-/** Spelled once so the writer, the .gitignore rule and the tests can't drift. It keeps the `reads.` prefix so a test filtering the planning root on it catches a leaked temp. */
+/** Spelled once so writer, .gitignore and tests agree; the `reads.` prefix lets a test catch a leaked temp. */
 export const ROTATED_READS_FILE = 'reads.1.jsonl';
 
 /** Derived from ROTATED_READS_FILE so the two names can't come apart. */
 export const READS_CLAIM_FILE = `${ROTATED_READS_FILE}.claim`;
 
 /**
- * The writer's two private temp paths, derived from the names above. The finally clears both, so a reader only finds them if the process died mid-rotation, which the hook's 5 s timeout makes reachable.
- * The evict temp can then hold a whole generation. Each carries a pid and a random suffix, so the .gitignore rule for them can only be a pattern.
+ * The writer's private temp paths. Each has a pid and random suffix, so the .gitignore rule can only be a pattern.
+ * A killed hook (5 s timeout) leaves them mid-rotation, and the evict temp can hold a whole generation.
  */
 export const READS_ROTATE_TEMP_FILE = `${READS_FILE}.rotate`;
 
@@ -60,11 +60,11 @@ export function readsClaimPath(planningRoot) {
   return join(planningRoot, READS_CLAIM_FILE);
 }
 
-/** Same string as ROTATION in lib/trace.mjs, copied on purpose: this loads on every tool call and importing the trace for one constant costs too much. */
+/** Copy of ROTATION in lib/trace.mjs, because importing the trace on every tool call for one constant is too much. */
 export const READS_ROTATION = 'record_rotated';
 
 /**
- * Unlike the trace's, this marker isn't inert: summarizeReads bills every object and joinReads makes an `unresolved` row for any record with no agent, so an unfiltered marker shows up in /cad-report as a phantom read.
+ * Not inert like the trace's: unfiltered, summarizeReads bills it and /cad-report shows a phantom read.
  * No `tool` is a safe second test because recordFromHook always writes a tool and never an `event`.
  * @param {any} record
  */
@@ -80,7 +80,7 @@ export function isReadsRotationMarker(record) {
 export function programOf(cmd) {
   const raw = String(cmd || '').trim();
   if (!raw) return null;
-  // scan lines and stop at a heredoc opener, because the body is payload; the live hook once billed a token lifted out of one
+  // stop at a heredoc opener, because the body is payload; the live hook once billed a token lifted out of one
   const lines = raw.split('\n');
   for (let i = 0; i < lines.length && i < 8; i++) {
     const line = lines[i];
@@ -103,15 +103,11 @@ export function programOf(cmd) {
 
 
 /**
- * The in-repo file paths a Bash command names, and nothing else.
- * programOf refuses arguments because a flag value can carry a secret, but that left `redundancy` counting how often a shell verb was typed instead of how often a file was re-opened.
- * Existence is the filter that gets paths without payload. A token has to:
- *   1. look like a path: no quote, sigil, backtick, glob or redirect, not VAR=value, not a -flag, and a `/` or `.` so shell keywords never qualify
- *   2. resolve inside the project root, so ~/.config/<service>/credentials can't be recorded even though it exists
- *   3. be an existing regular file
- * A secret value isn't a file in the repo, so it's dropped before anything is written.
- * Recorded relative to the root, so an absolute home path never lands in a record.
- * Pure by injection like `now` on recordFromHook: the caller passes the root and the existence check. With no opts it returns nothing.
+ * The in-repo file paths a Bash command names, and nothing else (programOf alone made `redundancy` count shell verbs).
+ * A token counts only if it looks like a path (no quote, glob, redirect, VAR=value or -flag, and a `/` or `.`),
+ * resolves inside the project root (so ~/.config/<service>/credentials never counts) and is an existing regular file.
+ * Paths are recorded root-relative, so no home path lands in a record.
+ * Pure by injection like `now` on recordFromHook: the caller passes the root and isFile, and no opts returns nothing.
  *
  * @param {string} cmd the command line
  * @param {{root?: string, cwd?: string, isFile?: (p: string) => boolean}} [opts]
@@ -123,7 +119,7 @@ export function filesOf(cmd, opts) {
   if (!root || !isFile) return [];
   const raw = String(cmd || '').trim();
   if (!raw) return [];
-  // relative tokens resolve against the call's cwd, since a session in a subdirectory writes `bin/x.mjs` and means a file the root alone wouldn't find
+  // relative tokens resolve against the call's cwd, since a subdirectory session writes `bin/x.mjs`
   const base = opts && typeof opts.cwd === 'string' && opts.cwd ? opts.cwd : root;
 
   /** @type {string[]} */
@@ -166,11 +162,11 @@ export function filesOf(cmd, opts) {
  * @param {any} input the parsed hook JSON
  * @param {string} [now] ISO timestamp, injectable for tests
  * @param {{root?: string, cwd?: string, isFile?: (p: string) => boolean, pluginRoot?: string}} [opts]
- *   root and isFile feed filesOf and pluginRoot tells a plugin file from any other outside path; omit them and no `files` is added and no target is reclassified.
+  *   root and isFile feed filesOf, pluginRoot marks plugin files; omit them and nothing is added or reclassified.
  */
 /**
  * Whether a `tool_response` reports failure, or null when it doesn't say.
- * Both keys are read, `isError` from the MCP wire shape and `is_error` from the host's hooks; neither is documented for PostToolUse, so a missing key gives null instead of a guess.
+ *   root and isFile feed filesOf, pluginRoot marks plugin files; omit them and nothing is added or reclassified.
  * @param {any} resp
  * @returns {boolean|null}
  */
@@ -206,7 +202,7 @@ export function errorTextOf(resp) {
 
 /**
  * Mask credential-shaped values in a cause line before it's stored.
- * A failing tool wrote that text and it lands in a record /cad-report prints, so it's masked whoever authored it, with the same token|password|secret|key|api|bearer words the risk detector uses.
+ * A failing tool wrote this text and /cad-report prints it, so mask it with the risk detector's credential words.
  * The name survives and only the value is masked, so "auth failed: api_key=<redacted>" still says what went wrong.
  * @param {string} line
  * @returns {string}
@@ -220,9 +216,9 @@ export function redactCause(line) {
 }
 
 /**
- * A path target as the record should carry it: lexical only, no realpath and no stat. Relative targets resolve against the call's cwd and `~` is the home directory.
- * Inside the project root it's kept as given, inside the plugin root it's `${CLAUDE_PLUGIN_ROOT}/<relative path>` and anything else is `outside`.
- * The project test runs first, so a plugin root inside the project records as given. With no opts.root the target comes back untouched.
+ * A path target as the record carries it: lexical only, no realpath, no stat. Relative paths resolve against the cwd.
+ * Project paths stay as given, plugin paths become `${CLAUDE_PLUGIN_ROOT}/<relative path>`, anything else is `outside`.
+ * The project test runs first, so a plugin root inside the project records as given. No opts.root leaves it untouched.
  * @param {unknown} target
  * @param {any} input the parsed hook JSON
  * @param {{root?: string, cwd?: string, pluginRoot?: string}} [opts]
@@ -234,7 +230,7 @@ function classifyTarget(target, input, opts) {
   const cwd = (opts && opts.cwd) || (input && input.cwd);
   const base = typeof cwd === 'string' && cwd ? cwd : root;
   let abs;
-  // the host expands a leading ~ for Glob and Grep; resolved against the cwd it would read as a project dir named `~` and another project's path would be recorded as given
+  // the host expands a leading ~ for Glob and Grep; left alone it would read as a project dir named `~`
   try {
     abs = target === '~' || target.startsWith('~/') ? resolve(homedir(), target.slice(2)) : resolve(base, target);
   } catch { return 'outside'; }
@@ -275,7 +271,7 @@ export function recordFromHook(input, now, opts) {
     rec.target = ti.path ?? null;
     if (ti.output_mode) rec.mode = ti.output_mode;
   } else if (tool === 'Bash') {
-    // target stays the program since byTool and topTargets count it and old records carry only that; files gets its own field so the two never pool into one ratio
+    // target stays the program (old records carry only that); files is its own field so the two never pool
     rec.target = programOf(ti.command);
     const files = filesOf(ti.command, { ...(opts || {}), cwd: (opts && opts.cwd) || input.cwd });
     if (files.length) rec.files = files;
@@ -284,17 +280,17 @@ export function recordFromHook(input, now, opts) {
   const target = rec.target;
   if (tool !== 'Bash') rec.target = classifyTarget(rec.target, input, opts);
 
-  // tool_response isn't documented for PostToolUse; if the host sends one its size is the only exact byte figure, and if not bytes stays absent instead of invented
+  // tool_response isn't documented for PostToolUse; when the host sends none, bytes stays absent instead of invented
   const resp = input.tool_response;
   if (resp != null) {
     try {
       rec.bytes = typeof resp === 'string' ? resp.length : JSON.stringify(resp).length;
     } catch { /* unserializable response: leave `bytes` absent */ }
     const failed = errorFlagOf(resp);
-    // only written when the response says so; defaulting to false would record every call as a success on a host that sends no shape
+    // only written when the response says so; a default false would mark every call a success
     if (failed === true) {
       rec.is_error = true;
-      // a hidden target gets no cause: it reads `<path>: <reason>` and would hand back the absolute path `outside` withholds
+      // a hidden target gets no cause: it reads `<path>: <reason>` and would hand back the path `outside` withholds
       const text = errorTextOf(resp);
       if (text && !(rec.target === 'outside' && target !== 'outside')) rec.error = text;
     } else if (failed === false) {
@@ -306,7 +302,7 @@ export function recordFromHook(input, now, opts) {
 
 /**
  * How long, in ms, a writer waits for a rotation in flight before appending anyway.
- * A ceiling, not a lock: it blocks nobody and always proceeds. 250 matches lib/trace.mjs, and a real rotation takes a few ms against the 5000 the hook gets.
+ * A ceiling, not a lock: it blocks nobody and always proceeds. Same 250 as lib/trace.mjs.
  */
 const READS_ROTATE_WAIT_MS = 250;
 
@@ -319,8 +315,9 @@ const READS_CLAIM_STALE_MS = 30_000;
 
 /**
  * Was the claim in flight abandoned, by a process killed or timed out before it could release it?
- * readsRotationInFlight can't say: the claim is a hard link, so appends keep bumping the shared inode's timestamps. Only a file beside the claim holds its age.
- * Unknowable reads as live (no sidecar, a stat that throws, a future mtime): a wrong "live" costs one deferred rotation, a wrong "abandoned" breaks a live claim and costs the record.
+ * readsRotationInFlight can't say: the claim is a hard link, so appends keep bumping the inode's times.
+ * Only the sidecar holds the claim's age. Unknowable reads as live: a wrong "live" defers one rotation,
+ * a wrong "abandoned" breaks a live claim and loses the record.
  * @param {string} claim
  */
 function readsClaimAbandoned(claim) {
@@ -333,8 +330,9 @@ function readsClaimAbandoned(claim) {
 
 /**
  * Is the existing sibling a rotation in flight, or a generation an earlier rotation left?
- * The claim is a hard link, so until the swap the live path and the sibling share an inode. Reading in flight as a leftover evicts a claim someone holds, and the reverse means the record can never rotate a second time.
- * Unknowable reads as in flight (no inode, a failed stat): that only defers a rotation and the append still lands.
+ * Until the swap the claim is a hard link, so the live path and the sibling share an inode.
+ * Reading in flight as a leftover evicts a held claim, and the reverse means the record never rotates again.
+ * Unknowable reads as in flight: that only defers a rotation and the append still lands.
  * @param {string} file @param {string} sibling
  */
 function readsRotationInFlight(file, sibling) {
@@ -350,10 +348,10 @@ function readsRotationInFlight(file, sibling) {
 
 /**
  * The whole fresh record a rotation writes: the marker, one line, nothing else.
- * rotateReads and appendRead's size arm both build it here, so the width appendRead reserves can't drift from the line that gets written; a reserve one byte short is the bug it exists to prevent.
- * `carried_bytes` seals the generation: the live record's size when the cut claimed it. The eviction in rotateReads uses it to rescue bytes a late writer appended to the old inode.
- * A null seal writes no field, because an absent field means "rescue nothing" and a guessed offset would re-append a whole generation.
- * It rides as a trailing field, so isReadsRotationMarker (keyed on `event` and no `tool`) and the reads filter in planning/core.mjs don't care.
+ * rotateReads and appendRead's size arm both build it here, so the reserve can't drift from the line written.
+ * `carried_bytes` is the live record's size at the cut; rotateReads uses it to rescue bytes a late writer appended.
+ * A null seal writes no field: absent means "rescue nothing", and a guessed offset would re-append a whole generation.
+ * It rides as a trailing field, so isReadsRotationMarker and the reads filter in planning/core.mjs don't care.
  * @param {number|null} sealed the size of the record this cut carried away
  * @returns {string} the marker line, newline included
  */
@@ -367,16 +365,16 @@ function readsRotationMarker(sealed) {
 }
 
 /**
- * An upper bound on the marker's width, not a measurement. The only varying field is `carried_bytes`, so it's rendered at the widest value a file size can take.
- * Don't "correct" it to a real marker's width: a reserve narrower than the line the rotation writes lets the fresh file land over its bound.
+ * Upper bound on the marker's width: `carried_bytes` is rendered at the widest value a file size can take.
+ * Don't "correct" it to a real marker's width: a narrower reserve lets the fresh file land over its bound.
  * Exported so read-trace.test.mjs can pin the admission threshold to this number instead of restating the shape.
  */
 export const READS_MARKER_BYTES = Buffer.byteLength(readsRotationMarker(Number.MAX_SAFE_INTEGER));
 
 /**
  * The offset the cut that wrote `record` sealed its generation at, or null if it names none.
- * Only the head is read: the marker is the first line, and this runs on the rotation path where reading 8 MB for one number is the cost the bound avoids.
- * null on anything unreadable, unparseable or non-numeric, including generations sealed before `carried_bytes` existed, because a guessed offset re-appends a whole generation.
+ * Reads only the head: the marker is line one, and 8 MB for one number is too much on the rotation path.
+ * null for anything unreadable or non-numeric, old generations included: a guessed offset re-appends a whole one.
  * @param {string} record path to a record whose first line may be a marker
  * @returns {number|null}
  */
@@ -399,19 +397,15 @@ function sealOf(record) {
 
 /**
  * Claim the record, swap a fresh one in and hand the old generation to ROTATED_READS_FILE.
- * A restated copy of rotateTrace's technique, not a generalization of it (that one is bound to the trace at four levels), so the two can drift on the next fix to either.
- * No lock: withPlanningFileLock can't report a refusal from a hook that has to stay silent, and the concurrency is real, one process per tool call.
- * The claim is linkSync because a rename silently replaces its destination, so a writer with a stale stat could destroy a generation another writer just made. A link fails with EEXIST, atomically.
- * The fresh record is written whole to a private path and renamed in, so the live path is never absent and no concurrent append gets trimmed away.
- * One prior generation is the whole retention policy, and nothing crosses the cut: a loser's record in the sibling is still present across the pair, so there's no carry-back.
- * The one exception is the rescue when evicting a leftover generation: bytes past the earlier cut's seal were never accounted for, so they're carried into the live record while they still exist.
+ * A copy of rotateTrace's technique, not a shared one, so a fix to either has to be made in both.
+ * No lock: a hook has to stay silent, so withPlanningFileLock has nowhere to report a refusal.
+ * The claim is a linkSync because a rename silently replaces its target; a link fails with EEXIST, atomically.
  * Exported for the tests; the losing arms can't be reached through appendRead, which re-stats.
  *
  * @param {string} planningRoot
- * @param {number} reserve the pending line's byte length, what the fresh record owes beyond the marker
+ * @param {number} reserve the pending line's byte length
  * @returns {{rotated: boolean, reason?: string, shortfall?: number|null}}
- *   `reason` only where the rotation failed outright; losing the claim is `{rotated:false}` and the caller appends.
- *   `shortfall` is the bytes of the destroyed generation the rescue couldn't carry, or null if even the count is unknown; absent means complete.
+ *   `reason` only on an outright failure. `shortfall` is bytes the rescue couldn't carry, null if unknown.
  */
 export function rotateReads(planningRoot, reserve) {
   const file = readsPath(planningRoot);
@@ -422,21 +416,21 @@ export function rotateReads(planningRoot, reserve) {
   let temp = null;
   /** @type {string|null} */
   let evicted = null;
-  // set only when the evicted path is a leftover generation, the one eviction with bytes worth rescuing; on an abandoned claim
-  // that path is a second name for the live inode and a rescue would re-append the live record to itself
+  // set only for a leftover generation, the one eviction worth rescuing; on an abandoned claim
+  // the evicted path is the live inode, and a rescue would re-append it to itself
   /** @type {string|null} */
   let leftover = null;
   /** @type {string|null} */
   let dated = null;
-  // the mtime this process stamped on the sidecar, so the confirm below can tell its own write from another claimant's refresh
+  // the mtime we stamped on the sidecar, so the confirm below can tell it from another claimant's refresh
   /** @type {number|null} */
   let mine = null;
-  // held from the link until the swap; the sibling is only a second name for the live file meanwhile, so every failure arm releases it or the record never rotates again
+  // held from link to swap; every failure arm must release it or the record never rotates again
   let held = false;
   // our stamp at its private path until the link says we own the claim it dates
   /** @type {string|null} */
   let pending = null;
-  // the live record's size when this call claimed it, published as carried_bytes; null seals nothing instead of guessing
+  // the live record's size at the claim, published as carried_bytes; null seals nothing rather than guess
   /** @type {number|null} */
   let sealed = null;
   /** Moves the private stamp onto the shared sidecar path, only from the arms that know the claim is ours. */
@@ -455,23 +449,20 @@ export function rotateReads(planningRoot, reserve) {
       let wasStale = false;
       try {
         wasStale = readsClaimAbandoned(claim);
-        // stamp privately and publish only once the claim is ours. The stamp has to exist before the link, or a third process
-        // reads the aged file a previous run left and evicts a live claim.
-        // Writing straight to `claim` would refresh somebody else's claim on every losing append, and on a busy record that restarts
-        // the staleness clock forever so an abandoned claim never ages out. Having the loser put back what it overwrote is a
-        // check-then-write on a shared path and can rewind a fresh stamp.
-        // Plain overwrite, not `{flag:'wx'}`: the retry after an eviction reuses `priv` and would throw on our own leftover.
-        // A failed sidecar write is swallowed, since no sidecar reads as live.
+        // stamp at a private path and publish only once the claim is ours: it has to exist before the link, or a third
+        // process reads the old aged file and evicts a live claim. Writing straight to `claim` would refresh
+        // somebody else's claim on every losing append, and an abandoned claim would never age out.
+        // not `{flag:'wx'}`: the retry after an eviction reuses `priv` and would throw on our own leftover
+        // a failed sidecar write is swallowed, since no sidecar reads as live
         pending = `${claim}.${priv}`;
         try { writeFileSync(pending, `${new Date().toISOString()}\n`); }
         catch { pending = null; /* fail live: no sidecar reads as a live claim */ }
-        // seal before the link, never after: linking doesn't freeze the inode, so a writer appending between the link and a later
-        // stat would have its bytes folded into carried_bytes, and the eviction would never rescue them
+        // seal before the link, or a late writer's bytes fold into carried_bytes and never get rescued
         try { sealed = statSync(file).size; } catch { sealed = null; }
         linkSync(file, sibling);
         claimed = true;
         held = true;
-        // the claim is ours, so publish the stamp that dates it; the eviction arm's confirm covers the gap before this line
+        // the claim is ours, so publish the stamp that dates it
         publish();
       } catch (e) {
         const code = e && /** @type {any} */ (e).code;
@@ -481,16 +472,13 @@ export function rotateReads(planningRoot, reserve) {
         // a sibling is already there, and EEXIST can't say whether it's a claim in flight or a leftover generation
         let abandoned = false;
         if (attempt > 0 || readsRotationInFlight(file, sibling)) {
-          // unless the claim was abandoned: a claimant killed or timed out mid-rotation never runs its finally, so the claim stands
-          // forever and every append pays the full wait budget. A shorter budget doesn't help, only a completed rotation ends it.
-          // The sidecar's age is read only here, where the sibling is the same inode. A different inode is a leftover generation,
-          // and that reading is confirmed after the eviction because a writer can link in between.
+          // unless abandoned: a killed claimant never runs its finally, and only a completed rotation ends the wait
+          // the sidecar's age counts only on the same inode; a leftover is confirmed after the eviction
           abandoned = attempt === 0 && wasStale;
           if (!abandoned) {
-          // a rotation really is in flight and we lost the claim. Don't go straight to the append: the live path still names the old
-          // inode, so the record would land in the file about to become the sibling. Poll the inode identity until it changes,
-          // then report not rotated so the caller appends into what the winner left.
-          // No lock, for the reason in the doc comment above: the hook can't speak, so a refusal has nowhere to be reported.
+          // a rotation is in flight and we lost: appending now would land in the file about to become the sibling,
+          // so poll until the inode changes, then report not rotated and let the caller append into the winner's file
+          // no lock, because the hook can't speak and a refusal would have nowhere to go
             for (
               let waited = 0;
               waited < READS_ROTATE_WAIT_MS && readsRotationInFlight(file, sibling);
@@ -501,25 +489,21 @@ export function rotateReads(planningRoot, reserve) {
             return { rotated: false };
           }
         }
-        // evicting a leftover generation is the one destructive act on this path, so re-stat first and never rotate a record this writer
-        // didn't see over the trigger. Another writer may have rotated since this one took its stat, and carrying that fresh file away
-        // destroys the generation it just made. EEXIST can't see that and a check afterwards is too late, so the claim is refused up front.
+        // evicting a leftover is the one destructive act here, so re-stat first: another writer may have rotated
+        // since our stat, and carrying its fresh file away destroys the generation it just made. EEXIST can't see that
         let now = null;
         try { now = statSync(file).size; } catch { return { rotated: false }; }
         if (now + reserve < MAX_READS_BYTES) return { rotated: false };
-        // publish here and on no other losing arm: either the sibling is a leftover generation and no claim is held, or the sidecar read
-        // abandoned and we're about to evict the claim it dates. It has to come before the eviction because the confirm below compares mtimes against what this line leaves.
+        // publish before the eviction, because the confirm below compares mtimes against what this leaves
         publish();
-        // evict single-winner, the way lib/capture-file.mjs breaks a stale lock: one contender renames and the losers get ENOENT. The finally drops the private path.
+        // evict single-winner, the way lib/capture-file.mjs breaks a stale lock: one renames, the losers get ENOENT
         const path = join(planningRoot, `${READS_EVICT_TEMP_FILE}.${priv}`);
         try { renameSync(sibling, path); } catch { return { rotated: false }; }
         evicted = path;
         if (!abandoned) leftover = path;
-        // confirm after claiming, on both eviction arms, before reading or writing anything. A second writer can link in between the
-        // discriminator and the rename and stamp a fresh sidecar, so the mtime is no longer the one we wrote, and breaking that claim loses the whole record.
-        // The leftover arm needs it too: its discriminator was read before the rename, so a writer that linked in meanwhile reads as a leftover and would be renamed away.
-        // `mine === null` counts as unconfirmed, the same fail-live reading as everywhere else.
-        // Put the sibling back only if nothing took the path meanwhile (a plain rename would clobber a fourth writer's claim), and clear `evicted` either way so the release can't delete a restored claim.
+        // confirm on both eviction arms before touching anything: a writer that linked in after the check
+        // may have stamped a fresh sidecar, and breaking that claim loses the record. `mine === null` is unconfirmed.
+        // restore the sibling only if nothing took the path, and clear `evicted` either way so release can't delete it
         let refreshed = false;
         try { refreshed = mine === null || statSync(claim).mtimeMs !== mine; } catch { refreshed = true; }
         if (refreshed) {
@@ -533,21 +517,18 @@ export function rotateReads(planningRoot, reserve) {
       }
     }
     if (!claimed) return { rotated: false };
-    // the fresh record is written whole to a private path (pid and random suffix, exclusive create) and renamed over the live one
+    // the fresh record goes to a private path (exclusive create) and is renamed over the live one
     temp = join(planningRoot, `${READS_ROTATE_TEMP_FILE}.${priv}`);
     writeFileSync(temp, readsRotationMarker(sealed), { flag: 'wx' });
     renameSync(temp, file);
     temp = null;
     held = false;
 
-    // the second window, and the one thing that crosses the cut. A writer that appended into the old inode while an earlier cut held its
-    // claim has its bytes only in that generation. A second rotation evicts the generation and the finally unlinks it, so the record
-    // ends up in neither file and nothing says so. The writer about to destroy a leftover finishes the carry here, after the swap, whole lines only.
-    // The ordinary path still writes just the marker; this runs only at an eviction, over bytes no cut accounted for.
-    // It starts at the earlier cut's marker, the first line of sibling, whose carried_bytes is where that cut sealed. Only the head is read, to stay off an 8 MB read.
-    // No seal, no rescue: a generation from before the field has no offset to guess, and re-appending a whole one into a record readers use is worse than losing it. It fails closed with shortfall null.
-    // A failed rescue never decides whether the rotation rotated, but it can't be silent either: every failure arm reports shortfall, the bytes past the seal not carried (from the stat, since a throwing read
-    // established no count), and null if even the stat fails.
+    // rescue, the one thing that crosses the cut: bytes a writer appended to the old inode while an earlier cut held
+    // its claim live only in that generation; evicting it would lose them, so the evictor carries whole lines
+    // past the earlier seal over, after the swap. The ordinary path still writes just the marker.
+    // no seal, no rescue: re-appending a whole generation into a record readers use is worse than losing it
+    // a failed rescue never decides whether the rotation rotated, but it reports shortfall (null if the stat fails too)
     /** @type {number|null|undefined} */
     let shortfall;
     if (leftover) {
@@ -576,7 +557,7 @@ export function rotateReads(planningRoot, reserve) {
         }
       } else shortfall = null;
     }
-    // rescued lines may leave the record over MAX_READS_BYTES; they're carried anyway since refusing loses them for good and the next append rotates
+    // rescued lines may leave the record over MAX_READS_BYTES; carry them anyway, the next append rotates
     return shortfall === undefined ? { rotated: true } : { rotated: true, shortfall };
   } catch (e) {
     return { rotated: false, reason: (e && /** @type {any} */ (e).code) || 'rotate-failed' };
@@ -584,19 +565,18 @@ export function rotateReads(planningRoot, reserve) {
     // leave nothing behind on any arm: no private temp, stamp, unfinished claim or evicted generation
     if (temp) { try { unlinkSync(temp); } catch { /* nothing to clean up */ } }
     if (held) { try { unlinkSync(sibling); } catch { /* nothing to release */ } }
-    // guarded by `held`, never unconditional: held goes false at the swap, so an unconditional unlink would delete the fresh sidecar
-    // of a process that took the claim legitimately then, leaving a standing claim with no sidecar. That reads as live forever and defeats the reclaim for good.
-    // So a completed rotation leaves its sidecar behind, and that's inert: after the swap the sibling is a separate inode, nothing reads it and the next claimant overwrites it.
+    // guarded by `held`: it goes false at the swap, and unlinking later would eat the next claimant's sidecar
+    // and leave a claim that reads as live forever. The sidecar a completed rotation leaves behind is inert.
     if (held && dated) { try { unlinkSync(dated); } catch { /* nothing to release */ } }
-    // a stamp we never published dates nothing and sits at a path with our priv, so nobody else sees it; always dropping it keeps a losing append off the shared sidecar
+    // an unpublished stamp dates nothing and sits at our private path, so always drop it
     if (pending) { try { unlinkSync(pending); } catch { /* nothing to clean up */ } }
     if (evicted) { try { unlinkSync(evicted); } catch { /* nothing to clean up */ } }
   }
 }
 
 /**
- * Append one record, guarded the way lib/trace.mjs is: lstat for a planted symlink first, the bound enforced before the write (an append-only file can't be trimmed), a reason returned instead of thrown.
- * The size bound isn't a refusal. At MAX_READS_BYTES the record rotates and the append lands; the other size answers are `oversized-record` for a single line that reaches the bound alone, and whatever code a failed rotation gave.
+ * Append one record, guarded like lib/trace.mjs: symlink check, bound enforced before the write, reason returned.
+ * The size bound rotates instead of refusing; `oversized-record` is for a single line that reaches the bound alone.
  * @param {string} planningRoot
  * @param {any} record
  */
@@ -609,7 +589,7 @@ export function appendRead(planningRoot, record) {
   try {
     if (lstatSync(file).isSymbolicLink()) return { written: false, reason: 'symlinked-reads' };
   } catch { /* ENOENT is the ordinary first write */ }
-  // rendered ahead of the size arm because that arm needs this line's length: it fires when the record plus this line would reach the bound, not when the record is already there
+  // rendered first because the size arm needs this line's length: it fires when record plus line reach the bound
   let line;
   try {
     line = `${JSON.stringify(record)}\n`;
@@ -617,9 +597,8 @@ export function appendRead(planningRoot, record) {
     return { written: false, reason: 'unserializable-record' };
   }
   const pending = Buffer.byteLength(line);
-  // the bound used to be a refusal, and a full record meant silent write-death for the rest of the project, which went four cycles
-  // unnoticed because appendRead's return reaches no user-facing surface. Now it rotates and this append lands.
-  // An absent file is the ordinary first write; any other stat failure is why this append didn't happen.
+  // the bound used to refuse, which silently killed writes for the rest of the project; now it rotates
+  // an absent file is the ordinary first write; any other stat failure is why this append didn't happen
   let size = null;
   try {
     size = statSync(file).size;
@@ -628,14 +607,13 @@ export function appendRead(planningRoot, record) {
     if (code !== 'ENOENT') return { written: false, reason: code || 'stat-failed' };
   }
   if (size !== null && size + pending >= MAX_READS_BYTES) {
-    // a single line that reaches the bound alone is refused, not rotated: rotating throws the record away for a line that still won't fit, and the next append does it again.
-    // The marker is reserved too, not just the pending line. A rotation writes its marker into the fresh record, so a record that fit alone but not beside it
-    // used to rotate and then land over the bound on its first write. That moves a narrow band of sizes into the refusal below on purpose; they couldn't be written under the bound either way.
+    // a line that reaches the bound alone is refused: rotating would discard the record and it still wouldn't fit
+    // reserve the marker too, or a line that fit alone would rotate and still land over the bound
     if (pending + READS_MARKER_BYTES >= MAX_READS_BYTES) {
       return { written: false, reason: 'oversized-record' };
     }
     const rot = rotateReads(planningRoot, pending);
-    // losing the claim isn't a failure, somebody else made the room; only a failed rotation carries a reason, and that's reported instead of appended past
+    // losing the claim isn't a failure, someone else made room; only a failed rotation carries a reason
     if (rot.reason) return { written: false, reason: rot.reason };
   }
   try {
@@ -648,9 +626,9 @@ export function appendRead(planningRoot, record) {
 
 /**
  * Fold records into the figures the ledger asks for. Pure; callers own the reading.
- * Two redundancies because target and files measure different things. `redundancy` is calls over distinct targets, but a Bash target is the program, so on a Bash-heavy corpus it counts how often a shell verb was typed. It stays because every record already on disk carries only that.
- * `fileRedundancy` is path touches over distinct files, from the `files` array filesOf fills, and it's the one that shows whether in-dispatch reading repeats.
- * A record with no target, or no `files`, counts toward `calls` and not toward the matching distinct count, since an unnamed target can't be shown to repeat. Every record written before `files` existed is that, so `fileCalls` says how much of `calls` the file half covers, like `bytesCoverage`.
+ * `redundancy` is calls over distinct targets; a Bash target is only the program, and old records carry nothing else.
+ * `fileRedundancy` is path touches over distinct `files`, the one that shows whether in-dispatch reading repeats.
+ * A record with no target or no `files` counts toward `calls` but not the distinct count; `fileCalls` is the share.
  * @param {any[]} records
  */
 export function summarizeReads(records) {
@@ -705,17 +683,17 @@ export function summarizeReads(records) {
   };
 }
 
-/** Host-owned agent types with no dispatch event in trace.jsonl, so their reads are a permanent floor on what the join can attribute, not a gap to close. */
+/** Host-owned agent types with no dispatch event in trace.jsonl: their reads are a floor, not a gap to close. */
 export const HOST_AGENT_TYPES = ['fork', 'general-purpose'];
 
 // re-exported so lib/subagent-trace.mjs and the tests keep importing them from here
 export { roleOfAgent, rungOfAgent };
 
 /**
- * Join reads.jsonl records to the trace.jsonl dispatch brackets that caused them, at read time: normalize the agent to a role, then test the timestamp for containment in a closed bracket of that role.
- * Not a corr stamped at hook time: a read inside a subagent would get the coordinator's current corr, so the join would be confidently wrong instead of honestly absent.
- * Ambiguity is reported, not resolved. Same-role brackets really do overlap on the parallel execute path, and picking one is wrong exactly on the costliest path (cad-executor), so a record inside more than one is `ambiguous` and joins to none.
- * Nothing defaults an absent field: a record with no agent gets `agent: null` instead of reading as a coordinator, and agent_id the same, since the host guarantees neither across subagent kinds and versions.
+ * Join reads.jsonl records to the trace.jsonl dispatch brackets at read time, by role and timestamp containment.
+ * Not a corr stamped at hook time: a subagent read would get the coordinator's corr and be confidently wrong.
+ * Same-role brackets overlap on the parallel path, so a record in more than one is `ambiguous` and joins to none.
+ * An absent field stays null instead of defaulting to coordinator; the host guarantees neither field across versions.
  * Pure by injection like filesOf: the caller supplies the brackets (`renderTrace(...).brackets`).
  *
  * @param {any[]} records the parsed `reads.jsonl` lines
@@ -730,7 +708,7 @@ export function joinReads(records, brackets) {
     const role = typeof b.role === 'string' ? b.role : '';
     const a = Date.parse(b.ts);
     const z = Date.parse(b.end);
-    // a bracket with an unreadable end is dropped, not widened to infinity, which would swallow every read of that role into one confident answer
+    // a bracket with an unreadable end is dropped, not widened, or it would swallow every read of that role
     if (!role || !Number.isFinite(a) || !Number.isFinite(z)) continue;
     if (!spansByRole.has(role)) spansByRole.set(role, []);
     spansByRole.get(role).push({ a, b: z, row: b });
@@ -744,9 +722,8 @@ export function joinReads(records, brackets) {
     if (!r || typeof r !== 'object') continue;
     const agent = typeof r.agent === 'string' && r.agent ? r.agent : null;
     const agentId = typeof r.agent_id === 'string' && r.agent_id ? r.agent_id : null;
-    // the record's files ride the row, normalized once here. The in-dispatch fold needs both the bracket and the paths, and the alternatives
-    // are worse: re-testing containment there is a second statement of the join, and zipping rows to records by index goes silently wrong
-    // once either side filters a record the other keeps.
+    // the record's files ride the row so the in-dispatch fold has both bracket and paths; re-testing containment there
+    // would restate the join, and zipping rows to records by index breaks once either side filters
     const files = Array.isArray(r.files)
       ? r.files.filter((f) => typeof f === 'string' && f)
       : [];
@@ -760,8 +737,8 @@ export function joinReads(records, brackets) {
     if (agent === null) { push('unresolved'); continue; }
     if (agent === 'coordinator') { push('coordinator'); continue; }
     if (HOST_AGENT_TYPES.includes(agent)) { push('floor'); continue; }
-    // `unknown-agent` lands here: the call had an agent_id and no agent_type, so it's a subagent's read whose role just isn't knowable.
-    // Calling it unjoined would claim no bracket contained it, which was never tested.
+    // `unknown-agent` (an agent_id with no agent_type) lands here: its role isn't knowable,
+    // and calling it unjoined would claim a bracket test that never ran
     if (role === null) { push('unresolved'); continue; }
 
     const t = Date.parse(r.ts);
@@ -777,10 +754,10 @@ export function joinReads(records, brackets) {
 
 /**
  * Per-role in-dispatch file figures, folded off the rows joinReads returned.
- * Group the joined rows by the one bracket each joined to, count touches per path inside it, then per role divide the touches by the sum of the per-bracket distinct counts. Summing distinct per bracket is what makes it in-dispatch: one distinct count over a role's whole corpus can't tell "re-read 20 times in one dispatch" from "read once in each of 20", and only the first is something a per-dispatch lever can act on.
- * It differs from summarizeReads's fileRedundancy on purpose and both stay: that one is whole-corpus over distinct files, this one is per role and per dispatch.
- * Two limits ride the return so callers state them. `coverage` is the share of joined reads that carried `files` at all (older records carry none, so 0.62 is normal, and a figure without it reads as a total). `coordinatorFiles` counts main-thread file reads, which have no bracket by construction and sit outside what this can measure.
- * A null ratio, never 0: no summed distinct is no measurement. Rounded through Number(x.toFixed(2)) like the others.
+ * Touches per path inside each bracket, per role over the sum of per-bracket distinct counts. One distinct count over a
+ * corpus can't tell "re-read 20 times in one dispatch" from "read once in each of 20"; only the first is actionable.
+ * Unlike summarizeReads's fileRedundancy (whole corpus), this is per role and per dispatch.
+ * `coverage` is the share of joined reads that carried `files`; `coordinatorFiles` has no bracket to join.
  *
  * @param {any[]} rows `joinReads(...).rows`
  * @returns {{roles: {role: string, brackets: number, touches: number,
@@ -806,13 +783,13 @@ export function inDispatchReads(rows) {
       if (files.length) coordinatorFiles++;
       continue;
     }
-    // a row that didn't join adds nothing, to the ratio or to coverage; counting ambiguous, floor, unjoined or unresolved in the denominator would report a coverage the ratio never had
+    // a row that didn't join adds nothing to the ratio or coverage, or coverage would claim more than the ratio had
     if (row.status !== 'joined' || !row.bracket) continue;
     joined++;
     if (files.length) fileCarrying++;
     const role = typeof row.role === 'string' && row.role ? row.role : null;
     if (!role) continue;
-    // the role gets a row on its first joined read, before any file question, so a role that recorded no paths shows a null ratio instead of looking like it never ran
+    // the role gets its row on the first joined read, so one that recorded no paths shows a null ratio, not absence
     if (!byRole.has(role)) byRole.set(role, { role, brackets: 0, touches: 0, distinct: 0, worst: null });
     if (!files.length) continue;
     let cell = perBracket.get(row.bracket);
@@ -831,7 +808,7 @@ export function inDispatchReads(rows) {
     acc.distinct += files.size;
     for (const [path, count] of files) {
       acc.touches += count;
-      // the worst single file in one bracket is the suggestion's named target: "read X N times" in one dispatch is actionable where a role-wide ratio isn't. Ties keep the first seen so the answer is stable.
+      // the worst file in one bracket is the suggestion's target ("read X N times"); ties keep the first seen
       if (!acc.worst || count > acc.worst.count) {
         acc.worst = { path, count, phase: bracket.phase ?? null, plan: bracket.plan ?? null };
       }

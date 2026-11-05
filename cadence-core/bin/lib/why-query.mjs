@@ -1,16 +1,14 @@
 // @ts-check
-// Query grammar and git invocations for /cad-why. Pure: no disk, no emit, no exit, no Date, no randomness. why.mjs owns every refusal sentence and envelope field.
-// Disambiguation is two steps on purpose. The suffix after the last colon is a line attempt only if it's empty or starts with a digit, `-` or `+`, so `C:/src/a.rs` and `a/b:name.rs` stay paths. Then a line attempt is validated, so `a.rs:-1` is refused as negative instead of quietly re-read as a path.
-// Five refusal reasons, each from its own branch: empty-path, trailing-colon, negative-line, non-integer-line, zero-line. requireInt judges the digits once they're known to be digits, since Number() coerces (Number(true) is 1).
-// The bare and line arms are separate argv builders because --follow and -L are mutually exclusive and --follow reorders a bare path's answer. Both pin -M and a fixed --format so a user's log.follow or diff.renames can't change the answer.
-// LOG_FORMAT is shared so the caller parses one shape, joined by \x1f since no commit subject will contain it. It uses %cI, not %aI: a rebase or cherry-pick can leave author dates out of history order, and the commit date is what git log walks in.
-// probeArgv is separate because `git log -- no/such/file` exits 0 with nothing, which looks like a legitimately empty chain. It runs before the full chain query so a typo costs one small invocation.
-// The line arm needs no probe: an unknown path and a line past the end fail -L with two different messages, so classifyResult tells them apart from stderr alone.
+// query grammar and git argv for /cad-why. Pure: no disk, emit, exit, Date or randomness.
+// the last colon's suffix is a line attempt only if empty or led by a digit, `-` or `+`: `C:/src/a.rs` stays a path
+// then a line attempt is validated, so `a.rs:-1` is refused as negative, not re-read as a path
+// bare and line arms are separate: --follow and -L are mutually exclusive. Both pin -M and a fixed --format
+// LOG_FORMAT is joined by \x1f, which no subject contains; %cI not %aI, as rebases leave author dates out of order
 'use strict';
 
 import { requireInt } from './require-int.mjs';
 
-/** Shared `--format` for both git arms: sha, strict-ISO commit date and subject, joined by the ASCII unit separator, one record per line. */
+/** Shared `--format`: sha, strict-ISO commit date and subject, joined by the unit separator, one record per line. */
 export const LOG_FORMAT = '%H%x1f%cI%x1f%s';
 
 /** A line attempt's first character: empty is folded in by the caller. */
@@ -57,7 +55,7 @@ function finishPath(path) {
 }
 
 /**
- * Does git know this path: capped at one result in the plainest format, so a mistyped path gets the smallest invocation that can answer it.
+ * Does git know this path: `git log -- no/such/file` exits 0 with nothing, so a typo needs its own one-result probe.
  * @param {string} path @returns {string[]}
  */
 export function probeArgv(path) {
@@ -65,7 +63,8 @@ export function probeArgv(path) {
 }
 
 /**
- * Every commit that touched `path`, newest first, following renames. The `--` keeps a path that looks like a revision (`HEAD`, a branch name) from being read as one.
+ * Every commit that touched `path`, newest first, following renames. The `--` keeps a path that looks like a revision
+ * (`HEAD`, a branch name) from being read as one.
  * @param {string} path @returns {string[]}
  */
 export function bareArgv(path) {
@@ -73,20 +72,20 @@ export function bareArgv(path) {
 }
 
 /**
- * Only the commits whose diff touched `line` in `path`; `-s` drops the patch body. No `--`, since `-L` takes the path as part of its own argument and can't have a trailing pathspec.
+ * Commits whose diff touched `line` in `path`; `-s` drops the patch. No `--`: `-L` takes the path itself, no pathspec.
  * @param {string} path @param {number} line @returns {string[]}
  */
 export function lineArgv(path, line) {
   return ['log', `-L${line},${line}:${path}`, '-s', `--format=${LOG_FORMAT}`, '-M'];
 }
 
-/** The comparand's `--format`: sha and parent list, nothing else. The parents let a caller count merges from evidence, and no subject rides along so the list stays inside the same byte budget as the entry cap. */
+/** The comparand's `--format`: sha and parents only, so merges are counted from evidence and the byte budget holds. */
 export const COMPARAND_FORMAT = '%H%x1f%P';
 
 /**
- * Every commit that touched `path` with git's history simplification turned off, so a caller can measure what the bare arm left out.
- * No `--follow`, and that's why it's a second query: `--follow` defeats `--full-history`, so adding the flag to bareArgv would change nothing and the only way to get both is to ask twice.
- * `-M` and the fixed `--format` are pinned for the same reason as the other arms: a reading machine's diff.renames or log.follow must not change the answer.
+ * Every commit that touched `path` with history simplification off, so a caller can measure what the bare arm left out.
+ * No `--follow`, which defeats `--full-history`; that's why it's a second query.
+ * `-M` and the fixed `--format` are pinned like the other arms, so a reader's diff.renames or log.follow can't matter.
  * @param {string} path @returns {string[]}
  */
 export function comparandArgv(path) {
@@ -94,8 +93,8 @@ export function comparandArgv(path) {
 }
 
 /**
- * Which of the comparand's commits the chain doesn't carry, in the comparand's own order. That's newest-first as git answered, and re-sorting here would be a second opinion about chronology with no dates to form it.
- * Each carries its parent count instead of a merge flag, so the caller counts merges from evidence. A record with no sha is a parse artifact and is dropped.
+ * The comparand's commits the chain lacks, in git's order; re-sorting would guess at chronology without dates.
+ * Each carries its parent count, not a merge flag, so merges come from evidence. A record with no sha is dropped.
  *
  * @param {Iterable<string>} chainShas the full shas the chain already lists
  * @param {{sha: string, parents?: string[]}[]} records the comparand's records
@@ -116,7 +115,7 @@ const LINE_PAST_END = /has only \d+ lines$/m;
 const PATH_UNKNOWN = /^fatal: There is no path .* in the commit$/m;
 
 /**
- * Classify one git invocation's raw result. stderr is read here and never returned, because a caught git error reaching an envelope is how a credential leaked before, and a `fatal:` line follows the same rule.
+ * Classify one git result. stderr is read here and never returned: a git error in an envelope once leaked a credential.
  *
  * @param {{status: number, stderr?: string, stdoutEmpty: boolean}} result
  * @returns {{outcome: 'ok'} | {outcome: 'not-in-history'}

@@ -1,25 +1,21 @@
 // @ts-check
-// Deterministic renderer and entry cap for /cad-why. Pure: no disk, no emit, no exit, no Date.now, no randomness. It turns chain entries into the one `text` string the seam emits plus the counts its envelope carries.
-// Ordering is explicit, never inherited: renderChain sorts a copy by commit date then full sha, both descending, so two entries sharing a date, or the same array reversed, render byte-identically.
-// Every join field is stated, never omitted. When phase, task, decision, deviation or review is absent the entry renders a fixed stated-absence line instead of dropping it, so a chain with no .planning/ join is never a shorter entry or an empty chain.
-// The join attaches in one place, entry.join: a plain serializable object the seam hangs off each entry, which the field* functions turn into label lines. Every later edge adds a key and a formatter, never a second traversal. A literal string on the entry still wins, so hand-built entries work unchanged.
-// The cap truncates entry count because raw git log bytes already cross the 10,000-byte threshold in conventions.md on two of four sampled paths, and every join field adds more. It follows cmdRecall's --top: a stated default plus the untruncated total beside shown, so a truncated answer reads as truncated.
-// The cap doesn't bound the response in bytes. Join fields are unbounded, so a path with few commits and heavy joins crosses the line at any cap that shows its history at all. Lowering the cap only hides the history a reader asked for; relocating the bytes is the real fix and isn't this cap's job.
-// Six is the largest cap under which the worst of the three paths measured (capture-file.mjs, issue-decision.mjs, planning.mjs) stays under the 10,000-byte line, with all six join edges filled and the exclusion block rendering; at seven the worst renders over it.
+// deterministic renderer and entry cap for /cad-why. Pure: no disk, emit, exit, Date.now or randomness.
+// the cap bounds entry count, not bytes: join fields are unbounded, and lowering it only hides history
+// six is the largest cap that keeps the worst measured path under the 10,000-byte line; seven goes over
 // MEASURED CAP: 6 entries, 2026-08-23.
-// why-render.test.mjs parses that line and asserts it equals DEFAULT_TOP, then renders the frozen worst case in fixtures/why.chain-worst.json at the default and one above, so it goes red when the number and its stated reason disagree.
-// The truncation note and the exclusion block live inside text, not only the envelope, because the skill relays text verbatim and never prints the envelope fields. The exclusion block goes before the truncation note so the Pass --top line stays last, and an absent or empty report renders nothing, since a line stating a non-event is bytes on every query for no information.
+// why-render.test.mjs checks that line against DEFAULT_TOP
+// the truncation note and exclusion block live inside text because the skill relays text verbatim
 'use strict';
 
 import { MARKER_GAP } from './why-record.mjs';
 
-/** The default entry cap, the largest one measurement supports. See the MEASURED CAP line in this module's header, which why-render.test.mjs parses and pins against this number. */
+/** The default entry cap; the MEASURED CAP line in the header is pinned to this number by why-render.test.mjs. */
 export const DEFAULT_TOP = 6;
 
 /** The fixed text an absent join field renders as; a field the record doesn't carry says so and is never dropped. */
 const NOT_JOINED = 'not yet joined';
 
-/** Characters of the full sha in the rendered abbreviation: the length the newest SUMMARY convention uses, so the two are easy to eyeball against each other. */
+/** Characters of the sha in the rendered abbreviation: the newest SUMMARY convention's length, easy to eyeball. */
 const ABBREV_LEN = 8;
 
 /**
@@ -45,15 +41,15 @@ const ABBREV_LEN = 8;
 const candidate = (/** @type {JoinMatch} */ m) =>
   `${m.label} (plan ${m.plan || '-'}, task ${m.task || '-'})`;
 
-/** How many ARCHIVE.md residue rows and touched paths an unresolved entry prints before it counts the rest. Both are unbounded in the corpus, and the response is bounded by counting, not by relocating bytes. */
+/** How many ARCHIVE.md residue rows and touched paths an unresolved entry prints before counting the rest. */
 const GAP_ROWS = 3;
 const GAP_PATHS = 10;
 
-/** The sentence an unresolved entry leads with. It names which lookups failed, because "not joined" alone doesn't say whether the record is missing or the reader is. */
+/** What an unresolved entry leads with, naming the lookups that failed rather than just "not joined". */
 const GAP = 'NOT RESOLVED - no phase directory on disk and no summary recovered from git '
   + 'history names this commit, so the record does not say which phase produced it';
 
-/** How many excluded commits the block names before it counts the rest, the same disposition as GAP_ROWS; the block names the invocation a reader runs to see all of them. */
+/** How many excluded commits the block names before counting the rest, like GAP_ROWS. */
 const EXCLUDED_ROWS = 3;
 
 /** One capped list, with the remainder counted rather than dropped. */
@@ -64,7 +60,8 @@ function capped(items, limit) {
 }
 
 /**
- * The gap block. Everything in it is either a fact git carries or a fact the record carries under a label. No line names a phase number, and the one number that looks like one, the commit-message scope, is printed with the statement that it's not the answer.
+ * The gap block: every line is a fact git carries or the record carries under a label. None names a phase number;
+ * the commit-message scope, the one that looks like one, is printed as explicitly not the answer.
  * @param {any} g @returns {string}
  */
 function gapLines(g) {
@@ -94,9 +91,9 @@ function gapLines(g) {
 }
 
 /**
- * What git's default history simplification left out, stated in `text` and not only the envelope, for the same reason the truncation note is: the skill relays `text` verbatim, so a gap only the JSON recorded would never reach a reader.
- * An empty report renders nothing at all. A chain with nothing excluded must not grow a line stating a non-event, which is bytes on every query for no information and lands on the entry cap.
- * The merge count is counted from the parent lists the report carries, never asserted: a block saying `--full-history` buys merges without counting would be repeating a measurement instead of making it.
+ * What git's history simplification left out, stated in `text` because the skill relays `text` verbatim.
+ * An empty report renders nothing; a line stating a non-event costs bytes on every query for no information.
+ * The merge count comes from the parent lists in the report, never asserted.
  * @param {{sha: string, parentCount: number}[]} excluded
  * @param {string} [path] the queried path, named in the invocation line
  * @returns {string}
@@ -114,8 +111,9 @@ function excludedBlock(excluded, path) {
 }
 
 /**
- * The `phase:` line: the milestone and phase number read off the resolved directory's own name, never derived from the commit's conventional-commit scope. An ambiguous resolution names every candidate instead of picking one, because picking is the invisible failure the index exists to remove.
- * A resolved task is not a phase. A commit the off-roadmap tasks tier answered names its slug and says so in words, with no phase number or milestone, because a task directory rendering as `tasks phase <slug>` reads as a phase and is a wrong answer instead of a missing one.
+ * The `phase:` line: milestone and phase number read off the resolved directory's name, never the commit scope.
+ * An ambiguous resolution names every candidate; picking one is the invisible failure the index exists to remove.
+ * A task tier answer names its slug and says so, with no phase or milestone: `tasks phase <slug>` reads as a phase.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldPhase(j) {
@@ -126,17 +124,18 @@ function fieldPhase(j) {
   }
   if (j.state === 'unresolved') return /** @type {any} */ (j).gap ? gapLines(/** @type {any} */ (j).gap) : undefined;
   if (j.state !== 'resolved') return undefined;
-  // the slug marker, never a label prefix: buildTaskIndex puts it on the directory descriptor so this arm needs no opinion about how a label is spelled. phase and milestone are null on this tier, so the line below couldn't render them anyway
+  // the slug marker, never a label prefix; phase and milestone are null on this tier anyway
   if (j.slug) return `off-roadmap task ${j.slug} - a /cad-task run, not a roadmap phase (${j.label})`;
-  // a recovered resolution says where it was recovered from, since the directory no longer exists and a reader couldn't otherwise tell the two apart. The milestone rides beside the phase number on both tiers because one number under two milestones is two different phases wearing the same label
+  // a recovered resolution says where it came from, since the directory no longer exists
+  // the milestone rides beside the phase number because one number under two milestones is two different phases
   const where = /** @type {any} */ (j).recovered;
   if (where) return `${j.milestone} phase ${j.phase} (recovered from ${where.parent.slice(0, 8)}:${where.tree})`;
   return `${j.milestone} phase ${j.phase} (${j.label})`;
 }
 
 /**
- * The `plan task:` line: the commits table's own plan, task and description cells, quoted as the record wrote them. The task cell is never integerized, since `fix 1` is a real value in shipped summaries.
- * No arm is needed for a task record: its table has no Plan column, so `j.plan` is `''` and the `plan ` prefix drops by the same rule the three-column SUMMARY era needs.
+ * The `plan task:` line: the commits table's plan, task and description cells as written. Task is never an integer,
+ * since `fix 1` is a real value. A task record has no Plan column, so `j.plan` is `''` and the `plan ` prefix drops.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldTask(j) {
@@ -148,7 +147,8 @@ function fieldTask(j) {
 }
 
 /**
- * A label line followed by the record's own lines, indented under it. The indent is the only byte this module adds to a quoted line; it keeps a multi-line quote readable as one field's value instead of five more fields, and it's fixed so two runs render it the same.
+ * A label line followed by the record's own lines, indented under it. The indent is the only byte added,
+ * and it keeps a multi-line quote readable as one field's value.
  * @param {string} label @param {string[]} lines @returns {string}
  */
 function quoted(label, lines) {
@@ -163,7 +163,7 @@ const DECISION_SCOPE = Object.freeze({
 });
 
 /**
- * The `decision:` line. The scope is announced before the quoted lines, because a phase-scoped answer presenting itself as a task-level one is the specific wrong this edge exists to avoid.
+ * The `decision:` line. The scope comes first: a phase-scoped answer posing as task-level is the wrong this avoids.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldDecision(j) {
@@ -174,11 +174,12 @@ function fieldDecision(j) {
   return quoted(announce(d.ids || []), d.lines);
 }
 
-/** What an entry says when its phase recorded no deviation: a statement about the SUMMARY, never about whether a decision was refuted. MARKER_GAP, printed beside it, carries that. */
+/** What an entry says when its phase recorded no deviation: about the SUMMARY, not about any refuted decision. */
 const NO_DEVIATION_BULLETS = "(this phase's SUMMARY records no deviation)";
 
 /**
- * The `deviation:` line: always phase-scoped and always carrying MARKER_GAP. The deviation-refutes-a-decision edge doesn't exist in machine-readable form, and an entry that quietly printed "none" would report the absence of a refutation when what's absent is the marker that could have recorded one.
+ * The `deviation:` line: always phase-scoped, always with MARKER_GAP. No machine-readable deviation-refutes-decision
+ * edge exists, so "none" would report no refutation when what's absent is the marker that could record one.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldDeviation(j) {
@@ -189,9 +190,10 @@ function fieldDeviation(j) {
 }
 
 /**
- * One surviving finding, quoted in the reviewer's own returned words. `counter_evidence` is the adjudicator's note and is omitted when absent instead of rendered empty.
- * `fix:` is printed on every survivor, absent value and all, the one line here not omitted when the record carries nothing. A survived finding raised at blocker or high names the commit that fixed it; one raised below was confirmed and not fixed and has no commit id. Same ruling, so without this line the two render identically and a reader can't tell a fix that landed from a finding the gate confirmed and moved past. Omitting it would make absence the statement, and "this was left standing" is exactly the fact /cad-why exists to surface.
- * The commit id is printed where one exists because an auditor runs `git show` on it, which is why adjudication-record.mjs validates the value and not merely its presence.
+ * One surviving finding in the reviewer's own words. `counter_evidence` is the adjudicator's note, omitted when absent.
+ * `fix:` is printed on every survivor, even empty: a finding confirmed and left standing has no commit id, and without
+ * line it would render like a fixed one. "Left standing" is exactly what /cad-why exists to surface.
+ * The commit id is there for an auditor to `git show`, which is why adjudication-record.mjs validates the value.
  * @param {any} f @returns {string[]}
  */
 function findingLines(f) {
@@ -207,8 +209,9 @@ function findingLines(f) {
 }
 
 /**
- * The `review:` line. Three distinct answers, because they're three different facts: this phase kept no adjudication record; it kept records and none of their survivors covers this commit; and a survivor exists whose `base_id..head_id` doesn't resolve in this clone, so whether it covers this commit is unknown. The third is never collapsed into the second, since a finding dropped for want of a resolvable range would read as one that doesn't apply.
- * Whether a survivor was fixed isn't a fourth answer. It's drawn one level down, on the survivor line, where findingLines prints `fix:`. A confirmed-and-unfixed finding still covers this commit and belongs in `kept`, so the head sentence is unchanged.
+ * The `review:` line has three answers: no adjudication record in this phase; no survivor covers this commit;
+ * or a survivor's `base_id..head_id` doesn't resolve here, so coverage is unknown, never collapsed into the second.
+ * Whether a survivor was fixed is drawn one level down, where findingLines prints `fix:`.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldReview(j) {
@@ -234,7 +237,8 @@ function fieldReview(j) {
 }
 
 /**
- * The `declared by:` line: which task's `- **Files:**` line claimed the queried path, and through which declaration, since a directory lease claims a file it doesn't name. It's the sixth join field and obeys the same rule as the other five: stated when known, stated absent when not, never dropped.
+ * The `declared by:` line: which task's `- **Files:**` line claimed the queried path, and through which declaration,
+ * since a directory lease claims a file it doesn't name. Stated when known, stated absent when not.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldDeclared(j) {
@@ -267,7 +271,7 @@ function decorate(e) {
 }
 
 /**
- * Sort a copy of `entries` newest first: commit date descending, full sha descending as the tiebreak. Never mutates its argument.
+ * Sort a copy of `entries` newest first: commit date descending, full sha descending as tiebreak. Never mutates.
  * @param {ChainEntry[]} entries @returns {ChainEntry[]}
  */
 function sortEntries(entries) {
@@ -298,8 +302,9 @@ function renderEntry(raw) {
 }
 
 /**
- * Render `entries` into the one `text` string the seam emits, plus the counts its envelope carries and the sorted, capped entries themselves. Returning the already-sorted slice is what keeps the sort one computation instead of a second copy in the seam.
- * `excluded` is the seam's simplification report: the commits a `--full-history` comparand carries and this chain doesn't. Absent or empty renders nothing, and when it renders it goes before the truncation note so the `Pass --top` line stays last on a truncated chain.
+ * Render `entries` into the one `text` string the seam emits, plus the envelope's counts and the sorted, capped list.
+ * `excluded` is the simplification report. Absent or empty renders nothing; it comes before the truncation note so
+ * the `Pass --top` line stays last.
  *
  * @param {ChainEntry[]} entries
  * @param {{top?: number, excluded?: {sha: string, parentCount: number}[]|null, path?: string}} [opts]

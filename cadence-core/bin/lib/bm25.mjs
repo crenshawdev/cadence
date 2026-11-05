@@ -1,6 +1,6 @@
 // @ts-check
-// Pure, zero-dep BM25 ranking: no Date, no randomness, no I/O, so the same corpus and query always rank the same. The planning grammar lives in planning-files.mjs, not here.
-// Textbook k1=1.2, b=0.75, lowercase alphanumeric tokens, a small fixed stopword list and a Porter 1a/1b suffix fold, so `seams` and `seam` are one term. cmdRecall uses it.
+// pure, zero-dep BM25: no Date, randomness or I/O, so the same corpus and query always rank the same
+// textbook k1=1.2 and b=0.75, lowercase alphanumeric tokens, a small stopword list and a Porter 1a/1b suffix fold
 'use strict';
 
 // small and fixed on purpose, no NLP dependency; matched against the raw token, never the folded one (see tokenize)
@@ -10,10 +10,10 @@ export const STOPWORDS = new Set([
   'from', 'but', 'not', 'no', 'so', 'if', 'than', 'will', 'can',
 ]);
 
-// The suffix fold: a user who typed `seam` used to miss every document that said `seams`, because they were different terms.
-// foldSuffix is called by tokenize and nothing else (not exported, not from buildIndex, search or recall), so index-time and query-time folding can't disagree. One code path, because nothing in the suite would catch a one-sided edit to two sites.
-// Steps 1a and 1b only, so other forms stay distinct terms: `verifies` folds to `verifi` while `verify` is untouched, `released` to `releas`, and `indices` never reaches `index`.
-// Pure, because recall's byte-stable output rests on it.
+// suffix fold: `seam` used to miss every document that said `seams`
+// foldSuffix is called only by tokenize, so index-time and query-time folding can't disagree
+// steps 1a and 1b only, so other forms stay distinct: `verifies` folds to `verifi` while `verify` is untouched
+// pure, because recall's byte-stable output rests on it
 
 const VOWELS = 'aeiou';
 
@@ -61,10 +61,10 @@ function endsCvc(w) {
 
 /**
  * Porter step 1a then step 1b over one already-lowercased token.
- * Step 1a runs in order: `sses` to `ss`, `ies` to `i`, a final `ss` kept, an otherwise-final `s` dropped. `es` is never a rule of its own, since stripping it before `s` gives `closes` -> `clos` against `close` -> `close` and splits file/files, note/notes, type/types and change/changes.
- * Step 1b: `eed` loses its `d` only when the stem before it has measure above zero (`agreed` -> `agree`, `freed` stays), otherwise a final `ed` or `ing` is stripped only if the remaining stem holds a vowel. A strip that fired gets its cleanup: `at`/`bl`/`iz` take back an `e`, a doubled final consonant other than `l`/`s`/`z` loses a letter, a consonant-vowel-consonant ending takes back an `e`.
- * The textbook `m == 1` gate on that last restoration is deliberately not applied: with it `refused` folds to `refus` while `refuse` stays `refuse`, and the pair splits.
- * Tokens of two characters or fewer come back untouched, or the `s` rule would empty a one-letter token, and an empty term is one every document shares.
+ * 1a: `sses` to `ss`, `ies` to `i`, a final `ss` kept, other final `s` dropped. No `es` rule: it splits file/files.
+ * 1b: `eed` loses its `d` if the stem's measure is above zero; `ed`/`ing` strip only if a vowel remains, then cleanup.
+ * The textbook `m == 1` gate on the final `e` restoration is skipped, or `refused` -> `refus` while `refuse` stays.
+ * Tokens of two characters or fewer come back untouched, or the `s` rule would empty them and match every document.
  * @param {string} term @returns {string}
  */
 function foldSuffix(term) {
@@ -97,7 +97,8 @@ function foldSuffix(term) {
 
 /**
  * Lowercase, split on runs of non-alphanumerics, drop empties and stopwords, then fold each surviving token's suffix.
- * The stopword filter runs first and the order is load-bearing: folding first sends `being` to `be` and `its` to `it`, onto stopwords, and the filter would then delete them, so a query for `being` would return nothing. Testing the raw token keeps a term whose fold happens to be a stopword in the index; planning-recall-fold.test.mjs pins that both ways.
+ * The order is load-bearing: folding first sends `being` to the stopword `be`, so a query for `being` finds nothing.
+ * planning-recall-fold.test.mjs pins it both ways.
  * @param {string} text @returns {string[]}
  */
 export function tokenize(text) {
@@ -109,7 +110,8 @@ export function tokenize(text) {
 }
 
 /**
- * Per-doc term frequencies and lengths, the corpus average length and document frequency per term. `docs` are raw strings and index `i` is the doc's corpus position, also search's tie-break key.
+ * Per-doc term frequencies and lengths, the corpus average length and per-term document frequency.
+ * `docs` are raw strings; index `i` is the corpus position, also search's tie-break key.
  * @param {string[]} docs
  */
 export function buildIndex(docs) {
@@ -132,7 +134,7 @@ export function buildIndex(docs) {
 }
 
 /**
- * Rank every doc against `query`, textbook BM25: only docs scoring above 0, sorted by score descending then corpus position ascending, a stable total order whatever the insertion order.
+ * Textbook BM25 over every doc: only scores above 0, sorted by score descending then corpus position, a total order.
  * @param {ReturnType<typeof buildIndex>} index @param {string} query
  * @param {{k1?:number, b?:number}} [opts]
  * @returns {Array<{i:number, score:number}>}
