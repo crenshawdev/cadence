@@ -416,6 +416,8 @@ export const CONTRACTS = {
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--task': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // the correction face: marks survivor <n> re-ruled, the payload then being {ruling, found} and not the survivors
+      '--mark': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
     // A finished review-panel run to the record's payload and the review file's input. --run-file is the host's
     // `<session>/workflows/<run id>.json`, read whole because the completion notice cuts a long result short. --out-dir is
