@@ -43,7 +43,9 @@ It writes `payload.json` (the record's payload), `survivors.json` (the review fi
 
 Repeat until `unruled` is empty and `ready` is true.
 
-A call the seam refuses has already run and spent its agents, so today's path is not run as well. Name the reason in one line, treat the gate as one that could not be evaluated, the arm `references/triage-gate.md` states, and ask whether to run this fire once more on today's path or move on.
+A reviewer that returned nothing never reads as a verdict. Name each voice in `dropped` in one visible line with its reason before you go on. When none were left, the script already ran the `claude-subagent` fallback once (that voice is in `voices`). Rule each `unruled` finding by opening the code it cites, as today's path does, and answer with its ruling and all six headings, so its survivor's section is not missing from the review file.
+
+A call the seam refuses has already run and spent its agents, so today's path is not run as well. Name the reason in one line, treat the gate as one that could not be evaluated, the arm `references/triage-gate.md` states, and ask whether to run this fire once more on today's path or move on. That includes `run-no-voice`, where even the fallback returned nothing: never say adjudication killed everything.
 
 ## 4. Merge, then the file, the record and the triage
 

@@ -276,7 +276,9 @@ still surviving round two is the terminal STOP-and-ask, never a round three.
   `{ "findings": [...] }` object `skills/cad-reviewer-contract/SKILL.md`'s
   `<returns>` block specifies is not that state at all: the gate
   could not be evaluated - say so and ask, the same arm the `blocking` bullet
-  states, and never present it as adjudication having killed everything. Here
+  states, and never present it as adjudication having killed everything. A
+  workflow run that ran no voice, which the seam refuses as `run-no-voice`, is
+  that same gate. Here
   too the test is the return's SHAPE, never a host-side stop signal. The
   NON-SURVIVORS, and every survivor the user did not name, are settled in the
   same step, by "What happens to a finding this fire will not fix" below.

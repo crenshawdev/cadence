@@ -9,8 +9,9 @@ export const meta = {
 //   The main session settles these in steps 1 to 3. 'claude-subagent' runs here. A provider runs through a wrapper agent: the main session
 //   composed its payload before launch and passes the whole seam line with absolute paths, since CLAUDE_PLUGIN_ROOT is unset in a workflow
 //   agent, the file to tee the provider's own output to, the Bash timeout in ms, and the provider's model for the record.
-// Returns { voices: [{ voice, ran, reason?, result, rulings: [{ index, finding, ruling }], envelope?, model? }] }, no merging.
+// Returns { voices: [{ voice, ran, reason?, result, rulings: [{ index, finding, ruling }], fallback?, envelope?, model? }] }, no merging.
 //   ran false names its reason. A reviewer or checker that died stays null, and the main model owns that slot.
+//   When no voice ran, the local reviewer runs once more as the fallback and is marked fallback: true.
 
 const LOCAL = 'claude-subagent';
 
@@ -157,4 +158,10 @@ const check = async (entry) => {
 
 const voices = (await pipeline(a.reviewers, review, check))
   .map((v, i) => v || none(a.reviewers[i], 'the voice failed before it returned'));
+// An emptied set falls back to the local reviewer once. This script is the actor still running, so it does it here.
+if (!voices.some((v) => v.ran)) {
+  log('no reviewer returned a usable result, so the claude-subagent fallback runs once');
+  const fb = await review(LOCAL).then((e) => check({ ...e, fallback: true }), () => null);
+  voices.push(fb || { ...none(LOCAL, 'the voice failed before it returned'), fallback: true });
+}
 return { voices };
