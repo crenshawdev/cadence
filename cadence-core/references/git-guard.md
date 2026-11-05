@@ -60,9 +60,11 @@ DEFAULTS rather than from the user's settings.
 Act on its `action`:
 
 - `create` -> `git checkout -b <branch>` and continue on it. `<branch>` is the
-  seam's `branch` field: the per-milestone integration branch (e.g.
-  `cadence/v1.1.0-rc.2`, derived from `PROJECT.md`'s `### Active` milestone,
-  falling back to the `ROADMAP.md` title). Guard: never run `checkout -b` with an
+  seam's `branch` field: the name `git.integration_branch_name` sets (e.g.
+  `seldon/hardin`), else `cadence/<version>` (e.g. `cadence/v1.1.0-rc.2`),
+  derived from `PROJECT.md`'s `### Active` milestone and falling back to the
+  `ROADMAP.md` title. A configured name that fails its grammar comes back as a
+  naming-problem `ask`, never a `create`. Guard: never run `checkout -b` with an
   empty/null `branch` - the seam already downgrades an unnameable branch to
   `ask`, so treat any `create` with a null `branch` as a naming problem too.
 - `ask` -> prompt once via the ask-user seam, no preselected default. When
