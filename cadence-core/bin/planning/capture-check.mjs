@@ -1,5 +1,5 @@
 // @ts-check
-// planning/capture-check.mjs - `capture-check`: what .planning/CAPTURE.md holds right now, as a report: the substantive walked count, the annotated bullets, and the `## Archive` heading that's no longer part of this file's contract
+// planning/capture-check.mjs - `capture-check`: a report on CAPTURE.md's walked count, annotations and `## Archive`
 'use strict';
 
 import { readFileSync } from 'node:fs';
@@ -8,17 +8,19 @@ import { fail, ok } from './core.mjs';
 import { captureHealth, ARCHIVE_HEADING } from '../lib/capture-health.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 
-// CAPTURE.md holds the phase in flight and a hand sweep to zero regrew within weeks, so queue size, an item settled in place by annotation and an archive heading holding retired work are the three signs the file stopped being transient
-// nothing here refuses: every verdict is a report on an ok:true envelope, and the only ok:false arms are bad arguments and a present file that couldn't be read. A seam that blocked on a big queue is one every caller learns to route around
-// standalone and not folded into status: cmdStatus returns no-planning-dir, no-roadmap or unparseable-roadmap before any drift is computed, which would hand no report to exactly the trees most likely to hold a mangled CAPTURE.md
+// CAPTURE.md should be transient and a hand sweep to zero regrew within weeks: queue size, in-place annotations and an
+// archive heading are the three signs it isn't
+// nothing here refuses: verdicts ride an ok:true envelope, and a seam that blocks on a big queue gets routed around
+// standalone, not a status drift kind: cmdStatus bails early on the trees likeliest to hold a mangled CAPTURE.md
 function cmdCaptureCheck(dir, opts) {
-  // same present-but-unusable refusal as capture and capture-sections: a flag with nothing usable after it is never silently answered about the default path
+  // same refusal as capture and capture-sections: a flag with nothing usable after it never falls to the default
   if ('file' in opts && (typeof opts.file !== 'string' || opts.file.trim() === '')) {
     return fail('bad-args', 'capture-check --file needs a path after it: --file <path to CAPTURE.md>',
       'name the CAPTURE.md to report on, or drop --file to use the one under --dir');
   }
   const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
-  // mergeLayers warnings[]: bound and ridden on the envelope when non-empty, which lib/merge-warnings.mjs holds every callsite to. A torn layer reads the bound as unset and falls back to the default, so a project that raised its bound would be told it crossed a number it doesn't use
+  // mergeLayers warnings[]: bound and ridden on the envelope when non-empty. A torn layer reads the bound as unset,
+  // so a project that raised it would be told it crossed a number it doesn't use
   const { config, warnings } = mergeLayers(join(dir, 'config.json'));
   const bound = usableBound(config?.planning?.max_capture_bullets)
     ? config.planning.max_capture_bullets : DEFAULT_MAX_CAPTURE_BULLETS;
@@ -29,7 +31,7 @@ function cmdCaptureCheck(dir, opts) {
     text = readFileSync(file, 'utf8');
   } catch (e) {
     // ENOENT alone is the absent arm, and absence is data: a project with no queue has an empty queue
-    // not a catch-all, since a present queue that can't be opened reported as zero items is an all-clear about a file nobody read
+    // not a catch-all: a queue that can't be opened would report zero items, an all-clear about a file nobody read
     if (e && /** @type {any} */ (e).code === 'ENOENT') {
       return ok({ file, exists: false, ...rest, ...report(captureHealth(''), bound) });
     }
@@ -58,13 +60,13 @@ function report(health, bound) {
 }
 
 /**
- * The default bound, and the one place the code states it: the schema states it too, and `mergeLayers` applies no defaults.
- * It sits above a healthy tree so it fires on growth, since a bound that reddens the day it ships teaches its reader to ignore it.
+ * The default bound, the one place the code states it (the schema does too, and `mergeLayers` applies no defaults).
+ * It sits above a healthy tree so it fires on growth: a bound that reddens on day one teaches its reader to ignore it.
  */
 const DEFAULT_MAX_CAPTURE_BULLETS = 40;
 
 /**
- * A bound this report can compare against. `config.mjs` validates the type at the write face, so a value failing here was hand-edited into a layer.
+ * A bound this report can compare against. `config.mjs` validates the type on write, so a bad one was hand-edited.
  * It reads as unset and the default applies, since comparing against `"forty"` would name a crossing nobody can act on.
  * @param {unknown} v
  */

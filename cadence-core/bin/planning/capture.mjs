@@ -9,7 +9,7 @@ import { CAPTURE_KINDS, appendCapture } from '../lib/capture-file.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 
-// the heading is not an argument: the append used to be /cad-capture prose, and five filed bullets were lost to a heading the recall walk doesn't visit. Format and file I/O live in lib/capture-file.mjs
+// the heading is not an argument: the append used to be prose, and five bullets were lost to the wrong heading
 function cmdCapture(dir, opts) {
   const kind = typeof opts.kind === 'string' ? opts.kind.trim() : '';
   if (!CAPTURE_KINDS.includes(kind)) {
@@ -18,7 +18,7 @@ function cmdCapture(dir, opts) {
       'send one of the kinds the detail lists - it decides which heading of CAPTURE.md the item is'
       + ' filed under, and the recall walk reads them differently');
   }
-  // --text-file is the safe transport: `--text "<item>"` puts caller-derived prose in a double-quoted shell word, so a $(...) or backtick runs before Node starts. --text stays for a human typing at a shell
+  // --text-file is the safe transport: a double-quoted `--text` word lets $(...) run before Node starts
   if ('text-file' in opts && (typeof opts['text-file'] !== 'string' || opts['text-file'].trim() === '')) {
     return fail('bad-args', 'capture --text-file needs a path after it: --text-file <path>',
       'write the sentence to a file and name it after the flag - nothing was captured, so the'
@@ -45,7 +45,7 @@ function cmdCapture(dir, opts) {
         + ' is what a write that never landed looks like');
     }
   } else {
-    // parseArgs hands a valueless flag the boolean true, so a bare --text is refused: written through, it captures the word "true" and the user's sentence is gone under ok:true
+    // parseArgs hands a valueless flag the boolean true, so a bare --text is refused or it would capture "true"
     text = typeof opts.text === 'string' ? opts.text.trim() : '';
     if (!text) {
       return fail('bad-args',
@@ -58,7 +58,7 @@ function cmdCapture(dir, opts) {
   /** @type {string|undefined} */
   let phase;
   if ('phase' in opts) {
-    // todo only: a seed or note carrying --phase would be written with no tag and leave the caller believing it tagged something, so the flag is refused and not dropped
+    // todo only: a seed or note with --phase would be written untagged and the caller would think it tagged
     if (kind !== 'todo') {
       return fail('bad-args', 'capture --phase is admitted only with --kind todo'
         + ' - a seed and a note carry no phase tag',
@@ -73,18 +73,18 @@ function cmdCapture(dir, opts) {
         + ' captured');
     }
     // the caller's own spelling, so a 1.10 phase is tagged 1.10 and not 1.1
-    // exempt from phaseSpellingCollision on purpose: this resolves no phases/<N>/ path, raw is only a tag appended to CAPTURE.md
+    // exempt from phaseSpellingCollision on purpose: no phases/<N>/ path is resolved, raw is only a tag in CAPTURE.md
     phase = parsed.raw;
   }
-  // same present-but-unusable refusal as debt-harvest --root: a flag with nothing usable after it is never silently answered about the default path, which would write a different file than the caller named
+  // same refusal as debt-harvest --root: an unusable flag value never silently falls back to the default path
   if ('file' in opts && (typeof opts.file !== 'string' || opts.file.trim() === '')) {
     return fail('bad-args', 'capture --file needs a path after it: --file <path to CAPTURE.md>',
       'name the CAPTURE.md to append to, or drop --file to use the one under --dir - nothing was'
       + ' captured');
   }
   const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
-  // --file is /cad-capture --cadence's arm alone, and its entry carries `host: <origin URL>` from git remote get-url origin, whose userinfo can be a credential
-  // so it's stripped here once and not in the prose that builds the line; ssh://git@host becomes ssh://<redacted>@host, over-redacted and accepted. The project arm (no --file) is the user's own queue and writes the text unchanged
+  // --file is the /cad-capture --cadence arm and its `host: <origin URL>` can carry credentials, so strip once here
+  // ssh://git@host becomes ssh://<redacted>@host, over-redacted and accepted; the project arm writes the text unchanged
   if (typeof opts.file === 'string') text = redactUrl(text);
   const res = appendCapture(file, kind, text, phase);
   if (res.ok === false) {

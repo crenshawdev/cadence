@@ -1,6 +1,6 @@
 // @ts-check
-// planning/detect-commands.mjs - `detect-commands`: the lint and typecheck commands a repo that configured nothing can still be told to run
-// ESLINT_CONFIGS is the flat-config probe order and nothing else reads it. The --root default is applied at the dispatch door in planning.mjs, so a blank --root is refused there and not here
+// planning/detect-commands.mjs - `detect-commands`: the lint and typecheck commands to run when nothing is configured
+// ESLINT_CONFIGS is the flat-config probe order; a blank --root is refused at planning.mjs's dispatch, not here
 'use strict';
 
 import { readdirSync } from 'node:fs';
@@ -9,20 +9,19 @@ import { fail, ok, read } from './core.mjs';
 import { executableIn, onPath } from '../lib/on-path.mjs';
 import { testSeamOpen } from '../lib/test-seam.mjs';
 
-// this is a seam and not executor judgment: the criterion is about "a repo that configured nothing", and CI can't prove a judgment fired where a seam is testable on fixture trees
-// --root is the project root and not --dir, which this script defines as the planning directory. It's read one directory deep with no recursive walk and no monorepo inference, since a command guessed from a nested package is run in the wrong tree
-// detecting nothing is ok:true with both null, a successful check with a negative answer. An unreadable or malformed manifest contributes nothing and is named in warnings[] and never thrown
-// a manifest is evidence of intent and not of a binary: `[tool.ruff]` says the maintainers chose ruff and not that it's installed here, and an executor runs this answer before every commit
-// so a winning arm is offered only when its tool resolves, named by where it resolved: eslint and tsc out of <root>/node_modules/.bin as that relative path, everything else off PATH as a bare name
-// an unreachable arm nulls its slot and names the tool in warnings[], and never falls through to a lower arm, because that would tell a tree with `[tool.ruff]` and a go.mod to run `go vet ./...`: a linter its maintainers didn't choose, over a language the change may not touch
-// no arm delegates to npx: with no local install it fetches the package from the registry and runs it, and a command run before every commit must never download code to do it
+// a seam, not executor judgment: CI can prove a seam on fixture trees, not a judgment
+// --root is the project root, not --dir (the planning directory)
+// a manifest shows intent, not an installed binary, so an arm is offered only when its tool resolves
+// eslint and tsc from <root>/node_modules/.bin, everything else off PATH as a bare name
+// an unreachable arm nulls its slot, never falls through: `[tool.ruff]` plus a go.mod would run `go vet ./...`
+// no arm delegates to npx: with no local install it downloads and runs a package, and this runs before every commit
 
 // the flat-config spellings in probe order; a legacy `.eslintrc*` of any extension is matched after them, by prefix
 const ESLINT_CONFIGS = ['eslint.config.js', 'eslint.config.mjs',
   'eslint.config.cjs', 'eslint.config.ts'];
 
 // the tools a project installs itself, so the only ones looked for in node_modules/.bin
-// every other driver (npm, cargo, ruff, go, mypy) is the user's own install and resolves off PATH alone, so a cloned repo carrying a node_modules/.bin/cargo can't stand in for it
+// every other driver (npm, cargo, ruff, go, mypy) resolves off PATH, or a cloned node_modules/.bin/cargo stands in
 const PROJECT_TOOLS = new Set(['eslint', 'tsc']);
 
 function cmdDetectCommands(root) {
@@ -39,7 +38,7 @@ function cmdDetectCommands(root) {
   }
   const has = (/** @type {string} */ name) => entries.includes(name);
 
-  // package.json is parsed once for both slots: two parses could disagree about one file and file the warning twice for one fault
+  // package.json is parsed once for both slots: two parses could disagree about one file and warn twice for one fault
   let scripts = {};
   if (has('package.json')) {
     const text = read(join(root, 'package.json'));
@@ -68,7 +67,7 @@ function cmdDetectCommands(root) {
   }
   const pyTable = (/** @type {string} */ t) => pyproject !== null && pyproject.includes(t);
 
-  // first match wins per slot, in declared order; a project's own script beats a tool config in the same tree, since the script is what its maintainers run
+  // first match wins per slot, in declared order; a project's own script beats a tool config
   let lint = null;
   let lintSource = null;
   if (script('lint')) { lint = 'npm run lint'; lintSource = 'package.json'; }
@@ -85,18 +84,18 @@ function cmdDetectCommands(root) {
   let typecheckSource = null;
   const tsScript = script('typecheck') || script('type-check');
   if (tsScript) { typecheck = `npm run ${tsScript}`; typecheckSource = 'package.json'; }
-  // two exact names and never a tsconfig*.json glob: `tsc --noEmit` ignores a config it isn't pointed at, so a match has to bring the -p form, and guessing which of several candidates is the typecheck would name an editor-only or per-package file
+  // two exact names, never a glob: `tsc --noEmit` ignores a tsconfig*.json it is not pointed at, so a match needs -p
   // both literals are fixed strings, so no repo content is ever interpolated into a command
-  // the order is why there are two arms: a tree with both keeps `tsc --noEmit` off tsconfig.json, the project's own typecheck, and the second arm is for a tree with only the CI file, like this repo
+  // tsconfig.json goes first as the project's own typecheck; the CI file is for a tree with only that, like this repo
   else if (has('tsconfig.json')) { typecheck = 'tsc --noEmit'; typecheckSource = 'tsconfig.json'; }
   else if (has('tsconfig.ci.json')) { typecheck = 'tsc -p tsconfig.ci.json'; typecheckSource = 'tsconfig.ci.json'; }
   else if (has('Cargo.toml')) { typecheck = 'cargo check --all-targets'; typecheckSource = 'Cargo.toml'; }
   else if (pyTable('[tool.mypy')) { typecheck = 'mypy .'; typecheckSource = 'pyproject.toml'; }
   else if (has('go.mod')) { typecheck = 'go build ./...'; typecheckSource = 'go.mod'; }
 
-  // the override is gated because an ungated test hook that changes an enforcement answer is the shape this project refused: this variable decides which static-analysis command an executor runs
-  // it's read only when CADENCE_TEST_SEAM holds, and by presence and not through `||`, because an empty value means "nothing on PATH" and a `||` chain can't express a falsy set
-  // present, it stands in for the whole answer and a name in it reads as on PATH, so every arm comes back as its bare name; the node_modules/.bin arm is proven by the live probe instead, with stubs in the fixture's own tree
+  // the override is gated because an ungated test hook that changes an enforcement answer is what this project refused
+  // read only when CADENCE_TEST_SEAM holds, by presence and not `||`: an empty value means "nothing on PATH"
+  // present, it stands in for the whole answer; the node_modules/.bin arm is proven by the live probe with stubs
   // lib/on-path.mjs reads no Cadence variable of its own, so the hook lives here at the one call site that needs it
   const reachOverride = testSeamOpen() && 'CADENCE_DETECT_REACHABLE' in process.env
     ? new Set(String(process.env.CADENCE_DETECT_REACHABLE).split(',').map((t) => t.trim()).filter(Boolean))
@@ -120,7 +119,7 @@ function cmdDetectCommands(root) {
   /**
    * A slot's answer once reachability has been asked.
    * `source` follows the command: a manifest that named a command nobody can run didn't supply this run's command.
-   * The warning carries both the tool and the manifest, so a caller can still tell "found nothing" from "found something unreachable".
+   * The warning names the tool and the manifest, so "found nothing" differs from "found something unreachable".
    * @param {string} slot @param {string|null} cmd @param {string|null} src
    */
   const offer = (slot, cmd, src) => {

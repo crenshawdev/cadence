@@ -1,6 +1,6 @@
 // @ts-check
 // planning/cite-count.mjs - `cite-count`: what recall surfaced against what the produced plan cites
-// CITE_POINTS is an enum the declared argument row can't express, so it's refused here in this seam's own bad-args vocabulary, and nothing else reads it
+// CITE_POINTS is an enum the declared row can't express, so it's refused here in `bad-args` vocabulary
 'use strict';
 
 import { join } from 'node:path';
@@ -10,15 +10,14 @@ import { SURFACED_KINDS, surfacedRows } from '../lib/cite-surfaced.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { appendEvent } from '../lib/trace.mjs';
 
-// the Core Value says what Cadence writes down comes back on its own when it matters, and nothing measured that: a planner could be handed twelve prior decisions and cite none, and no gate noticed
-// it reports and never gates: a plan citing zero of a non-empty surfaced set is a number on the record, and a threshold needs a legitimate-zero rate to set against, which this seam exists to produce
-// lib/cite-surfaced.mjs says what the surfaced set is and lib/cite-cited.mjs says what a citation is; both are pure, and this function owns the refusals, the disk reads and the envelope
-// the match is per item and not per source, because per-source would credit every row from a source on one mention. The low honest number is the one that can carry a threshold later
-// a bare mention can only match an archived same-numbered phase's decision, since own-phase rows are excluded and a bare mention is own-phase. That's intended: widening either rule to raise the number would flatter the thing it measures
+// it reports and never gates: a threshold needs a legitimate-zero rate to set against, which this produces
+// lib/cite-surfaced.mjs says what the surfaced set is, lib/cite-cited.mjs what a citation is; this owns the rest
+// the match is per item, not per source, or one mention would credit every row from that source
+// a bare mention only matches an archived same-numbered phase's decision; widening either rule would flatter the number
 
 /**
  * The two moments a count is taken: after the planner returns and before the gate, and on the plan as committed.
- * An enum the declared row can't express, so it's refused here in this file's own `bad-args` vocabulary, like `capture --kind`.
+ * An enum the declared row can't express, so it's refused here in `bad-args` vocabulary, like `capture --kind`.
  */
 const CITE_POINTS = ['planned', 'committed'];
 
@@ -28,8 +27,7 @@ function cmdCiteCount(dir, opts) {
     return fail('bad-args', 'cite-count needs --phase <N>',
       'pass --phase <N> naming the phase whose plans should be counted, then re-run');
   }
-  // the tree-aware collision check goes before any read of the phase directory, since a flag is validated ahead of the work it names
-  // it refuses only when the normalized spelling names a directory that exists here, so phases/1.10/ stays addressable on a tree with no phases/1.1/
+  // the collision check goes first and refuses only if the normalized spelling names a directory that exists here
   const collision = phaseSpellingCollision(dir, parsedPhase);
   if (collision) {
     return fail('bad-args', `cite-count ${collision}`,
@@ -46,15 +44,13 @@ function cmdCiteCount(dir, opts) {
   }
   const point = typeof opts.point === 'string' ? opts.point : undefined;
 
-  // memory.backend comes through the same reader cmdRecall gates on, so the two seams can't disagree about whether the backend is off
-  // this repo runs the builtin default and never exercises the off arm, so that state has to be constructed to be tested
-  // `none` is a third state on the record and not a spelling of "surfaced nothing": backend 'none', a surfaced.count of 0 without it, and a non-empty surfaced with cited.count 0 are three runs you can tell apart from recorded fields alone
+  // memory.backend comes through the same reader cmdRecall gates on, so the two seams can't disagree about it being off
+  // `none` is its own state on the record, not "surfaced nothing"; this repo never runs it, so tests construct it
   const { backend, warnings } = memoryBackend(dir);
   const off = backend === 'none';
 
-  // on `none` there's no envelope, because workflows/plan.md skips the call that would make one, so --payload is neither required nor read and the surfaced set is empty by construction
-  // the envelope shape is the same on both paths, so a reader never has to branch on which state produced it
-  // on `builtin` an absent --payload is refused and not fed to stdin, for the reason cmdAdjudication gives: readJsonPayload with no argument sits reading a stdin no call site opens
+  // on `none` there's no envelope (workflows/plan.md skips the call), so --payload is neither required nor read
+  // on `builtin` an absent --payload is refused, not fed to stdin, as in cmdAdjudication
   if (!off && opts.payload === undefined) {
     return fail('bad-args',
       'cite-count needs --payload <file> - the surfaced set is a FILE, never inline '
@@ -81,8 +77,8 @@ function cmdCiteCount(dir, opts) {
     mentions.push(...citedMentions(read(join(pdir, f)) || '', parsedPhase.raw));
   }
 
-  // a surfaced decision is cited when some mention has the same number and the same scope phase as the row's source phase
-  // a row with neither (captures, deviations, UAT rows, an unnumbered CONTEXT bullet) can match nothing, which the unjoinable arms below report
+  // a surfaced decision is cited when a mention has the same number and scope phase as the row's source phase
+  // a row with neither (captures, deviations, UAT rows) can match nothing, which the unjoinable arms report
   const isCited = (row) => row.kind === 'decision'
     && row.number !== undefined && row.phase !== undefined
     && mentions.some((m) => m.number === row.number && m.phase === row.phase);
@@ -97,9 +93,8 @@ function cmdCiteCount(dir, opts) {
     citedIds.push(row.id);
   }
 
-  // surfaced.count is every kinded row and surfaced.ids only the rows an id exists for, and the gap is the answer and not a truncation
-  // captures and deviations carry no identifier, and inventing one from corpus position would break determinism the moment a bullet is added above it. cited_by_kind is what reconciles the headline
-  // the lists ride the envelope even when empty, against this file's usual compactness: an empty cited.ids beside count: 0 is exactly the zero-citation case this seam exists to make visible
+  // surfaced.count is every kinded row and surfaced.ids only those with an id: the gap is the answer, not a truncation
+  // lists ride the envelope even when empty: an empty cited.ids beside count: 0 is the case this seam exists to show
   const surfaced = {
     count: rows.length,
     ids: rows.filter((r) => r.id !== undefined).map((r) => r.id),
@@ -107,19 +102,16 @@ function cmdCiteCount(dir, opts) {
   const cited = { count: citedIds.length, ids: citedIds };
   const citedByKind = {
     decision: { surfaced: byKind.decision.surfaced, cited: byKind.decision.cited },
-    // unjoinable and never silently zero: these arms carry no identifier to join on, so `cited: 0` would report a plan that ignored them when nothing could tell either way
+    // unjoinable, never silently zero: these arms have no id to join on, so `cited: 0` would claim a plan ignored them
     capture: { surfaced: byKind.capture.surfaced, unjoinable: true },
     deviation: { surfaced: byKind.deviation.surfaced, unjoinable: true },
     uat: { surfaced: byKind.uat.surfaced, unjoinable: true },
   };
 
-  // appended before the envelope is emitted, like cmdRiskCheckRun
-  // an in-code producer keeps the coordinator from retyping a figure onto a flag, and a pure reader with a separate trace append would be two extra invocations with both figures retyped between them
-  // `outcome` is one of FAMILIES, so this lands where renderTrace counts. The event carries both figures with their id lists and the per-kind breakdown, so the zero rate is measurable across phases and not only in the run
-  // no role and no tokens: this opens no bracket and bills no worker, and token counts come off a subagent return this seam doesn't have
-  // phase is the caller's own spelling, like a prose `trace append --phase` stores it: key() stringifies both sides, so 2 still joins "2"
-  // appendEvent never throws and never speaks, so its {written, reason} rides the envelope, and that's the only place a caller learns the figures were dropped
-  // a full record isn't one of those ways anymore: at MAX_TRACE_BYTES it rotates and the append lands, so what's left is a symlinked trace, a stat or append failure, and a single event past the bound
+  // appended before the envelope is emitted, like cmdRiskCheckRun; in-code so the coordinator doesn't retype figures
+  // `outcome` is one of FAMILIES, so this lands where renderTrace counts; no role or tokens, nothing bills a worker
+  // phase is the caller's own spelling, as `trace append --phase` stores it: key() stringifies both sides
+  // appendEvent never throws, so its {written, reason} rides the envelope: that's how a caller learns of a drop
   const res = appendEvent(dir, {
     phase: parsedPhase.raw,
     family: 'outcome',
@@ -134,18 +126,18 @@ function cmdCiteCount(dir, opts) {
   ok({
     phase: n,
     ...(point ? { point } : {}),
-    // present only on the off path, like cmdRecall, which omits it everywhere else: its absence is what says the count ran against a live backend
+    // present only on the off path, like cmdRecall: its absence says the count ran against a live backend
     ...(off ? { backend: 'none' } : {}),
     plans: planFiles,
     surfaced,
     cited,
     cited_by_kind: citedByKind,
-    // present on every path, reason only where the append failed; a trace that couldn't be written leaves every figure above byte-identical
+    // present on every path, reason only where the append failed; the figures above are the same either way
     trace: { written: res.written, ...(res.reason ? { reason: res.reason } : {}) },
-    // a payload row this reader couldn't place is reported and not binned: counted in surfaced and in no arm, it would stop the breakdown reconciling with the headline, and dropped silently it would make an unreadable payload look small
+    // a payload row we couldn't place is reported, not binned: in surfaced and no arm, it breaks the breakdown
     ...(unkinded.length ? { unkinded } : {}),
     ...(malformed ? { malformed } : {}),
-    // a torn config layer reads memory.backend as absent, which defaults to builtin, so a project that set `none` would be counted as live and the third state would vanish from the record
+    // a torn config layer reads memory.backend as absent (builtin), so a project that set `none` would look live
     // present only when non-empty, so ordinary output stays byte-stable
     ...(warnings.length ? { warnings } : {}),
   });

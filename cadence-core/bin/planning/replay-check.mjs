@@ -1,6 +1,6 @@
 // @ts-check
-// planning/replay-check.mjs - `replay-check`: has this phase's work already been committed, and which plans still need dispatching
-// /cad-execute's locate step asked this in prose, so the only probe was a live run reading trace.jsonl afterwards, and a test that costs an executor dispatch is one nobody runs. A fixture directory answers it here
+// planning/replay-check.mjs - `replay-check`: is this phase's work committed, and which plans still need dispatching
+// /cad-execute asked this in prose, so the only test cost an executor dispatch; a fixture directory answers it here
 // it reports; the stop and its wording stay the workflow's
 'use strict';
 
@@ -28,10 +28,10 @@ function cmdReplayCheck(dir, opts) {
   }
 
   const rerun = opts.rerun === true;
-  // readPlanReports is the one definition status reads too, so the dispatch set and the outstanding set can't disagree about the same phase
-  // the phases/<raw>/ prefix stays here: it's built from the caller's raw spelling and not the String(n) spelling status resolves, so moving it into the shared reader would make one of the two envelopes wrong
+  // readPlanReports is the one definition status reads too, so the dispatch set and the outstanding set can't disagree
+  // the phases/<raw>/ prefix stays here: it uses the caller's raw spelling, not the String(n) spelling status resolves
   const reports = readPlanReports(pdir, plans).map((r) => {
-    // the name is what /cad-execute prints for its "plan K of J: <plan name>" line, and it's left off when the heading yields none
+    // the name feeds /cad-execute's "plan K of J: <plan name>" line, and is left off when the heading yields none
     const name = planName(read(join(pdir, r.plan)) ?? '');
     return { ...r, report: join('phases', parsedPhase.raw, r.report), ...(name ? { name } : {}) };
   });
@@ -39,7 +39,7 @@ function cmdReplayCheck(dir, opts) {
   ok({
     phase: parsedPhase.value,
     rerun,
-    // J: every conforming plan file and not the dispatch set, so a resumed run still prints its true position out of the total
+    // J: every conforming plan file, not the dispatch set, so a resumed run still prints its true position
     plan_count: plans.length,
     reports,
     // every plan and never some: one plan without a complete report is a continuation and not a replay

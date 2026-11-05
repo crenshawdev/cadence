@@ -1,5 +1,5 @@
 // @ts-check
-// planning/seed-reqs.mjs - `seed-reqs`: the Traceability rows a phase's plans declare, inserted where /cad-plan writes the plan
+// planning/seed-reqs.mjs - `seed-reqs`: the Traceability rows a phase's plans declare, inserted as /cad-plan writes
 'use strict';
 
 import { readdirSync } from 'node:fs';
@@ -11,7 +11,7 @@ import {
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { PLAN_FILE } from '../lib/phase-plans.mjs';
 
-// bounded by ## Active and called by /cad-plan right where the plan is written: the Traceability table never had a write path before this
+// bounded by ## Active, called by /cad-plan where the plan is written: the Traceability table had no write path before
 function cmdSeedReqs(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) {
@@ -26,8 +26,8 @@ function cmdSeedReqs(dir, opts) {
       + ' spellings this face accepts; 02, 1.0 and 1.10 are not');
   }
   const n = parsedPhase.value;
-  // the caller's own spelling names the directory and every diagnostic, while the Traceability rows and the echoed phase stay numeric because parseRequirements and audit compare that cell against ROADMAP phase numbers
-  // a 1.10 phase used to read its own directory and write the rows as 1.1, merging two sub-phases in the audit; that's refused above now, so the spelling that reaches pname is the one the numeric half names
+  // the caller's own spelling names the directory and diagnostics; rows and the echoed phase stay numeric for audit
+  // a 1.10 phase used to write its rows as 1.1, merging two sub-phases in the audit
   const pname = parsedPhase.raw;
 
   // the flag is validated before any read
@@ -50,7 +50,7 @@ function cmdSeedReqs(dir, opts) {
   if (!planFiles.length) return fail('no-plans', `no PLAN(-N).md under ${pdir}`, `/cad-plan ${pname}`);
 
   // ids in plan-file order, first occurrence wins across the phase's plans
-  // frontmatter issues come in the {file, issues} shape cmdAudit emits, so a malformed requirements: line is loud when its ids are written and not only at the next audit
+  // frontmatter issues use the {file, issues} shape cmdAudit emits, so a malformed requirements: line is loud
   const ids = [];
   const seenIds = new Set();
   const frontmatterIssues = [];
@@ -60,7 +60,7 @@ function cmdSeedReqs(dir, opts) {
     if (issues.length) frontmatterIssues.push({ file: `phases/${pname}/${f}`, issues });
   }
 
-  // bound by ## Active: an id with no bullet there is scope creep or a typo, and stays an orphans.plan_ids entry on purpose and is never seeded
+  // bound by ## Active: an id with no bullet there is scope creep or a typo, so it's an orphan and never seeded
   const activeIds = parseActiveIds(reqText);
   const noActiveSection = activeIds === null;
   const activeSet = new Set(activeIds || []);
@@ -79,7 +79,7 @@ function cmdSeedReqs(dir, opts) {
   }
   if (res.inserted.length) atomicWrite(reqFile, res.text);
 
-  // seeded and skipped are always present, even empty, against the envelope's omit-empty convention: a bookkeeping step that has failed twice by writing nothing must report writing nothing
+  // seeded and skipped are always present, even empty: a step that failed twice by writing nothing must say so
   ok({
     phase: n,
     seeded: res.inserted,

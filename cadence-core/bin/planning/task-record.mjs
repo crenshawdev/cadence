@@ -16,13 +16,13 @@ import {
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { appendEvent } from '../lib/trace.mjs';
 
-// the fast path is the one most real work takes, and it used to leave commits and nothing else: nothing the recall corpus could index and nothing /cad-why could join a commit back to
-// code writes the record and never workflow prose holding Write/Edit: five filed bullets were lost when a model wrote them below a heading the recall walk doesn't visit, and nothing could fail
-// every figure comes from the range and none is retyped onto a flag, so a re-run over an unchanged range rewrites the same bytes
-// where it lands and what it looks like is lib/task-record.mjs's, so the writer, the recall walk and /cad-why's task tier all read one fact
+// the fast path is the one most real work takes, and it left commits and nothing recall or /cad-why could join
+// code writes the record, never workflow prose with Write/Edit: five filed bullets were lost that way
+// every figure comes from the range, none retyped onto a flag, so a re-run over an unchanged range is byte-identical
+// where it lands and what it looks like is lib/task-record.mjs's, so the writer, recall walk and /cad-why read one fact
 
 function cmdTaskRecord(dir, opts) {
-  // the slug is a path segment, refused and never sanitised: milestone-prune --label was only trimmed before being joined onto a path and escaped the tree. Judged first, with nothing written
+  // the slug is a path segment, refused never sanitised: a merely trimmed milestone-prune --label escaped the tree
   if (!isTaskSlug(opts.slug)) {
     return fail('bad-args',
       'task-record --slug must be ONE path segment of lowercase letters, digits and '
@@ -32,7 +32,7 @@ function cmdTaskRecord(dir, opts) {
   }
   const slug = String(opts.slug);
 
-  // both required and neither defaulted, like risk-check run: a defaulted head is a range the caller never stated, and this record is the evidence of what shipped
+  // both required and neither defaulted, like risk-check run: a defaulted head is a range the caller never stated
   const base = riskRef(opts.base);
   const head = riskRef(opts.head);
   if (!base || !head) {
@@ -42,7 +42,7 @@ function cmdTaskRecord(dir, opts) {
       + ' this record');
   }
 
-  // --text-file is what workflows use: --text "<value>" puts caller-derived prose inside a double-quoted shell word, where a $(...) runs before Node starts. --text stays for a human at a shell
+  // --text-file is what workflows use: --text is a double-quoted shell word, where $(...) runs before Node starts
   const resolvedText = resolveTextFlag(opts, 'text', 'task-record');
   if (!resolvedText.ok) {
     return fail('bad-args', resolvedText.detail,
@@ -60,8 +60,8 @@ function cmdTaskRecord(dir, opts) {
   }
 
   // one git call per figure, never per commit
-  // %x1f separates the fields because a subject can carry a tab or a pipe, and splitting on the first one only keeps a subject that carries another
-  // --reverse puts the oldest commit first, and the trailing -- ends the revision list so a ref that also names a path can't become a pathspec
+  // %x1f separates the fields because a subject can carry a tab or a pipe
+  // --reverse puts the oldest commit first, and the trailing -- ends the revision list so a ref can't become a pathspec
   let commits = [];
   let files = [];
   let rangeError = null;
@@ -92,7 +92,7 @@ function cmdTaskRecord(dir, opts) {
   let written = false;
   let reason;
   let writeError = null;
-  // a missing planning root isn't created here, and neither is tasks/: with no .planning/ the fast path scaffolds nothing, so it answers written: false with a reason
+  // a missing planning root isn't created, nor tasks/: with no .planning/ the fast path writes nothing and says why
   // a non-directory at that path takes the same arm, because there's no root to write into either way
   let rootIsDir = false;
   try { rootIsDir = statSync(dir).isDirectory(); } catch { /* absent is the ordinary case */ }
@@ -103,13 +103,13 @@ function cmdTaskRecord(dir, opts) {
   } else {
     try {
       mkdirSync(recordDir, { recursive: true });
-      // isTaskSlug refuses a slug that traverses but says nothing about tasks/<slug> already being a symlink, and git carries those
-      // mkdir -p follows it and atomicWrite only lstats its own temp path, so the record would land where taskRecordsIn refuses to read it back
+      // isTaskSlug refuses traversal but not tasks/<slug> already being a symlink, and git carries those
+      // mkdir -p follows it, and the record would land where taskRecordsIn refuses to read it back
       // checked after the mkdir because that's when the directory exists to resolve
       if (!insideRoot(dir, recordDir)) {
         throw new Error(`task-record refused: ${recordDir} resolves outside ${dir}`);
       }
-      // overwriting is right here, unlike cmdAdjudication: this record is derived wholly from the range and the text, so a re-run rewrites the same bytes and a wider range is the correction the caller meant
+      // overwriting is right, unlike cmdAdjudication: a re-run rewrites the same bytes and a wider range is the fix
       atomicWrite(recordPath, renderTaskRecord({
         slug,
         // the title is the slug and not a flag, since a typed title would be a second name for the record
@@ -120,23 +120,24 @@ function cmdTaskRecord(dir, opts) {
       }));
       written = true;
     } catch (e) {
-      // not through redactUrl: this is an fs error over a path the caller just named, so the only string it can echo is one they already hold. The git catch above is wrapped because a remote can send back a credential nobody typed
+      // not through redactUrl: an fs error over a path the caller just named can only echo what they already hold
+      // the git catch above is wrapped because a remote can send back a credential nobody typed
       writeError = e && e.message ? e.message : String(e);
       reason = writeError;
     }
   }
 
-  // appended before the envelope and on every path past argument validation, so even a refusal records that a task record was attempted
-  // that's why this writes the trace itself and isn't a reader with a separate trace append beside it: two extra invocations and every figure retyped between them
-  // phase is 0 because the fast path carries no roadmap phase, and a --phase would be one more thing for a caller to misstate
-  // no role and no tokens: this opens no bracket and bills no worker, and token counts come off a subagent return this seam doesn't have
-  // appendEvent never throws and never speaks, so it can't change the verdict, and its {written, reason} rides the envelope as trace
+  // appended before the envelope and on every path past argument validation, so even a refusal records the attempt
+  // that's why this writes the trace itself, not a reader plus a separate trace append that retypes every figure
+  // phase is 0 because the fast path carries no roadmap phase, and a --phase would be one more thing to misstate
+  // no role and no tokens: this opens no bracket and bills no worker
+  // appendEvent never throws, so it can't change the verdict, and its {written, reason} rides the envelope as trace
   const res = appendEvent(dir, {
     phase: 0,
     family: 'outcome',
     event: 'task_record',
     slug,
-    // both spellings and both ids, written even when null so a run that resolved nothing is visibly unidentifiable and not silently missing a field
+    // both spellings and both ids, written even when null so a run that resolved nothing is visibly unidentifiable
     base,
     head,
     base_id: range.ok ? range.base : null,
@@ -169,7 +170,7 @@ function cmdTaskRecord(dir, opts) {
     record: recordPath,
     commits: commits.length,
     files: files.length,
-    // always present: written: false beside a reason is the answer on a tree with no planning root, and a caller shouldn't have to infer it from a missing record
+    // always present: written: false beside a reason is the answer on a tree with no planning root
     written,
     ...(reason ? { reason } : {}),
     trace,

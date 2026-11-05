@@ -1,5 +1,5 @@
 // @ts-check
-// planning/adjudication.mjs - `adjudication`: the record a blocking or adjudicated gate fire leaves beside its REVIEW file
+// planning/adjudication.mjs - `adjudication`: the record a gate fire leaves beside its REVIEW file
 // groundCitations is this handler's alone: once per fire it asks which cited files don't exist at the resolved head
 'use strict';
 
@@ -12,27 +12,23 @@ import { atomicWrite } from '../lib/planning-files.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
-// a gate used to summarize itself: the trace kept "n survivors of m raised" and the finding bodies went nowhere, so a refutation couldn't be checked against the code it claimed to refute
-// this writes one entry per finding per raising voice with the reviewer's own words, so `git checkout <head_id>` then open file:line is mechanical
-// lib/adjudication-record.mjs holds the grammar and everything that touches the world lives here, which is why the module tests without a repository
-// the payload is a file because the text is verbatim reviewer quoting, and one stray quote in a heredoc leaves an unparseable payload after the adjudication was already done
-// the caller's id spelling isn't trusted: most receipts carry the base as 7 chars and execute.md passes the literal `HEAD`. An unresolvable range is a refusal, since a record whose head can't be checked out is useless
+// a gate used to summarize itself and the finding bodies went nowhere, so a refutation couldn't be checked against code
+// one entry per finding per raising voice in the reviewer's own words: `git checkout <head_id>` then open file:line
+// lib/adjudication-record.mjs holds the grammar and what touches the world lives here, so it tests without a repo
+// the payload is a file: it's verbatim reviewer quoting, and one stray quote in a heredoc leaves it unparseable
+// the caller's id spelling isn't trusted (receipts carry 7 chars, execute.md passes `HEAD`): unresolvable refuses
 
 /**
  * Which entries cite a `file` that doesn't exist at `headId`, and whether the question could be asked at all.
- *
- * Nothing upstream checks `file` or `line` (the schema only bounds the string), so the citation is checked here, once, while the head is resolved.
- * A marked entry is still stored, because dropping it would delete the very finding whose grounding is in question.
- * The probe goes first: `git cat-file -e <sha>:<path>` exits 128 both for a path missing at that commit and for "not a repository" (not the documented 1 on this git).
- * So the probe asks whether the head commit is readable at all, and only after that is a nonzero exit about the citation.
- * A check that couldn't run is reported once by the caller and marks nothing. Marking every entry there is the collapsed-stdin mistake land-cleanup already made once.
- * `-C top` so the answer is the repository's and not the process cwd's.
+ * Nothing upstream checks `file`. A marked entry is still stored: dropping it would delete the finding in question.
+ * The probe goes first: `git cat-file -e <sha>:<path>` exits 128 for a missing path and for "not a repository" alike,
+ * so check the head commit is readable before reading a nonzero exit as being about the citation.
+ * A check that couldn't run marks nothing; marking every entry there is what land-cleanup got wrong.
  *
  * @param {string} top the repository top
  * @param {string} headId the resolved 40-character head id
  * @param {any[]} entries
  * @returns {{checked: boolean, missing: Set<number>, reason: string}}
- *   `checked: false` always carries an empty `missing`, so a caller can't mark entries against a check that never ran.
  */
 function groundCitations(top, headId, entries) {
   const git = (/** @type {string} */ arg) => execFileSync('git',
@@ -47,7 +43,7 @@ function groundCitations(top, headId, entries) {
   /** @type {Set<number>} */
   const missing = new Set();
   for (let i = 0; i < entries.length; i += 1) {
-    // the path is the second half of one `<sha>:<path>` argument, so a citation opening with `-` can't be read as an option
+    // the path is half of one `<sha>:<path>` argument, so a citation opening with `-` can't be read as an option
     try { git(`${headId}:${entries[i].file}`); } catch { missing.add(i); }
   }
   return { checked: true, missing, reason: '' };
@@ -58,7 +54,8 @@ function cmdAdjudication(dir, opts) {
   if (!id) return;
   const { n, trigger, discriminator, round, base, head, task } = id;
 
-  // an absent --payload is refused and not fed to stdin: evaluateRow checks values and not presence, and readJsonPayload with no argument would sit reading a stdin no gate site opens
+  // an absent --payload is refused, not fed to stdin: evaluateRow checks values and not presence, and readJsonPayload
+  // with no argument would sit reading a stdin no gate site opens
   if (opts.payload === undefined) {
     return fail('bad-args',
       'adjudication needs --payload <file> - the composed payload is a FILE, never '
@@ -91,12 +88,13 @@ function cmdAdjudication(dir, opts) {
   const pdir = fireHome(dir, n, 'record', task);
   if (!pdir) return;
 
-  // one filename rule, shared with the receipt recount in cmdTrace: two spellings is two files and the recount would read the wrong fire
+  // one filename rule, shared with the receipt recount in cmdTrace: two spellings would make it read the wrong fire
   const name = recordName(trigger, discriminator, round);
   const file = join(pdir, name);
-  // derived from the home that was chosen, never a literal phases/<N>/: a carried fire is adjudicated in deferred/<N>/, and an envelope naming the wrong path can't be opened
+  // derived from the home that was chosen, never a literal phases/<N>/: a carried fire is adjudicated in deferred/<N>/
   const rel = relative(dir, file);
-  // refused and never overwritten: a caller that forgot --round on a re-arm would silently lose the first round's rulings with ok:true. lstat, since a symlink at the target is already something there
+  // refused, never overwritten: forgetting --round on a re-arm would silently lose the first round's rulings. lstat,
+  // since a symlink at the target is already something there
   let existing = null;
   try { existing = lstatSync(file); } catch { /* the ordinary case */ }
   if (existing) {
@@ -110,23 +108,23 @@ function cmdAdjudication(dir, opts) {
   // after every refusal above, so a refused call does no git work
   const cites = groundCitations(range.top, range.head, built.entries);
 
-  // each entry carries the resolved pair too, on top of the header's: an entry is what gets quoted and argued about, and it should say which head it was judged at
+  // each entry carries the resolved pair too: an entry is what gets quoted, so it says which head it was judged at
   const record = {
     phase: n,
-    // the slug rides the record only on a task's fire, since without it the directory path is the only statement of what was settled
-    // absent and not empty on a phase fire, so a phase record keeps the key set it always had
+    // the slug rides the record only on a task's fire: without it the directory path is all that says what was settled
+    // absent, not empty, on a phase fire, so a phase record keeps the key set it always had
     ...(task === undefined ? {} : { task }),
     trigger,
     discriminator,
     round,
-    // both spellings and both ids, like risk-check run records: the spelling is what the caller recognises and the id is the range's identity
+    // both spellings and both ids, like risk-check run records: spelling for the caller, id for the range's identity
     base,
     head,
     base_id: range.base,
     head_id: range.head,
-    // the roster of voices that ran, which the entries can't carry: a fire where every voice returned nothing has no entries, and that isn't evidence any voice ran
+    // the voices that ran, which entries can't carry: a fire where every voice returned nothing has no entries
     voices: built.voices,
-    // no citation_missing mark means "checked and found" only when this says the check happened. No count rides it, a reader recounts the marks
+    // no citation_missing mark means "checked and found" only if this says the check ran. A reader recounts the marks
     citations: cites.checked ? { checked: true } : { checked: false, reason: cites.reason },
     entries: built.entries.map((e, i) => ({
       ...e,
@@ -138,7 +136,7 @@ function cmdAdjudication(dir, opts) {
   };
   atomicWrite(file, `${JSON.stringify(record, null, 2)}\n`);
 
-  // counts ride the envelope and not the record: a stored count is a second place for the record to disagree with itself, and deriveCounts recomputes them from the entries
+  // counts ride the envelope, not the record: a stored count is a second place for the record to disagree with itself
   return ok({
     phase: n,
     trigger,

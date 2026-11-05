@@ -9,13 +9,13 @@ import { buildQueue, queueName } from '../lib/deferred-queue.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
-// the opposite of the adjudication record: that says a fire was judged and this says it wasn't yet, so the finding stops the land and not the run
+// the opposite of the adjudication record: that says a fire was judged, this says it wasn't yet
 function cmdDeferredRecord(dir, opts) {
   const id = fireIdentity('deferred record', dir, opts);
   if (!id) return;
   const { n, trigger, discriminator, round, base, head } = id;
 
-  // a file for the adjudication record's reason (one unescaped quote in a heredoc makes verbatim reviewer text unparseable), and it's the same file the fire wrote to the sibling REVIEW file
+  // a file, as for the adjudication record: one stray quote in a heredoc makes verbatim reviewer text unparseable
   if (opts.payload === undefined) {
     return fail('bad-args',
       'deferred record needs --payload <file> - the reviewer\'s returned object is a '
@@ -32,7 +32,8 @@ function cmdDeferredRecord(dir, opts) {
       + ' an unqueued finding is one /cad-land will never see');
   }
 
-  // resolved and never the caller's spelling, since a member is read at land time in another session when HEAD names a different commit; an unresolvable range is a refusal because a head that can't be checked out can't be triaged
+  // resolved, never the caller's spelling: land time is another session, where HEAD names a different commit
+  // an unresolvable range refuses, since a head that can't be checked out can't be triaged
   const range = resolveRange(base, head);
   if (!range.ok) {
     return emit({
@@ -51,9 +52,10 @@ function cmdDeferredRecord(dir, opts) {
 
   const name = queueName(trigger, discriminator, round);
   const file = join(pdir, name);
-  // derived like the record's, for the same reason: a capped re-arm's round-2 member is written into whichever home the round-1 member is in
+  // derived like the record's: a capped re-arm's round-2 member goes into whichever home the round-1 member is in
   const rel = relative(dir, file);
-  // refused and never overwritten, like the record beside it: a caller that forgot --round on a re-arm would silently drop the round the land refusal is still holding, with ok:true. lstat, since a symlink at the target is already something there
+  // refused, never overwritten, like the record beside it: forgetting --round on a re-arm would silently drop a round
+  // lstat, since a symlink at the target is already something there
   let existing = null;
   try { existing = lstatSync(file); } catch { /* the ordinary case */ }
   if (existing) {
@@ -64,21 +66,21 @@ function cmdDeferredRecord(dir, opts) {
       + `${round + 1} so it lands beside round ${round} instead of replacing it`);
   }
 
-  // committed, unlike the REVIEW file beside it: trace.jsonl is gitignored and renderTrace drops a phase's events at its uat_verdict complete, so a queue living there would evaporate on a fresh clone and at sign-off while every in-session test stays green
+  // committed, since trace.jsonl is gitignored and dropped at uat_verdict complete, a queue there would evaporate
   const record = {
     phase: n,
     trigger,
     discriminator,
     round,
-    // both spellings and both ids, like the adjudication record and risk-check run: the spelling is what the caller recognises and the id is the range's identity
+    // both spellings and both ids, like the adjudication record: spelling for the caller, id for the range's identity
     base,
     head,
     base_id: range.base,
     head_id: range.head,
-    // verbatim and not counted: /cad-milestone deletes the sibling REVIEW file, so bodies living only there would leave a number nobody can triage, and a stored count is a second place to disagree
+    // verbatim, not counted: /cad-milestone deletes the sibling REVIEW file, so a bare count would be untriageable
     findings: queued.findings,
   };
-  // no adjudication record is written and no fourth ruling added: RULINGS is frozen at three and a finding with no ruling is a refusal, so a record at fire time is impossible by construction
+  // no adjudication record, no fourth ruling: a finding with no ruling is a refusal, so RULINGS stays at three
   atomicWrite(file, `${JSON.stringify(record, null, 2)}\n`);
 
   return ok({
