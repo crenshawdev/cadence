@@ -547,6 +547,11 @@ opinion, not another iteration.
    (references/git-guard.md rail 1), then commit the plan file(s), STATE.md, and
    `.planning/REQUIREMENTS.md` when seed-reqs reported any `seeded` ids -
    `docs: plan phase {N} - {name}` - staging exactly those files.
+
+3. A review fire that held a `blocker` or `high` survivor records now: its
+   adjudication record, receipts and `issue-filing unfixed` waited for this
+   commit (`references/review-triggers.md` step 5), which is the `fix_commit`
+   of a fix, or the plan file as `fix_file` when nothing was committed.
 </step>
 
 <step name="count_committed">

@@ -307,6 +307,8 @@ Then report `<n> survivors of <m> raised` to the user at this step - the line
 that makes a nine-findings-all-killed fire visible in the session and not only
 in the record.
 
+**A fire holding a `blocker` or `high` survivor records once each one is settled.** It writes the adjudication record and receipts, and runs `issue-filing unfixed`, after the fix commit for a fix and straight away for an override (`references/triage-gate.md` says how each is asked). `plan` triages before its commit, so there it is after `commit`. The review file is still written before triage, so the question can read it, and the `<n> survivors of <m> raised` line takes its figures from that file on these fires. A fire with no such survivor keeps the order above.
+
 **The adjudicated gate writes the REVIEW file as Markdown.** As you open the
 cited code and rule each finding, fill six headings for each survivor: What
 breaks, Why I should care, What triggers it, What proves it, What is still

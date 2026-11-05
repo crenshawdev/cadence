@@ -283,6 +283,33 @@ still surviving round two is the terminal STOP-and-ask, never a round three.
   NON-SURVIVORS, and every survivor the user did not name, are settled in the
   same step, by "What happens to a finding this fire will not fix" below.
 
+**A `blocker` or `high` survivor ends settled.** NONE is the default, but
+`buildEntries` and `issue-filing unfixed` both refuse a survived `blocker` or
+`high` with neither `fix_commit` nor `overridden: true`, so what follows the
+multi-select is stated here. These asks come after it and leave it as it is.
+They are the exception to NONE first: they carry no NONE, because NONE would
+leave the high unsettled, so only the four-questions-per-call cap applies. An
+answer that is neither option re-asks, and the record waits.
+- **Suspected**, named or not: one ask with three options - run the named
+  check, fix it, or override with a reason. Running the check re-rules it, and
+  `review-file --mark` marks the review file (`references/review-record.md`).
+  Refuted is recorded `refuted` with its counter-evidence. Proved goes to the
+  two-option ask, and so does a check that settles nothing, so this cannot
+  loop. It is never downgraded.
+- **Proved and unnamed**: its own ask with two options - fix it, or override
+  with a reason.
+- **Proved and named**: no second question, since naming it is the answer, and
+  the answer is to fix. One whose fix is not then made, such as `/cad-verify`'s
+  leave-it-open or Re-plan, goes to the two-option ask.
+- **Settling**: a fix names its commit in `fix_commit`. An override writes
+  `overridden: true` and carries the user's words on the `override` receipt
+  above. A fix that leaves no commit, because the file is one git does not
+  track (a plan under an uncommitted `.planning/`), holds `fix_file` with that
+  file's repo-relative path: neither a downgrade nor `overridden: true`, which
+  would say the finding stood.
+- **Order**: the record, its receipts and `issue-filing unfixed` wait until
+  every such survivor is settled (`references/review-triggers.md` step 5).
+
 **Two caps, two different numbers.** One question carries at most four options
 and NONE occupies one of them, so N survivors become `ceil(N/3)` questions - at
 most three survivors per question, NONE first in every one. Those questions then

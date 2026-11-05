@@ -352,7 +352,10 @@ For each item with `status: fail` and no recorded cause:
    list is ALWAYS triaged before any of it becomes a proposed fix: the
    survivors are a numbered list the user triages, NONE is the default, and
    only what the user names goes on to step 2, so an unpicked finding never
-   reaches step 3's "Apply now". With no reviewer set or tier on a route line,
+   reaches step 3's "Apply now". The record waits until every `blocker` or
+   `high` survivor is settled. One the two-option ask sends to fix goes on to
+   step 2 like a named one, and step 2's Re-plan leaves no fix in this fire, so
+   it goes to that ask like leave-it-open. With no reviewer set or tier on a route line,
    it takes `claude-subagent` alone, `verify` as the record's trigger token and
    `verify-<short HEAD sha>` as its discriminator on review-triggers.md step 5's
    grammar. It takes the workflow path when step 4's both-layer answer and the

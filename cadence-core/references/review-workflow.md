@@ -62,7 +62,9 @@ It writes `payload.json` (the record's payload), `survivors.json` (the review fi
 - **`needs_answer`** lists survivors raised at `blocker` or `high`, which the record takes only with a fix commit or an override. A survivor ruled neither is marked `suspected`.
 - **Answers** are a file, `{"answers": [{"voice": ..., "index": ..., ...}]}`, with the voice and index the envelope names. A ruling is `ruling` (`survived`, `downgraded` or `refuted`) with `counter_evidence` for a refutation, a `severity` below the raised one for a downgrade, and any of the six texts the finding lacks. A settlement is `fix_commit` or `overridden: true`. Run the same call again with `--answers-file`: earlier answers are kept, and a later answer replaces only its own group on its own finding.
 
-Repeat until `unruled` is empty and `ready` is true.
+A fire whose `needs_answer` lists a `blocker` or `high` survivor, which also covers a finding the checker proved higher than it was raised, follows `references/review-triggers.md` step 5's order: the answers go through `--answers-file` before the record and receipts are written, and nothing is recorded while one is open.
+
+Repeat until `unruled` is empty, `needs_answer` is empty and `ready` is true.
 
 A reviewer that returned nothing never reads as a verdict. Name each voice in `dropped` in one visible line with its reason before you go on. When none were left, the script already ran the `claude-subagent` fallback once (that voice is in `voices`). Rule each `unruled` finding by opening the code it cites, as today's path does, and answer with its ruling and all six headings, so its survivor's section is not missing from the review file.
 

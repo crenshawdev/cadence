@@ -395,10 +395,14 @@ export function mapRun(run, answers, envelopes = new Map()) {
         ...(item.overridden ? { overridden: true } : {}),
       });
       if (item.ruling === 'refuted') return;
-      kept.push({ voice: v.voice, finding, item });
-      if (item.ruling === 'survived' && HALTING_SEVERITIES.includes(finding.severity)
+      // a downgrade shows the checker's lower severity, and a finding it proved higher shows that one; the record keeps the raised one
+      const shown = RAISED_SEVERITIES.includes(item.severity)
+        && (item.ruling === 'downgraded' || (item.ruling === 'survived' && RANK[item.severity] > RANK[finding.severity]))
+        ? item.severity : finding.severity;
+      kept.push({ voice: v.voice, finding, item, shown });
+      if (item.ruling === 'survived' && HALTING_SEVERITIES.includes(shown)
         && item.fix_commit === undefined && !item.overridden) {
-        needsAnswer.push({ voice: v.voice, index, file: finding.file, line: finding.line, severity: finding.severity, suspected: item.suspected });
+        needsAnswer.push({ voice: v.voice, index, file: finding.file, line: finding.line, severity: shown, suspected: item.suspected });
       }
     });
     voices.push(block);
@@ -408,12 +412,11 @@ export function mapRun(run, answers, envelopes = new Map()) {
   }
 
   // most severe first, a stable sort so one severity keeps the order the voices returned
-  kept.sort((a, b) => RANK[b.item.severity] - RANK[a.item.severity]);
-  const survivors = kept.map(({ voice, finding, item }) => ({
+  kept.sort((a, b) => RANK[b.shown] - RANK[a.shown]);
+  const survivors = kept.map(({ voice, finding, item, shown }) => ({
     file: finding.file,
     line: finding.line,
-    // the record keeps the raised severity for a finding that stood, so the file does too; only a downgrade shows lower
-    severity: item.ruling === 'downgraded' ? item.severity : finding.severity,
+    severity: shown,
     voices: [voice],
     what_breaks: item.what_breaks,
     why_care: item.why_care,

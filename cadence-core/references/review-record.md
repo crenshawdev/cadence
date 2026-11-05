@@ -73,7 +73,11 @@ carries `file`, `line`, `severity`, `voices` and the six texts `what_breaks`,
 one cause. A survivor missing any of the six is refused, and so is a second write
 to the same name: a re-arm passes `--round 2`.
 
+A suspected `blocker` or `high` the named check then re-rules is corrected in the file, so it and the record agree. Pass the fire's identity as above and `--mark <n>`, with a payload of `{ruling: refuted|proved, found}`. It puts a line ahead of survivor `n`'s headings, a refuted one stops counting as a survivor, and a number the file lacks or one already marked is refused.
+
 ## The adjudication record
+
+When a fire holding a `blocker` or `high` survivor writes this record is `references/review-triggers.md` step 5's order.
 
 Then WRITE THE ADJUDICATION RECORD: the rulings themselves, not a count of them.
 An adjudicated-only rule would record nothing at all on most projects -
@@ -112,6 +116,8 @@ id because none exists: leave `fix_commit` off the ruling entirely. Do not
 downgrade a finding to make it storable and do not invent a SHA to fill the
 field; both are false statements about what happened, and the record accepts the
 true one.
+
+A fix that leaves no commit, because it edits a file git does not track, carries `fix_file` instead: that file's repo-relative path. It is neither a downgrade nor an override.
 
 A `blocker` or `high` the USER OVERRODE carries `overridden: true` instead of a
 commit - the one survived-at-a-halting-severity case where no fix is coming, so
