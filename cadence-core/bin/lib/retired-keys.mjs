@@ -1,14 +1,7 @@
 // @ts-check
-// retired-keys.mjs - the one statement of which config keys were retired and what replaced them. config.mjs
-// imports it for the write face (checkPairs) and the read face (get), route.mjs for the other read face.
-// Spelling it in each face is the drift class this repo keeps closing: a key refused at `set` and silently
-// ignored at `resolve` is the same defect as no diagnostic at all.
-// A retired key is one the schema no longer holds, so a schema-derived list would name nothing. This is a
-// hand-maintained record of a rename and reads nothing off disk: a cross-file read of a routing table is how a
-// cross-key check once fired unconditionally.
-// Pure: no fs, no emit, no process, no Date, no randomness. It returns strings and the callers own the
-// envelope: config.mjs turns the write-face string into a `{key, error}` entry, and both read faces push the
-// `retiredKeysIn` strings onto the warnings they already carry.
+// retired-keys.mjs - the one record of retired config keys and what replaced them; config.mjs and route.mjs import it.
+// Hand-kept on purpose: the schema no longer holds a retired key, so a list derived from it would name nothing.
+// Pure: no fs, no emit, no process, no Date, no randomness. Callers wrap the strings in their own envelopes.
 'use strict';
 
 /**
