@@ -7,6 +7,12 @@
 // two can't drift.
 // NO RULING IS ADDED and no record key: the checker's three words map onto the record's three (D-04), and a finding the
 // record could not store is listed for the main session to rule, never stored as something it isn't (D-16)
+// BRACKETS: one dispatch and one terminal per `workflow_agent` row, from `workflowProgress[]`, since the completion notice
+// holds run totals only. A figure the row lacks is omitted, never 0, as seam-spawn-agent.md states. ROLES: a reviewer row
+// is `cad-reviewer` by its agentType, and two labels the script sets keep their spend apart from it so that role's total
+// still means the reviewers: a label opening `checker ` is `review-checker`, one opening `provider ` is the provider
+// wrapper, `review-provider-wrapper`. No label and no rung agentType reads as `workflow-agent`. With no per-agent rows the
+// call bills the run as one `review-workflow` bracket from the notice's totals.
 // ANSWERS are the main session's, keyed by voice and index. Two groups, and a later answer replaces its group whole:
 //   ruling:      ruling (survived|downgraded|refuted), severity, counter_evidence, and the six texts
 //   settlement:  fix_commit, overridden
@@ -15,6 +21,7 @@
 
 import { buildEntries, HALTING_SEVERITIES, RAISED_SEVERITIES, RULINGS } from './adjudication-record.mjs';
 import { HEADINGS } from './review-file.mjs';
+import { roleOfAgent } from './rung-agent.mjs';
 import { isPlainObject } from './text-util.mjs';
 
 /** The run file's size cap. A real one is about 100 KB, so this is generous and still stops a hostile giant. */
@@ -314,4 +321,91 @@ export function mapRun(run, answers) {
       ...(built.ok ? {} : { not_ready: built.detail }),
     },
   };
+}
+
+/** The role labels a workflow agent is billed under besides the rung roles `roleOfAgent` answers. */
+export const CHECKER_ROLE = 'review-checker';
+export const PROVIDER_ROLE = 'review-provider-wrapper';
+/** The one bracket a run bills as when its file gives no rows. */
+export const WORKFLOW_ROLE = 'review-workflow';
+const OTHER_ROLE = 'workflow-agent';
+
+/** A figure the host reported, or undefined so the key is left off. @param {any} v */
+const figure = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : undefined);
+
+/**
+ * The rows of a run file that are agents.
+ * @param {any} run @returns {any[]}
+ */
+export function agentRows(run) {
+  const rows = isPlainObject(run) && Array.isArray(run.workflowProgress) ? run.workflowProgress : [];
+  return rows.filter((r) => isPlainObject(r) && r.type === 'workflow_agent');
+}
+
+/**
+ * The role an agent row is billed under: the script's label first, then the rung agent it ran as.
+ * @param {any} row @returns {string}
+ */
+export function roleOfRow(row) {
+  const label = typeof row.label === 'string' ? row.label : '';
+  if (label.startsWith('checker ')) return CHECKER_ROLE;
+  if (label.startsWith('provider ')) return PROVIDER_ROLE;
+  return roleOfAgent(row.agentType) || OTHER_ROLE;
+}
+
+/**
+ * The dispatch and terminal events for one bracket, in the shapes `trace append --event dispatch` and `trace close` write.
+ * @param {{phase: string, plan: string, role: string, read: string, reviewer?: string, figures: Record<string, number|string>,
+ *   terminal: 'return'|'checkpoint', detail?: string}} b
+ * @returns {{plan: string, dispatch: Record<string, any>, terminal: Record<string, any>}}
+ */
+function bracket(b) {
+  const common = { phase: b.phase, family: 'lifecycle', plan: b.plan, role: b.role, ...(b.reviewer ? { reviewer: b.reviewer } : {}) };
+  return {
+    plan: b.plan,
+    dispatch: { ...common, event: 'dispatch', read: [b.read] },
+    terminal: { ...common, event: b.terminal, ...b.figures, ...(b.detail ? { detail: b.detail } : {}) },
+  };
+}
+
+/**
+ * One bracket per agent row. The worker key carries the run id, so a second run in one phase can't fold into the first.
+ * An agent that did not finish is a checkpoint naming its state, and still bills what it spent.
+ * @param {any} run @param {{phase: string, runId: string, payloadRef: string}} at
+ */
+export function agentBrackets(run, at) {
+  return agentRows(run).map((row, i) => {
+    const id = isText(row.agentId) ? row.agentId : `agent${i + 1}`;
+    const role = roleOfRow(row);
+    const label = typeof row.label === 'string' ? row.label : '';
+    const state = typeof row.state === 'string' ? row.state : 'unknown';
+    /** @type {Record<string, any>} */
+    const figures = {};
+    for (const [key, v] of [['tokens', row.tokens], ['turns', row.toolCalls], ['duration_ms', row.durationMs]]) {
+      if (figure(v) !== undefined) figures[key] = v;
+    }
+    if (isText(row.agentId)) figures.agent_id = row.agentId;
+    return bracket({
+      phase: at.phase, plan: `${at.runId}-${id}`, role, read: at.payloadRef, figures,
+      ...(role === 'cad-reviewer' && label.startsWith('reviewer ') ? { reviewer: label.slice('reviewer '.length) } : {}),
+      terminal: state === 'done' ? 'return' : 'checkpoint',
+      ...(state === 'done' ? {} : { detail: `the workflow agent was in state "${state}", not done` }),
+    });
+  });
+}
+
+/**
+ * The one bracket for a run whose file gave no per-agent rows, carrying the notice's totals and saying why it is one.
+ * @param {{phase: string, runId: string, payloadRef: string, why: string,
+ *   totals: {tokens?: number, turns?: number, duration_ms?: number}}} at
+ */
+export function noticeBracket(at) {
+  /** @type {Record<string, any>} */
+  const figures = {};
+  for (const [key, v] of Object.entries(at.totals)) if (figure(v) !== undefined) figures[key] = v;
+  return bracket({
+    phase: at.phase, plan: `${at.runId}-notice`, role: WORKFLOW_ROLE, read: at.payloadRef, figures,
+    terminal: 'return',
+    detail: `the run's totals from the completion notice, because ${at.why}`,
+  });
 }

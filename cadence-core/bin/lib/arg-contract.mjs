@@ -427,6 +427,13 @@ export const CONTRACTS = {
       '--run-file': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--out-dir': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--answers-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --payload-ref is the fire's payload reference (step 2's), the read set every bracket carries: never empty.
+      // The three --notice-* flags are the completion notice's run totals, billed as one bracket only when the run
+      // file gives no per-agent rows. Whole numbers as the notice prints them, ungrouped.
+      '--payload-ref': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--notice-tokens': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--notice-turns': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--notice-duration-ms': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
     // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {

@@ -2,16 +2,20 @@
 // planning/workflow-run.mjs - `workflow-run`: a finished review-panel run becomes a payload and a review input
 // it reads the run file whole from disk and writes into the run's scratch directory. The record and the review file are
 // written by their own seams, so --round, --task and the receipts stay where review-record.md states them
+// the run's brackets go FIRST, whatever the file says: an agent that spent tokens on a killed or refused run is still billed
+// the same call twice writes no second set, because a resumed session may retry it: a bracket whose key is already there is skipped
 'use strict';
 
 import { lstatSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fail, ok } from './core.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
-import { requirePhaseArg } from '../lib/require-int.mjs';
+import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
+import { emit } from '../lib/seam-io.mjs';
+import { appendEvent, renderTrace } from '../lib/trace.mjs';
 import {
   ANSWERS_FILE, MAX_ANSWERS_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
-  mapRun, mergeAnswers, parseAnswers, parseRun,
+  agentBrackets, agentRows, mapRun, mergeAnswers, noticeBracket, parseAnswers, parseRun,
 } from '../lib/workflow-run.mjs';
 
 /**
@@ -62,15 +66,44 @@ function loadAnswers(outDir, answersFile) {
   return { ok: true, answers: mergeAnswers(prior, checked.answers || []), fresh: true };
 }
 
+/**
+ * Write the run's brackets, skipping any whose worker key the phase's record already holds.
+ * @param {string} dir the planning directory
+ * @param {string} phase @param {{plan: string, dispatch: any, terminal: any}[]} list
+ * @returns {{written: number, already: number, failed: {plan: string, reason: string}[]}}
+ */
+function writeBrackets(dir, phase, list) {
+  const have = new Set(renderTrace(dir, phase).events
+    .filter((e) => e.family === 'lifecycle' && e.event === 'dispatch').map((e) => String(e.plan)));
+  const out = { written: 0, already: 0, failed: /** @type {{plan: string, reason: string}[]} */ ([]) };
+  for (const b of list) {
+    if (have.has(b.plan)) { out.already += 1; continue; }
+    for (const event of [b.dispatch, b.terminal]) {
+      const r = appendEvent(dir, event);
+      if (!r.written) { out.failed.push({ plan: b.plan, reason: r.reason || 'not-written' }); break; }
+      if (event === b.terminal) out.written += 1;
+    }
+  }
+  return out;
+}
+
 function cmdWorkflowRun(dir, opts) {
   const phase = requirePhaseArg(opts.phase);
   if (!phase.ok) {
     return fail('bad-args', 'workflow-run needs --phase <N>', 'pass --phase <N> for the phase this fire belongs to, then re-run');
   }
-  for (const flag of ['run-file', 'out-dir']) {
+  for (const flag of ['run-file', 'out-dir', 'payload-ref']) {
     if (typeof opts[flag] !== 'string' || !opts[flag].trim()) {
-      return fail('bad-args', `workflow-run needs --${flag} <path>`, `pass --${flag} <path> and re-run - nothing was written`);
+      return fail('bad-args', `workflow-run needs --${flag} <value>`, `pass --${flag} and re-run - nothing was written`);
     }
+  }
+  /** @type {{tokens?: number, turns?: number, duration_ms?: number}} */
+  const totals = {};
+  for (const [flag, key] of [['notice-tokens', 'tokens'], ['notice-turns', 'turns'], ['notice-duration-ms', 'duration_ms']]) {
+    if (!(flag in opts)) continue;
+    const n = requireInt(opts[flag]);
+    if (!n.ok || n.value < 0) return fail('bad-args', `workflow-run --${flag} needs a non-negative whole number`, 'copy the notice\'s figure as a plain number - nothing was written');
+    totals[key] = n.value;
   }
   const outDir = resolve(opts['out-dir']);
   let outStat = null;
@@ -79,21 +112,37 @@ function cmdWorkflowRun(dir, opts) {
     return fail('bad-args', `--out-dir ${outDir} is not a directory`, 'make this run\'s scratch directory first and pass it - nothing was written');
   }
 
-  const run = readCapped(opts['run-file'], MAX_RUN_BYTES);
-  if (run.text === null) {
-    return fail(run.tooLarge ? 'run-too-large' : 'run-unreadable',
-      `the run file ${run.why}`,
-      'nothing was written - read the run file named on the launch result, and if it is gone the notice\'s totals are all that remain');
+  const runRead = readCapped(opts['run-file'], MAX_RUN_BYTES);
+  /** @type {any} */
+  let file = null;
+  if (runRead.text !== null) { try { file = JSON.parse(runRead.text); } catch { /* the bracket falls back below */ } }
+  const runId = file && typeof file.runId === 'string' && file.runId ? file.runId : basename(opts['run-file'], '.json');
+
+  // the brackets first: whatever happens to the result below, these agents spent real tokens
+  const at = { phase: phase.raw, runId, payloadRef: opts['payload-ref'].trim() };
+  const rows = agentRows(file);
+  const fromFile = rows.length > 0;
+  const why = runRead.text === null ? `the run file ${runRead.why}` : (file === null ? 'the run file is not JSON' : 'the run file holds no agent rows');
+  const brackets = {
+    source: fromFile ? 'run-file' : 'notice-totals',
+    ...writeBrackets(dir, phase.raw, fromFile ? agentBrackets(file, at) : [noticeBracket({ ...at, why, totals })]),
+  };
+  /** Every answer from here on says what was billed. @param {string} reason @param {string} [detail] @param {string} [hint] */
+  const refuse = (reason, detail, hint) => emit({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}), brackets });
+
+  if (runRead.text === null) {
+    return refuse(runRead.tooLarge ? 'run-too-large' : 'run-unreadable', `the run file ${runRead.why}`,
+      'no payload was written - the notice\'s totals were billed as one bracket; read the run file named on the launch result if it is still there');
   }
-  const parsed = parseRun(run.text);
-  if (!parsed.ok) return fail(/** @type {string} */ (parsed.reason), parsed.detail, 'nothing was written - a run that did not complete cleanly is not a clean review, so rule this fire another way');
+  const parsed = parseRun(runRead.text);
+  if (!parsed.ok) return refuse(/** @type {string} */ (parsed.reason), parsed.detail, 'no payload was written - a run that did not complete cleanly is not a clean review, so rule this fire another way. Its agents were billed');
 
   const loaded = loadAnswers(outDir, opts['answers-file']);
-  if (!loaded.ok) return fail(/** @type {string} */ (loaded.reason), loaded.detail, 'nothing was written - repair the answers and re-run');
+  if (!loaded.ok) return refuse(/** @type {string} */ (loaded.reason), loaded.detail, 'nothing was written but the brackets - repair the answers and re-run');
   const answers = loaded.answers || [];
 
   const mapped = mapRun(parsed.run, answers);
-  if (!mapped.ok) return fail(/** @type {string} */ (mapped.reason), mapped.detail, 'nothing was written - this run cannot be turned into a record');
+  if (!mapped.ok) return refuse(/** @type {string} */ (mapped.reason), mapped.detail, 'no payload was written - this run cannot be turned into a record. Its agents were billed');
 
   const files = {
     payload: join(outDir, PAYLOAD_FILE),
@@ -106,10 +155,11 @@ function cmdWorkflowRun(dir, opts) {
 
   return ok({
     phase: phase.raw,
-    run_id: typeof parsed.run.runId === 'string' ? parsed.run.runId : undefined,
+    run_id: runId,
     payload: files.payload,
     review_input: files.review_input,
     ...(loaded.fresh || answers.length ? { answers: files.answers } : {}),
+    brackets,
     ...mapped.summary,
   });
 }

@@ -24,8 +24,10 @@ A launch the host refuses is named in one line, and this fire's steps 4 and 5 ru
 The notice holds run totals and cuts a long result short, so the seam reads the run file whole: `workflows/<Run ID>.json` under the session directory `Transcript dir` names.
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --phase <N> --run-file <run file> --out-dir <scratch directory> [--answers-file <path>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --phase <N> --run-file <run file> --out-dir <scratch directory> --payload-ref <the payload reference step 2 assembled> [--answers-file <path>] [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
 ```
+
+The same call bills the run, before it judges anything, so a killed or refused run still pays for its agents: one bracket per agent in the run file, each with its own tokens, turns and duration. Reviewers bill under `cad-reviewer`, checkers under `review-checker` and a provider wrapper under `review-provider-wrapper`, so `cad-reviewer`'s total still means the reviewers. An agent that did not finish closes as a checkpoint. Write no bracket by hand, and calling it again is safe: a run is billed once. When the run file cannot be read or holds no agent rows, pass the notice's totals (its tokens, tool uses and duration in ms, as plain whole numbers) and it bills them as one `review-workflow` bracket.
 
 It writes `payload.json` (the record's payload), `survivors.json` (the review file's input) and `answers.json` (what you have answered so far) into the scratch directory, and prints one envelope: `counts`, the `voices` that ran, the voices `dropped` with their reasons, `unruled`, `needs_answer`, `ready` and, when it is not, `not_ready`. It adds no ruling of its own.
 
