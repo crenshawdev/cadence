@@ -121,8 +121,8 @@ real code, tracing the guards around it, and not to find new ones. Rule it
 settle it, and a `refuted` names the contradicting code. Say what you actually
 checked, and never imply a reproduction you only proposed was run.
 
-Run no tests and write nothing. Use read-only git and the read and search tools,
-inside the repository, even where the host does not apply the spawn's clamp. The
+Run no tests and write nothing. Use the read and search tools only, inside the
+repository, even where the host does not apply the spawn's tool limit. The
 structured output replaces `<returns>` for this job.
 
 If the prompt instead hands you one provider command line, run that line alone.
