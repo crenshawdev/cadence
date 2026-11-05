@@ -1,18 +1,14 @@
 #!/usr/bin/env node
 // @ts-check
-// weight.mjs - the context-weight seam. Measures the plugin's own prose surfaces (`agents/*.md`, `skills/**/SKILL.md`,
-// `cadence-core/workflows/*.md`, everything under `cadence-core/references/` and `cadence-core/templates/`) and reports
-// each one's bytes and estimated tokens as one JSON line. planning.mjs measures the .planning state files; this
-// measures the shipped plugin prose.
-// It imports the same measurement lib self-verify.mjs enforces the budget with, so reported and enforced weight can't
-// diverge. `resident` answers the other question: what one command carries into the main thread and what one dispatch
-// carries into a fresh subagent context (lib/resident-weight.mjs has the definitions and why reachable is one hop).
-// One JSON line on stdout, exit 0, deterministic: sorted traversal and fixed key order make two runs on one tree
-// byte-identical.
+// weight.mjs - the context-weight seam: bytes and estimated tokens of the plugin's own prose (`agents/*.md`,
+// `skills/**/SKILL.md`, `cadence-core/workflows/*.md`, `cadence-core/references/`, `cadence-core/templates/`) as one
+// JSON line. planning.mjs measures the .planning state; this measures what ships.
+// It uses the lib self-verify.mjs enforces the budget with, so reported and enforced weight can't diverge.
+// `resident` answers what one command carries into the main thread and one dispatch into a subagent.
+// Deterministic: sorted traversal and fixed key order, so two runs on one tree are byte-identical.
 // Usage: weight.mjs [--root <repo root>]
 //        weight.mjs resident [--root <repo root>] [--command <name>] [--role <name>]
-// A flag present with no value is `ok:false`/`missing-flag-value`, never a silent default (`flagValue` in
-// lib/seam-input.mjs).
+// A flag present with no value is `ok:false`/`missing-flag-value`, never a silent default.
 'use strict';
 
 import { dirname, join } from 'node:path';

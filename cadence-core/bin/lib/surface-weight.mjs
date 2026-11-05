@@ -1,14 +1,10 @@
 // @ts-check
-// surface-weight.mjs - the one measurement of the plugin's own prose-surface weight, imported by weight.mjs (reports
-// it) and self-verify.mjs (enforces the budget with it), so reported and enforced weight can't diverge. Pure lib.
-// Five branches: `agents/*.md`, `skills/**/SKILL.md`, `cadence-core/workflows/*.md`, and every file under
-// `cadence-core/references/` and `cadence-core/templates/`. The last two are walked whole-directory, not by extension,
-// or `references/model-hints.json` and `templates/config.json` would sit in budgeted directories capped by nothing.
-// An entry it can't stat or read is skipped silently, because weight.mjs emits this return verbatim; self-verify.mjs
-// reports it loudly as `unreadable-surface`, so don't turn this into a throw.
-// The recursion is per entry, never one `recursive: true` readdir per branch: one throwing descendant would return []
-// for the whole subtree, and a mode-000 directory could hide every readable sibling. Descent is decided on the dirent,
-// so a symlinked directory met mid-walk isn't descended, but a named root is.
+// surface-weight.mjs - the one measurement of the plugin's prose-surface weight, used by weight.mjs (reports it) and
+// self-verify.mjs (enforces the budget with it), so the two can't diverge. Pure lib.
+// References and templates are walked whole, so a stray JSON file isn't left uncapped.
+// An entry it can't read is skipped silently, since weight.mjs emits this verbatim; self-verify.mjs reports it.
+// Recursion is per entry, never a `recursive: true` readdir, which one throwing descendant would empty.
+// Descent follows the dirent, so a symlinked directory met mid-walk isn't descended, but a named root is.
 'use strict';
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';

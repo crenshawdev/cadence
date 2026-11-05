@@ -1,14 +1,10 @@
 // @ts-check
-// route-relay.mjs - the pure rule behind self-verify's `unrelayed-route-resolve` check: a prose file that issues a
-// `route.mjs resolve` must also carry the relay rule for the `warnings[]` that resolve returns. The disk half lives in
-// self-verify.mjs.
-// Why: seams.md already mandated the relay and it failed: this repo's config set `review.triggers.diff.gate` against a
-// written decision and the resolver warned on every dispatch for days unread. A check makes the absence visible.
-// Issue is the `${CLAUDE_PLUGIN_ROOT}` invocation form, never a backticked mention, since references and workflows name
-// `route.mjs resolve` in prose while issuing nothing. Relay is one paragraph (whitespace-collapsed) carrying both
-// `relay` and `warnings`, so one in each of two sections can't satisfy each other.
-// Presence only, not per dispatch, which would put a notice on every dispatch for the life of a project and degrade the
-// same channel. Prose that delegates without issuing the command is out of reach by construction.
+// route-relay.mjs - the pure rule behind self-verify's `unrelayed-route-resolve`: a prose file that issues a
+// `route.mjs resolve` must also carry the relay rule for the `warnings[]` it returns. Disk half: self-verify.
+// seams.md already mandated the relay and it failed: a bad gate setting warned for days, unread.
+// An issue is the `${CLAUDE_PLUGIN_ROOT}` invocation form, never a backticked mention. A relay is one paragraph
+// carrying both `relay` and `warnings`, so one in each of two sections can't satisfy each other.
+// Presence only, not per dispatch. Delegating without issuing the command is out of reach.
 'use strict';
 
 /** The one problem code this rule files. */

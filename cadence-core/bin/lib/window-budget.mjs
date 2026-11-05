@@ -1,13 +1,10 @@
 // @ts-check
 // window-budget.mjs - the pure rule behind `planning.mjs trace window`: given the paired `brackets` rows of a trace
-// render and a role-to-ceiling map, say which dispatches ran a bigger context window than their role's ceiling allows.
+// render and a role-to-ceiling map, say which dispatches ran a bigger window than their role allows.
 // The disk half lives in planning.mjs.
-// The budgeted `tokens` is the figure the host reported on the subagent's return: a final-window proxy, not a sum
-// across turns.
-// It reports and never refuses: a crossing is a finding about a run that already finished, and nothing on the dispatch
-// path reads a ceiling. At or under a ceiling is silent; there's no shrink arm.
-// Nothing is priced as zero or skipped: rows with no role ceiling or no token figure are counted beside the problems,
-// since zero would make an unmeasured dispatch the cheapest.
+// `tokens` is the figure the host reported on the subagent's return: a final-window proxy, not a sum across turns.
+// It reports and never refuses, since a crossing is a finding about a run that already finished.
+// Rows with no ceiling or no token figure are counted beside the problems, never priced as zero.
 'use strict';
 
 /** The problem codes this rule files. */
