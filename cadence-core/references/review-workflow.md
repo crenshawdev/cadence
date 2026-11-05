@@ -63,9 +63,9 @@ It writes `payload.json` (the record's payload), `survivors.json` (the review fi
 - **`needs_answer`** lists survivors raised at `blocker` or `high`, which the record takes only with a fix commit or an override. A survivor ruled neither is marked `suspected`.
 - **Answers** are a file, `{"answers": [{"voice": ..., "index": ..., ...}]}`, with the voice and index the envelope names. A ruling is `ruling` (`survived`, `downgraded` or `refuted`) with `counter_evidence` for a refutation, a `severity` below the raised one for a downgrade, and any of the six texts the finding lacks. A settlement is `fix_commit` or `overridden: true`. Run the same call again with `--answers-file`: earlier answers are kept, and a later answer replaces only its own group on its own finding.
 
-A fire whose `needs_answer` lists a `blocker` or `high` survivor, which also covers a finding the checker proved higher than it was raised, follows `references/review-triggers.md` step 5's order: the answers go through `--answers-file` before the record and receipts are written, and nothing is recorded while one is open.
+A `blocker` or `high` in `needs_answer`, which also covers a finding the checker proved higher than it was raised, gets its answer from what triage decides: a fix's commit or file, or an override. So it waits for step 4 and holds nothing here. `references/review-triggers.md` step 5's order stands: nothing is recorded while one is open.
 
-Repeat until `unruled` is empty, `needs_answer` is empty and `ready` is true.
+Repeat until `unruled` is empty, then go to step 4: merge, write the review file, and triage.
 
 A reviewer that returned nothing never reads as a verdict. Name each voice in `dropped` in one visible line with its reason before you go on. When none were left, the script already ran the `claude-subagent` fallback once (that voice is in `voices`). Rule each `unruled` finding by opening the code it cites, as today's path does, and answer with its ruling and all six headings, so its survivor's section is not missing from the review file.
 
@@ -75,7 +75,7 @@ A call the seam refuses has already run and spent its agents, so today's path is
 
 Merge duplicates and group shared root causes by editing `survivors.json`: join the `voices` of survivors that are one finding and set a one-line `root_cause` on those that share one. The rulings are already in `payload.json` per voice, so the merge costs the record nothing.
 
-Then run the review file seam on `survivors.json`, write the record and the receipts from `payload.json`, and triage, as `references/review-record.md` and `references/triage-gate.md` state.
+Then run the review file seam on `survivors.json` and triage, as `references/review-record.md` and `references/triage-gate.md` state. Put each answer triage settles on a `blocker` or `high` into the answers file, a fix's `fix_commit` or `fix_file` or an override, and run step 3's call again with `--answers-file` until `ready` is true. Only then write the record and the receipts from `payload.json`, which the merge never touched.
 
 ## Where each site resumes
 
