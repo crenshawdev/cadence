@@ -1,11 +1,10 @@
 // @ts-check
 // merge-warnings.mjs - the pure rule behind self-verify's `undocumented-merge-warnings` check
 // a seam calling mergeLayers must bind the returned `warnings[]` or say in its header why its envelope surfaces them
-// eight of ten callsites dropped the torn-config diagnostic, so branch rails ran on defaults in silence
+// callsites that dropped the torn-config diagnostic ran branch rails on defaults in silence
 // (a) the destructuring binds `warnings`; (b) the header carries a `mergeLayers warnings[]:` line and the reason
-// (a) proves it's bound, not emitted, and (b) covers every callsite in the file at once
-// the rule is lexical: a string holding mergeLayers and its open paren reads as a callsite, and it once flagged itself
-// so write the identifier without its parens. Pure, no fs or emit; the caller owns the envelope
+// the rule is lexical: a string holding mergeLayers and its open paren reads as a callsite, so write it without parens
+// pure, no fs or emit; the caller owns the envelope
 'use strict';
 
 /** The one problem code this rule files. */

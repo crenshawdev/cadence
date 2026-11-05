@@ -1,11 +1,10 @@
 // @ts-check
 // reference-routers.mjs - the pure rule behind self-verify's reference-router check
 // a cold-split reference must stay reachable from its router: a deleted Read line leaves a green tree and a dead rule
-// the register is hand-maintained because a cold branch and a cited reference look alike in a snapshot
+// hand-maintained because a cold branch and a cited reference look alike in a snapshot
 // three arms: the cold file exists, the router still Reads it, and it names no references/*.md path a row lacks
 // that third arm skips fenced blocks: a path passed as an argument inside a node -e block isn't a branch
-// only the `${CLAUDE_PLUGIN_ROOT}` spelling counts: that's what a model can Read and what check 3 proves resolves
-// pure, builtins only, every read guarded; no CONTRACTS row, lib/*.mjs are never invoked from prose
+// only the `${CLAUDE_PLUGIN_ROOT}` spelling counts. Pure, builtins only, every read guarded
 'use strict';
 
 import { readFileSync, existsSync, statSync } from 'node:fs';

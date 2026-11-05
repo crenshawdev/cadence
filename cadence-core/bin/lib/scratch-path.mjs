@@ -2,9 +2,8 @@
 // scratch-path.mjs - check 21: a bulk-output scratch file belongs to this run, and its read-back refuses a bad file
 // the rule is stated once in `references/conventions.md`; this holds prose to it, like lib/bulk-output.mjs
 // check 20 sees a redirect exists, never where it points, so a fixed /tmp name and `> /dev/stdout` passed alike
-// six sites shared five fixed names, and a second repo's run could answer this run's re-arm cap
 // line-local rules, no register: a line naming TMPDIR without mktemp is a shared path whatever the site
-// the gap: a path built through a shell variable isn't caught, following it across a fenced block needs a parser
+// the gap: a path built through a shell variable isn't caught
 // pure, no disk or emit; the caller owns the walk and the envelope
 'use strict';
 

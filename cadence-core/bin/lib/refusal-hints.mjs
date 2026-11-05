@@ -1,14 +1,10 @@
 // @ts-check
 // refusal-hints.mjs - self-verify's check 22: a refusal a user can read must name the next step (#238)
-// Cadence stated failures in its own words and never the remedy; a one-time sweep of hints goes stale without a check
-// in scope: the emitting call (emit, out or fail with ok:false), not a field named reason, which missed 150 fail calls
-// comments are stripped with skim first, which keeps line numbers, so a reported line addresses the original source
-// a character scan, not a line regex: arguments wrap, a hint can sit lines below its reason, and a string isn't a call
+// in scope: the emitting call (emit, out or fail with ok:false), not a field named reason
+// a character scan, not a line regex: arguments wrap and a hint can sit lines below its reason
 // emit and out count on a literal ok: false, fail always; hinted is a hint key, spread included, or three args to fail
-// a non-literal reason stays in scope, reported as its expression; no reason key reports as (no reason key)
-// the register is the only exclusion mechanism, and a parameter so a test can prove its rows are read
-// usage and internal are excluded by token; the file rows are documentary today, kept to show they're deliberate
-// pure; an absent or unreadable bin reports nothing; no CONTRACTS row, lib/*.mjs are never invoked from prose
+// the register is the only exclusion mechanism; usage and internal are excluded by token
+// pure; an absent or unreadable bin reports nothing; no CONTRACTS row since lib/*.mjs are never invoked from prose
 'use strict';
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';

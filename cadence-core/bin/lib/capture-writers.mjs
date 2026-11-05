@@ -1,14 +1,10 @@
 // @ts-check
-// capture-writers.mjs - every prose site that issues a .planning/CAPTURE.md write, and self-verify's check 23 over them
+// capture-writers.mjs - every prose site that writes .planning/CAPTURE.md, and self-verify's check 23 over them
 // the rule is in references/capture-grammar.md: CAPTURE holds the phase in flight, nothing that accumulates fits
-// lib/capture-file.mjs does the write and owns the file's bytes; this holds the enumeration and the check
-// it exists because a close step filed every open item into the queue and /cad-plan read all of it on every pass
 // hand-maintained: one capture call is fine at a user's request and wrong in a close step, so a row has to say which
-// keyed on surface and subcommand, one row per write; every matched row must be non-durable to stay silent
-// issuing means planning.mjs plus a write face, with node before it or a --flag after it; a bare mention takes no row
+// keyed on surface and subcommand; every matched row must be non-durable to stay silent
 // a shell redirect to CAPTURE.md bypasses lib/capture-file.mjs, so it takes no row and is reported outright
-// the cost: prose that says "append the item to CAPTURE.md" in words, with no redirect or subcommand, stays invisible
-// pure: no disk or emit, no CONTRACTS row (lib/*.mjs are never invoked from prose)
+// pure: no disk or emit, no CONTRACTS row
 'use strict';
 
 /** The problem codes this rule files. */

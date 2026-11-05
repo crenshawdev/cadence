@@ -2,12 +2,8 @@
 // text-transport.mjs - every prose site that hands a seam free text, and self-verify's check 19 over them
 // the rule is in references/conventions.md: agent or repo text reaches a seam as a path, since "$(...)" runs first
 // hand-maintained: caller-derived isn't visible in the prose, "/cad-execute {N}" and "<resume pointer>" read alike
-// an unclassified site is reported, never passed silently; keyed on surface, flag and value because line numbers rot
-// one row per identical value in a surface, and a row outlives its occurrence, so a returning inline form isn't "new"
-// check 2's invocation parser can't do this: about thirty of the mentions have no script prefix
-// only a quoted value right after the flag prescribes anything; a flag named to forbid it needs no row
-// what the scan can't delimit (unquoted placeholder, quote closing next line) is reported unless a row settles it
-// git tag -m is watched on a git tag line only: it carries a milestone name from PROJECT.md, and bare -m is git commit
+// keyed on surface, flag and value because line numbers rot; an unclassified site is reported, never passed
+// only a quoted value right after the flag prescribes anything; what the scan can't delimit needs a row
 // pure: no disk or emit; the caller owns the walk and the envelope
 'use strict';
 
@@ -22,12 +18,11 @@ export const CODES = Object.freeze({
 });
 
 /**
- * The seam flags whose value is free text, each with a `--<field>-file`
- * sibling (or the one shared `--fields-file` for `uat record`'s five).
- * Flags validated against a closed enum or an integer (--phase, --status, --result, --severity, --origin,
- * --family, --event, --tokens) can't carry repo prose, so a transport protects nothing there.
- * Path-list flags are out by construction: --bracket-read and --payload take paths the workflow builds, which
- * already are the file transport. --read stays watched, its inline form takes a read-set the caller composed.
+ * The seam flags whose value is free text, each with a `--<field>-file` sibling (or the one shared `--fields-file`
+ * for `uat record`'s five).
+ * Flags validated against a closed enum or an integer can't carry repo prose, so a transport protects nothing there.
+ * Path-list flags (--bracket-read, --payload) take paths the workflow builds, which already are the file transport.
+ * --read stays watched: its inline form takes a read-set the caller composed.
  * The test is where the value comes from, never the flag's shape.
  */
 export const TEXT_FLAGS = Object.freeze([

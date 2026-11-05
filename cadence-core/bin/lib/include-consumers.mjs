@@ -2,11 +2,9 @@
 // include-consumers.mjs - self-verify's check 16: an `@`-include claims a consumer, and this checks the claim
 // a command pays an include's bytes every turn; if none of its eager prose names the surface, nothing says to use it
 // eager prose only: a cited reference doesn't count, and the fix for that false positive is a waiver row
-// the scan drops the included surface's own text, which would name itself, and every `@${CLAUDE_PLUGIN_ROOT}/` line
-// workflows/* includes are exempt: the workflow is the command's process, naming it would be citing its own body
+// the scan drops the surface's own text and every `@${CLAUDE_PLUGIN_ROOT}/` line; workflows/* includes are exempt
 // matched on the `<branch>/<file>` path, never the basename: workflows/verify.md says bare UAT.md for another file
-// the waiver register ships empty, both bounds wired: a row whose include is gone or whose phase is done is a problem
-// pure, builtins only, every read guarded; a root without the skill or ROADMAP.md reports nothing
+// pure, builtins only, every read guarded
 'use strict';
 
 import { readFileSync, statSync } from 'node:fs';

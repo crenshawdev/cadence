@@ -1,13 +1,10 @@
 // @ts-check
 // deferred-reads.mjs - self-verify's check 13: a reference a skill stopped @-including is still Read by name
-// the register is hand-maintained: one snapshot can't tell a removed include from one that never existed
-// a promoted row never had an include, so stillEager can't fire, but its anchor is its whole protection: keep the row
-// anchors aren't seams.md's consult-site count (steps): they name each arm that needs its own Read sentence
-// anchors and not a count: a file-wide quota let a relocated sentence stand in for a deleted Read
+// hand-maintained: one snapshot can't tell a removed include from one that never existed
+// anchors, not a count: a file-wide quota let a relocated sentence stand in for a deleted Read
 // every skill is in scope, contracts too: a subagent can't reach a reference its contract stopped including
-// a row's file defaults to skills/<skill>/SKILL.md; skill still targets the include arms, whichever file holds the Read
-// the unit is the sentence: cad-land's step 3b is one ~2,900 B paragraph, so a block test passes with the Read deleted
-// pure: builtins only, every read guarded so an unreadable file is one issue and not an unwound run
+// a row's file defaults to skills/<skill>/SKILL.md; a promoted row has no include, so its anchor is all it has
+// pure: builtins only, every read guarded
 'use strict';
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
@@ -120,13 +117,10 @@ const HEADING_RE = /^(#{2,6})\s+(\S(?:.*\S)?|[^\S\n\r\u2028\u2029](?=[\n\r\u2028
 /**
  * Label the region a line belongs to from structure alone, so rewriting a sentence can't move an anchor.
  * A block tag on its own line opens a frame, labelled by its name= value, null for process, else the tag name.
- * Outside a frame, headings build a path (## replaces it, deeper levels extend it); the label is the path joined by /.
- * Then a column-0 n. adds a numbered step and an indented **(x) a lettered arm: 3(a), worktree_mode, git_guard(3).
- * Frames win over headings, and they're a stack that a close pops only on a matching top. With scalars,
- * execute.md's step close turned process off for the rest of the file and nothing there could be anchored.
- * A bare n is only emitted inside a frame labelled null. Anywhere else two regions could both be "3" and an
- * anchor would be satisfied by a Read in an unrelated bullet, the file-wide quota defect again.
- * Matching is exact, never a prefix: execute_parallel doesn't match inside execute_parallel(6), nor guardrails 3(b).
+ * Outside a frame, headings build a path (## replaces it, deeper levels extend it), joined by /.
+ * A column-0 n. adds a numbered step and an indented **(x) a lettered arm.
+ * Frames win over headings, and a close pops only a matching top, or a step close turns process off for good.
+ * A bare n is emitted only inside a null-labelled frame, or two regions could both be "3". Matching is exact.
  * @param {string} text
  * @returns {(line: number) => string|null} region label per 0-based line index
  */

@@ -1,7 +1,6 @@
 // @ts-check
 // hook-events.mjs - self-verify's hook-events check: every event hooks.json registers needs a row here
 // the host names hooks, not Cadence: if a spelling like SubagentStop changes, it registers nothing and no error says so
-// for the trace bracket that means the close half goes unwritten and the record fills with `unpaired` rows
 // the register is hand-maintained because read off hooks.json alone, the check would compare the file to itself
 // one direction only: a row whose event is gone isn't reported, removing a hook is an ordinary edit
 // pure, builtins only, every read guarded. No CONTRACTS row, lib/*.mjs are never invoked from prose

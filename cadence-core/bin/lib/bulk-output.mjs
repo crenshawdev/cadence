@@ -1,14 +1,10 @@
 // @ts-check
 // bulk-output.mjs - every prose site that prescribes a bulk-response tool call, and self-verify's check 20 over them
-// the rule is in references/conventions.md: bulk output goes to a scratch file and the transcript gets a digest
-// a response in the transcript is re-paid every later turn; the transport is a redirect plus a targeted read-back
+// the rule is in references/conventions.md, where it's stated once
 // hand-maintained, because bulk is a measurement the prose can't show: trace render and reads --join look identical
-// keyed on surface, shape and call: one row for a call written twice in a surface, two when the files differ
-// a row outlives its occurrence, so the inline form returning is a reported regression and not a new site
-// an invocation, not a mention: planning.mjs shapes need that token on the line, and rows settle git diff mentions
-// a call closed by a backtick or punctuation is only named; a wrapped one is reported unless a row settles it
-// excluded: git diff with a bounding flag (--stat, --numstat, --name-only and kin), or neither a range nor --cached
-// limits: one line at a time with no continuations joined, and a redirect needs whitespace before the >
+// keyed on surface, shape and call; a row outlives its occurrence, so the inline form returning is a regression
+// an invocation, not a mention; git diff with a bounding flag, or neither a range nor --cached, is excluded
+// one line at a time with no continuations joined, and a redirect needs whitespace before the >
 'use strict';
 
 /** The problem codes this rule files. */
@@ -58,12 +54,11 @@ export const BULK_SHAPES = Object.freeze([
 ]);
 
 /**
- * The register: one row per examined site. surface is a root-relative POSIX path, shape the
- * watched shape's id, call the call as written with any redirect stripped, bytes the measured
- * response size or 'unbounded' where the range sets it, measured the date of that figure.
- * transport says how the site meets the rule: redirect (a shell redirect on the call's own line, the
- * only value the scan enforces), file (the output reaches a file but the destination is in prose off
- * the call's line, so the register settles it), none (no transport owed, needs a reason).
+ * The register: one row per examined site. surface is a root-relative POSIX path, shape the watched shape's id, call
+ * the call as written with any redirect stripped, bytes the measured response size or 'unbounded' where the range
+ * sets it, measured the date of that figure.
+ * transport is how the site meets the rule: redirect (on the call's own line, the only value the scan enforces), file
+ * (the output reaches a file but the destination is in prose off the call's line), none (no transport owed).
  * reason is required on every row that isn't redirect, because an unexplained exemption looks like an oversight.
  * @type {ReadonlyArray<{surface: string, shape: string, call: string,
  *   bytes: number|'unbounded', measured: string,
