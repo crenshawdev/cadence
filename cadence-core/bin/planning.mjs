@@ -91,6 +91,9 @@ const COMMANDS = {
   // a finished review-panel run, read from its run file, becomes the record's payload and the review file's input
   'workflow-run': async (dir, _sub, opts) =>
     (await import('./planning/workflow-run.mjs')).cmdWorkflowRun(dir, opts),
+  // may a workflow launch now: take answers launch or names the holder, release frees only the caller's own claim
+  'workflow-claim': async (dir, sub, opts) =>
+    (await import('./planning/workflow-claim.mjs')).cmdWorkflowClaim(dir, sub, opts),
   // moves the risk_surface rulings out of a phase directory before a milestone close deletes it
   'risk-carry': async (dir, _sub, opts) =>
     (await import('./planning/risk-carry.mjs')).cmdRiskCarry(dir, opts),

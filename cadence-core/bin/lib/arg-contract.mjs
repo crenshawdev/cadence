@@ -438,6 +438,13 @@ export const CONTRACTS = {
       // report lands whole in the out-dir. No answers, trigger or discriminator apply.
       '--analyzer': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
+    // take/release share one row's shape: --label is `<trigger>-<discriminator>` or the analyzer's, and release frees only a match
+    'workflow-claim take': {
+      '--label': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'workflow-claim release': {
+      '--label': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
