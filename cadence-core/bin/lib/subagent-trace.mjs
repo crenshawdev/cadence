@@ -132,6 +132,16 @@ function currentRun(rows, clocks) {
 }
 
 /**
+ * Does this transcript path sit under a `subagents/workflows/` directory? That is where the host keeps the transcript of an
+ * agent a workflow script spawned. Any other value, and no value, is no.
+ * @param {any} path
+ * @returns {boolean}
+ */
+function inWorkflowDir(path) {
+  return typeof path === 'string' && /(^|[\\/])subagents[\\/]workflows[\\/]/.test(path);
+}
+
+/**
  * The events a stopped subagent should append, in file order. Empty is the do-nothing answer, never null, so the
  * disk half's one loop covers both.
  * @param {any} payload the host's `SubagentStop` JSON
@@ -177,6 +187,11 @@ export function closeForStop(payload, render, evidence) {
 
   // gate 2a: a stop after the hand-written close has nothing left to close; falling through would hit another open row
   if (closed) return withheld();
+
+  // gate 2a2: the host keeps a workflow agent's transcript under `subagents/workflows/`, and its only close is the
+  // run-file bracket workflow-run writes after the notice. Adopting a lone open dispatch of its role would close another
+  // worker's bracket. A payload with no such path (or none) falls through to 2b as before.
+  if (inWorkflowDir(payload && payload.agent_transcript_path)) return withheld();
 
   // gate 2b: exactly one open dispatch in the current run, or nothing. Two workers dispatched in one message share a
   // clock, so adopting the newest would cross them; currentRun drops a dead run's rows, or this would refuse forever
