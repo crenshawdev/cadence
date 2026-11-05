@@ -594,6 +594,8 @@ export const CONTRACTS = {
     keys: {
       '--walk': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
+    // reads no flag: the repo is the cwd and the global layer is CADENCE_GLOBAL_CONFIG
+    'workflow-layers': {},
   },
   'git-branch.mjs': {
     '*': {

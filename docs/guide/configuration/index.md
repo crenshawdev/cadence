@@ -35,6 +35,7 @@ An absent setting can inherit a value. An explicit `null` replaces the lower lay
 | `testing.*` | Repository-only. Global writes are refused and a hand-edited global testing section is ignored. |
 | `git.forge_repo` | Must be set for this repository; the validated write refuses a global value. |
 | `git.auto_close` | Must be explicitly true in both layers to authorize unattended closing. |
+| `workflow.use_workflows`, `workflow.multi_workflow` | Each counts only when explicitly true in both layers; either alone leaves the old, single-session path. |
 | External entries in `review.reviewers` | Must also be authorized in your user-global reviewer list. |
 | `cadence.publishForVerification` | Local Git authorization, outside the schema. Stored only in this clone's `.git/config`. |
 | `worktree.baseRef` | Claude Code host setting, outside the schema. Governs where subagent worktrees start. |

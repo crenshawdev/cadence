@@ -8,6 +8,7 @@
 //   unset [--file <path>|--global] <key> ...  removes from that one file, never the merged view
 //   get [--file <path>] [key ...]             repo > global > defaults
 //   keys [--walk]                             --walk is only keys holding a `question`
+//   workflow-layers                           the two workflow switches, each on only when both layers set it
 // --file defaults to .planning/config.json, --global is the user-global layer.
 
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -20,6 +21,7 @@ import { DONE, emit } from './lib/seam-io.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { checkValue, checkGrammar } from './lib/config-value.mjs';
+import { workflowLayers } from './lib/workflow-layers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // loaded inside the dispatch try below, so a missing or broken schema answers {ok:false} instead of crashing at import
@@ -348,7 +350,15 @@ try {
     if (evaluateFlag(rest, '--walk', CONTRACTS['config.mjs'].keys['--walk']).value === true) out({ ok: true, walk: walkRead() });
     else out({ ok: true, keys: SCHEMA });
   }
-  else fail('usage', 'subcommand: validate | check | set | unset | get | keys');
+  // the repo's cwd, like every other default here; `get` would answer on a repo-only value, so deciders read this
+  else if (cmd === 'workflow-layers') {
+    const r = workflowLayers(process.cwd());
+    const unreadable = [];
+    if (Object.values(r.keys).some((k) => k.repo === 'unreadable')) unreadable.push(r.repoFile);
+    if (Object.values(r.keys).some((k) => k.global === 'unreadable')) unreadable.push(r.globalFile);
+    out({ ok: true, ...r, unreadable });
+  }
+  else fail('usage', 'subcommand: validate | check | set | unset | get | keys | workflow-layers');
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
