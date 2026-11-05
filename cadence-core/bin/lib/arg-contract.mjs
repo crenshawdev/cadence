@@ -417,6 +417,17 @@ export const CONTRACTS = {
       '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--task': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // A finished review-panel run to the record's payload and the review file's input. --run-file is the host's
+    // `<session>/workflows/<run id>.json`, read whole because the completion notice cuts a long result short. --out-dir is
+    // this run's scratch directory and must exist; the payload, the survivors and the kept answers land in it.
+    // --answers-file is the main session's answers (voice, index, then a ruling and/or fix_commit or overridden); each
+    // call keeps what earlier ones were given in the out-dir, so a later answer replaces only its own finding's.
+    'workflow-run': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--run-file': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--out-dir': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--answers-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },

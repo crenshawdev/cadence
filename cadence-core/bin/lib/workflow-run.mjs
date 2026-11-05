@@ -1,0 +1,317 @@
+// @ts-check
+// workflow-run.mjs - a finished review-panel run, turned into the adjudication payload and the review file's input
+//
+// INPUT is the run file the host leaves (`<session>/workflows/<run id>.json`) read whole: the completion notice cuts a long
+// result short. Only `status`, `result` and `workflowProgress[]` are read, so an undocumented file is trusted for no more
+// than that. The result is the shape workflows/review-panel.js returns, and a test runs that script through here so the
+// two can't drift.
+// NO RULING IS ADDED and no record key: the checker's three words map onto the record's three (D-04), and a finding the
+// record could not store is listed for the main session to rule, never stored as something it isn't (D-16)
+// ANSWERS are the main session's, keyed by voice and index. Two groups, and a later answer replaces its group whole:
+//   ruling:      ruling (survived|downgraded|refuted), severity, counter_evidence, and the six texts
+//   settlement:  fix_commit, overridden
+// `buildEntries` stays the one judge of what is storable. Pure: no fs, no git, no env
+'use strict';
+
+import { buildEntries, HALTING_SEVERITIES, RAISED_SEVERITIES, RULINGS } from './adjudication-record.mjs';
+import { HEADINGS } from './review-file.mjs';
+import { isPlainObject } from './text-util.mjs';
+
+/** The run file's size cap. A real one is about 100 KB, so this is generous and still stops a hostile giant. */
+export const MAX_RUN_BYTES = 8 * 1024 * 1024;
+/** The answers file's cap. */
+export const MAX_ANSWERS_BYTES = 1024 * 1024;
+/** The three files a call leaves in its output directory, so prose, tests and the next call agree on the names. */
+export const PAYLOAD_FILE = 'payload.json';
+export const REVIEW_INPUT_FILE = 'survivors.json';
+export const ANSWERS_FILE = 'answers.json';
+/** How many entries one envelope list carries before it says how many more there are. */
+export const LIST_CAP = 25;
+
+const SIX = HEADINGS.map(([key]) => key);
+const HEADING_OF = Object.fromEntries(HEADINGS);
+const RANK = { low: 0, medium: 1, high: 2, blocker: 3 };
+const CHECKER_RULINGS = ['proved', 'refuted', 'neither'];
+const SETTLEMENT_KEYS = ['fix_commit', 'overridden'];
+const RULING_KEYS = ['ruling', 'severity', 'counter_evidence', ...SIX];
+const EVIDENCE_KEYS = ['file', 'line', 'note'];
+
+const isText = (v) => typeof v === 'string' && v.trim() !== '';
+/** A refusal with its one named reason. @param {string} reason @param {string} detail */
+const refuse = (reason, detail) => ({ ok: false, reason, detail });
+
+/**
+ * The counter-evidence a record would take, or null when it names no file. Only the three keys it knows are copied.
+ * @param {any} ev
+ */
+function evidenceOf(ev) {
+  if (!isPlainObject(ev) || !isText(ev.file)) return null;
+  const out = { file: ev.file };
+  if (Number.isSafeInteger(ev.line) && ev.line >= 1) out.line = ev.line;
+  if (isText(ev.note)) out.note = ev.note;
+  return out;
+}
+
+/**
+ * Check the main session's answers and return them as a list, or the one thing wrong with them.
+ * @param {any} raw the parsed answers file
+ * @returns {{ok: boolean, reason?: string, detail?: string, answers?: any[]}}
+ */
+export function parseAnswers(raw) {
+  const bad = (/** @type {string} */ detail) => refuse('bad-answers', detail);
+  if (!isPlainObject(raw) || !Array.isArray(raw.answers)) return bad('the answers file must be {"answers": [...]}');
+  for (const k of Object.keys(raw)) if (k !== 'answers') return bad(`the answers file carries an unknown key: ${k}`);
+  const allowed = ['voice', 'index', ...SETTLEMENT_KEYS, ...RULING_KEYS];
+  /** @type {any[]} */
+  const answers = [];
+  for (let i = 0; i < raw.answers.length; i += 1) {
+    const a = raw.answers[i];
+    const at = `answers[${i}]`;
+    if (!isPlainObject(a)) return bad(`${at} is not an object`);
+    for (const k of Object.keys(a)) if (!allowed.includes(k)) return bad(`${at} carries an unknown key: ${k}`);
+    if (!isText(a.voice)) return bad(`${at}.voice must name the voice that raised the finding`);
+    if (!Number.isSafeInteger(a.index) || a.index < 0) return bad(`${at}.index must be the finding's index in that voice's findings`);
+    if (a.ruling !== undefined && !RULINGS.includes(a.ruling)) return bad(`${at}.ruling must be one of ${RULINGS.join(' | ')}`);
+    if (a.severity !== undefined && !RAISED_SEVERITIES.includes(a.severity)) return bad(`${at}.severity must be one of ${RAISED_SEVERITIES.join(' | ')}`);
+    if (a.counter_evidence !== undefined && !isPlainObject(a.counter_evidence)) return bad(`${at}.counter_evidence must be an object`);
+    if (a.counter_evidence) {
+      for (const k of Object.keys(a.counter_evidence)) if (!EVIDENCE_KEYS.includes(k)) return bad(`${at}.counter_evidence carries an unknown key: ${k}`);
+    }
+    for (const k of SIX) if (a[k] !== undefined && typeof a[k] !== 'string') return bad(`${at}.${k} must be text`);
+    if (a.fix_commit !== undefined && typeof a.fix_commit !== 'string') return bad(`${at}.fix_commit must be text`);
+    if (a.overridden !== undefined && a.overridden !== true) return bad(`${at}.overridden must be the boolean true or be absent`);
+    answers.push(a);
+  }
+  return { ok: true, answers };
+}
+
+/**
+ * Fold a later round of answers onto the earlier ones. Within one finding a later answer replaces its group whole, so
+ * a ruling given in round one survives a settlement given in round two, and a new settlement displaces the old.
+ * @param {any[]} prior @param {any[]} incoming @returns {any[]}
+ */
+export function mergeAnswers(prior, incoming) {
+  /** @type {Map<string, any>} */
+  const by = new Map();
+  for (const a of [...prior, ...incoming]) {
+    const id = `${a.voice}\0${a.index}`;
+    const cur = by.get(id) || { voice: a.voice, index: a.index };
+    for (const group of [SETTLEMENT_KEYS, RULING_KEYS]) {
+      if (!group.some((k) => k in a)) continue;
+      for (const k of group) delete cur[k];
+      for (const k of group) if (k in a) cur[k] = a[k];
+    }
+    by.set(id, cur);
+  }
+  return [...by.values()];
+}
+
+/**
+ * Parse a run file's text and judge whether it is a completed run of this script.
+ * @param {string} text
+ * @returns {{ok: boolean, reason?: string, detail?: string, run?: any}}
+ */
+export function parseRun(text) {
+  /** @type {any} */
+  let run;
+  try { run = JSON.parse(text); } catch { return refuse('run-not-json', 'the run file is not JSON'); }
+  if (!isPlainObject(run)) return refuse('run-not-json', 'the run file is not a JSON object');
+  if (run.status !== 'completed') {
+    return refuse('run-not-completed', `the run's status is ${JSON.stringify(run.status)}, not "completed", so it holds no result to rule on`);
+  }
+  if (run.result === undefined || run.result === null) return refuse('run-no-result', 'the run completed with no result');
+  const r = run.result;
+  if (!isPlainObject(r) || !Array.isArray(r.voices)) {
+    return refuse('run-bad-result', 'the result is not review-panel\'s: it has no voices array');
+  }
+  for (let v = 0; v < r.voices.length; v += 1) {
+    const voice = r.voices[v];
+    const at = `result.voices[${v}]`;
+    if (!isPlainObject(voice) || !isText(voice.voice) || typeof voice.ran !== 'boolean') {
+      return refuse('run-bad-result', `${at} does not name a voice and say whether it ran`);
+    }
+    if (!voice.ran) continue;
+    if (!isPlainObject(voice.result) || !Array.isArray(voice.result.findings)) {
+      return refuse('run-bad-result', `${at} ran but holds no {findings: [...]} result`);
+    }
+    if (!Array.isArray(voice.rulings)) return refuse('run-bad-result', `${at}.rulings is not an array`);
+    for (const ruling of voice.rulings) {
+      const ok = isPlainObject(ruling) && Number.isSafeInteger(ruling.index) && ruling.index >= 0
+        && (ruling.ruling === null || isPlainObject(ruling.ruling));
+      if (!ok) return refuse('run-bad-result', `${at}.rulings holds an entry that is not {index, ruling}`);
+    }
+  }
+  return { ok: true, run };
+}
+
+/**
+ * The checker's verdict as a record ruling plus the texts, or a reason it can't be used.
+ * Proved at or above the raised severity stands, below it is downgraded, refuted is refuted, and neither stands as a
+ * finding that is suspected. A verdict with a word outside the three is as unusable as none.
+ * @param {any} finding @param {any} verdict
+ * @returns {{ok: boolean, why?: string, item?: any}}
+ */
+function fromVerdict(finding, verdict) {
+  if (verdict === null || verdict === undefined) return { ok: false, why: 'the checker returned nothing' };
+  if (!CHECKER_RULINGS.includes(verdict.ruling)) return { ok: false, why: `the checker's ruling ${JSON.stringify(verdict.ruling)} is none of proved, refuted, neither` };
+  if (!RAISED_SEVERITIES.includes(verdict.severity)) return { ok: false, why: 'the checker named no usable severity' };
+  const texts = Object.fromEntries(SIX.map((k) => [k, typeof verdict[k] === 'string' ? verdict[k] : '']));
+  const item = { severity: verdict.severity, suspected: verdict.ruling === 'neither', ...texts };
+  if (verdict.ruling === 'refuted') {
+    item.ruling = 'refuted';
+    const ev = evidenceOf(verdict.counter_evidence);
+    if (ev) item.counter_evidence = ev;
+  } else if (verdict.ruling === 'proved' && RANK[verdict.severity] < RANK[finding.severity]) {
+    item.ruling = 'downgraded';
+  } else {
+    item.ruling = 'survived';
+  }
+  return { ok: true, item };
+}
+
+/**
+ * The one ruling for a finding, from the checker's verdict and the main session's answer for it. The answer's ruling
+ * group lays over the verdict key by key, and its settlement is carried beside.
+ * @param {any} finding @param {any} verdict @param {any} answer
+ * @returns {{ok: boolean, why?: string, item?: any}}
+ */
+function settle(finding, verdict, answer) {
+  const base = fromVerdict(finding, verdict);
+  let item = base.ok ? base.item : null;
+  if (answer && answer.ruling !== undefined) {
+    item = { ...(item || {}), suspected: false, ruling: answer.ruling };
+    for (const k of ['severity', ...SIX]) if (answer[k] !== undefined) item[k] = answer[k];
+    if (answer.counter_evidence !== undefined) item.counter_evidence = evidenceOf(answer.counter_evidence) || undefined;
+  }
+  if (!item) return { ok: false, why: base.why };
+
+  if (item.ruling === 'refuted') {
+    if (!evidenceOf(item.counter_evidence)) return { ok: false, why: 'ruled refuted with no counter_evidence.file, which a refutation owes' };
+  } else {
+    if (item.ruling === 'downgraded' && !(RAISED_SEVERITIES.includes(item.severity) && RANK[item.severity] < RANK[finding.severity])) {
+      return { ok: false, why: 'ruled downgraded with no severity below the raised one' };
+    }
+    if (item.suspected && !isText(item.what_proves)) return { ok: false, why: 'ruled neither with no next check (what_proves is blank)' };
+    for (const k of SIX) {
+      if (!isText(item[k])) return { ok: false, why: `has no text under "${HEADING_OF[k]}" (${k})` };
+    }
+  }
+  if (answer) {
+    if (answer.fix_commit !== undefined) item.fix_commit = answer.fix_commit;
+    if (answer.overridden !== undefined) item.overridden = true;
+  }
+  return { ok: true, item };
+}
+
+/**
+ * Build the payload, the review input and what the main session still owes, from a parsed run.
+ * @param {any} run a run `parseRun` accepted
+ * @param {any[]} answers the accumulated answers
+ * @returns {{ok: boolean, reason?: string, detail?: string, payload?: any, review?: any, summary?: any}}
+ */
+export function mapRun(run, answers) {
+  /** @type {any[]} */
+  const rows = Array.isArray(run.workflowProgress) ? run.workflowProgress : [];
+  const modelOf = (/** @type {string} */ voice) => {
+    const row = rows.find((r) => isPlainObject(r) && r.type === 'workflow_agent' && r.label === `reviewer ${voice}`);
+    return isText(row && row.model) ? row.model : (isText(run.defaultModel) ? run.defaultModel : null);
+  };
+  const answerFor = (/** @type {string} */ voice, /** @type {number} */ index) =>
+    answers.find((a) => a.voice === voice && a.index === index);
+
+  /** @type {any[]} */
+  const voices = [];
+  /** @type {any[]} */
+  const dropped = [];
+  /** @type {any[]} */
+  const unruled = [];
+  /** @type {any[]} */
+  const needsAnswer = [];
+  /** @type {any[]} */
+  const kept = [];
+  const counts = { raised: 0, survived: 0, downgraded: 0, refuted: 0, unruled: 0 };
+
+  for (const v of run.result.voices) {
+    if (!v.ran) {
+      dropped.push({ voice: v.voice, reason: isText(v.reason) ? v.reason : 'it did not run' });
+      continue;
+    }
+    const model = modelOf(v.voice);
+    if (!model) return refuse('run-no-model', `the run file records no model for ${v.voice}, and the record owes one`);
+    const verdicts = new Map();
+    for (const r of v.rulings) if (!verdicts.has(r.index)) verdicts.set(r.index, r.ruling);
+    const block = { voice: v.voice, model, returned: v.result, rulings: /** @type {any[]} */ ([]) };
+    v.result.findings.forEach((finding, index) => {
+      counts.raised += 1;
+      const done = isPlainObject(finding)
+        ? settle(finding, verdicts.has(index) ? verdicts.get(index) : null, answerFor(v.voice, index))
+        : { ok: false, why: 'is not a finding object' };
+      if (!done.ok || !done.item) {
+        counts.unruled += 1;
+        unruled.push({ voice: v.voice, index, file: finding && finding.file, line: finding && finding.line, reason: done.why });
+        return;
+      }
+      const item = done.item;
+      counts[item.ruling] += 1;
+      block.rulings.push({
+        finding: index,
+        ruling: item.ruling,
+        claim: finding.claim,
+        failure_scenario: finding.failure_scenario,
+        ...(item.ruling === 'refuted' ? { counter_evidence: item.counter_evidence } : {}),
+        ...(item.fix_commit !== undefined ? { fix_commit: item.fix_commit } : {}),
+        ...(item.overridden ? { overridden: true } : {}),
+      });
+      if (item.ruling === 'refuted') return;
+      kept.push({ voice: v.voice, finding, item });
+      if (item.ruling === 'survived' && HALTING_SEVERITIES.includes(finding.severity)
+        && item.fix_commit === undefined && !item.overridden) {
+        needsAnswer.push({ voice: v.voice, index, file: finding.file, line: finding.line, severity: finding.severity, suspected: item.suspected });
+      }
+    });
+    voices.push(block);
+  }
+  if (voices.length === 0) {
+    return refuse('run-no-voice', `no voice ran, so there is nothing to rule on (${dropped.map((d) => `${d.voice}: ${d.reason}`).join('; ') || 'the run held no voices'})`);
+  }
+
+  // most severe first, a stable sort so one severity keeps the order the voices returned
+  kept.sort((a, b) => RANK[b.item.severity] - RANK[a.item.severity]);
+  const survivors = kept.map(({ voice, finding, item }) => ({
+    file: finding.file,
+    line: finding.line,
+    // the record keeps the raised severity for a finding that stood, so the file does too; only a downgrade shows lower
+    severity: item.ruling === 'downgraded' ? item.severity : finding.severity,
+    voices: [voice],
+    what_breaks: item.what_breaks,
+    why_care: item.why_care,
+    what_triggers: item.what_triggers,
+    what_proves: item.what_proves,
+    // a finding ruled neither opens as suspected and names the next check, which the schema has the checker put in what_proves
+    what_uncertain: item.suspected
+      ? `Suspected, not proved. The next check: ${item.what_proves.trim()}\n${item.what_uncertain}`
+      : item.what_uncertain,
+    recommendation: item.recommendation,
+  }));
+
+  const payload = { voices };
+  const built = buildEntries(payload);
+  const cap = (/** @type {any[]} */ list) => list.slice(0, LIST_CAP);
+  return {
+    ok: true,
+    payload,
+    review: { raised: counts.raised, survivors },
+    summary: {
+      counts,
+      voices: voices.map((b) => b.voice),
+      dropped,
+      unruled: cap(unruled),
+      ...(unruled.length > LIST_CAP ? { unruled_more: unruled.length - LIST_CAP } : {}),
+      needs_answer: cap(needsAnswer),
+      ...(needsAnswer.length > LIST_CAP ? { needs_answer_more: needsAnswer.length - LIST_CAP } : {}),
+      // whether the record's own grammar takes the payload as it stands, and the first thing it refuses when not
+      ready: built.ok,
+      ...(built.ok ? {} : { not_ready: built.detail }),
+    },
+  };
+}
