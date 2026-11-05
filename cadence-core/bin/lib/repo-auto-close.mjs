@@ -1,14 +1,10 @@
 // @ts-check
-// repo-auto-close.mjs - the one read of `git.auto_close` that answers "may this machine run an unattended publish or
-// merge of this repository". Zero-dep, two filesystem reads and no other I/O.
-// Authorized only when both `<dir>/.planning/config.json` and the user-global config set `git.auto_close` to an explicit
-// `true`. A global value alone can't speak for a repo that never opted in, and a repo value alone can't speak for the
-// user: the repo config is committed and arrives with a clone, which must not be able to switch on an unattended push.
-// Each half is a raw `JSON.parse` of its own file, not `mergeLayers`: `config.mjs get` can't answer per layer, and the
-// merge skips a torn layer where this read must withhold. Anything that throws or isn't an explicit `true` reads as no
-// opt-in, because failing closed is the only safe direction for an answer that unlocks a push.
-// If CADENCE_GLOBAL_CONFIG names the repo's own config (by `layerIdentity`, through symlinks), that's one layer and no
-// authorization. `shared` says so, so the refusal names the file instead of telling the user to set a key it already sets.
+// repo-auto-close.mjs - the one read of `git.auto_close`: may this machine publish or merge here unattended.
+// Authorized only when the repo config and the user-global config both set it to an explicit `true`.
+// The repo config arrives with a clone, so it alone must never switch on an unattended push.
+// Raw `JSON.parse` per half, not `mergeLayers`: the merge skips a torn layer where this must withhold.
+// Anything that throws or isn't an explicit `true` is no opt-in: an answer that unlocks a push fails closed.
+// If CADENCE_GLOBAL_CONFIG names the repo's own config, that's one layer, not two; `shared` says so.
 'use strict';
 
 import { readFileSync } from 'node:fs';

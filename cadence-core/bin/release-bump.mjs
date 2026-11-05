@@ -1,60 +1,56 @@
 #!/usr/bin/env node
 // @ts-check
-// release-bump.mjs - the workflow-facing I/O seam over lib/release-decision.mjs. At a plugin milestone close (milestone.md
-// step 2, before the tag) it bumps `.claude-plugin/plugin.json`'s `version` to the shipping release and scaffolds a dated
-// CHANGELOG entry, so a release stops shipping a stale manifest version. Unlike land-cleanup.mjs it writes, so it has
-// its own CONTRACTS row and test; the tested logic is in the pure release-decision.mjs. It fires only when plugin.json
-// exists: a non-plugin project gets action:"skip" and nothing written, so there's no config key for it.
+// release-bump.mjs - the workflow-facing I/O seam over lib/release-decision.mjs. At a plugin milestone close (before
+// the tag) it bumps `.claude-plugin/plugin.json`'s `version` and scaffolds a dated CHANGELOG entry, so a release stops
+// shipping a stale manifest version. Unlike land-cleanup.mjs it writes, so it has its own CONTRACTS row and test.
+// It fires only when plugin.json exists: a non-plugin project gets action:"skip" and nothing written.
 //   bump [--dir <path>] [--version <v>] [--date <YYYY-MM-DD>]
-//     --dir      absent is cwd; empty or valueless refuses (`missing-flag-value`, nothing written), not bump a tree nobody named.
+//     --dir      absent is cwd; empty or valueless refuses (`missing-flag-value`, nothing written).
 //     --version  required: the number the milestone workflow already confirmed. Absent refuses (`no-target-version`).
-//     --date     the CHANGELOG date (test hook), today UTC when absent. A present one must be YYYY-MM-DD and is checked at
-//                dispatch, before anything is read or written: `''`, `2026-13-45`, `2026-8-1` and a newline all refuse
-//                with `bad-date`. Absent and empty are different calls, and so is a bare trailing `--date`.
-// `version` is written only where the field exists: marketplace.json has none, so it yields `skip` and stays byte-untouched.
+//     --date     the CHANGELOG date (test hook), today UTC when absent. A present one must be YYYY-MM-DD and is checked
+//                at dispatch, before anything is read or written: `''`, `2026-13-45`, `2026-8-1` and a newline all
+//                refuse with `bad-date`. Absent and empty are different calls, and so is a bare trailing `--date`.
+// `version` is written only where the field exists: marketplace.json has none, so it yields `skip` and stays untouched.
 // Refusal envelope, one shape for every cause: ok:false, action:"refuse", a machine `reason` code, the sentence in
-// `detail`, exit 1, nothing written (emit mirrors ok into the exit code; no process.exit, it can truncate stdout on a pipe).
-// The other ok:false shape is action:"partial" with reason:"partial-bump": a transition threw part way, files DID land, and
-// `manifest.bumped`, each `siblings[]` row's `bumped` and `changelog.changed` say which. So ok:false means "do not ship",
-// not "nothing written". `reason` is a machine code on every path. One exception: a sibling manifest that parses but isn't
-// upgradeable (downgrade, non-upgrade, unparseable version) leaves top-level ok true with a `siblings[]` entry of
-// action:"refuse", which milestone.md halts on too. A sibling that can't be read refuses the whole run, because the write
-// set is decided before the first write.
-// One verdict is re-classified: a PRIMARY plugin.json with verdict skip/no-version-field becomes ok:false, action:"refuse",
-// reason:"no-version-field", exit 1, because a manifest with no `version` can't be bumped and ok:true/skip let the close
-// ship unbumped. SIBLINGS keep skipping on it (marketplace.json has no `version` by design; refusing would halt every close).
+// `detail`, exit 1, nothing written.
+// The other ok:false shape is action:"partial", reason:"partial-bump": a transition threw part way and files did land.
+// `manifest.bumped`, each `siblings[]` row's `bumped` and `changelog.changed` say which, so ok:false means "do not
+// ship", not "nothing written".
+// A sibling that parses but isn't upgradeable (downgrade, non-upgrade, unparseable version) leaves top-level ok true
+// with a `siblings[]` entry of action:"refuse", which milestone.md halts on too. A sibling that can't be read refuses
+// the whole run, because the write set is decided before the first write.
+// One verdict is re-classified: a primary plugin.json with no `version` field becomes ok:false, action:"refuse",
+// reason:"no-version-field", because ok:true/skip let the close ship unbumped. Siblings keep skipping on it.
 // Two code vocabularies, one owner each. The seam's own, owned here:
 //   no-plugin-manifest          - no plugin.json: not a plugin project, an ok:true skip.
 //   unreadable-manifest         - plugin.json present but not parseable JSON.
-//   unreadable-sibling-manifest - a declared sibling (marketplace.json) not parseable; own code so the halt names the file.
-//   unreadable-changelog        - CHANGELOG.md present but unreadable (a directory, a permission wall); no grammar check.
-//   partial-bump                - the write set began and a step threw: ok:false, action:"partial". The one non-refusal
-//                                 ok:false code.
-//   bad-date                    - a present --date that isn't YYYY-MM-DD or has a newline. Refused at dispatch, so it fires on
-//                                 a non-plugin project too; never `usage` or a verdict code, so callers can tell them apart.
-//   missing-flag-value          - a --dir or --version spelling its declared row refuses; --date has `bad-date` instead.
+//   unreadable-sibling-manifest - a declared sibling (marketplace.json) not parseable; own code so the halt names it.
+//   unreadable-changelog        - CHANGELOG.md present but unreadable (a directory, a permission wall).
+//   partial-bump                - the write set began and a step threw: ok:false, action:"partial".
+//   bad-date                    - a present --date that isn't YYYY-MM-DD or has a newline, refused at dispatch even on
+//                                 a non-plugin project; never `usage` or a verdict code.
+//   missing-flag-value          - a --dir or --version spelling its declared row refuses; --date has `bad-date`.
 //   usage | internal            - bad subcommand / an unexpected throw.
 // The verdict codes (`no-target-version`, `unparseable-version`, `no-version-field`, `already-at-target`, `downgrade`,
-// `not-an-upgrade`, `bump`) are owned by release-decision.mjs's JSDoc and emitted verbatim as `reason`, bar the primary
-// `no-version-field` re-classification above. prose-agreement.test.mjs reddens until a new verdict is named here and there.
+// `not-an-upgrade`, `bump`) are owned by release-decision.mjs's JSDoc and emitted verbatim as `reason`.
 'use strict';
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { emit } from './lib/seam-io.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
-// the multi-file transition primitive: the one place that runs an ordered step list and records which steps completed
+// runs an ordered step list and records which steps completed
 import { runTransition } from './lib/file-transition.mjs';
 import {
   normalizeTargetVersion, decideManifestBump, prependChangelogEntry, promoteUnreleased,
 } from './lib/release-decision.mjs';
-// no `readText` here, on purpose: its ''-on-failure contract would read an unreadable manifest or CHANGELOG as an empty one
-// no flag rule here, the declared rows own it; `requireFlag` raises for --dir/--version, `evaluateFlag` returns for --date
+// no `readText` here, on purpose: its ''-on-failure would read an unreadable manifest or CHANGELOG as an empty one
+// no flag rule here, the declared rows own it; `requireFlag` raises, `evaluateFlag` returns (for --date)
 import { CONTRACTS, evaluateFlag, requireFlag } from './lib/arg-contract.mjs';
 
 /**
- * The release-tag URL a CHANGELOG link points at, from the manifest's `homepage` (or `repository` minus a trailing `.git`):
- * `<base>/releases/tag/v<version>`. Falls back to `<base>/releases` with a base but no version, and "" with no base at all.
+ * The release-tag URL a CHANGELOG link points at, from the manifest's `homepage` or `repository`:
+ * `<base>/releases/tag/v<version>`. Falls back to `<base>/releases` with no version, and "" with no base at all.
  * @param {Record<string, any>} manifest @param {string} version
  */
 function changelogUrl(manifest, version) {
@@ -67,10 +63,9 @@ function changelogUrl(manifest, version) {
 }
 
 /**
- * Read a JSON manifest as a three-state result, because "absent" and "present but unparseable" are different facts about a
- * release. Absent is a non-plugin project (skip, ok:true); a mangled one (trailing comma, truncated half-write) read as absent
- * would report "nothing to bump" about a manifest it can't see, exit 0 included, so it refuses instead. A parsed non-object
- * (`null`, a number) is unreadable too: no `version` field to reason about.
+ * Read a JSON manifest as a three-state result, because "absent" and "present but unparseable" are different facts.
+ * Absent is a non-plugin project (skip, ok:true); a mangled one read as absent would say "nothing to bump" about a
+ * manifest it can't see, so it refuses instead. A parsed non-object (`null`, a number) is unreadable too.
  * @param {string} file
  * @returns {{ state:'absent'|'unreadable'|'ok', manifest: Record<string, any>|null }}
  */
@@ -86,33 +81,30 @@ function readManifest(file) {
 }
 
 /**
- * The write set, as repo-relative paths. Each is also its transition step key, so what the envelope says about a file and
- * what the step list calls it can't drift. The siblings are a declared list, never a discovery scan: a second one is one
- * more entry here, and the seam never reads or refuses over a file nobody declared.
+ * The write set, as repo-relative paths. Each is also its transition step key, so envelope and step list can't drift.
+ * The siblings are a declared list, never a discovery scan, so the seam never refuses over a file nobody declared.
  */
 const PRIMARY_MANIFEST = '.claude-plugin/plugin.json';
 const SIBLING_MANIFESTS = ['.claude-plugin/marketplace.json'];
 const CHANGELOG_FILE = 'CHANGELOG.md';
 
 /**
- * Read the CHANGELOG as a three-state result: present, readable and a regular file, never a content grammar check, since the
- * transform over it (`prependChangelogEntry` then `promoteUnreleased`) is pure and can't fail on any text.
- * Absent is a real state, a project with no changelog still bumps its manifest. Unreadable is the one this exists for (a
- * directory, a permission wall): reading it as `''` scaffolded a fresh changelog over a history the seam can't see, and it did
- * so after the manifest was already bumped.
+ * Read the CHANGELOG as a three-state result: present, readable and a regular file, never a content grammar check.
+ * Absent is a real state, a project with no changelog still bumps its manifest. Unreadable is the one this exists for:
+ * reading it as `''` scaffolded a fresh changelog over a history the seam can't see, after the manifest was bumped.
  * @param {string} file
  * @returns {{ state:'absent'|'unreadable'|'ok', text: string|null }}
  */
 function readChangelog(file) {
   if (!existsSync(file)) return { state: 'absent', text: null };
-  // regular file, checked: `existsSync` accepts a FIFO, and `readFileSync` then blocks forever on one nobody writes to
+  // `existsSync` accepts a FIFO, and `readFileSync` then blocks forever on one nobody writes to
   try { if (!statSync(file).isFile()) return { state: 'unreadable', text: null }; }
   catch { return { state: 'unreadable', text: null }; }
   try { return { state: 'ok', text: readFileSync(file, 'utf8') }; }
   catch { return { state: 'unreadable', text: null }; }
 }
 
-/** The remedy per verdict code, since the four have four different fixes; the fallback covers later codes. */
+/** The remedy per verdict code, since each has a different fix; the fallback covers later codes. */
 const VERSION_HINTS = Object.freeze({
   'no-target-version': 'pass --version with the version this release ships, then re-run the bump',
   'unparseable-version': 'give both --version and the manifest a plain MAJOR.MINOR.PATCH number - the detail quotes the one that is not - then re-run',
@@ -128,13 +120,11 @@ function bump(dir, versionArg, dateArg) {
   const date = dateArg || new Date().toISOString().slice(0, 10);
   const pluginPath = join(dir, PRIMARY_MANIFEST);
 
-  // the target is the explicit --version and nothing else; it's normalized before the manifest read so a refusal can name it
+  // the target is the explicit --version and nothing else; normalized before the manifest read so a refusal can name it
   let target = normalizeTargetVersion(versionArg);
-  // keep the raw argument when normalization leaves nothing usable: `--version v` trims to `v`, the leading-v strip empties it,
-  // and the run refused as `no-target-version` over `target:""`, which is false (a version WAS given). Handing the raw value
-  // on reaches decideManifestBump's `unparseable-version`, which quotes it, so no verdict code is minted here.
-  // normalizeTargetVersion isn't changed: planning.mjs uses it for the audit's `version_drift` signal. An absent --version
-  // still refuses as `no-target-version`, and a blank one refuses earlier at its declared row as `missing-flag-value`.
+  // keep the raw argument when normalization empties it: `--version v` refused as `no-target-version`, which is false,
+  // a version was given. The raw value reaches `unparseable-version`, which quotes it.
+  // normalizeTargetVersion stays as it is because the audit's `version_drift` uses it too
   const rawVersion = typeof versionArg === 'string' ? versionArg.trim() : '';
   if (!target && rawVersion) target = rawVersion;
 
@@ -163,7 +153,7 @@ function bump(dir, versionArg, dateArg) {
     return;
   }
 
-  // the one primary verdict re-classified: a `skip` here let the close ship over a manifest nobody bumped (measured 2026-08-22)
+  // the one primary verdict re-classified: a `skip` here let the close ship over a manifest nobody bumped
   if (primary.code === 'no-version-field') {
     emit({ ok: false, action: 'refuse', reason: 'no-version-field', target,
       manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
@@ -173,10 +163,8 @@ function bump(dir, versionArg, dateArg) {
   }
 
   // --- read and decide (nothing below this line touches disk) ---------------
-  // the whole write set (primary, every sibling, the changelog) is read and planned before the first write lands. The old
-  // order wrote the primary, then read the sibling, then the changelog, so an unwritable CHANGELOG.md emitted "internal"
-  // (EISDIR) while plugin.json already read the new version: a half-bumped tree in an envelope with no `manifest`,
-  // `siblings` or `changelog`. Hoisting the reads changes no result, since the three deciders are pure.
+  // the whole write set is read and planned before the first write lands, or an unwritable CHANGELOG.md emitted
+  // "internal" while plugin.json already had the new version: a half-bumped tree with no `manifest` in the envelope
 
   // primary manifest: a real bump mutates the in-memory manifest here, and the bytes reach disk in the write half below
   if (primary.action === 'bump') manifest.version = target;
@@ -189,7 +177,7 @@ function bump(dir, versionArg, dateArg) {
     const siblingPath = join(dir, rel);
     const siblingRead = readManifest(siblingPath);
     if (siblingRead.state === 'unreadable') {
-      // an unreadable sibling refuses the run: nothing is written until the whole set is decided, so no half-landed primary
+      // an unreadable sibling refuses the run before anything is written, so no half-landed primary
       emit({ ok: false, action: 'refuse', reason: 'unreadable-sibling-manifest', target,
         manifest: { from: primary.from, to: primary.to, bumped: false },
         siblings: [], changelog: { changed: false, state: 'not-examined' },
@@ -210,21 +198,18 @@ function bump(dir, versionArg, dateArg) {
       : { file: rel, action: d.action, bumped: d.bumped });
   }
 
-  // changelog: scaffold the dated heading, then promote whatever is staged under `## [Unreleased]` into it. Composed and
-  // written once, since atomicWrite renames a temp file into place and two writes would expose an intermediate state on disk.
-  // Gated on the primary verdict being `bump` or `noop`, never `skip`: a manifest with no `version` bumped nothing, so dating
-  // a heading would claim a release that never happened. The primary can't be `skip` here (the re-classification above
-  // refuses it), so the gate is a whitelist because that's what a new verdict action must be added to to reach the changelog.
-  // `changelog.state` is set on every path that emits a `changelog` object: the outcomes used to differ only by key presence,
-  // so a project with NO changelog read exactly like a clean one and milestone.md closed as if the notes were fine. The
-  // vocabulary is readChangelog's (`absent`, `unreadable`, `ok`) plus `not-examined` for refusals that returned before the gate.
-  // It stays separate from `section_empty`, which still means what it did and still drives the empty-section halt.
+  // changelog: scaffold the dated heading, then promote whatever is staged under `## [Unreleased]`
+  // composed and written once, since two writes would expose an intermediate state on disk
+  // gated on the primary verdict being `bump` or `noop`: dating a heading for a manifest nobody bumped claims a release
+  // that never happened, and a new verdict action has to be added to this whitelist to reach the changelog
+  // `changelog.state` is set on every path that emits a `changelog`, or a project with none read like a clean one
+  // its vocabulary is readChangelog's plus `not-examined` for refusals that returned early
   let changelog = { changed: false, state: 'not-examined' };
   /** @type {string|null} the composed bytes to write, null when nothing changed */
   let changelogText = null;
   const clPath = join(dir, CHANGELOG_FILE);
   if (target && (primary.action === 'bump' || primary.action === 'noop')) {
-    // validated only when it's in this run's write set, so a run that never touches the changelog is never refused over it
+    // validated only when it's in this run's write set, so a run that never touches the changelog isn't refused over it
     const clRead = readChangelog(clPath);
     if (clRead.state === 'unreadable') {
       emit({ ok: false, action: 'refuse', reason: 'unreadable-changelog', target,
@@ -234,7 +219,7 @@ function bump(dir, versionArg, dateArg) {
         hint: `make ${CHANGELOG_FILE} readable and re-run - moving it aside would lose the release history this seam refuses to write over` });
       return;
     }
-    // absent keeps its own behaviour (no changelog step, changed:false, ok:true) but now says so with state:"absent"
+    // absent means no changelog step, changed:false, ok:true, and says so with state:"absent"
     changelog = { changed: false, state: clRead.state };
     if (clRead.state === 'ok') {
       const url = changelogUrl(manifest, target);
@@ -242,14 +227,14 @@ function bump(dir, versionArg, dateArg) {
       const promo = promoteUnreleased(scaffold.text, target);
       const changed = scaffold.changed || promo.changed;
       if (changed) changelogText = promo.text;
-      // section_empty: the dated section has no body at all, which milestone.md turns into "author the notes first"
+      // section_empty: the dated section has no body, which milestone.md turns into "author the notes first"
       changelog = { changed, promoted: promo.changed, section_empty: promo.sectionEmpty, state: 'ok' };
     }
   }
 
   // --- write ----------------------------------------------------------------
-  // one transition, stop-at-first-failure: a half-applied release tree makes every later step's plan wrong. Each step is
-  // keyed by its repo-relative path, so a failure can report which files landed.
+  // one transition, stop-at-first-failure: a half-applied release tree makes every later step's plan wrong
+  // each step is keyed by its repo-relative path, so a failure can report which files landed
   /** @type {Array<[string, () => void]>} */
   const steps = [];
   if (primary.action === 'bump') {
@@ -266,11 +251,9 @@ function bump(dir, versionArg, dateArg) {
 
   const applied = runTransition({ steps, discipline: 'stop-at-first-failure' });
   if (!applied.ok) {
-    // a step threw anyway. Everything a read could catch was caught above, so this is what no pre-flight sees: EACCES, ENOSPC,
-    // a symlink planted at atomicWrite's temp path. The dispatch's catch would flatten it to "internal" with no `manifest`,
-    // `siblings` or `changelog`, and the operator couldn't tell a bumped tree from an untouched one. So it gets
-    // `action:"partial"`, `reason:"partial-bump"` and the disposition fields filled from what the transition completed, not
-    // what was decided. It's the one halt where re-running isn't a clean retry.
+    // a step threw anyway, on what no pre-flight sees: EACCES, ENOSPC, a symlink planted at atomicWrite's temp path
+    // the dispatch's catch would flatten that to "internal" and hide whether the tree was bumped, so the fields come
+    // from what the transition completed, not what was decided
     const landed = (key) => applied.completed.includes(key);
     const { error } = applied.failures[0];
     emit({ ok: false, action: 'partial', reason: 'partial-bump', target,
@@ -278,7 +261,7 @@ function bump(dir, versionArg, dateArg) {
       siblings: siblings.map((s) => ({ ...s, bumped: landed(s.file) })),
       changelog: { ...changelog, changed: landed(CHANGELOG_FILE) },
       detail: error && error.message ? error.message : String(error),
-      // deliberately not "re-run": a retry here compounds the damage, so the hint sends the operator to read the tree first
+      // deliberately not "re-run": a retry here compounds the damage, so the hint sends them to read the tree first
       hint: 'read the `bumped` and `changed` flags in this envelope - they name which files landed and which did not - and reconcile the tree by hand BEFORE any re-run, because a second bump over a half-written tree moves the ones that already landed again' });
     return;
   }
@@ -294,10 +277,9 @@ const DATE_RE = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/;
 
 /**
  * The refusal sentence for a present `--date`, or null when it's well-formed.
- * The newline arm comes first with its own sentence, because "not YYYY-MM-DD" is the wrong diagnostic for a value that
- * appended a release section: `--date $'2026-08-18\n## [9.9.9] - forged'` wrote a forged second heading into CHANGELOG.md
- * above the real one (measured 2026-08-18), since the date is interpolated straight into the heading. Neither arm echoes
- * the value back; echoing a newline-carrying one would put it on a line the closing workflow prints.
+ * The newline arm comes first with its own sentence: `--date $'2026-08-18\n## [9.9.9] - forged'` wrote a forged second
+ * heading into CHANGELOG.md, since the date is interpolated straight into the heading.
+ * Neither arm echoes the value back, or a newline in it would land on a line the closing workflow prints.
  *
  * @param {string} value @returns {string|null}
  */
@@ -320,29 +302,24 @@ function badDateDetail(value) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** This script's declared rows; a subcommand's row wins over the `'*'` row, where flags allowed on every arm are declared. */
+/** This script's declared rows; a subcommand's row wins over the `'*'` row for flags every arm allows. */
 const ROWS = CONTRACTS['release-bump.mjs'];
 /** One flag read through its declared row in the raising form, for flags that refuse as `missing-flag-value`. */
 const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
   if (cmd === 'bump') {
-    // `--dir` refuses on both axes: an absent one stays undefined and falls to cwd, while empty, valueless and flag-shaped
-    // spellings raise the refusal the e.seam arm names. `--version` falls back on the bare axis, so a spelling with no usable
-    // value reads as absent and the verdict is `no-target-version`, never a neighbouring flag swallowed as the target.
+    // `--dir` refuses on both axes: absent falls to cwd, while empty, valueless and flag-shaped ones raise the refusal
+    // `--version` falls back, so a spelling with no usable value reads as absent and never swallows a neighbouring flag
     const dir = arg('bump', '--dir') || process.cwd();
-    // absent and present-with-nothing-usable are different calls, and the declaration tells them apart. The old dispatch probed
-    // argv for the flag beside its value because the permissive reader answered `undefined` for a trailing valueless `--date`
-    // as for an absent one, so that one spelling dated today. The row refuses on both axes now, so `''`, a blank, a flag-shaped
-    // value and a bare `--date` all count as present-with-nothing-usable, and the probe is gone.
-    // Read in the returning form so this file names the refusal in its own vocabulary: a caller branching on `reason` must tell
-    // a malformed date from a malformed `--dir`, and the raising form would render both as `missing-flag-value`.
+    // absent and present-with-nothing-usable are different calls, or a trailing valueless `--date` dated today
+    // read in the returning form so a caller branching on `reason` can tell a bad date from a bad `--dir`
     const dateRead = evaluateFlag(argv, '--date', ROWS.bump['--date']);
     const dateArg = dateRead.ok ? dateRead.value : undefined;
     const badDate = dateRead.ok
       ? (dateArg === undefined ? null : badDateDetail(dateArg))
       : badDateDetail('');
-    // validated before bump() runs, so the refusal needs no manifest read; hence no `manifest`, `siblings` or `changelog` here
+    // validated before bump() runs, so the refusal needs no manifest read; hence no `manifest` in this envelope
     if (badDate) {
       emit({ ok: false, action: 'refuse', reason: 'bad-date', detail: badDate,
         hint: 'pass --date one YYYY-MM-DD value, or drop the flag entirely to date today, then re-run' });

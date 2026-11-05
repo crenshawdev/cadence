@@ -1,15 +1,10 @@
 #!/usr/bin/env node
 // @ts-check
-// worktree-base.mjs - the preflight for the parallel /cad-execute path (#68): reads the host's effective
-// `worktree.baseRef` from the Claude Code settings cascade and says whether parallel execution is safe.
-// The default `fresh` forks worktrees from the remote default branch, so a phase's unpushed CONTEXT and PLAN files on
-// the integration branch aren't there and every executor halts `blocked` on its missing plan. `head` forks from local
-// HEAD (before Claude Code 2.1.208 `fresh` used whatever `origin/HEAD` was cached locally).
-// Read-only, always: the setting is the user's, and a plugin silently editing it would be a worse bug than this guards.
-// Cascade, highest first: managed policy, <root>/.claude/settings.local.json, <root>/.claude/settings.json, then
-// ~/.claude/settings.json; the first to set the key wins, none means `fresh`. CADENCE_MANAGED_SETTINGS and
-// CADENCE_USER_SETTINGS override the first and last layer, for tests.
-// A session-level CLI override isn't on disk, so `head` is evidence, not proof: the executor's own check stays.
+// worktree-base.mjs - preflight for parallel /cad-execute (#68): reads the host's `worktree.baseRef` and judges it.
+// The default `fresh` forks from the remote branch, so unpushed plan files are missing and executors halt `blocked`.
+// Read-only, always: the setting is the user's, and silently editing it would be worse than what this guards.
+// Cascade, highest first: managed policy, project settings.local.json, project settings.json, then the user's.
+// A session-level CLI override isn't on disk, so `head` is evidence, not proof.
 'use strict';
 
 import { readFileSync } from 'node:fs';
@@ -17,9 +12,8 @@ import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { emit } from './lib/seam-io.mjs';
-// no flag rule here: lib/arg-contract.mjs declares what `--dir` may be and `requireFlag` raises the refusal. `--dir`
-// refuses though this seam mutates nothing, because the ref it resolves is what a worktree forks from, so a wrong-tree
-// answer isn't cheaper for being advisory.
+// no flag rule here: arg-contract declares them. `--dir` refuses though this seam mutates nothing, because a
+// wrong-tree answer isn't cheaper for being advisory
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 
 /** The documented default when no layer sets the key. */
@@ -43,7 +37,7 @@ function userPath() {
 
 /**
  * The main checkout root for `dir`. In a linked worktree git's common dir is the main repo's `.git`, so its parent is
- * the tree whose `.claude/settings*.json` Claude Code actually reads. Degrades to `dir` when git can't answer.
+ * the tree whose settings Claude Code reads. Degrades to `dir` when git can't answer.
  * @param {string} dir
  * @returns {string}
  */
@@ -110,22 +104,21 @@ function resolveBaseRef(dir) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** This script's declared rows; a subcommand's row wins over the `'*'` row, where flags allowed on every arm are declared. */
+/** This script's declared rows; a subcommand's row wins over the `'*'` row for flags every arm allows. */
 const ROWS = CONTRACTS['worktree-base.mjs'];
-/** One flag of `sub` read through its declared row. An adapter over argv, never a second statement of what a flag may be. */
+/** One flag of `sub` read through its declared row, never a second statement of what a flag may be. */
 const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
-  // `--dir` refuses on both axes, so a truly absent one still reads as undefined and falls to cwd, while empty, valueless
-  // and flag-shaped spellings raise the refusal the e.seam arm names
+  // `--dir` refuses on both axes: absent falls to cwd, while empty, valueless and flag-shaped ones raise the refusal
   if (cmd === 'resolve') {
     resolveBaseRef(arg('resolve', '--dir') || process.cwd());
   } else {
     emit({ ok: false, reason: 'usage', detail: 'subcommand: resolve [--dir <path>]' });
   }
 } catch (e) {
-  // the raised refusal has no `message`, so without this arm a valueless --dir would emit detail "[object Object]".
-  // One JSON line on stdout like every verdict: no workflow reading this seam parses stderr.
+  // the raised refusal has no `message`, so without this arm a valueless --dir would emit detail "[object Object]"
+  // one JSON line on stdout like every verdict: no workflow parses stderr
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
     hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });

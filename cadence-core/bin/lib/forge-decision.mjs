@@ -1,19 +1,14 @@
 // @ts-check
-// forge-decision.mjs - the pure core of the setup-time forge question: a frozen provider table plus total functions
-// that decide, from the persisted forge record and the caller's own "does this name resolve" answer, what setup does next.
-// It touches no filesystem and spawns nothing; bin/forge.mjs supplies the live readings. Unknown input never throws.
-// Nothing here prompts or writes: a stdin block inside a Bash call would hang the workflow, so the question is asked
-// in prose and the answers come back through `config.mjs set`.
-// The persisted record is checked before the installed list. A repo whose forge keys are already set has to be asked
-// nothing on a second run, and checking binaries first would refuse it on a machine that just lacks the CLI right now.
-// "Installed" is `onPath` and nothing else - no `--version`, no login probe - passed in as a predicate so the production
-// resolver stays lib/on-path.mjs. The forgejo create row does need a login, but the seam reads that and hands it in.
+// forge-decision.mjs - the pure core of the setup-time forge question: a provider table plus total functions that
+// decide what setup does next. The seam supplies the live readings, and unknown input never throws.
+// The persisted record is checked before the installed list, or a repo already set would be refused on a machine
+// that just lacks the CLI right now.
+// "Installed" is `onPath` and nothing else, passed in as a predicate so tests can stub PATH.
 'use strict';
 
 /**
- * The three providers Cadence can drive, each with its one binary name, in the fixed order callers report them in.
- * The keys are the ones `HOST_TABLE` in lib/issue-decision.mjs and `git.forge_provider`'s enum use: the persisted value
- * is a `HOST_TABLE` key at land time, so a synonym here would be a lookup miss there.
+ * The three providers Cadence can drive, each with its one binary name.
+ * The keys are the `HOST_TABLE` keys in lib/issue-decision.mjs, so a synonym here would be a lookup miss at land time.
  * The order is what `installedProviders` walks, so the setup menu reads the same on every machine.
  */
 export const PROVIDER_TABLE = Object.freeze({
@@ -25,8 +20,7 @@ export const PROVIDER_TABLE = Object.freeze({
 /** The binaries a refusal names, in table order, so the sentence a user reads can't drift from the lookup. */
 const BINARIES = Object.freeze(Object.values(PROVIDER_TABLE));
 
-/** A config value as a usable string, or null. Anything that isn't a non-empty string is unasked, not an error:
- * the shipped template has `null` and there's no envelope here to refuse into.
+/** A config value as a usable string, or null. Anything that isn't a non-empty string is unasked, not an error.
  * @param {unknown} v @returns {string|null} */
 function text(v) {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
@@ -34,9 +28,8 @@ function text(v) {
 
 /**
  * Which providers this machine can drive, folded through the caller's own resolver.
- * The predicate is the caller's (bin/forge.mjs passes `onPath`), so the production lookup runs and a test can stub PATH.
- * A throwing predicate isn't caught: a resolver that can't answer is the caller's fault, and reading it as `false`
- * would report a bare machine that isn't.
+ * The predicate is the caller's, so the production lookup runs and a test can stub PATH.
+ * A throwing predicate isn't caught: reading it as `false` would report a bare machine that isn't.
  *
  * @param {(bin: string) => unknown} resolves does this binary name resolve?
  * @returns {{provider: string, bin: string}[]} in PROVIDER_TABLE order
@@ -52,8 +45,7 @@ export function installedProviders(resolves) {
 
 /**
  * Which forge keys are still unanswered, spelled as the config keys a user would set.
- * One statement of "complete" with two readers: setup decides whether to ask, the land-time tracker report decides
- * whether to call, and if they disagreed it would either re-ask a settled question or call a forge with no selector.
+ * One statement of "complete" for setup and the land-time tracker report, or one would re-ask and the other call blind.
  * In schema order, provider first. `git.forge_host` only counts on `forgejo`; github and gitlab have fixed hosts.
  *
  * @param {{provider?: unknown, repo?: unknown, host?: unknown}} record
@@ -72,11 +64,8 @@ export function missingForgeKeys({ provider, repo, host } = {}) {
 
 /**
  * Is the persisted forge record complete, i.e. nothing left to ask?
- * Provider and slug always, plus the instance host on `forgejo`: tea addresses an instance through a login name, the
- * host resolves it, and it can't be derived from origin. On a split SSH endpoint origin is `ssh.jcrenshaw.dev` while
- * the instance is `git.jcrenshaw.dev`, which is this repo's own shape. github and gitlab keep it null.
- * An unknown provider is incomplete: it's a `HOST_TABLE` key at land time, so honouring a spelling no row carries
- * would persist a record nothing can read.
+ * Provider and slug always, plus the host on `forgejo`, which can't come from origin when the SSH endpoint is split.
+ * An unknown provider is incomplete: honouring a spelling no row carries would persist a record nothing can read.
  *
  * @param {{provider?: unknown, repo?: unknown, host?: unknown}} record
  * @returns {boolean}
@@ -85,7 +74,7 @@ export function forgeRecordComplete(record) {
   return missingForgeKeys(record).length === 0;
 }
 
-/** Longest `owner/name` a forge serves (GitHub 39 + 100, GitLab 20 levels deep); 200 clears it and bounds the grammar. */
+/** Longest `owner/name` a forge serves (GitHub 39 + 100, GitLab 20 levels deep); 200 clears it. */
 const SLUG_MAX = 200;
 
 /** One slug segment; it never opens on `-`, which turns a value into a flag once it's on a command line. */
@@ -93,12 +82,9 @@ const SLUG_SEGMENT = /^[A-Za-z0-9_.][A-Za-z0-9._-]*$/;
 
 /**
  * Is `slug` a repository selector this seam will hand back as a default?
- * It comes off repository content (`git remote get-url origin`) and setup interpolates it into the shell line that
- * runs `config.mjs set git.forge_repo=<slug>`, so this grammar is what makes that safe. It lives in the seam
- * because prose can't hold a grammar.
- * Two or more segments, not two: GitLab nests subgroups and `glab --repo` takes `group/subgroup/repo` whole.
- * Refused: a leading `-` on any segment (reads as a flag), `.` or `..` as a segment, anything outside [A-Za-z0-9._-]
- * (whitespace, quotes, `$`, backticks, `;` and newlines end an argument), and anything over SLUG_MAX.
+ * It comes off repository content and setup interpolates it into a shell line, so this grammar is what makes that safe.
+ * Two or more segments, not two: GitLab nests subgroups.
+ * Refused: a leading `-` on any segment, `.` or `..` as a segment, anything outside [A-Za-z0-9._-], or over SLUG_MAX.
  * A refused slug yields no default, not a repaired one: a cleaned-up pre-filled answer is what a user confirms unread.
  *
  * @param {unknown} slug @returns {boolean}
@@ -110,26 +96,21 @@ export function isForgeSlug(slug) {
   return segments.every((seg) => seg !== '.' && seg !== '..' && SLUG_SEGMENT.test(seg));
 }
 
-/** Longest `host[:port]` a `git.forge_host` may carry. 253 is DNS's own ceiling, and it covers the port too, since a
- * separate bound for the tail would be a second rule to keep in step. */
+/** Longest `host[:port]` a `git.forge_host` may carry. 253 is DNS's ceiling, and it covers the port too. */
 const FORGE_HOST_MAX = 253;
 
-/** One hostname label; a leading `-` is refused because the value ends up in a shell line and a tea argv as a flag. */
+/** One hostname label; a leading `-` is refused because the value lands in a shell line and a tea argv as a flag. */
 const HOST_LABEL = /^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$/;
 
 /** A port in its one canonical spelling: digits, no leading zero. The 1-65535 range is a numeric check below. */
 const PORT_DIGITS = /^[1-9][0-9]*$/;
 
 /**
- * The `hostname` and `port` halves of a `git.forge_host`, or null when it isn't a value this seam will persist or compare.
- * One function judges and splits: a separate predicate would be a second answer to the same question.
- * Hostname: dot-separated labels of letters, digits and `-`, none opening or closing on `-`. Anything else is refused,
- * not stripped; whitespace, quotes, `$`, backticks, `;`, `/`, `@`, newlines and control bytes all end an argument.
- * Port: digits, no leading zero, 1 through 65535. It's compared with what `httpPortOf` reads off a tea login url
- * through a numeric conversion, so admitting `:0443` would persist a value that compares unequal on one side only.
- * No bracketed IPv6, on purpose: `loginNamesHost` can't read `[::1]:3001`, so it would persist a value nothing matches.
- * Case isn't folded here (`teaLoginNameForHost` does that), and a portless value gets a null port, never a defaulted
- * one: "named no port" and "named 443" are different facts.
+ * The `hostname` and `port` halves of a `git.forge_host`, or null when it isn't a value this seam will persist.
+ * Hostname: dot-separated labels of letters, digits and `-`, none opening or closing on `-`. Refused, not stripped.
+ * Port: digits, no leading zero, 1 through 65535, or `:0443` would compare unequal on one side only.
+ * No bracketed IPv6, on purpose: `loginNamesHost` can't read `[::1]:3001`, so nothing would match it.
+ * Case isn't folded here, and a portless value gets a null port, never a defaulted one: no port and 443 differ.
  *
  * @param {unknown} host @returns {{hostname: string, port: string|null}|null}
  */
@@ -148,12 +129,9 @@ export function splitForgeHost(host) {
 
 /**
  * The two defaults setup offers for the user to confirm, derived from an origin classification.
- * They are independently null on purpose. `classifyOrigin` gives a slug for any origin with two or more path segments
- * but a provider only for github.com and gitlab.com, since guessing a forge from a hostname's first label is a heuristic
- * it can't be right about; self-hosted gets a slug to confirm and no `(recommended)` provider.
- * Never a host default: on a split SSH endpoint the classifier's host is the SSH hostname, not the instance the user
- * opens in a browser, so a derived default would be wrong on the first repo that read it, and offering the guess
- * pre-filled would erase the difference between the asked value and the guess.
+ * They are independently null on purpose: a slug comes off any origin, a provider only off github.com and gitlab.com.
+ * Guessing a forge from a hostname's first label is a heuristic.
+ * Never a host default: on a split SSH endpoint the classifier's host is the SSH hostname, not the instance.
  *
  * @param {unknown} classification a `classifyOrigin` verdict, or anything at
  *   all - an unreadable origin is no defaults, never a throw
@@ -171,13 +149,11 @@ export function originDefaults(classification) {
 
 /**
  * What should the setup step do about the forge?
- * Modelled on `decideIssueCheck`'s return, which workflows branch on by `action` alone: `{action, reason}` and a
- * `hint` on the refusing one. Three actions and no fourth, because prose that has to tell four states apart gets one wrong:
+ * Shaped like `decideIssueCheck`'s return, so workflows branch on `action` alone. Three actions and no fourth:
  *   configured  the persisted record answers everything - say and ask nothing
- *   ask         at least one provider resolved - ask, carrying what's already answered so only the gaps are asked
- *   refuse      no provider resolved - a forge is a precondition, so this is a stop with a reason and a hint
- * Reason and hint live here, not in the seam, so the sentence a user reads can be tested without spawning anything.
- * Total: every field is optional and absent means "not answered", so reading nothing gets `ask` or `refuse`, never a throw.
+ *   ask         at least one provider resolved - ask only the gaps
+ *   refuse      no provider resolved - a forge is a precondition, so stop with a reason and a hint
+ * Total: absent means "not answered", so reading nothing gets `ask` or `refuse`, never a throw.
  *
  * @param {{provider?: unknown, repo?: unknown, host?: unknown,
  *   installed?: unknown}} args `installed` as `installedProviders` returns it
@@ -206,8 +182,8 @@ export function decideForge({ provider, repo, host, installed } = {}) {
 
 /**
  * The `owner` and `name` halves of a repository selector, or null when it isn't one to hand a forge CLI.
- * It runs `isForgeSlug` first rather than keep a grammar of its own, so a value refused as a default can't be accepted
- * as a creation target. The split is at the last separator, so GitLab's `g/sub/r` is owner `g/sub` and name `r`.
+ * It runs `isForgeSlug` first, so a value refused as a default can't be accepted as a creation target.
+ * The split is at the last separator, so GitLab's `g/sub/r` is owner `g/sub` and name `r`.
  *
  * @param {unknown} slug @returns {{owner: string, name: string}|null}
  */
@@ -220,13 +196,10 @@ export function splitSlug(slug) {
 
 /**
  * Is `owner` this login's own user account, rather than an organization on the same instance?
- * tea has no single create grammar. `tea repos create --name r --owner john --private` exits 1 with `GetOrgByName`
- * for a personal repo (measured on tea 0.15.1), because `--owner` resolves as an organization and never as a user;
- * with no `--owner` it creates `john/r` under the login user.
- * Case-insensitive and trimmed, since Gitea resolves account names without regard to case and a strict test would fail
- * the create for a difference the server doesn't have.
- * A login that isn't a record is "not the user", never a throw; that keeps `--owner` in the argv, and bin/forge.mjs
- * refuses before the builder when it can't resolve a login, so that arm is unreachable in production.
+ * `tea repos create --owner john` fails with `GetOrgByName` for a personal repo, because `--owner` resolves as an org
+ * and never as a user; with no `--owner` it creates under the login user.
+ * Case-insensitive and trimmed, since Gitea doesn't care about case and a strict test would fail a working create.
+ * A login that isn't a record is "not the user", never a throw; the seam refuses first, so that arm is unreachable.
  *
  * @param {unknown} owner @param {unknown} login @returns {boolean}
  */
@@ -240,11 +213,10 @@ export function ownerIsLoginUser(owner, login) {
 
 /**
  * `['--login', <name>]` for a usable login record, or `[]`.
- * Without `--login` tea picks a login from its own config, and a single login even prints `default` as the string
- * `'false'`, so "the default" can't be relied on. The create has to run as the same login whose user answered the
- * owner question, or the answer was about an account the create never used.
- * A name opening on `-` is dropped: it's third-party bytes from a CLI's stdout, and a flag-shaped value is the one way
- * an untrusted string changes what a command means. The seam refuses such a record too; this is the second door.
+ * Without `--login` tea picks its own, and prints `default` as the string `'false'`, so the default can't be trusted.
+ * The create has to run as the login whose user answered the owner question.
+ * A name opening on `-` is dropped: it's third-party bytes, and a flag-shaped value changes what a command means.
+ * The seam refuses such a record too; this is the second door.
  *
  * @param {unknown} login @returns {string[]}
  */
@@ -257,22 +229,17 @@ function loginFlag(login) {
 }
 
 /**
- * How each provider's CLI is told to create a repository: one row per provider, shaped like `HOST_TABLE` in
- * lib/issue-decision.mjs, with a builder for the argv and a stated fact about what it does to the git remote.
- * The binary isn't repeated here; `PROVIDER_TABLE` says which one drives which provider.
- * The three CLIs have three grammars (measured on gh 2.98.0, glab 1.114.0, tea 0.15.1), so the table is data and not a
- * format string. Every row pins `--private` and takes no visibility: gh with no flag drops to an interactive prompt
- * that hangs a Bash call, glab defaults to `internal`, tea to private, and three defaults isn't a choice for a user.
- * `needsLogin` marks the one row whose argv depends on a login record the seam must read and refuse without. It
- * isn't "needs auth" (all three do), and it's about the argv, not about a provider's name.
- * `wiresRemote` is read off the argv beside it: does it leave a git `origin` at the created repo? bin/forge.mjs
- * does the follow-up that acts on it.
+ * How each provider's CLI is told to create a repository: an argv builder and whether it leaves a git `origin` behind.
+ * The three CLIs have three grammars, so the table is data and not a format string.
+ * Every row pins `--private`: gh with no flag prompts and hangs a Bash call, and glab defaults to `internal`.
+ * `needsLogin` marks the one row whose argv depends on a login record; it isn't "needs auth", all three do.
+ * `wiresRemote` is read off the argv beside it, and the seam acts on it.
  */
 export const CREATE_TABLE = Object.freeze({
   forgejo: Object.freeze({
     // tea's help mentions no remote at all
     wiresRemote: false,
-    // --owner reads as an org, so the argv needs the login's user; the org arm is unmeasured, tea's error is all we have
+    // --owner reads as an org, so the argv needs the login's user; the org arm is unmeasured
     needsLogin: true,
     /** @param {string} owner @param {string} name
      *  @param {unknown} login the `{name, user}` record for this instance
