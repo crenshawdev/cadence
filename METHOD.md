@@ -363,19 +363,27 @@ a wrong result, crashes, corrupts data, or misses its goal.
 
 ### Adjudication inverts the hierarchy
 
-Under `adjudicated`, all reviewers run independently and then the main session
-adjudicates: open the cited code, confirm or kill each finding, drop false
-positives and overstatements, and re-rank by grounded severity. Reviewers
-critique; the main model grounds and owns the verdict.
+Under `adjudicated`, all reviewers run independently and then each finding is
+checked against the cited code: confirm or kill it, drop false positives and
+overstatements, and re-rank by grounded severity. On the default path the main
+session does that checking itself. With `workflow.use_workflows` on, one agent
+per finding does it instead, and the main session still merges what comes back,
+groups findings that share a root cause, runs the triage and owns the record.
+Either way reviewers critique and something other than the reviewer grounds
+the finding, which is the claim this section makes. The workflow path costs
+more usage, is off by default, and counts only when both config layers set it.
+The single-agent path stays.
 
 The one signal treated as strong is convergence. A defect found independently by
 more than one reviewer is high confidence, and that is the entire justification
 in this system for paying for more voices.
 
 What survives is not a work order. The survivors are presented as a numbered
-list and the session asks which of them to act on, with none as the default, so
-the model that just spent four voices on the artifact does not also get to
-decide what happens next. One gate ends this way whatever is configured: the fix
+list, each with what breaks, why it matters, what is still uncertain and a
+recommendation (the review file also holds what triggers it and what proves it,
+and the session answers those on request). The session asks which of them to
+act on, with none as the default, so the model that just spent four voices on
+the artifact does not also get to decide what happens next. One gate ends this way whatever is configured: the fix
 list in `/cad-verify`, which has no resolved gate and is always triaged. Three
 more end this way wherever their gate resolves adjudicated: the plan review in
 `/cad-plan`, advisory by default and blocking under a detected risk surface;

@@ -90,7 +90,7 @@ The record stays with the project, so you can end a session without making the n
 | [How it works](https://crenshawdev.github.io/cadence/how-it-works/roles.html) · [Controls and limits](https://crenshawdev.github.io/cadence/how-it-works/controls.html) | What the roles do and how the controls work. |
 | [Cost](https://crenshawdev.github.io/cadence/how-it-works/cost.html) | Measured runs and where the spend goes. |
 
-Cadence adds no telemetry. Its records stay in your repository and go wherever you push them. It runs inside Claude Code, so your session is still subject to the host's data handling. Optional external reviewers receive project material only when enabled.
+Cadence adds no telemetry. Its records stay in your repository and go wherever you push them. With `workflow.use_workflows` on in both config layers, it also reads the host's run file for a workflow under the session directory, read-only, to price each agent. It runs inside Claude Code, so your session is still subject to the host's data handling. Optional external reviewers receive project material only when enabled.
 
 ## Help and attribution
 

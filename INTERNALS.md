@@ -64,6 +64,10 @@ That split is why the invariants hold. The judgment that is easy to get wrong is
 
 Read the code: the `*-decision.mjs` cores under `cadence-core/bin/lib` and their tests (`close-decision.test.mjs`, `publish-decision.test.mjs`, `branch-decision.test.mjs`, `release-decision.test.mjs`), which are in the cadence-tests repository (https://github.com/crenshawdev/cadence-tests), mounted at tests/.
 
+## Workflows
+
+The plugin root has a `workflows/` directory, apart from `cadence-core/workflows/` (the prose each command follows). It holds the two scripts the host's `Workflow` tool runs: `workflows/review-panel.js` (one reviewer agent per voice, then one checker agent per finding per raising voice) and `workflows/analyzer.js` (the assumptions analyzer's readers). A script can't import, so a test holds its schemas equal to the ones in `cadence-core/bin/review-provider.mjs`. After a script returns, `planning.mjs workflow-run` reads the full result from the run file on disk, builds the adjudication payload and the review file, and writes one trace bracket per agent. It's off by default, and it counts only when `workflow.use_workflows` is true in both config layers; the single-agent path stays for every run that doesn't take it. `self-verify.mjs` reads `workflows/` as well.
+
 ## What a command carries
 
 A per-file byte budget tells you no command's weight. It tells you what one file costs, and a command is a bundle, so the question that actually decides whether a command is expensive, which files ride together into one context, went unanswered by the very check built to watch prose bloat.
