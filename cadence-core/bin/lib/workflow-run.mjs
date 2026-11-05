@@ -404,7 +404,8 @@ export function mapRun(run, answers, envelopes = new Map()) {
         && (item.ruling === 'downgraded' || (item.ruling === 'survived' && RANK[item.severity] > RANK[finding.severity]))
         ? item.severity : finding.severity;
       kept.push({ voice: v.voice, finding, item, shown });
-      if (item.ruling === 'survived' && HALTING_SEVERITIES.includes(shown)
+      // a blocker its checker proved only high is downgraded and still halts, so the ruling is not what asks for an answer
+      if (HALTING_SEVERITIES.includes(shown)
         && item.fix_commit === undefined && item.fix_file === undefined && !item.overridden) {
         needsAnswer.push({ voice: v.voice, index, file: finding.file, line: finding.line, severity: shown, suspected: item.suspected });
       }
@@ -450,9 +451,11 @@ export function mapRun(run, answers, envelopes = new Map()) {
       ...(unruled.length > LIST_CAP ? { unruled_more: unruled.length - LIST_CAP } : {}),
       needs_answer: cap(needsAnswer),
       ...(needsAnswer.length > LIST_CAP ? { needs_answer_more: needsAnswer.length - LIST_CAP } : {}),
-      // whether the record's own grammar takes the payload as it stands, and the first thing it refuses when not
-      ready: built.ok,
-      ...(built.ok ? {} : { not_ready: built.detail }),
+      // whether the record's own grammar takes the payload as it stands, and the first thing it refuses when not;
+      // the record asks a settlement of survivors only, so a downgraded blocker or high waits on needs_answer here
+      ready: built.ok && needsAnswer.length === 0,
+      ...(!built.ok ? { not_ready: built.detail }
+        : needsAnswer.length ? { not_ready: `${needsAnswer.length} finding(s) shown at blocker or high have no fix_commit, fix_file or override; an override re-rules the finding survived with overridden: true` } : {}),
     },
   };
 }
