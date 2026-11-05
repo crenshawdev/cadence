@@ -48,6 +48,14 @@ Branch names governed by `git.on_protected` for direct commits. Verification pub
 
 `ask` prompts before creating or switching to the integration branch at cycle start. `auto` does so without that prompt. `off` stays on the current branch.
 
+### `git.integration_branch_name`
+
+**Default:** `null` · **Type:** string or null · **Scope:** repository only.
+
+**Format:** letters, digits, `.`, `_`, `-` and `/`, starting with a letter or digit. No `..`, no trailing `/` and no `.lock` ending. `null` leaves it unset.
+
+The whole name of the integration branch, such as `seldon/hardin`. `null` keeps `cadence/<version>`. A version that is already tagged still asks instead of creating a branch under either name. It stops applying after the land, so the next cycle cannot reuse the name. User-global config cannot set it, because that value would name every repository's branch.
+
 ### `git.base_branch`
 
 **Default:** `null` · **Type:** string or null · **Scope:** repository or user-global.

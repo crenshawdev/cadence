@@ -154,6 +154,7 @@ purpose test runs against the reach the author just replaced.
 | `git.on_protected` | universal | `bin/git-guard.mjs` - ask / refuse / allow on a protected branch |
 | `git.integration_branch` | universal | `bin/git-branch.mjs` - milestone branch or trunk |
 | `git.auto_branch` | universal | `bin/git-branch.mjs` - how that branch is created |
+| `git.integration_branch_name` | universal | `bin/git-branch.mjs` `decide` - the whole name of the integration branch in place of `cadence/<version>`; a value failing the `branch_name` grammar on read is not used |
 | `git.base_branch` | universal | `bin/land-cleanup.mjs` - the base a land returns to |
 | `git.create_tag` | universal | `skills/cad-land/SKILL.md` - the release tag cut in its cleanup step, on the pulled base after the merge confirms (tag-after-merge); no other site reads it |
 | `git.on_land_cleanup` | universal | `bin/land-cleanup.mjs` - return, pull, reap after a merge |
