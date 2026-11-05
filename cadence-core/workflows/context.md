@@ -153,6 +153,41 @@ the blocking ones via the ask-user seam first, and do NOT bake an unverified
 scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
 wastes the whole pass and forces a mid-analysis interruption.
 
+Branch once here, before the dispatch below. `spend_gate` ran first either way.
+Take the workflow path only when the `Workflow` tool is in this session's tool
+list and the both-layer read says the setting is on:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" workflow-layers
+```
+
+`keys["workflow.use_workflows"].on` is the answer. Never the batched `config.mjs
+get`, which answers on a committed repo value alone, and an answer you cannot
+read is off. Off, or no `Workflow` tool: start no workflow and run the dispatch
+below as written, one agent.
+
+On the workflow path, resolve `cad-assumptions-analyzer` through the
+spawn-agent seam without the bracket flag, because the readers are billed after
+the run. Make a scratch directory, `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")"`.
+Launch the `Workflow` tool by its named entry `cadence:analyzer`, or with
+`scriptPath` set to `${CLAUDE_PLUGIN_ROOT}/workflows/analyzer.js` if the name
+does not resolve. `args` holds the payload's fields below: `phase`,
+`phase_name`, `goal`, `prior_decisions`, `search_terms`, `recalled_memory`
+(omit it when empty), plus the resolve's `agent_type` and `model` (null when it
+answered none). The result prints `Transcript dir` and `Run ID`, so keep both.
+A launch the host refuses is named in one line, and the dispatch below runs,
+its resolve and bracket included. Otherwise end the turn and dispatch nothing
+else. On the completion notice:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --analyzer --phase <N> --run-file <Transcript dir's session directory>/workflows/<Run ID>.json --out-dir "$D" --payload-ref ".planning/ROADMAP.md" [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
+```
+
+It bills one bracket per reader, so the close below is the old path's alone.
+Read the `report` path it prints and continue at "Parse:". If `nulls` names
+readers, say so in one line. An `ok:false` or a missing report takes the "If
+the agent fails" arm below, naming what the seam said.
+
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seam-spawn-agent.md), the bracket on its resolve:
 `--bracket-read ".planning/ROADMAP.md"`. That read-set is what this SITE causes
