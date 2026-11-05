@@ -85,6 +85,9 @@ const COMMANDS = {
   // per-finding rulings from a gate fire, kept beside the sibling REVIEW file
   adjudication: async (dir, _sub, opts) =>
     (await import('./planning/adjudication.mjs')).cmdAdjudication(dir, opts),
+  // the adjudicated gate's Markdown review file; the other gates keep their JSON
+  'review-file': async (dir, _sub, opts) =>
+    (await import('./planning/review-file.mjs')).cmdReviewFile(dir, opts),
   // moves the risk_surface rulings out of a phase directory before a milestone close deletes it
   'risk-carry': async (dir, _sub, opts) =>
     (await import('./planning/risk-carry.mjs')).cmdRiskCarry(dir, opts),

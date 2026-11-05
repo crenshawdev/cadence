@@ -404,6 +404,19 @@ export const CONTRACTS = {
       // phase directory a task doesn't have (/cad-task has no phase). Optional: a phase fire passes nothing.
       '--task': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // The adjudicated gate's REVIEW-<trigger>-<discriminator>.md: Markdown, six headings per survivor. --base and
+    // --head ride the file's header; fireIdentity requires both, as it does for the record and the queue member.
+    'review-file': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--trigger': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--discriminator': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      // a file, never inline: reviewer text carries arbitrary quoting
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--task': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
