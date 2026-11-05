@@ -117,7 +117,7 @@ downgrade a finding to make it storable and do not invent a SHA to fill the
 field; both are false statements about what happened, and the record accepts the
 true one.
 
-A fix that leaves no commit, because it edits a file git does not track, carries `fix_file` instead: that file's repo-relative path. It is neither a downgrade nor an override.
+A fix that leaves no commit, because it edits a file git does not track, carries `fix_file` instead: that file's repo-relative path. It is neither a downgrade nor an override. So a survived `blocker` or `high` settles one of three ways: `fix_commit`, `fix_file` or `overridden: true`. The seam refuses `fix_file` beside `fix_commit`, an absolute path or one with a `..` segment, and a file git tracks, since that fix has a commit to name. `fix_file` is weaker evidence than a commit: it names a file, and nobody can `git show` the fix.
 
 A `blocker` or `high` the USER OVERRODE carries `overridden: true` instead of a
 commit - the one survived-at-a-halting-severity case where no fix is coming, so

@@ -20,7 +20,7 @@
 // and that is named too (D-16, D-20)
 // ANSWERS are the main session's, keyed by voice and index. Two groups, and a later answer replaces its group whole:
 //   ruling:      ruling (survived|downgraded|refuted), severity, counter_evidence, and the six texts
-//   settlement:  fix_commit, overridden
+//   settlement:  fix_commit, fix_file, overridden
 // `buildEntries` stays the one judge of what is storable. Pure: no fs, no git, no env
 'use strict';
 
@@ -44,7 +44,7 @@ const SIX = HEADINGS.map(([key]) => key);
 const HEADING_OF = Object.fromEntries(HEADINGS);
 const RANK = { low: 0, medium: 1, high: 2, blocker: 3 };
 const CHECKER_RULINGS = ['proved', 'refuted', 'neither'];
-const SETTLEMENT_KEYS = ['fix_commit', 'overridden'];
+const SETTLEMENT_KEYS = ['fix_commit', 'fix_file', 'overridden'];
 const RULING_KEYS = ['ruling', 'severity', 'counter_evidence', ...SIX];
 const EVIDENCE_KEYS = ['file', 'line', 'note'];
 
@@ -91,6 +91,7 @@ export function parseAnswers(raw) {
     }
     for (const k of SIX) if (a[k] !== undefined && typeof a[k] !== 'string') return bad(`${at}.${k} must be text`);
     if (a.fix_commit !== undefined && typeof a.fix_commit !== 'string') return bad(`${at}.fix_commit must be text`);
+    if (a.fix_file !== undefined && typeof a.fix_file !== 'string') return bad(`${at}.fix_file must be text`);
     if (a.overridden !== undefined && a.overridden !== true) return bad(`${at}.overridden must be the boolean true or be absent`);
     answers.push(a);
   }
@@ -261,6 +262,7 @@ function fromVerdict(finding, verdict) {
   if (!CHECKER_RULINGS.includes(verdict.ruling)) return { ok: false, why: `the checker's ruling ${JSON.stringify(verdict.ruling)} is none of proved, refuted, neither` };
   if (!RAISED_SEVERITIES.includes(verdict.severity)) return { ok: false, why: 'the checker named no usable severity' };
   const texts = Object.fromEntries(SIX.map((k) => [k, typeof verdict[k] === 'string' ? verdict[k] : '']));
+  /** @type {any} */
   const item = { severity: verdict.severity, suspected: verdict.ruling === 'neither', ...texts };
   if (verdict.ruling === 'refuted') {
     item.ruling = 'refuted';
@@ -304,6 +306,7 @@ function settle(finding, verdict, answer, orphan) {
   }
   if (answer) {
     if (answer.fix_commit !== undefined) item.fix_commit = answer.fix_commit;
+    if (answer.fix_file !== undefined) item.fix_file = answer.fix_file;
     if (answer.overridden !== undefined) item.overridden = true;
   }
   return { ok: true, item };
@@ -392,6 +395,7 @@ export function mapRun(run, answers, envelopes = new Map()) {
         failure_scenario: finding.failure_scenario,
         ...(item.ruling === 'refuted' ? { counter_evidence: item.counter_evidence } : {}),
         ...(item.fix_commit !== undefined ? { fix_commit: item.fix_commit } : {}),
+        ...(item.fix_file !== undefined ? { fix_file: item.fix_file } : {}),
         ...(item.overridden ? { overridden: true } : {}),
       });
       if (item.ruling === 'refuted') return;
@@ -401,7 +405,7 @@ export function mapRun(run, answers, envelopes = new Map()) {
         ? item.severity : finding.severity;
       kept.push({ voice: v.voice, finding, item, shown });
       if (item.ruling === 'survived' && HALTING_SEVERITIES.includes(shown)
-        && item.fix_commit === undefined && !item.overridden) {
+        && item.fix_commit === undefined && item.fix_file === undefined && !item.overridden) {
         needsAnswer.push({ voice: v.voice, index, file: finding.file, line: finding.line, severity: shown, suspected: item.suspected });
       }
     });

@@ -84,13 +84,32 @@ const OVERRIDE_MARKER = true;
 const isText = (v) => typeof v === 'string' && v.trim() !== '';
 
 /**
+ * `fix_file` is the third way a survived blocker or high settles: a fix to a file git doesn't track has no commit to
+ * name, and `overridden: true` would say the finding stood. Weaker evidence than a commit, since nobody can `git show` it.
+ * A repo-relative path, so a drive or leading slash, a `..` segment either slash spells, or a control character is refused.
+ * Whether git tracks the file is a git question, asked by planning/adjudication.mjs.
+ *
+ * @param {unknown} value
+ * @returns {string} '' when usable, else why not
+ */
+export function fixFileIssue(value) {
+  if (!isText(value)) return 'must be a non-blank path';
+  const path = /** @type {string} */ (value);
+  if (path.length > MAX_FILE_CHARS) return `must be at most ${MAX_FILE_CHARS} characters`;
+  if (/[\u0000-\u001f\u007f]/.test(path)) return 'must not carry a control character';
+  if (/^([A-Za-z]:|[\\/])/.test(path)) return 'must be repo-relative, not absolute';
+  if (path.split(/[\\/]/).includes('..')) return 'must not carry a .. segment';
+  return '';
+}
+
+/**
  * The keys a payload object may carry, per level. Unknown keys are refused, as
  * `FINDING_SCHEMA` does, so a `fix_comit` typo gets told instead of stored as a
  * survivor with no fix commit.
  */
 const VOICE_KEYS = ['voice', 'model', 'returned', 'rulings'];
 const FINDING_KEYS = ['file', 'line', 'severity', 'claim', 'failure_scenario'];
-const RULING_KEYS = ['finding', 'ruling', 'claim', 'failure_scenario', 'counter_evidence', 'fix_commit', 'overridden'];
+const RULING_KEYS = ['finding', 'ruling', 'claim', 'failure_scenario', 'counter_evidence', 'fix_commit', 'fix_file', 'overridden'];
 const EVIDENCE_KEYS = ['file', 'line', 'note'];
 
 /**
@@ -283,6 +302,13 @@ export function buildEntries(payload) {
           + `git show on that value, so ${JSON.stringify(ruling.fix_commit)} fails them exactly `
           + 'as an absent one does');
       }
+      if (ruling.fix_file !== undefined) {
+        const why = fixFileIssue(ruling.fix_file);
+        if (why) return no(`${rat}.fix_file ${why}, got ${JSON.stringify(ruling.fix_file)}`);
+        if (ruling.fix_commit !== undefined) {
+          return no(`${rat} carries fix_file beside fix_commit - a fix with a commit names the commit`);
+        }
+      }
       if (ruling.ruling === 'refuted') {
         const ev = ruling.counter_evidence;
         if (!isPlainObject(ev)) {
@@ -306,13 +332,14 @@ export function buildEntries(payload) {
       if (ruling.ruling === 'survived') {
         // gated on the finding's raised severity, since a ruling carries none and a downgrade doesn't restate it
         if (HALTING_SEVERITIES.includes(f.severity)
-          && ruling.fix_commit === undefined && ruling.overridden !== OVERRIDE_MARKER) {
-          return no(`${rat} survived and carries neither a usable fix_commit nor overridden: `
-            + `true - a finding raised at ${HALTING_SEVERITIES.join(' or ')} that STOOD is one a `
-            + 'blocking gate is halting over, so its entry either names the commit that fixed it '
-            + 'or marks the user override that let it stand. Only those two severities are '
-            + 'asked: a survived finding raised below them was confirmed and NOT fixed, and '
-            + 'carries no commit id because none exists');
+          && ruling.fix_commit === undefined && ruling.fix_file === undefined
+          && ruling.overridden !== OVERRIDE_MARKER) {
+          return no(`${rat} survived and carries none of a usable fix_commit, a fix_file or `
+            + `overridden: true - a finding raised at ${HALTING_SEVERITIES.join(' or ')} that STOOD is `
+            + 'one a blocking gate is halting over, so its entry names the commit that fixed it, '
+            + 'the untracked file that was fixed, or marks the user override that let it stand. '
+            + 'Only those two severities are asked: a survived finding raised below them was '
+            + 'confirmed and NOT fixed, and carries no commit id because none exists');
         }
       }
     }
@@ -340,6 +367,7 @@ export function buildEntries(payload) {
         ...(ruling.counter_evidence ? { counter_evidence: ruling.counter_evidence } : {}),
         // `!== undefined`: the old truthiness read stored `fix_commit: ''` and null as absent under `ok: true`
         ...(ruling.fix_commit !== undefined ? { fix_commit: ruling.fix_commit } : {}),
+        ...(ruling.fix_file !== undefined ? { fix_file: ruling.fix_file } : {}),
         // marker alone is legal and leaves no commit id: an override has only a user's reason, so no SHA exists
         ...(ruling.overridden === OVERRIDE_MARKER ? { overridden: true } : {}),
       });
