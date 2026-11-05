@@ -110,7 +110,7 @@ export function tagCarrying(publishedVersions, version) {
 export function configuredNameProblem(configured) {
   if (configured === undefined || configured === null || isBranchName(configured)) return null;
   return 'git.integration_branch_name does not hold a usable branch name (letters, digits, `.`, `_`, `-` and `/`, '
-    + 'starting with a letter or digit, no `..`, no trailing `/` or `.lock`)';
+    + 'starting with a letter or digit, no `..`, no trailing `/` or `.`, no `.lock` ending, no part starting with `.`)';
 }
 
 /**

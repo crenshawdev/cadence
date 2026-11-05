@@ -285,7 +285,7 @@ still surviving round two is the terminal STOP-and-ask, never a round three.
 
 **A `blocker` or `high` survivor ends settled.** NONE is the default, but
 `buildEntries` and `issue-filing unfixed` both refuse a survived `blocker` or
-`high` with neither `fix_commit` nor `overridden: true`, so what follows the
+`high` with none of `fix_commit`, `fix_file` or `overridden: true`, so what follows the
 multi-select is stated here. These asks come after it and leave it as it is.
 They are the exception to NONE first: they carry no NONE, because NONE would
 leave the high unsettled, so only the four-questions-per-call cap applies. An

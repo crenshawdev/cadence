@@ -52,9 +52,9 @@ Branch names governed by `git.on_protected` for direct commits. Verification pub
 
 **Default:** `null` · **Type:** string or null · **Scope:** repository only.
 
-**Format:** letters, digits, `.`, `_`, `-` and `/`, starting with a letter or digit. No `..`, no trailing `/` and no `.lock` ending. `null` leaves it unset.
+**Format:** letters, digits, `.`, `_`, `-` and `/`, starting with a letter or digit. No `..`, no trailing `/` or `.`, no `.lock` ending and no path part starting with a dot. `null` leaves it unset.
 
-The whole name of the integration branch, such as `seldon/hardin`. `null` keeps `cadence/<version>`. A version that is already tagged still asks instead of creating a branch under either name. It stops applying after the land, so the next cycle cannot reuse the name. User-global config cannot set it, because that value would name every repository's branch.
+The whole name of the integration branch, such as `seldon/hardin`. `null` keeps `cadence/<version>`. A version that is already tagged still asks instead of creating a branch under either name. It stops applying after the land, so the next cycle cannot reuse the name. The one exception is a squash merge you land by hand: `git branch --merged` can't see a squash, so the key stays set until you clear it with `/cad-config git.integration_branch_name=null`. User-global config cannot set it, because that value would name every repository's branch.
 
 ### `git.base_branch`
 
