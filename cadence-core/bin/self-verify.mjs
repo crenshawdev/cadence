@@ -137,14 +137,15 @@ function* mdFiles(root) {
 
 // --- workflow scripts (D-21) ----------------------------------------------------
 
-// strings and comments in one pass, so an apostrophe in a comment can't open a string; strings become "" and
-// comments a space, leaving the code the guard check reads
+// strings and comments in one pass, so an apostrophe in a comment can't open a string; strings become "",
+// comments a space and a template keeps one backtick, so the purity test still sees it
 const SCRIPT_TOKENS = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`/g;
-const codeOnly = (/** @type {string} */ t) => t.replace(SCRIPT_TOKENS, (m) => (m.startsWith('/') ? ' ' : '""'));
+const codeOnly = (/** @type {string} */ t) => t.replace(SCRIPT_TOKENS, (m) => (m.startsWith('/') ? ' ' : m.startsWith('`') ? '`' : '""'));
 
 /**
  * The problems in one workflow script, by kind. The host skips an invalid `meta` with only a log line, and a named
- * workflow can be started with no args, so both are CI's to catch. Reads text and parses it, runs nothing.
+ * workflow can be started with no args, so both are CI's to catch. Parses the text, and evaluates only a `meta`
+ * literal that holds no call, name or template; a script's body is never run.
  * @param {string} text @param {string} rel
  */
 function workflowScriptIssues(text, rel) {
