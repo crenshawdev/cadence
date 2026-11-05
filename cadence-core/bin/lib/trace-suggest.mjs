@@ -1,14 +1,10 @@
 // @ts-check
-// trace-suggest.mjs - config suggestions read off the run record, the pure half of `planning.mjs trace
-// suggest`.
-// No I/O: every rule is a pure function over the render, so a test can pin exact outputs to exact traces.
-// Nothing applies a suggestion, the user decides. Each carries its evidence, the config key it concerns and a
-// kind: `suggest` or `info` (a receipt).
-// Every rule needs a floor of evidence before it speaks, because a suggestion from one event is a guess wearing
-// a verdict.
-// Keyed suggestions say which way to move the key and what it holds now. The caller resolves that and passes it
-// in as the optional second argument, which keeps the rules pure.
-// `direction` is set per rule, since the caller can't know which arm of R1 fired.
+// trace-suggest.mjs - config suggestions read off the run record, the pure half of `planning.mjs trace suggest`.
+// No I/O: every rule is pure over the render, so a test can pin exact outputs to exact traces.
+// Nothing applies a suggestion; each carries its evidence, config key and kind: `suggest` or `info` (a receipt).
+// Every rule needs a floor of evidence first: a suggestion from one event is a guess wearing a verdict.
+// Keyed suggestions say which way to move the key and what it holds now, passed in so the rules stay pure.
+// `direction` is set per rule: the caller can't know which arm of R1 fired.
 
 /**
  * @typedef {{kind: 'suggest'|'info', subject: string, evidence: string,
@@ -87,7 +83,7 @@ function resolved(resolution, key) {
   return v === undefined || v === null ? undefined : v;
 }
 
-/** What an unset key prints as `current`: `config.mjs get`'s refusal, naming the decider and never the value it fires. */
+/** What an unset key prints as `current`: `config.mjs get`'s refusal, naming the decider, not the value. */
 function unsetCurrent() {
   return 'unset: no config layer pins this, so the schema default decides it';
 }
@@ -143,14 +139,12 @@ function oneStepDown(gates, value) {
 
 /**
  * Parse an adjudication event: the trigger and survivor count from its `<trigger>: <n> survivors; voices <...>`
- * detail line, plus how many findings were raised before adjudication killed them.
- * A bare detail string works too, for callers that only hold one.
- * `raised` comes from the event's `raised` field, else a hand-written `of <m>` right after the survivor count,
- * else `null` for unknown. Never 0: a fire nobody counted isn't a fire that raised nothing.
- * The trigger regex stays permissive, since tightening it drops historical fires and takes R1's floor down with
- * them.
- * `<trigger> rearm:` and `<trigger> re-arm:` both exist on disk and read as the base trigger with `rearm:
- * true`, never a trigger of their own, which would mint a phantom config key.
+ * detail line, plus how many findings were raised.
+ * `raised` comes from the event's `raised` field, else a hand-written `of <m>` after the count, else `null`.
+ * Never 0: a fire nobody counted isn't a fire that raised nothing.
+ * The trigger regex stays permissive: tightening it drops historical fires and takes R1's floor down with them.
+ * `<trigger> rearm:` and `<trigger> re-arm:` both exist on disk and read as the base trigger with `rearm: true`,
+ * or they'd mint a phantom config key.
  * @param {unknown} input an adjudication event, or its detail string
  * @returns {{trigger: string, survivors: number, raised: number|null,
  *            rearm: boolean}|null}
@@ -178,8 +172,8 @@ export function parseAdjudication(input) {
  * All suggestions the render supports, `suggest` before `info`, then by subject so the order is stable for
  * tests.
  * @param {RenderLike} render
- * @param {Resolution} [resolution] the values the caller read off disk for the keys these rules name; absent, every keyed suggestion still carries a direction and reports `current` as unset.
- * @param {InDispatchReads} [reads] the per-role in-dispatch file figures folded off `.planning/reads.jsonl`, passed in so the rules stay pure. Absent, R7 stays silent and nothing else changes.
+ * @param {Resolution} [resolution] values read off disk for the keys these rules name; absent, `current` is unset
+ * @param {InDispatchReads} [reads] per-role in-dispatch file figures, passed in to keep the rules pure; R7 needs them
  * @returns {Suggestion[]}
  */
 export function suggestFromRender(render, resolution, reads) {
@@ -281,14 +275,11 @@ export function suggestFromRender(render, resolution, reads) {
     }
   }
 
-  // R1: an adjudicated trigger that keeps coming back empty, read a fire at a time. A fire counts when it
-  // adjudicated zero survivors and no re-arm came back to it: a gate that forced a fix round paid for itself on
-  // that fire.
-  // Two outcomes on the same floor, because "nothing survived" means opposite things. Nothing raised is a gate
-  // finding nothing; nine raised and nine killed is a gate working in front of a reviewer that can't tell a
-  // finding from an opinion, and turning it off is the wrong move.
-  // The raised total sums the empty fires only, and an unknown raised count adds 0, so traces from before
-  // `--raised` land on the gate arm as they always did.
+  // R1: an adjudicated trigger that keeps coming back empty, read a fire at a time. A fire counts when it adjudicated
+  // zero survivors and no re-arm came back to it: a gate that forced a fix round paid for itself on that fire.
+  // Two outcomes on the same floor, because "nothing survived" means opposite things. Nothing raised is a gate finding
+  // nothing; nine raised and nine killed is a reviewer that can't tell a finding from an opinion, so don't turn it off.
+  // The raised total sums the empty fires only, and an unknown count adds 0, so older traces land on the gate arm.
   /** @type {Map<string, {total: number, empty: number, raised: number}>} */
   const triggers = new Map();
   for (const f of fires) {
@@ -484,15 +475,12 @@ export function suggestFromRender(render, resolution, reads) {
     });
   }
 
-  // R8: the worker wall clock, in the figure the host reported for the worker itself. R6's counterpart from the
-  // other end. Receipt only, `action` null.
-  // The two clocks are named apart in the evidence: a bracket's `ms` is dispatch-to-close and includes the
-  // orchestrator's time between the writes, `duration_ms` is the worker's own run. One unnamed figure would
-  // price a worker with the step's clock.
-  // Dispatches whose close carried no wall clock are counted beside the sum, not folded in as zeros: zero would
-  // claim a worker that took no time.
-  // Silent when no bracket in scope carries a `duration_ms`. R6 isn't re-based on this figure either: most
-  // brackets carry none and it would fire on every run.
+  // R8: the worker wall clock, in the figure the host reported for the worker itself. R6's counterpart from the other
+  // end. Receipt only, `action` null.
+  // The clocks are named apart in the evidence: a bracket's `ms` includes the orchestrator's time between the writes,
+  // `duration_ms` is the worker's own run. One unnamed figure would price a worker with the step's clock.
+  // Dispatches whose close carried no wall clock are counted beside the sum, not folded in as zeros.
+  // Silent when no bracket in scope carries a `duration_ms`; R6 isn't re-based on it because most brackets carry none.
   const brackets = Array.isArray(render.brackets) ? render.brackets : [];
   let workerMs = 0;
   let priced = 0;
@@ -521,15 +509,12 @@ export function suggestFromRender(render, resolution, reads) {
     });
   }
 
-  // R9: one human authorization, written as two receipts. An override re-applied to a second range is two
-  // events by construction (`risk-check status` wants a receipt per fired range), so nothing said the pair came
-  // from one answer.
-  // `trace append --authorization-id` carries the id the coordinator minted at the answer, and this counts
-  // decisions against writes.
-  // An unlabelled receipt counts as its own decision: every override from before the flag has no id, and
-  // reading those as one shared answer would report a reuse on every old trace.
-  // Silent where the two figures agree, or every render would gain a "2 decisions from 2 writes" line. `action`
-  // is null, no schema key governs this.
+  // R9: one human authorization, written as two receipts. An override re-applied to a second range is two events by
+  // construction (`risk-check status` wants one per fired range), so nothing said the pair came from one answer.
+  // `trace append --authorization-id` carries the id minted at the answer; this counts decisions against writes.
+  // An unlabelled receipt counts as its own decision: overrides from before the flag have no id, and reading them as
+  // one answer would report a reuse on every old trace.
+  // Silent where the figures agree, or every render gains a "2 decisions from 2 writes" line; `action` is null.
   for (const [trigger, row] of [...overrides.entries()].sort()) {
     if (row.writes < MIN_OVERRIDES_FOR_AUTHORIZATION_INFO) continue;
     const decisions = row.ids.size + row.unlabelled;

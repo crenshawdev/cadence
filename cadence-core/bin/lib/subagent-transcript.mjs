@@ -1,13 +1,10 @@
 // @ts-check
-// the pure rule that reads a worker's own transcript for what only that file can say: whether it reached a terminal
-// entry and when, how much cache traffic it billed, and what effort it ran at
-// the SubagentStop payload can't tell finished from handed back mid-turn, and a close for an unfinished worker ends
-// the bracket early and poisons every figure denominated in that row's `ms`
-// terminal means the last "assistant" line has a stop_reason that is a non-empty string other than `tool_use`: an
-// exclusion, not `=== 'end_turn'`, because a stop_sequence worker is finished too
-// three states, not two: unknown lets the caller fall back to what it did before, since the layout has no stability
-// guarantee and two states would delete every hook close the day the host renames a field
-// pure: no fs, no emit, no Date, and it never throws, since the only caller is a hook that speaks on no stream
+// reads a worker's own transcript for what only it says: terminal or not and when, cache traffic, and effort
+// the SubagentStop payload can't tell finished from handed back mid-turn, and closing an unfinished worker poisons
+// every figure denominated in that row's `ms`
+// terminal = the last "assistant" line has a non-empty stop_reason but `tool_use`, since stop_sequence is finished too
+// three states, not two: unknown lets the caller fall back, or one renamed host field deletes every hook close
+// pure: no fs, no emit, no Date, and it never throws, since the only caller is a hook
 'use strict';
 
 /**
@@ -36,7 +33,7 @@ function* assistantEntries(text) {
     if (!t) continue;
     /** @type {any} */
     let o;
-    try { o = JSON.parse(t); } catch { continue; } // a truncated tail (the host may still be appending) or a foreign line
+    try { o = JSON.parse(t); } catch { continue; } // a truncated tail (host still appending) or a foreign line
     if (o && typeof o === 'object' && o.type === 'assistant') yield o;
   }
 }
@@ -84,7 +81,7 @@ export function cacheOf(text) {
     }
     for (const field of CACHE_FIELDS) {
       const v = usage[field];
-      // only non-negative integers count: a string like "1,000" would concatenate onto the sum, a negative would cancel real traffic
+      // only non-negative integers count: a string like "1,000" would concatenate, a negative would cancel real traffic
       if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0) continue;
       sums[field] = (sums[field] || 0) + v;
     }
@@ -94,7 +91,7 @@ export function cacheOf(text) {
 
 /**
  * Whether a worker reached a terminal entry, and when.
- * @param {any} text the transcript's bytes. Anything that isn't a non-empty string answers `unknown`, which is how an absent, empty or over-cap file arrives.
+ * @param {any} text the transcript's bytes; anything but a non-empty string answers `unknown`
  * @returns {{state: 'terminal'|'not-terminal'|'unknown', ts: string|null}}
  * `ts` is the terminal entry's own `timestamp`, byte for byte, and null on every other answer and on a terminal
  * entry with no readable timestamp.
@@ -112,7 +109,7 @@ export function terminalOf(text) {
 
   const message = last.message;
   if (!message || typeof message !== 'object') return { state: STOP_STATE.UNKNOWN, ts: null };
-  // no stop_reason key is a shape change, not a worker mid-turn: calling it not-terminal would suppress every close the first time the field moved
+  // no stop_reason key is a shape change, not a worker mid-turn; calling it not-terminal would suppress every close
   if (!('stop_reason' in message)) return { state: STOP_STATE.UNKNOWN, ts: null };
 
   const stop = message.stop_reason;
@@ -138,7 +135,7 @@ export function effortOf(text) {
   let agreed = null;
   for (const entry of entriesOf(text)) {
     const v = entry.effort;
-    // a line with no readable effort is a missing value, not an ambiguity, so skip it as cacheOf skips an entry with no usage
+    // a line with no readable effort is missing, not ambiguous, so skip it the way cacheOf skips an entry with no usage
     if (typeof v !== 'string' || !v) continue;
     if (agreed === null) { agreed = v; continue; }
     // two lines, two answers: the transcript hasn't said what the worker ran at, so neither do we

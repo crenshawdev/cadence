@@ -1,11 +1,10 @@
 // @ts-check
-// the pure rule behind the SubagentStop hook: from the stop payload and a rendered trace, which open bracket this
-// subagent closes, if any
+// the pure rule behind the SubagentStop hook: which open bracket this stopped subagent closes, if any
 // bin/subagent-trace.mjs is the disk half, so this stays testable on synthetic pairs with no hook or filesystem
 // a session that dies between a bracket's two writes leaves a dispatch that never closes, and the host stops every
 // subagent, so this is the writer that can't be skipped
 // the hand-written `trace close` stays: only it sees the return's token, turn and wall-clock figures
-// pure: no fs, no emit, no clock; Date.parse on a ts the record supplied is a function of bytes, not a clock read
+// pure: no fs, no emit, no clock; Date.parse on a ts the record supplied reads bytes, not a clock
 'use strict';
 
 import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
@@ -46,14 +45,14 @@ function closedBracket(render, id, corr) {
  * rule may state.
  * @param {string|null} id the payload's `agent_id`; without it the fact has no join key
  * @param {string} role the mapped role, never the host's `agent_type`
- * @param {Record<string, number>} cache what `cacheOf` summed; empty means neither figure was reported, which is not zero
+ * @param {Record<string, number>} cache what `cacheOf` summed; empty means unreported, not zero
  * @param {string|null} ts the worker's own stop instant, omitted where the evidence named none
- * @param {any} source the row this fact takes `corr` and `phase` from: the bracket already carrying the id, else a candidate dispatch of the current run. Null means no run to name, so nothing is written.
- * @param {{effort?: string, rung?: string}} ran what the transcript says the worker ran at and the rung it was dispatched under, empty where it named no effort
+ * @param {any} source the row this fact takes `corr` and `phase` from; null means no run to name, so nothing is written
+ * @param {{effort?: string, rung?: string}} ran the transcript's effort and the dispatched rung, empty without one
  * @returns {any[]}
  */
 function cacheFact(id, role, cache, ts, source, ran) {
-  // an effort alone is worth writing: asking for a cache figure only used to drop the one sighting of a silent downgrade
+  // an effort alone is worth writing: asking for a cache figure used to drop the one sighting of a silent downgrade
   // corr plus agent_id is the fold's only key, so without an id and a source there is nowhere for the fact to land
   if (!id || !source || !(Object.keys(cache).length || Object.keys(ran).length)) return [];
   return [{
@@ -110,9 +109,9 @@ function bracketClocks(render, id) {
 
 /**
  * The run in flight: the `corr` of the newest dated evidence that could be about this worker, and the candidate
- * rows carrying it. An undated row counts as oldest; with nothing dated the rows come back untouched.
- * A scope, not a choice: it drops a dead run's leftovers (`unpaired` accumulates for the life of the file) but can't
- * separate two workers of one run, since they share a `corr`.
+ * rows carrying it.
+ * A scope, not a choice: it drops a dead run's leftovers (`unpaired` never shrinks) but can't separate two workers
+ * of one run, since they share a `corr`.
  * Brackets are in the clock because once something closed this worker's dispatch, the role's surviving `unpaired`
  * rows are a dead run's, and gate 2b would write a `return` into another phase's bracket. Rows come before clocks
  * so an unpaired dispatch wins an exact tie.
@@ -137,7 +136,7 @@ function currentRun(rows, clocks) {
  * disk half's one loop covers both.
  * @param {any} payload the host's `SubagentStop` JSON
  * @param {any} render the result of `renderTrace(planningRoot)`, unscoped because the payload carries no phase
- * @param {{transcript?: any}} [evidence] what the disk half read for this stop: `transcript` is the stopped worker's own JSONL, whole, as a string. Omitted, the termination gate answers `unknown` and the cache sums answer nothing.
+ * @param {{transcript?: any}} [evidence] the worker's own JSONL as a string; without it the gate answers `unknown`
  * @returns {{corr: any, phase: any, plan?: any, family: string, event: string, role: string, agent_id?: string, ts?: string, cache_creation_input_tokens?: number, cache_read_input_tokens?: number, effort?: string, rung?: string}[]}
  * Either the single `return` an unambiguous terminal stop closes with, or the single `WORKER_CACHE` fact a
  * withholding gate states instead, or nothing. `effort` and `rung` ride both and are omitted together when the
@@ -145,7 +144,7 @@ function currentRun(rows, clocks) {
  */
 export function closeForStop(payload, render, evidence) {
   const transcript = evidence && evidence.transcript;
-  // gate 1, the self-filter, is the whole enforcement: the host never applies a hooks.json matcher, and every arm below needs a role
+  // gate 1, the self-filter, is the whole enforcement: the host never applies a hooks.json matcher
   const role = roleOfAgent(payload && payload.agent_type);
   if (!role) return [];
 
@@ -154,8 +153,8 @@ export function closeForStop(payload, render, evidence) {
   const entries = transcriptEntries(transcript);
   const cache = cacheOf(entries);
   const stopped = terminalOf(entries);
-  // the effort comes off the worker's own transcript and never the payload, not even as a fallback: the payload
-  // reports the configured level (`max` on a run whose transcript recorded `high`), the very downgrade this pair exposes
+  // effort comes from the worker's own transcript, never the payload: that reports the configured level
+  // (`max` on a run whose transcript recorded `high`), the very downgrade this pair exposes
   const effort = effortOf(entries);
   // both keys or neither; gate 1 already refused every type with no rung file, so a role means a rung
   const ran = effort ? { effort, rung: rungOfAgent(payload && payload.agent_type) } : {};
@@ -173,18 +172,18 @@ export function closeForStop(payload, render, evidence) {
 
   // gate 0: only not-terminal refuses the close. unknown falls through to the behaviour from before transcripts were
   // read, since folding it in would let one host-side rename delete every hook close, silently.
-  // A refusal still answers the fact: a worker handed back mid-turn billed real cache traffic and nothing else holds it.
+  // a refusal still answers the fact: a worker handed back mid-turn billed real cache traffic nothing else holds
   if (stopped.state === STOP_STATE.NOT_TERMINAL) return withheld();
 
-  // gate 2a: a stop arriving after the hand-written close has nothing left to close, and falling through would land it on whatever else is open
+  // gate 2a: a stop after the hand-written close has nothing left to close; falling through would hit another open row
   if (closed) return withheld();
 
-  // gate 2b: exactly one open dispatch in the current run, or nothing. No clock separates two workers dispatched in one
-  // message, so adopting the newest would cross them; currentRun already dropped a dead run's rows, or this refuses forever
+  // gate 2b: exactly one open dispatch in the current run, or nothing. Two workers dispatched in one message share a
+  // clock, so adopting the newest would cross them; currentRun drops a dead run's rows, or this would refuse forever
   if (mine.length !== 1) return withheld();
   const best = mine[0];
 
-  // gate 3: identity quoted verbatim off the adopted row, no return figures (this hook never sees any), and the cache sums where they exist
+  // gate 3: identity quoted off the adopted row, no return figures (the hook never sees any), and the cache sums
   return [{
     corr: best.corr,
     phase: best.phase,
@@ -192,10 +191,10 @@ export function closeForStop(payload, render, evidence) {
     family: 'lifecycle',
     event: 'return',
     role,
-    // without it the post-pass fold can't reach this bracket, and closedBracket won't recognise the worker if it stops again
+    // without it the post-pass fold can't reach this bracket, and closedBracket won't recognise a repeat stop
     ...(id ? { agent_id: id } : {}),
-    // the worker's own stop instant, quoted as is: renderEvent would stamp the append time, and a close delayed past the
-    // next dispatch of the same key would carry a later instant, so the repeat-close check in renderTrace could never fire
+    // the worker's own stop instant, as is: renderEvent would stamp the append time, and a close delayed past the next
+    // dispatch of the same key would carry a later instant, so renderTrace's repeat-close check could never fire
     ...(stopped.ts ? { ts: stopped.ts } : {}),
     ...cache,
     ...ran,

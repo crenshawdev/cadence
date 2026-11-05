@@ -1,13 +1,9 @@
 // @ts-check
 // trace.mjs - the one writer and reader of `.planning/trace.jsonl`, the record of what a run did.
-// The correlation id is derived from what's on disk, never minted: producers are one-shot processes with no
-// shared state.
+// The correlation id is derived from disk, never minted: producers are one-shot processes with no state.
 // Writes append, because a read-modify-write would lose events under parallel dispatch.
 // It never throws or speaks on a stream, since a record of a decision can't change the decision.
-// Token provenance: `--tokens` is whatever the host's return reported. Omit it when there's no figure, since 0
-// claims a free dispatch.
-// A missing figure is routine (built-in agents like `Explore` return none), so `unrecorded` means no number
-// came back.
+// `--tokens` is what the host reported; omit it with no figure, since 0 claims a free dispatch (`unrecorded`).
 // Never estimate a figure or borrow another worker's: an absent number reads as absent, a wrong one doesn't.
 'use strict';
 
@@ -200,7 +196,7 @@ function renderEvent(planningRoot, event) {
  * `carried_bytes` seals the generation: `rotateTrace` uses it to find bytes a late writer left in the old
  * inode.
  * @param {string} text the whole record a cut would carry away
- * @returns {{lines: string[], at: number, corr: string, marker: string}} `at` is the anchor line's index, or `-1` with no anchor (no tail).
+ * @returns {{lines: string[], at: number, corr: string, marker: string}} `at` is the anchor's index, `-1` with none
  */
 function rotationMarker(text) {
   const lines = text.split('\n');
@@ -326,18 +322,15 @@ function claimAbandoned(claim) {
 }
 
 /**
- * Claim the record, swap in a fresh one carrying the run in flight, and hand the old one to
- * `ROTATED_TRACE_FILE`.
- * No lock: the `SubagentStop` hook writes through here and may not speak on the path a lock refusal would use.
- * The claim is `linkSync`, not `renameSync`: a rename silently replaces a finished rotation's generation,
- * `linkSync` fails `EEXIST`.
- * Never a read-modify-write: the fresh file is renamed in whole, so the live path is never absent.
+ * Claim the record, swap in a fresh one carrying the run in flight, and hand the old one to `ROTATED_TRACE_FILE`.
+ * No lock: the `SubagentStop` hook writes through here and can't speak on the path a lock refusal would use.
+ * The claim is `linkSync`, not `renameSync`: a rename silently replaces a finished rotation's generation.
  * @param {string} planningRoot
  * @param {number} reserve bytes the fresh file owes beyond the carried tail
  * Exported so a test can reach the losing arm, which `appendEvent` can't (it re-stats).
  * @returns {{rotated: boolean, reason?: string, shortfall?: number|null}}
  * `reason` only where the rotation failed outright; losing the claim is `{rotated:false}`. `shortfall` is the
- * bytes of the destroyed generation the rescue couldn't carry, `null` when unknown.
+ * bytes the rescue couldn't carry from the destroyed generation, `null` when unknown.
  */
 export function rotateTrace(planningRoot, reserve) {
   const file = tracePath(planningRoot);
@@ -376,16 +369,12 @@ export function rotateTrace(planningRoot, reserve) {
       let wasStale = false;
       try {
         wasStale = claimAbandoned(claim);
-        // stamp private, publish only when the claim is ours. It has to exist before `linkSync`, or a third
-        // process reads the dead claimant's age on our live claim and evicts it.
-        // Writing straight to `claim` was the other bug: every losing append refreshed someone else's claim, so
-        // an abandoned one never aged out.
-        // Naming the stamp with `priv` fixes it, losers unlink a file nobody else sees. Only the link winner
-        // and the evictor publish.
-        // Plain overwrite, not `wx`: the retry after an eviction reuses `priv` and would throw on our own
-        // leftover.
-        // A failed sidecar write is swallowed: no sidecar reads as live, and throwing would send an unwritable
-        // root down the no-hard-links fallback.
+        // stamp private, publish only when the claim is ours, and before `linkSync` or a third process evicts our live
+        // claim on the dead claimant's age. Writing straight to `claim` let every losing append refresh someone else's,
+        // so an abandoned one never aged out. Only the link winner and the evictor publish.
+        // plain overwrite, not `wx`: the retry after an eviction reuses `priv` and would throw on our own leftover
+        // a failed sidecar write is swallowed: no sidecar reads as live, and throwing would send an unwritable root
+        // down the no-hard-links fallback
         pending = `${claim}.${priv}`;
         try { writeFileSync(pending, `${new Date().toISOString()}\n`); }
         catch { pending = null; /* fail live: no sidecar reads as a live claim */ }
@@ -491,15 +480,12 @@ export function rotateTrace(planningRoot, reserve) {
       seen += whole.length;
     }
 
-    // the second window, which the loop above can't reach: an append that lands in the old inode after rotation
-    // 1 stopped carrying back lives only in the generation, and rotation 2 evicts it. So the writer about to
-    // destroy a leftover generation finishes the carry-back.
-    // It starts at the newest marker's `carried_bytes`. No seal (a generation from before the field) means no
-    // rescue and `shortfall: null`, since guessing an offset risks re-appending a whole generation.
-    // Unlike the loop above it skips lines already here: a duplicate in the live record changes what
-    // `renderTrace` counts.
-    // A failed rescue never throws or decides whether the rotation rotated, but it's stated: every failure arm
-    // reports `shortfall`, `null` for an unknown amount.
+    // the second window: an append landing in the old inode after rotation 1 stopped carrying back lives only in the
+    // generation, and rotation 2 evicts it, so the writer about to destroy a leftover generation finishes the job
+    // it starts at the newest marker's `carried_bytes`; with no seal it reports `shortfall: null`, since guessing an
+    // offset risks re-appending a whole generation
+    // unlike the loop above it skips lines already here, or `renderTrace` would count a duplicate
+    // a failed rescue never throws or decides whether the rotation rotated, but every failure arm reports `shortfall`
     /** @type {number|null|undefined} */
     let shortfall;
     if (leftover) {
@@ -646,21 +632,20 @@ export function appendEvent(planningRoot, event) {
  * @property {string} file the trace file's path
  * @property {string|null} corr the phase's derived id, or null with no `--phase`
  * @property {boolean} capped true when the file is at or over MAX_TRACE_BYTES
- * @property {{file: string, ts: any}} [rotated] present only where the record carries a rotation marker, so an unrotated record renders unchanged. It describes the record, not the `--phase` scope.
+ * @property {{file: string, ts: any}} [rotated] present only with a rotation marker; the record's, not `--phase`'s
  * @property {{routing: number, provider: number, lifecycle: number, outcome: number}} counts
  * @property {number} malformed lines that did not parse as JSON
  * @property {Record<string, {dispatches: number, tokens?: number, turns?: number, unrecorded?: number, turns_unrecorded?: number}>} roles what each role's returns reported; `tokens` pairs with `unrecorded` and `turns` with `turns_unrecorded`, on separate counters.
  * @property {Record<string, any>[]} events
  * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number, duration_ms?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number, agent_id?: string, effort?: string, rung?: string}[]} brackets every dispatch that paired, one row each, in terminal order. Exposed so callers don't re-derive the pairing and disagree.
  *   `ms` is dispatch-to-close wall clock; `duration_ms` is what the host reported for the worker's own run.
- *   Cache figures come from the hook (on the close or a `WORKER_CACHE` fact), the larger read wins, and they
- *   never reach `roles`.
- *   `effort` is what the worker's transcript says it ran at, `rung` what it was dispatched under. A `max`
- *   dispatch can run at `high` unannounced.
- *   On a `routing/resolve` event `effort` is the routed rung instead. Optional keys are omitted when absent so
- *   older records render unchanged.
- * @property {{corr: any, phase: any, plan: any, ts: any, role: string}[]} unpaired dispatches with no terminal; `role` is the dispatch's, and no `--role` keys the empty string so a forgotten flag stays visible
- * @property {{corr: any, phase: any, plan: any, ts: any, event: any, dispatched: string, closed: string}[]} mismatched paired brackets whose terminal named a role its dispatch did not
+ *   Cache figures come from the hook, the larger read wins, and they never reach `roles`.
+ *   `effort` is what the worker's transcript says it ran at, `rung` what it was dispatched under (a `max` dispatch
+ *   can run at `high` unannounced). On a `routing/resolve` event `effort` is the routed rung instead.
+ * @property {{corr: any, phase: any, plan: any, ts: any, role: string}[]} unpaired
+ *   dispatches with no terminal; no `--role` keys the empty string, so a forgotten flag stays visible
+ * @property {{corr: any, phase: any, plan: any, ts: any, event: any, dispatched: string, closed: string}[]} mismatched
+ *   paired brackets whose terminal named a role its dispatch did not
  * @property {CoordinatorResidue} [coordinator] present only when the scoped events carry a usable COORDINATOR marker
  */
 
