@@ -1,12 +1,11 @@
 // @ts-check
-// planning/testing-policy.mjs - `test-policy render`: the committed form of the project's accepted testing policy
-// the file is named testing-policy and not test-policy like the subcommand because node's default coverage exclusion skips files named test-*, which kept this module outside the 95/88 gate
-// it's a file because the policy lives in .planning/config.json, which a project may keep out of its repository, and GitHub Actions can only read what's committed. render writes .github/cadence/coverage-policy.json from the config so CI and the config can be compared (check) and a lowered threshold named against a ref
-// the shape is the testing section's own (scope, coverage, strong_areas, required_jobs) in config.schema.json's order, two-space JSON and a trailing newline, so a re-render is byte-identical. Unset keys take the schema's default, located the way config.mjs and route.mjs locate it, and its defaults are never restated here
-// check compares text: the config, that file and the workflow files directly under .github/workflows/. It parses no tool configuration and never runs an accepted command, because a config that arrives with a clone must not choose what Cadence runs
-// check --base <ref> also reads the committed file at a ref and names what the config now weakens against it; those are reported and not failed, since an explicit adjustment is legal and /cad-land decides what to do with them
-// ci-status --commit <sha> reads one commit's check runs from GitHub with `gh api`, by argv and under a timeout, and answers pass, fail or pending for the required jobs. It runs from the main session and never the verifier subagent, whose contract forbids network use. Pass is never inferred: no matching run, no gh, a failing call or another forge all read pending. Only on an overall pass with --phase named does it write that commit to the phase UAT's ci field, the one writer that field has
-// --root is the project root, deliberately not --dir, which this script defines as the planning directory
+// `test-policy render`: the committed form of the accepted testing policy
+// named testing-policy, not test-policy, or node's default coverage exclusion skips it
+// a file because GitHub Actions can only read what's committed
+// check compares text and never runs an accepted command: a config from a clone mustn't choose what runs
+// check --base <ref> reports what the config weakens against that ref, but doesn't fail it
+// ci-status runs from the main session, never the verifier subagent; no run, no gh or another forge reads pending
+// --root is the project root, not --dir, which here is the planning directory
 'use strict';
 
 import { execFileSync } from 'node:child_process';

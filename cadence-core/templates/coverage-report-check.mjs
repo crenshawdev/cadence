@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// coverage-report-check.mjs - enforces the accepted coverage thresholds for the stacks whose own tool can't: Python (coverage.py JSON), Go (`go tool cover -func`) and Rust on nightly (LCOV). It's copied into a project, so it imports node: builtins only and can't reach cadence-core/
+// enforces the accepted coverage thresholds for stacks whose own tool can't: Python, Go and Rust (LCOV)
+// copied into projects, so node: builtins only and no reaching into cadence-core/
 //
 //   node coverage-report-check.mjs --format python|go|lcov --report <path> [--policy <path>]
 //
-// thresholds, scope and accepted commands come from the policy file (default .github/cadence/coverage-policy.json). One line per metric, exit 1 when any fails, naming each. A metric is never estimated: a missing, empty or unusable report fails, a threshold above 0 with no data fails, and a threshold of 0 prints as disabled and never as satisfied
+// one line per metric, exit 1 when any fails. Nothing is estimated: a missing or empty report fails,
+// so does a threshold above 0 with no data, and a threshold of 0 prints as disabled
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
@@ -47,7 +49,7 @@ const threshold = (m) => policy[m];
 const text = read(reportPath, 'report');
 if (!text.trim()) { fail(`report: ${reportPath} is empty`); finish(); }
 
-// metrics: name -> [covered, total], or a string saying why the format has none. zeroBranchesOk is true when a zero branch total may read as "not applicable"
+// name -> [covered, total], or a string saying why the format has none; zeroBranchesOk lets zero branches read as n/a
 const metrics = {};
 let zeroBranchesOk = false;
 

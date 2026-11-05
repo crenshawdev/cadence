@@ -1,29 +1,33 @@
 // @ts-check
-// git-segments.mjs - the whole of what git-guard.mjs sees. It replaced a shell tokenizer plus a model of git's option grammar, both deleted, and it is deliberately the smaller thing
-// why it's this small: the guard is a PreToolUse hook whose adversary is the model issuing the command, not an attacker, and references/git-publish.md concedes the rail is "a detection widener, not a security boundary". Being wrong costs a prompt, never a bypass, and the sanctioned publish never reaches this hook
-// a reader that predicts what the shell will do has an unbounded escape surface (bash -c, $(...), backticks, env -S, aliases, variable indirection), so every review round found another hole and every patch added grammar. That cost three blocking review panels and a V8 OOM at 280KB of input on a hook that runs on every Bash call, and it still left three families of silent destruction open
-// so it reads one thing: a segment counts only when its command word is git, and everything else is silent by construction. The shapes that go silent are listed in references/git-publish.md rail 3 and in the CHANGELOG-v1-v2.md entry that removed the parser, as the accepted cost
-// it also holds the scope rule, the .planning/ walk that decides whether a directory sits inside a Cadence project: git-guard applies it, read-trace and subagent-trace share it, and it lives here because git-guard.test.mjs pins git-guard's import set and this is the one dependency-free file in that set
-// the walk is one generator that yields [dir, name] and takes back a boolean, and planningRoot drives it with the hooks' sync existsSync probe. The parent step is parentDir, a port of node's own dirname
+// everything git-guard.mjs sees; it replaced a shell tokenizer and a model of git's option grammar
+// the guard's adversary is the model, not an attacker: being wrong costs a prompt, never a bypass
+// predicting the shell has an unbounded escape surface, and every patch added grammar
+// so a segment counts only when its command word is git, and everything else is silent by construction
+// also holds the .planning/ scope walk that git-guard, read-trace and subagent-trace share
+// the walk is a generator yielding [dir, name] and taking back a boolean; planningRoot drives it with existsSync
 'use strict';
 
-/** The git global options that take a separate argument. A fixed list and not a grammar, and the only reason the scan looks past a flag at all: without it `git -C /srv/repo push` reads `/srv/repo` as its verb and a real push goes silent. The `=`-glued spellings (`--git-dir=x`) need no entry, each is one `-`-leading word the flag skip already covers. */
+/** The git global options that take a separate argument. A fixed list, not a grammar: without it
+ * `git -C /srv/repo push` reads `/srv/repo` as the verb. The `=`-glued spellings need no entry. */
 const GLOBAL_OPT_WITH_ARG = new Set([
   '-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--config-env',
 ]);
 
-/** `;`, a newline, `|`, `||`, `&&` and `&` each end a simple command. The two-character forms lead the alternation so they match before the single-character class can split them. */
+/** `;`, a newline, `|`, `||`, `&&` and `&` each end a command. The two-character forms lead so they aren't split. */
 const SEPARATOR = /&&|\|\||[;|&\n]/;
 
 /**
  * Every git verb this command runs, in order: `git add . && git push` reads
  * `['add', 'push']`.
  *
- * Total and linear: any input at all (a non-string, a hostile object, a megabyte of repeated separators) returns an array and never throws, because this runs on every Bash tool call and a guard that stalls or aborts is worse than one that misses. The deleted reader was O(K x N) in memory and OOMed the hook, which fails open.
+ * Total and linear: any input returns an array and never throws. This runs on every Bash call, and a guard that stalls
+ * is worse than one that misses.
  *
- * A segment contributes a verb only when its first word is `git` (or ends in `/git`, so `/usr/bin/git push` counts). That anchor is why there's no separate deny gate: a verb read here came from a command word by construction, so `rg -t sh "git commit"`, `command -v git commit`, `grep git commit` and `echo "git push"` are silent and not detected wide and then gated back down to an ask.
+ * A segment contributes a verb only when its first word is `git` (or ends in `/git`).
+ * That's why `echo "git push"` and `grep git commit` are silent.
  *
- * The cost, stated: an invocation reached through a wrapper, a substitution or a transparent prefix (`bash -c "git push"`, `$(git push)`, `sudo git push`, `xargs git push`, `env -S "git push"`) is not seen. references/git-publish.md rail 3 carries the list.
+ * What it can't see: a wrapper, a substitution or a prefix (`bash -c "git push"`, `$(git push)`, `sudo git push`).
+ * references/git-publish.md rail 3 lists them.
  *
  * @param {unknown} text the raw command string from the hook payload
  * @returns {string[]} the verbs, in the order they appear
@@ -33,7 +37,9 @@ export function gitVerbs(text) {
 }
 
 /**
- * The same scan as `gitVerbs`, keeping each segment's `-C` arguments in order: `git -C /tmp/x commit` reads `[{verb: 'commit', dirs: ['/tmp/x']}]`. `-C` is which repository a commit lands in, so the commit rail needs it. The words are raw (quotes and `$` are left for the caller to judge) and a `-C` with nothing after it keeps `''`, which no reader resolves.
+ * The same scan as `gitVerbs`, keeping each segment's `-C` arguments: `git -C /tmp/x commit` reads
+ * `[{verb: 'commit', dirs: ['/tmp/x']}]`. The commit rail needs `-C` to know which repo is hit.
+ * Words are raw, and a bare `-C` keeps `''`.
  *
  * @param {unknown} text the raw command string from the hook payload
  * @returns {{verb: string, dirs: string[]}[]}
