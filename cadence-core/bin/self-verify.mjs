@@ -10,6 +10,7 @@
 
 import { readFileSync, readdirSync, existsSync, statSync, lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import vm from 'node:vm';
 import { join, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
@@ -132,6 +133,47 @@ function* mdFiles(root) {
     const p = join(root, doc);
     if (existsSync(p)) yield { file: p };
   }
+}
+
+// --- workflow scripts (D-21) ----------------------------------------------------
+
+// strings and comments in one pass, so an apostrophe in a comment can't open a string; strings become "" and
+// comments a space, leaving the code the guard check reads
+const SCRIPT_TOKENS = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`/g;
+const codeOnly = (/** @type {string} */ t) => t.replace(SCRIPT_TOKENS, (m) => (m.startsWith('/') ? ' ' : '""'));
+
+/**
+ * The problems in one workflow script, by kind. The host skips an invalid `meta` with only a log line, and a named
+ * workflow can be started with no args, so both are CI's to catch. Reads text and parses it, runs nothing.
+ * @param {string} text @param {string} rel
+ */
+function workflowScriptIssues(text, rel) {
+  /** @type {{kind: string, file: string, detail: string}[]} */
+  const out = [];
+  const bad = (/** @type {string} */ kind, /** @type {string} */ detail) => out.push({ kind, file: rel, detail });
+  const m = /^export const meta = (\{[\s\S]*?\n\});?[ \t]*(?:\n|$)/.exec(text);
+  if (!m) {
+    bad('workflow-meta-invalid', 'the script must begin with `export const meta = {...}` closed by a } at column 0');
+    return out;
+  }
+  const lit = codeOnly(m[1]);
+  const idents = [...lit.matchAll(/[A-Za-z_$][\w$]*/g)];
+  const impure = /[()`]|=>|\.\.\./.test(lit)
+    || idents.some((i) => !['true', 'false', 'null'].includes(i[0]) && !/^\s*:/.test(lit.slice(i.index + i[0].length)));
+  let meta;
+  if (!impure) { try { meta = vm.runInNewContext(`(${m[1]})`, Object.create(null), { timeout: 100 }); } catch { /* reported below */ } }
+  if (impure || !meta || typeof meta !== 'object') bad('workflow-meta-invalid', 'meta must be a pure literal: no calls, names or templates');
+  else for (const k of ['name', 'description']) {
+    if (typeof meta[k] !== 'string' || !meta[k].trim()) bad('workflow-meta-invalid', `meta.${k} must be a non-blank string`);
+  }
+  const body = text.slice(m[0].length);
+  try { new vm.Script(`(async function () {\n${body}\n})`); }
+  catch (e) { bad('workflow-script-syntax', e && e.message ? e.message : String(e)); }
+  const code = codeOnly(body);
+  const call = code.search(/\bagent\s*\(/);
+  const guard = code.search(/\bargs\b/);
+  if (call >= 0 && (guard < 0 || guard > call)) bad('workflow-no-args-guard', 'args is not tested before the first agent( call');
+  return out;
 }
 
 /**
@@ -300,7 +342,7 @@ function run(root) {
   // 0. a full tree missing a core surface dir is a real break (#44), a fixture that omits one is not
   if (isFullTree) {
     for (const d of ['cadence-core/workflows', 'cadence-core/references',
-      'cadence-core/templates', 'skills', 'agents']) {
+      'cadence-core/templates', 'skills', 'agents', 'workflows']) {
       if (!existsSync(join(root, d))) {
         problems.push({ kind: 'missing-input', file: d, detail: 'core surface dir absent' });
       }
@@ -853,6 +895,22 @@ function run(root) {
   // 26. no shipped file but an image or font over 256 KiB, and at most 512 files plus folders, every root included
   for (const issue of directoryLimitIssues(root)) problems.push(issue);
 
+  // 27. workflows/*.js at plugin root: checks 1 to 3 on the text, then the script's own rules (workflowScriptIssues)
+  const wfDir = join(root, 'workflows');
+  if (existsSync(wfDir)) {
+    let names = [];
+    try { names = readdirSync(wfDir).filter((n) => n.endsWith('.js')).sort(); }
+    catch (e) { problems.push({ kind: 'unreadable-surface', file: 'workflows', detail: e.code || e.message }); }
+    for (const n of names) {
+      const rel = join('workflows', n);
+      let text;
+      try { text = readFileSync(join(wfDir, n), 'utf8'); }
+      catch (e) { problems.push({ kind: 'unreadable-surface', file: rel, detail: e.code || e.message }); continue; }
+      lintProse(text, rel, false, '');
+      problems.push(...workflowScriptIssues(text, rel));
+    }
+  }
+
   return problems;
 }
 
@@ -869,7 +927,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations, workflow-scripts', problems });
 } catch (e) {
   // a thrown seam object has no message, so without this arm the refusal's detail is "[object Object]"
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
