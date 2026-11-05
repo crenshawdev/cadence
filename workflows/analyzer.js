@@ -120,7 +120,8 @@ const render = (e) => [
   `  **Certainty:** ${e.certainty}`,
   `  **Evidence:** ${e.evidence.map((p) => `\`${p}\``).join(', ')}`,
   `  **If wrong:** ${e.if_wrong}`,
-  ...(e.certainty !== 'Confident' && e.alternatives.length ? ['  **Alternatives:**', ...e.alternatives.map((alt) => `  - ${alt}`)] : []),
+  // The contract wants one or two for Likely and Unclear; merging can give more, and a reader can send none.
+  ...(e.certainty !== 'Confident' ? ['  **Alternatives:**', ...(e.alternatives.length ? e.alternatives.slice(0, 2) : ['None named.']).map((alt) => `  - ${alt}`)] : []),
 ].join('\n');
 
 const report = [
