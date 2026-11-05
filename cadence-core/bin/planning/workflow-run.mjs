@@ -102,7 +102,8 @@ function writeBrackets(dir, phase, runId, list) {
 function readEnvelopes(run) {
   const found = new Map();
   for (const v of run.result.voices) {
-    if (!v.ran || typeof v.envelope !== 'string' || !v.envelope.trim()) continue;
+    // a voice that did not run may still carry what its provider teed before the wrapper failed to answer
+    if (typeof v.envelope !== 'string' || !v.envelope.trim()) continue;
     const r = readCapped(v.envelope, MAX_ENVELOPE_BYTES);
     /** @type {any} */
     let parsed = null;

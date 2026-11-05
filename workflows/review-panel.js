@@ -10,7 +10,7 @@ export const meta = {
 //   composed its payload before launch and passes the whole seam line with absolute paths, since CLAUDE_PLUGIN_ROOT is unset in a workflow
 //   agent, the file to tee the provider's own output to, the Bash timeout in ms, and the provider's model for the record.
 // Returns { voices: [{ voice, ran, reason?, result, rulings: [{ index, finding, ruling }], fallback?, envelope?, model? }] }, no merging.
-//   ran false names its reason. A reviewer or checker that died stays null, and the main model owns that slot.
+//   ran false names its reason, and a voice whose wrapper launched keeps envelope and model, so the seam can still read what the provider teed. A reviewer or checker that died stays null, and the main model owns that slot.
 //   When no voice ran, the local reviewer runs once more as the fallback and is marked fallback: true.
 
 const LOCAL = 'claude-subagent';
@@ -113,7 +113,8 @@ const checkPrompt = (finding) => [
   'END FINDING',
 ].join('\n');
 
-const none = (voice, reason) => ({ voice, ran: false, reason, result: null, rulings: [] });
+// kept is what a voice carries after its wrapper launched: the envelope path and model, since the provider may have teed before the wrapper failed to answer.
+const none = (voice, reason, kept) => ({ voice, ran: false, reason, result: null, rulings: [], ...kept });
 
 // The wrapper runs one line and retypes its output, and nothing else: it holds no Read, Glob or Grep, and its rung denies the write tools.
 const viaProvider = (voice) => {
@@ -126,10 +127,11 @@ const viaProvider = (voice) => {
     `${p.line} | tee ${p.envelope}`,
     'It prints one JSON line. Return that JSON through the schema, copying each value as printed and adding nothing. If it printed nothing, return {"ok": false, "reason": "no-output"}.',
   ].join('\n');
+  const kept = { envelope: p.envelope, model: p.model };
   return ask(prompt, { agentType: a.wrapper_agent_type, ...(text(a.model) ? { model: a.model } : {}), schema: PROVIDER_SCHEMA, label: `provider ${voice}`, disallowedTools: ['Read', 'Glob', 'Grep'] }, `provider ${voice}`)
     .then((r) => {
-      if (!r) return none(voice, 'the provider wrapper returned nothing');
-      if (r.ok !== true) return none(voice, text(r.reason) ? `the provider reported ${r.reason}` : 'the provider reported ok:false with no reason');
+      if (!r) return none(voice, 'the provider wrapper returned nothing', kept);
+      if (r.ok !== true) return none(voice, text(r.reason) ? `the provider reported ${r.reason}` : 'the provider reported ok:false with no reason', kept);
       return {
         voice, ran: true, model: p.model, result: { findings: Array.isArray(r.findings) ? r.findings : [] }, rulings: [], envelope: p.envelope,
         ...(r.redactions > 0 ? { redactions: r.redactions } : {}), ...(Array.isArray(r.warnings) && r.warnings.length ? { warnings: r.warnings } : {}),

@@ -162,7 +162,9 @@ function providerFindings(voice, env) {
     const j = isPlainObject(f) ? retyped.findIndex((x, k) => !used.has(k) && isPlainObject(x) && canon(x) === canon(f)) : -1;
     if (j >= 0) used.add(j);
     from.push(j);
-    orphan.push(j >= 0 ? '' : 'the provider\'s own text differs from the copy its checker read, or the agent left it out, so no checker ruling carries over');
+    orphan.push(j >= 0 ? '' : (voice.salvaged
+      ? 'the wrapper returned no usable result, so no checker ruled on this finding from the provider\'s own output'
+      : 'the provider\'s own text differs from the copy its checker read, or the agent left it out, so no checker ruling carries over'));
   });
   const stray = retyped.map((f, k) => ({ f, k })).filter(({ k }) => !used.has(k))
     .map(({ f }) => ({ voice: voice.voice, file: f && f.file, line: f && f.line, reason: 'the agent returned a finding the provider\'s own output does not hold, so it was dropped' }));
@@ -303,11 +305,16 @@ export function mapRun(run, answers, envelopes = new Map()) {
   const notes = [];
   const counts = { raised: 0, survived: 0, downgraded: 0, refuted: 0, unruled: 0 };
 
-  for (const v of run.result.voices) {
-    if (!v.ran) {
-      dropped.push({ voice: v.voice, reason: isText(v.reason) ? v.reason : 'it did not run' });
+  for (const row of run.result.voices) {
+    // a voice that did not run but teed a readable ok:true envelope is judged on it; no checker saw it, so every finding lands unruled
+    const teed = !row.ran && isText(row.envelope) ? envelopes.get(row.voice) : null;
+    const salvaged = isPlainObject(teed) && teed.ok === true && Array.isArray(teed.findings) && !findingsProblem(teed.findings);
+    if (!row.ran && !salvaged) {
+      dropped.push({ voice: row.voice, reason: isText(row.reason) ? row.reason : 'it did not run' });
       continue;
     }
+    const v = row.ran ? row : { ...row, ran: true, salvaged: true, result: { findings: [] }, rulings: [] };
+    if (salvaged) notes.push(`${v.voice}: the wrapper did not answer (${isText(row.reason) ? row.reason : 'it did not run'}), so the envelope at ${v.envelope} was read and its findings carry no checker ruling`);
     const model = isText(v.model) ? v.model : modelOf(v.voice);
     if (!model) return refuse('run-no-model', `the run file records no model for ${v.voice}, and the record owes one`);
     const verdicts = new Map();
