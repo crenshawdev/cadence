@@ -16,11 +16,28 @@ One object:
   - `providers`: `{"<name>": {"line", "envelope", "timeout_ms", "model"}}`. `line` is that file's seam call whole, with `--trigger <trigger>` on it and every path absolute, `${CLAUDE_PLUGIN_ROOT}` written out, because the variable is unset in a workflow agent. `envelope` is a new path in the scratch directory, where the wrapper tees the provider's own output. `timeout_ms` covers `review.request_timeout_ms`, at most 600000. `model` is the provider's, for the record.
 - `checker_artifact`: a checker holds no Bash, so it opens one file with Read. Make this run's scratch directory first, `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")"`, and keep every file of this run in it. On a refs fire write the range's diff to a file there, the way step 2's shape (c) does, and pass its path. On a staged scope write the staged diff the same way. On a path fire pass the same path as `artifact`.
 
-## 2. Launch
+## 2. Claim, then launch
+
+Every workflow launch claims first. The label is `<trigger>-<discriminator>`, this fire's own:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-claim take --fire <trigger>-<discriminator>
+```
+
+The seam reads the multi-workflow setting from both config layers itself, so never answer for it from memory. `launch: true` means go on, and with the setting on that is every call. `launch: false` names the `holder` and its `age_seconds`:
+
+- This session holds it, because a fire of yours is awaiting its notice: queue this fire, launch nothing, and run this step again right after that notice's release below.
+- Another session holds it, or this session holds nothing awaiting a notice, so the holder may be dead: name the holder and its age, and ask through the ask-user seam. The choices are to check again, or to take today's path for this fire. An old claim from a dead session is cleared through that same ask: release it under the label the wait named, with `workflow-claim release --fire <holder>`, then take the claim again.
 
 Launch the `Workflow` tool by its named entry `cadence:review-panel` with `args`. If the name does not resolve, launch it with `scriptPath` set to `${CLAUDE_PLUGIN_ROOT}/workflows/review-panel.js`. The result prints `Transcript dir` and `Run ID`, so keep both.
 
-A launch the host refuses is named in one line, and this fire's steps 4 and 5 run on today's path, because no workflow ran. Otherwise end the turn.
+A launch the host refuses is named in one line, this fire's steps 4 and 5 run on today's path because no workflow ran, and its claim is released at once, since no notice will ever come:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-claim release --fire <trigger>-<discriminator>
+```
+
+Otherwise end the turn.
 
 ## 3. On the notice
 
@@ -29,6 +46,8 @@ The notice holds run totals and cuts a long result short, so the seam reads the 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --phase <N> --run-file <run file> --out-dir <scratch directory> --payload-ref <the payload reference step 2 assembled> [--answers-file <path>] [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
 ```
+
+Release the claim right after this call returns, whether it succeeded or refused, with the `workflow-claim release` line from step 2. The run is over either way, and a queued fire starts on it.
 
 The same call bills the run, before it judges anything, so a killed or refused run still pays for its agents: one bracket per agent in the run file, each with its own tokens, turns and duration. Reviewers bill under `cad-reviewer`, checkers under `review-checker` and a provider wrapper under `review-provider-wrapper`, so `cad-reviewer`'s total still means the reviewers. An agent that did not finish closes as a checkpoint. Write no bracket by hand, and calling it again is safe: a run is billed once. When the run file cannot be read or holds no agent rows, pass the notice's totals (its tokens, tool uses and duration in ms, as plain whole numbers) and it bills them as one `review-workflow` bracket.
 

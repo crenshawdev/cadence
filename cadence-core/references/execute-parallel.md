@@ -67,12 +67,16 @@ on this path is a real defect to report, not the fork-point default.
    The same triple and never the phase-wide arm, which compares no range and
    would clear this plan on a record an earlier and narrower one left. The plan
    is NOT reported done while that call refuses.
-   Then fire the
-   `diff` trigger for every plan CONCURRENTLY in one message (artifact: shape
-   (a), the refs `{base_ref: that plan's pre-merge HEAD from step 3, head_ref:
-   that plan's post-merge HEAD from step 3}`) - the ranges are static and
-   independent, so the per-plan reviews need not serialize
-   (seam-spawn-agent.md concurrent dispatch). This step runs AFTER step 3
+   The
+   `diff` trigger then runs for every plan (artifact: shape (a), the refs `{base_ref: that
+   plan's pre-merge HEAD from step 3, head_ref: that plan's post-merge HEAD from
+   step 3}`). The ranges are static and independent, so a fire on today's path
+   goes CONCURRENTLY in one message (seam-spawn-agent.md concurrent dispatch). A
+   fire that takes the workflow path (references/review-workflow.md) goes
+   concurrently the same way only when `config.mjs workflow-layers` prints
+   `keys["workflow.multi_workflow"].on` true; otherwise they go one at a time
+   through that file's claim, each queued on the last one's notice. Step 6's
+   `phase_diff` runs after them. This step runs AFTER step 3
    merged every branch, so a per-plan `diff` review never
    fires before the merge and its refs always resolve in THIS tree, which is the
    tree a dispatched subagent inherits. The

@@ -17,10 +17,10 @@ import { WORKFLOW_KEYS, workflowLayers } from '../lib/workflow-layers.mjs';
  * @param {any} opts
  */
 function cmdWorkflowClaim(dir, sub, opts) {
-  if (sub !== 'take' && sub !== 'release') return fail('usage', 'workflow-claim <take|release> --label <label>');
-  const label = opts.label;
+  if (sub !== 'take' && sub !== 'release') return fail('usage', 'workflow-claim <take|release> --fire <label>');
+  const label = opts.fire;
   if (typeof label !== 'string' || !label.trim() || label.length > MAX_LABEL) {
-    return fail('bad-args', `workflow-claim ${sub} needs --label <label> of 1 to ${MAX_LABEL} characters`,
+    return fail('bad-args', `workflow-claim ${sub} needs --fire <label> of 1 to ${MAX_LABEL} characters`,
       'pass the fire\'s `<trigger>-<discriminator>` label, or the analyzer\'s');
   }
   const root = dirname(resolve(dir));
