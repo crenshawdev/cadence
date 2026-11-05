@@ -168,7 +168,8 @@ below as written, one agent.
 
 On the workflow path, resolve `cad-assumptions-analyzer` through the
 spawn-agent seam without the bracket flag, because the readers are billed after
-the run. Make a scratch directory, `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")"`.
+the run. Make a scratch directory and print it: `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`.
+Keep the printed path: the call on the notice runs in another Bash invocation, where `$D` is empty.
 Launch the `Workflow` tool by its named entry `cadence:analyzer`, or with
 `scriptPath` set to `${CLAUDE_PLUGIN_ROOT}/workflows/analyzer.js` if the name
 does not resolve. `args` holds the payload's fields below: `phase`,
@@ -180,7 +181,7 @@ its resolve and bracket included. Otherwise end the turn and dispatch nothing
 else. On the completion notice:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --analyzer --phase <N> --run-file <Transcript dir's session directory>/workflows/<Run ID>.json --out-dir "$D" --payload-ref ".planning/ROADMAP.md" [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --analyzer --phase <N> --run-file <Transcript dir's session directory>/workflows/<Run ID>.json --out-dir <the scratch dir printed above> --payload-ref ".planning/ROADMAP.md" [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
 ```
 
 It bills one bracket per reader, so the close below is the old path's alone.
