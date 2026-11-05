@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 // @ts-check
-// planning.mjs - the .planning state-machine seam: deterministic reads and writes, so workflow prose keeps judgment and this script keeps invariants.
-// The JSON shapes asserted in planning.test.mjs are the interface, there is no spec file beyond them.
-// Exactly one JSON object on stdout: {ok:true,...} exit 0, or {ok:false, reason, detail?, hint?} exit 1, where hint is a recovery command.
-// Every parse problem degrades to ok:false, so this never blocks the spine.
-// Output is deterministic (phases sorted, fixed key order) and compact, and fields are additive-only, so don't rename one.
-// --dir overrides `.planning` for hermetic tests. --root names the project root instead, for the commands that read source or manifests.
-// A new subcommand is a COMMANDS entry, never an if-chain.
+// planning.mjs - the .planning state-machine seam: invariants live here so workflow prose keeps the judgment
+// The JSON shapes asserted in planning.test.mjs are the interface, there is no spec file beyond them
+// One JSON object on stdout: {ok:true,...} exit 0, or {ok:false, reason, detail?, hint?} exit 1
+// Every parse problem degrades to ok:false, so this never blocks the spine
+// Fields are additive-only, so don't rename one
+// --dir overrides `.planning` for tests; --root names the project root for commands that read source
+// A new subcommand is a COMMANDS entry, never an if-chain
 'use strict';
 
 import {
   evaluateRow, evaluatePresence, subcommandKey, CONTRACTS, PRESENCE_RULES,
 } from './lib/arg-contract.mjs';
-// ok, fail, read and HERE live in planning/core.mjs only, and command modules can't import them from here: importing this file runs the dispatch
+// ok, fail, read and HERE live in core.mjs; importing this file runs the dispatch, so modules can't take them from here
 import { ARGV, argRefusal, fail } from './planning/core.mjs';
 
 function parseArgs(argv) {
@@ -30,8 +30,8 @@ function parseArgs(argv) {
   return { words, opts };
 }
 
-// handlers get the trailing positional words as a 4th argument, only `recall` uses it (free-text query), and that beats special-casing it in the dispatcher
-// each arrow imports its module on call so a run loads one, and the await sits inside the try below so a load failure is still ok:false internal
+// handlers get the trailing positional words as a 4th argument; only `recall` uses it, for its free-text query
+// each arrow imports on call, inside the try, so a load failure is still ok:false internal
 /** @type {Record<string, (dir: string, sub: string, opts: any, rest: string[]) => Promise<unknown>>} */
 const COMMANDS = {
   status: async (dir, _sub, _opts) => (await import('./planning/status.mjs')).cmdStatus(dir),
@@ -59,8 +59,7 @@ const COMMANDS = {
     (await import('./planning/cite-count.mjs')).cmdCiteCount(dir, opts),
   'seed-reqs': async (dir, _sub, opts) =>
     (await import('./planning/seed-reqs.mjs')).cmdSeedReqs(dir, opts),
-  // bare words are joined, not rejected: callers quote, but rejecting extras would turn a call that only degrades today into a hard failure
-  // tokenize splits on non-alphanumerics so the separator doesn't matter, and an empty join still trips the bad-args guard
+  // bare words are joined, not rejected: rejecting extras would turn a soft degrade into a hard failure
   recall: async (dir, _sub, opts, rest) =>
     (await import('./planning/recall.mjs')).cmdRecall(dir, rest.join(' '), opts),
   'task-record': async (dir, _sub, opts) =>
@@ -68,12 +67,11 @@ const COMMANDS = {
   'lease-check': async (dir, _sub, opts) =>
     (await import('./planning/lease-check.mjs')).cmdLeaseCheck(dir, opts),
   // --root, never --dir, since it names the PROJECT root
-  // a --root with nothing usable after it is refused at the door, or it would answer about the cwd and not the tree the caller named (#42/#45)
-  // `--root ""` used to answer ok:true about the cwd while `--root "   "` fell through to a no-root ENOENT, so the declared row now owns both
+  // a --root with nothing usable after it is refused at the door, or it answers about the cwd and not the tree named
   'detect-commands': async (_dir, _sub, opts) =>
     (await import('./planning/detect-commands.mjs'))
       .cmdDetectCommands(typeof opts.root === 'string' ? opts.root : process.cwd()),
-  // same --root row and refusal; --answered carries what a config layer already holds, so a re-entrant ask hits the same option rule, and absent means nobody answered
+  // same --root row and refusal; --answered carries what a config layer already holds, absent means nobody answered
   'detect-surfaces': async (_dir, _sub, opts) =>
     (await import('./planning/detect-surfaces.mjs'))
       .cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd(),
@@ -101,7 +99,7 @@ const COMMANDS = {
     }
     return fail('usage', 'deferred record|list|carry');
   },
-  // --file overrides `<dir>/CAPTURE.md` for the global queue, which sits beside the global config and not in any `.planning`
+  // --file overrides `<dir>/CAPTURE.md` for the global queue, which sits beside the global config, not in a `.planning`
   capture: async (dir, _sub, opts) => (await import('./planning/capture.mjs')).cmdCapture(dir, opts),
   // same --file override, and standalone beside `status` instead of a drift kind inside it
   'capture-sections': async (dir, _sub, opts) =>
@@ -122,19 +120,17 @@ const COMMANDS = {
 try {
   const { words, opts } = parseArgs(ARGV);
   const [cmd, sub] = words;
-  // every flag the row declares is judged here before any handler runs, or a row saying `refuse` could still write through
-  // (bare `cursor set --name` answered ok:true and wrote `Phase: 1 of 5 (true)` into STATE.md)
-  // it reads raw ARGV on purpose: parseArgs turns a bare flag into `true`, which collapses the bare, empty and flag-shaped spellings a row tells apart
-  // (a bare --dir hit existsSync(true) and printed a DEP0187 warning on stderr, and stdout is the only channel the seam layer parses)
-  // an absent flag is left to its handler, which owns the wording, and opts is not mutated or resolveTextFlag stops seeing its "--x or --x-file, never both" case
+  // every flag the row declares is judged before any handler runs, or a row saying `refuse` could still write through
+  // it reads raw ARGV on purpose: parseArgs turns a bare flag into `true`, and the row tells those spellings apart
+  // an absent flag is left to its handler, and opts isn't mutated or resolveTextFlag stops seeing its "never both" case
   const key = subcommandKey(words, CONTRACTS['planning.mjs']);
   const args = evaluateRow(ARGV, CONTRACTS['planning.mjs'], key);
-  // the one presence rule a row can't state: a trace append whose --event settles a review fire owes at least one settled figure
+  // the one presence rule a row can't state: a trace append settling a review fire owes at least one settled figure
   // without it a gate_pass carrying none cleared a blocking range while asserting nothing about it
   const owed = evaluatePresence(ARGV, PRESENCE_RULES['planning.mjs'], key);
   const handler = COMMANDS[cmd];
   // fail emits and returns, so the refusals chain here, and a second one outside would print a second JSON line
-  // the owed check is the second arm so a malformed value still names its own flag, and bad-args is the vocabulary because this file has no e.seam arm to render the missing-flag-value throw
+  // owed is the second arm so a malformed value still names its own flag; bad-args because this file has no e.seam arm
   if (!args.ok) {
     fail('bad-args', argRefusal(key, args.detail),
       'correct the flag the detail names and re-run - nothing was written. A value that itself'

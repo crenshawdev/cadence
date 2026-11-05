@@ -1,6 +1,6 @@
 // @ts-check
 // planning/cursor-get.mjs - `cursor get`: STATE.md's cursor, parsed.
-// read-only, and its refusals are distinct: an absent STATE.md is `no-cursor`, a file off the cursor schema (four required lines plus an optional `Plan:`) is `unparseable-cursor`
+// read-only, with distinct refusals: absent STATE.md is `no-cursor`, off-schema is `unparseable-cursor`
 // both point at /cad-progress, which derives a cursor from the phase artifacts; STATE.md is never hand-edited
 // split from `cursor set` because the two share the file they address and nothing else
 'use strict';

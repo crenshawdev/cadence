@@ -1,6 +1,6 @@
 // @ts-check
-// planning/status.mjs - `status`: where the project is, derived from the phase artifacts on disk and reconciled against the STATE.md cursor.
-// phaseDirGrammarDrift and AGREE live here because nothing else reads them, and the grammar itself is in core.mjs because several readers share it.
+// planning/status.mjs - `status`: where the project is, from phase artifacts, reconciled against the STATE.md cursor
+// phaseDirGrammarDrift and AGREE live here because nothing else reads them; the grammar is in core.mjs, shared
 'use strict';
 
 import { existsSync, readdirSync } from 'node:fs';
@@ -13,8 +13,9 @@ import { emit } from '../lib/seam-io.mjs';
 
 /**
  * Every `phases/` entry outside `PHASE_DIR_NAME`, as one drift entry per colliding group.
- * One kind covers named, zero-padded and prefix-colliding entries, since every writer builds `join(dir, 'phases', <spelling>)` and can never produce `14-data-depth-x`. What's worth reporting is a collision like `08` beside a legal `8`.
- * An absent `phases/` is data, stray files aren't phase directories, and entirely legal entries produce nothing, so `drift` stays absent on a clean tree.
+ * One kind covers named, zero-padded and prefix-colliding entries, since no writer builds `14-data-depth-x`.
+ * What's worth reporting is a collision like `08` beside a legal `8`.
+ * Absent `phases/` is data, stray files aren't phase dirs, and a clean tree leaves `drift` absent.
  * @param {string} dir @returns {Array<{kind: string, entries: string[], detail: string}>}
  */
 function phaseDirGrammarDrift(dir) {
@@ -57,7 +58,7 @@ function phaseDirGrammarDrift(dir) {
 
 /**
  * The legal phase-directory names on this tree that parse to the same number, one drift entry per colliding group.
- * `1.1` and `1.10` are both legal and different phases but `Number` collapses them, so no reader can tell them apart. There's nothing to prefer or refuse, so this reports it and renaming is the user's call.
+ * `1.1` and `1.10` are different phases but `Number` collapses them; nothing to prefer or refuse, so it reports.
  * Separate from `phase-dir-grammar` because folding them in would tell a user to fix a spelling the grammar accepts.
  * @param {string[]} legalNames @returns {Array<{kind: string, phase: number, entries: string[], detail: string}>}
  */
@@ -127,17 +128,18 @@ function cmdStatus(dir) {
     }
   }
 
-  // an interrupted close leaves phases/<N>/ on disk; kept out of the classifier (text-only, pure) so we report both the closed state and the drift
+  // an interrupted close leaves phases/<N>/ on disk; reported as drift, not folded into the pure classifier
   if (closed) {
     let entries = [];
     try { entries = readdirSync(join(dir, 'phases')); } catch { /* absence is data */ }
-    // the grammar and not a looser numeric shape (phases/8 beside phases/08 gave two entries for `phase: 8`), and the name breaks ties since Number('1.1') === Number('1.10')
+    // the grammar, not a looser numeric shape: phases/8 beside phases/08 gave two entries for `phase: 8`
+    // the name breaks ties since Number('1.1') === Number('1.10')
     const surviving = entries.filter((e) => PHASE_DIR_NAME.test(e))
       .sort((a, b) => (Number(a) - Number(b)) || (a < b ? -1 : a > b ? 1 : 0));
     for (const e of surviving) {
       const { plans } = listPlanFiles(join(dir, 'phases', e));
       drift.push({
-        // dir is the spelling and phase the number it parses to; 1.1 and 1.10 share a number, so phase alone can't say which directory
+        // 1.1 and 1.10 share a number, so `dir` carries the spelling
         kind: 'phase-dir', phase: Number(e), dir: e,
         detail: `phases/${e}/ survives the milestone close (${plans.length} plan files)`,
       });
@@ -145,7 +147,7 @@ function cmdStatus(dir) {
     drift.push(...phaseDirNumericCollisions(surviving));
   }
 
-  // checked in every state, not only after a close: a directory Cadence can't address is cheapest to rename while the cycle is open
+  // checked in every state: a directory Cadence can't address is cheapest to rename while the cycle is open
   drift.push(...phaseDirGrammarDrift(dir));
 
   // optional file; Deferred and unmapped rows are audit's concern, not drift
@@ -170,7 +172,7 @@ function cmdStatus(dir) {
   if (parsed) {
     let agrees;
     if (parsed.status === 'paused') agrees = true; // legal at any point
-    // closed: only phase complete and ready to plan agree, and the number isn't compared since a zero-phase roadmap has none; the cursor is the only evidence left here
+    // closed: only phase complete and ready to plan agree; the number isn't compared, a zero-phase roadmap has none
     else if (closed) agrees = parsed.status === 'phase complete' || parsed.status === 'ready to plan';
     else if (current === null) agrees = parsed.status === 'phase complete';
     else agrees = parsed.phase === current &&
@@ -188,7 +190,8 @@ function cmdStatus(dir) {
             : current === null ? 'all complete' : `phase ${current} ${currentEntry.status}`),
       });
     }
-    // a stale "of <M>" on a zero-phase roadmap is reported on its own: a tagged close deletes phases/<N>/, so if the cursor rewrite never ran this total is the only evidence the close didn't finish
+    // a stale "of <M>" on a zero-phase roadmap is reported on its own
+    // a tagged close deletes phases/<N>/, so a cursor rewrite that never ran leaves this total as the only sign
     if (closed && parsed.total !== 0) {
       drift.push({
         kind: 'cursor', phase: parsed.phase,
@@ -199,13 +202,14 @@ function cmdStatus(dir) {
   }
 
   // off the one derivation deferred list uses, so /cad-progress and /cad-land agree on what's queued
-  // always present: a refusal surface reads it and has to tell "nothing deferred" from "seam predates the queue"; not a cursor status or drift kind, the next /cad-progress would rewrite it away
+  // always present, so a refusal surface can tell "nothing deferred" from "seam predates the queue"
   const queue = readQueue(dir, null);
 
-  // plans a phase still owes, off the same readPlanReports replay-check dispatches from, so routing and dispatch can't disagree; a SUMMARY ends a run, not the work, so a phase with a later gap plan shows up here
-  // always present, [] when empty, like deferred: an absent key would read as "seam predates the field" on a routing surface
-  // read here, not by spawning replay-check per phase; not a new cursor or phase status, which would turn every older cursor into drift
-  // the dir resolves through the same String(p.n) as derivePhases, so phases/1.10 reads as phases/1.1 as it already does under phase-dir-collision
+  // plans a phase still owes, off the same readPlanReports replay-check dispatches from, so routing and dispatch agree
+  // a SUMMARY ends a run, not the work, so a phase with a later gap plan shows up here
+  // always present, [] when empty, like deferred: an absent key would read as "seam predates the field"
+  // read here, not by spawning replay-check per phase; not a new status, which would turn older cursors into drift
+  // the dir resolves through String(p.n) as derivePhases does, so phases/1.10 reads as phases/1.1 here too
   const outstanding = [];
   for (const p of derived) {
     const plans = readPlanReports(join(dir, 'phases', String(p.n)), p.plans)
@@ -217,7 +221,7 @@ function cmdStatus(dir) {
     current, total: derived.length,
     deferred: queue,
     outstanding,
-    // only when closed: a caller branching on current === null alone would read a closed milestone as all complete and route back to /cad-milestone
+    // only when closed, or current === null alone reads a closed milestone as all complete
     ...(closed ? { cycle: 'none' } : {}),
     phases: derived.map((p) => ({
       n: p.n, name: p.name, status: p.status,
