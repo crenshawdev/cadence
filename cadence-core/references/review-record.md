@@ -129,6 +129,8 @@ bar there as anywhere else: an auditor runs `git show` on it, so a blank, a
 entry. The key is VALIDATED on those rulings, never forbidden on them, and the
 refusal names both the field and the ruling it was set on.
 
+A suspected finding (`references/review-triggers.md` step 5) is a `survived` ruling with no new value or key: it shows as suspected in the review file's heading text alone. At `blocker` or `high` it is never downgraded, and the record refuses it with neither a fix commit nor `overridden: true`.
+
 Neither case is a fourth `ruling` value. The vocabulary is still `survived`,
 `downgraded`, `refuted`, and what varies is what a `survived` entry carries
 beside the ruling.
