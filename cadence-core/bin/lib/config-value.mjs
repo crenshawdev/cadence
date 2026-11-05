@@ -40,10 +40,12 @@ export function checkType(spec, v) {
 }
 
 // A whole branch name a shell can't act on. SAFE_BRANCH is the rule `git-publish.mjs reap` enforces, so an accepted
-// name is never one reap then refuses; the extra three are what `git checkout -b` refuses anyway. Callers on read use this.
+// name is never one reap then refuses; the extra ones are what `git checkout -b` refuses anyway: `..`, a trailing `/`
+// or `.`, a `.lock` ending, and a path component that starts with a dot. Callers on read use this.
 /** @param {unknown} v */
 export function isBranchName(v) {
-  return typeof v === 'string' && SAFE_BRANCH.test(v) && !v.includes('..') && !v.endsWith('/') && !v.endsWith('.lock');
+  return typeof v === 'string' && SAFE_BRANCH.test(v) && !v.includes('..') && !v.endsWith('/') && !v.endsWith('.')
+    && !v.endsWith('.lock') && !v.split('/').some((c) => c.startsWith('.'));
 }
 
 // Named grammars a schema key may claim, one predicate each, so checkValue doesn't grow a branch per key.
@@ -65,7 +67,7 @@ export const GRAMMARS = Object.freeze({
   branch_name: Object.freeze({
     ok: (v) => isBranchName(v),
     error: 'expected a branch name - letters, digits, `.`, `_`, `-` and `/`, starting with a letter or digit, '
-      + 'with no `..`, no trailing `/` and no `.lock` ending',
+      + 'with no `..`, no trailing `/` or `.`, no `.lock` ending and no `/`-separated part starting with `.`',
   }),
   model_id: Object.freeze({
     ok: (v) => isModelId(v),
