@@ -348,6 +348,18 @@ risky plan gets the blocking plan review and the deep pass, its clean sibling
 does not. Each resolves its own, carrying its `--plan <k>`; every other role
 keeps the rule.
 
+**Workflow dispatch.** A fire may hand its agents to a script: the `Workflow`
+tool, started by a named entry (`cadence:review-panel`) or a `scriptPath`, with
+`args`. The launch result prints `Transcript dir` and `Run ID`. The host leaves
+the run at `<session>/workflows/<Run ID>.json` with `status`, `result` and
+`workflowProgress[]`, one row per agent carrying `label`, `agentId`, `agentType`,
+`model`, `state`, `tokens`, `toolCalls` and `durationMs`. The completion notice
+holds run totals only and cuts a long result short. That file is undocumented,
+the same standing exposure this seam states for the rendered figures, so a host
+release can change it unannounced; a read that finds it gone or wrong falls back
+to the notice's totals and never a made-up figure. A workflow agent has no
+`CLAUDE_PLUGIN_ROOT`, so every path it is told to run is spelled absolute.
+
 **Prompt shape (cache discipline).** Order every dispatch prompt stable-first:
 context that repeats across dispatches of the same role (phase/goal, shared
 files to read) goes BEFORE the volatile per-dispatch specifics (this plan, this
