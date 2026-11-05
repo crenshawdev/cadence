@@ -260,10 +260,16 @@ uses. The cap is then answered by reading what is on disk rather than by
 remembering it, whoever asks and from whichever session. A `blocker`/`high`
 still surviving round two is the terminal STOP-and-ask, never a round three.
 - **adjudicated** - the survivors are already grounded, so what remains is the
-  USER's choice, not the model's. Present them as a NUMBERED list, one line per
-  survivor: severity, `file:line`, claim. Then ask which to act on through
+  USER's choice, not the model's. Present them as a NUMBERED list with one entry
+  per survivor: severity, `file:line`, then What breaks, Why I should care, What
+  is still uncertain and Your recommendation, each from the review file
+  `.planning/phases/<N>/REVIEW-<trigger>-<discriminator>[-rN].md`, whose path you
+  print where the list prints. The recommendation is advice: nothing is
+  preselected and no answer word is added. Then ask which to act on through
   `AskUserQuestion` with `multiSelect: true`, and END THE TURN on that question.
-  NONE is the first option in every question and the default. Nothing is
+  NONE is the first option in every question and the default. If the user asks
+  about a number instead of answering, read that survivor's What triggers it and
+  What proves it from the review file, answer, and ask again. Nothing is
   applied, committed, published or re-planned against a survivor the user did
   not name. When nothing survives, say the review RAN and adjudication killed
   everything, not a bare "no findings". A return that is not the
