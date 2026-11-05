@@ -434,6 +434,9 @@ export const CONTRACTS = {
       '--notice-tokens': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--notice-turns': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--notice-duration-ms': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      // --analyzer reads a finished workflows/analyzer.js run instead: its readers are billed under the analyzer's role and the
+      // report lands whole in the out-dir. No answers, trigger or discriminator apply.
+      '--analyzer': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
     // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {

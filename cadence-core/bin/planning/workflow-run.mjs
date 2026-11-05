@@ -1,5 +1,6 @@
 // @ts-check
 // planning/workflow-run.mjs - `workflow-run`: a finished review-panel run becomes a payload and a review input
+// with --analyzer it takes a finished analyzer run instead: the brackets, then the report written whole to the out-dir
 // it reads the run file whole from disk and writes into the run's scratch directory. The record and the review file are
 // written by their own seams, so --round, --task and the receipts stay where review-record.md states them
 // the run's brackets go FIRST, whatever the file says: an agent that spent tokens on a killed or refused run is still billed
@@ -14,8 +15,8 @@ import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { appendEvent, renderTrace, TERMINAL } from '../lib/trace.mjs';
 import {
-  ANSWERS_FILE, MAX_ANSWERS_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
-  agentBrackets, agentRows, mapRun, mergeAnswers, noticeBracket, parseAnswers, parseRun,
+  ANALYZER_FILE, ANSWERS_FILE, MAX_ANSWERS_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
+  agentBrackets, agentRows, mapRun, mergeAnswers, noticeBracket, parseAnalyzerRun, parseAnswers, parseRun,
 } from '../lib/workflow-run.mjs';
 
 /** A provider's teed envelope is one JSON line, so this is generous. */
@@ -145,6 +146,7 @@ function cmdWorkflowRun(dir, opts) {
   const runId = file && typeof file.runId === 'string' && file.runId ? file.runId : basename(opts['run-file'], '.json');
 
   // the brackets first: whatever happens to the result below, these agents spent real tokens
+  const analyzer = opts.analyzer === true;
   const at = { phase: phase.raw, runId, payloadRef: opts['payload-ref'].trim() };
   const rows = agentRows(file);
   const fromFile = rows.length > 0;
@@ -160,6 +162,14 @@ function cmdWorkflowRun(dir, opts) {
     return refuse(runRead.tooLarge ? 'run-too-large' : 'run-unreadable', `the run file ${runRead.why}`,
       'no payload was written - the notice\'s totals were billed as one bracket; read the run file named on the launch result if it is still there');
   }
+  if (analyzer) {
+    const found = parseAnalyzerRun(runRead.text);
+    if (!found.ok) return refuse(/** @type {string} */ (found.reason), found.detail, 'no report was written - take the analyzer\'s failure arm. The readers were billed');
+    const report = join(outDir, ANALYZER_FILE);
+    atomicWrite(report, /** @type {string} */ (found.report));
+    return ok({ phase: phase.raw, run_id: runId, report, nulls: found.nulls, brackets });
+  }
+
   const parsed = parseRun(runRead.text);
   if (!parsed.ok) return refuse(/** @type {string} */ (parsed.reason), parsed.detail, 'no payload was written - a run that did not complete cleanly is not a clean review, so rule this fire another way. Its agents were billed');
 

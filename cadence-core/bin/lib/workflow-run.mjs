@@ -172,11 +172,11 @@ function providerFindings(voice, env) {
 }
 
 /**
- * Parse a run file's text and judge whether it is a completed run of this script.
+ * A run file's text, judged as far as any script's run goes: JSON, completed, with a result.
  * @param {string} text
  * @returns {{ok: boolean, reason?: string, detail?: string, run?: any}}
  */
-export function parseRun(text) {
+function parseCompleted(text) {
   /** @type {any} */
   let run;
   try { run = JSON.parse(text); } catch { return refuse('run-not-json', 'the run file is not JSON'); }
@@ -185,6 +185,40 @@ export function parseRun(text) {
     return refuse('run-not-completed', `the run's status is ${JSON.stringify(run.status)}, not "completed", so it holds no result to rule on`);
   }
   if (run.result === undefined || run.result === null) return refuse('run-no-result', 'the run completed with no result');
+  return { ok: true, run };
+}
+
+/** What the analyzer arm writes its report to, in the scratch directory. */
+export const ANALYZER_FILE = 'analysis.md';
+
+/**
+ * Parse a run file's text and judge whether it is a completed run of workflows/analyzer.js with a report in it. A run with
+ * none is `analyzer-no-report`, naming the readers that returned nothing, so it never reads as an analysis with no assumptions.
+ * @param {string} text
+ * @returns {{ok: boolean, reason?: string, detail?: string, run?: any, report?: string, nulls?: string[]}}
+ */
+export function parseAnalyzerRun(text) {
+  const c = parseCompleted(text);
+  if (!c.ok) return c;
+  const r = c.run.result;
+  if (!isPlainObject(r) || !(r.report === null || typeof r.report === 'string') || !Array.isArray(r.nulls) || !r.nulls.every(isText)) {
+    return refuse('run-bad-result', 'the result is not the analyzer\'s: it needs a report (text or null) and a nulls list');
+  }
+  if (r.report === null || !isText(r.report)) {
+    return refuse('analyzer-no-report', `the analyzer returned no report${r.nulls.length ? ` (readers that returned nothing: ${r.nulls.join(', ')})` : ''}`);
+  }
+  return { ok: true, run: c.run, report: r.report, nulls: r.nulls };
+}
+
+/**
+ * Parse a run file's text and judge whether it is a completed run of this script.
+ * @param {string} text
+ * @returns {{ok: boolean, reason?: string, detail?: string, run?: any}}
+ */
+export function parseRun(text) {
+  const c = parseCompleted(text);
+  if (!c.ok) return c;
+  const run = c.run;
   const r = run.result;
   if (!isPlainObject(r) || !Array.isArray(r.voices)) {
     return refuse('run-bad-result', 'the result is not review-panel\'s: it has no voices array');
