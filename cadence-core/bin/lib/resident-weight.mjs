@@ -1,70 +1,10 @@
 // @ts-check
-// resident-weight.mjs - what one COMMAND and one DISPATCH actually carry,
-// composed from the tree. lib/surface-weight.mjs weighs each prose file on its
-// own; this module answers the question a budget cannot: which of those files
-// ride together into one context, and whose.
-//
-// Three quantities, and the definitions are the whole contract:
-//
-//   EAGER (per command)     `skills/<name>/SKILL.md` plus every path on an
-//                           `@${CLAUDE_PLUGIN_ROOT}/<relpath>` line at the
-//                           START of a line in that SKILL.md. These are the
-//                           bytes the host injects before the command's first
-//                           turn, so they ride every remaining turn of the run.
-//                           Includes resolve ONE LEVEL ONLY, deliberately: a
-//                           grep of cadence-core/workflows/*.md,
-//                           cadence-core/references/*.md, cadence-core/templates/**
-//                           and agents/*.md returns zero `@`-include lines, so
-//                           an include cannot itself include (D-04). A recursive
-//                           resolver would be machinery for a graph that does
-//                           not exist.
-//   REACHABLE (per command) the eager set plus every
-//                           `cadence-core/{references,templates,workflows}/<file>`
-//                           that the TEXT OF THE EAGER FILES names and that
-//                           exists on disk - matched both in the
-//                           `${CLAUDE_PLUGIN_ROOT}/cadence-core/<branch>/<file>`
-//                           form and in the bare `<branch>/<file>` citation form.
-//                           ONE HOP FROM THE EAGER SET, never a transitive
-//                           closure: a closure over named surfaces collapses to
-//                           ~231 KB for every command and destroys the ranking
-//                           this measurement exists to show.
-//   DISPATCH (per role)     one `agents/<file>.md` plus the SKILL.md of every
-//                           contract it preloads via `skills:` frontmatter -
-//                           the bytes that land in a FRESH subagent context.
-//
-// One hop cuts BOTH ways, and a reader of the numbers has to know it:
-// de-preloading a file moves that file's OWN citations out of the reachable set
-// even though the model still Reads it at the step and can still follow them
-// from there. A reachable DROP under this definition is therefore not by itself
-// a saving anyone stopped paying - whoever reports a delta must say which part
-// of it is this artifact.
-//
-// Command and dispatch numbers are reported SIDE BY SIDE and never summed
-// (D-05): a dispatch's bytes land in a fresh subagent context, not in the
-// orchestrator's, so a total would grow with plan count and stop being
-// reproducible from the tree.
-//
-// A COMMAND is a `skills/` directory whose SKILL.md frontmatter does NOT carry
-// `user-invocable: false`. That excludes exactly the `*-contract` skills, which
-// are dispatch prose and are accounted on the roles side instead.
-//
-// `commandEagerSets` is that EAGER definition as a shared builder, exported so
-// lib/include-consumers.mjs can ask whether a command's own eager prose ever
-// NAMES the surface it `@`-includes without re-walking the tree. It hands back
-// the raw include PATHS as well as the resolved surfaces, because that rule has
-// to judge an include line whose target is absent from the root it was given -
-// a fixture holding only a SKILL.md and its workflow - where the weighing side
-// here correctly drops it as zero bytes and it appears in no surface at all.
-//
-// Pure lib: no emit, no process.exit, no Date, no randomness, node builtins
-// only, reading nothing but the surface files it measures. Every read and stat
-// is guarded per ENTRY rather than per branch, so one unreadable or dangling
-// descendant hides only itself and can never empty a whole subtree (BUD-02,
-// the shape lib/surface-weight.mjs already carries). Every accumulated set is
-// deduped by `realpathSync` where it resolves, falling back to the joined path
-// when it throws: a symlinked directory otherwise lets one physical file be
-// summed twice under two logical paths. Every array is sorted, so two runs on
-// one tree are byte-identical.
+// resident-weight.mjs - what one command and one dispatch carry; surface-weight.mjs weighs files alone.
+// Eager (per command): its SKILL.md plus every `@${CLAUDE_PLUGIN_ROOT}/<relpath>` include, one level only.
+// Reachable: eager plus every references, templates or workflows file its text names, one hop; a closure is ~231 KB.
+// Dispatch (per role): one `agents/<file>.md` plus the SKILL.md of each contract it preloads via `skills:`.
+// Command and dispatch numbers are never summed: a total would grow with plan count.
+// A command is a `skills/` directory without `user-invocable: false`, so contracts are out.
 'use strict';
 
 import { readFileSync, readdirSync, existsSync, realpathSync, statSync } from 'node:fs';
@@ -78,20 +18,15 @@ const BRANCHES = ['references', 'templates', 'workflows'];
 /** An `@`-include: the form the host expands, anchored to the line start. */
 const INCLUDE_RE = /^@\$\{CLAUDE_PLUGIN_ROOT\}\/([A-Za-z0-9_\-./]+)/gm;
 
-/**
- * A named core surface, in either the full `${CLAUDE_PLUGIN_ROOT}/cadence-core/`
- * form or the bare `<branch>/<file>` citation form the prose also uses. The
- * bare arm is what makes `(references/git-guard.md)` count as a reach.
- */
+/** A named core surface, full or bare `<branch>/<file>`; the bare arm counts `(references/git-guard.md)`. */
 const CITE_RE = /(?:\$\{CLAUDE_PLUGIN_ROOT\}\/)?(?:cadence-core\/)?\b(references|templates|workflows)\/([A-Za-z0-9_\-.]+)/g;
 
 /** `user-invocable: false` in a leading frontmatter block. */
 const NOT_INVOCABLE_RE = /^user-invocable:[ \t]*false[ \t]*$/m;
 
 /**
- * Yield every descendant file path under `dir`, one directory at a time.
- * Descent is decided on the DIRENT, so a symlinked directory met during the
- * walk is yielded as a path rather than descended.
+ * Yield every descendant file path under `dir`. Descent is decided on the dirent, so a symlinked directory met during
+ * the walk is yielded as a path, not descended.
  * @param {string} dir
  * @returns {Generator<string>}
  */
@@ -104,9 +39,8 @@ function* walk(dir) {
 }
 
 /**
- * The dedupe key for one path: its real path when that resolves, the joined
- * path itself when it does not (a dangling link is still distinct from every
- * other dangling link).
+ * The dedupe key for one path: its real path, or the joined path when that throws (a dangling link is still distinct
+ * from every other).
  * @param {string} f
  * @returns {string}
  */
@@ -119,10 +53,8 @@ function identity(f) {
 }
 
 /**
- * Read one measured file. Returns null when the path is absent, is not a file,
- * or cannot be read - a missing `@`-include contributes 0 rather than throwing.
- * `bytes` is the raw whole-file length, frontmatter included, because that is
- * what the host injects.
+ * Read one measured file, or null when it's absent, not a file or unreadable, so a missing `@`-include contributes 0
+ * and doesn't throw. `bytes` is the raw whole-file length, frontmatter included, because that's what the host injects.
  * @param {string} root
  * @param {string} file
  * @returns {{ key: string, surface: string, bytes: number, text: string } | null}
@@ -197,9 +129,8 @@ function byString(a, b) {
 }
 
 /**
- * Every core surface named by `text`, as root-relative paths that exist on
- * disk. Trailing sentence punctuation is stripped the way self-verify's
- * plugin-root path check strips it, so `references/seams.md.` still resolves.
+ * Every core surface named by `text`, as root-relative paths that exist on disk. Trailing sentence punctuation is
+ * stripped the way self-verify's plugin-root path check does, so `references/seams.md.` still resolves.
  * @param {string} root
  * @param {string} text
  * @returns {string[]}
@@ -216,28 +147,11 @@ function citedSurfaces(root, text) {
 }
 
 /**
- * Every user-invocable command's EAGER set, assembled once and shared.
- *
- * `residentWeight` consumes this, and so does lib/include-consumers.mjs - the
- * rule that asks whether a command's own eager prose ever NAMES the surface it
- * `@`-includes. That rule reuses the split rather than re-walking the tree, so
- * the two can never disagree about what "eager" means.
- *
- * Which field is the ROOT-RELATIVE POSIX path matters at the callsite and is
- * stated here rather than inferred: it is `surface`. `key` is a realpath dedupe
- * key and is NOT root-relative - comparing against it would silently never
- * match, and a self-citation exclusion that never matches is an
- * include-consumer check that passes forever (D-10).
- *
- * `includes` carries the RAW relative paths off the `@${CLAUDE_PLUGIN_ROOT}/...`
- * lines, in line order with duplicates preserved, alongside the resolved
- * `surfaces`. The consumer rule must be able to judge an include line whose
- * target is ABSENT from the root it is handed - a fixture copying only a
- * SKILL.md and its workflow - where the weighing side correctly drops it as
- * zero bytes and `surfaces` therefore never mentions it.
- *
- * The `user-invocable: false` filter is the same one `residentWeight` applies,
- * which is what keeps contract skills accounted under `roles` (D-12).
+ * Every user-invocable command's eager set, shared with lib/include-consumers.mjs so the two agree on "eager".
+ * Compare on `surface`, the root-relative POSIX path, not `key`: that is a realpath dedupe key, so a self-citation
+ * exclusion keyed on it never matches and the include-consumer check passes forever.
+ * `includes` keeps the raw paths off the `@${CLAUDE_PLUGIN_ROOT}/...` lines, in order with duplicates, because that
+ * rule must judge an include whose target is absent, which the weighing side drops as zero bytes.
  * @param {string} root
  * @returns {Array<{ command: string, skillFile: string, includes: string[],
  *   surfaces: Array<{ key: string, surface: string, bytes: number, text: string }> }>}
@@ -252,8 +166,7 @@ export function commandEagerSets(root) {
     const skill = readSurface(root, skillFile);
     if (!skill) continue;
     const fm = FRONTMATTER_RE.exec(skill.text);
-    // A dispatch contract is not a command: its bytes are accounted under
-    // `roles`, and the two are never summed (D-05).
+    // A dispatch contract isn't a command: its bytes are accounted under `roles`, and the two are never summed.
     if (fm && NOT_INVOCABLE_RE.test(fm[1])) continue;
 
     const includes = [];
@@ -274,12 +187,9 @@ export function commandEagerSets(root) {
 }
 
 /**
- * Weigh every command and every dispatch role under `root`.
- *
- * `zeroResident` is derived, never hardcoded (D-09): every file under
- * `cadence-core/references/` that appears in NO command's reachable set. Those
- * bytes are budgeted but enter no model context, so a cut there would move the
- * main thread by zero and no delta may claim them.
+ * Weigh every command and every dispatch role under `root`. `zeroResident` is derived, never hardcoded: every file
+ * under `cadence-core/references/` in no command's reachable set. Those bytes are budgeted but enter no model context,
+ * so a cut there moves the main thread by zero and no delta may claim them.
  * @param {string} root
  * @returns {{
  *   commands: Array<{ command: string, eagerBytes: number,
@@ -296,10 +206,8 @@ export function residentWeight(root) {
   /** every realpath key any command can reach, for the zero-resident derivation */
   const reached = new Set();
 
-  // The eager assembly itself lives in `commandEagerSets`, shared with
-  // lib/include-consumers.mjs. Surfaces arrive in the same order they were
-  // added here before (SKILL.md first, then each include that resolved), so the
-  // realpath dedupe, the byte totals and the ordering are unchanged.
+  // Surfaces keep the order they were added in (SKILL.md first, then each include that resolved), so the realpath
+  // dedupe, byte totals and ordering hold.
   for (const entry of commandEagerSets(root)) {
     const eager = surfaceSet();
     for (const s of entry.surfaces) eager.add(s);
@@ -308,8 +216,7 @@ export function residentWeight(root) {
     for (const s of eager.files()) {
       reachable.add(readSurface(root, join(root, s.surface)));
     }
-    // ONE hop: citations are read out of the EAGER texts only, never out of
-    // what those citations themselves name.
+    // One hop: citations are read out of the eager texts only, never out of what those citations name.
     for (const text of eager.texts()) {
       for (const f of citedSurfaces(root, text)) reachable.add(readSurface(root, f));
     }
@@ -338,10 +245,8 @@ export function residentWeight(root) {
       for (const name of names) {
         contracts.add(readSurface(root, join(root, 'skills', name, 'SKILL.md')));
       }
-      // The role is the first preloaded contract's name with `-contract`
-      // stripped, so every rung file groups under the role it serves without
-      // string surgery on filename suffixes. An agent that preloads no
-      // contract is its own role.
+      // The role is the first preloaded contract's name minus `-contract`, so every rung file groups under the role it
+      // serves without suffix surgery. An agent that preloads none is its own role.
       const first = names.find((n) => n.endsWith('-contract'));
       const role = first ? first.slice(0, -'-contract'.length) : basename(d.name, '.md');
       roles.push({

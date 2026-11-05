@@ -1,215 +1,48 @@
 // @ts-check
-// redact-url.mjs - strip the userinfo out of every remote-looking URL in a
-// string, so a caught git error's message can reach a seam envelope without
-// carrying a credential (EXP-01, AC8). Pure and TOTAL on the require-int.mjs /
-// retired-keys.mjs pattern: node builtins only (it uses none; `Buffer` is a
-// global), no I/O, no emit, never throws.
-//
-// TWO REDACTORS, deliberately split (RVP-01), plus the mark they both write:
-//   `redactUrl`         - credentials in URL POSITION and nothing else. Its
-//                         coverage is stated in exactly those words at
-//                         issue-check.mjs:41-47, and that statement stays true
-//                         because this export was not widened.
-//   `redactCredentials` - credential-shaped SPANS a URL-position rule cannot
-//                         see: an `authorization: Bearer <value>` echo and a
-//                         `<name>=<value>` / `"<name>": "<value>"` pair whose
-//                         name is credential-shaped. Added for the provider
-//                         seam's HTTP failure excerpt, where the body is
-//                         whatever a provider or an intermediary proxy chose to
-//                         echo back - including, on a misconfigured gateway, the
-//                         request headers.
-//   `redactAndCap`      - both redactors in order, then a 1024-byte cap with the
-//                         truncation marker: the one excerpt builder for failure
-//                         text from outside this process (D-13). Sites:
-//                         review-provider.mjs's `bodyExcerpt` and git-publish.mjs's
-//                         push-failed detail.
-//   `REDACTION_MARK`    - the string both write in place of what they removed.
-//                         Exported because a caller that COUNTS redactions - the
-//                         outbound payload fence in review-provider.mjs - needs
-//                         the same constant, and a copied literal is the drift
-//                         D-14 exists to keep out of the tree.
-// A caller that wants both redactors composes them; neither is a superset of the
-// other. The split is what lets a per-site regex stay out of the tree (D-14)
-// without making one function's documented coverage a lie.
-//
-// ONE shared helper rather than a regex at each emit site (D-14). Four sites put
-// a caught error's message into a `detail` - git-publish.mjs's push-failed
-// (through `redactAndCap`), reap-failed and dispatch-internal arms, and
-// planning.mjs's no-staged-set arm -
-// and lib/publish-decision.mjs:14-17 already states the rule for this class: a
-// security-relevant regex duplicated across sites is how the copies drift, and
-// the fourth site is the one a reader misses.
-//
-// WHICH transports leak, measured 2026-08-13 on git 2.55.0 (D-15). git
-// anonymizes the URL in its own error for the schemes it recognizes as
-// network transports, so the `https://x-access-token:TOKEN@host` form the
-// requirement cites never reaches the seam with the token attached:
-//
-//   git://cad:s3cr3t-tok@host.invalid/r.git   LEAKS
-//     fatal: unable to look up cad:s3cr3t-tok@host.invalid (port 9418) ...
-//   /nonexistent/cad:s3cr3t-tok@host.invalid/r.git   LEAKS (path-shaped)
-//     fatal: '/nonexistent/cad:s3cr3t-tok@host.invalid/r.git' does not appear ...
-//   https://cad:s3cr3t-tok@host.invalid/r.git   anonymized by git
-//   ssh://cad:s3cr3t-tok@host.invalid/r.git     anonymized by git
-//
-// So this helper covers the anonymized schemes TOO. Depending on git to keep
-// anonymizing them is depending on a behaviour no test here owns, and the two
-// forms above are proof the coverage is per-transport rather than universal.
-//
-// COST, and the two things that bound it (#167). This helper used to run against
-// a 4096-byte excerpt only, so its cost never showed. The outbound payload fence
-// in `review-provider.mjs` hands it a whole artifact - up to
-// `review.max_prompt_tokens`, ~480,000 characters at the default - and measured
-// there the unbounded form took 25 seconds on 128,000 characters and would have
-// taken minutes on a real payload. Both rules were QUADRATIC: a greedy class
-// with no `:` or `@` after it backtracks once per start position, and a long
-// run without either character is every long run.
-//
-// Two bounds, together linear in practice and bounded in the worst case:
-//
-//   1. `redactUrl` segments on WHITESPACE and applies the rules per segment.
-//      Every class in all four rules excludes whitespace, so a match cannot
-//      cross a run of it and the segmentation changes no verdict. Measured on a
-//      462,000-character diff of ordinary code: 25.5s -> 23ms.
-//   2. A segment is only handed to a rule when it CONTAINS the literal that
-//      rule cannot match without - `@` for the two terminated rules, `:` for
-//      the scheme-less ones, `://` for the scheme-anchored ones. One `indexOf`
-//      per rule, and it skips a delimiter-free run outright.
-//   3. Each rule carries a LOOKBEHIND that pins its start to the beginning of a
-//      run, which is what bounds the case bound 2 lets through: a single
-//      whitespace-free segment holding both the literal and a long run, which
-//      is an ordinary minified bundle or a data URI. Measured before this,
-//      `'A'x240000 + ':' + 'B'x240000 + '/'` spent 84 SECONDS inside the fence.
-//
-//      Each lookbehind is a NO-OP on the verdict, and provably so rather than
-//      by inspection: a rule's first class is greedy over one character class,
-//      so if it can match starting mid-run it can also match starting one
-//      character earlier - the earlier attempt consumes the same characters and
-//      reaches the same separator. Leftmost-match means the engine returns that
-//      earlier one anyway, so a start whose PREVIOUS character is in the class
-//      never produced a match that survived. Blocking it removes attempts, not
-//      matches.
-//
-//      The SCHEME rules need one more piece, because their first character is
-//      narrower than their continuation: a scheme must START with a letter but
-//      may CONTINUE with a digit, `+`, `.` or `-`. Pinning them at "not preceded
-//      by a letter" therefore left every letter in an alternating run a legal
-//      start - `'1a'x240000 + ':///@'` measured 99.6 SECONDS with that form.
-//      So the lookbehind excludes the whole continuation class, and a
-//      `[0-9+.-]*` INSIDE the capture absorbs whatever non-letter prefix the run
-//      begins with. Inside the capture and not before it: `$1` is written back,
-//      so a prefix left outside would be dropped from the output. `9a9b://x@`
-//      and `x9https://tok@h` both come back byte-identical to what the
-//      unpinned form produced.
-//
-// None of the three moves a verdict, and that is deliberate: the QUANTIFIERS
-// are still unbounded, because bounding them at 1024 was tried and it re-opened
-// EXP-02 (#215) - a 2000-character userinfo cut before its `@` came back
-// redacted from its tail with 985 bytes of the secret surviving. A cost bound
-// that reintroduces a measured leak is not a cost bound worth having.
-//
-// Redaction is by SHAPE - the userinfo POSITION in a URL - never by matching
-// known token prefixes. A prefix list (GitHub's, GitLab's, `x-access-token`) is a
-// list of the credentials somebody already thought of, and the next forge's
-// scheme is not on it.
+// redact-url.mjs - strip credentials out of text before it reaches a seam envelope. Pure and total, no I/O.
+// `redactUrl` covers credentials in URL position and nothing else; callers rely on that claim, so it was never widened.
+// `redactCredentials` takes the rest: an `authorization: Bearer <v>` echo and `name=value` pairs.
+// `redactAndCap` runs both then caps at 1024 bytes.
+// Redaction is by shape, never a token-prefix list, which only covers credentials somebody already thought of.
+// git anonymizes `https://` and `ssh://` userinfo but leaks `git://cad:tok@host/r.git`, so don't trust git to do it.
 
-/**
- * What replaces the userinfo, and every other span these redactors remove.
- * Fixed, so a caller can grep for it - and exported, so a caller that counts
- * occurrences of it counts the same string this file writes.
- */
+/** What replaces the userinfo and every other removed span: fixed so callers can grep it. */
 export const REDACTION_MARK = '<redacted>';
 const MARK = REDACTION_MARK;
 
-// 1. Scheme-anchored: `<scheme>://<userinfo>@`. The `://` is unambiguous, so
-//    this covers a password-less `https://<token>@host/r.git` where the whole
-//    credential IS the user part. The userinfo class excludes `/ ? # @` and
-//    whitespace, so an authority carrying no `@` (`https://host/r.git`) cannot
-//    match and comes back byte-identical.
+// 1. scheme-anchored `<scheme>://<userinfo>@`, which covers a password-less `https://<token>@host`
+// Every lookbehind pins the start to the start of a run: no verdict changes, and it kills quadratic backtracking
+// (a 480k-character input took 84s without it). The scheme rules keep `[0-9+.-]*` inside the capture so `$1` writes the
+// prefix back; pinning on letters alone was just as slow.
 const SCHEME_USERINFO = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@]+)@/g;
 
-// 2. Scheme-less: `<user>:<secret>@<host>`, which is what the two leaking forms
-//    above actually print, and also the scp-shaped `user:token@host:path`. The
-//    COLON is the discriminator that separates a credential from an address:
-//    `john@jcrenshaw.dev` in a commit trailer has none and is left alone, and so
-//    is the password-less scp remote `git@github.com:org/repo.git`, whose colon
-//    falls after the `@` and carries a path rather than a secret. Neither class
-//    crosses whitespace or `/`, so the userinfo cannot run backwards out of its
-//    own token.
+// 2. scheme-less `<user>:<secret>@<host>` and scp `user:token@host:path`; the colon separates it from `git@host:o/r`
 const BARE_USERINFO = /(?<![^\s/:@])([^\s/:@]+:[^\s/@]+)@/g;
 
-// 1b + 2b. The SAME two spans with their `@` cut off, anchored to end-of-input.
-//    Both rules above are `@`-anchored, so a userinfo span whose `@` falls
-//    outside a bounded window matches nothing and the credential survives
-//    byte-identical. `bodyExcerpt` (review-provider.mjs) sanitizes only the
-//    first 4096 bytes of a provider response, and a body compressible enough to
-//    shrink past the 1024-byte excerpt cap carried a planted secret into the
-//    failure envelope through exactly that gap (EXP-02, #215). This is the same
-//    hole `CRED_VALUE` below already closes for a quoted `name:value` pair, in
-//    the same shape and for the same reason: the terminated forms are tried
-//    FIRST, so a well-formed body is untouched, and the worst an unterminated
-//    tail can cost is over-redaction of that tail - never a leak.
-//
-//    What the anchor COSTS, stated here rather than rediscovered later. With
-//    the `@` gone the discriminator went with it, so 1b redacts any authority
-//    that ENDS the input: a body whose last characters are
-//    `see https://docs.example.com` comes back `see https://<redacted>`. That
-//    is deliberate, not an oversight - `https://<token>@host` is the ordinary
-//    spelling of a forge PAT and rule 1 exists to catch it, and cut before its
-//    `@` it is byte-for-byte a plain host. 2b keeps rule 2's COLON, which is
-//    the only discriminator a scheme-less span ever had; without it every
-//    trailing word would be a credential.
-//
-//    Both classes additionally exclude `"` and `'`, which the terminated forms
-//    have no need to. An unterminated span can only end where the input does,
-//    so a JSON body's own tail - `..."secret":"hunter2"}}` - otherwise reads as
-//    one scheme-less userinfo span and the diagnostic the excerpt exists to
-//    carry is eaten with it. A real userinfo carries no quote (they
-//    percent-encode), so the exclusion costs nothing on the class this catches
-//    and keeps the match INSIDE the JSON string where a cut URL actually sits.
-//
-//    One bounded quantifier per rule and no nesting, so the linear-time
-//    property this file's header pays for is unchanged. No `g`: end-of-input
-//    can match at most once.
+// 1b + 2b. The same two spans with the `@` cut off, anchored to end of input. Rules 1 and 2 need the `@`, so a userinfo
+// whose `@` fell outside the sanitize window matched nothing and the secret survived (#215).
+// That over-redacts: any authority ending the input goes (`see https://docs.example.com` comes back redacted), because
+// a forge PAT cut before its `@` is byte-for-byte a plain host. 2b keeps the colon, the only discriminator it has.
+// Both exclude quotes so a JSON tail like `"secret":"hunter2"}}` isn't eaten as userinfo.
 const SCHEME_USERINFO_CUT = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@"']+)$/;
 const BARE_USERINFO_CUT = /(?<![^\s/:@"'])[^\s/:@"']+:[^\s/@"']+$/;
 
 /**
- * `s` with the userinfo of every URL-shaped and scp-shaped remote replaced by
- * `<redacted>`, and everything else byte-identical. A string carrying no
- * userinfo comes back unchanged, with the ONE exception rules 1b/2b state: a
- * URL-shaped or `user:secret`-shaped span that ENDS the input is redacted
- * whether or not an `@` follows it, because a cut `@` is unrecoverable and the
- * span may be a credential the window sliced.
+ * `s` with the userinfo of every URL-shaped and scp-shaped remote replaced by `<redacted>`, the rest byte-identical.
+ * The one exception is rules 1b/2b: a span that ends the input is redacted with or without an `@`.
  *
- * Coerces rather than passing through: the callers all hand it
- * `e.message ?? String(e)`, and a helper that returned a non-string input
- * untouched would let an object carrying the same URL route around the one
- * thing this exists to do. So the return is always a string.
+ * Coerces instead of passing through, or an object carrying the same URL would route around what this exists to do.
  * @param {unknown} s
  * @returns {string}
  */
 export function redactUrl(s) {
   const text = String(s);
-  // SEGMENTED ON WHITESPACE, and the header above says why. Every class in the
-  // four rules excludes whitespace, so no match can cross a run of it: applying
-  // the rules per segment is EQUIVALENT to applying them to the whole string,
-  // and it is what keeps the cost linear in the total length rather than
-  // quadratic in it.
-  //
-  // `split(/(\s+)/)` keeps the separators as members, so the join is
-  // byte-identical on an input with nothing to redact.
+  // split on whitespace: no rule matches across it, so per-segment equals whole-string and cost stays linear
   const parts = text.split(/(\s+)/);
-  // The two CUT rules are `$`-anchored, so only the LAST segment can carry one -
-  // and if the input ends in whitespace that segment is the empty string, which
-  // matches nothing, exactly as an `$` after whitespace would.
+  // the cut rules are `$`-anchored, so only the last segment can carry one
   const last = parts.length - 1;
   for (let i = 0; i <= last; i += 1) {
-    // The LITERAL each rule cannot match without. Checking for it first is a
-    // linear `indexOf`; running the rule without it is the quadratic walk the
-    // header describes, because a class with no terminator ahead of it
-    // backtracks the whole segment once per start position. A segment carrying
-    // the literal is scanned exactly as before, so no verdict moves.
+    // check each rule's required literal with a linear indexOf first, or a terminator-less class backtracks
     const at = parts[i].indexOf('@') !== -1;
     const colon = parts[i].indexOf(':') !== -1;
     const scheme = parts[i].indexOf('://') !== -1;
@@ -225,90 +58,40 @@ export function redactUrl(s) {
   return parts.join('');
 }
 
-// 3. An HTTP authorization echo: `Bearer <token>`, optionally with its header
-//    name in front so `authorization: Bearer x` goes whole rather than leaving
-//    the header name pointing at a hole. The scheme word is consumed TOO - an
-//    excerpt that still reads `Bearer <redacted>` has told a reader nothing the
-//    name did not, and AC2 asks for the lead-in gone.
-//    `token` is a scheme word too (GitHub's PAT header, `Authorization: token
-//    ghp_x`), but only BEHIND its header name: bare, `token` is the ordinary
-//    English word and `the token expired` must survive.
+// 3. an authorization echo, scheme word included; `token` counts only behind its header, bare it's English
 const AUTH_SCHEME = new RegExp(
   '(?:authorization\\s*[:=]\\s*)?(?:bearer|basic)\\s+[A-Za-z0-9._~+/=-]+'
   + '|authorization\\s*[:=]\\s*token\\s+[A-Za-z0-9._~+/=-]+', 'gi');
 
-// 4. A credential-shaped NAME=VALUE pair, in the four spellings a body actually
-//    carries it: `key=v` in a query string, `key: v` in a header dump,
-//    `"api_token": "v"` in JSON, and `secret=v` in a form body.
-//
-//    Shape, not a prefix list, exactly as rules 1 and 2: the discriminator is
-//    that a NAME a credential is stored under is followed by a separator and a
-//    value. `an invalid token` in an error sentence has neither and survives
-//    byte-identical, which is the boundary that keeps this from eating provider
-//    diagnostics - the one thing the excerpt exists to carry.
-//
-//    The leading lookbehind is what stops `monkey=1` from matching on its last
-//    three characters: a name may be PREFIXED (`x-api-key`, `openai_api_key`)
-//    but only across a `_`, `-` or `.` boundary, never mid-word. The prefix
-//    repetition is bounded at four rather than left open: an unbounded nested
-//    quantifier backtracks quadratically on a long separator run, and this runs
-//    against a provider-controlled body up to the response ceiling.
-//
-//    `pass` and `pwd` (`DB_PASS`, `MYSQL_PWD`) are credential names only BEHIND
-//    a prefix: bare, `pass: 3` is a test count and `pwd: /home/u` a shell line.
+// 4. a credential-shaped name=value pair: `key=v`, `key: v`, `"api_token": "v"`, `secret=v`
+// By shape: a name is followed by a separator and a value, so `an invalid token` in an error sentence survives.
+// The lookbehind stops `monkey=1` matching on its last three characters; a prefix (`x-api-key`) goes only across `_-.`.
+// The prefix repeat is capped at four: an unbounded nested quantifier backtracks quadratically on provider bodies.
+// `pass` and `pwd` (`DB_PASS`) count only behind a prefix: bare, `pass: 3` is a test count and `pwd: /home/u` a path.
 const CRED_NAME = '(?:(?:[A-Za-z0-9]+[_.-]){0,4}'
   + '(?:api[_.-]?key|access[_.-]?token|refresh[_.-]?token|passwd|password|secret|token|key)'
   + '|(?:[A-Za-z0-9]+[_.-]){1,4}(?:pass|pwd))';
-//    The VALUE is five alternatives, not one class. A quoted value runs to its
-//    closing quote so a secret containing a space (`"password": "hunter2 xyz"`)
-//    goes whole - the bare class stops at the first space and left the tail in
-//    the excerpt, which is the leak this whole rule exists to prevent.
-//
-//    The UNTERMINATED quoted forms exist because a caller may hand this a
-//    PREFIX of a larger body: `bodyExcerpt` sanitizes a bounded window, so a
-//    credential straddling that window arrives carrying its opening quote and
-//    no closing one. The terminated alternatives cannot match it, and the bare
-//    class excludes `"` and `'` so it cannot match either - the whole pair used
-//    to survive byte-identical, and 73 bytes of a value reached the failure
-//    envelope in the measured case. Running to end-of-input closes that. The
-//    terminated forms are tried FIRST, so a well-formed body is untouched, and
-//    the worst an unterminated quote costs is over-redaction of a malformed
-//    tail - never a leak.
-//
-//    All four quoted forms are `[^"]*` / `[^']*`: one bounded quantifier each,
-//    so the linear-time property the prefix bound above protects is unchanged.
+// a quoted value runs to its closing quote so a secret with a space (`"password": "hunter2 xyz"`) goes whole
+// the unterminated forms exist because the sanitize window can cut a value after its opening quote, and 73 bytes of one
+// once reached the envelope that way; terminated forms go first, so the worst case is over-redacting a malformed tail
 const CRED_VALUE = `(?:"[^"]*"|'[^']*'|"[^"]*$|'[^']*$|[^\\s&"',;)\\]}>]+)`;
 const CRED_PAIR = new RegExp(
   `(?<![A-Za-z0-9_.-])["']?${CRED_NAME}["']?\\s*[:=]\\s*${CRED_VALUE}`, 'gi');
 
-// 5. The same pair in camelCase, which rule 4 structurally cannot reach: its
-//    prefix crosses a `_`, `-` or `.` only, and its lookbehind blocks a
-//    mid-word terminal, so `apiSecret` and `clientSecret` - the ordinary
-//    spelling of a JSON key - passed through byte-identical. Case is the
-//    discriminator here rather than a separator, so this pattern is
-//    case-SENSITIVE (no `i`) and that is what keeps `monkey` from matching on
-//    its last three characters exactly as the lookbehind does for rule 4.
+// 5. rule 4 in camelCase (`apiSecret`), which its prefix can't reach; no `i` flag, case is the discriminator
 const CRED_PAIR_CAMEL = new RegExp(
   `(?<![A-Za-z0-9_.-])["']?[a-z][A-Za-z0-9]{0,30}(?:Key|Token|Secret|Passwd|Password)["']?`
   + `\\s*[:=]\\s*${CRED_VALUE}`, 'g');
 
-// 6. The same pair in upper case with NO separator before the credential word:
-//    `PGPASSWORD`, `MYSQLPASSWORD`, `GITHUBTOKEN`. Rule 4 needs a `_`, `-` or
-//    `.` boundary and rule 5 needs a lower-case start, so both pass these. Case
-//    is the discriminator again (no `i`), and the word list is short on purpose:
-//    `KEY`, `PASS` and `PWD` are left out because `MONKEY`, `BYPASS` and
-//    `OLDPWD` end in them and a mid-word hit would eat a name that is not one.
+// 6. upper case, no separator (`PGPASSWORD`); no `KEY`, `PASS` or `PWD`, since `MONKEY` and `BYPASS` end in them
 const CRED_PAIR_UPPER = new RegExp(
   `(?<![A-Za-z0-9_.-])["']?[A-Z][A-Z0-9]{0,30}(?:PASSWORD|PASSWD|SECRET|TOKEN)["']?`
   + `\\s*[:=]\\s*${CRED_VALUE}`, 'g');
 
 /**
- * `s` with every credential-shaped span replaced by `<redacted>` - the NAME, the
- * separator and the value together, never the value alone. Everything else is
- * byte-identical, including a bare credential WORD carrying no value.
- *
- * Coerces rather than passing through, and never throws, for the same reasons
- * `redactUrl` above does.
+ * `s` with every credential-shaped span replaced by `<redacted>`: name, separator and value, never the value alone.
+ * Everything else is byte-identical, including a bare credential word with no value.
+ * Coerces and never throws, for the same reason `redactUrl` does.
  * @param {unknown} s
  * @returns {string}
  */
@@ -320,64 +103,24 @@ export function redactCredentials(s) {
     .replace(CRED_PAIR_UPPER, MARK);
 }
 
-// ---------------------------------------------------------------------------
-// redactAndCap: the shared failure-text excerpt (D-13). Two sites put failure
-// text from OUTSIDE this process into an envelope - review-provider.mjs's `http`
-// body (through its `bodyExcerpt` delegate) and git-publish.mjs's push-failed
-// detail - and one helper means one cap and one order of operations.
-// ---------------------------------------------------------------------------
+// redactAndCap: the one excerpt builder for text from outside this process, so there's one cap and one order
 
-// 1024 bytes, measured rather than round: the largest real OpenAI error body in
-// review-provider's own fixtures is 155 bytes (`model_not_found`) and a
-// documented invalid-schema rejection runs about 226, so the whole diagnostic
-// workflows/config-review.md reads the `http` envelope FOR fits with more than
-// 4x headroom, while a proxy HTML error page is bounded to a readable head.
+// 1024 bytes: the biggest real error body in the fixtures is 155, so that's headroom
 const MAX_EXCERPT_BYTES = 1024;
 
-// Appended in place of what was cut, so a reader can tell an excerpt from a
-// whole body. Inside the cap, not added to it.
+// appended where the cut happened so a reader can tell an excerpt from a whole body; inside the cap, not on top
 const TRUNCATED = ' ...[truncated]';
 
-// How much of the raw text the sanitizers ever see. A COST bound, not a privacy
-// one - see `redactAndCap` for the measurement that forces it and for why the
-// window's edge cannot reach the excerpt.
+// how much raw text the sanitizers ever see: a cost bound, not a privacy one
 const SANITIZE_WINDOW_BYTES = MAX_EXCERPT_BYTES * 4;
 
 /**
- * A sanitized, capped STRING: ONE shape always, never a parsed object for a
- * small input and a string for a large one.
- *
- * Sanitize BEFORE the excerpt is cut, never after. Cutting first can slice a
- * credential in half and leave its prefix in the envelope, which is a leak
- * wearing a cap. Two sanitizers because neither covers the other: `redactUrl`
- * takes credentials in URL position, `redactCredentials` takes the
- * `authorization: Bearer ...` and `<name>=<value>` spans a misconfigured gateway
- * echoes back.
- *
- * The WINDOW is a cost bound, and it is not optional. Measured 2026-08-17 on
- * this box: `redactUrl` is quadratic in its input (78ms at 10KB, 337ms at 20KB,
- * 5.1s at 80KB) because its scheme-less rule scans forward from every offset,
- * and a provider body may reach 4 MiB - which extrapolates to roughly four
- * HOURS of CPU for one failure envelope. Sanitizing a bounded window instead
- * keeps the worst case in the tens of milliseconds. Fixing the quadratic in
- * `redactUrl` itself is the better repair and was not that plan's: its other
- * callers hand it a git error message, so the cost only became reachable here.
- *
- * The window's own edge is handled where it is CREATED, not here. Cutting a
- * prefix can leave a credential's opening quote inside the window and its
- * closing quote outside, so `redactCredentials` matches an unterminated quoted
- * value to end-of-input - see rule 4's VALUE alternatives above. The earlier
- * reasoning was that the cap discards anything near the edge unless sanitizing
- * shrank the window below the cap, in which case the trailing token is dropped
- * at the last whitespace. That arm is gated on `clean <= room`, so a body that
- * is almost entirely credential spans could shrink to JUST PAST the cap, skip
- * the safeguard, and carry 73 bytes of a value into the envelope. Both
- * regression fixtures are in review-provider.test.mjs; the whitespace arm below
- * stays as a second line of defence, not the guarantee.
- *
- * The cut is by BYTES, and the head is trimmed back if slicing landed
- * mid-code-point, so the returned string never exceeds the cap however the text
- * was encoded.
+ * A sanitized, capped string: one shape always.
+ * Sanitize before cutting: cutting first can slice a credential in half and leave its prefix in the envelope.
+ * The window isn't optional: `redactUrl` was quadratic, so a 4 MiB provider body would burn hours.
+ * Its edge can leave a credential's opening quote inside and the closing one outside, hence rule 4's open forms.
+ * The `clean <= room` arm alone missed a body that shrank to just past the cap and let 73 bytes through.
+ * The cut is by bytes, trimmed back off a mid-code-point, so the result never exceeds the cap.
  * @param {unknown} raw
  * @returns {string}
  */
@@ -394,8 +137,7 @@ export function redactAndCap(raw) {
   }
   if (!windowed && Buffer.byteLength(clean) <= MAX_EXCERPT_BYTES) return clean;
   let head = Buffer.from(clean, 'utf8').subarray(0, room).toString('utf8');
-  // A partial code point re-encodes as U+FFFD, which is wider than the bytes it
-  // replaced; drop characters until it fits rather than trusting the slice.
+  // a partial code point re-encodes as U+FFFD, wider than the bytes it replaced, so drop characters until it fits
   while (Buffer.byteLength(head) > room) head = head.slice(0, -1);
   return head + TRUNCATED;
 }

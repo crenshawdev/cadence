@@ -1,18 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
-// skim.mjs - the cheap-read seam. Prints a source file with its comments
-// stripped and its LINE NUMBERS INTACT, so an agent can orient in a large
-// file for roughly half the tokens and then Read the exact range it needs
-// with the design prose still there.
-//
-// Measured on this repo: 58.9% of non-test .mjs bytes are comments and blank
-// lines; `planning.mjs` skims 170,520 -> 82,514 B at 3,328 lines in and out.
-//
-// SEAM CONVENTION DEVIATION, deliberate: the success path writes SOURCE TEXT
-// on stdout, not one JSON line. Wrapping 82 KB of code in a JSON string would
-// escape every quote and newline in it, inflating the payload this command
-// exists to shrink. Failures and `--stats` still emit the one JSON line, so
-// everything a caller parses is JSON and everything it reads is source.
+// the cheap-read seam: source with comments stripped and line numbers intact, to orient in a big file cheaply
+// source goes to stdout, not JSON, as escaping a big file inflates what this shrinks. Failures and `--stats` emit JSON
 //
 // Usage: skim.mjs <file> [--stats] [--no-numbers]
 //        --stats       one JSON line of the byte/line figures, no source
@@ -35,9 +24,7 @@ try {
   } else {
     const ext = extname(file).toLowerCase();
     if (!(ext in SYNTAX) || SYNTAX[ext] === null) {
-      // Refuse rather than guess. A wrong comment syntax deletes real code,
-      // and a caller that gets ok:false can fall back to Read; a caller handed
-      // mangled source cannot tell that it was mangled.
+      // refuse rather than guess: the wrong comment syntax deletes real code, and ok:false falls back to Read
       emit({
         ok: false, reason: 'unsupported-extension', ext: ext || '(none)',
         supported: Object.keys(SYNTAX).filter((k) => SYNTAX[k]),
@@ -48,8 +35,7 @@ try {
       const skimmed = skim(source);
       const stats = skimStats(source, skimmed);
       if (!stats.lines_match) {
-        // The one invariant worth aborting on: if the line count moved, every
-        // line reference the agent takes from this output is wrong.
+        // the one invariant worth aborting on: if the line count moves, every line reference from this output is wrong
         emit({ ok: false, reason: 'line-count-drift', file, ...stats,
           hint: 'read this file with the Read tool - the line numbers this seam would print do not match the file' });
       } else if (flags.has('--stats')) {
@@ -67,8 +53,7 @@ try {
   }
 } catch (e) {
   const err = /** @type {any} */ (e);
-  // The hint splits where the reason splits: an absent path is the caller's to
-  // correct, and anything else leaves Read as the way to see the file at all.
+  // an absent path is the caller's to fix; anything else leaves Read as the only way to see the file
   const absent = err?.code === 'ENOENT';
   emit({ ok: false, reason: absent ? 'no-such-file' : 'skim-failed',
     detail: String(err?.message || err),

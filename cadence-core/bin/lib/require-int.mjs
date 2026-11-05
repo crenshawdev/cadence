@@ -1,16 +1,9 @@
 // @ts-check
-// require-int.mjs - the shared seam numeric-flag guard. Rejects anything that
-// is not a clean integer string before a caller derives a number from a CLI
-// flag, so a bad `--total` (#42) or `--attempt` (#45.2) never silently
-// coerces to NaN (or, worse, to a wrong-but-valid int like Number(true)===1)
-// and reaches a write or a routing decision. RANGE IS PART OF THE GRAMMAR:
-// the predicate is `Number.isSafeInteger`, not `Number.isInteger`, because
-// `--total 9007199254740993` parses to `9007199254740992` - a DIFFERENT number
-// than the caller typed, arriving with ok:true. A value silently changed on the
-// way in is the same defect as a NaN reaching a write, one digit quieter.
-// Dependency-free, side-effect-free: no emit, no I/O. Callers own their own
-// reason string (`bad-args` vs `usage`) - this helper only classifies the
-// value (D-01/D-03).
+// the shared guard for numeric flags: only a clean integer string passes, so a bad `--total` (#42) or `--attempt`
+// (#45.2) never coerces to NaN or to a wrong-but-valid int like Number(true)===1
+// the range is part of the grammar: `--total 9007199254740993` would arrive as `9007199254740992` with ok:true, so the
+// predicate is isSafeInteger, not isInteger
+// no emit, no I/O: callers own their reason string (`bad-args` vs `usage`) and this only classifies
 'use strict';
 
 /**
@@ -26,22 +19,12 @@ export function requireInt(raw) {
   return { ok: true, value: n };
 }
 
-// A clean integer is not the same contract as a number STATE.md can hold.
-// parseCursor reads `Phase: <phase> of <total>` as `\d+(?:\.\d+)?` and `\d+` -
-// unsigned, no exponent - so `--total -2` and `--total 1e21` pass requireInt,
-// write, and make the very next `cursor get` fail `unparseable-cursor`. This
-// guard mirrors the parser on both ends: the flag must look like the file
-// format, and so must the number once rendered back (which is what catches a
-// digits-only value large enough that String() yields `1e+21`).
-// The magnitude bound after that round trip is the third leg of the same
-// grammar. This reader cannot take requireInt's `Number.isSafeInteger`: its
-// decimal form legitimately accepts `2.1`, and `Number.isSafeInteger(2.1)` is
-// false, so the integer predicate would refuse every sub-phase. So the PARSED
-// NUMBER is bounded instead - finite, and no greater than MAX_SAFE_INTEGER,
-// with the regex already excluding negatives - which is what refuses
-// `9007199254740993`: a spelling that survives the round trip (String() of it
-// is `9007199254740992`, still digits-only) while naming a different number
-// than the caller typed.
+// a clean integer isn't what STATE.md can hold: parseCursor reads unsigned `\d+(?:\.\d+)?` with no exponent, so
+// `--total -2` and `--total 1e21` would pass requireInt, get written, and make the next `cursor get` fail
+// `unparseable-cursor`
+// the flag has to look like the file format, and so does the number rendered back: that catches a digits-only `1e+21`
+// no isSafeInteger here, since the decimal form accepts `2.1` and that would refuse every sub-phase; the parsed number
+// is bounded instead, which refuses `9007199254740993` (it survives the round trip while naming a different number)
 const CURSOR_SHAPE = { plain: /^\d+$/, decimal: /^\d+(?:\.\d+)?$/ };
 
 /**
@@ -62,23 +45,14 @@ export function requireCursorNumber(raw, opts = {}) {
 }
 
 /**
- * THE `--phase` reader (D-02). Same shape rule as `requireCursorNumber`'s
- * decimal form, and one field more: the caller's OWN spelling, trimmed.
+ * The `--phase` reader: `requireCursorNumber`'s decimal form plus the caller's own spelling, trimmed.
  *
- * A phase number is two different things at once - a directory component and an
- * arithmetic value - and `String(Number(x))` is not a round trip for the first
- * of them. `--phase 1.10` normalized to `1.1` READ A DIFFERENT PHASE'S
- * DIRECTORY, silently and with an ok:true envelope, and `--phase 08` answered
- * about `phases/8`. So `raw` is what every path and every directory-naming
- * diagnostic is built from, and `value` is kept for arithmetic and comparisons
- * ONLY (a `total`, an `=== current`, a ROADMAP phase number).
+ * A phase number is a directory component and an arithmetic value, and `String(Number(x))` isn't a round trip for the
+ * first: `1.10` normalized to `1.1` and read a different phase's directory under ok:true. So `raw` builds every path
+ * and directory-naming diagnostic, and `value` is for arithmetic and comparisons.
  *
- * The `String(n)` round trip inside `requireCursorNumber` is still doing work
- * here even though the raw string is what gets used: it is what refuses a
- * digits-only value large enough that `String()` yields `1e+21`, which stays
- * arithmetic-poison for the `value` half no matter how the directory is spelled.
- * The magnitude bound beside it does the same job one order down, refusing
- * `9007199254740993` whose `value` half would otherwise be a neighbour's number.
+ * The String(n) round trip in requireCursorNumber still refuses a digits-only value whose String() yields `1e+21`,
+ * and the magnitude bound refuses `9007199254740993`.
  * @param {unknown} raw
  * @returns {{ok: true, raw: string, value: number} | {ok: false}}
  */

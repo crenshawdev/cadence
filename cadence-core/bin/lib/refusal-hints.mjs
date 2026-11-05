@@ -1,107 +1,10 @@
 // @ts-check
-// refusal-hints.mjs - the pure rule behind self-verify's refusal-hint check
-// (check 22): a refusal a user can READ must name the next step.
-//
-// THE DEFECT (#238). Cadence states a failure in its own vocabulary and never
-// states the remedy. Measured across `cadence-core/bin/` on 2026-08-23, tests
-// excluded, 186 sites set a literal `reason` and 13 set a literal `hint` - and
-// all 13 of those sit in `planning.mjs` or `skim.mjs`. A user who runs
-// `config.mjs set nosuchkey=1` gets `{"ok":false,"reason":"invalid",...}` and
-// nothing telling them what to type instead. Writing the missing hints is a
-// one-time sweep; the sweep going stale the next time a seam ships a refusal is
-// the failure this check exists to stop, which is why the invariant is a check
-// and not a memory.
-//
-// THE POPULATION IS THE EMITTING CALL, NOT THE FIELD NAME (phase-1 D-02). A
-// site is in scope when it EMITS an `ok:false` envelope on stdout - `emit`,
-// `out` or `fail` - never when it merely contains a field called `reason`. The
-// test is whether a user reads the token. Two rules were rejected for this one:
-//   - a kebab-shape regex on `reason:` values. Only 85 of the 158 in-code
-//     `reason:` sites pass it, it admits returns that are never emitted, and it
-//     misses every interpolated token (`reason: e.seam`, `reason: primary.code`)
-//     - which are exactly the refusals a user is most likely to hit.
-//   - a per-file allowlist. It drifts silently as new seams ship, which is the
-//     failure this check exists to stop, one indirection down.
-// Keyed on the `reason:` object key alone the check goes GREEN while
-// `planning.mjs`'s 150-odd hintless `fail()` refusals - the largest
-// user-facing refusal surface in the plugin - stay untouched. Both spellings,
-// or the check measures nothing.
-//
-// COMMENTS ARE STRIPPED FIRST, with the tree's own `skim` (phase-1 D-08). 28 of
-// the raw hits are comments and JSDoc, and reporting them would name design
-// prose the sweep must not edit. `skim` replaces a comment with its own
-// newlines and nothing else, so line N of the skimmed text is line N of the
-// file and every reported line addresses the ORIGINAL source.
-//
-// WHY A CHARACTER SCAN AND NOT A LINE REGEX. A refusal's argument list wraps
-// across lines, its `hint` is often three lines below its `reason`, and a
-// `fail(` inside a regex character class or a string is not a call. So the scan
-// tracks string, template and regex literals - the same three `skim` tracks,
-// and for the same reason - and takes each call's BALANCED argument span before
-// classifying it. Dropping regex-literal tracking alone lost 29 real
-// `planning.mjs` refusals to a `/['"]/` that opened a phantom string.
-//
-// CLASSIFICATION, once a call is found:
-//   - `emit`/`out` is in scope when its argument span carries a literal
-//     `ok: false`. A computed `ok:` (`ok: problems.length === 0`) is a report,
-//     not a refusal.
-//   - `fail` is ALWAYS in scope: every `fail` wrapper in this tree emits
-//     `ok:false` by construction.
-//   - HINTED means the object literal carries a `hint` key - including the
-//     conditional-spread spelling `...(hint ? { hint } : {})` - or, for `fail`,
-//     that the call passes three or more top-level arguments.
-// A `function fail(...)` DECLARATION is not a call and is not a site; the
-// wrapper's BODY is scanned like any other code, which is deliberate: the three
-// two-argument wrappers report through the `out({ok:false, reason, detail})` in
-// their own bodies until their signatures are widened, and `planning.mjs`'s
-// already-widened wrapper classifies as hinted with no special case.
-//
-// A NON-LITERAL REASON STAYS IN SCOPE. `reason: e.seam`, `reason: decision.reason`
-// and `fail(reason, ...)` are reported with the EXPRESSION text as written where
-// a literal token would go, because a rule that could only read literals is the
-// kebab-shape rule D-02 rejected. A site emitting `ok:false` with no `reason`
-// key at all - `config.mjs` has one, carrying only `file`, `checked` and
-// `errors` - is in scope too, and says `(no reason key)` rather than inventing
-// a token.
-//
-// THE REGISTER IS THE ONLY EXCLUSION MECHANISM. There is no positional, no
-// line-based and no per-site exemption, because a per-site exemption is how a
-// check gets silenced rather than satisfied. It is a PARAMETER rather than a
-// hard-wired read of `REGISTER`, so a test can hand the rule a substitute and
-// prove the exclusions are read rather than compiled in (phase-1 AC6).
-//
-// Its two token rows are excluded BY TOKEN NAME (phase-1 D-03):
-//   `usage`    already carries the next step in its sibling `detail` - e.g.
-//              `worktree-base.mjs`'s `'subcommand: resolve [--dir <path>]'` -
-//              so demanding a second copy would fork one sentence in two.
-//   `internal` has no user action beyond filing a bug, and demanding a hint
-//              there is how a check gets silenced rather than satisfied.
-//
-// Its seven file rows are all DOCUMENTARY TODAY: not one of the seven calls
-// `emit`, `out` or `fail`, so the rule excludes every one of them structurally
-// as well, and deleting the rows would change nothing this week. They are kept
-// so a later reader can tell a deliberate exclusion from an oversight - each
-// names WHY that file's `reason` fields are not refusals a user reads, and each
-// would start reporting the day that file grew an emitting call for the reasons
-// its row states it should not.
-//   `git-guard.mjs`            its `reason` is the hook payload's
-//                              `permissionDecisionReason`, already plain prose
-//                              that names the action, and it runs on the
-//                              PreToolUse hot path (phase-1 D-06).
-//   `lib/bulk-output.mjs`      \
-//   `lib/text-transport.mjs`    > static classification rows self-verify READS;
-//   `lib/release-decision.mjs` /  no user ever sees one as a refusal (D-05).
-//   `lib/why-query.mjs`        \
-//   `lib/read-trace.mjs`        > sub-envelope RETURNS a caller re-wraps or
-//   `lib/trace.mjs`            /  swallows before anything is emitted (D-07).
-//
-// Pure rule: no emit, no exit, no Date, no randomness, node builtins only, and
-// every read guarded. An absent or unreadable `cadence-core/bin` reports
-// nothing rather than throwing - the same partial-fixture degradation
-// lib/include-consumers.mjs and lib/deferred-reads.mjs use. The disk half -
-// filing each issue as a CI problem - lives in self-verify.mjs, the same split
-// lib/merge-warnings.mjs, lib/route-relay.mjs and lib/config-reach.mjs use. It
-// takes no CONTRACTS row, for the reason check 14 states about `lib/*.mjs`.
+// refusal-hints.mjs - self-verify's check 22: a refusal a user can read must name the next step (#238)
+// in scope: the emitting call (emit, out or fail with ok:false), not a field named reason
+// a character scan, not a line regex: arguments wrap and a hint can sit lines below its reason
+// emit and out count on a literal ok: false, fail always; hinted is a hint key, spread included, or three args to fail
+// the register is the only exclusion mechanism; usage and internal are excluded by token
+// pure; an absent or unreadable bin reports nothing; no CONTRACTS row since lib/*.mjs are never invoked from prose
 'use strict';
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -114,12 +17,9 @@ export const CODES = Object.freeze({
 });
 
 /**
- * The exclusion register. Every exclusion this check makes is a row here with a
- * one-line reason - see the header for the long form and the phase-1 decision
- * each row implements. There is no other exclusion mechanism.
- *
- * `tokens` are matched against the refusal's reason token, `files` against the
- * file's path relative to `cadence-core/bin`, always spelled with `/`.
+ * The exclusion register: every exclusion this check makes is a row here
+ * with a one-line reason, and there is no other mechanism.
+ * tokens match the refusal's reason token, files match the path relative to cadence-core/bin, always spelled with /.
  * @type {Readonly<{tokens: ReadonlyArray<{token: string, reason: string}>,
  *                  files: ReadonlyArray<{file: string, reason: string}>}>}
  */
@@ -179,14 +79,10 @@ const EXPR_MAX = 120;
 const NO_REASON = '(no reason key)';
 
 /**
- * The index just past the string, template or regex literal starting at `i`, or
- * `-1` when `i` does not start one.
- *
- * A template literal is consumed WHOLE, `${}` included - the same simplification
- * `skim` makes. The cost is a refusal written inside an interpolation, of which
- * this tree has none; the benefit is that no `${`-nesting depth can desynchronise
- * the scan. Every arm is bounded by the string length, so an unterminated
- * literal ends the scan rather than looping.
+ * The index just past the string, template or regex literal starting at i, or -1 when i doesn't start one.
+ * A template literal is consumed whole, interpolations included, as skim does: a refusal written inside one
+ * would be missed (this tree has none), and no nesting depth can desynchronise the scan in return. Every arm
+ * is bounded by the string length, so an unterminated literal ends the scan instead of looping.
  * @param {string} s @param {number} i
  * @returns {number}
  */
@@ -237,8 +133,7 @@ function balancedArgs(s, openIdx) {
     if (c === ')' && depth === 0) {
       args.push(s.slice(start, i));
       const trimmed = args.map((a) => a.trim());
-      // `f()` splits to one empty argument; every other empty slot is a real
-      // elision and is kept, so an argument COUNT stays honest.
+      // f() splits to one empty argument; any other empty slot is a real elision, so the argument count stays honest
       return { end: i, args: trimmed.length === 1 && trimmed[0] === '' ? [] : trimmed };
     }
     if (c === ')' || c === ']' || c === '}') { depth -= 1; i += 1; continue; }
@@ -249,9 +144,8 @@ function balancedArgs(s, openIdx) {
 }
 
 /**
- * Every `emit`/`out`/`fail` CALL in comment-stripped source, with its balanced
- * argument list. A `function fail(...)` declaration is skipped - it is a
- * signature, not a call - and a name reached through a `.` is somebody else's.
+ * Every emit, out or fail call in comment-stripped source, with its balanced argument list. A declaration is
+ * skipped, it's a signature and not a call, and a name reached through a . belongs to someone else.
  * @param {string} s comment-stripped source
  * @returns {{callee: string, at: number, span: string, args: string[]}[]}
  */
@@ -286,13 +180,9 @@ function callSites(s) {
 }
 
 /**
- * The value of a single-quoted or double-quoted string literal, or `null` when
- * `text` is not exactly one.
- *
- * A character walk rather than a pattern: the obvious
- * `/^(['"])((?:[^\\]|\\.)*?)\1$/` nests two quantifiers, and this rule reads
- * whatever source it is pointed at, so a long non-matching argument is somebody
- * else's input driving this process's backtracking.
+ * The value of a single or double quoted string literal, or null when text isn't exactly one.
+ * A character walk and not a pattern: the obvious regex nests two quantifiers, so a long non-matching
+ * argument would drive this process's backtracking, and this rule reads whatever source it's pointed at.
  * @param {string} text
  * @returns {string|null}
  */
@@ -405,15 +295,12 @@ function readText(file) {
 }
 
 /**
- * Every in-scope refusal site under `root`, hinted or not.
- *
- * This is the CENSUS the issue list is built on, and it is exported because
- * phase-1 AC2 asks the phase SUMMARY for two integers - the in-scope site count
- * and the hintless count - and nothing else in the tree can answer the first.
+ * Every in-scope refusal site under root, hinted or not: the census the issue list is built on.
+ * Exported because nothing else in the tree can answer how many sites are in scope.
  *
  * @param {string} root
  * @param {typeof REGISTER} [register] the exclusion register; a parameter so a
- *   test can prove the exclusions are READ rather than compiled in (AC6)
+ *   test can prove the exclusions are read rather than compiled in
  * @returns {{file: string, line: number, token: string, callee: string, hinted: boolean}[]}
  */
 export function refusalSites(root, register = REGISTER) {
@@ -430,8 +317,7 @@ export function refusalSites(root, register = REGISTER) {
     if (raw === null) continue;
     const src = skim(raw);
     for (const call of callSites(src)) {
-      // `fail` is a refusal by construction; `emit`/`out` only when the
-      // envelope literally says so.
+      // fail is a refusal by construction; emit and out only when the envelope literally says ok: false
       if (call.callee !== 'fail' && !/(?<![\w$.])ok\s*:\s*false\b/.test(call.span)) continue;
 
       let token;
@@ -446,8 +332,7 @@ export function refusalSites(root, register = REGISTER) {
         const reason = props.find((p) => p.key === 'reason');
         const lit = reason ? stringLiteral(reason.value) : null;
         token = reason === undefined ? NO_REASON : (lit === null ? exprText(reason.value) : lit);
-        // The conditional-spread spelling `...(hint ? { hint } : {})` carries no
-        // top-level `hint` property, so the span is what answers here.
+        // the conditional-spread form has no top-level hint property, so the span is what answers here
         hinted = /(?<![\w$.])hint\s*(?::|,|\}|$)/.test(call.span);
       }
       if (excludedTokens.has(token)) continue;
@@ -465,10 +350,8 @@ export function refusalSites(root, register = REGISTER) {
 }
 
 /**
- * Every hintless-refusal issue under `root`.
- *
- * `detail` is spelled `line <N>: <token>` and that spelling is PINNED: the
- * phase-1 sweep's verify commands parse the line number back out of it.
+ * Every hintless-refusal issue under root. detail is spelled "line <N>: <token>" and
+ * that spelling is pinned: the line number gets parsed back out of it.
  * @param {string} root
  * @param {typeof REGISTER} [register]
  * @returns {{kind: string, file: string, detail: string}[]}

@@ -1,27 +1,14 @@
 // @ts-check
-// close-decision.mjs - the pure, testable core of the land-cleanup + autonomous
-// -close logic (Phase 2, GIT-02/GIT-03). Zero-dep (node builtins only, and it
-// uses none): three TOTAL functions that decide, from config + state, whether a
-// land should clean up (return to base + pull + reap), which branch to reap, and
-// whether an autonomous close halts before merge on a genuinely-unfixed
-// risk_surface finding.
-// It never runs live git and never does I/O - the land-cleanup.mjs seam supplies
-// the live `git branch --merged` list and the ALREADY-CLASSIFIED halting
-// findings, and the cad-land prose runs the actual checkout/pull/branch -D.
-// Mirrors branch-decision.mjs's discipline: unknown/missing inputs never throw.
+// close-decision.mjs - the pure core of land-cleanup and the autonomous close: three total functions that decide
+// whether a land cleans up, which branch to reap, and whether an autonomous close halts on an unfixed finding.
+// No live git and no I/O: land-cleanup.mjs supplies the readings. Unknown or missing input never throws.
 
 /**
- * Pick which branch cleanup should reap, from a derived integration-branch name
- * plus the branches `git branch --merged <base>` reported. Pure: the seam
- * supplies `mergedBranches`.
- *
- * - the derived name when it is a non-empty string present in the merged list
- *   (the normal case: the just-shipped `cadence/<version>` merged into base);
- * - else the sole `cadence/*` entry of the merged list when EXACTLY one exists
- *   (the CONTEXT robustness fallback: PROJECT.md `### Active` already evolved to
- *   the next version, or a null-derived name, so re-derivation would miss - but
- *   exactly one cadence/* branch actually merged, so reap that one);
- * - else null (zero or several cadence/* matches: reap nothing, never guess).
+ * Pick which branch cleanup reaps, from the derived integration-branch name and `git branch --merged <base>`.
+ * - the derived name when it's a non-empty string in the merged list (the normal case);
+ * - else the sole `cadence/*` entry of the merged list, for when PROJECT.md already moved on to the next version or
+ *   the name derived null;
+ * - else null: zero or several matches reap nothing, never guess.
  *
  * @param {string | null | undefined} derivedName
  * @param {string[]} mergedBranches
@@ -37,16 +24,10 @@ export function resolveReapBranch(derivedName, mergedBranches) {
 }
 
 /**
- * Decide whether a land cleans up. Total: any `onLandCleanup` other than the
- * literal `true` leaves work in place.
- *
- * - onLandCleanup !== true -> skip: leave the branch and HEAD in place.
- * - onLandCleanup === true -> cleanup: return to base and pull, and reap ONLY
- *   when `mergedIntoBase === true` (the seam confirmed the branch is merged) AND
- *   a branch name actually resolved (`branch != null`); reap is false whenever
- *   the merge is not confirmed OR no branch resolved, so an unmerged branch is
- *   never deleted and `git branch -D` is never handed a null (the GitHub
- *   auto_close path deletes the branch at merge, so re-derivation resolves null).
+ * Decide whether a land cleans up. Total: any `onLandCleanup` other than the literal `true` leaves work in place.
+ * With it on, return to base and pull, and reap only when `mergedIntoBase === true` and a branch name resolved.
+ * An unmerged branch is never deleted and `git branch -D` is never handed a null (GitHub's auto_close deletes the
+ * branch at merge, so re-derivation resolves null).
  *
  * @param {{ onLandCleanup?: boolean, mergedIntoBase?: boolean, branch?: string|null }} args
  * @returns {{ action:'cleanup'|'skip', returnToBase:boolean, pull:boolean, reap:boolean, branch:string|null, reason:string }}
@@ -73,13 +54,10 @@ export function decideCleanup({ onLandCleanup, mergedIntoBase, branch } = {}) {
 const NAMED_UNRULED = 5;
 
 /**
- * How an `unruled` halt names what it holds, WITHOUT letting a caller-supplied
- * payload write the reason string. `unruled` arrives off stdin, so it is
- * untrusted: a non-string member would render as `[object Object]` and a long
- * list would make the reason unbounded. So only non-blank STRINGS are named,
- * at most `NAMED_UNRULED` of them, and the count in the sentence around this
- * is taken from the array's real length - a member too odd to name still
- * halts, which is the direction that fails closed.
+ * How an `unruled` halt names what it holds without letting a caller-supplied payload write the reason string.
+ * `unruled` arrives off stdin, so it's untrusted: only non-blank strings are named, at most `NAMED_UNRULED`, or an
+ * object would render as `[object Object]` and a long list would make the reason unbounded.
+ * The count comes from the array's real length, so a member too odd to name still halts: it fails closed.
  *
  * @param {unknown[]} reviews
  * @returns {string}
@@ -92,69 +70,12 @@ function nameSome(reviews) {
 }
 
 /**
- * Decide whether an autonomous close halts before merge. Total: a non-array
- * `findings`, `unruled` or `overridden` each coerce to [] and never throw.
- *
- * `findings` IS ALREADY DECIDED BEFORE IT GETS HERE, and that is the whole
- * change (LND-02, CONTEXT D-06). It is the genuinely-unfixed halting set the
- * land-cleanup.mjs seam classified out of this branch's ADJUDICATION records
- * through lib/filing-decision.mjs's `unfixedFromEntries` - so a finding that
- * was fixed, refuted, downgraded or overridden is not in it, and does not stop
- * a close. This function reads no `severity` at all any more. It used to
- * filter the halting pair here, which was a third spelling of that module's
- * `HALTING_SEVERITIES` that nothing watched (D-11), and it could not have read
- * a ruling without importing a 500-line validator into a module whose header
- * promises zero deps and no I/O. The rule left here is the whole rule: a
- * NON-EMPTY halting list halts.
- *
- * `risk_surface` is the PRODUCER because it is the only review left that runs
- * on this branch's work and carries `blocking` as its schema default; `/cad-land`
- * fires nothing of its own, so the seam reads the rulings those fires
- * persisted. When auto_close is off the chain is not running unattended, so
- * every arm below proceeds (the manual publish ask owns the decision).
- *
- * `unreadable`: the name of why the findings could not be read at all. Without
- * it a payload nobody could parse coerced to `[]` and came back as `proceed,
- * no surviving blocker/high finding` - an affirmative claim about input this
- * function never saw. Under `auto_close` a named failure is a halt carrying
- * that name; the four names land-cleanup.mjs `readFindings` passes are fixed,
- * and are stated HERE so the pure core and the seam cannot drift:
- *
- *   - `stdin-unreadable`   the read itself failed
- *   - `stdin-empty`        nothing on stdin (D-09: the gate requires an
- *                          explicit `{"findings":[]}`, because a forgotten pipe
- *                          is the likeliest operator error and is otherwise
- *                          indistinguishable from "adjudication killed
- *                          everything")
- *   - `malformed-json`     stdin did not parse
- *   - `not-a-findings-payload`  it parsed, but carried no findings list (a
- *                          valid `{"ok":false,"reason":"dispatch-failed"}`
- *                          envelope is the live shape)
- *
- * `unruled` IS THE FIFTH STATE, and it stands BESIDE those four rather than
- * folding into one of them (D-03, D-13): it names every
- * `REVIEW-risk_surface*.md` the caller found carrying no sibling
- * `ADJUDICATION-*.json`, so the fire happened and nothing ruled it - its
- * findings are neither fixed nor refuted nor declined, and reading past them
- * is exactly the fail-open this requirement closes. Its halt name is
- * `unruled-review`. It is NOT an `unreadable` value: the payload here WAS read
- * and parsed, so the unreadable sentence would be a false statement about
- * input this gate did see.
- *
- * ARM ORDER, and it matters: `unreadable` first (a payload nobody parsed says
- * nothing about anything else), then `unruled`, then the halting list.
- *
- * `overridden` IS CARRIED, NEVER DECIDED ON (D-09). It is the halting set a
- * person already cleared - ruled `survived` at a halting severity, no commit,
- * marked `overridden: true` - and it rides the returned object UNCHANGED on
- * every arm including `proceed`. Folding it into `findings` would re-add the
- * false halt this requirement removes, for the one case somebody already
- * decided, so `action` never moves for it and `/cad-land` keeps branching on
- * `action` alone (D-08).
- *
- * With `auto_close` off the answer stays `proceed` whatever any of these hold.
- * Only a non-empty STRING counts as an `unreadable` failure name, so an
- * unknown value cannot halt a close by accident.
+ * Decide whether an autonomous close halts before merge. Total: a non-array input is [].
+ * `findings` is the unfixed halting set land-cleanup.mjs already classified. With `auto_close` off every arm proceeds.
+ * `unreadable` names why the findings couldn't be read, or an unparseable payload would come back `proceed`.
+ * `stdin-empty` is a name because a forgotten pipe looks like "adjudication killed everything".
+ * `unruled` is a review with no ADJUDICATION record; it halts as `unruled-review`.
+ * Arm order: `unreadable`, `unruled`, then the halting list. `overridden` rides the result and never moves `action`.
  *
  * @param {{ autoClose?: boolean, findings?: Array<Record<string, any>>,
  *   unreadable?: string|null, unruled?: unknown, overridden?: unknown }} args

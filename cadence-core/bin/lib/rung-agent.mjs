@@ -1,51 +1,25 @@
 // @ts-check
-// rung-agent.mjs - the ONE statement of which agent FILE carries which rung of
-// which role, imported by route.mjs (which resolves a cell's rung to an agent
-// name), through lib/route-cells.mjs by self-verify.mjs (which proves every
-// name the grids can produce exists on disk), and through `roleOfAgent` and
-// `rungOfAgent` by lib/read-trace.mjs and lib/subagent-trace.mjs.
-// Spelling the map twice is exactly the resolved-then-silently-wrong class this
-// repo keeps closing (#39, #43, #64): route.mjs would name a file the linter
-// never looked for.
-//
-// RUNG_FILES is the whole mapping story - a stated table, not a naming
-// convention, because no convention is true of all 30 files.
-// `rungBody`/`normalizeBody`/`rungBodyIssue` beside it state the one legitimate
-// BODY of a rung file, and `rungPrefixIssues` states that one role's rung files
-// all carry it byte for byte, for the same single-source reason.
-//
-// Pure lib: no fs, no emit, no process, no Date, no randomness. It returns
-// names and problem CODES; the callers own the envelope - route.mjs decides
-// what an unmapped rung means for a dispatch (nothing: it fails open), and
-// self-verify.mjs decides what it means for CI (a problem entry).
+// rung-agent.mjs - the one statement of which agent file carries which rung of which role. route.mjs resolves a rung
+// to an agent name from it, self-verify proves every name exists, and read-trace and subagent-trace use
+// roleOfAgent and rungOfAgent. Spelling the map twice is the resolved-then-silently-wrong class (#39, #43, #64).
+// RUNG_FILES is a stated table, not a naming convention, because no convention is true of all 30 files.
+// Pure lib: no fs, no emit, no process, no Date, no randomness. It returns names and problem codes.
 'use strict';
 
 /**
- * The rung ladder, weakest first - the whole vocabulary of rung names, and the
- * order `rungFiles` returns a role's files in. It lived in the routing data
- * table until the stakes level was deleted and that table with it; it now
- * belongs beside RUNG_FILES because the two are the two halves of ONE
- * statement - the ladder names the rungs, the map says which file carries each -
- * and `rungOrderIssues` below is what holds them together now that no data file
- * does.
+ * The rung ladder, weakest first: the whole vocabulary of rung names and the order `rungFiles` returns a role's files
+ * in. It sits beside RUNG_FILES because the two are one statement (the ladder names rungs, the map says which file
+ * carries each), and `rungOrderIssues` holds them together.
  * @type {readonly string[]}
  */
 export const RUNG_ORDER = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
 
 /**
- * The rung -> agent-file map, stated per role rather than derived (D-05). The
- * unsuffixed `agents/<role>.md` is one rung among the others, and nothing about
- * a rung's NAME says which file carries it:
- * `cad-assumptions-analyzer` is the `xhigh` rung while its `-high` sibling is
- * the lower one, so any convention would have to lie about one of them. The
- * alternative was renaming five of six files to make a convention true, which
- * invalidates every one of their exact-fit weight budgets and buys nothing a
- * reader of this table cannot already see.
- *
- * Each role's rungs are listed in RUNG_ORDER (low -> max), which is the order
- * `rungFiles` returns them in. Frozen: this is a statement of what is on disk,
- * and a caller mutating it would make route.mjs and self-verify disagree about
- * the same question.
+ * The rung -> agent-file map, stated per role and not derived. The unsuffixed `agents/<role>.md` is one rung among the
+ * others and a rung's name doesn't say which file carries it: `cad-assumptions-analyzer` is the `xhigh` rung while its
+ * `-high` sibling is the lower one.
+ * Renaming five of six files to make a convention true would break every exact-fit weight budget. Rungs are listed in
+ * RUNG_ORDER, and the map is frozen so a caller can't make route.mjs and self-verify disagree.
  * @type {Readonly<Record<string, Readonly<Record<string, string>>>>}
  */
 export const RUNG_FILES = Object.freeze({
@@ -94,20 +68,10 @@ export const RUNG_FILES = Object.freeze({
 });
 
 /**
- * Whether the map and the ladder still say the same thing: every role's rung
- * keys are exactly RUNG_ORDER, in that order.
- *
- * The routing data table used to hold the ladder and self-verify held the cells
- * against it, so a rung the map dropped could not be named by any cell. With
- * that table gone the two exports above are the only statement left, and nothing
- * else compares them: a role missing `xhigh` would resolve `rungFile` to null
- * and route.mjs would fail open, while a role whose keys were REORDERED would
- * hand `rungFiles` and `rungPrefixIssues` a tie-break order that is not the
- * ladder's - both silent.
- *
- * Takes the map so a caller can hold a drifted one against the ladder; defaults
- * to the shipped map, which is the only one that exists today.
- *
+ * Whether the map and the ladder still say the same thing: every role's rung keys are exactly RUNG_ORDER, in order.
+ * Nothing else compares them. A role missing `xhigh` resolves `rungFile` to null and route.mjs fails open, and
+ * reordered keys hand `rungFiles` and `rungPrefixIssues` a tie-break order that isn't the ladder's; both are silent.
+ * Takes the map so a caller can hold a drifted one against the ladder.
  * @param {any} [files] the rung map to check, stem values unread
  * @param {any} [order] the ladder to check it against, weakest first
  * @returns {{code: string, role: string, detail: string}[]}
@@ -132,11 +96,8 @@ export function rungOrderIssues(files, order) {
 }
 
 /**
- * The agent-file stem for one rung of one role, or null when the pair is not
- * in the map. Null rather than a guessed `<role>-<rung>`: a guess names a file
- * that does not exist and reads as a real answer, while null is a fact the
- * caller can act on - route.mjs degrades the dispatch and says so, self-verify
- * files a problem.
+ * The agent-file stem for one rung of one role, or null when the pair isn't in the map. Null and not a guessed
+ * `<role>-<rung>`: a guess names a file that doesn't exist and reads as a real answer.
  * @param {string} role
  * @param {string} rung
  * @returns {string|null}
@@ -148,9 +109,8 @@ export function rungFile(role, rung) {
 }
 
 /**
- * Every agent-file stem one role's map names, in declared rung order. An
- * unknown role yields an empty array rather than throwing - self-verify calls
- * this on a table it has not validated yet.
+ * Every agent-file stem one role's map names, in rung order. An unknown role yields an empty array, since self-verify
+ * calls this on a table it hasn't validated yet.
  * @param {string} role
  * @returns {string[]}
  */
@@ -159,12 +119,7 @@ export function rungFiles(role) {
   return map ? Object.values(map) : [];
 }
 
-// The reverse lookups: a recorded `agent_type` back to the role and rung it is
-// filed under. Built off RUNG_FILES rather than a `-<rung>` suffix regex, which
-// would be a SECOND statement of the mapping: `cad-assumptions-analyzer` is that
-// role's `xhigh` rung while `cad-assumptions-analyzer-high` is its lower one, so
-// no suffix convention is true of all 30 files, and a rung added to the table
-// but not to the regex would leave the answer silently wrong.
+// Reverse lookups for a recorded `agent_type`; a suffix regex would be a second statement of the map.
 
 /** Every rung file's stem, mapped back to the role whose rung it is. */
 const ROLE_OF_STEM = new Map(
@@ -173,12 +128,7 @@ const ROLE_OF_STEM = new Map(
   ),
 );
 
-/**
- * The same 30 stems, mapped back to the RUNG each one is filed under. Built off
- * the SAME import in the same shape as `ROLE_OF_STEM`, because the two answers
- * are two columns of one table: a rung added to `RUNG_FILES` reaches both maps
- * or neither, and neither can go stale while the other does not.
- */
+/** The same stems mapped back to their rung, built off the same import so a new rung reaches both maps or neither. */
 const RUNG_OF_STEM = new Map(
   Object.keys(RUNG_FILES).flatMap(
     (role) => Object.entries(RUNG_FILES[role]).map(([rung, stem]) => [stem, rung]),
@@ -186,13 +136,9 @@ const RUNG_OF_STEM = new Map(
 );
 
 /**
- * The agent-file stem inside a recorded `agent` value - the host writes
- * `<plugin>:<agent-file-stem>` and a bare stem is accepted as itself.
- *
- * ONE copy of the split, called by both readers below. A second copy is how the
- * role answer and the rung answer start disagreeing about which file a spelling
- * names, and `helper-census.test.mjs` matches shared-contract BODY idioms
- * precisely so a paste-back under another name is caught rather than noticed.
+ * The agent-file stem inside a recorded `agent` value: the host writes `<plugin>:<agent-file-stem>` and a bare stem is
+ * accepted as itself. One copy of the split, shared by both readers below, or the role answer and the rung answer start
+ * disagreeing about which file a spelling names.
  * @param {any} agent
  * @returns {string|null} null for anything that is not a non-empty string.
  */
@@ -202,21 +148,11 @@ function stemOfAgent(agent) {
 }
 
 /**
- * The role a recorded `agent` value names, or null when it names none.
- *
- * The corpus carries `cadence:cad-executor`, `cadence:cad-planner`,
- * `cadence:cad-verifier-medium` and `cadence:cad-assumptions-analyzer-high` -
- * the host's `<plugin>:<agent-file-stem>` spelling - while a dispatch event
- * carries the bare ROLE. Null for anything else, including the host types and
- * `coordinator`, so the caller decides what each absence means rather than
- * having one of them silently become a role.
- *
- * EXPORTED for `lib/read-trace.mjs`'s join, for `lib/subagent-trace.mjs`, whose
- * `SubagentStop` self-filter asks the same question of the same spelling (both
- * through read-trace's re-export).
- * They import this rather than holding a copy: two readers of one record
- * deriving the role independently is how they start disagreeing about which
- * bracket closed.
+ * The role a recorded `agent` value names, or null. The corpus carries the host's `<plugin>:<agent-file-stem>` spelling
+ * (`cadence:cad-verifier-medium`) while a dispatch event carries the bare role. Null for anything else, host types and
+ * `coordinator` included, so the caller decides what each absence means.
+ * Exported for read-trace's join and subagent-trace's `SubagentStop` self-filter, so two readers of one record can't
+ * derive the role independently and disagree about which bracket closed.
  * @param {any} agent
  * @returns {string|null}
  */
@@ -227,23 +163,12 @@ export function roleOfAgent(agent) {
 }
 
 /**
- * The RUNG a recorded `agent` value names, or null when it names none.
- *
- * The sibling of `roleOfAgent` over the same spelling and the same table:
- * `cadence:cad-verifier-medium` is the `cad-verifier` role at its `medium`
- * rung, so the two functions answer the two halves of one lookup. Null for
- * anything `RUNG_FILES` does not file - the host's own types, `coordinator`, a
- * non-string - so the caller decides what the absence means.
- *
- * NEVER derived from a `-<rung>` filename suffix, for the reason stated above
- * `ROLE_OF_STEM`: `cad-assumptions-analyzer` is that role's
- * `xhigh` rung while `cad-assumptions-analyzer-high` is its lower one, so no
- * suffix convention is true of all 30 files and a suffix rule would report the
- * wrong rung for the unsuffixed file of every role.
- *
- * EXPORTED for `lib/subagent-trace.mjs`, whose `SubagentStop` close records the
- * rung a worker was DISPATCHED under beside the effort its own transcript says
- * it RAN at - the pair the run record exists to let a reader compare.
+ * The rung a recorded `agent` value names, or null: the sibling of `roleOfAgent` over the same table, so
+ * `cadence:cad-verifier-medium` is `cad-verifier` at `medium`. Never from a `-<rung>` suffix, since
+ * `cad-assumptions-analyzer` is `xhigh` while `-high` is its lower rung and a suffix rule would report the wrong rung
+ * for the unsuffixed file of every role.
+ * Exported for subagent-trace, whose `SubagentStop` close records the rung a worker was dispatched under beside the
+ * effort it ran at.
  * @param {any} agent
  * @returns {string|null}
  */
@@ -254,35 +179,11 @@ export function rungOfAgent(agent) {
 }
 
 /**
- * Whether one role's rung files still share ONE body, byte for byte (RNG-03).
- *
- * A role's rungs are separate registered agents whose bodies are assembled
- * into separate prompts, and a prompt cache can only reuse a prefix that is
- * identical from its first byte. The rung sentence used to make that
- * impossible by construction - every rung file opened with a different line -
- * and deleting it bought a shared prefix that nothing then held. This is what
- * holds it: an edit landing in one rung file and not its siblings re-forecloses
- * the sharing, and it is invisible to every other check, because each file on
- * its own is still a perfectly legal rung file.
- *
- * RAW BYTES, deliberately, and this is the one place in this lib where
- * whitespace is load-bearing (D-04). `rungBodyIssue` normalizes whitespace away
- * so that re-wrapping a paragraph is free - which is right for "does this file
- * carry behaviour of its own" and exactly wrong here, since two line-break
- * variants are two different cache prefixes. Re-wrapping ONE rung file and not
- * its siblings is precisely the edit this rule exists to catch, so the two
- * rules are not duplicates: they disagree about that edit on purpose.
- *
- * Scoped by RUNG_FILES: a stem the map does not name is not this rule's
- * business (check 8's reachability arm owns stale and unreachable files), and
- * a role contributing fewer than two bodies yields nothing - an absent file is
- * already `missing-rung-agent`'s to report, and a second entry would
- * double-count one fault.
- *
- * The majority body is the rank and the minority is what broke it, ties going
- * to whichever group holds the earliest-declared rung, so the detail names the
- * FILE a maintainer would open rather than every file in the role.
- *
+ * Whether one role's rung files still share one body, byte for byte. Each rung is its own prompt, and a prompt cache
+ * reuses only a prefix identical from its first byte, so an edit to one rung file and not its siblings breaks it.
+ * Raw bytes on purpose, the one place whitespace is load-bearing: `rungBodyIssue` normalizes it away, but two
+ * line-break variants are two cache prefixes. A role with fewer than two bodies yields nothing; an absent file is
+ * `missing-rung-agent`'s to report. The detail names the file to open.
  * @param {any} bodies stem -> that file's raw prose, frontmatter already
  *   stripped; entries whose value is not a string are treated as absent
  * @returns {{code: string, role: string, stems: string[], detail: string}[]}
@@ -296,8 +197,7 @@ export function rungPrefixIssues(bodies) {
   /** @type {{code: string, role: string, stems: string[], detail: string}[]} */
   const out = [];
   for (const role of Object.keys(RUNG_FILES)) {
-    // Declared rung order (low -> max), which is what makes the tie-break and
-    // the listed order below reproducible rather than filesystem-dependent.
+    // Declared rung order, so the tie-break and the listed order are reproducible and not filesystem-dependent.
     const stems = Object.values(RUNG_FILES[role]).filter((s) => bodyOf(s) !== null);
     if (stems.length < 2) continue;
 
@@ -311,8 +211,7 @@ export function rungPrefixIssues(bodies) {
     }
     if (groups.size === 1) continue;
 
-    // Insertion order IS declared rung order, and `>` is strict, so a tie
-    // leaves the earliest-declared group as the rank.
+    // Insertion order is declared rung order and `>` is strict, so a tie keeps the earliest group.
     let rank = [];
     for (const members of groups.values()) {
       if (members.length > rank.length) rank = members;
@@ -330,19 +229,11 @@ export function rungPrefixIssues(bodies) {
 }
 
 /**
- * The canonical BODY of a rung agent file: a pointer at the contract it
- * preloads, and nothing else. Stated here rather than inside self-verify for
- * the same reason the name mapping is - the check and the files it checks must
- * read ONE source, or they drift and the linter blesses the drift.
- *
- * It names NO rung, and that is the point (RNG-03). The body used to open
- * ``Your rung is `high`.``, which put a per-rung token at body line 1 and gave
- * every rung file of one role a different prefix from its first character - so
- * two rungs of the same role could share no cached prefix at all, however
- * identical the rest. The rung was never lost by deleting it: the frontmatter
- * `effort:` is what the host actually reads and what `rungEffortIssue` holds
- * against this map. A role whose CONTRACT branches on the rung takes it from
- * its dispatch prompt, which is billed fresh and costs no prefix.
+ * The canonical body of a rung agent file: a pointer at the contract it preloads and nothing else, stated here so the
+ * check and the files read one source. It names no rung on purpose: a rung token at body line 1 gave every rung file of
+ * a role a different prefix, so no two shared a cached one.
+ * The frontmatter `effort:` is what the host reads, and `rungEffortIssue` holds it against this map. A contract that
+ * branches on rung takes it from its dispatch prompt, which is billed fresh.
  * @param {string} skill the contract skill the file preloads
  * @returns {string}
  */
@@ -352,10 +243,8 @@ export function rungBody(skill) {
 }
 
 /**
- * A body in whitespace-insensitive form, so re-wrapping a paragraph is free
- * and only a REWORD counts as a change. Comparing raw text would make the
- * line breaks load-bearing - a CI failure with no fix a maintainer would
- * think of.
+ * A body in whitespace-insensitive form, so re-wrapping a paragraph is free and only a reword counts. Raw comparison
+ * would make line breaks load-bearing, a CI failure with no fix a maintainer would think of.
  * @param {string} text
  * @returns {string}
  */
@@ -364,31 +253,11 @@ function normalizeBody(text) {
 }
 
 /**
- * Whether a rung file's body is anything other than the canonical template.
- *
- * An ALLOWLIST, deliberately, and this is the second attempt at the rule.
- * D-04 rejected a size-only check because a 200-byte behavioural instruction
- * fits under any weight budget - but so does a 200-byte instruction carrying
- * no contract section tag, so the tag denylist it chose instead had the same
- * hole: a rung file whose whole body is plain prose passed CI. A rung file has
- * exactly ONE legitimate body, so "is it that body" is the only rule that
- * matches what INTERNALS.md:11 claims - it refuses a rung file carrying any
- * instruction of its own, including a same-size REPLACEMENT of the pointer
- * paragraph, which no byte budget can see.
- *
- * The tag denylist stays in front of this in self-verify: when a body DOES
- * carry `<process>`, naming the tag is the more actionable message.
- *
- * A file declaring several skills passes if its body points at any ONE of
- * them - the template names a single contract, and nothing here rules out a
- * future multi-contract agent.
- *
- * The template no longer names a rung, so this rule no longer holds a body
- * against its own frontmatter `effort:` (RNG-03). That arm is gone, not
- * bypassed, and it was the redundant one: `rungEffortIssue` below holds the
- * file's `effort:` against the rung RUNG_FILES filed it under, which is the
- * link that decides how deep a dispatch actually thinks.
- *
+ * Whether a rung file's body is anything other than the canonical template. An allowlist on purpose: a size check let a
+ * 200-byte instruction through, and a denylist of contract section tags passed a body of plain prose.
+ * The tag denylist stays in front of this in self-verify, since naming `<process>` is the more actionable message.
+ * A file declaring several skills passes if its body points at any one. The template names no rung, so
+ * `rungEffortIssue` holds the file's `effort:` against the rung RUNG_FILES filed it under.
  * @param {string} body the agent file's prose, frontmatter already stripped
  * @param {string[]} [skills] the file's declared `skills:` entries
  * @returns {null|{detail: string}} null when the body IS the template
@@ -406,20 +275,14 @@ export function rungBodyIssue(body, skills) {
 /** The config-key prefix every per-role start rung is written under. */
 export const EFFORT_PREFIX = 'model.effort.';
 
-/**
- * The roles-block spelling of the same quantity, as its two fixed halves:
- * `roles.<role>.effort`. It is a SECOND key naming one role's start rung, not a
- * rename - the older prefix above stays live as the narrower fallback - so both
- * spellings are held to the rules below rather than one of them being trusted.
- */
+/** `roles.<role>.effort` is a second spelling of the start rung, not a rename, so both prefixes get the rules below. */
 export const ROLES_PREFIX = 'roles.';
 /** The last segment that makes a `roles.<role>.*` key a start rung. */
 export const ROLES_EFFORT_SUFFIX = '.effort';
 
 /**
- * The two keys one role's start rung can be written under, older spelling
- * first - which is also the order the issues below come out in, so a drift in
- * the older key still reports before its roles-block sibling.
+ * The two keys one role's start rung can be written under, older spelling first, which is also the order issues come
+ * out in.
  * @param {string} role
  * @returns {string[]}
  */
@@ -428,11 +291,8 @@ function effortKeyNames(role) {
 }
 
 /**
- * The role a start-rung key names, or null when the key is neither spelling.
- *
- * `roles.<role>.model` is deliberately NOT one: D-10 types it `string_or_null`
- * with nothing to drift against, so classifying it here would file a drift
- * issue about a key that has no enum to drift.
+ * The role a start-rung key names, or null when the key is neither spelling. `roles.<role>.model` isn't one: it's
+ * `string_or_null` with nothing to drift against.
  * @param {string} key
  * @returns {string|null}
  */
@@ -445,37 +305,12 @@ function effortKeyRole(key) {
 }
 
 /**
- * Whether the shipped `model.effort.<role>` and `roles.<role>.effort` schema
- * enums still say what RUNG_FILES says. It belongs beside the map because the
- * map is the statement it checks against, and because the refusal it protects
- * is one a USER meets:
- * `config.mjs` refuses a start rung by key off these enums, so an enum that
- * drifts from the map starts refusing the wrong values - accepting a rung with
- * no file (which route.mjs then has to warn its way out of) or refusing one
- * this role really has.
- *
- * BOTH spellings, to the same rules and with no shared-enum shortcut: the two
- * keys are separate schema rows and `checkValue` reads whichever one the user
- * typed, so a guard that checked only the older prefix would leave the winning
- * key - the roles block beats `model.effort.<role>` - the unguarded one.
- *
- * The DEFAULT is checked on the roles spelling ALONE. Since the cells grid went,
- * `roles.<role>.effort`'s default is the rung a project with no config resolves
- * at, so a default naming no rung of this role leaves nothing to dispatch;
- * `model.effort.<role>` defaults to null on purpose, meaning "this key does not
- * answer", and refusing that would refuse the fall-through itself.
- *
- * self-verify never reads a user's config and so cannot refuse a user's value;
- * this is its half of that criterion (D-08), which is why every detail NAMES
- * THE KEY a maintainer would edit.
- *
- * `rungOrder` is the caller's rung vocabulary - RUNG_ORDER above, handed in
- * rather than read here so a caller can hold a drifted ladder against these
- * enums. An empty or absent one skips the vocabulary arm ALONE, the way
- * `cellIssues` tolerates an absent vocabulary - the schema-vs-map proof must
- * still run when the ladder is unavailable, which is where a drifted enum is
- * likeliest and least noticed.
- *
+ * Whether the shipped `model.effort.<role>` and `roles.<role>.effort` schema enums still say what RUNG_FILES says.
+ * `config.mjs` takes start rungs from them, so a drifted enum accepts a rung with no file or refuses a real one.
+ * Both spellings get the same rules, since the roles block wins and the older prefix alone leaves it unguarded.
+ * Only the roles spelling is checked for its default, as `model.effort.<role>` defaults to null on purpose.
+ * `rungOrder` lets a caller hold a drifted ladder against the enums; an empty one skips that arm.
+ * Every detail names the key to edit.
  * @param {any} schema the `keys` map of config.schema.json, trusted for nothing
  * @param {any} [rungOrder] the declared rung vocabulary, lowest first
  * @returns {{code: string, detail: string}[]}
@@ -496,19 +331,14 @@ export function effortEnumIssues(schema, rungOrder) {
             Object.keys(RUNG_FILES[role]).length} rungs for ${role}` });
         continue;
       }
-      // Type BEFORE values: `checkValue` enforces an enum's `values` only when
-      // `type` IS "enum", so a key whose type drifted to "string" keeps a correct
-      // values list while the write face silently accepts any rung - the exact
-      // accepting-a-rung-with-no-file drift this function exists to refuse.
+      // Type first: `checkValue` enforces `values` only for "enum", so a key drifted to "string" accepts any rung.
       if (spec.type !== 'enum') {
         out.push({ code: 'effort-enum-drift',
           detail: `${key} has type ${JSON.stringify(spec.type)}, must be "enum" - `
             + 'a non-enum type disables the write-face refusal' });
         continue;
       }
-      // The map's rungs in DECLARED order, then null - the exact shape D-03 ships,
-      // so a reordered enum reads as drift too: the order is what a reader of the
-      // refusal message sees, and it is meant to be the ladder's own order.
+      // Declared order then null, so a reordered enum reads as drift; the order is what the refusal message shows.
       const want = [...Object.keys(RUNG_FILES[role]), null];
       const got = Array.isArray(spec.values) ? spec.values : null;
       if (!got || got.length !== want.length || want.some((v, i) => got[i] !== v)) {
@@ -517,17 +347,9 @@ export function effortEnumIssues(schema, rungOrder) {
             role} at ${JSON.stringify(want)}` });
         continue;
       }
-      // The DEFAULT half, and only for the roles spelling. `roles.<role>.effort`
-      // is what answers when no layer names a rung, so its default has to name a
-      // rung this role has a FILE for: a null or stray default hands `agentFor`
-      // nothing, and the dispatch falls open to the unsuffixed file while the
-      // resolve still reports a rung - the report-a-rung-nothing-ran-at shape
-      // `rungEffortIssue` exists to close, reached one door out.
-      //
-      // `model.effort.<role>` is EXEMPT and its null default is correct: null
-      // there means the key does not answer, and the roles row's own default
-      // decides. Checking both would refuse the very fall-through the two-key
-      // precedence is built on.
+      // The default half, roles spelling only: it answers when no layer names a rung, so it must name a rung this role
+      // has a file for. `model.effort.<role>` is exempt, its null default being the fall-through the precedence is
+      // built on.
       if (key.startsWith(ROLES_PREFIX)) {
         const def = spec.default;
         if (typeof def !== 'string'
@@ -561,30 +383,10 @@ export function effortEnumIssues(schema, rungOrder) {
 }
 
 /**
- * Whether the file a rung is filed under carries a DIFFERENT effort than that
- * rung. The third link in the chain, and the one that was open.
- *
- * A cell states a rung, RUNG_FILES turns it into a file NAME, and the dispatch
- * carries only that name - so the depth that actually runs is the `effort` in
- * that file's frontmatter, and since RNG-03 deleted the rung sentence from the
- * body this is the ONLY rule that reads that field against anything. Check 8's
- * reachability arm reads the rung out of the FILENAME rather than out of the
- * file, and `rungBodyIssue` held a file's body against its OWN frontmatter, so
- * a file that was internally consistent and externally wrong passed it
- * anyway - which is why losing that arm loses no coverage this one has, and
- * why this one may not be weakened. Leave the gap and a config layer can
- * name `xhigh`, this map
- * can resolve it to a file carrying `effort: high`, and the resolver's JSON,
- * the transcript's `subagent_type` and the escalation `reason` all report
- * `xhigh` while nothing ran at it. Subagent turns record no effort anywhere,
- * so no observable downstream disagrees either - it is unfalsifiable outside
- * the file. It is also the same invariant CI already holds against the table,
- * where a retry rung may not sit below the rung it started on; this holds it
- * against the filesystem, so a rung cannot think less while every surface
- * reports that it thought more.
- *
- * A stem this map does not name is not this rule's business - check 8's
- * reachability arm owns stale and unreachable files - and returns null.
+ * Whether the file a rung is filed under carries a different effort than that rung. The dispatch carries only the file
+ * name, so the depth that runs is the `effort` in that file's frontmatter, and nothing else reads that field.
+ * Without this a config can name `xhigh`, resolve to a file carrying `effort: high`, and every report says `xhigh`
+ * while nothing ran at it. A stem the map doesn't name returns null.
  *
  * @param {string} stem the agent file's basename without `.md`
  * @param {string} [effort] the file's frontmatter `effort`

@@ -1,30 +1,14 @@
 // @ts-check
-// skim.mjs - strip comments from source while preserving line numbers.
-//
-// The measurement this exists for: 58.9% of Cadence's own non-test .mjs bytes
-// are comments and blank lines (812,320 -> 334,017 across 47 files), and
-// `planning.mjs` alone is 170,520 B of which 88,006 is prose. An agent that
-// opens that file to find one function pays for the whole design record.
-//
-// LINE NUMBERS ARE THE CONTRACT. A comment is replaced by nothing, but its
-// newlines survive, so line N of the output is line N of the file. That is
-// what makes the two-step read work: skim to orient, then Read the exact
-// range with the comments intact. Collapsing blank lines would halve the
-// output again and break the only property that makes it useful.
-//
-// This never deletes a comment from disk. The prose is the design record -
-// `deferred-reads.mjs` exists because deleting it was tried and failed.
-//
-// FAILS TOWARD KEEPING. Every ambiguity resolves to "leave the bytes alone":
-// an unterminated block comment, a `//` inside a template literal's `${}`, an
-// unrecognized extension. Keeping a comment costs tokens; dropping a line of
-// real code hands an agent source that does not parse.
+// strips comments and keeps the line numbers: newlines stay, so line N of the output is line N of the file
+// that's what makes the two-step read work: skim to orient, then Read the range. Collapsing blank lines would break it
+// it never deletes a comment on disk, the prose is the design record
+// ambiguity falls toward keeping bytes (an unterminated block comment, a `//` inside a template's `${}`, an unknown
+// extension): a kept comment costs tokens, a dropped line of real code hands an agent source that doesn't parse
 'use strict';
 
 /**
- * Comment syntax by extension. Only families whose line/block markers are
- * unambiguous here; an extension absent from this map is REFUSED rather than
- * guessed at, because guessing wrong deletes code.
+ * Comment syntax by extension. An extension absent from this map is refused
+ * and not guessed at, because guessing wrong deletes code.
  */
 export const SYNTAX = {
   '.mjs': 'c', '.cjs': 'c', '.js': 'c', '.jsx': 'c',
@@ -39,11 +23,10 @@ const REGEX_PRECEDING = new Set([
 ]);
 
 /**
- * Is the `/` at `i` a regex literal rather than a division operator?
- *
- * Looks back at the last significant character. `)` and `]` are treated as
- * division (`(a+b)/2`), which misreads the rare `if (x) /re/.test(y)`; that
- * error direction keeps a comment, never eats code.
+ * Is the `/` at `i` a regex literal and not a division? Looks at the last
+ * significant character. `)` and `]` count as division, which misreads the rare
+ * `if (x) /re/.test(y)`, but that errs toward keeping a comment, never eating
+ * code.
  * @param {string} s @param {number} i
  */
 export function regexHere(s, i) {
@@ -71,7 +54,7 @@ export function skim(source) {
   let i = 0;
   const n = source.length;
 
-  // A shebang is not a comment - it is the file's first instruction.
+  // a shebang is the file's first instruction, not a comment
   if (source.startsWith('#!')) {
     const e = source.indexOf('\n');
     if (e < 0) return source;
@@ -84,8 +67,7 @@ export function skim(source) {
     const d = source[i + 1];
 
     if (c === '"' || c === "'" || c === '`') {
-      // Template literals are consumed whole, `${}` included. A `//` inside an
-      // interpolation therefore survives - keeping bytes, never breaking code.
+      // templates are consumed whole, `${}` included, so a `//` inside an interpolation survives rather than break code
       const q = c;
       out += c;
       i++;
@@ -133,7 +115,7 @@ export function skim(source) {
     i++;
   }
 
-  // Trailing whitespace left behind by a stripped end-of-line comment.
+  // trailing whitespace left by a stripped end-of-line comment
   return out.split('\n').map((l) => l.replace(/\s+$/, '')).join('\n');
 }
 

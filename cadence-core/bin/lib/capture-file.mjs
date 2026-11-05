@@ -1,73 +1,10 @@
 // @ts-check
-// capture-file.mjs - the ONE owner of `.planning/CAPTURE.md` file I/O. Every
-// product writer of that file (`/cad-capture`, `/cad-execute`'s open-items
-// append, `debt-harvest`) reaches the bytes through here, so the bullet format
-// is stated once and no surface can name its own heading.
-//
-// WHY a module and not skill prose. Five filed bullets were lost because the
-// writer was a model holding `Write`/`Edit` over the file: it appended below a
-// heading the recall walk does not visit, and nothing could fail. A prose
-// writer also has no test to redden. So the write is code, and the heading is
-// not a parameter.
-//
-// THE THREE HEADINGS ARE ONE FACT WITH ONE HOME. The section NAMES live in
-// `CAPTURE_WALK_SECTIONS` in lib/planning-files.mjs - the recall walk's own
-// list - and `CAPTURE_HEADINGS` below derives from it rather than restating it.
-// This module is the WRITE side of the walk that module READS, and the two
-// disagreeing about which sections are the walk is exactly how five filed
-// bullets were lost; a fact written down twice is the only way that recurs.
-// The import direction is one-way (this file already takes `sectionSpan` and
-// `atomicWrite` from there), so there is no cycle to avoid.
-//
-// What stays HERE is the kind-to-heading MAPPING, which is writer knowledge: a
-// caller may ask for a `todo`, a `seed` or a `note`, and those three words are
-// mapped onto the walk's three names positionally, in order. The order is
-// therefore load-bearing on both sides, and capture-file.test.mjs's per-kind
-// rows plus planning.test.mjs's capture->recall round trip are what turn red if
-// either side moves.
-//
-// WHY the kind-to-heading map is FIXED here rather than validated at the entry.
-// The structural cause of the lost bullets is that a writer COULD name a
-// heading outside the walk. A validated `--section` flag closes that by
-// checking; an absent flag closes it by construction, and only the second one
-// survives the next caller who has a reason.
-//
-// WHY never `appendFileSync` at EOF (CONTEXT D-09). CAPTURE.md is sectioned
-// markdown whose live heading order ends at `## Debt markers` - outside the
-// walk - so an EOF append lands exactly where the lost bullets landed. The
-// section is located with the EXPORTED `sectionSpan`, which is bounded at both
-// ends and fence-aware; a bare heading scan was already the destructive half of
-// a fixed bug (see `replaceSection`'s comment in planning.mjs), and the whole
-// file is then written with `atomicWrite`.
-//
-// WHY `atomicWrite` is not touched (CONTEXT D-08). Its stated contract is
-// crash-safety, not mutual exclusion, and 17 call sites across 4 files inherit
-// anything added inside it. The guard is built ABOVE it, in this file: a
-// sibling lock file taken with an exclusive create, around the WHOLE
-// read-modify-write. `atomicWrite` alone leaves two writers last-write-wins on
-// the target - its own D-05 block says so - which is a silently lost bullet,
-// the same failure this module exists to close.
-//
-// A WRITER THAT CANNOT TAKE THE LOCK RETURNS A REASON, IT DOES NOT THROW. This
-// settles the assumption CONTEXT flagged, and the trade-off is real either way.
-// A throw would match `atomicWrite`'s own convention, but it would surface
-// inside a `/cad-capture` step whose prose has no handler, so the user's
-// sentence would be lost with a stack trace instead of a retry - the same lost
-// update, now noisy. A returned reason matches `appendEvent` in lib/trace.mjs
-// and `cmdDebtHarvest`'s existing `fail('write-failed')`, and it is only
-// non-silent because the CALLING PROSE reports it: `/cad-capture` shows the
-// user the reason and their sentence, and `/cad-execute` reports it in one
-// line. A caller that swallows the reason is the bug, and it is a prose fix.
-//
-// THE LOCK PATH IS A WORKING-TREE FILE. `<CAPTURE.md>.lock`, a sibling so the
-// exclusive create is on the same filesystem as the target. It is unlinked on
-// every exit path (a `finally`), and a crashed writer's lock is broken by
-// mtime age rather than left to wedge the queue forever. `/cad-capture`'s
-// commit step stages ONLY `CAPTURE.md`, so a transient lock is never committed.
-//
-// WHAT THE GUARD DOES NOT REACH: a hand edit or a foreign script writing
-// CAPTURE.md never takes the lock, so it can still clobber a bullet. That is
-// the honest gap, and it is not closable by a lock nobody else honours.
+// capture-file.mjs - the one owner of `.planning/CAPTURE.md` file I/O, so the bullet format is stated once
+// a module, not skill prose: five bullets were lost when a model with Write/Edit appended below a heading the recall
+// walk doesn't visit, and nothing could fail
+// heading names live in CAPTURE_WALK_SECTIONS (planning-files.mjs) and CAPTURE_HEADINGS derives from it
+// never appendFileSync at EOF: the live order ends at `## Debt markers`, outside the walk, where those bullets landed
+// the lock guard can't reach a hand edit that never takes the lock; see takeLock and appendCapture
 'use strict';
 
 import { readFileSync, mkdirSync, existsSync, openSync, closeSync, statSync, unlinkSync, renameSync } from 'node:fs';
@@ -76,9 +13,7 @@ import { atomicWrite, sectionSpan, CAPTURE_WALK_SECTIONS } from './planning-file
 import { sleep } from './text-util.mjs';
 
 /**
- * The kind a caller may ask for, and the heading it lands under. Not
- * extensible on purpose, and the three names are the WALK's, positionally -
- * see the header.
+ * The kind a caller may ask for and the heading it lands under. Not extensible: the three names are the walk's.
  */
 export const CAPTURE_HEADINGS = {
   todo: `## ${CAPTURE_WALK_SECTIONS[0]}`,
@@ -90,24 +25,15 @@ export const CAPTURE_HEADINGS = {
 export const CAPTURE_KINDS = Object.keys(CAPTURE_HEADINGS);
 
 /**
- * The body an absent CAPTURE.md is created with - byte-for-byte the three
- * headings `cmdDebtHarvest` writes for that same case, so a queue created by
- * either writer is the one `/cad-capture` expects. Built from the walk's own
- * list for the same reason the map above is: a queue this seam CREATES must be
- * one the walk can read, and that is a guarantee, not a coincidence to keep in
- * sync by hand.
+ * The body an absent CAPTURE.md is created with, byte for byte the three headings `cmdDebtHarvest` writes for the same
+ * case. Built from the walk's list so a queue this seam creates is one the walk can read.
  */
 export const EMPTY_CAPTURE = CAPTURE_WALK_SECTIONS.map((s) => `## ${s}\n\n- None.\n`).join('\n');
 
 /**
- * Render the bullet for one capture. The shapes are exactly the three
- * `skills/cad-capture/SKILL.md` used to restate in prose; they live here now
- * because two statements of one format is how the writer and the reader drifted
- * apart in the first place.
- *
- * The text is flattened to one line: a newline inside it would write a second
- * line that is not a bullet, which the walk drops silently - this phase's
- * headline bug arriving through the front door.
+ * Render the bullet for one capture: the three shapes `skills/cad-capture/SKILL.md` used to restate in prose, kept here
+ * since two statements of one format is how writer and reader drifted.
+ * The text is flattened to one line: a newline would write a second line that isn't a bullet, which the walk drops.
  * @param {string} kind @param {string} text @param {string} [phase]
  * @returns {string}
  */
@@ -119,13 +45,8 @@ function renderBullet(kind, text, phase) {
 }
 
 /**
- * Insert `bullet` at the END of `heading`'s section body, or append the whole
- * section when the heading is absent.
- *
- * Absent-heading arm: the heading is written WITH the bullet, so the bullet is
- * still inside the walk - which is what separates this from the EOF append D-09
- * refuses, where the bullet would land under whatever heading happened to be
- * last.
+ * Insert `bullet` at the end of `heading`'s section body, or append the whole section when the heading is absent. The
+ * heading goes in with the bullet so the bullet stays inside the walk, unlike an EOF append under whatever is last.
  * @param {string} text @param {string} heading @param {string} bullet
  * @returns {string}
  */
@@ -136,31 +57,20 @@ function insertBullet(text, heading, bullet) {
     const sep = text === '' || text.endsWith('\n\n') ? '' : (text.endsWith('\n') ? '\n' : '\n\n');
     return `${text}${sep}${heading}\n\n${bullet}\n`;
   }
-  // Back up over the blank lines that separate this section from the next, so
-  // the bullet joins the section's own list rather than the gap after it.
+  // back up over the blank lines before the next section so the bullet joins the list, not the gap after it
   let at = end;
   while (at > start + 1 && lines[at - 1].trim() === '') at--;
-  // An EMPTY section has no list to join: the bullet needs the blank line after
-  // the heading that every other section already has.
+  // an empty section has no list to join, so the bullet needs the blank line after the heading like the others
   lines.splice(at, 0, ...(at === start + 1 ? ['', bullet] : [bullet]));
   return lines.join('\n');
 }
 
 /**
- * Replace `heading`'s body wholesale, or append the section when it is absent.
- *
- * Bounded at BOTH ends by the EXPORTED `sectionSpan` rather than a second fence
- * scanner (D-12): a `## ` line inside a fenced block in someone's `## Todos`
- * bullet must not be read as the section boundary - nor as the section's START.
- * Finding the heading with a bare `findIndex` was the second half of that same
- * bug and the more destructive one: a fenced example of `## Debt markers` in an
- * earlier section became the rewrite's anchor, and everything from inside that
- * code block onward - `## Seeds`, `## Notes`, their bullets - was replaced by
- * the new body.
- *
- * Moved here verbatim from planning.mjs, where it was `cmdDebtHarvest`'s
- * private helper: this module owns CAPTURE.md's bytes, and the harvest is one
- * of the three writers that has to take the same guard as the rest.
+ * Replace `heading`'s body wholesale, or append the section when it's absent.
+ * Bounded by the exported sectionSpan, not a second fence scanner: a `## ` line inside a fenced block in a bullet
+ * mustn't read as a boundary. A bare findIndex for the heading was the worse half of that bug: a fenced example of
+ * `## Debt markers` became the anchor and everything from there on (`## Seeds`, `## Notes`) was replaced.
+ * Moved here verbatim from planning.mjs, so the harvest takes the same guard as the other writers.
  * @param {string} text @param {string} heading @param {string} body
  * @returns {string}
  */
@@ -176,13 +86,8 @@ export function replaceSection(text, heading, body) {
 }
 
 /**
- * Read a file, or return null when it does not exist.
- *
- * ONLY `ENOENT` is null. Every other error THROWS, and the throw is the point:
- * a `catch`-all here read an unreadable-but-PRESENT queue as an absent one, and
- * the caller then wrote `EMPTY_CAPTURE` over it - the whole backlog destroyed
- * under an `ok:true` envelope. An absent queue is data; an unreadable one is a
- * failure, and the two must never render the same.
+ * Read a file, or null when it doesn't exist. Only ENOENT is null and everything else throws, on purpose: a catch-all
+ * read an unreadable queue as absent and the caller wrote EMPTY_CAPTURE over the whole backlog under an `ok:true`.
  */
 function read(file) {
   try {
@@ -199,29 +104,19 @@ function read(file) {
 const LOCK_SUFFIX = '.lock';
 
 /**
- * Total time a writer waits for a held lock before refusing.
- *
- * What it buys: an ORDINARY overlap - two writers arriving inside each other's
- * write - lets BOTH bullets land instead of one refusing. What bounds it: this
- * seam sits inside an interactive `/cad-capture` step, so a lock that is really
- * held still has to be refused promptly rather than hang the command. Two
- * seconds leaves enough scheduling margin for the promised twenty-writer burst
- * on a busy runner while keeping a genuinely held lock visibly bounded.
+ * Total time a writer waits for a held lock before refusing. Ordinary overlap, two writers inside each other's write,
+ * lets both bullets land. It's bounded because this sits in an interactive `/cad-capture` step. Two seconds leaves
+ * margin for a twenty-writer burst on a busy runner.
  */
 const LOCK_WAIT_MS = 2_000;
 
-/**
- * One poll interval, jittered up to double. The jitter is what stops N writers
- * that collided once from re-colliding in lockstep every interval after.
- */
+/** One poll interval, jittered up to double so writers that collided once don't re-collide in lockstep. */
 const LOCK_POLL_MS = 5;
 
 /**
- * A lock file older than this belongs to a writer that DIED holding it, and is
- * broken. What it buys: a crashed `/cad-capture` cannot wedge the queue
- * forever. Why it is minutes and not seconds: the whole critical section is one
- * small read and one rename, so a live holder is never near this - the margin
- * is against a machine suspended mid-write, not against a slow write.
+ * A lock older than this belongs to a writer that died holding it, and is broken so a crashed `/cad-capture` can't
+ * wedge the queue. Minutes, not seconds: the critical section is one small read and one rename, so the margin is for
+ * a machine suspended mid-write.
  */
 const LOCK_STALE_MS = 120_000;
 
@@ -235,41 +130,30 @@ function takeLock(lockPath) {
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
     try {
-      // `wx` is the whole guard: an atomic create-or-fail, which is the one
-      // mutual-exclusion primitive available on every filesystem Cadence ships
-      // to without a dependency.
+      // `wx` is the whole guard: atomic create-or-fail, the one exclusion primitive that needs no dependency
       closeSync(openSync(lockPath, 'wx'));
       return { ok: true };
     } catch (e) {
       const code = e && /** @type {any} */ (e).code;
-      // Anything that is not "somebody else holds it" is a real I/O failure -
-      // an unwritable directory, a missing parent - and retrying cannot help.
+      // anything but "somebody else holds it" is a real I/O failure and retrying can't help
       if (code !== 'EEXIST') {
         return { ok: false,
           detail: `could not create the lock ${lockPath}: ${e && e.message ? e.message : String(e)}` };
       }
     }
-    // Breaking a stale lock CLAIMS it first. `unlinkSync` on a path we only
-    // `statSync`ed deletes whatever is there NOW, which is not necessarily the
-    // file we measured: a holder can die, a second writer break its lock and
-    // take a fresh one, and a third writer - still holding the dead lock's
-    // stat - then unlink that FRESH lock and walk into the section beside its
-    // owner. `renameSync` is the fix because it is atomic and single-winner:
-    // exactly one contender moves the stale lock to its own private path, and
-    // the losers get ENOENT. Re-stat after the claim, because only then do we
-    // exclusively own the bytes we are judging.
+    // break a stale lock by claiming it first: unlinkSync after a statSync deletes whatever is there now, so a third
+    // writer holding a dead lock's stat could unlink a fresh lock and walk in beside its owner. renameSync is atomic
+    // and single-winner: one contender moves it aside, the losers get ENOENT. Re-stat after claiming to judge our bytes
     try {
       if (Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS) {
         const claimed = `${lockPath}.break.${process.pid}.${Math.random().toString(36).slice(2)}`;
         renameSync(lockPath, claimed);
         if (Date.now() - statSync(claimed).mtimeMs > LOCK_STALE_MS) unlinkSync(claimed);
-        // Fresh after all - we claimed a live writer's lock. Put it back only
-        // if nothing has taken the path meanwhile; a plain rename back would
-        // clobber a lock a fourth writer legitimately holds.
+        // fresh after all, so we took a live writer's lock: put it back, unless something took the path meanwhile
         else if (!existsSync(lockPath)) renameSync(claimed, lockPath);
         else unlinkSync(claimed);
       }
-    } catch { /* it vanished under us - the next create IS the retry */ }
+    } catch { /* gone under us, so the next create is the retry */ }
     if (Date.now() >= deadline) {
       return { ok: false, detail: `another writer holds ${lockPath}` };
     }
@@ -278,20 +162,11 @@ function takeLock(lockPath) {
 }
 
 /**
- * Run `fn` holding the lock on `file`, and release it whatever happens.
- *
- * A throw from `fn` PROPAGATES (the lock is still released): the caller owns
- * how a write failure is reported, and this function's own failure arm is the
- * lock alone. Refusing the lock is `ok:false` with `reason`, which defaults to
- * `'capture-locked'`.
- *
- * The lock itself was never CAPTURE-specific - it is an exclusive-create
- * sibling around one file's whole read-modify-write - and `ARCHIVE.md` needs
- * the identical guarantee for a worse consequence: a milestone close removes
- * the phase directories right after its write, so a clobbered residue has no
- * live source left to recover from. So the name says what it guards (one
- * planning file) rather than which caller reached it first, and the refusal
- * `reason` is the caller's word, since that string reaches a user envelope.
+ * Run `fn` holding the lock on `file`, and release it whatever happens. A throw from `fn` propagates, lock released.
+ * Refusing the lock is `ok:false` with `reason` (default `'capture-locked'`), a value and not a throw: a throw inside a
+ * `/cad-capture` step with no handler would lose the user's sentence behind a stack trace.
+ * Not capture-specific: ARCHIVE.md needs it more, since a close removes the phase directories right after its write.
+ * The guard sits above atomicWrite on purpose: that promises crash-safety, not mutual exclusion.
  * @template T
  * @param {string} file @param {() => T} fn @param {string} [reason]
  * @returns {{ok: true, value: T} | {ok: false, reason: string, detail: string}}
@@ -303,40 +178,22 @@ export function withPlanningFileLock(file, fn, reason = 'capture-locked') {
   try {
     return { ok: true, value: fn() };
   } finally {
-    // `finally`, so a throw inside the write cannot leak the lock and leave the
-    // next writer waiting out the full staleness threshold.
-    try { unlinkSync(lockPath); } catch { /* already gone - a stale break took it */ }
+    // finally, so a throw in the write can't leak the lock and make the next writer wait out the staleness threshold
+    try { unlinkSync(lockPath); } catch { /* already gone, a stale break took it */ }
   }
 }
 
 /**
- * Append one bullet to `file` under its kind's heading.
- *
- * `kind` and `text` are already validated by the caller; `phase` is the
- * caller's OWN spelling of the phase number (`requirePhaseArg().raw`), so
- * `--phase 1.10` tags `(phase 1.10)` rather than a normalized `1.1`.
- *
- * An existing `- None.` placeholder is left where it is: removing it is a
- * different change with its own blast radius, and the walk reads past it.
+ * Append one bullet to `file` under its kind's heading. `phase` is the caller's own spelling (`requirePhaseArg().raw`),
+ * so `1.10` keeps its trailing zero. An existing `- None.` placeholder stays, the walk reads past it.
  * @param {string} file @param {string} kind @param {string} text @param {string} [phase]
  * @returns {{ok: true, bullet: string, heading: string, created: boolean}
  *   | {ok: false, reason: string, detail: string}}
  */
 /**
- * How many times a bullet that was overwritten is re-appended before the write
- * is called lost.
- *
- * Why a retry exists at all, stated plainly because it is the honest limit of
- * this seam: `wx` gives mutual exclusion, but BREAKING a stale lock cannot be
- * made ownership-safe with `stat` + `unlink` + `rename` alone - there is no
- * compare-and-swap on a filesystem this module is allowed to assume. A
- * contender holding a dead lock's stat can move a live successor's lock aside,
- * and two writers end up in the section together. The self-heal is kept
- * deliberately (a crashed `/cad-capture` must not wedge the queue), so the
- * GUARANTEE moves off the lock and onto the writer: verify after releasing,
- * and if our bullet is gone, append it again onto whatever won. Both bullets
- * land; the criterion was never "the lock is perfect" but "a concurrent write
- * cannot SILENTLY lose an append".
+ * How many times an overwritten bullet is re-appended before the write is called lost.
+ * Breaking a stale lock can't be made ownership-safe with stat, unlink and rename, so two writers can share a section.
+ * The writer verifies after release and re-appends if its bullet is gone: a concurrent write can't silently lose one.
  */
 const APPEND_ATTEMPTS = 4;
 
@@ -346,20 +203,13 @@ export function appendCapture(file, kind, text, phase) {
   const bullet = renderBullet(kind, text, phase);
   let created = false;
   for (let attempt = 1; attempt <= APPEND_ATTEMPTS; attempt++) {
-    // Spelled out rather than `ReturnType<typeof withPlanningFileLock>`: that helper
-    // is generic in what its callback returns, and ReturnType erases the
-    // argument, so the `value` half would come back `unknown`.
+    // spelled out: ReturnType<typeof withPlanningFileLock> erases the callback's return, so `value` would be unknown
     /** @type {{ok: true, value: boolean} | {ok: false, reason: string, detail: string}} */
     let guarded;
     try {
-      // Before the lock, because the LOCK is a sibling of the target: the
-      // `--cadence` queue lives in a directory that may not exist yet
-      // (`~/.claude/cadence/`), and both the lock's exclusive create and
-      // `atomicWrite`'s sibling-temp rename need the parent to be there.
+      // before the lock, which sits beside the target, and the `--cadence` queue's directory may not exist yet
       if (!existsSync(file)) mkdirSync(dirname(file), { recursive: true });
-      // The READ is inside the lock with the write. Reading outside it is
-      // exactly the lost update: two writers each read the same bytes, each
-      // append their own bullet, and the second rename erases the first one's.
+      // read inside the lock with the write, or two writers read the same bytes and the second rename erases the first
       guarded = withPlanningFileLock(file, () => {
         const existing = read(file);
         const base = existing === null ? EMPTY_CAPTURE : existing;
@@ -373,12 +223,8 @@ export function appendCapture(file, kind, text, phase) {
     if (guarded.ok === false) return guarded;
     if (attempt === 1) created = guarded.value;
 
-    // The confirmation is AFTER the lock is released, which is the whole point
-    // of its position. A read-back INSIDE the lock passes for a writer whose
-    // bullet is erased a moment later by the second writer that a broken stale
-    // break let in - it proves only "we won at this instant", which is not the
-    // claim. Confirming after release measures the state the caller is about to
-    // be told about.
+    // confirm after release: a read-back inside the lock passes for a writer whose bullet a second writer, let in by a
+    // stale break, erases a moment later. After release it measures the state the caller is told about
     const settled = read(file);
     if (settled !== null && settled.includes(bullet)) {
       return { ok: true, bullet, heading, created };

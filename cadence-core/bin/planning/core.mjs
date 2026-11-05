@@ -1,22 +1,7 @@
 // @ts-check
-// planning/core.mjs - the shared core of the planning seam: the envelope helpers
-// every command module calls, the readers more than one command family needs, and
-// the refusal composers the dispatch door and `trace` both compose.
-//
-// It exists because the 32 command handlers moved out of planning.mjs into one
-// module per subcommand (phase 4, D-01/D-03). `fail` is called by all 32 of them,
-// `ok` by 31 and `read` by 24, and a command module cannot import any of them back
-// out of planning.mjs, because importing that file RUNS the dispatch at the foot of
-// it. So each is declared exactly ONCE - here - and imported everywhere, including
-// by planning.mjs itself. A second copy in a command module is the accumulation
-// helper-census.test.mjs exists to stop.
-//
-// What belongs here is decided by USE and never by where a declaration happened to
-// sit in the old file (D-06): a helper or constant two handler families reach is
-// core, a single-use one travels with its handler. The seam contract itself - one
-// JSON object on stdout, ok:false for every parse problem, deterministic and
-// additive-only fields - is stated in planning.mjs's header and is unchanged by
-// the split.
+// planning/core.mjs - shared core of the planning seam: envelope helpers, shared readers and the refusal composers
+// ok, fail and read live here once; planning.mjs can't export them because importing it runs the dispatch
+// a helper moves here once two handler families reach it; a second copy elsewhere is what helper-census.test.mjs stops
 'use strict';
 
 import { execFileSync } from 'node:child_process';
@@ -35,11 +20,7 @@ import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { testSeamOpen } from '../lib/test-seam.mjs';
 
-// The raw argument list, kept beside the envelope helpers because the flags
-// that read through lib/arg-contract.mjs need the SPELLING and not parseArgs'
-// digest of it: parseArgs mints the boolean `true` for a bare flag, so by the
-// time a value reaches `opts` the three spellings a declared row separates -
-// bare, empty and flag-shaped - have already collapsed into one.
+// raw argument list: arg-contract flags need the spelling, and parseArgs collapses bare, empty and flag-shaped into one
 const ARGV = process.argv.slice(2);
 
 const ok = (o) => emit({ ok: true, ...o });
@@ -53,25 +34,10 @@ function read(file) {
 }
 
 /**
- * The `--phase` spellings the two WRITE faces cannot honour, as a refusal
- * detail - or null when the spelling is one they can.
- *
- * `requirePhaseArg` deliberately returns the caller's OWN spelling beside the
- * numeric value, and most reads in this file address `phases/<raw>/` with it.
- * `cursor set` and `seed-reqs` cannot: both WRITE the numeric half - the
- * cursor's `Phase:` line, and a Traceability cell that `parseRequirements` and
- * `audit` compare against ROADMAP phase NUMBERS. So on a tree holding both
- * `phases/1.1/` and `phases/1.10/`, `--phase 1.10` wrote `Phase: 1.1 of 2
- * (One)` and `| BBB-01 | Phase 1.1 | Pending |` - the OTHER phase's name and
- * the other phase's row, silently, with ok:true (measured 2026-08-18).
- *
- * The rule is the round trip `String(value) === raw`, the same predicate the
- * CAPTURE.md and ARCHIVE.md phase readers carry (D-07), so `1.10`, `1.0` and
- * `01` are refused while `2`, `2.1` and `10` pass. STATED COST: neither face
- * can name a `phases/1.10/` directory any more, a capability
- * `lib/require-int.mjs` deliberately built. The detail carries BOTH spellings
- * because the caller's fix is exactly one of two things - retype the flag, or
- * rename the directory - and nothing else in the envelope says which.
+ * Refusal detail for a `--phase` spelling the two write faces can't honour, or null.
+ * `cursor set` and `seed-reqs` write the numeric half, so with both `phases/1.1/` and `phases/1.10/`, 1.10 hit 1.1.
+ * The rule is the round trip `String(value) === raw`: `1.10`, `1.0` and `01` are refused, `2`, `2.1` and `10` pass.
+ * Neither face can name `phases/1.10/` any more, and that's the price.
  * @param {{raw: string, value: number}} parsed a `requirePhaseArg` success
  * @returns {string|null}
  */
@@ -83,56 +49,18 @@ function phaseSpellingRefusal(parsed) {
 }
 
 
-// THE phase-directory grammar: a bare phase integer, or an `N.M` sub-phase
-// insertion, with neither part zero-padded and no slug suffix. Checked here and
-// resolved NOWHERE - Cadence states the grammar and REPORTS what violates it,
-// rather than teaching the seams to resolve `08-meteogram-legend`
-// (references/roadmap-phases.md).
-//
-// The fractional part carries the SAME `[1-9]` lead as the integer part,
-// because the fraction is the sub-phase ORDINAL and obeys the same no-padding
-// rule: `1.01` is a padded spelling of `1.1`, and `2.0` is not a fraction at
-// all rather than a second spelling of phase 2. Deliberately NOT the
-// `String(Number(x)) === x` round trip `phaseSpellingRefusal` above uses -
-// measured 2026-08-25, `1.01` round-trips and `1.10` does not, so a round-trip
-// rule would legalize `1.01` and outlaw `1.10`, inverting the two cases this
-// grammar most has to get right. `phases/1.10/` stays a legal directory name.
-//
-// It lives in core rather than beside its drift walk (`phaseDirGrammarDrift`
-// in planning/status.mjs) because a second family reaches it: the two `phases/`
-// LISTING filters, in `cmdStatus`'s surviving-directory report and in the
-// recall corpus walk. Those two carried a looser `/^\d+(\.\d+)?$/` of their
-// own, described here as keeping "a zero-padded directory out of the corpus" -
-// untrue, measured 2026-08-25: it matches `08`, `1.01` and `2.0`, and both
-// sites key by `Number(...)`, so `phases/08/` landed under phase 8 (D-04).
+// the phase-directory grammar: a bare integer or an `N.M` sub-phase, neither part zero-padded, no slug suffix
+// checked and reported here, never resolved, so the seams don't have to learn `08-meteogram-legend`
+// the fraction gets the same `[1-9]` lead: `1.01` is a padded `1.1` and `2.0` isn't a fraction at all
+// not the `String(Number(x)) === x` round trip, which passes `1.01` and fails `1.10`, legalizing the wrong one
+// lives in core because status and recall use it too; their looser `/^\d+(\.\d+)?$/` let `phases/08/` land under 8
 const PHASE_DIR_NAME = /^[1-9]\d*(?:\.[1-9]\d*)?$/;
 
 /**
- * The `--phase` spellings a PATH-RESOLVING face cannot honour on THIS tree, as
- * a refusal detail - or null when the spelling is one it can.
- *
- * The harm is the MIXED callsite, not a wholesale misread (D-06). Every command
- * that opens a phase directory builds `join(dir, 'phases', parsed.raw)`, so
- * `--phase 1.10` reads `phases/1.10/` and never touches `phases/1.1/` content -
- * but the SAME command reports `parsed.value` in its envelope's `phase:` key.
- * On a tree carrying both, that answer says `phase: 1.1` over bytes read out of
- * `phases/1.10/`, and the reader has no way to see which half is which.
- *
- * So the rule is TREE-AWARE, and deliberately not `phaseSpellingRefusal`'s pure
- * one (D-07): it refuses only when the caller's spelling is not the canonical
- * one AND the canonical one names something already on disk. `--phase 1.10`
- * refuses against a tree holding `phases/1.1/` and RESOLVES against a tree
- * holding only `phases/1.10/`, which keeps the sub-phase-ten capability
- * `lib/require-int.mjs` deliberately built. Wiring the pure refusal at these
- * twenty-odd faces instead would make `phases/1.10/` a legal directory name no
- * command can address - the cost stated above for two callsites, generalized.
- *
- * A SYMLINK at the canonical path counts as present, the same disposition
- * `phaseDirGrammarDrift` takes: what matters is that a reader would find
- * something there, not what it resolves to. The detail carries BOTH spellings
- * because the caller's fix is exactly one of two things - retype the flag, or
- * rename the directory - and nothing else in the envelope says which.
- *
+ * Refusal detail for a `--phase` spelling a path-resolving face can't honour on this tree, or null.
+ * The harm is the mixed callsite: asking for 1.10 reads `phases/1.10/` but the envelope says `phase: 1.1`.
+ * Unlike `phaseSpellingRefusal` it's tree-aware: it refuses only when the canonical spelling already exists on disk.
+ * A symlink at the canonical path counts as present, since a reader would find something there.
  * @param {string} dir the planning directory (`--dir`)
  * @param {{raw: string, value: number}} parsed a `requirePhaseArg` success
  * @returns {string|null}
@@ -148,33 +76,18 @@ function phaseSpellingCollision(dir, parsed) {
     + ` already exists on this tree - two different phases - send --phase "${canonical}" for that`
     + ` one, or rename phases/${parsed.raw}/ to a spelling that does not normalize onto ${canonical}`;
 }
-// `cadence-core/bin`, deliberately NOT this file's own directory. Both
-// consumers below walk UP from it - `MANIFEST_PATH` with two `'..'` segments,
-// `routeLadder` with one - and both swallow their own read failure, so a `HERE`
-// one directory deeper does not crash: `pluginVersion` returns null and the
-// gate ladder reads as "none declared", each under ok:true with a wrong answer
-// (D-03). The `'..'` segments at those two consumers are therefore left exactly
-// as they were; compensating there instead would leave two different notions of
-// where the bin directory is. `resolve` rather than `join` so the value stays
-// the same normalized absolute path planning.mjs computed.
+// `cadence-core/bin`, not this directory: its consumers swallow read failures, so a wrong level answers ok:true
+// resolve and not join, so it stays the same normalized absolute path planning.mjs computed
 const HERE = resolvePath(dirname(fileURLToPath(import.meta.url)), '..');
 
-// The one path this script resolves outside `--dir`. Read relative to the
-// SCRIPT, not the cwd, so it names the plugin actually executing - the whole
-// point, given the skew this reports on. CADENCE_PLUGIN_MANIFEST overrides it
-// ONLY when the `CADENCE_TEST_SEAM` sentinel holds (lib/test-seam.mjs); without
-// it the variable is ignored and the shipped manifest is read, silently - this
-// constant resolves at module load, before any dispatch exists to carry a
-// warning. Same gate as CADENCE_CONFIG_SCHEMA, and for the same reason: every
-// version-skew answer is computed from this file, which is what QW-04 exists to
-// keep honest.
+// the one path read outside --dir, resolved from the script and not the cwd, so it names the plugin that's running
+// CADENCE_PLUGIN_MANIFEST overrides it only under the test seam, silently: this resolves before a warning can go out
 const MANIFEST_PATH = (testSeamOpen() && process.env.CADENCE_PLUGIN_MANIFEST)
   || join(HERE, '..', '..', '.claude-plugin', 'plugin.json');
 
 /**
- * The running plugin's version, or null when the manifest is unreadable,
- * malformed or version-less. Never throws: this is PROVENANCE, and a statement
- * about the run must not be able to sink the run it describes.
+ * The running plugin's version, or null when the manifest is unreadable, malformed or has none.
+ * Never throws: it's provenance, and a statement about the run mustn't be able to sink the run.
  * @returns {string|null}
  */
 function pluginVersion() {
@@ -184,11 +97,7 @@ function pluginVersion() {
   } catch { return null; }
 }
 
-// ---------------------------------------------------------------------------
-// Shared derivation: phase statuses from artifacts (the progress.md rules).
-// no PLAN -> unplanned; PLAN w/o SUMMARY -> planned; SUMMARY w/o fully-passed
-// UAT -> executed; SUMMARY + UAT complete -> complete.
-// ---------------------------------------------------------------------------
+// status from artifacts: no PLAN unplanned, PLAN planned, SUMMARY without a fully passed UAT executed, else complete
 function derivePhases(dir, roadmapPhases) {
   return roadmapPhases.map((p) => {
     const pdir = join(dir, 'phases', String(p.n));
@@ -206,26 +115,12 @@ function derivePhases(dir, roadmapPhases) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// uat - checklist persistence. The script owns the invariants (first_pass
-// set-once, verifier never overwrites user results, counts always recomputed,
-// atomic writes); the model owns item wording and result inference.
-// ---------------------------------------------------------------------------
+// uat persistence: the script owns the invariants, the model owns the wording
 /**
- * Read a JSON payload from `--payload <file>` when one is named, otherwise from
- * stdin, as a DISCRIMINATED result.
- *
- * The reader this replaces returned `null` for BOTH a parse failure and a
- * legitimate `null` payload, and `merge`'s `if (f === null) return;` then exited
- * 0 having printed NOTHING - from a seam whose entire contract is one JSON line
- * on stdout, so the caller saw neither a result nor a refusal. Distinguishing
- * the two is what lets a `null` payload be refused like any other non-object
- * instead of vanishing. `ok:false` here means a refusal has ALREADY been
- * emitted; the caller returns without emitting a second one.
- *
- * Empty input is `no-payload`, not `bad-payload`: "you handed me nothing" and
- * "what you handed me is not the shape" are different repairs, and the first is
- * what a truncated or never-written findings file actually looks like.
+ * Reads a JSON payload from `--payload <file>`, else stdin, and returns a discriminated result.
+ * A parse failure and a real `null` payload used to look alike, so `merge` exited 0 having printed nothing.
+ * `ok:false` means a refusal is already emitted, so the caller returns without a second one.
+ * Empty input is `no-payload`, not `bad-payload`: handing over nothing and the wrong shape are different repairs.
  * @param {string|boolean} [file] `opts.payload`; stdin when undefined
  * @returns {{ok: true, value: any} | {ok: false}}
  */
@@ -233,8 +128,7 @@ function readJsonPayload(file) {
   let text;
   let where = 'stdin';
   if (file !== undefined) {
-    // parseArgs gives a valueless flag the boolean `true`, so `--payload` with
-    // no path must be refused here rather than reaching readFileSync.
+    // a valueless flag parses as boolean true, so refuse it here before it reaches readFileSync
     if (typeof file !== 'string' || !file.trim()) {
       fail('no-payload', '--payload needs a file path',
         'write the payload JSON to a file and name it: --payload <path>; this flag reads a file'
@@ -274,42 +168,17 @@ function readJsonPayload(file) {
 }
 
 /**
- * `memory.backend`, effective across the config layers (repo > global), with
- * the layer warnings behind it.
- *
- * ONE reader for the key, not one per command. `cmdRecall` gates its whole
- * corpus walk on it and `cmdCiteCount` records `none` as a third state on the
- * record, and the two must agree by construction: a second inlined
- * `mergeLayers` + `?? 'builtin'` pair is exactly how the off switch comes to
- * mean one thing at the seam that produces the surfaced set and another at the
- * seam that counts it. The schema default is `builtin`, so an unset key is on.
- *
- * `warnings` is RETURNED rather than surfaced here, because this is a reader
- * and the envelope belongs to the caller - both callers put it on theirs, for
- * the reason each states at its own emit: a TORN layer reads the key as absent
- * and defaults a deliberate `none` back to `builtin`.
+ * `memory.backend` effective across the config layers (repo over global), plus the layer warnings.
+ * One reader so `cmdRecall` and `cmdCiteCount` can't disagree on the off switch; unset means on (`builtin`).
+ * Warnings are returned, not surfaced: a torn layer reads as absent and flips a deliberate `none` back to `builtin`.
  */
 function memoryBackend(dir) {
   const { config, warnings } = mergeLayers(join(dir, 'config.json'));
   return { backend: config?.memory?.backend ?? 'builtin', warnings };
 }
 
-// ---------------------------------------------------------------------------
-// listPlanFiles - one phase directory's plan files, split into conforming
-// (`PLAN.md`, `PLAN-N.md`) and non-conforming (any other `PLAN*.md`, e.g. a
-// `PLAN-gaps.md` shipped by name - phase-1 D-21: invisible to status, audit,
-// plan-overlap and executor dispatch alike, so its requirements and files
-// were read by nothing while everything reported success).
-//
-// `missing: true` reports that `pdir` could not be read at all - load-bearing,
-// not decoration: cmdAudit and cmdPlanOverlap have OPPOSITE absent-directory
-// contracts today (audit swallows it to mean "unplanned"; plan-overlap
-// returns `fail('no-phase-dir', ...)`), and a helper with no channel for that
-// would turn an absent phase dir into plan-overlap's clean-pass shape, which
-// `execute.md`'s choose_path (routes sequential only on `ok:false`) would then
-// read as clearance to run parallel. Each caller keeps its own behavior on
-// `missing`; this helper only reports it.
-// ---------------------------------------------------------------------------
+// one phase dir's plan files, conforming (`PLAN.md`, `PLAN-N.md`) apart from other `PLAN*.md`, which once went unseen
+// `missing: true` flags an unreadable dir, or plan-overlap would read it as a clean pass and execute would run parallel
 function listPlanFiles(pdir) {
   let entries;
   try { entries = readdirSync(pdir); }
@@ -323,29 +192,12 @@ function listPlanFiles(pdir) {
   return { plans: plans.sort(), nonconforming: nonconforming.sort() };
 }
 
-// ---------------------------------------------------------------------------
-// readPlanReports - one phase directory's executor reports, one row per plan.
-//
-// ONE definition of "this plan's report says it is complete", because TWO
-// commands now decide from it: `replay-check`, which turns it into a dispatch
-// set, and `status`, which turns it into the outstanding set /cad-progress
-// routes on. A second copy is a second place for the two rules below to drift,
-// and the failure would be silent - the two answers disagreeing about the same
-// phase (D-04).
-//
-// The `report` path it returns is RELATIVE to `pdir`, and the
-// `phases/<spelling>/` prefix stays the CALLER's on purpose: `replay-check`
-// resolves the phase directory from the caller's RAW spelling while `status`
-// resolves it numerically as `String(n)`, so a shared reader that also owned
-// the prefix would emit a different string for a sub-phase in one of the two
-// envelopes.
-// ---------------------------------------------------------------------------
-/** `PLAN-<k>.md` -> k, bare `PLAN.md` -> 1 - the derivation the executor
- * contract's `<report_file>` states, so this reads the path that gets written. */
+// one definition of "this plan's report says it is complete", since replay-check and status both decide from it
+// `report` is relative to pdir, and the caller owns the `phases/<spelling>/` prefix: replay-check and status differ
+/** `PLAN-<k>.md` is k and a bare `PLAN.md` is 1, matching the path the executor writes its report to. */
 const planNumber = (f) => Number(/^PLAN-(\d+)\.md$/.exec(f)?.[1] ?? 1);
 
-/** The FIRST line, trimmed - not the file. A `PLAN COMPLETE` quoted in a Note
- * is prose about a status, not a claim of one, and only line 1 pins the word. */
+/** Only the first line, trimmed: a `PLAN COMPLETE` quoted in a Note is prose about a status, not a claim of one. */
 const firstLine = (body) => (body == null ? null
   : body.slice(0, body.indexOf('\n') === -1 ? undefined : body.indexOf('\n')).trim());
 
@@ -358,8 +210,7 @@ const firstLine = (body) => (body == null ? null
 function readPlanReports(pdir, plans) {
   return plans.map((plan) => {
     const k = planNumber(plan);
-    // The exact filename, never a `plan-*.md` glob: report-rotation.mjs mints
-    // `plan-<k>.<n>.md` siblings, and a glob would let an old one decide.
+    // the exact filename, never a plan-*.md glob: report-rotation mints plan-<k>.<n>.md siblings an old one would win
     const report = join('reports', `plan-${k}.md`);
     const status = firstLine(read(join(pdir, report)));
     return { plan, k, report, exists: status !== null, status,
@@ -367,22 +218,12 @@ function readPlanReports(pdir, plans) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// planPosition - where one phase's plans stand: the plan to run next, by
-// position (phase 1, D-02, D-03, D-08).
-//
-// K is the numerically lowest plan file number whose report is not complete,
-// never the first entry of the list: `listPlanFiles` sorts lexically, which puts
-// PLAN-10.md before PLAN-2.md and PLAN-2.md before PLAN.md. J is the count of
-// conforming plan files. The name is `planName`'s reading of that plan's
-// heading, and is left off when the heading yields none (D-10). `null` when the
-// directory is missing, holds no plan file, or every plan reports complete - the
-// phase-only position. `cursor set` and `status` both call this, on the one
-// `readPlanReports` definition of "complete", so they cannot disagree.
-//
+// where one phase's plans stand: the plan to run next, by position
+// K is the lowest plan number whose report isn't complete, not the first list entry: listPlanFiles sorts lexically
+// J is the count of conforming plans, and the name comes from planName and is left off when the heading gives none
+// null when the dir is missing, has no plan or every plan is complete; `cursor set` and `status` share it
 // @param {string} pdir the phase directory
 // @returns {{k: number, j: number, name?: string}|null}
-// ---------------------------------------------------------------------------
 function planPosition(pdir) {
   const { plans } = listPlanFiles(pdir);
   const next = readPlanReports(pdir, plans).filter((r) => !r.complete)
@@ -393,32 +234,9 @@ function planPosition(pdir) {
 }
 
 /**
- * The ONE `.planning/reads.jsonl` line parse in this file. Two arms read that
- * record now - `cmdReads` and the `trace suggest` arm below - and a second copy
- * of the partial-tail rule would be a second place for it to drift.
- *
- * It REPORTS what it hit and decides nothing. `absent` and `unreadable` are
- * handed back separately rather than collapsed, because the two callers take
- * deliberately different postures on them and a helper that picked one would
- * impose it on both: `reads` fails loudly on an unreadable file (it is the face
- * `/cad-report`'s Reading line is composed from, and a silent empty there reads
- * as a project that opened nothing), while `trace suggest` returns no entry and
- * names the file in `warnings[]`. A permissions error loud on one face and
- * invisible on the other is exactly what this split prevents.
- *
- * It also DROPS the rotation marker and reports the cut, because both are the
- * same fact about the same line and every reader crosses this parse. The
- * marker cannot be made inert the way `lib/trace.mjs:276-280` makes the
- * trace's: `summarizeReads` bills every object it is handed into `calls` and
- * `byAgent`, and `joinReads` pushes an `unresolved` row for any record with no
- * `agent`, so an unfiltered marker becomes a phantom read `/cad-report` prints
- * in its Reading line as a real tool call (D-09). Filtering in the two folds
- * instead would be three sites - `inDispatchReads` folds off `joinReads`'s
- * rows - and three places for one predicate to drift.
- *
- * `rotated` is present ONLY where a marker was seen, so a record that never
- * rotated returns exactly the three fields it has always returned.
- *
+ * The one `.planning/reads.jsonl` parse, shared by `cmdReads` and `trace suggest`, so the partial-tail rule lives once.
+ * It reports `absent` and `unreadable` apart and decides nothing: `reads` fails on unreadable, `trace suggest` warns.
+ * The rotation marker is dropped and reported as `rotated`, or it bills as a call and shows up as a phantom read.
  * @param {string} dir the planning directory
  * @returns {{status: 'ok'|'absent'|'unreadable', records: any[], file: string,
  *   rotated?: {file: string, ts: string}}}
@@ -437,9 +255,7 @@ function readReadsRecords(dir) {
   for (const line of text.split('\n')) {
     const t = line.trim();
     if (!t) continue;
-    // A truncated final line is SKIPPED, never fatal: the file is appended to
-    // by a hook that can be killed mid-write, and a partial tail must not cost
-    // the caller every complete record ahead of it.
+    // a truncated last line is skipped, not fatal: a hook appends this file and can be killed mid-write
     let parsed;
     try { parsed = JSON.parse(t); } catch { continue; /* partial line */ }
     if (isReadsRotationMarker(parsed)) {
@@ -452,17 +268,9 @@ function readReadsRecords(dir) {
 }
 
 /**
- * The per-role dispatch-window ceilings the `window` arm falls back to when no
- * config layer sets one.
- *
- * `cadence-core/config.schema.json` IS THE SOURCE OF TRUTH for these numbers -
- * its rows carry the defaults, the sample sizes behind them and the reach
- * phrase, and `cadence-core/references/seams.md` carries the argument. This map
- * is the unset-layer fallback and nothing else, the same duplication
- * `cmdRecall`'s `?? 'builtin'` already accepts: this seam reads the merged
- * config, not the schema, so an unset key has to resolve to something here.
- * A number changed in one place and not the other makes the report disagree
- * with the row a user reads before setting the key.
+ * Per-role dispatch-window ceilings the `window` arm falls back to when no config layer sets one.
+ * `config.schema.json` is the source of truth; this map is here because the seam reads merged config, not the schema.
+ * Change one place and not the other and the report disagrees with the row a user reads before setting the key.
  */
 const DISPATCH_WINDOW_DEFAULTS = Object.freeze({
   'cad-planner': 200000,
@@ -473,34 +281,18 @@ const DISPATCH_WINDOW_DEFAULTS = Object.freeze({
   'cad-plan-checker': 75000,
 });
 
-// The schema row whose `values` array IS each named ladder, now that the grids
-// keyed on a routing level are gone and every one of these vocabularies has
-// exactly one statement in the repo. An EXPLICIT map rather than a default
-// branch: `routeLadder` answers two different callers, and a key that fell
-// through to whichever row was hardcoded would hand one caller another's
-// vocabulary - measured here as `risk-check` reading the gate ladder as its
-// surface list and refusing every configured answer as unrecognised.
+// the schema row whose `values` array is each named ladder
+// explicit map, no default branch: a fall-through gave risk-check the gate ladder for its surface list
 const LADDER_ROWS = Object.freeze({
   gates: 'review.triggers.plan.gate',
   risk_surface_categories: 'review.triggers.risk_surface.surfaces',
 });
 
 /**
- * One ordered ladder, or `undefined` when it cannot be read as a non-empty
- * array of non-empty strings.
- *
- * `gates` and `risk_surface_categories` are the `values` arrays of the rows
- * `LADDER_ROWS` names, in the order `config.schema.json` declares them - gates
- * WEAKEST FIRST, which is the same order `route.mjs` reads "sits below
- * blocking" off. The schema is read the way `route.mjs` reads it - beside
- * `HERE` - but WITHOUT honouring `CADENCE_CONFIG_SCHEMA`: an env-supplied
- * ladder is the ungated override class EXP-01 closed, and these decide what a
- * suggestion tells a user to set a review gate to and which surface tokens a
- * blocking gate's scope may name.
- *
- * A schema that cannot be read or parsed degrades to NO ladder, which makes the
- * gate arm omit `proposed`. That omission is the report; no ladder is
- * substituted from memory here.
+ * One ordered ladder, or undefined when it isn't a non-empty array of non-empty strings.
+ * The `values` arrays of the LADDER_ROWS rows in schema order, gates weakest first; route.mjs depends on that.
+ * It ignores CADENCE_CONFIG_SCHEMA: an env-supplied ladder would decide what a gate suggestion says to set.
+ * An unreadable schema means no ladder, so the gate arm omits `proposed`, and nothing is ever substituted from memory.
  * @param {string} key
  * @returns {string[]|undefined}
  */
@@ -512,19 +304,16 @@ function routeLadder(key) {
   try {
     const schema = JSON.parse(readFileSync(join(HERE, '..', 'config.schema.json'), 'utf8'));
     return ok(schema?.keys?.[row]?.values);
-  } catch { /* unreadable or malformed: no ladder, and the omission says so */ }
+  } catch { /* unreadable schema: no ladder, and the omission says so */ }
   return undefined;
 }
 
-/** The `git diff` body this will read, at most. An oversized range is a
- * REPORTED state (`checked:false`, with the reason on the envelope), never a
- * throw that leaves the caller with no answer at all. */
+/** Most of a `git diff` we read. Oversize is a reported state (`checked:false`), never a throw with no answer. */
 const RISK_DIFF_MAX_BUFFER = 32 * 1024 * 1024;
 
 /**
- * A ref the caller stated, or null. Refused when it opens with `-`: git would
- * read it as a FLAG, and a gate whose range can be turned into an option by its
- * own argument is a gate that can be told to look at something else.
+ * A ref the caller stated, or null.
+ * A leading `-` is refused: git would read it as an option, and the gate could be told to look at something else.
  * @param {any} raw
  */
 function riskRef(raw) {
@@ -535,20 +324,9 @@ function riskRef(raw) {
 }
 
 /**
- * ONE git read, and the ONLY catch this region has.
- *
- * `resolveRange` used to run the toplevel probe and BOTH `rev-parse --verify`
- * calls inside a single `try`, so any one failure returned `base: '', head: ''`
- * and a resolvable `HEAD` was discarded beside an unresolvable sibling - the
- * caller could not even say which end it was (verbatim 2026-08-30T18:28:50 wrote
- * both ids null). Splitting the calls means three failure sites, so the failure
- * SHAPE is built once here and every caller below reads the same three fields.
- *
- * redactUrl on the message, the EXP-01 rail cmdLeaseCheck's `no-staged-set`
- * applies: a git failure detail can carry a remote URL with credentials in it.
- * Keeping the wrap at this one catch is also what holds the
- * `planning-detail-sites` census where it stands - one idiom site for the whole
- * range-resolution region, wrapped, however many git reads it grows.
+ * One git read, and the only catch in this region, so the failure shape is built once.
+ * redactUrl on the message because a git failure can carry a remote URL with credentials.
+ * One wrapped catch also keeps the `planning-detail-sites` census where it stands.
  * @param {string[]} args
  * @returns {{ok: boolean, out: string, error: string}}
  */
@@ -566,28 +344,11 @@ function gitLine(args) {
 }
 
 /**
- * ONE END of a range: the repository, and the COMMIT ID one caller ref names.
- *
- * THE SHARED SINGLE-REF RESOLUTION. `resolveRange` is built on it twice, and
- * `risk-check`'s staged arms call it once for a lone `--base` - which is why it
- * exists as its own function rather than as two lines inside `resolveRange`: a
- * caller with only one end must not have to invent a second ref, and
- * `resolveRange` must never learn a spelling that is not a rev.
- *
- * THE FAILURE NAMES THE END. `error` opens with `base` or `head`, then that
- * end's own spelling, then the git message, so a refusal quoted straight at a
- * caller says which half it has to fix. The name is the CALLER's word for the
- * end, not something git knows, so it is a parameter.
- *
- * `--verify` with a `^{commit}` suffix, so a tag resolves to the commit it
- * names and a ref naming no commit at all is an ERROR rather than some other
- * object's id. `riskRef` has already refused a `-`-leading spelling, so nothing
- * reaching git here can be read as an option.
- *
- * `top` is passed in by a caller that already resolved it - `resolveRange`
- * resolves the toplevel ONCE and hands it to both ends - and probed here when
- * it is not. A toplevel that cannot be read fails the end with git's own
- * message and no end name: it is not this end that failed, it is the repository.
+ * One end of a range: the repository, and the commit id one caller ref names.
+ * Separate because `risk-check`'s staged arms call it for a lone `--base`, and resolveRange must stay rev-only.
+ * `error` opens with `base` or `head`, then the spelling, then git's message, so a refusal says which half to fix.
+ * `^{commit}` makes a tag resolve to its commit and a ref naming no commit an error; a leading `-` is already refused.
+ * `top` is probed here unless the caller resolved it; an unreadable toplevel fails with git's message, no end name.
  * @param {string} end @param {string} ref @param {string} [top]
  * @returns {{ok: boolean, top: string, id: string, error: string}}
  */
@@ -605,28 +366,11 @@ function resolveRef(end, ref, top) {
 }
 
 /**
- * THE OTHER END OF A STAGED SCOPE: the index's own content identity.
- *
- * A staged check has no head commit, so its record was identified by its base
- * alone - and the index is MUTABLE, which made that identity a hole. Run the
- * detector over a benign index, then stage a risky change without committing:
- * HEAD has not moved, so `risk-check status --base HEAD --staged` found the
- * earlier record over the same base and answered `recorded` for contents
- * nothing ever scanned. The base is only half of what a staged scope IS.
- *
- * `git write-tree` is git's own name for the index's contents - the id `commit`
- * and `stash` take from it - so two identical indexes give one id and any
- * staged byte that differs gives another. It writes a content-addressed tree
- * object and NOTHING else: no ref moves, no index is rewritten, no worktree
- * file is touched, which is what lets a reporting call take it too. An index
- * git cannot name - unmerged entries mid-conflict, an unwritable object store -
- * is a REFUSAL whose `error` opens with the end that failed (`index`), the way
- * `resolveRef`'s names `base` or `head`: there is no id to record, and a staged
- * record carrying no identity is one no later ask could ever match.
- *
- * `top` is the caller's own already-resolved toplevel, so the identity and the
- * diff are read out of one repository - and out of one index file, whatever
- * `GIT_INDEX_FILE` names.
+ * The other end of a staged scope: the index's content identity.
+ * The index is mutable, so keying on the base alone let `status` match a record over contents nothing ever scanned.
+ * `git write-tree` names the contents and writes only a tree object, no ref or index change, so reporting can use it.
+ * An index git can't name (unmerged entries) is a refusal whose error opens with `index`, since it has no identity.
+ * `top` is the caller's resolved toplevel, so identity and diff come from one repository and one index file.
  * @param {string} top
  * @returns {{ok: boolean, id: string, error: string}}
  */
@@ -638,33 +382,11 @@ function resolveIndex(top) {
 }
 
 /**
- * The repository, and the COMMIT IDS a caller's two refs name.
- *
- * RANGE IDENTITY IS THE COMMIT PAIR, never the ref SPELLING.
- * `workflows/execute.md` documents `--head HEAD` for both the `run` call and
- * the `status` call, so a string compare of spellings lets the record left
- * under one value of `HEAD` satisfy a later, wider `HEAD`: a gate fix, a
- * continuation commit or a concurrent write landing between the two calls was
- * never scanned, and the gate still reports `recorded`. The caller's spelling
- * stays on the record for the READER; the id is what is compared. A ref that
- * cannot be resolved is a refusal at both call sites, never a match.
- *
- * EACH END RESOLVES ON ITS OWN, and the toplevel exactly once. The all-or-
- * nothing shape this used to return threw away an end git had already named:
- * the two ends are independent questions and are now answered independently, so
- * `base` and `head` each hold the full commit id of the end that RESOLVED and
- * `''` for the end that did not. `error` opens with the name of the failing end
- * (`resolveRef` writes it), and names both ends base-first when both failed, so
- * a caller quoting it says which half is wrong. A toplevel that cannot be read
- * still fails both ends, with git's message and no end name.
- *
- * ONE shape on both paths rather than an `ok`-discriminated union: this repo's
- * CI typecheck runs `strict: false`, where narrowing a JSDoc union by its
- * boolean literal does not happen, so the union costs every caller a cast. A
- * fully failed resolve reads `{ok: false, base: '', head: '', error: <the
- * end-named, redacted git message(s)>}`; a partial one is the same shape with
- * the resolved end's id in place, and `top` holds the toplevel whenever the
- * toplevel itself resolved.
+ * The repository, and the commit ids a caller's two refs name.
+ * Range identity is the commit pair, never the ref spelling, or a record from one HEAD satisfies a later, wider one.
+ * An unresolvable ref is a refusal at both call sites, never a match.
+ * `base` and `head` hold the id of the end that resolved and '' for the one that didn't; `error` names the failing end.
+ * One shape, no `ok` union: CI typechecks with strict off, where JSDoc unions don't narrow and callers need casts.
  * @param {string} base @param {string} head
  * @returns {{ok: boolean, top: string, base: string, head: string, error: string}}
  */
@@ -678,62 +400,35 @@ function resolveRange(base, head) {
     top: probe.out,
     base: b.id,
     head: h.id,
-    // BASE FIRST when both failed, and joined rather than one-of: a caller told
-    // about one unresolvable end would fix it and meet the second refusal on
-    // the next run.
+    // both failures joined, base first: told about one bad end, a caller fixes it and meets the second next run
     error: [b, h].filter((e) => !e.ok).map((e) => e.error).join('; '),
   };
 }
 
 /**
- * A plan identity as ONE spelling. `trace append --plan` stores the caller's
- * string and `risk-check run` stores the parsed number, so both sides of every
- * comparison are stringified - the rule lib/trace.mjs's own `key()` follows for
- * the same reason. A row with no plan at all keys to '' and is still carried:
- * an unidentified completed range is not an exempt one. The correlation id is
- * compared through this too - one normalization for both identity fields, so a
- * `corr` that arrived as a non-string cannot compare unequal to its own value.
+ * A plan identity as one spelling: `trace append --plan` stores a string, `risk-check run` a number, so stringify both.
+ * No plan keys to '' and is still carried, since an unidentified range isn't an exempt one. `corr` is stringified too.
  * @param {any} v
  */
 const planKey = (v) => (v === undefined || v === null ? '' : String(v));
 
 /**
- * The spelling `--trigger` and `--discriminator` may carry: the character set
- * the `REVIEW-<trigger>-<discriminator>.md` filenames already on disk use.
- *
- * VALIDATED AND REFUSED, never sanitized, because both reach a FILENAME.
- * `milestone-prune --label` was only TRIMMED before `join(dir, '_archive-' +
- * label)` and a label read out of PROJECT.md escaped the tree (VAL-01);
- * sanitizing silently writes a record under a name the caller did not choose,
- * which is the same class of answer about something nobody asked for. No path
- * separator, no `.` - which takes `..` with it and keeps the `.json` suffix
- * this seam's own - and no leading `-`, so the name can never be read as an
- * option by whatever later walks the directory.
+ * The spelling `--trigger` and `--discriminator` may carry: the character set the on-disk REVIEW names already use.
+ * Refused, never sanitized, because both reach a filename: a merely trimmed `--label` once escaped the tree.
+ * No separator, no `.` (the `.json` suffix stays ours) and no leading `-`, so nothing later reads it as an option.
  */
 const RECORD_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 /**
- * The identity a fire's artifact is filed under, validated ONCE for both faces
- * that write one: the phase as the caller spells it, the two filename tokens,
- * the re-arm round, and the two refs.
- *
- * Shared rather than restated, because `adjudication` and `deferred record`
- * name the SAME fire and the two files land in one directory: two copies of
- * this preamble is two chances for the record and the queue member to disagree
- * about which fire they belong to, and the rails here - a token that reaches a
- * FILENAME, a round that keeps a re-arm off round one's file - are exactly the
- * ones where a divergence is silent.
- *
- * It EMITS its own refusal and answers `null`, the shape `readJsonPayload`
- * already takes: the caller's arm is `if (!id) return;`.
- *
+ * The identity a fire's artifact is filed under, validated once: phase as spelled, two tokens, re-arm round, two refs.
+ * Shared because `adjudication` and `deferred record` write into one directory and could disagree on the fire.
+ * It emits its own refusal and answers null, like readJsonPayload, so the caller's arm is `if (!id) return;`.
  * @param {string} face the subcommand's spelling, for every refusal's wording
  * @param {string} dir the planning directory, for the tree-aware spelling check
  * @param {any} opts
  * @returns {{n: string, trigger: string, discriminator: string, round: number,
  *            base: string, head: string, task?: string} | null}
- *   `task` is present only on a fire that named one, so a phase fire's identity
- *   is the shape it always was.
+ *   `task` is only there when the fire named one.
  */
 function fireIdentity(face, dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
@@ -742,18 +437,14 @@ function fireIdentity(face, dir, opts) {
       `pass --phase <N> for the phase this fire belongs to, then re-run the ${face}`);
     return null;
   }
-  // AHEAD of the token rails and well ahead of `fireHome`, because this is a
-  // question about the FLAG and the rails below are questions about other
-  // flags. `fireHome`'s `no-phase-dir` is not a substitute even where it would
-  // also fire: it names the right directory but neither of the two fixes.
+  // before the token rails and fireHome, whose `no-phase-dir` names the right directory but neither fix
   const collision = phaseSpellingCollision(dir, parsedPhase);
   if (collision) {
     fail('bad-args', `${face} ${collision}`,
       `re-run the ${face} with one of those two spellings - nothing was written`);
     return null;
   }
-  // The caller's OWN spelling, the way `uatFile` addresses a phase: every use
-  // of it is a path or a label, never arithmetic.
+  // the caller's own spelling, as uatFile addresses a phase: only ever a path or a label, never arithmetic
   const n = parsedPhase.raw;
 
   const trigger = opts.trigger;
@@ -770,11 +461,7 @@ function fireIdentity(face, dir, opts) {
     }
   }
 
-  // THE RE-ARM'S ROUND. A blocking re-arm (references/triage-gate.md caps it at
-  // ONE) is a SECOND fire of the same trigger on the same plan, so it resolves
-  // to the same discriminator: without this flag round two's artifact would
-  // replace round one's, and round one is exactly the record an auditor reads
-  // to see the finding a fix was claimed to close.
+  // the re-arm round: without it a blocking re-arm's artifact replaces round one's, the record an auditor reads
   let round = 1;
   if ('round' in opts) {
     const parsedRound = requireInt(opts.round);
@@ -790,9 +477,7 @@ function fireIdentity(face, dir, opts) {
     round = parsedRound.value;
   }
 
-  // BOTH required and neither defaulted, the rule `risk-check run` already
-  // states: a defaulted head is a range the caller never stated, and these
-  // artifacts ARE the evidence of what was reviewed.
+  // both required, neither defaulted, like `risk-check run`: a defaulted head is a range the caller never stated
   const base = riskRef(opts.base);
   const head = riskRef(opts.head);
   if (!base || !head) {
@@ -802,10 +487,7 @@ function fireIdentity(face, dir, opts) {
     return null;
   }
 
-  // THE TASK'S OWN HOME, optional and held to the same rail as `--trigger` and
-  // `--discriminator` above, because it reaches a PATH: `.planning/tasks/<slug>/`.
-  // Absent is the ordinary phase fire; present is `/cad-task`, whose records
-  // never join a phase's.
+  // the task's home gets the same rail because it reaches a path; absent is an ordinary phase fire
   let task;
   if ('task' in opts) {
     if (typeof opts.task !== 'string' || !RECORD_TOKEN.test(opts.task)) {
@@ -820,13 +502,8 @@ function fireIdentity(face, dir, opts) {
     task = opts.task;
   }
 
-  // PHASE 0 IS THE TASK NUMBER, so it does not resolve a phase home. `/cad-task`
-  // fires with it precisely because no roadmap phase carries it, and its
-  // artifacts live under `.planning/tasks/<slug>/`. Left unenforced, a task fire
-  // that FORGOT `--task` fell through to the ordinary phase branch, and a repo
-  // that happens to hold a `phases/0/` took the record into it and answered
-  // ok:true while the sibling REVIEW file under the slug stayed unsettled - a
-  // fire reported as recorded, filed where nothing reads it.
+  // 0 is the task number, not a phase: `/cad-task` fires with it because no roadmap phase carries it
+  // without this guard a task fire that forgot --task fell into the phase branch and a `phases/0/` took the record
   if (n === '0' && task === undefined) {
     fail('bad-args',
       `${face} --phase 0 is a TASK's number and resolves no phase home - a task keeps its `
@@ -837,15 +514,8 @@ function fireIdentity(face, dir, opts) {
     return null;
   }
 
-  // AND THE CONVERSE, which was accepted and is just as wrong (D-08). `--task`
-  // beside any phase but 0 routed the record to `tasks/<slug>/` and answered
-  // ok:true, leaving the phase's OWN sibling REVIEW file unsettled - the same
-  // failure the guard above describes, arriving from the other side: a fire
-  // reported as recorded and filed where nothing reads it. `fireHome` cannot
-  // catch it, because it takes `task` as the home the caller chose and finds
-  // that directory really there. The phase is compared as the CALLER SPELLED
-  // IT, exactly as the guard above compares it, so `--phase 0.1` is a phase and
-  // not the task number.
+  // the converse: --task with a phase other than 0 filed under the slug and left the phase's REVIEW file unsettled
+  // fireHome can't catch it: task is taken as the chosen home, and `0.1` is a phase since it's compared as spelled
   if (n !== '0' && task !== undefined) {
     fail('bad-args',
       `${face} --task is a TASK's home and --phase ${n} is a roadmap phase's - one fire cannot `
@@ -861,70 +531,17 @@ function fireIdentity(face, dir, opts) {
 }
 
 /**
- * The directory a fire's artifact is written into, or `null` once the refusal
- * has been emitted.
- *
- * BESIDE THE SIBLING REVIEW FILE (D-06), and never inside `<plandir>/reports/`:
- * `cmdLeaseCheck` exempts exactly one path under that directory by byte
- * equality, so anything else staged from there answers `undeclared-files`. The
- * directory has to already exist - these seams record a fire that HAPPENED, and
- * minting one for a mistyped flag would leave a directory nothing else in the
- * tree accounts for. `lstatSync` on whichever home is chosen AND on the parent
- * it sits under, so a SYMLINK sitting where either belongs is refused rather
- * than followed out of the tree, the disposition the read side of this file
- * already takes. The parent half is not belt-and-braces: `lstatSync` declines to
- * follow only its OWN last component, so a symlinked `tasks` (or `phases`, or
- * `deferred`) was resolved on the way past and the leaf test then reported the
- * TARGET's directory.
- *
- * A TASK NAMES ITS OWN HOME (#167 GH-227). `/cad-task` deliberately fires with
- * `--phase 0`, because 0 is the one number no roadmap phase carries and a task's
- * records must never join a phase's - and it just as deliberately writes its
- * artifacts to `.planning/tasks/<slug>/`, so there is no `phases/0/` and there
- * never will be. The two halves disagreed by construction: the REVIEW file
- * landed under `tasks/<slug>/` with no complaint and the record beside it was
- * refused `no-phase-dir`, which left the hand-append as the only way to settle a
- * blocking gate on a task - a receipt no guard can see, which is worse than a
- * refusal. `task` is that home, named by the caller rather than derived, because
- * the slug is not recoverable from the phase number or the discriminator. When
- * it is given it is the ONLY home tried: a task run is not a phase run that
- * happens to have no directory yet, and falling back to `phases/0/` would put a
- * task's rulings wherever a phase 0 happened to exist.
- *
- * TWO HOMES OTHERWISE, IN ORDER: `phases/<N>/` while the phase is live, else
- * `.planning/deferred/<N>/` once `deferred carry` has moved that phase's queue
- * out ahead of `milestone-prune`. Without the second, a carried queue member is
- * PERMANENTLY unclearable - `adjudication` refuses on the deleted phase
- * directory, so the finding that stops the land can never be ruled on, and an
- * unclearable gate is one that gets bypassed. `deferred record` resolves the
- * same way and in the same order, because a triage that rules a `blocker`/
- * `high` survived has to re-arm, and a re-arm with nowhere to write its round-2
- * member leaves the cap reading unspent off a queue that could never gain one.
- *
- * `recordForFire` deliberately does NOT widen with the SECOND of them. It
- * resolves the receipt RECOUNT, whose own contract already states that an
- * unresolvable record OMITS the check rather than failing the append - so a
- * carried fire degrades to no cross-check instead of to a wrong one, and that is
- * the safe direction there while it is the unsafe one here. The task home is
- * different and the recount DOES share it (D-04): a task's record is written
- * under a slug the receipt cannot name, so leaving it unresolved meant every
- * task settlement asserted its own counts with nothing able to disagree.
- *
+ * The directory a fire's artifact is written into, or null once the refusal is out.
+ * It sits beside the sibling REVIEW file, never in `<plandir>/reports/`, where lease-check exempts only one path.
+ * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/`, then `deferred/<N>/`.
  * @param {string} dir @param {string} n the phase as the caller spelled it
  * @param {string} what the artifact, for the refusal's wording
  * @param {string} [task] the task slug, when this fire is a task's
  * @returns {string|null}
  */
 /**
- * Is `<dir>/<name>` a REAL directory - present, and not a symlink?
- *
- * The check `fireHome` used to make was on the LEAF alone, and `lstatSync`
- * refuses to follow only its own final component: with `.planning/tasks` (or
- * `phases`, or `deferred`) a symlink out of the tree, an `lstat` of
- * `tasks/<slug>` resolves that symlink on the way past and reports the TARGET's
- * directory, so the leaf test passed and the write landed outside the planning
- * tree it names. So the parent is tested too, on the same disposition the leaf
- * takes - a symlink where a directory belongs is refused rather than followed.
+ * Is `<dir>/<name>` a real directory, present and not a symlink?
+ * lstat follows a symlinked parent in passing, so the parent gets the same test as the leaf.
  * @param {string} dir @param {string} name @returns {boolean}
  */
 function realDir(dir, name) {
@@ -971,12 +588,8 @@ function fireHome(dir, n, what, task) {
 const QUEUE_HOMES = ['phases', 'deferred'];
 
 /**
- * Every unadjudicated queue member under `dir`, and everything in the two homes
- * that could not be proven to hold none.
- *
- * ONE derivation with TWO callers - `deferred list` and the `status` envelope -
- * so `/cad-land` and `/cad-progress` cannot disagree about what is queued.
- *
+ * Every unadjudicated queue member under dir, and everything in the two homes that couldn't be proven to hold none.
+ * One derivation for `deferred list` and `status`, so `/cad-land` and `/cad-progress` can't disagree on what's queued.
  * @param {string} dir the planning directory
  * @param {string|null} wantPhase a phase as the caller spelled it, or null for
  *   the whole tree
@@ -989,16 +602,13 @@ function readQueue(dir, wantPhase) {
   const members = [];
   /** @type {{path: string, detail: string}[]} */
   const unreadable = [];
-  // redactUrl on every message, the EXP-01 rail: these strings are printed by
-  // a land refusal and can carry a path a caller would rather not publish.
+  // redactUrl on every message: a land refusal prints these, and they can carry a path nobody wants published
   const why = (/** @type {any} */ e) => redactUrl(e && e.message ? e.message : String(e));
 
   for (const home of QUEUE_HOMES) {
     let entries;
     try { entries = readdirSync(join(dir, home), { withFileTypes: true }); } catch (e) {
-      // ENOENT is ABSENCE and absence is data: `.planning/deferred/` exists only
-      // once a close has carried something, and a project with no `phases/` at
-      // all has no fires. Every OTHER error is a home that might hold a queue.
+      // ENOENT is absence (`deferred/` only exists once a close carried something); anything else might hide a queue
       if (e && /** @type {any} */ (e).code === 'ENOENT') continue;
       unreadable.push({ path: `${home}/`, detail: why(e) });
       continue;
@@ -1006,15 +616,12 @@ function readQueue(dir, wantPhase) {
     for (const ent of entries) {
       if (wantPhase !== null && ent.name !== wantPhase) continue;
       const rel = `${home}/${ent.name}`;
-      // `withFileTypes` classifies the LINK, never its target, the disposition
-      // `fireHome` takes at the write face: a symlink where a phase
-      // directory should be is refused rather than followed out of the tree.
+      // withFileTypes classifies the link, not its target: a symlink where a phase directory belongs is refused
       if (ent.isSymbolicLink()) {
         unreadable.push({ path: rel, detail: 'a symlink where a phase directory should be - not followed' });
         continue;
       }
-      // A regular file under `phases/` holds no queue member and is some other
-      // reader's business; only a directory can.
+      // a regular file here holds no queue member, only a directory can
       if (!ent.isDirectory()) continue;
       const pdir = join(dir, home, ent.name);
       /** @type {string[]} */
@@ -1047,19 +654,12 @@ function readQueue(dir, wantPhase) {
           unreadable.push({ path, detail: id.detail });
           continue;
         }
-        // The member's own `phase` against the directory holding it. They are
-        // written together - the write face resolves `phases/<N>/` from the
-        // same `--phase` it stores, and `deferred carry` preserves both - so a
-        // disagreement means the file was moved by hand, and `--phase` would
-        // then narrow to a phase the member does not claim.
+        // a member's phase must match its directory, or a hand move makes --phase narrow to a phase it doesn't claim
         if (id.phase !== ent.name) {
           unreadable.push({ path, detail: `queue member says phase ${id.phase} but sits in ${rel}/` });
           continue;
         }
-        // THE SUPERSESSION TEST, as one filename comparison (D-01). A REGULAR
-        // FILE only, the disposition `recordForFire` already states: a symlink
-        // is not a record, and accepting one here would let a queue be cleared
-        // by a link to anything at all.
+        // supersession is one filename comparison, regular files only, or a link to anything could clear a queue
         const record = recordName(id.trigger, id.discriminator, id.round);
         if (present.has(record)) {
           let rstat = null;
@@ -1077,26 +677,15 @@ function readQueue(dir, wantPhase) {
       }
     }
   }
-  // Stable and derivation-owned rather than readdir's order, so a refusal
-  // prints the same list twice running and two homes interleave by phase.
+  // sorted so a refusal prints the same list twice running and the two homes interleave by phase
   members.sort((a, b) => a.path.localeCompare(b.path));
   unreadable.sort((a, b) => a.path.localeCompare(b.path));
   return { members, findings: members.reduce((n, m) => n + m.findings, 0), unreadable };
 }
 
-// Dispatch. Adding a subcommand = one entry here + its tests.
-// ---------------------------------------------------------------------------
-// The refusal SENTENCE for a flag this script's rows declare, and the ONE home
-// for that wording. lib/arg-contract.mjs names the FLAG and nothing else
-// (D-07): this file owns its refusal vocabulary - `bad-args`, never the
-// `missing-flag-value` throw, which has no `e.seam` catch arm here to render it
-// as anything but `internal`.
-//
-// Only the spellings that already SHIP are listed. Everything else COMPOSES
-// from the flag's own name and its declared type, so a row added to the table
-// tomorrow refuses with a sentence naming its flag rather than with an entry
-// somebody has to remember to write here - which is the second table this
-// requirement exists to prevent, one wording over.
+// refusal wording for the flags this script's rows declare: arg-contract names the flag and nothing else
+// bad-args, never the missing-flag-value throw: this file has no e.seam catch arm, so that would read as internal
+// only the spellings that already ship are listed; the rest compose from the flag's name and declared type
 const FLAG_SENTENCES = {
   '--dir': 'needs a path after it: --dir <planning dir>',
   '--root': 'needs a path after it: --root <project root>',
@@ -1108,18 +697,8 @@ const FLAG_SENTENCES = {
 
 /**
  * The sentence a refused flag carries, without its subcommand prefix.
- *
- * The `-file` arm composes lib/text-flag-file.mjs's own wording character for
- * character, because the door refuses a bare `--<field>-file` BEFORE that
- * module is reached and its callers must see no change. The `int`/`cursor` arm
- * is the sentence the four hand-written integer guards in this file already
- * publish.
- *
- * `spec` may be ABSENT, and that is not a missing row: the shared `trace
- * append|close` body validates flags the `trace close` row deliberately does
- * not declare, because a flag row is a prose allowlist that never widens what
- * a subcommand accepts. Such a flag is named by `FLAG_SENTENCES` and needs no
- * type at all; the `string` default is what keeps the arm total.
+ * The `-file` arm repeats lib/text-flag-file.mjs's wording exactly: the door refuses a bare `--<field>-file` first.
+ * `spec` can be absent: the shared `trace append|close` body validates flags `trace close` doesn't declare.
  * @param {string} flag @param {{type: string}|undefined} spec @returns {string}
  */
 function flagSentence(flag, spec) {
@@ -1132,26 +711,9 @@ function flagSentence(flag, spec) {
 }
 
 /**
- * The one refusal in this script whose wording depends on the VALUE rather than
- * on the flag, and which a declaration therefore cannot state at all.
- *
- * `renumber` is integer arithmetic - a decimal insertion like 2.1 neither
- * displaces integers nor is displaced by them - so a WELL-FORMED decimal is a
- * different repair from a missing or non-numeric value, and cmdRenumber
- * re-tested the value to say so. The declared `int` row refuses both spellings
- * at the door before that re-test can run, so the wording moved HERE rather
- * than being lost: without it a caller whose real problem is that 2.1 has to be
- * re-placed by hand is told "needs a non-negative integer". It is the same
- * species as the PRESENCE carve-out - a diagnostic no row can express stays
- * with the bin that owns the wording - and it reads a raw token the door
- * itself judged.
- *
- * The DECIMAL test is explicit rather than implied by `requirePhaseArg`, which
- * accepts a plain integer as readily as `2.1`. Implied, this sentence fired on
- * a well-formed `--at 1`, telling a caller to re-place a decimal they never
- * typed - reachable the moment the door began judging every occurrence of a
- * flag rather than its first, since `--at 1 --at` is a refusal whose first
- * token is an integer.
+ * The one refusal whose wording depends on the value, not the flag, so no declaration can state it.
+ * `renumber` is integer arithmetic, so a well-formed decimal like 2.1 is a different repair from a bad value.
+ * The decimal test is explicit: `requirePhaseArg` accepts `1` as readily as `2.1`, and `--at 1 --at` fired on it.
  * @param {string} key @param {string|undefined} raw @returns {string}
  */
 function decimalRefusal(key, raw) {
@@ -1162,12 +724,8 @@ function decimalRefusal(key, raw) {
 }
 
 /**
- * Compose the whole refusal detail for the flag the door refused.
- *
- * A flag on the script-global `'*'` row carries NO subcommand prefix - `--dir
- * needs a path after it` is the line every caller of every subcommand sees -
- * while a flag on a subcommand's own row is prefixed with that subcommand, the
- * way `detect-commands --root ...` and `trace append --role ...` already read.
+ * Composes the whole refusal detail for the flag the door refused.
+ * A flag on the global `'*'` row has no subcommand prefix (`--dir needs a path after it`); others get one.
  * @param {string} key the subcommand key the words resolved to
  * @param {string} flag @returns {string}
  */
@@ -1175,9 +733,7 @@ function argRefusal(key, flag) {
   const table = CONTRACTS['planning.mjs'];
   const global = table['*'][flag];
   const spec = global || (table[key] || {})[flag];
-  // EVERY occurrence is offered to the domain wording, because `evaluateRow`
-  // names only the flag (D-07) and now judges every occurrence: the decimal a
-  // caller has to re-place by hand is not always the first one they typed.
+  // every occurrence goes to the domain wording: evaluateRow names only the flag, and the decimal may not be first
   let domain = '';
   for (let i = 0; i < ARGV.length && !domain; i++) {
     if (ARGV[i] === flag) domain = decimalRefusal(key, ARGV[i + 1]);
@@ -1186,9 +742,7 @@ function argRefusal(key, flag) {
   return `${global ? '' : `${key} `}${flag} ${flagSentence(flag, spec)}`;
 }
 
-// The shared surface, exported as ONE list rather than by prefixing each
-// declaration: every body above is then byte-identical to the one planning.mjs
-// shipped, and `grep '^function <name>'` still finds each under its own name.
+// one export list, so every body above stays byte-identical to what planning.mjs shipped
 export {
   ARGV,
   DISPATCH_WINDOW_DEFAULTS,

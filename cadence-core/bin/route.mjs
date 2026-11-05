@@ -1,130 +1,11 @@
 #!/usr/bin/env node
 // @ts-check
-// route.mjs - zero-dep routing resolver. Given an agent role and an attempt
-// number, resolve the whole quality bundle the spawn-agent seam and the review
-// subsystem need: {model, effort, review, verify}. Every one of those answers
-// comes from the config LAYERS where a user set one and from
-// ../config.schema.json's own defaults where they did not; this file is the
-// logic. DESIGN "model routing" (§ model routing).
-//
-// The question a project answers is what each ROLE is worth to it - one model
-// key and one rung key per role, and a per-trigger gate beside them. There is no
-// stakes level and no cells grid: nothing derives one role's answer from
-// another's, and the only thing that moves an answer after the config is read is
-// the plan-time risk floor, which does exactly two things (the plan review
-// becomes blocking, the deep-verify pass turns on) and moves no role's model and
-// no role's rung. Still four knobs out, because quality is not one dial and
-// effort alone cannot express "fire a blocking cross-model review".
-//
-// Never blocks the spine: on any problem it returns {ok:false,...} and the
-// caller dispatches the base agent at the session-default model (no override).
-//
-// Subcommands (one JSON line on stdout):
-//   resolve --role <name> [--attempt N] [--file <config>] [--phase N]
-//           [--plan <key>] [--bracket-read <csv> [--bracket-plan <key>]]
-//     With --bracket-read, resolve also writes the worker's lifecycle DISPATCH
-//     event (family lifecycle, event dispatch, plan/role/read) before resolving,
-//     so a dispatch site pays one seam call instead of two. The CLOSE half
-//     (return/checkpoint, --tokens) stays with the caller, which alone sees it.
-//
-// Config is layered: a global file (see GLOBAL_CONFIG below) provides defaults,
-// the per-repo --file (default .planning/config.json) overrides it, and the
-// built-in DEFAULTS backstop both. Precedence: repo > global > defaults.
-// Config keys read:
-//   model.escalate_on_failure  re-dispatch a failed attempt one rung above the
-//                              rung it started at, holding at the top rung
-//                              (bool)
-//   model.overrides.<role>     the narrower fallback under roles.<role>.model,
-//                              answering for one role whose roles key is absent
-//   model.effort.<role>        the narrower fallback under roles.<role>.effort,
-//                              on the same terms
-//   roles.<role>.model         one role's model, named outright; wins over the
-//                              key above. A value the host does not accept warns
-//                              and the dispatch sends NO model parameter, so it
-//                              runs at the session's own model
-//   roles.<role>.effort        the rung one role STARTS at; wins over
-//                              model.effort.<role>, and this key's own schema
-//                              default answers when neither layer set either.
-//                              Setting both for one role warns and names the
-//                              winner
-//   review.triggers.*.gate     a gate a LAYER set, which must be one of that
-//                              key's own `values` and then wins over the key's
-//                              schema default, reporting the disagreement
-//                              (D-04); a value outside that vocabulary loses to
-//                              the default and is named in `warnings`
-//   review.reviewers           the reviewer backends the fire may go to, which
-//                              `resolve` filters per trigger by availability
-//                              into the `reviewers` map beside `review`. A
-//                              cross-model name also needs the USER-GLOBAL
-//                              layer's own list to name it (D-14): a repo layer
-//                              arrives with a clone and the provider key comes
-//                              from the user's environment, so a repository can
-//                              narrow the set but never add a provider to it.
-//                              Those global names are returned as
-//                              `reviewers_global`
-//   review.triggers.*.tier     the model tier that trigger's cross-model half
-//                              runs at, which is also what its availability
-//                              test reads, falling back to that key's own schema
-//                              default; returned as `reviewer_tiers`
-//   review.triggers.*.effort   the reasoning effort that trigger's cross-model
-//                              half runs at, falling back to its own schema
-//                              default on the same terms; returned as
-//                              `reviewer_efforts`. Neither moves for anything
-//                              else: the panel's cross-model half is configured
-//                              per trigger and by nothing above it (RVW-03)
-//   review.providers.*.tiers.* the model id a provider is configured with per
-//                              tier - a provider with none at the resolved tier
-//                              is unavailable, is dropped, and says so in
-//                              `warnings`
-//   review.triggers.risk_surface.surfaces
-//                              the categories the risk_surface fire is scoped
-//                              to, returned as `surfaces` - and the same set
-//                              the plan-time floor below is scoped by, so a
-//                              project that narrowed the surface question
-//                              narrowed what can raise its review too. Absent
-//                              from both layers means ALL of the table's
-//                              `risk_surface_categories`, and
-//                              `surfaces_answered` says which of the two it is,
-//                              so "chose everything" and "never answered" stay
-//                              apart (D-12)
-//
-// THE FLOOR RAISES TWO THINGS AND NOTHING ELSE (CER-01, D-02). The phase's own
-// declared `files:`, read here at resolve time, decide whether it is raised. A
-// raise makes the plan review `blocking` where no valid configured gate already
-// answered that key, and turns the deep-verify pass `on`. It moves no role's
-// model, no role's rung, and no other trigger's gate - so the two questions
-// "what is this role worth" and "is this phase risky" stay separable, and a user
-// reading their own config can predict every field of a resolve from it.
-//
-// AND IT FAILS CLOSED, which is the direction that matters. A scope this cannot
-// read RAISES rather than refusing: an `ok:false` drops the caller to the base
-// agent at the host session default with no model override
-// (references/seams.md), so a hard refusal here would leave a risky phase on an
-// advisory plan review and a skipped deep pass. Not raising is earned only by a
-// scope every conforming plan of which was found, read clean and declared
-// something to scan, so one member that was not read holds the whole scope up.
-//
-// THIS IS NOT THE DELETED NAME-KEYED FLOOR RETURNING. That one judged a file by
-// its NAME and raised a whole phase on one path token - `tests/ingest_concurrency.rs`
-// took six roles to their top rung, 15 of 16 resolves floored on opus - and its
-// waiver family (`risk.override.<surface>`) stays retired in
-// lib/retired-keys.mjs. What runs here is lib/risk-diff.mjs's `scanDeclared`:
-// the same anchored construct patterns and whole-path segments the commit-time
-// `risk_surface` gate fires on, over the same signal ordering, scoped to the
-// categories the project ANSWERED. And what a match buys is two review effects,
-// never a rung: the raise-tax that floor levied was a whole phase's six roles
-// climbing on one path token, and there is no longer any mechanism by which a
-// matched file can move a model or a rung at all.
-//
-// WHICH PHASE, AND WHICH PLAN. `--phase` decides the floor when it is passed and
-// the STATE cursor decides it otherwise, so a malformed `--phase` is REFUSED
-// rather than answered about another phase's plans. `--plan` narrows the scope
-// from the phase's union to ONE plan, which is what an executor dispatch floors
-// on: a clean plan in a mixed phase keeps its advisory plan review while its
-// risky sibling does not. The two roles dispatched BEFORE a plan exists -
-// `cad-planner` and `cad-assumptions-analyzer` - are exempt and have no floor
-// computed at all, because the cursor lags at both their call sites and a floor
-// computed for them would be computed off a DIFFERENT phase's file list.
+// route.mjs - resolves a role and attempt into {model, effort, review, verify}: config layers (repo > global), then
+// config.schema.json's defaults. Move that precedence and a key someone set stops doing anything.
+// Never blocks the spine: on any problem it returns ok:false and the caller dispatches the base agent at session
+// model. Subcommands: `resolve` and `agent-type --stem <name>`; resolve's flags are in SYNOPSIS below.
+// The plan-time risk floor is the only thing that moves an answer after the read: plan review goes blocking and
+// deep-verify turns on, never a model or rung. An unreadable scope raises.
 
 import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -145,46 +26,22 @@ import { testSeamOpen } from './lib/test-seam.mjs';
 import { answeredSurfaces } from './lib/surface-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// config.schema.json is loaded lazily, inside the dispatch try block below, so
-// a missing or malformed shipped file degrades to {ok:false} instead of
-// crashing at import time. CADENCE_CONFIG_SCHEMA overrides the path ONLY when
-// the `CADENCE_TEST_SEAM` sentinel holds (lib/test-seam.mjs); without it the
-// variable is ignored and the shipped file is read, silently - this constant
-// resolves at module load, before any dispatch exists to carry a warning. The
-// gate is the point: this file now sets every review trigger's gate, so an
-// ungated override turns a blocking gate off.
-//
-// The exact shape `config.mjs`'s SCHEMA_PATH already has, deliberately: the two
-// faces read one file and must not disagree about where it is or when an
-// override is allowed to move it.
-//
-// The routing data file this resolver used to read declared, in its own
-// `_meta`, that route.mjs never reads the schema - and the reason was real:
-// reading a schema DEFAULT would make "the schema says flagship"
-// indistinguishable from "the user asked for flagship". That reason died with
-// the `null` sentinel. Every default this resolve answers with lives in the
-// schema and nowhere else, so it is not a second opinion here - it is the only
-// one, which is why an unreadable schema is fatal rather than fallen back on.
+// Loaded lazily inside the dispatch try, so a bad shipped file degrades to ok:false instead of crashing at import. An
+// unreadable schema is fatal: every default lives there and nowhere else.
+// CADENCE_CONFIG_SCHEMA moves the path only when the `CADENCE_TEST_SEAM` sentinel holds, and is ignored silently
+// otherwise (no dispatch exists yet to carry a warning). Ungated, it could turn a blocking gate off. Same shape as
+// SCHEMA_PATH in config.mjs, so the two never disagree on when it can move.
 let SCHEMA;
 const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
   || join(HERE, '..', 'config.schema.json');
 
-// The plugin's agent-type prefix is plugin.json's `name` - the host namespaces a
-// plugin's agents by it, and `provider.plugin` (`cadence@cadence`) is NOT it.
-// Read relative to the SCRIPT, never the cwd or the directory's name, so a
-// `cadence-dev` install reaches its own agents. This mirrors planning/core.mjs's
-// MANIFEST_PATH the way SCHEMA_PATH mirrors config.mjs's: the same file, the
-// same CADENCE_PLUGIN_MANIFEST override, the same gate.
+// Agent prefix is plugin.json's `name` (not `provider.plugin`), read relative to the script so `cadence-dev` works.
 const MANIFEST_PATH = (testSeamOpen() && process.env.CADENCE_PLUGIN_MANIFEST)
   || join(HERE, '..', '..', '.claude-plugin', 'plugin.json');
 
 /**
- * The ONE answer to "prefix or failure", for `resolve` and `agent-type` alike,
- * so the two can never disagree about the prefix or about the fallback. Never
- * throws. A manifest that cannot answer leaves `agentType` the bare stem, as
- * v3.8.0's dispatch named it, and hands
- * back the one `reason` sentence naming the path. That sentence names no stem,
- * so both reads produce it byte-for-byte.
+ * The one answer to "prefix or failure" for `resolve` and `agent-type`, so the two can't disagree. Never throws: with
+ * no readable manifest `agentType` is the bare stem and `reason` names the path, byte for byte the same for both.
  * @param {string} stem
  * @returns {{agentType: string, reason: string|null}}
  */
@@ -192,40 +49,25 @@ function prefixedAgentType(stem) {
   try {
     const name = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')).name;
     if (typeof name === 'string' && name !== '') return { agentType: `${name}:${stem}`, reason: null };
-  } catch { /* falls through to the bare answer below */ }
+  } catch { /* no manifest, so the bare stem below */ }
   return { agentType: stem,
     reason: `agent_type is the bare agent: no plugin name could be read from ${MANIFEST_PATH}` };
 }
 
-// `hint` is the third argument and rides as a conditional key: an absent hint
-// adds no key, so no shipped assertion moves (phase-1 D-09/D-10).
+// `hint` rides as a conditional key, so an absent one adds no key and no shipped assertion moves.
 const fail = (reason, detail, hint) => {
   out({ ok: false, reason, detail, ...(hint ? { hint } : {}) });
   throw DONE;
 };
 
-// Config defaults mirror config.schema.json so a missing/partial config still routes.
+// Mirrors config.schema.json so a missing or partial config still routes.
 const DEFAULTS = { escalate_on_failure: false, reviewers: ['claude-subagent'] };
 
-// The four names the HOST's agent-dispatch `model` parameter accepts, verified
-// against the live tool schema on 2026-09-04. This is the host's enum and not a
-// routing default: it names no fallback, it decides only whether a string a user
-// typed can be sent at all, and a string outside it resolves `model: null` -
-// the dispatch runs with no model parameter and the resolve says so in
-// `warnings[]` (D-04).
-//
-// It is the ONE in-repo copy of that list now that `model_aliases` is gone: the
-// table mirrored it, the six `model.overrides.*` enums mirrored it, and both are
-// deleted this phase. Nothing under this repo can re-derive it, so a host
-// release that widens the parameter is re-verified HERE and nowhere else, and
-// until it is, a newly-accepted name reads as unaccepted rather than as a
-// silently-dropped dispatch.
+// The host's `model` enum, checked 2026-09-04 and the only copy here; a string outside it resolves `model: null` plus a
+// warning.
 const HOST_MODELS = Object.freeze(['opus', 'sonnet', 'haiku', 'fable']);
 
-// One schema row, or an empty object when the schema does not carry the key.
-// Every read of a `review.triggers.*` answer goes through this pair rather than
-// indexing SCHEMA directly, so a hand-edited or injected schema missing a row
-// degrades to "no vocabulary, no default" instead of throwing mid-dispatch.
+// Every `review.triggers.*` read goes through this pair, so a schema missing a row degrades instead of throwing.
 const schemaKeys = () => {
   const keys = SCHEMA && typeof SCHEMA === 'object' && !Array.isArray(SCHEMA)
     ? SCHEMA.keys : null;
@@ -236,153 +78,70 @@ const schemaRow = (key) => {
   const spec = Object.prototype.hasOwnProperty.call(keys, key) ? keys[key] : null;
   return spec && typeof spec === 'object' && !Array.isArray(spec) ? spec : {};
 };
-// The accepted vocabulary of one key, declared WEAKEST FIRST in the schema -
-// which is what makes "sits below blocking" readable off the array rather than
-// off a second ladder kept here. Non-strings are dropped: the array is what a
-// warning prints and what a configured value is judged against.
+// One key's accepted vocabulary, weakest first in the schema, so "below blocking" reads off the array.
 const schemaValues = (key) => {
   const v = schemaRow(key).values;
   return Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x) : [];
 };
 
-// What a raised floor makes the plan review, and the ONE gate name this file
-// spells. It is not a vocabulary - `schemaValues` is - it is the effect D-02
-// states the floor has, and it is judged against the plan gate key's own
-// `values` order, so a schema that does not carry it raises nothing rather than
-// asserting a gate nobody declared.
+// The one gate name spelled here, judged against the plan gate's `values` order, so a schema without it raises nothing.
 const FLOOR_GATE = 'blocking';
 
-// The risk-surface vocabulary, which is what `answeredSurfaces` scopes a
-// project's answer against. It is the `review.triggers.risk_surface.surfaces`
-// key's own `values` - `schemaValues` already drops non-strings - so a schema
-// naming fewer categories is honoured, exactly as a narrower table was.
+// The surfaces key's own `values`, so a schema naming fewer categories is honoured.
 const riskCategories = () => schemaValues('review.triggers.risk_surface.surfaces');
 
-// The ONE key that can route a dispatch below the computed floor, spelled once
-// so the schema, the reader, the reason and the refusal cannot drift apart. It
-// waives a LEVEL and never a REVIEW: the blocking commit-time `risk_surface`
-// gate still fires on the actual diff, which is why the name says `routing`.
-// D-03: the eight `risk.override.<surface>` keys v2.0.0 retired stay retired -
-// a key cannot live in the schema and the retired registry at once - so the
-// floor is given back through a NEW key rather than by reviving those.
+// The one key that routes below the computed floor. It waives a level, never a review: the blocking `risk_surface` gate
+// still fires on the diff.
+// A new key, not a revival of the retired `risk.override.<surface>` ones, since a key can't live in the schema and the
+// retired registry at once.
 const WAIVER_KEY = 'review.triggers.risk_surface.waive_routing_floor';
 
-// The roles dispatched BEFORE a plan exists, exempt from the floor. Neither has
-// a plan to read, so neither has a floor computed at all: `workflows/context.md`
-// dispatches the analyzer while the cursor still names the PREVIOUS phase, and
-// `plan.md` dispatches the planner to write the plan the floor would read. A
-// floor computed for either is computed off a different phase's file list, which
-// is not a safe-direction superset and which no reason string would reveal as
-// wrong - a silently-wrong raise being strictly worse than no raise at all.
+// Roles dispatched before a plan exists get no floor; one off another phase's file list would be silently wrong.
 const PRE_PLAN_ROLES = Object.freeze(['cad-planner', 'cad-assumptions-analyzer']);
 
-// The bytes the content pass will read from ONE declared file. A `files:` list
-// arrives in a PLAN that can arrive with a clone, exactly as a repo config layer
-// does (lib/config-merge.mjs states that threat model), and this seam may never
-// block the spine: an unbounded read of a path a data file names is how a
-// resolve comes to hang on a device node or a multi-gigabyte artifact. A file
-// over the cap contributes its PATH signals and no content signals - the same
-// arm an absent body already takes.
+// Per-file read cap, since a cloned `files:` list could point a resolve at a device node or a huge file.
 const MAX_BODY_BYTES = 512 * 1024;
 
-// The `--phase` shape rule lives in ONE place (`lib/require-int.mjs`'s
-// `requirePhaseArg`), not in a local regex per script: three independent copies
-// is how the same input came to be refused in three different wordings, and how
-// the directory component came to be normalized on some surfaces and not
-// others. This file no longer calls it DIRECTLY - the flag's declared row in
-// lib/arg-contract.mjs names `phase` as its type and that table maps the type
-// to this one classifier, so the rule is reached through the declaration rather
-// than named twice.
+// `--phase` is judged by `requirePhaseArg` via the flag's row in lib/arg-contract.mjs, not a regex per script (three
+// copies disagreed).
 
-// Resolve the effective config from global + repo layers (repo wins, via the
-// shared merge lib), falling back to DEFAULTS for anything unset. _source
-// names the layers that applied, and _warnings carries what the read found wrong
-// but did not block on: a layer that failed to parse, and any key v2.0.0
-// retired.
+// Repo over global over DEFAULTS. `_warnings` carries parse failures and retired keys without blocking.
 function readConfig(file) {
   const { config: c, source, warnings, layers } = mergeLayers(file);
   const m = c.model || {};
   return {
     escalate_on_failure: m.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
     overrides: m.overrides ?? {},
-    // Its own map, not folded into `overrides` above: that one is
-    // read as `cfg.overrides[opts.role]` for the per-role MODEL pin, so a config
-    // carrying both a pin and a start rung would have two writers fighting over
-    // one entry - and a start rung read as a model alias would be reported as an
-    // unknown alias rather than honoured.
+    // Its own map: `overrides` is the per-role model pin, and a start rung there would read as an unknown alias.
     effort: m.effort ?? {},
-    // The ROLES BLOCK - `roles.<role>.{model, effort}`, one entry per role
-    // naming that role's dispatch outright. Its own map for the same reason
-    // `effort` above got one: folding it into either of the two maps beside it
-    // gives one entry two writers, and this block carries BOTH quantities, so
-    // it would have to be folded into both.
-    //
-    // No per-role merge of its own, deliberately (D-09): lib/config-merge.mjs
-    // recurses nested objects key by key, so a global layer naming only
-    // `roles.<role>.model` already composes with a repo layer naming only
-    // `roles.<role>.effort`. Silence falls back per KEY, and a merge written
-    // here would replace that with a per-role one.
+    // Own map, so no entry gets two writers. No per-role merge on purpose: config-merge recurses by key, so global
+    // `model` composes with repo `effort`.
     roles: rolesIn(c),
     triggerGates: triggerFieldIn(c, 'gate'),
-    // The per-trigger model TIER, read the same way and for the same reason:
-    // it is the input to the reviewer-availability test below, and a schema
-    // default read here would report an availability answer as the user's.
+    // Layers only: a schema default read here would pass the seam's own answer off as the user's.
     triggerTiers: triggerFieldIn(c, 'tier'),
-    // The per-trigger cross-model EFFORT, the tier's other half (RVW-03).
-    // Read through the same generic reader for the third time and for the same
-    // reason: the level's `efforts` row answers it when no layer did, and a
-    // schema default read here would report the seam's own answer as the
-    // user's. Nothing else about it resembles the envelope's `effort`, which
-    // is the agent RUNG this dispatch runs at.
+    // Cross-model effort, same layers-only read. Not the envelope's `effort`, which is the agent rung.
     triggerEfforts: triggerFieldIn(c, 'effort'),
-    // `review.triggers.risk_surface.surfaces` - the categories the one blocking
-    // trigger is scoped to. Read through the same reader for the same reason
-    // again: config.schema.json's default for this key is `null` precisely so
-    // "nobody has answered" stays a distinguishable state (D-12), and reading a
-    // default here would erase it.
+    // The risk_surface scope. Its default is `null` so "nobody answered" stays distinguishable.
     triggerSurfaces: triggerFieldIn(c, 'surfaces'),
-    // `review.triggers.risk_surface.waive_routing_floor` - the surfaces whose
-    // RAISE this project waives, which is the ONE way to route below the
-    // computed floor. Read through the same generic reader for the fifth time
-    // and for the same reason: `null` is its schema default precisely so
-    // "waived nothing" and "never answered" stay one honest state.
+    // Surfaces whose raise is waived. `null` keeps "waived nothing" and "never answered" one state.
     triggerWaivers: triggerFieldIn(c, 'waive_routing_floor'),
-    // The configured reviewer SET, or null when no layer named a usable one -
-    // DEFAULTS.reviewers backstops it below, the way DEFAULTS backstops every
-    // other unset key.
+    // null when no layer named a usable set; DEFAULTS backstops it below.
     reviewers: reviewersIn(c),
-    // The cross-model names the USER-GLOBAL layer itself lists (D-14), read off
-    // the merge's own per-layer object rather than a second read of the file.
-    // `layers.global` is null when that file is absent, torn, not an object, or
-    // the same file as the repo config - so a torn file proves no opt-in and a
-    // collapsed one is ONE layer that cannot count as both, failing closed the
-    // way lib/repo-auto-close.mjs does for git.auto_close.
+    // Cross-model names the user-global layer itself lists. `layers.global` is null when that file is absent, torn, not
+    // an object or the same file as the repo config, so none of those proves an opt-in.
     reviewersGlobal: (reviewersIn(layers.global) || []).filter((n) => n !== 'claude-subagent'),
-    // Which of those null causes it was, when it was the collapse: the drop
-    // below then names the one file, not a key that file may already carry.
-    // The same identity test mergeLayers runs, on the same two paths.
+    // True when that null was the collapse, so the drop below names the one file.
     layersShared: layerIdentity(file) !== null && layerIdentity(file) === layerIdentity(GLOBAL_CONFIG),
-    // `review.providers.<name>.tiers.<tier>` - the model id a provider is
-    // configured with per tier, which is what "available" means for a
-    // cross-model reviewer.
+    // Model id per provider and tier; no id at the resolved tier means unavailable.
     providers: providersIn(c),
     _source: source,
     _warnings: [...(warnings || []), ...retiredKeysIn(c)],
   };
 }
 
-// One field of `review.triggers.<name>.*` that a LAYER actually wrote, keyed by
-// trigger name (`gate` for the gate grid, `tier` for the availability test).
-// mergeLayers merges the two FILE layers only and never folds in a schema
-// default, so everything this returns is a user assertion - which is the whole
-// reason D-04 can let a gate win over the level's gate, and the reason the tier
-// this feeds may decide a fallback. Reading a default here would turn "the
-// schema says advisory" into "the user asked for advisory" and the grid would
-// decide nothing; the same read on `tier` would turn "the schema says flagship"
-// into a user assertion and report the seam's own answer as the config's.
-// Defensive at every hop: this runs on whatever a user's config happens to
-// hold, and a scalar where an object belongs contributes nothing rather than
-// throwing.
+// A field a layer actually wrote, keyed by trigger. mergeLayers never folds in schema defaults, so this is a user
+// assertion: read a default here and "the schema says advisory" becomes "the user asked for advisory".
 function triggerFieldIn(c, field) {
   const out = {};
   const triggers = (c && typeof c === 'object' ? (c.review || {}) : {}).triggers;
@@ -394,11 +153,7 @@ function triggerFieldIn(c, field) {
   return out;
 }
 
-// The reviewer backends a layer named, or null when none did. Non-strings are
-// dropped rather than carried into the availability test, where they would be
-// looked up as a provider name; a value that is not a usable list at all reads
-// as unset, and DEFAULTS.reviewers backstops it the way DEFAULTS backstops
-// every other unset key.
+// Reviewer backends a layer named, or null. Non-strings are dropped, and anything but a usable list reads as unset.
 function reviewersIn(c) {
   const list = (c && typeof c === 'object' ? (c.review || {}) : {}).reviewers;
   if (!Array.isArray(list)) return null;
@@ -406,35 +161,25 @@ function reviewersIn(c) {
   return names.length ? names : null;
 }
 
-// The provider blocks, defensively: `review.providers.<name>.tiers` is a map of
-// tier -> model id, and anything else contributes no model id (which reads as
-// unavailable) rather than throwing.
+// Provider blocks, defensively: anything but a tier -> model id map reads as unavailable instead of throwing.
 function providersIn(c) {
   const p = (c && typeof c === 'object' ? (c.review || {}) : {}).providers;
   return p && typeof p === 'object' && !Array.isArray(p) ? p : {};
 }
 
-// The `roles` block, read in exactly the shape above and for the same reason:
-// this runs on whatever a user's config happens to hold, and a scalar or a list
-// where a map belongs contributes nothing rather than throwing.
+// The same defensive read for `roles`.
 function rolesIn(c) {
   const r = c && typeof c === 'object' ? c.roles : undefined;
   return r && typeof r === 'object' && !Array.isArray(r) ? r : {};
 }
 
-// ONE role's entry in that block, guarded the same way one level down - a
-// `roles.<role>` that is not a plain object names neither a model nor a rung,
-// so it contributes nothing and the older keys still answer. `hasOwn` rather
-// than a bare index: the map is user data, and a bare read of a prototype
-// member would answer with an object carrying neither field but reading as an
-// entry.
+// `hasOwn`, not a bare index: the map is user data and a prototype member would read as an entry.
 function roleEntryIn(rolesBlock, role) {
   const e = Object.prototype.hasOwnProperty.call(rolesBlock, role) ? rolesBlock[role] : undefined;
   return e && typeof e === 'object' && !Array.isArray(e) ? e : {};
 }
 
-// The id string a layer holds for one provider at one tier, or null when there
-// is none; no judgment of it.
+// The raw id a layer holds for one provider at one tier, or null.
 function configuredTierId(providers, name, tier) {
   if (!tier) return null;
   const block = providers[name];
@@ -443,75 +188,25 @@ function configuredTierId(providers, name, tier) {
   return typeof id === 'string' ? id : null;
 }
 
-// The model id one provider is configured with at one tier, or '' for none.
-// An empty string is deliberately NOT a model id: a `""` in a config is a key
-// somebody cleared, and dispatching a provider call with an empty model is the
-// silent-substitution shape RVW-02 opened against. Nor is a string the shared
-// predicate refuses (lib/model-id.mjs, D-17): a hand-edited or cloned config
-// can hold one, since `config.mjs set` is the only write face that checks.
+// '' is not a model id (a cleared key sent as an empty model is silent substitution), and neither is anything the
+// shared predicate refuses.
 function providerModel(providers, name, tier) {
   const id = configuredTierId(providers, name, tier);
   return id !== null && isModelId(id) ? id : '';
 }
 
 /**
- * The declared paths with whatever body each currently HAS, for
- * `scanDeclared`. Repo-relative, so they are read against the planning root's
- * PARENT - which is what keeps a `--file` pointed at another tree from reading
- * this one's files.
- *
- * A body that DOES NOT EXIST is not an error and not an inconclusive state:
- * at plan time a declared file frequently does not exist yet because the plan
- * CREATES it, so the path still travels and only the body it does not have is
- * missing (lib/risk-diff.mjs states why at length).
- *
- * A body that EXISTS AND WAS SKIPPED is the opposite state and carries
- * `unread` saying which arm skipped it. The two were one arm until a
- * `risk_surface` review refuted it: a 600 KiB declared file full of
- * `JSON.parse` calls returned a bare path exactly like a file the plan had yet
- * to write, so its content evidence vanished and the caller's discount
- * predicate - which reads PLAN readability and nothing below it - handed the
- * scope a level BELOW the configured stakes on the strength of a file nobody
- * opened. `unread` is what lets `riskFloor` apply D-04's own argument one level
- * down: nothing read is not evidence of nothing there.
- *
- * WHAT IT REFUSES TO OPEN, and neither is tidiness. A path that is ABSOLUTE or
- * that climbs out of the repo root with `..` gets its path signals and no read
- * at all: the `files:` list is data from a file that can arrive with a clone,
- * no legitimate plan declares a path outside the repository, and a resolve is
- * not a place to open one. That check reads the SPELLING, so two more read what
- * the path RESOLVES to. A non-regular file is refused unopened, because
- * `statSync` follows a symlink and a link to a character device reports size 0,
- * clearing the byte bound and then never reaching EOF. And a path whose REAL
- * location sits outside the repository root is refused for the boundary itself:
- * `lstatSync` declines to follow only the FINAL component, so `a/link/file.mjs`
- * where `link` is a symlinked DIRECTORY resolved outside the tree, was read as
- * evidence, and this function's own claim - that a `--file` pointed at another
- * tree cannot read this one's files - was untrue for any repository whose layout
- * carries such a link (raised by the `risk_surface` re-arm round, adjudicated
- * medium). Containment is judged on `realpathSync`, both sides: the ROOT is
- * resolved the same way and once, or a root itself reached through a link - a
- * temp dir on a linked `/tmp` is the everyday case - would refuse every
- * legitimate path in the tree.
- *
- * A file over `MAX_BODY_BYTES` is the same arm for the bound's own reason. Every
- * read sits in its own try - nothing here throws, and a resolve that could not
- * read a body still returns a whole bundle. What is never done is echo the body:
- * a refused path may hold the very evidence a discount would claim is absent, so
- * saying WHICH file was skipped and why is the whole of the report.
- *
- * `bytes` rides ONLY the arm that actually read (D-11), and is the file's
- * on-disk size rather than the string's length: it is the read this floor paid
- * for, and it is what the resolve puts on the record. A path that does not exist
- * and a path any `unread` arm refused contributed no read, so neither carries
- * the field at all - a zero there would be indistinguishable from an empty file
- * somebody opened.
+ * The declared paths with whatever body each has, for `scanDeclared`, read against the planning root's parent so a
+ * `--file` pointed at another tree can't read this one's files.
+ * No body isn't an error, a plan may create the file. A skipped one carries `unread` saying why, or its scope got
+ * discounted unopened. Refused unopened: an absolute path or `..`, a non-regular file, a real path outside the
+ * root, or over the byte cap. Containment is `realpathSync` on both sides, or a linked `/tmp` root refuses everything.
+ * Nothing throws, and `bytes` rides only the arm that read, so a zero isn't an empty file.
  * @param {string} repoRoot @param {string[]} files
  * @returns {Array<{path: string, body?: string, unread?: string, bytes?: number}>}
  */
 function declaredBodies(repoRoot, files) {
-  // Resolved ONCE, and fail-soft: a root this cannot resolve keeps its literal
-  // spelling, which can only ever refuse paths, never admit an outside one.
+  // Resolved once, fail-soft: an unresolvable root keeps its spelling, which can only refuse paths, never admit one.
   let root;
   try {
     root = realpathSync(repoRoot);
@@ -520,8 +215,7 @@ function declaredBodies(repoRoot, files) {
   }
   const inside = (/** @type {string} */ real) => within(real, root);
   return files.map((rel) => {
-    // Refused by SPELLING. `unread` and not a bare path: a file this declined
-    // to open may hold the very evidence a discount would claim is absent.
+    // Refused by spelling. `unread`, not a bare path: a file left unopened may hold what a discount would call absent.
     if (isAbsolute(rel) || rel.split('/').includes('..')) {
       return { path: rel, unread: 'path climbs out of the repository' };
     }
@@ -530,26 +224,15 @@ function declaredBodies(repoRoot, files) {
     try {
       st = lstatSync(abs);
     } catch {
-      // THE ONE ARM THAT IS NOT `unread`, and the distinction is the whole
-      // point: at plan time a declared file frequently does not exist yet
-      // because the plan CREATES it. Nothing was skipped, so the path travels
-      // with no body and the scope stays discountable.
+      // The one arm that isn't `unread`: a plan often creates the file, so nothing was skipped.
       return { path: rel };
     }
-    // Refused by WHAT THE PATH RESOLVES TO, which the spelling check above
-    // cannot see. `statSync` FOLLOWS a symlink, so a link to a character
-    // device reports size 0, passes the byte bound below, and is then read to
-    // an EOF that never comes - the bounded-I/O guarantee this function claims,
-    // escaped by a link the repository itself carries. `lstatSync` + isFile()
-    // is that check, and it fails closed: a non-regular declared path is
-    // evidence nobody read, never evidence of nothing.
+    // Refused by what it resolves to: `statSync` follows a link to a character device, size 0, so it passes the byte
+    // bound and never hits EOF.
     if (!st.isFile()) return { path: rel, unread: 'not a regular file' };
-    // Refused by WHERE IT REALLY IS, which neither check above can see: the
-    // spelling is repo-relative and clean, and `lstatSync` followed every
-    // component but the last, so a symlinked PARENT directory lands this at a
-    // file in another tree. Judged AFTER the regular-file arm on purpose - a
-    // link straight to a device is that arm's finding and keeps its wording -
-    // and before any read, since the point is that these bytes are not ours.
+    // Refused by where it really is: `lstatSync` follows every component but the last, so a symlinked parent can land
+    // in another tree.
+    // After the regular-file arm so a device link keeps that wording, and before any read.
     let real;
     try {
       real = realpathSync(abs);
@@ -571,18 +254,9 @@ function declaredBodies(repoRoot, files) {
 }
 
 /**
- * The categories this project waives the RAISE of (`WAIVER_KEY`), validated
- * ONCE per command against the table's own vocabulary and never per phase - a
- * malformed waiver is a fact about the run, and a per-phase check would
- * otherwise repeat it once per phase the command walks.
- *
- * A value outside the vocabulary is NAMED and waives nothing, which is how this
- * file already treats a gate, a tier or an effort outside its own: name it, let
- * the routed value stand. That is also the safe direction here, since the value
- * that fails to parse fails toward RAISING. It is deliberately NOT the
- * fails-safe-whole-list rule its `surfaces` sibling carries: there a bad entry
- * widens the blocking gate's scope, and here dropping one entry is already the
- * widening direction.
+ * The categories this project waives the raise of (`WAIVER_KEY`), validated once per command, not once per phase.
+ * A value outside the vocabulary is named and waives nothing, which fails toward raising. Not the fail-safe-whole-list
+ * rule its `surfaces` sibling uses: a bad entry there widens the blocking gate, and dropping one here already widens.
  * @param {any} cfg @param {string[]} warnings @returns {string[]}
  */
 function waivedSurfaces(cfg, warnings) {
@@ -605,40 +279,12 @@ function waivedSurfaces(cfg, warnings) {
 }
 
 /**
- * THE PLAN-TIME RISK FLOOR (CER-01), which after this phase does exactly TWO
- * things and names no level: it makes the plan review blocking and it turns the
- * deep-verify pass on. The phase's own declared `files:`, scanned here, are what
- * raise it. It returns whether it raised and what evidenced that, appends every
- * finding to `reason` and every input it could not read to `warnings` - both
- * arrays are the caller's own, already built by the time this runs, because a
- * floor that changed a gate silently would be indistinguishable from a config
- * that set it.
- *
- * NEVER `ok:false`, and never a change to any role's model or effort (D-02,
- * D-03). Two arms compute nothing at all and say so: a role dispatched before a
- * plan exists, and no phase in hand.
- *
- * IT RAISES ON AN UNREAD SCOPE. That is the same fail-closed rule
- * `lib/phase-plans.mjs` states for CER-01 - an unreadable plan may never lower
- * what fires - said in the only vocabulary left. The old rule held such a scope
- * at the CONFIGURED level, which for the shipped unset `stakes` was the raised
- * row; with no level, "held at the configured level" has no meaning, and raising
- * is the reading that keeps a broken plan file from silently dropping the
- * blocking plan review and the deep pass. `reason` distinguishes a surface hit
- * from an unread scope, because the two want different fixes.
- *
- * PER PLAN FOR AN EXECUTOR, PER PHASE FOR EVERYONE ELSE (D-06). `planKey` names
- * ONE plan of the phase and is what an executor dispatch carries, so a clean
- * plan in a mixed phase is not raised by its risky sibling; without it the scope
- * is the union of every conforming plan in the phase, which is what a
- * phase-scoped role - `cad-plan-checker`, `cad-verifier`, reviewer resolution -
- * is answering about. A key naming no plan file is NOT the union: it takes the
- * fail-closed arm, because a caller that asked about one plan and was silently
- * answered about six is the wrong answer in the wide direction.
- *
- * THE ADDRESSING HALF ONLY. Which scope this dispatch is about is decided here;
- * what that scope RESOLVES TO is `floorFor` below.
- *
+ * The plan-time risk floor: it makes the plan review blocking and turns deep-verify on, and names no level. It returns
+ * whether it raised and why, appending to `reason` and `warnings`, so a gate change can't pass for config.
+ * Never `ok:false`, never a model or effort change. No plan or no phase in hand computes nothing and says so.
+ * An unread scope raises (fail closed, as lib/phase-plans.mjs states), and `reason` tells it from a surface hit.
+ * `planKey` names one plan, so a risky sibling can't raise a clean one; no key means the phase's union, and a key
+ * naming no plan file fails closed, not to the union.
  * @param {{role: string, planningRoot: string, phase: any, planKey: any, cfg: any,
  *   surfaces: string[], waived: string[], reason: string[], warnings: string[]}} ctx
  * @returns {{raised: boolean, surface: string|null, signal: string|null,
@@ -647,11 +293,8 @@ function waivedSurfaces(cfg, warnings) {
 function riskFloor(ctx) {
   const { role, planningRoot, phase, planKey, cfg, surfaces, waived, reason, warnings } = ctx;
   /**
-   * Nothing was raised because nothing was COMPUTED - a different sentence, and
-   * deliberately not carrying the `risk floor: ` prefix that marks an entry the
-   * floor's own read produced. "Nothing raised it" and "nothing looked" are the
-   * two states this seam exists to keep apart, and spelling both with one prefix
-   * is how they would collapse again.
+   * Nothing was computed, so no `risk floor: ` prefix: "nothing raised it" and "nothing looked" must not share one
+   * spelling.
    */
   const notComputed = (why) => {
     reason.push(`no risk-floor computation: ${why}; the plan review and the `
@@ -659,7 +302,7 @@ function riskFloor(ctx) {
     return { raised: false, surface: null, signal: null, file: null, bytes: 0 };
   };
 
-  // D-16: no floor reaches either of these, before this phase or after it.
+  // No floor is computed for either of these.
   if (PRE_PLAN_ROLES.includes(role)) {
     return notComputed(`${role} is dispatched before a plan exists and reads none`);
   }
@@ -674,9 +317,7 @@ function riskFloor(ctx) {
       : declaredPhaseFiles(planningRoot, phase),
     scoped,
     scopeName: scoped ? `phase ${phase} plan ${planKey}` : `phase ${phase}`,
-    // The repo root is the planning root's PARENT: declared paths are
-    // repo-relative, and deriving the root this way is what keeps a `--file`
-    // pointed at another tree from reading THIS one's files.
+    // Repo root is the planning root's parent, which keeps a `--file` at another tree from reading this one's files.
     repoRoot: dirname(planningRoot),
     surfaces,
     waived,
@@ -686,29 +327,11 @@ function riskFloor(ctx) {
 }
 
 /**
- * THE SCOPE-TO-ANSWER HALF of the floor, and the ONE implementation of the rule:
- * given a scope that has already been read off disk, decide whether the floor is
- * raised and what evidenced it.
- *
- * `scoped` is a RENDERING fact and not a rule: it says whether the scope is ONE
- * plan or a set of them, which is the difference between "plan 2 declared no
- * files at all" and "1 of 3 plans in phase 3 declared no files at all". The
- * rule is identical either way.
- *
- * `raised` is false when nothing matched and the scope read clean, and false
- * when every match was WAIVED. It is true on a non-waived match, and true on a
- * scope that could not be read whole - the fail-closed half, which carries no
- * surface because none was proved.
- *
- * `bytes` is what computing this answer COST to read (D-11): the on-disk size of
- * the declared bodies this scope actually opened, and nothing else. Not the PLAN
- * files' own bytes, which `declaredFilesIn` read before this function was
- * called; not a path that took any `unread` arm or does not exist, which
- * contributed no read at all; and counted ONCE per entry, because `evidencedBy`
- * re-scans entries already in memory and returns to no disk. It rides every arm,
- * including the ones that raise nothing - a scope that read 4 MB to conclude
- * "nothing here" is exactly the row the figure exists for.
- *
+ * The scope-to-answer half of the floor, and the only implementation of the rule: given a scope already read off
+ * disk, decide whether it's raised and what evidenced it.
+ * `scoped` is a rendering fact: one plan or a set, "this plan declared no files" versus "1 of 3 plans declared none".
+ * `raised` is true on a non-waived match and on a scope that couldn't be read whole, which carries no surface.
+ * `bytes` is the on-disk size of the declared bodies opened, on every arm, so a scope that read 4 MB shows it.
  * @param {{scope: any, scoped: boolean, scopeName: string, repoRoot: string,
  *   surfaces: string[], waived: string[], reason: string[], warnings: string[]}} ctx
  * @returns {{raised: boolean, surface: string|null, signal: string|null,
@@ -716,8 +339,7 @@ function riskFloor(ctx) {
  */
 function floorFor(ctx) {
   const { scope, scoped, scopeName, repoRoot, surfaces, waived, reason, warnings } = ctx;
-  /** Set once, below, from the entries this scope actually opened. Declared
-   * here so every return arm carries it without threading a parameter. */
+  /** Set below from the entries this scope opened; declared here so every return arm carries it. */
   let bytes = 0;
   /** Nothing raised the floor - the shape every non-raise arm returns. */
   const none = () => ({ raised: false, surface: null, signal: null, file: null, bytes });
@@ -727,34 +349,19 @@ function floorFor(ctx) {
   bytes = entries.reduce((n, e) => n + (typeof e.bytes === 'number' ? e.bytes : 0), 0);
   const { matches, withheld } = scanDeclared(entries, surfaces);
 
-  // WHAT THE LINE-KIND EXEMPTION COST THIS SCOPE (RSK-05), said before any arm
-  // below decides anything, because it is true on every arm: a raise that used
-  // to rest on an import or a literal constant now says which file and which
-  // surface stopped counting, instead of moving its evidence silently.
-  //
-  // A `reason` and not a `warning`, on the distinction this function keeps
-  // everywhere else: `warnings[]` is for an input the floor could NOT read - an
-  // oversized body, a path outside the tree, a plan out of grammar - and a
-  // withheld line is one it read and judged. Measured on this repository
-  // 2026-08-26 this fires 5 times across the 28 archived phase directories, so
-  // it is a sentence and not a flood.
+  // What the line-kind exemption cost this scope, said before any arm because it's true on every arm: a raise that used
+  // to rest on an import or a constant now names the file and surface that stopped counting.
+  // A `reason`, not a `warning`: warnings are inputs it couldn't read, and this one it read and judged.
   for (const w of withheld) {
     reason.push(`risk floor: ${scopeName}: ${w.path} evidences ${w.category} `
       + 'only on an import or a constant declaration, which no longer counts');
   }
 
-  // THE WAIVER, applied per MATCH and not to the scan: a project that waived
-  // `secrets` on a phase which also touches `destructive` is still raised,
-  // because the next unwaived match is the hit. Waiving the top match is
-  // therefore never waiving the floor.
+  // Waived per match, not per scan: waiving `secrets` on a phase that also touches `destructive` still raises.
   const waivedHits = matches.filter((m) => waived.includes(m.category));
   const hit = matches.find((m) => !waived.includes(m.category));
 
-  // Which declared file produced the winning signal, so the reason cites
-  // EVIDENCE rather than asserting a category. Re-scanned per entry against the
-  // one matched category and compared on the signal STRING, because a category
-  // can be evidenced by several files and only one of them produced the sentence
-  // the user is about to read.
+  // Which file produced the winning signal; compared on the signal string since files can share a category.
   const evidencedBy = (category, signal) => {
     for (const e of entries) {
       const m = scanDeclared([e], [category]).matches[0];
@@ -763,25 +370,11 @@ function floorFor(ctx) {
     return null;
   };
 
-  // D-04's AGGREGATION RULE, in one predicate: a scope proves itself clean only
-  // when it held at least one conforming plan, every one of them read clean,
-  // every one of them declared at least one path, and every declared body that
-  // EXISTS was actually opened. All four halves are the SAME argument at four
-  // depths, and each one was learned separately. `clean === found` is the
-  // mixed-phase case - one unreadable member raises the WHOLE scope, so a phase
-  // whose unreadable plan is the risky one can never resolve as clean.
-  // `found > 0` is that argument one step earlier: a phase directory holding no
-  // plan, or no directory at all, read nothing, and nothing read is not evidence
-  // of a clean phase. `undeclared` is it one step further in and is the half the
-  // UAT refuted: the shipped templates/PLAN.md ships `files:` with no items, so
-  // a plan copied from it parsed perfectly, scanned ZERO files, and passed as
-  // clean on a scope where nothing was ever looked at - absence of evidence
-  // reported as absence of surface. `unread` is the same at the level BELOW the
-  // plan, and it is the half a `risk_surface` review refuted: a plan that parsed
-  // perfectly while declaring an oversized, symlinked or unreadable SOURCE file
-  // passed the whole scope on evidence nobody had opened. Reading clean is a
-  // claim that the scope was READ; every one of these makes that claim false at
-  // its own depth.
+  // A scope proves itself clean only when it held a conforming plan, every plan read clean and declared a path, and
+  // every declared body that exists was opened. Each half was learned separately: `clean === found` so one unreadable
+  // plan raises the whole mixed phase, `found > 0` because no plan read is not a clean phase, `undeclared` because a
+  // plan copied from the template scanned zero files and passed, `unread` because a plan naming an oversized or
+  // symlinked source passed on evidence nobody opened.
   const undeclared = Array.isArray(scope.undeclared) ? scope.undeclared : [];
   for (const f of undeclared) {
     warnings.push(`risk floor: ${scopeName}: ${f} declares no files at all, `
@@ -795,9 +388,7 @@ function floorFor(ctx) {
   const read = scope.found > 0 && scope.clean === scope.found
     && undeclared.length === 0 && unread.length === 0;
 
-  // A SILENT WAIVER is the shape this seam's every other arm exists to refuse,
-  // so each one applied is stated: the key, the surface, and the file it would
-  // have raised on.
+  // Every waiver applied is stated (key, surface, file): a silent waiver is what this seam refuses everywhere else.
   for (const m of waivedHits) {
     const wat = evidencedBy(m.category, m.signal);
     reason.push(`risk floor: ${scopeName}: `
@@ -816,10 +407,7 @@ function floorFor(ctx) {
     return { raised: true, surface: hit.category, signal: hit.signal, file: at, bytes };
   }
 
-  // EVERY match waived is NOT the same state as no match, and it is stated as
-  // its own sentence: a scope that matched a surface it waived is not a scope
-  // that matched nothing. It still has to have READ CLEAN to stand down, which
-  // is why this arm sits under the `read` test below rather than in front of it.
+  // All matches waived isn't no match, so it gets its own sentence, and it still has to read clean to stand down.
   if (read) {
     if (waivedHits.length) {
       reason.push(`risk floor: ${scopeName}: every matched surface is waived by `
@@ -834,13 +422,9 @@ function floorFor(ctx) {
     return none();
   }
 
-  // NO SURFACE AND NO EVIDENCE ARE NOT THE SAME SENTENCE, which is the whole of
-  // why this arm exists separately. A scope that was read whole and matched
-  // nothing has PROVED itself clean; a scope with nothing readable in it has
-  // proved nothing at all, and reporting the second as the first is how a phase
-  // whose risky plan is the unreadable one would drop the blocking plan review.
-  // The per-plan warnings already name which file and what went wrong with it,
-  // so this says only what it cost.
+  // No surface and no evidence are different sentences: a scope read whole that matched nothing proved itself clean,
+  // and one with nothing readable proved nothing. Calling that clean is how a phase whose risky plan is the unreadable
+  // one drops the blocking review.
   const why = scope.found === 0
     ? (scoped
       ? `${scopeName} names no plan file this could read`
@@ -848,64 +432,42 @@ function floorFor(ctx) {
     : scope.clean !== scope.found
       ? `${scope.found - scope.clean} of ${plans(scope.found)} in ${scopeName} `
         + 'could not be read'
-      // The plans read clean and named nothing to scan. Its OWN sentence, and
-      // this is the one arm where the wording is the whole fix: "declaring
-      // nothing that touches [...]" is the clean sentence and would say that a
-      // scope nobody looked at was found clean. "No surface" and "nothing was
-      // declared" are the two states this seam exists to keep apart, and the
-      // second may never be spelled as the first.
+      // The plans read clean but named nothing to scan; "declaring nothing that touches [...]" would call that clean.
       : undeclared.length
         ? (scoped
           ? `${scopeName} declared no files at all`
           : `${undeclared.length} of ${plans(scope.found)} in ${scopeName} `
             + 'declared no files at all')
-        // The plans all read clean and a declared BODY did not. Named as its
-        // own cause: "2 of 3 plans could not be read" is false here.
+        // The plans read clean but a declared body didn't, so "could not be read" about the plans would be false.
         : `${unread.length} declared file${unread.length === 1 ? '' : 's'} in `
           + `${scopeName} went unread`;
   reason.push(`risk floor: ${why}, so no surface could be computed; the plan `
     + 'review is raised to blocking and the deep-verify pass is turned on rather '
     + 'than resting on a scope nobody read');
-  // NO surface, deliberately: nothing was proved, and a raise that named one
-  // would be citing evidence it never had.
+  // No surface on purpose: nothing was proved, and naming one would cite evidence it never had.
   return { raised: true, surface: null, signal: null, file: null, bytes };
 }
 
 function resolve(opts) {
-  // The planning root and the trace phase, derived ONCE for both events this
-  // resolve may write: `--phase` when it parses, the cursor otherwise, and with
-  // neither in hand nothing is recorded - an event keyed to no phase joins
-  // nothing, and the id it would derive is the empty string.
+  // Trace phase is `--phase` when it parses, else the cursor; with neither nothing is recorded, since an event keyed to
+  // no phase joins nothing.
   const planningRoot = dirname(opts.file);
   let tracePhase = null;
   try {
-    // `opts.phase` is set ONLY when it parsed clean: `parseArgs` already judged
-    // it against its declared row, and that row REFUSES now, so a malformed
-    // spelling never reaches this function at all.
+    // Only set when it parsed clean: `parseArgs` already refused a malformed spelling.
     tracePhase = opts.phase !== undefined ? opts.phase : cursorPhase(planningRoot);
-  } catch { /* a record of a decision may never change the decision */ }
+  } catch { /* tracing must never change the answer */ }
 
-  // NO ARGUMENT-LEVEL DIAGNOSTICS RIDE HERE ANY MORE, and the history is the
-  // point. `--phase` used to warn and continue, and before THAT it produced
-  // nothing at all: `requirePhaseArg(opts.phase)` sat inside the try above and
-  // its `!parsed.ok` arm fell silently through to the cursor, so measured
-  // 2026-08-19 `resolve --role cad-planner --phase 1.10.3` returned ok:true with
-  // no mention of `--phase` - the routing event keyed to a phase the caller never
-  // named. The warning closed that. What the warning could NOT close is a floor
-  // computed off the cursor's phase, so the flag now REFUSES at `parseArgs` and
-  // never reaches this function malformed (CER-01 D-09).
+  // No argument diagnostics here: `--phase` once fell silently through to the cursor, so a typo answered ok:true about
+  // a phase nobody named.
+  // The floor is why `parseArgs` refuses it now: a typo would compute the floor off the cursor's phase.
 
-  // The dispatch half of the worker's lifecycle bracket (`--bracket-read` is
-  // the switch; `--bracket-plan` the worker key, defaulting to the role). It is
-  // written HERE, before any resolution, because the caller dispatches on every
-  // arm of this command - a degraded resolve falls back to the base agent, and
-  // a bracket gated on ok:true would leave exactly those dispatches unpaired.
-  // The close half stays with the caller: only it sees the return and its token
-  // figure. Best effort like the routing event below - `appendEvent` never
-  // throws, and a bracket that could not be written changes no envelope byte.
-  // (The one unbracketed arm is a schema that failed to PARSE: that fails
-  // before argument dispatch, so the caller's close then shows as unpaired in
-  // `trace render` - which is signal, not noise, on an arm that rare.)
+  // The dispatch half of the worker's lifecycle bracket, written before any resolution because the caller dispatches on
+  // every arm, degraded ones included.
+  // Gated on ok:true it would leave those unpaired. The close half stays with the caller, which alone sees the return
+  // and its tokens. Best effort: `appendEvent` never throws and a failed bracket changes no envelope byte.
+  // The one unbracketed arm is a schema that fails to parse, where the close shows as unpaired in `trace render`; that
+  // is signal on an arm so rare.
   if (opts.bracketRead && tracePhase !== null) {
     try {
       const read = opts.bracketRead.split(',').map((s) => s.trim()).filter(Boolean);
@@ -917,20 +479,14 @@ function resolve(opts) {
         role: opts.role,
         ...(read.length ? { read } : {}),
       });
-    } catch { /* same rule */ }
+    } catch { /* tracing must never change the answer */ }
   }
 
-  // Read the config BEFORE the role check, not after (D-04). `unknown-role`
-  // used to return without any layer being read, so a config holding a retired
-  // key answered a mistyped role with nothing about the key that is redirecting
-  // every OTHER dispatch in the project - the breaking-change notice sitting
-  // unread in JSON while a stale config routes.
+  // Read before the role check so a mistyped role still reports a retired key that is redirecting every other dispatch.
   const cfg = readConfig(opts.file);
 
-  // The routable roles are the roles lib/rung-agent.mjs FILES rungs for, which
-  // is the same statement `agentFor` below dispatches through. A second list -
-  // the table's `roles` array, which this read - could name a role with no
-  // agent file and answer `ok:true` about a dispatch that cannot happen.
+  // Routable roles are the ones lib/rung-agent.mjs files rungs for; a second list could say ok:true about an impossible
+  // dispatch.
   const roles = Object.keys(RUNG_FILES);
   if (!roles.includes(opts.role)) {
     const degraded = [...cfg._warnings];
@@ -941,52 +497,32 @@ function resolve(opts) {
     return;
   }
 
-  // An honest first reason: which config LAYERS were read, and nothing about
-  // what they said. It used to open on the stakes level's source, and that
-  // claim died with the level - there is no single value a layer either
-  // supplied or did not any more, there are a dozen keys each of which says its
-  // own source in its own `reason` entry below. Naming the layers is still
-  // worth a line: it is the only place a resolve says whether the global file
-  // was found at all.
+  // Which layers were read, nothing more; the only place a resolve says whether the global file was found.
   const reason = [`config layers: ${cfg._source}`];
 
-  // `warnings` is an ARRAY (matching config.mjs get): a torn config layer, a
-  // retired key, an unreadable PLAN, a gate disagreement and an unknown pin
-  // alias can all be true at once. Built before the floor so the floor's own
-  // diagnostics ride on it.
+  // An array like config.mjs get, since several can be true at once; built before the floor so its diagnostics ride on
+  // it.
   const warnings = [...cfg._warnings];
 
-  // THE ANSWERED SURFACE SET, decided here rather than at its warning block
-  // below, because the plan-time floor is scoped by it (D-10) and the floor runs
-  // before the rung and model resolve. The DECISION is hoisted and the
-  // DIAGNOSTICS are not:
-  // `answeredSurfaces` is pure, so reading it twice would be free and reading it
-  // once is honest, while moving the warning block would reorder `warnings[]`
-  // for every caller that reads it positionally. `resolve` narrows the floor to
-  // this set on the same terms the commit-time trigger already uses - a project
-  // that answered the surface question narrowed what can raise its level, and an
-  // unanswered one gets all eight, which is the safe direction on both.
+  // Decided here, not at its warning block below, because the floor is scoped by it and runs before the rung and model
+  // resolve.
+  // Only the decision is hoisted; moving the warnings would reorder `warnings[]` for callers that read it positionally.
+  // Unanswered gets all eight, the safe direction.
   const tableCategories = riskCategories();
   const wroteSurfaces = cfg.triggerSurfaces.risk_surface;
   const decided = answeredSurfaces(wroteSurfaces, tableCategories);
   const surfaces = decided.surfaces;
   const surfacesAnswered = decided.answered;
 
-  // THE RISK FLOOR for this dispatch, computed from what the phase's own
-  // declared `files:` touch (CER-01). It names no level and moves no rung: its
-  // whole effect is the plan gate and the deep-verify switch, applied below
-  // where those two are resolved (D-02, D-03).
+  // The risk floor for this dispatch: it moves no level or rung, only the plan gate and the deep-verify switch below.
   const floor = riskFloor({
     role: opts.role, planningRoot, phase: tracePhase, planKey: opts.plan,
     cfg, surfaces, waived: waivedSurfaces(cfg, warnings), reason, warnings,
   });
 
-  // The agent FILE is what carries the effort (route.mjs reports effort, it
-  // cannot set it - seams.md), and the unsuffixed file is one rung among the
-  // others, so the file comes from the explicit map in lib/rung-agent.mjs
-  // rather than from a naming convention. Fail-open by design: a rung the map
-  // does not carry is self-verify's problem, and this still dispatches - at the
-  // unsuffixed file, saying it did, rather than naming a file that is not there.
+  // The agent file carries the effort (route.mjs reports it, can't set it), and the unsuffixed file is one rung among
+  // others, so the file comes from the map in lib/rung-agent.mjs.
+  // Fail-open: a rung the map lacks is self-verify's problem, and this dispatches the unsuffixed file and says so.
   const agentFor = (rung) => {
     const stem = rungFile(opts.role, rung);
     if (stem) return stem;
@@ -994,33 +530,15 @@ function resolve(opts) {
     return opts.role;
   };
 
-  // This role's entry in the roles block, read once for both halves - the rung
-  // here and the model further down.
+  // This role's roles-block entry, read once for the rung here and the model below.
   const roleEntry = roleEntryIn(cfg.roles, opts.role);
 
-  // THE START RUNG (RNG-02), from the first of three sources that names a rung
-  // this role has an agent FILE for: `roles.<role>.effort`, then the older
-  // `model.effort.<role>`, then this role's own `roles.<role>.effort` DEFAULT in
-  // config.schema.json. The cells grid used to sit where that default now does;
-  // moving it into the schema is what leaves the rung in one place a user can
-  // read and one place a maintainer can edit.
-  //
-  // A source that names no rung this role HAS does not stop the resolve, it
-  // loses its turn: it warns and the next source answers. Only a hand-edited
-  // config or schema reaches that arm - the write face refuses these values off
-  // the same enums - and holding a whole dispatch on one bad string would drop
-  // the caller to the base agent at the session default, which is strictly
-  // further from what the user asked for than the next source down is.
-  //
-  // Never hand an unfiled rung to `agentFor`: it fails open to the unsuffixed
-  // file while `effort` still reports the rung that was asked for, which is the
-  // report-a-rung-nothing-ran-at shape `rungEffortIssue` exists to close.
-  //
-  // WHICH KEY DECIDED travels with the rung and is interpolated into every arm,
-  // never a fixed spelling: a `reason` naming a key that did not decide is the
-  // resolved-then-dropped shape one level up, wearing the diagnostic's clothes.
-  // Setting BOTH config keys for one role is a config a user should resolve, so
-  // it warns whether or not the two agree - they are one quantity spelled twice.
+  // The start rung comes from the first of three sources naming a rung this role has a file for: `roles.<role>.effort`,
+  // `model.effort.<role>`, then that key's schema default.
+  // A source naming a rung this role lacks loses its turn with a warning; only a hand-edited config gets there, and
+  // holding the dispatch would drop the caller to the base agent.
+  // Never hand an unfiled rung to `agentFor`: it fails open to the unsuffixed file while `effort` still reports the
+  // rung asked for. Both keys set warns even if they agree, since it's one quantity spelled twice.
   const rolesEffortKey = `roles.${opts.role}.effort`;
   const legacyEffortKey = `model.effort.${opts.role}`;
   const rolesEffort = roleEntry.effort;
@@ -1054,13 +572,10 @@ function resolve(opts) {
       + `(${hasRungs.join(', ')}); the next source down answers`);
   }
   if (effort === null) {
-    // Nothing named a rung this role can be dispatched at, which after the three
-    // sources above means the SCHEMA's own default is broken. Degrading rather
-    // than dispatching: half a bundle read as a whole one is worse than no
-    // bundle at all, and `effort` is the field the agent file is chosen by.
-    // self-verify's `effort-default-invalid` is what stops this reaching a user.
-    // The live warnings array, not `cfg._warnings`: by here it also carries the
-    // floor's own diagnostics and the losing sources named just above.
+    // The schema's own default is broken. Degrade instead of dispatching: half a bundle read as a whole one is worse
+    // than none, and `effort` picks the agent file.
+    // self-verify's `effort-default-invalid` stops this reaching a user. This uses the live warnings array, which
+    // already holds the floor's diagnostics.
     out({ ok: false, reason: 'unresolved', role: opts.role,
       hint: `config.schema.json's ${rolesEffortKey} default names no rung this role has `
         + `(${hasRungs.join(', ')}) - restore the shipped schema, a hand-edited default being `
@@ -1071,20 +586,10 @@ function resolve(opts) {
   let agent = agentFor(effort);
   let escalated = false;
 
-  // Escalation is ONE RUNG UP from wherever this dispatch started, on the
-  // `RUNG_ORDER` ladder beside the map. A retry never thinks less than the
-  // attempt that just failed, and it never skips: the cells grid was the only
-  // source of a per-cell retry TARGET, and fourteen of its eighteen cells
-  // encoded exactly one step, so one step is what survives the grid rather than
-  // a new behaviour. At the top rung there is nowhere to climb and it holds,
-  // saying so - a report of an escalation that moved nothing is the
-  // resolved-then-dropped shape this milestone closes.
-  //
-  // The ladder is `RUNG_ORDER`, never a rung list read from data: it is the one
-  // statement of the order, `rungOrderIssues` holds the file map against it, and
-  // a rung this role has no FILE for is stepped over rather than dispatched -
-  // `cad-plan-checker` files every rung today, but the map is per-role and a
-  // role that ever files a partial ladder must climb to its next REAL rung.
+  // Escalation is one rung up from where this dispatch started: a retry never thinks less than the failed attempt and
+  // never skips. At the top rung it holds and says so, since reporting an escalation that moved nothing is the
+  // resolved-then-dropped shape.
+  // The ladder is `RUNG_ORDER`, never data, and a rung this role has no file for is stepped over, not dispatched.
   if ((opts.attempt || 1) > 1) {
     if (cfg.escalate_on_failure) {
       const at = RUNG_ORDER.indexOf(effort);
@@ -1106,30 +611,13 @@ function resolve(opts) {
     }
   }
 
-  // Config-wins precedence (D-04): a `review.triggers.<t>.gate` a layer SET
-  // beats the schema's default, and the disagreement is spoken rather than
-  // resolved silently. Default-wins was rejected because it makes a key the user
-  // explicitly set stop doing anything, which is the resolved-then-dropped
-  // defect this milestone exists to close.
-  //
-  // The walk is over the TRIGGERS THE SCHEMA DEFINES A GATE FOR, derived by
-  // `gateTriggers` - one derivation shared with self-verify's agreement check,
-  // never a second list here. A trigger name no schema row names contributes no
-  // gate and no warning: naming the accepted set is config.mjs validate's job,
-  // not a dispatch's.
-  //
-  // A gate must be one of the KEY's own accepted values before it can win. This
-  // validity check sits in front of the precedence and changes no part of it: a
-  // valid gate that disagrees still wins and still warns. Without it a
-  // one-character typo (`"blockign"`) silently replaced the deliberately-blocking
-  // `risk_surface` gate - a silent lowering of the very signal the risk floor
-  // rides on.
-  //
-  // `gateWon` records, per trigger, whether a VALID configured gate is what
-  // answered. The floor below tests that rather than the key's presence: a layer
-  // holding an out-of-enum string never won resolution, so it must not suppress
-  // a raise either, or a hand-edited typo would leave a detected risk surface on
-  // an advisory plan review.
+  // A gate a layer set beats the schema default, and the disagreement is spoken. Default-wins would make a key the user
+  // set stop doing anything.
+  // The walk is over the triggers the schema defines a gate for, from `gateTriggers`, shared with self-verify's
+  // agreement check.
+  // A gate has to be one of the key's own values before it can win: a typo (`"blockign"`) once silently replaced the
+  // blocking `risk_surface` gate. `gateWon` records whether a valid configured gate answered, and the floor tests that,
+  // not key presence.
   const review = {};
   /** @type {Record<string, boolean>} */
   const gateWon = {};
@@ -1141,8 +629,7 @@ function resolve(opts) {
     gateWon[trigger] = false;
     if (configured !== undefined && configured !== dflt) {
       if (!gateNames.includes(configured)) {
-        // Same treatment an unknown model alias gets: name it, let the resolved
-        // value stand, never block the spawn.
+        // Same as an unknown model alias: name it, let the resolved value stand, never block the spawn.
         review[trigger] = dflt;
         warnings.push(`${key}=${JSON.stringify(configured)} is not one of `
           + `[${gateNames.join(', ')}]; the schema default ${JSON.stringify(dflt)} stands`);
@@ -1159,22 +646,16 @@ function resolve(opts) {
     }
   }
 
-  // THE FLOOR'S TWO EFFECTS, and the only two (D-02). Everything else a detected
-  // surface used to move - the level, the role's model, the role's rung, the
-  // diff gate - it no longer moves, and there is no third arm to look for.
-  //
-  // `verify` has no config key of its own: it is `on` when the floor raised and
-  // `off` otherwise. `workflow.verifier` remains the off switch workflows/
-  // verify.md reads, and `--deep` remains the manual on switch.
+  // The floor's two effects, and only two. `verify` has no config key: it's `on` when the floor raised and `off`
+  // otherwise.
+  // `workflow.verifier` stays the off switch workflows/verify.md reads, and `--deep` the manual on switch.
   let verify = floor.raised ? 'on' : 'off';
   if (floor.raised) {
     const planKey = 'review.triggers.plan.gate';
     const gates = schemaValues(planKey);
     const answer = review.plan;
     if (gateWon.plan) {
-      // The config-wins precedence review-triggers.md states, held here too: a
-      // gate the user validly set is what fires, and the floor says it did not
-      // move it rather than moving it silently.
+      // A gate the user validly set is what fires, and the floor says it moved nothing.
       reason.push(`risk floor: ${planKey}="${answer}" is configured, so the floor `
         + 'moved no gate');
     } else if (gates.indexOf(answer) < gates.indexOf(FLOOR_GATE)) {
@@ -1192,62 +673,22 @@ function resolve(opts) {
     }
   }
 
-  // The OTHER half of a fire (RVW-02). The gate map above says whether a
-  // trigger fires; this says WHO it fires to, resolved by the seam instead of
-  // by prose at the fire site - the shape that let a blocking risk_surface
-  // review go to a same-model subagent on 2026-08-13 with `review.reviewers`
-  // set to `openai` and nothing recording the substitution.
-  //
-  // Its own top-level field, never folded into `review` (D-05): that map's
-  // values are gate STRINGS, and turning each into an object would break every
-  // reader of the wiring table at once.
-  //
-  // Availability, per trigger: `claude-subagent` is always available (it is a
-  // subagent dispatch, not a provider call); any other name needs a model id at
-  // the tier THIS trigger resolves at - the layer's `review.triggers.<t>.tier`
-  // when a layer set one, else the LEVEL's row of the table's hand-maintained
-  // `tiers` grid (D-04: never config.schema.json's default, which would report
-  // the schema's answer as the user's) - AND the user-global layer's own
-  // `review.reviewers` must name it (D-14). A repo layer arrives with a clone,
-  // and review-provider.mjs `resolveKey` takes the provider key from the user's
-  // environment first, so a committed list alone would send the user's code
-  // out on the user's key. The merged list still decides what is WANTED, so a
-  // repository can narrow the set but never add a provider to it. An empty set
-  // falls back to `claude-subagent`, because a blocking trigger with no
-  // reviewer is a gate that silently stops gating.
-  //
-  // Detection, not prevention (D-07): nothing here refuses a dispatch to a
-  // reviewer outside this set. The set plus the `reviewer` field on the
-  // lifecycle event are what make a substitution visible afterwards.
-  //
-  // The tier and the effort are RESOLVED here and RETURNED (RVW-03), not merely
-  // consumed by the availability test: they are the two fields that reach a
-  // cross-model provider call, and before this they were read at the fire site
-  // from a config key no layer sets - so the level moved the subagent half of a
-  // panel and left the cross-model half on a value nothing resolved. Both ride
-  // their own top-level maps beside `reviewers` for the reason `reviewers`
-  // itself does (D-05): `review`'s values are gate STRINGS, and turning each
-  // into an object would break every reader of the wiring table at once.
-  //
-  // `reviewer_efforts`, never `efforts`: the envelope already carries a
-  // top-level `effort`, which is the agent RUNG this dispatch runs at. These
-  // are per-trigger provider-request efforts and are a different quantity, so
-  // the names are kept far enough apart that a reader cannot take one for the
-  // other.
+  // The other half of a fire: the gate map says whether a trigger fires, this says who it fires to. Resolved here
+  // because a blocking risk_surface review once went to a same-model subagent despite `openai` being set.
+  // `claude-subagent` is always available. Any other name needs a model id at this trigger's tier and a place in the
+  // user-global `review.reviewers`: a repo layer arrives with a clone and would spend their key.
+  // An empty set falls back to `claude-subagent`, or a blocking trigger stops gating.
+  // Tier and effort get own maps: `reviewer_efforts`, never `efforts`, since `effort` is the agent rung.
   const wantedReviewers = cfg.reviewers ?? DEFAULTS.reviewers;
   const reviewers = {};
   /** @type {Record<string, any>} */
   const reviewerTiers = {};
   /** @type {Record<string, any>} */
   const reviewerEfforts = {};
-  // A config-layer tier or effort must be one of the KEY's own accepted values
-  // BEFORE it can win, exactly as a gate must (the check above): these two are
-  // the fields review-triggers.md step 4 interpolates into a provider command
-  // line, and review-provider.mjs validates neither - the OpenAI adapter sends
-  // `reasoning.effort` verbatim. A repo layer arrives with a clone
-  // (lib/config-merge.mjs states the threat), so without this check an
-  // out-of-vocabulary string - or an object - reaches the fire site unwarned.
-  // Same treatment as a bad gate: name it, let the schema default stand.
+  // A layer's tier or effort has to be one of the key's own values before it can win, like a gate: review-provider.mjs
+  // validates neither, and the OpenAI adapter sends `reasoning.effort` verbatim.
+  // A repo layer arrives with a clone, so an out-of-vocabulary string or an object would reach the fire site unwarned.
+  // Name it, schema default stands.
   for (const trigger of Object.keys(review)) {
     const tierKey = `review.triggers.${trigger}.tier`;
     const effortKeyName = `review.triggers.${trigger}.effort`;
@@ -1272,9 +713,7 @@ function resolve(opts) {
       setEffort = undefined;
     }
     const effortFor = setEffort !== undefined ? setEffort : effortDefault;
-    // `null`, never a dropped key: a missing entry in a map the fire site
-    // indexes reads as "this trigger has no answer", and an absent key and an
-    // unresolved one must not be the same shape to a caller.
+    // `null`, never a dropped key: the fire site indexes these maps, and absent must not look like unresolved.
     reviewerTiers[trigger] = tier ?? null;
     reviewerEfforts[trigger] = effortFor ?? null;
     const kept = [];
@@ -1305,9 +744,8 @@ function resolve(opts) {
       }
       kept.push(name);
     }
-    // The cause travels IN the return, never left to be inferred from a set
-    // that is smaller than the one the user configured. One warning per
-    // trigger, since the tier - and so the answer - is per trigger.
+    // The cause travels in the return instead of being inferred from a smaller set; one warning per trigger, as the
+    // tier is.
     if (kept.length && dropped.length) {
       warnings.push(`${trigger}: ${dropped.join('; ')}; dropped from the reviewer set, `
         + `leaving [${kept.join(', ')}]`);
@@ -1318,26 +756,10 @@ function resolve(opts) {
     reviewers[trigger] = kept.length ? kept : ['claude-subagent'];
   }
 
-  // The THIRD half of a fire (CST-02). The gate says whether `risk_surface`
-  // fires and `reviewers` says who to, and this says on WHAT: a heuristic match
-  // in a category outside the resolved set does not fire the trigger. Resolved
-  // here rather than read at the fire site (D-13) - a cost-control key whose
-  // enforcement is a model remembering to read a config value is the same shape
-  // as the `review.reviewers` substitution the map above closes.
-  //
-  // Absence means EVERYTHING, never nothing: the table's own category list is
-  // the answer when no layer wrote one, and `surfaces_answered` says which of
-  // the two it is, so a fire site can tell "the user chose all eight" from
-  // "nobody has answered yet" - the second is what the one-time ask keys on.
-  // Failing toward all eight is the only safe direction here (D-14): the
-  // alternative narrows the only blocking review trigger on evidence nobody
-  // supplied.
-  // The predicate itself lives in lib/surface-scan.mjs, because
-  // `planning.mjs risk-check run` REFUSES on the same answer this block
-  // REPORTS: two copies would let the seam that enforces the one-time question
-  // disagree with the resolve that names it. The wording of the warnings here
-  // stays in this file - the diagnostics are this face's, the rule is not, and
-  // the ANSWER itself was decided above the floor that is scoped by it.
+  // The third half of a fire: a category outside the resolved set doesn't fire `risk_surface`. Resolved here so a
+  // cost-control key doesn't depend on a model remembering to read config.
+  // Absence means all eight, never none, and `surfaces_answered` says which, so the one-time ask can tell them apart.
+  // The predicate lives in lib/surface-scan.mjs because `planning.mjs risk-check run` refuses on the same answer.
   if (wroteSurfaces !== undefined) {
     const { kept, bad } = decided;
     if (!Array.isArray(wroteSurfaces)) {
@@ -1347,15 +769,11 @@ function resolve(opts) {
       warnings.push(`review.triggers.risk_surface.surfaces: ${bad.map((x) => JSON.stringify(x)).join(', ')} `
         + `${bad.length === 1 ? 'is' : 'are'} not one of [${tableCategories.join(', ')}]`);
     }
-    // A list carrying ANY unrecognised entry fails SAFE - all categories stand
-    // and the question reads as unanswered - rather than resolving to its valid
-    // subset. `["auth", "secret"]` is a typo for `secrets`, not a decision to
-    // stop reviewing secret handling, and accepting the subset would suppress
-    // the one-time question forever while silently shrinking the only blocking
-    // gate. Widening is the safe direction; a warning the user may not read is
-    // not a substitute for it.
+    // A list with any unrecognised entry fails safe: all categories stand and the question reads as unanswered, not the
+    // valid subset. `["auth", "secret"]` is a typo for `secrets`, not a decision to stop reviewing secret handling, and
+    // the subset would hush the one-time question for good.
     if (kept.length && !bad.length) {
-      // decided.answered already carried this arm; nothing to set here.
+      // Nothing to set: decided.answered already covers this arm.
     } else if (bad.length) {
       warnings.push('review.triggers.risk_surface.surfaces carries an unrecognised entry; '
         + `all ${tableCategories.length} stand, and the surface question reads as unanswered`);
@@ -1365,31 +783,11 @@ function resolve(opts) {
     }
   }
 
-  // A per-role MODEL, from either of two keys and otherwise from nothing.
-  // `roles.<role>.model` names it outright and wins; `model.overrides.<role>`
-  // stays live as the narrower fallback for every role whose roles key is
-  // absent. With no cells grid there is no third source and no default model
-  // name: unset resolves `model: null`, which means NO model parameter is sent
-  // and the dispatch runs at the host session's own model (D-04, and no agent
-  // file under `agents/` carries a `model:` line, so that session model is
-  // exactly what runs). What neither key touches is effort: that is fixed per
-  // agent file in frontmatter, so a role whose model was chosen keeps its rung
-  // and its rung escalation - same reasoning depth, user's model.
-  //
-  // NEVER `ok:false` on a string the host does not accept, and never a
-  // pass-through either. A refusal drops the caller to the base agent
-  // (references/seams.md), which loses the RUNG as well as the model; a
-  // pass-through fails the host's own input validation on every dispatch rather
-  // than erroring gracefully. So the string is dropped, the parameter is
-  // omitted, and `warnings[]` names the key and the value - the one arm that
-  // costs the user nothing but the model they mistyped.
-  //
-  // `pinned` keeps its meaning - `model.overrides` chose this model - because
-  // references/seam-spawn-agent.md keys a per-dispatch ANNOUNCEMENT on it, and a
-  // flag that fired for every roles-block dispatch would be exactly the warning
-  // fatigue that file legislates against (D-11). `model_source` below is what a
-  // caller reads instead: the dotted key that chose the model, or `session`
-  // when nothing did - including when a key was set and its value was rejected.
+  // Model comes from `roles.<role>.model`, else the narrower `model.overrides.<role>`. Unset is `model: null`, the
+  // session's model. Neither touches effort, which is fixed per agent file.
+  // A string the host won't accept is dropped with a warning: ok:false would lose the rung with the model, and a
+  // pass-through fails the host's validation on every dispatch.
+  // `pinned` still means `model.overrides` chose it, because references/seam-spawn-agent.md keys an announcement on it.
   /** @type {string|null} */
   let model = null;
   let pinned = false;
@@ -1398,10 +796,8 @@ function resolve(opts) {
   const rolesModelKey = `roles.${opts.role}.model`;
   const pin = cfg.overrides[opts.role];
   if (rolesModel !== null && rolesModel !== undefined) {
-    // A roles key, once SET, owns the answer for this role whether or not the
-    // host accepts its value. Falling through to the pin on a rejected string
-    // would hand the role back to an older key the user has already replaced -
-    // silently, and only on the typo, which is the one case a user cannot see.
+    // A roles key, once set, owns the answer even if the host rejects it; falling through on a typo would hand the role
+    // back to a replaced key.
     if (pin != null) {
       warnings.push(`${rolesModelKey}=${JSON.stringify(rolesModel)} (config) decides this `
         + `role's model; model.overrides.${opts.role}=${JSON.stringify(pin)} does not apply`);
@@ -1432,15 +828,10 @@ function resolve(opts) {
     reason.push('no model key set; no model parameter, the session\'s model runs');
   }
 
-  // The routing family of the joined run record, one line per resolve. It
-  // carries the DECISION and never the diagnostic TEXT: `warning_count` is a
-  // count because the envelope below is what carries the strings, and a second
-  // copy of them would drift from it.
-  //
-  // Best effort in every direction. `appendEvent` never throws and never writes
-  // to a stream, and this whole block sits in its own try, so a trace that
-  // cannot be written leaves the envelope below byte-identical - a record of a
-  // decision may never be able to change the decision.
+  // The routing family of the run record, one line per resolve. It carries the decision, not the diagnostic text:
+  // `warning_count` is a count because the envelope has the strings.
+  // Best effort: `appendEvent` never throws and this sits in its own try, so a trace that can't be written leaves the
+  // envelope byte-identical.
   try {
     if (tracePhase !== null) {
       appendEvent(planningRoot, {
@@ -1450,10 +841,8 @@ function resolve(opts) {
         role: opts.role,
         agent,
         model,
-        // `model_source` takes the place `stakes` held (D-05). The level was
-        // the field that named what decided a dispatch, and every historical
-        // row carries one; with it gone, a record with no such field could not
-        // tell a `null` model the user asked for from one nothing was set for.
+        // `model_source` took `stakes`'s place: without it a `null` model the user asked for looks like one nothing
+        // set.
         model_source: modelSource,
         effort,
         escalated,
@@ -1462,38 +851,13 @@ function resolve(opts) {
         warning_count: warnings.length,
       });
     }
-  } catch { /* a record of a decision may never change the decision */ }
+  } catch { /* tracing must never change the answer */ }
 
-  // The bundle: four knobs, not a bare model. `review` is the whole
-  // trigger->gate map (no --trigger flag: the map rides on one resolve, and a
-  // flag would change the CONTRACTS entry for no reader), `reviewers` is the
-  // trigger->reviewer-set map beside it, `surfaces` + `surfaces_answered` are
-  // the risk_surface fire's scope and whether anyone chose it, and `verify` is
-  // the deep-verify switch the floor turns on. All three halves of a fire ride
-  // on ONE resolve.
-  //
-  // `stakes` and `stakes_set` are GONE from this envelope with the key itself.
-  // What they answered - which decision produced this dispatch - is
-  // `model_source`'s job now, and `reason` says the rest per key.
-  //
-  // `model_source` rides beside `pinned` rather than replacing it (D-11):
-  // `pinned` answers "must this dispatch be announced", `model_source` answers
-  // "which key chose this model" - `roles.<role>.model`,
-  // `model.overrides.<role>`, or the string `session` when no key did, which
-  // includes a key whose value the host does not accept. ALWAYS present and
-  // never a dropped key, for the reason the reviewer maps above state: a
-  // missing entry and an unresolved one must not be one shape. It is what makes
-  // `model: null` readable, since null is both the unset answer and the
-  // rejected-value answer, and only this field tells them apart.
-  //
-  // `agent_type` is the name a Cadence dispatch SENDS: plugin.json's name, `:`,
-  // the final `agent` (after any escalation, so the two never name different
-  // rungs). Cadence's own dispatches name their agents explicitly because a
-  // bare stem belongs to whoever owns that bare name - a user's own
-  // `cad-reviewer` in their agents folder - and a user agent's name cannot
-  // contain `:`, so a prefixed name is never theirs. `agent` stays the bare
-  // stem: it is the trace name and the mismatch name, and the routing event
-  // above carries it and not this field.
+  // `review` is the whole trigger -> gate map, `reviewers` the trigger -> reviewer-set map, `surfaces` and
+  // `surfaces_answered` the risk_surface scope, `verify` the deep-verify switch the floor turns on.
+  // `model_source` is always present, so `model: null` unset reads differently from `model: null` rejected.
+  // `agent_type` is plugin.json's name, `:`, then the final `agent`: a bare stem could be a user's own `cad-reviewer`.
+  // `agent` stays the bare stem because it's the trace name.
   const prefixed = prefixedAgentType(agent);
   if (prefixed.reason) reason.push(prefixed.reason);
   out({ ok: true, role: opts.role, agent, agent_type: prefixed.agentType, model, model_source: modelSource, effort, review, reviewers, reviewers_global: cfg.reviewersGlobal, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
@@ -1501,66 +865,30 @@ function resolve(opts) {
 
 // --- arg parsing -------------------------------------------------------------
 
-// The whole synopsis, printed when `--role` is ABSENT rather than merely
-// valueless: with no role there is no call to describe, so the refusal is the
-// help. A role present with nothing usable after it gets the specific sentence
-// in the table below instead - the caller who wrote `--role "$R"` against an
-// unset variable knows what a role is and needs to be told which token vanished.
+// The whole synopsis, printed when `--role` is absent rather than valueless: with no role there's no call to describe,
+// so the refusal is the help.
+// A role with nothing usable after it gets the specific sentence in the table below.
 const SYNOPSIS = 'resolve --role <name> [--attempt N] [--file <config>] [--phase N]'
   + ' [--plan <key>] [--bracket-read <csv> [--bracket-plan <key>]]';
 
-// The five value-carrying flags of `resolve`, each read through its DECLARED
-// row in lib/arg-contract.mjs (ARG-06). The rows own the RULE - required-ness,
-// which classifier judges the value, and what a malformed or valueless one
-// costs - and this table owns only the SENTENCE, because route.mjs mints no
-// reason code of its own (D-07): every refusal here is this bin's own `usage`,
-// in the wording it already published.
-//
-// THE DEFECT THIS ENDS. The loop this replaced read a value as `a[++i]` with no
-// flag-shape test, so a flag ate the flag after it: measured 2026-08-19,
-// `route.mjs resolve --role --attempt 2` returned
-// `{"ok":false,"reason":"unknown-role","role":"--attempt"}` - a refusal about a
-// role the caller never named, with the attempt silently reverted to 1, which
-// is the exact shape lib/seam-input.mjs's `flagValue` was written against. The
-// declared rows refuse the missing, empty and flag-shaped spellings by one rule.
-//
-// ORDER IS LOAD-BEARING: the first failing flag names the refusal, and this is
-// the order the five `else if` arms ran in, so a call malformed in two places
-// still reports the same one it reported before.
-//
-// `--phase` IS here now, and that is a reversal worth naming. It declared `warn`
-// and was read separately, on the reasoning that a `usage` refusal would route
-// the phase lower than its own risk baseline - which was true while it named
-// only the phase a trace event is keyed to. It is a FLOOR input since CER-01, so
-// warn-and-continue answers a typo by computing a floor from the CURSOR's phase:
-// a different phase's declared files, at a level the resolved bundle gives the
-// caller no way to notice is wrong. Refusing is loud at the call site, and the
-// lower-than-baseline objection does not survive the change - an ok:false there
-// is a caller that must FIX its argument, not a caller that silently proceeds.
+// The rows in lib/arg-contract.mjs own each flag's rule and this table owns only the sentence, since route.mjs mints
+// no reason code of its own: every refusal is `usage`. Order is load-bearing, the first failing flag names the refusal.
+// `--phase` refuses instead of warning, because a warning would compute a floor off the cursor's phase unnoticed.
 const RESOLVE_FLAGS = {
   '--role': ['role', 'resolve --role needs a role name after it: --role <name>'],
   '--attempt': ['attempt', 'resolve --attempt must be an integer'],
-  // `o.file` reaches `dirname()` on the way to the layer read, so a valueless
-  // one escaped as reason:"internal" carrying a raw Node type error. Both
-  // spellings, matching config.mjs's own guard - unquoted `$VAR` drops the
-  // token, quoted `"$VAR"` passes an empty one - and defaulting either to
-  // .planning/config.json would answer about a file the caller never named.
+  // `o.file` reaches `dirname()`, so a valueless one used to escape as "internal" with a raw Node type error. Refuses
+  // both spellings, like config.mjs: unquoted `$VAR` drops the token, quoted `"$VAR"` passes an empty one, and
+  // defaulting either would answer about a file nobody named.
   '--file': ['file', 'resolve --file needs a path after it: --file <config file>'],
-  // The bracket pair: `--bracket-read` switches the lifecycle dispatch event on
-  // and carries the site's read-set (ONE comma-separated value, like `trace
-  // append --read`); `--bracket-plan` is the worker key when it is not the role
-  // name (an executor's plan number). Recording a bracket for a read-set the
-  // caller never named would claim a site read nothing when the token merely
-  // went missing.
+  // `--bracket-read` switches the lifecycle dispatch event on and carries the site's read-set (one comma-separated
+  // value); `--bracket-plan` is the worker key when it isn't the role name.
+  // Recording a bracket for a read-set nobody named would claim a site read nothing when a token merely went missing.
   '--bracket-read': ['bracketRead', 'resolve --bracket-read needs a comma-separated path list after it'],
   '--bracket-plan': ['bracketPlan', 'resolve --bracket-plan needs a worker key after it'],
-  // The risk floor's SCOPE: with it the floor reads that one plan's declared
-  // files, without it the phase's union. Refused on both axes, unlike
-  // `--bracket-plan` above, because a valueless one would silently widen a
-  // caller that asked about one plan to the whole phase.
+  // The floor's scope. Refused when valueless, unlike `--bracket-plan`: it would silently widen to the whole phase.
   '--plan': ['plan', 'resolve --plan needs a plan key after it: --plan <k>'],
-  // Last, so the four flags that were already refused keep naming the refusal
-  // first on a call malformed in two places (see ORDER IS LOAD-BEARING above).
+  // Last, so the older flags still name the refusal first on a call malformed in two places.
   '--phase': ['phase', 'resolve --phase must be a phase number: --phase <N|N.M>'],
 };
 
@@ -1573,29 +901,22 @@ function parseArgs(a) {
       o.usage = flag === '--role' && !a.includes(flag) ? SYNOPSIS : detail;
       return o;
     }
-    // A `fallback` or absent flag reads as undefined and leaves this object's
-    // own default in place; no row here declares `warn`, so no value arrives
-    // carrying a diagnostic.
+    // A `fallback` or absent flag reads undefined and leaves this object's default; no row here declares `warn`.
     if (parsed.value !== undefined) o[key] = parsed.value;
   }
-  // An ABSENT `--phase` still falls to the STATE cursor, unchanged: the loop
-  // above is a VALUE door and a flag nobody passed reaches no row.
+  // An absent `--phase` still falls to the STATE cursor: the loop above is a value door, and a flag nobody passed
+  // reaches no row.
   return o;
 }
 
-// Every agent file stem Cadence ships, the only names `agent-type` will prefix.
-// A typo or an already-prefixed `cadence:cad-reviewer` is refused here rather
-// than handed back as an unknown type or a doubled prefix.
+// Every agent file stem Cadence ships. A typo or an already-prefixed name is refused instead of doubling the prefix.
 const AGENT_STEMS = new Set(Object.values(RUNG_FILES).flatMap((rungs) => Object.values(rungs)));
 
 /**
- * `agent-type --stem <name>`: the prefixed name for a dispatch that resolves
- * no routing - `/cad-minimalism-review` and `/cad-decision-review` send the
- * base `cad-reviewer` at the session default. It reads no config layer, picks
- * no rung and appends no trace event, so those workflows' "resolves no routing
- * at all" stays true. The prefix and its fallback come from the same
- * `prefixedAgentType` `resolve` calls. Every refusal is `usage` and names
- * `--stem`.
+ * `agent-type --stem <name>`: the prefixed name for a dispatch that resolves no routing (`/cad-minimalism-review`,
+ * `/cad-decision-review`). Reads no config, picks no rung and appends no trace event, so those workflows' "resolves no
+ * routing at all" stays true. Prefix and fallback come from the same `prefixedAgentType` `resolve` calls. Every refusal
+ * is `usage` and names `--stem`.
  * @param {string[]} a
  */
 function agentType(a) {
@@ -1614,10 +935,7 @@ function agentType(a) {
 }
 
 try {
-  // FATAL: every review gate, tier and effort this resolve answers is a schema
-  // default now, and so is every role's start rung, so a schema it cannot read
-  // is a bundle it cannot build. Falling back to a hand-kept copy of the
-  // defaults is exactly the second opinion this phase deleted.
+  // Fatal: every gate, tier, effort and start rung is a schema default, and a hand-kept copy would be a second opinion.
   try {
     SCHEMA = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'));
   } catch (e) {
@@ -1627,11 +945,7 @@ try {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
   if (cmd === 'resolve') {
-    // The argument-shape refusal carries no `warnings` on purpose: it fails on
-    // ARGUMENT SHAPE before any config file is named, so there is no layer whose
-    // diagnostics could ride along. Every other ok:false return does carry them
-    // (D-04). One arm where five stood, because `parseArgs` now names the
-    // refusal from the declared row that produced it.
+    // The argument-shape refusal carries no `warnings`: it fails before any config file is named, so no layer was read.
     const o = parseArgs(argv.slice(1));
     if (o.usage) out({ ok: false, reason: 'usage', detail: o.usage });
     else resolve(o);

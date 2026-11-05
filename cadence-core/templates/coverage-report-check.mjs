@@ -1,16 +1,11 @@
 #!/usr/bin/env node
-// coverage-report-check.mjs - enforces the accepted coverage thresholds for the
-// stacks whose own tool cannot: Python (coverage.py JSON), Go (`go tool cover
-// -func`) and Rust on nightly (LCOV). Copied into a project, so it imports
-// `node:` builtins only and cannot reach cadence-core/.
+// enforces the accepted coverage thresholds for stacks whose own tool can't: Python, Go and Rust (LCOV)
+// copied into projects, so node: builtins only and no reaching into cadence-core/
 //
 //   node coverage-report-check.mjs --format python|go|lcov --report <path> [--policy <path>]
 //
-// Thresholds, scope and accepted commands come from the policy file (default
-// .github/cadence/coverage-policy.json). One line per metric; exit 1 when any
-// metric fails, naming each failing one. A metric is never estimated: a missing,
-// empty or unusable report fails, a threshold above 0 with no data fails, and a
-// threshold of 0 prints as disabled, never as satisfied.
+// one line per metric, exit 1 when any fails. Nothing is estimated: a missing or empty report fails,
+// so does a threshold above 0 with no data, and a threshold of 0 prints as disabled
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
@@ -43,8 +38,7 @@ if (!['python', 'go', 'lcov'].includes(format) || !reportPath) {
 let policy;
 try { policy = JSON.parse(read(policyPath, 'policy')).coverage; } catch { policy = undefined; }
 if (!policy || typeof policy !== 'object') { fail(`policy: ${policyPath} is not a usable coverage policy`); finish(); }
-// Only an explicit 0 disables a metric: a missing or non-numeric threshold is a
-// broken policy, never a silent 0.
+// only an explicit 0 disables a metric: a missing or non-numeric threshold is a broken policy, never a silent 0
 const METRICS = ['lines', 'branches', 'statements'];
 for (const m of METRICS) {
   if (!Number.isFinite(policy[m])) fail(`policy: ${m} threshold is missing or not a number in ${policyPath}`);
@@ -55,8 +49,7 @@ const threshold = (m) => policy[m];
 const text = read(reportPath, 'report');
 if (!text.trim()) { fail(`report: ${reportPath} is empty`); finish(); }
 
-// metrics: name -> [covered, total], or a string naming why the format has none.
-// zeroBranchesOk: true when a zero branch total may read as "not applicable".
+// name -> [covered, total], or a string saying why the format has none; zeroBranchesOk lets zero branches read as n/a
 const metrics = {};
 let zeroBranchesOk = false;
 
@@ -88,7 +81,7 @@ if (format === 'python') {
 } else if (format === 'go') {
   const m = /^total:\s+\(statements\)\s+([\d.]+)%/m.exec(text);
   if (!m) { fail(`report: ${reportPath} has no "total: (statements)" line`); finish(); }
-  // go reports a percentage only; scale to an integer ratio so the comparison stays exact.
+  // go reports a percentage only, so scale to an integer ratio and keep the comparison exact
   metrics.statements = [Math.round(Number(m[1]) * 100), 10000];
   metrics.lines = 'Go reports statements, not lines';
   metrics.branches = 'Go reports no branches';
@@ -98,9 +91,9 @@ if (format === 'python') {
   if (!/^LF:\d+/m.test(text)) { fail(`report: ${reportPath} has no LCOV line records`); finish(); }
   metrics.lines = [sum('LH'), sum('LF')];
   metrics.statements = 'LCOV reports lines, not statements';
-  // No BRF record at all is absent data, not a measured zero.
+  // no BRF record at all is absent data, not a measured zero
   metrics.branches = /^BRF:\d+/m.test(text) ? [sum('BRH'), sum('BRF')] : 'the report has no BRF branch records';
-  // BRF:0 alone cannot prove instrumentation; --branch in an accepted command does.
+  // BRF:0 alone can't prove instrumentation; --branch in an accepted command does
   zeroBranchesOk = (policy.commands || []).some((c) => /(^|\s)--branch(\s|=|$)/.test(String(c)));
 }
 

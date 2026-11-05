@@ -1,175 +1,31 @@
 // @ts-check
-// arg-contract.mjs - the ONE statement of what a seam CLI's flags may be, and
-// the ONE evaluator that classifies a value against that statement (ARG-06).
-//
-// THE DEFECT IT ENDS. Every bin script wrote its own argument refusals: 79
-// `fail('bad-args', ...)` sites in planning.mjs alone, eleven "needs a <thing>
-// after it" sentences, four separate argv parsers. A rule restated nine times
-// is a rule nine files can disagree about, and they did - `planning.mjs status
-// --dir ''` answered ok:true about `./.planning`, a tree the caller never
-// named, while `git-branch.mjs tags --dir ''` refused the identical spelling.
-// So the rules are DECLARED here, once, and a tenth seam inherits them rather
-// than restating them.
-//
-// THE DECLARATION IS WHAT REFUSES, and that sentence was once bigger than the
-// truth. The table declared 98 rows for planning.mjs and that script consulted
-// two of them, so a row could say `refuse` while the CLI wrote the value
-// through - `cursor set --name` with nothing after it answered ok:true and
-// wrote `Phase: 1 of 5 (true)` into STATE.md. An adopting bin now runs its
-// RESOLVED ROW at the door of its dispatch (`subcommandKey` then
-// `evaluateRow`) rather than restating the rule at each handler, and
-// arg-contract-adoption.test.mjs walks the whole table against the shipped
-// binaries so a declared refusal nothing carries out reddens. What that census
-// cannot catch is stated where it lives: a row declaring only `fallback` or
-// `warn` has no refusal arm to exercise.
-//
-// PRESENCE IS THE STATED EXCEPTION. `evaluateRow` is a VALUE door: it judges
-// only the flags a caller actually PASSED, and a genuinely ABSENT flag is
-// answered by the bin that owns the wording. review-provider.mjs has held that
-// position in code since its adoption - its `parseArgs` skips a flag with `if
-// (!rest.includes(flag)) continue;` - and this is where it is written down.
-// The reason is that the diagnostics for a missing enum-valued flag are not
-// expressible in a declaration: `capture --kind must be one of todo | seed |
-// note` and `milestone-prune needs --mode <delete|archive>` would each become
-// one generic sentence. So `required` below records a fact for the bins that
-// choose to read it (route.mjs's `--role`, review-provider.mjs's handlers),
-// never a rule the shared door enforces.
-//
-// ONE PRESENCE QUESTION IS DECLARABLE, and it is a different question from the
-// one that carve-out answers: not "is this flag missing" but "does this VALUE
-// oblige one of these flags". `PRESENCE_RULES` states those and
-// `evaluatePresence` answers them. The carve-out above is untouched, because
-// the sentence an UNCONDITIONALLY required flag would need is the generic one
-// it rejects, while a conditional rule's diagnostic IS the flags it names.
-// They are a SECOND declared structure beside `CONTRACTS` and never a fifth
-// field inside a row: `flagNames` is `Object.keys(row)`, self-verify check 2
-// unions those keys as the FLAG names prose may spell, planning/trace.mjs's
-// `TRACE_GRAMMAR` spreads both trace rows as flag specs, and
-// arg-contract.test.mjs asserts every row key holds exactly `bare`, `required`,
-// `type` and `value` - all four would read a non-flag key as a flag name.
-//
-// TWO HALVES, both in this file (D-06/D-10). The declarations are DATA - per
-// script, per subcommand, per flag - and the evaluator is a pure CLASSIFIER
-// beside them. Data alone would be a second table drifting from the code that
-// refuses; a helper alone would not be the declarative thing ARG-06 asks for.
-// The precedent for the pair is already here: config.schema.json is 77
-// declarative key specs read by config.mjs, and lib/require-int.mjs,
-// lib/text-flag-file.mjs and lib/plan-key.mjs are pure classifiers whose
-// headers each state that the CALLER owns the reason string.
-//
-// WHAT A FLAG DECLARES is a complete grammar, four fields, no defaults:
-//
-//   required  absent-and-required is a refusal; absent-and-optional lets the
-//             caller's own default answer. Required-ness is per SUBCOMMAND and
-//             never per flag - `risk-check run` requires `--base` while
-//             `risk-check status` takes the same flag optionally - so folding
-//             two faces onto one row would state a bound one of them does not
-//             hold. `--head` is no longer the example: `risk-check run` takes
-//             exactly one of `--head`/`--staged`, which is an EITHER-OR the
-//             four fields cannot state and the seam checks itself.
-//   type      which of this tree's EXISTING classifiers judges the value.
-//             Never a re-derived predicate: `int` is lib/require-int.mjs's
-//             `requireInt`, `cursor` its `requireCursorNumber`, `phase` its
-//             `requirePhaseArg`, `plan-key` is lib/plan-key.mjs's
-//             `requirePlanKey`. `string` is the non-blank rule planning.mjs
-//             hand-writes at its two `--root` guards, trim clause included.
-//             `boolean` is for the flags whose BARE FORM IS THE VALUE
-//             (`--undo`, `--dry-run`, `--global`, `--events`, `--join`,
-//             `--list`, `--stats`, `--no-numbers`); without it a door reading
-//             one would call the only spelling it has malformed.
-//   value     what happens when a value is present and fails the type.
-//   bare      what happens when the flag is present with nothing usable after
-//             it. SEPARATE from `value` on purpose (D-05): planning.mjs's
-//             shared `trace append|close` body already runs both side by side -
-//             `--step`, `--reviewer`, `--trigger` and `--role` refuse a bare
-//             flag while `--plan`, `--sha` and `--base` silently drop one - and
-//             a single disposition would either start refusing every shipped
-//             `trace close` that omits `--plan`, or extend the drop to the
-//             three refusals written against exactly the complete-looking event
-//             that defeats attribution.
-//
-// THE DISPOSITION VOCABULARY IS EXACTLY THREE WORDS (D-04), because all three
-// are reasoned positions already shipped in this tree and a contract that made
-// every typed flag refuse would reverse two of them at once:
-//
-//   refuse    the seam answers ok:false naming the flag. lib/seam-input.mjs's
-//             `flagValue` is this disposition written out by hand.
-//   warn      the value is kept RAW and the caller records a warning. NO row
-//             declares it today: route.mjs's `--phase` did until it became an
-//             input to the risk FLOOR and flipped to `refuse` (CER-01 D-09).
-//             The word stays in the vocabulary and the evaluator keeps the arm,
-//             pinned by arg-contract.test.mjs's synthetic rows, because the
-//             disposition is a reasoned position and not a dead branch - a
-//             value a seam must SEE rather than lose is the shape it answers,
-//             and deleting it would make the next such flag a `refuse` by
-//             default rather than by decision.
-//   fallback  the flag reads as absent so the caller's own `|| default` or
-//             key-omission answers. issue-check.mjs's `--timeout-ms` is the
-//             case on the value axis - that seam's whole contract is that it
-//             never fails a land - and the `trace append` drop-on-bare spreads
-//             are the case on the bare axis. Dropping a bare flag IS fallback
-//             and gets no fourth word: the bare form reads as absent, which is
-//             precisely what the caller's default already answers.
-//
-// ONE FLAT RETURN ON BOTH PATHS, never a JSDoc discriminated union (D-11).
-// tsconfig.ci.json runs `checkJs: true` with `strict: false` over every
-// non-test .mjs under cadence-core/bin, and lib/text-flag-file.mjs's header
-// records a MEASURED TS2339 at its first call site from exactly that pattern.
-// The three answers are read off two fields rather than a third: `ok:false` is
-// a refusal, `ok:true` with a non-empty `detail` is a warning, `ok:true` with
-// an empty one is an accepted value or a fallback. `detail` carries the FLAG
-// NAME and nothing else - the caller owns its `reason` string and its wording,
-// the way lib/require-int.mjs leaves `bad-args` vs `usage` to its callers
-// (D-07: this module mints no reason code of its own).
-//
-// THE TABLE MOVED HERE, it was not copied (D-06). `CONTRACTS` was defined in
-// self-verify.mjs beside the prose lint that reads it; it is defined here now
-// and self-verify.mjs imports it. Two tables is the drift ARG-06 exists to end
-// reintroduced by the fix - a flag added to one and not the other is either
-// silently accepted at the CLI or reported `unknown-flag` against correct
-// prose. The prose side reads flag NAMES through `flagNames` rather than
-// spreading a row, so the lint keeps working now that a row is a grammar.
-//
-// TWO MECHANISMS, PICKED PER BIN (D-08), because both ship here and
-// harmonizing them would break one side. `evaluateFlag` RETURNS a
-// classification and the caller names the refusal: that is the only form
-// planning.mjs, route.mjs and config.mjs can use, since none of them holds an
-// `e.seam` catch arm and a throwing contract there surfaces every argument
-// refusal as `{"ok":false,"reason":"internal","detail":"[object Object]"}`.
-// `requireFlag` is the same classification RAISED as lib/seam-input.mjs's
-// refusal object, for the seven bins that already hold that arm and already
-// answer `missing-flag-value` through it - the disposition they were written
-// with, now read off a declared row instead of a hand-written `flagValue` call.
-//
-// PURE. It never emits, never reads `process` or the environment, never touches
-// the filesystem, and holds no state. The caller owns its envelope.
-//
-// ONE HARD BOUNDARY: this module governs VALUE grammar only. It never refuses
-// an UNDECLARED flag at runtime - flag membership is self-verify check 2's
-// prose-side job, and a runtime refusal would break callers no decision here
-// asks about. Nor does it own any refusal WORDING: the caller composes the
-// sentence, which is what leaves a bin free to keep a diagnostic no row can
-// state (planning.mjs's decimal-phase answer is the case). The table's own completeness is likewise a TEST-time question,
-// not a runtime one: arg-contract.test.mjs walks every row and reddens on a
-// missing or misspelled field, so the evaluator carries no spec-validation
-// branch that would only ever fire on a table this repo cannot ship.
+// arg-contract.mjs - the one statement of what a seam CLI's flags may be, and the one evaluator that classifies them.
+// Every bin wrote its own refusals and they disagreed: `planning.mjs status --dir ''` said ok:true about a tree
+// nobody named while `git-branch.mjs tags --dir ''` refused the same spelling.
+// A bin runs its row at its dispatch door, and arg-contract-adoption.test.mjs reddens on a refusal nothing carries out.
+// Value grammar only: it never refuses an undeclared flag (the prose lint owns that) and owns no wording. Pure, no I/O.
 'use strict';
 
 import { flagValue, missingFlagValue } from './seam-input.mjs';
 import { requireInt, requireCursorNumber, requirePhaseArg } from './require-int.mjs';
 import { requirePlanKey } from './plan-key.mjs';
 
-/** The whole disposition vocabulary. Three words, stated once (D-04). */
+// Three words, all positions already shipped; making every typed flag refuse would reverse two of them.
+//   refuse    ok:false naming the flag, which lib/seam-input.mjs's `flagValue` does by hand.
+//   warn      the value is kept raw and the caller records a warning. No row declares it today, but the arm stays
+//             so the next such flag is a decision.
+//   fallback  the flag reads as absent so the caller's own `|| default` answers. A dropped bare flag is fallback too.
 export const DISPOSITIONS = Object.freeze(['refuse', 'warn', 'fallback']);
 
-/** The whole type vocabulary. Each name is an EXISTING classifier's home. */
+// Each type is an existing classifier, never a re-derived predicate: `int` is requireInt, `cursor` requireCursorNumber,
+// `phase` requirePhaseArg, `plan-key` requirePlanKey. `string` is the non-blank rule planning.mjs hand-writes at its
+// two `--root` guards. `boolean` is for flags whose bare form is the value (`--dry-run`, `--global`); without it a door
+// would call the only spelling the flag has malformed.
 export const TYPES = Object.freeze(['string', 'boolean', 'int', 'cursor', 'phase', 'plan-key']);
 
 /**
- * Flatten a classifier's `{ok:true, <key>} | {ok:false}` union into the one
- * flat shape this module speaks. The single cast lives here rather than at
- * five call sites, which is the same reason lib/text-flag-file.mjs returns one
- * shape: a JSDoc union costs its readers a TS2339 under `strict: false`.
+ * Flattens a classifier's `{ok:true, <key>} | {ok:false}` union into the one flat shape this module speaks.
+ * Not a JSDoc discriminated union: with `strict: false` in tsconfig.ci.json that pattern hit a TS2339.
  * @param {{ok: boolean}} r @param {string} [key] the accepted field's name
  * @returns {{ok: boolean, value: any}}
  */
@@ -179,20 +35,14 @@ function flat(r, key = 'value') {
 }
 
 /**
- * type -> the classifier that judges a PRESENT value. `boolean` is absent on
- * purpose: its whole grammar is presence, answered before this map is reached.
- *
- * `phase` yields the CALLER's own trimmed spelling rather than the parsed
- * number, because lib/require-int.mjs states that a phase is a directory
- * component as well as an arithmetic value and `String(Number('1.10'))` reads a
- * different phase's directory. A caller needing the arithmetic half applies
- * `Number()` to a spelling already proven clean.
+ * type -> the classifier that judges a present value. `boolean` is absent on purpose: its grammar is presence,
+ * answered before this map is reached.
+ * `phase` yields the caller's own trimmed spelling, not the parsed number, because a phase is a directory component
+ * as well as a number and `String(Number('1.10'))` reads a different phase's directory.
  * @type {Record<string, (raw: string) => {ok: boolean, value: any}>}
  */
 const CLASSIFIERS = {
-  // Non-blank, not merely non-empty: planning.mjs's two `--root` guards test
-  // `opts.root.trim() === ''` because `--root "   "` otherwise fell through to
-  // a `no-root` ENOENT - one refusal vocabulary answering in two.
+  // non-blank, not just non-empty: `--root "   "` used to fall through to a `no-root` ENOENT, so planning.mjs trims too
   string: (raw) => ({ ok: raw.trim() !== '', value: raw }),
   int: (raw) => flat(requireInt(raw)),
   cursor: (raw) => flat(requireCursorNumber(raw)),
@@ -201,45 +51,24 @@ const CLASSIFIERS = {
 };
 
 /**
- * Apply one disposition. `raw` is the caller's own spelling, kept by `warn`
- * and discarded by the other two.
- *
- * The `fallback` arm is where lib/seam-input.mjs's second flag reader ENDED UP
- * (D-09). That module used to export a permissive positional reader beside
- * `flagValue`, for the flags whose `|| default` was the whole contract, and the
- * five bins that copied it read the NEXT FLAG as a value when one was given
- * with nothing after it - `decide --branch --dir <p>` answered `--dir` as the
- * branch name (D-13). Declaring `fallback` is the same "reads as absent"
- * answer without that: the token is never consulted at all.
- * helper-census.test.mjs's row for that reader moved here with it and pins THIS
- * arm's body to this file, so the disposition has exactly one spelling. What it
- * can no longer catch is a hand-written positional reader pasted into a bin
- * under a new name: that idiom is not a shared contract any more, it is just an
- * expression, and what refuses it is the declaration this module requires.
- *
+ * Applies one disposition. `raw` is the caller's own spelling, kept by `warn` and dropped by the other two.
+ * `fallback` reads as absent without consulting the token: the old permissive reader took the next flag as a value
+ * (`decide --branch --dir <p>` answered `--dir` as the branch name). helper-census.test.mjs pins this arm's body here.
  * @param {string} disposition @param {string} flag @param {string|undefined} raw
  * @returns {{ok: boolean, value: any, detail: string}}
  */
 function dispose(disposition, flag, raw) {
   if (disposition === 'refuse') return { ok: false, value: undefined, detail: flag };
-  // The value survives so the caller can name it in the warning and still
-  // resolve. No shipped row declares this today (see the vocabulary above); the
-  // arm is what makes `warn` a choice a later flag can be given.
+  // the value survives so the caller can name it in the warning and still resolve; no shipped row declares it today
   if (disposition === 'warn') return { ok: true, value: raw, detail: flag };
-  // fallback: the flag reads as absent and the caller's own default answers.
   return { ok: true, value: undefined, detail: '' };
 }
 
 /**
- * Classify ONE occurrence of `flag` against its declaration. `tail` is `argv`
- * sliced so that occurrence sits at index 0, which is what lets `flagValue` -
- * an `indexOf` reader that answers about the FIRST spelling it finds - be
- * consulted per occurrence instead of re-spelled here.
- *
- * The absent arm is deliberately not this function's: `tail` starts AT an
- * occurrence, so `flagValue` never answers `undefined`, and absence is a fact
- * about the whole list rather than about one position in it.
- *
+ * Classifies one occurrence of `flag` against its declaration. `tail` is `argv` sliced so that occurrence sits at
+ * index 0, which lets `flagValue`, an indexOf reader that answers about the first spelling it finds, be consulted
+ * per occurrence instead of re-spelled here. Absence isn't this function's: `tail` starts at an occurrence, so
+ * `flagValue` never answers undefined there.
  * @param {string[]} tail @param {string} flag
  * @param {{required: boolean, type: string, value: string, bare: string}} spec
  * @returns {{ok: boolean, value: any, detail: string}}
@@ -257,41 +86,19 @@ function evaluateOccurrence(tail, flag, spec) {
 }
 
 /**
- * Classify `flag`'s value in `argv` against its declaration.
- *
- * ABSENT and PRESENT-WITH-NOTHING-USABLE are different inputs and are answered
- * by different fields of the spec. The split is read off `flagValue`, which
- * already draws that line for the whole seam layer - it returns `undefined`
- * only for a genuinely absent flag and throws for the missing, empty and
- * flag-shaped spellings - so the rule is CONSULTED here rather than re-spelled
- * (helper-census.test.mjs pins its body to lib/seam-input.mjs, and a second
- * copy is what silently drifts). The throw is caught and turned into a
- * classification: THIS function never throws at its caller. `requireFlag`
- * below is the throwing half, for the bins that hold an `e.seam` arm.
- *
- * EVERY OCCURRENCE IS JUDGED, not just the first. `flagValue` answers about
- * the first spelling, but the bins' own parsers do not agree with it on which
- * one wins - planning.mjs's `parseArgs` keeps the LAST - so a row declaring
- * `refuse` was bypassable by repeating the flag: `cursor set --phase 1 --total
- * 5 --status planned --next /x --name valid --name` passed this door on
- * `valid` and then wrote boolean `true` through as the phase name, the exact
- * corruption the declaration exists to refuse. A declaration that holds only
- * at the position one reader happens to pick is not a contract, so the
- * refusing occurrence wins wherever it sits; a warning one wins over a clean
- * one for the same reason, and only when nothing else fired does the first
- * occurrence's accepted value stand.
- *
+ * Classifies `flag`'s value in `argv` against its declaration. Absent and present-with-nothing-usable differ:
+ * `flagValue` answers undefined only for an absent flag and throws for the missing, empty and flag-shaped spellings.
+ * Here that throw becomes a classification, so this never throws; `requireFlag` is the throwing half.
+ * Every occurrence is judged: `flagValue` reads the first but `parseArgs` keeps the last, so a repeated flag
+ * (`cursor set ... --name valid --name`) once slipped past a `refuse` row. A refusal wins wherever it sits,
+ * then a warning beats a clean one.
  * @param {string[]} argv the argument list, subcommand words included
  * @param {string} flag the flag as it is spelled on the command line (`--dir`)
  * @param {{required: boolean, type: string, value: string, bare: string}} spec
- * @returns {{ok: boolean, value: any, detail: string}} `ok:false` refuses
- *   naming the flag in `detail`; `ok:true` with a non-empty `detail` is a
- *   warning; `ok:true` with an empty one is an accepted value or a fallback.
+ * @returns {{ok: boolean, value: any, detail: string}} `ok:false` refuses; `detail` on `ok:true` is a warning
  */
 export function evaluateFlag(argv, flag, spec) {
-  // A boolean flag's whole grammar is presence: `--dry-run` has no value to be
-  // malformed and no bare form to be missing one, so neither disposition can
-  // fire and an absent one is `false` rather than `undefined`.
+  // a boolean flag's grammar is presence: neither disposition can fire, and an absent one is false, not undefined
   if (spec.type === 'boolean') return { ok: true, value: argv.includes(flag), detail: '' };
 
   /** @type {{ok: boolean, value: any, detail: string}|undefined} */
@@ -313,24 +120,13 @@ export function evaluateFlag(argv, flag, spec) {
 }
 
 /**
- * The same classification, RAISED rather than returned (D-08), for the seam
- * bins whose dispatch already ends in an `e.seam` catch arm that emits
- * `{ok:false, reason:e.seam, detail:e.detail}` on one stdout line. It is the
- * form those seven bins were already written in - each read `--dir` through
- * `flagValue` and caught its throw - so adopting a declared row costs them no
- * new control flow and mints no new reason code (D-07): the refusal object is
- * lib/seam-input.mjs's own `missingFlagValue`, and `missing-flag-value` is the
- * code those bins already publish.
- *
- * A `fallback` row never reaches the throw - it is `ok:true` with an undefined
- * value, so the caller's own `|| default` answers exactly as it did when the
- * flag was read through the permissive reader (D-12). A `warn` row would return
- * its raw value here and drop the diagnostic, which is why no bin using this
- * entry point declares one: `warn` belongs to the returning form, where the
- * caller can word the warning. No shipped row declares it at all since
- * route.mjs's `--phase` flipped to `refuse` (CER-01 D-09).
- *
- * @param {string[]} argv @param {string} flag @param {{required: boolean, type: string, value: string, bare: string}} spec
+ * The same classification raised, not returned, for the seven bins whose dispatch ends in an `e.seam` catch arm.
+ * They already read `--dir` through `flagValue`, so a declared row adds no control flow and no reason code.
+ * planning.mjs, route.mjs and config.mjs hold no such arm: a throw there would surface as reason "internal", so
+ * they use `evaluateFlag`. A `fallback` row never reaches the throw; a `warn` row would drop its diagnostic here.
+ * @param {string[]} argv
+ * @param {string} flag
+ * @param {{required: boolean, type: string, value: string, bare: string}} spec
  * @returns {any} the accepted value, or `undefined` for an absent or
  *   fallback-dispositioned flag. Never returns on the refusing path.
  */
@@ -341,21 +137,10 @@ export function requireFlag(argv, flag, spec) {
 }
 
 /**
- * Resolve a script's leading positional WORDS to the subcommand KEY its table
- * is filed under.
- *
- * The BARE form - no words at all, or a first word that is really a flag -
- * resolves to the `''` key, which is what stops a reader taking a first flag
- * for a subcommand: `weight.mjs --root <path>` reported `unknown-subcommand`
- * until that arm existed. A second word is consumed only when the script's
- * table declares the two-word key, so `cursor set` resolves to `cursor set`
- * while `recall some query` resolves to `recall`. Both planning.mjs and
- * self-verify.mjs's prose lint resolve through here, so they reach the same row
- * for the same words.
- *
- * A key the table does not declare comes back as the first word, and the caller
- * decides whether that is a refusal (planning.mjs's `usage` line) or a report
- * (self-verify.mjs's `unknown-subcommand` problem).
+ * Resolves a script's leading positional words to the subcommand key its table is filed under.
+ * The bare form (no words, or a first flag) is `''`, or `weight.mjs --root <path>` reports `unknown-subcommand`.
+ * A second word counts only if the table declares the pair: `cursor set` is one key, `recall some query` is `recall`.
+ * An undeclared key comes back as the first word, and the caller decides whether that's a refusal or a report.
  * @param {string[]} words the positional words, subcommand first
  * @param {Record<string, unknown>} table the script's `CONTRACTS` row
  * @returns {string} the table key, `''` for the bare form
@@ -367,38 +152,16 @@ export function subcommandKey(words, table) {
 }
 
 /**
- * Apply a whole resolved ROW's value grammar to one argument list, and return
- * the FIRST refusal or the accepted values.
- *
- * THIS IS A VALUE DOOR, NOT A PRESENCE DOOR. It evaluates only the flags
- * actually PRESENT in `argv` and leaves an absent-but-required flag to the bin
- * that owns the wording. That is review-provider.mjs's shipped position - its
- * `parseArgs` skips a flag with `if (!rest.includes(flag)) continue;` - and
- * reversing it would replace diagnostics a declaration cannot express
- * (`capture --kind must be one of todo | seed | note`, `milestone-prune needs
- * --mode <delete|archive> (tagged release: ...)`) with one generic sentence.
- * `required` therefore stays a fact the table states for the bins that choose
- * to read it, not a rule this door enforces.
- *
- * THE `'*'` ROW IS EVALUATED FIRST, because a script-global flag is what
- * answers first today: planning.mjs refused a valueless `--dir` before it
- * looked at its subcommand at all, and the first failing flag is the one the
- * refusal names. A resolved key the table does not declare leaves only the
- * `'*'` row to evaluate, so an unknown subcommand still falls through to the
- * caller's own usage refusal.
- *
- * IT CARRIES NO WORDING AND NO REASON CODE (D-07): `detail` is the flag name
- * and nothing else, exactly as `evaluateFlag` answers, and the caller composes
- * the sentence and names the refusal in the vocabulary it already owns.
- *
+ * Applies a whole resolved row's value grammar to one argument list: the first refusal, or the accepted values.
+ * A value door, not a presence door: it judges only the flags present and leaves a missing required one to the
+ * bin that owns the wording, as review-provider.mjs does. So `required` is a fact the table states for bins that
+ * read it, not a rule enforced here.
+ * The `'*'` row goes first because planning.mjs refused a valueless `--dir` before it looked at its subcommand.
  * @param {string[]} argv the whole argument list, subcommand words included
  * @param {Record<string, Record<string, any>>} table one script's table
  * @param {string} key the subcommand key `subcommandKey` resolved
  * @returns {{ok: boolean, detail: string, values: Record<string, any>,
- *   warned: string[]}} `ok:false` refuses naming the flag in `detail`;
- *   `values` holds each accepted flag's value, a `fallback` one omitted so it
- *   reads as absent; `warned` names every flag a `warn` row kept raw, always
- *   an array so no caller has to test for it.
+ *   warned: string[]}} `ok:false` refuses naming the flag; `values` are accepted flags, `warned` the raw `warn` ones
  */
 export function evaluateRow(argv, table, key) {
   /** @type {Record<string, any>} */
@@ -421,48 +184,17 @@ export function evaluateRow(argv, table, key) {
 }
 
 /**
- * Answer the ONE presence question a `CONTRACTS` row cannot state: does a
- * flag's VALUE oblige at least one of a set of OTHER flags to be present.
- *
- * `evaluateRow` above is a value door and deliberately not a presence door,
- * and this does not reverse that (see the header). The carve-out is about an
- * unconditionally required flag, whose diagnostic a declaration cannot write;
- * a conditional rule's diagnostic is exactly the flags it names. The rule
- * `PRESENCE_RULES` declares today is the settle receipt: a `trace append`
- * whose `--event` settles a review fire has to carry at least one of the
- * figures it settles ON, or the receipt clears a blocking range while
- * asserting nothing about it (RSK-08).
- *
- * EVERY OCCURRENCE OF THE CONDITIONING FLAG IS JUDGED, for the reason
- * `evaluateFlag` states about its own axis and with a sharper edge here:
- * planning.mjs's `parseArgs` keeps the LAST occurrence while an `indexOf`
- * reader answers about the FIRST, so `--event rearm --event gate_pass` would
- * otherwise walk a settle event past a door that had already made up its mind
- * on `rearm`. The first conditioned occurrence wins wherever it sits.
- *
- * THE VALUE IS COMPARED AS GIVEN, untrimmed. `trace append` stores `--event`
- * verbatim and planning/risk-check.mjs joins its receipt vocabulary by exact
- * string, so a padded spelling settles nothing downstream and is not this
- * rule's business to catch.
- *
- * SATISFACTION IS ANY ONE of the required flags, never all of them. This door
- * compares nothing and recounts nothing; the seam's own `recountReceipt` is
- * what needs a complete triple, because a partial set cannot be compared with
- * a recount that answers all three. Demanding the full set here would refuse a
- * shape the seam accepts and states its own separate refusal for.
- *
- * IT CARRIES NO WORDING AND NO REASON CODE (D-07), exactly as `evaluateRow`
- * does not. It names the conditioning flag, the value that armed the rule and
- * the flags one of which was owed; the caller composes the sentence.
- *
+ * Answers the one presence question a `CONTRACTS` row can't state: does a flag's value oblige one of a set of others.
+ * `evaluateRow` stays a value door; a conditional rule's diagnostic is exactly the flags it names.
+ * Every occurrence of the conditioning flag is judged, since `parseArgs` keeps the last: `--event rearm --event
+ * gate_pass` would walk a settle event past a door that decided on `rearm`.
+ * Values compare untrimmed, and any one required flag satisfies the rule, not all.
  * @param {string[]} argv the whole argument list, subcommand words included
  * @param {Record<string, {when: string, is: string[], requires: string[]}>|undefined} table
  *   one script's presence rules
  * @param {string} key the subcommand key `subcommandKey` resolved
  * @returns {{ok: boolean, flag: string, value: string, requires: string[]}}
- *   `ok:false` names the conditioning `flag`, the `value` it carried, and every
- *   flag in `requires`, ONE of which the caller has to add. On the accepted
- *   path all three are empty, so no caller has to test for undefined.
+ *   `ok:false` names the flag, its value and the flags owed
  */
 export function evaluatePresence(argv, table, key) {
   const pass = { ok: true, flag: '', value: '', requires: [] };
@@ -479,89 +211,19 @@ export function evaluatePresence(argv, table, key) {
 }
 
 // --- the contract table: script -> subcommand -> flag -> grammar ------------
-// Global flags allowed everywhere on that script are listed under '*'.
-//
-// EVERY ENTRY DECLARES FOUR FIELDS and none of them defaults: `required`,
-// `type`, `value` (what happens to a present-but-malformed value) and `bare`
-// (what happens to a flag present with nothing usable after it).
-// arg-contract.test.mjs walks all 156 of them, so a row added later without a
-// complete grammar reddens rather than picking up a silent default.
-//
-// REQUIRED-NESS IS PER SUBCOMMAND. `risk-check run` requires `--base`;
-// `risk-check status` takes it optionally, because its named range is
-// all-or-none and the seam owns that rule. `--plan` is three
-// different types on three rows for the same reason - `lease-check` names a
-// plan FILE and stays `int`, `risk-check` names the worker key and reads
-// `plan-key`, `trace append` stores the caller's string verbatim. Folding any
-// of those onto one row would state a bound one face does not hold.
-//
-// THE DISPOSITIONS REPRODUCE WHAT SHIPS, they do not tidy it. The ones that
-// carry a reason, each with its evidence:
-//
-//   `--dir` and `--root` refuse the empty, bare and flag-shaped spellings
-//     everywhere. `planning.mjs status --dir ''` answered ok:true about
-//     `./.planning`, a tree the caller never named, while `git-branch.mjs tags
-//     --dir ''` already refused the identical spelling.
-//   `--branch`, `--base`, `--remote`, `--merged` and `--version` declare
-//     `fallback` on the bare form (D-12). Their seams read them through the
-//     permissive reader and answer with `|| fallback`; declaring `refuse`
-//     would start refusing a valueless spelling those seams absorb today.
-//   `--timeout-ms` declares `fallback` on a MALFORMED VALUE as well.
-//     issue-check.mjs falls back to its constant because that seam's whole
-//     contract is that it never fails a land, and an unbounded call is the one
-//     thing it may never do instead.
-//   `route.mjs`'s `--phase` declares `refuse` on both axes, reversing the `warn`
-//     it shipped with. It stopped being a trace-keying flag and became an input
-//     to the risk FLOOR (CER-01), and warn-and-continue there answers a typo
-//     with a floor computed off a DIFFERENT phase's declared files - a wrong
-//     level nothing in the resolved bundle reveals as wrong.
-//   On `trace append|close`, `--plan`, `--sha`, `--base` and `--detail` declare
-//     `fallback` on both axes - the drop the shared body already performs
-//     (`typeof opts.plan === 'string' && opts.plan`), so every shipped
-//     `trace close` without them keeps answering ok:true - while `--step`,
-//     `--reviewer`, `--trigger` and `--role` REFUSE the bare form on the same
-//     two subcommands. That split is D-05, and it is why the two axes are two
-//     fields: a bare `--role` wrote a record with no `role` key and `trace
-//     render` then aggregated it under the empty-string key.
-//   `--tokens` declares `fallback` on the VALUE axis alone, on both trace
-//     rows, because the body's grammar is WIDER than any type here can state:
-//     it accepts a strict comma-grouped integer (`146,405`), which is the form
-//     this plugin PRINTS token figures in and therefore the transcription its
-//     own prose models, and it refuses a negative one, which `int` accepts.
-//     Declaring `refuse` made the door reject `146,405` after the `dispatch`
-//     half of the bracket was already written, stranding the worker unpaired
-//     forever - a recording error escalated into loss of the bracket it was
-//     recording. The BARE axis still refuses: that spelling has no grammar to
-//     be wider than.
-//   `--date` refuses the bare form, which release-bump.mjs hand-writes today by
-//     testing the flag's own appearance in argv beside the permissive reader: a
-//     valueless `--date` must refuse rather than silently date today.
-//
-// A `boolean` row's two dispositions are INERT by construction - presence is
-// the whole grammar, so neither axis can fire - and they are declared
-// `fallback` rather than omitted, because an omitted field is the silent
-// opt-out the completeness test exists to catch.
-//
-// The '' key is the BARE form - the script invoked with flags and no
-// subcommand, e.g. `weight.mjs --root <path>`. Without it check 2 reads the
-// first flag AS the subcommand and reports `unknown-subcommand` on correct
-// prose, so every script with a no-subcommand form must declare one.
-//
-// Every top-level script under cadence-core/bin must appear here: check 14
-// enforces it, because check 2 skips a script it finds no row for. A missing
-// row is therefore a silent opt-out of the flag lint, not a script that
-// happens to be unlinted - which is exactly how `weight.mjs`'s own row could
-// be deleted with self-verify still returning ok:true.
+// Global flags allowed everywhere on a script sit under '*'.
+// Every entry declares `required`, `type`, `value` and `bare`, none defaulted, so a missing field reddens in the test.
+// The dispositions reproduce what ships and don't tidy it. A `boolean` row's are inert but declared `fallback` anyway.
+// Every top-level script under cadence-core/bin needs a row, or the prose lint skips it.
 export const CONTRACTS = {
   'planning.mjs': {
     '*': {
+      // an empty --dir used to read as ./.planning, a tree nobody named, so --dir and --root refuse it everywhere
       '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     status: {},
     'cursor get': {},
-    // `--next-file` is `--next`'s path transport, for the two sites that COMPOSE
-    // a resume pointer (/cad-pause, `progress`) rather than authoring a literal
-    // `/cad-<command> N`. The seven literal sites keep the inline form.
+    // --next-file carries --next's path for the two sites that compose a resume pointer, not a literal command
     'cursor set': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--status': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -582,13 +244,7 @@ export const CONTRACTS = {
     'uat refresh': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
-    // `--fields-file` is the path transport for the seven FREE-TEXT fields
-    // (`reason`, `reported`, `cause`, `fix`, `evidence`, and a `pending_ci`
-    // item's `job` and `commit`) as ONE JSON object -
-    // one file per failing item rather than three, on the workflow whose
-    // per-item round-trip discipline is explicit. The enum-validated flags gain
-    // no file form: a value that must survive `UAT_RESULTS.includes()` or an
-    // `AC<N>` test is not caller-derived prose.
+    // --fields-file carries the seven free-text fields as one JSON object; enum-validated flags get no file form
     'uat record': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--item': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
@@ -615,11 +271,7 @@ export const CONTRACTS = {
     },
     audit: {},
     'criteria-coverage': {},
-    // The criteria-count ceilings, as the CALLER's literal numbers. Four bounds
-    // rather than two because the two grammars have different ones - CONTEXT's
-    // acceptance criteria 3-7, ROADMAP's per-phase criteria 2-5 - and folding
-    // them onto one pair would make a workflow state a bound it does not hold.
-    // No config keys: D-04, the rule `plan-size`'s row above already follows.
+    // four bounds, not two: the context and roadmap criteria grammars have different ceilings
     'criteria-size': {
       '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--context-min': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
@@ -630,12 +282,7 @@ export const CONTRACTS = {
     'plan-overlap': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
-    // `--rerun` is the caller's override, declared here rather than left as a
-    // flag the seam reads without a row. `boolean` + `fallback` on both axes is
-    // what every other bare flag in this table declares (`--plan-time`,
-    // `--join`): presence IS the grammar, so neither a value nor its absence is
-    // a refusal the CLI actually carries out, and declaring one would be a
-    // refusal the adoption census then fails to exercise.
+    // --rerun is the caller's override; presence is its whole grammar, so boolean plus fallback like every bare flag
     'replay-check': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--rerun': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
@@ -646,34 +293,16 @@ export const CONTRACTS = {
       '--max-tasks': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--max-bytes': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
-    // THE READ-BACK COUNT (RBK-01): what the retrieval pass put in front of the
-    // planner, against what the produced plan cites.
-    //
-    // `--payload` is a FILE and never inline JSON, the rule the `adjudication`
-    // row states in full: the payload is a retrieval envelope carrying verbatim
-    // artifact prose with arbitrary quoting, so one unescaped quote in a heredoc
-    // makes it unparseable. It is declared OPTIONAL rather than required because
-    // `memory.backend: none` skips the retrieval call entirely, so on that path
-    // there is no envelope to hand over and none to demand; the seam qualifies
-    // the refusal by backend, which is a presence rule no declaration can state
-    // (the PRESENCE carve-out this file's header names).
-    //
-    // `--point` names WHICH of the two count points a run is recording - the
-    // count runs after the planner returns and again on the plan as committed,
-    // and the pair is what makes a revision's effect on citation visible. Its
-    // two values are an ENUM the declaration cannot express, so the seam refuses
-    // a value outside them in its own `bad-args` vocabulary, the carve-out
-    // `capture --kind must be one of ...` already occupies.
+    // The read-back count: what retrieval put in front of the planner against what the produced plan cites. --payload
+    // is a file, never inline JSON: a retrieval envelope carries verbatim prose with arbitrary quoting. Optional
+    // because `memory.backend: none` leaves no envelope, and the seam qualifies the refusal by backend. --point is an
+    // enum the declaration can't express, so the seam refuses other values in its own bad-args vocabulary.
     'cite-count': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--payload': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--point': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // `--label-file` is `--label`'s path transport: an untagged close takes the
-    // label from PROJECT.md's milestone NAME, which is repository content. The
-    // table term (`|` or a newline) and the containment term run on the
-    // resolved value either way - the transport changes how it arrives, never
-    // what it must satisfy.
+    // --label-file is --label's path transport: an untagged close labels from the milestone name, which is repo content
     'milestone-prune': {
       '--label': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--label-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -682,17 +311,9 @@ export const CONTRACTS = {
     'seed-reqs': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
-    // `--plan-time` selects the PLAN-TIME arm (CEN-02): the same operation
-    // asked before an executor runs, against the plan's declared lease and the
-    // census registry, instead of after the fact against the staged set. A
-    // FLAG, not a `lease-check plan` second word, because it is the same
-    // operation asked at a different time.
-    //
-    // `--plan` stays REQUIRED on both arms, and that is not an oversight of
-    // the optional arm: both arms name a plan FILE on disk and neither can
-    // resolve `PLAN-<k>.md` without it, so a required-ness that varied by flag
-    // would state a bound one arm does not hold - the per-subcommand rule this
-    // table already applies to `risk-check run` against `risk-check status`.
+    // --plan-time is the same operation asked before an executor runs, against the plan's declared lease and the
+    // census registry, not after the fact against the staged set. A flag, not a second word. --plan stays required on
+    // both arms, since neither can resolve a plan file without it.
     'lease-check': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--plan': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
@@ -701,36 +322,23 @@ export const CONTRACTS = {
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // The accepted testing policy's committed form. `--root` is the PROJECT root
-    // and copies `detect-commands`'s row: the same refusal for the same spelling.
+    // the accepted testing policy's committed form; --root is the project root and copies detect-commands's row
     'test-policy render': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // The same `--root` row, for the same reason: `check` reads the project's
-    // config, its committed policy file and its workflow files.
-    //
-    // `--base` is a ref, read by the seam after `--end-of-options` so it can
-    // never act as a git option; a flag-shaped value is refused here as well.
+    // --base is read after --end-of-options so it can't act as a git option; a flag-shaped value is refused here too
     'test-policy check': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--base': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // `--commit` is a sha, shape-checked by the seam; `--wait` bounds one call's
-    // re-reads in whole seconds; `--phase` names the checklist a pass is
-    // recorded in. A valueless spelling of any of them refuses, because each
-    // would otherwise silently read as the flag being absent.
+    // a valueless --commit, --wait or --phase refuses, or it would silently read as the flag being absent
     'test-policy ci-status': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--commit': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--wait': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
-    // `--answered` carries the set a config layer ALREADY holds, so the
-    // re-entrant ask (`/cad-config --surfaces`) reaches the same option rule
-    // the first fire does instead of merging the current answer itself. Same
-    // shape as `risk-check run`'s `--surfaces` row below and for the same
-    // reason: a comma-separated scope whose tokens are refused when they fall
-    // outside the eight, never narrowed to the ones that parsed.
+    // --answered carries the set a layer already holds, so /cad-config --surfaces reaches the same option rule
     'detect-surfaces': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--answered': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -738,25 +346,10 @@ export const CONTRACTS = {
     recall: {
       '--top': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
-    // THE RECORD A `/cad-task` RUN LEAVES (FST-01): the fast path's own artifact
-    // under `.planning/tasks/<slug>/`, written so the recall corpus and
-    // `/cad-why` can both reach it.
-    //
-    // `--slug` is joined onto a directory path, so its grammar is a REFUSAL and
-    // not a trim: one path segment or nothing written. The declaration cannot
-    // state that grammar - it is not one of the declared types - so the seam
-    // refuses in its own `bad-args` vocabulary through lib/task-record.mjs's
-    // predicate, the carve-out `capture --kind must be one of ...` occupies.
-    //
-    // `--base` and `--head` are both REQUIRED for the reason the `risk-check
-    // run` row above states: a defaulted head is a range the caller never
-    // stated, and this record IS the evidence of what shipped. Both the commits
-    // table and the declared-files line are DERIVED from that range by the seam,
-    // so there is no flag a caller could retype a figure onto.
-    //
-    // `--text` / `--text-file` are the pair the `capture` row below already
-    // models: the file form is the safe transport a workflow prescribes, and the
-    // inline form stays for a human typing at a shell.
+    // The record a /cad-task run leaves under .planning/tasks/<slug>/, so recall and /cad-why can both reach it.
+    // --slug is joined onto a directory path, so it's one path segment or nothing written. No declared type states
+    // that, so the seam refuses in its own bad-args vocabulary through lib/task-record.mjs's predicate. --base and
+    // --head are both required, as on risk-check run: a defaulted head is a range the caller never stated.
     'task-record': {
       '--slug': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -764,44 +357,15 @@ export const CONTRACTS = {
       '--text': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--text-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // `--join` ties each record to the `trace.jsonl` dispatch bracket that
-    // caused it, by role normalization and timestamp containment. Off by
-    // default so the envelope every existing reader parses is unchanged, and
-    // whole-record by construction: `reads.jsonl` carries no phase scoping, so
-    // the brackets it joins to must span every phase.
+    // --join ties each record to its dispatch bracket in trace.jsonl; off by default so existing envelopes don't change
     reads: {
       '--join': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // `--read` is ONE comma-separated value, never a repeated flag (parseArgs
-    // keeps only the last). Its grammar is deliberately heterogeneous: an
-    // element is any verbatim string naming something the site caused the
-    // worker to read - a path, a glob, or a non-path reference (a
-    // `<base>..<head>` ref range) the worker resolves for itself.
-    // `--step` names the workflow step a COORDINATOR marker marks. It rides the
-    // same event-agnostic seam as every other flag here; what keeps it off a
-    // worker bracket is the prose and the census, not this table.
-    // `--raised` is the ADJUDICATED arm's kill count - how many findings the
-    // reviewers raised before adjudication, structured so a 0-of-0 fire and a
-    // 0-of-9 one stop reading alike. It lives here rather than in `--detail`
-    // because this row is what makes the flag the only structured route.
-    // `--reviewer` names the reviewer that ACTUALLY ran a fire (RVW-02), so two
-    // fires of one trigger - one cross-model, one subagent - are distinguishable
-    // in the record. Nothing refuses a dispatch to a reviewer outside the
-    // resolved set, so this mark is the whole enforcement.
-    // The detection the blocking `risk_surface` gate fires on, and the record
-    // that proves it ran. `--base` and `--head` are both REQUIRED - a defaulted
-    // head is a range the caller never stated - and `--surfaces` narrows the
-    // scope to the project's resolved set, refusing any token outside the
-    // eight rather than answering about a narrower one.
-    // `--head` is NOT `required: false` because a head became optional. Exactly
-    // one of `--head <ref>` and `--staged` names this run's scope, and an
-    // either-or is not one of the four fields a row states - the same bound
-    // `trace append` leaves to its seam by declaring `--detail` and
-    // `--detail-file` both optional. `risk-check run` refuses both-or-neither
-    // itself, in its own `bad-args` vocabulary; declaring `--head` required here
-    // would refuse the staged spelling at the door before that check is reached.
-    // `--staged` is BOOLEAN: presence is its whole grammar, so both axes are
-    // `fallback`, the shape `--plan-time` and `--replay` already declare.
+    // The detection the blocking risk_surface gate fires on, and the record that proves it ran. --surfaces narrows to
+    // the project's set and refuses any token outside the eight. --base is required; a defaulted head is a range
+    // nobody stated. --head is `required: false` because exactly one of --head <ref> and --staged names the scope, an
+    // either-or the four fields can't state. risk-check run refuses both-or-neither. --staged is boolean, so both
+    // axes are fallback.
     'risk-check run': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
@@ -810,70 +374,37 @@ export const CONTRACTS = {
       '--staged': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
       '--surfaces': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // The completion gate. `--phase` alone keeps plan-level matching; the
-    // optional named range - `--plan --base` plus exactly one of `--head` and
-    // `--staged` - requires a record for THAT scope, so a record left by an
-    // earlier, narrower range of the same plan does not satisfy a later one, and
-    // a ref-range record does not satisfy a staged ask. `--staged` mirrors the
-    // `risk-check run` row above: boolean, presence is its whole grammar, and
-    // the exactly-one rule is the seam's own check rather than a bound these
-    // four fields can state.
+    // The completion gate. --phase alone keeps plan-level matching; the optional named range (--plan --base plus
+    // exactly one of --head and --staged) needs a record for that scope, so an earlier narrower range can't satisfy a
+    // later one. --staged mirrors the run row; exactly-one is the seam's check.
     'risk-check status': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
+      // optional here, required on run: the named range is all-or-none and the seam owns that rule
       '--base': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--head': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--staged': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // THE ADJUDICATION RECORD a blocking or adjudicated gate fire leaves beside
-    // its sibling `REVIEW-<trigger>-<discriminator>.md`.
-    //
-    // `--payload` is a FILE and never inline JSON: the record's whole content is
-    // verbatim reviewer text with arbitrary quoting, so one unescaped quote in a
-    // heredoc makes it unparseable after the adjudication is already done
-    // (references/review-triggers.md states the rule; `uat merge --payload` is
-    // the precedent reader).
-    //
-    // `--base` and `--head` are both REQUIRED for the reason the `risk-check
-    // run` row above states - a defaulted head is a range the caller never
-    // stated - and this record IS the evidence of what was judged, so the seam
-    // resolves both to full ids rather than storing the caller's spelling.
-    //
-    // `--round` is the blocking re-arm's round (references/triage-gate.md caps
-    // it at ONE). A re-arm is a SECOND fire of the same trigger on the same
-    // plan and resolves to the same discriminator, so without it round two's
-    // record would replace round one's rulings - the self-overwriting evidence
-    // #195 fixed for executor reports, reappearing on the artifact this record
-    // exists to make durable. Optional, defaulting to 1, so an ordinary fire
-    // keeps the sibling REVIEW file's exact name.
-    // `--task` names the task slug when this fire is a task's, so the record
-    // lands in `.planning/tasks/<slug>/` beside the sibling REVIEW file rather
-    // than in a `phases/0/` that does not exist and never will. `/cad-task`
-    // fires with `--phase 0` deliberately - 0 is the one number no roadmap phase
-    // carries - and writes its artifacts under its slug, so without this flag
-    // the two halves disagree by construction and a blocking gate on a task can
-    // only be settled by hand. Optional: a phase fire passes nothing and
-    // resolves the two phase homes exactly as before.
+    // The adjudication record a blocking or adjudicated fire leaves beside its REVIEW-<trigger>-<discriminator>.md.
     adjudication: {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--trigger': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--discriminator': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --base and --head are both required, as on risk-check run; the seam stores full ids, not the caller's spelling
       '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --payload is a file, never inline JSON: it's verbatim reviewer text, and one unescaped quote in a heredoc
+      // makes it unparseable after the adjudication is done
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --round is the blocking re-arm's round (capped at one). A re-arm reuses the discriminator, so without it
+      // round two's record would replace round one's rulings. Optional, default 1, so an ordinary fire keeps the
+      // REVIEW file's name.
       '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      // --task names the task slug when a task fires, so the record lands in .planning/tasks/<slug>/, not in a
+      // phase directory a task doesn't have (/cad-task has no phase). Optional: a phase fire passes nothing.
       '--task': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // THE QUEUE MEMBER a gate resolved `deferred` leaves beside that same
-    // REVIEW file: the reviewer ran, the findings are on disk, and nothing has
-    // ruled on them yet. Same flags as `adjudication` above and for the same
-    // reasons, because both name the same fire - `--payload` is the reviewer's
-    // own returned object as a FILE rather than inline JSON, `--base`/`--head`
-    // are both required so the stored ids are a range an auditor can check out,
-    // and `--round` keeps a re-arm's member off round one's file.
-    //
-    // TWO WORDS, unlike `adjudication`: the queue takes three operations
-    // (`record`, then `list` and `carry`), the `risk-check run|status` shape.
+    // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--trigger': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -882,193 +413,100 @@ export const CONTRACTS = {
       '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
-      // NO `--task` here, unlike `adjudication` above, and the asymmetry is the
-      // point. The queue-wide enumeration `/cad-land` reads walks the two phase
-      // homes only, so a member written under a task slug would be created
-      // successfully and then never found - a deferred fire that reports queued
-      // and is permanently unadjudicated. A task's only gate is `risk_surface`,
-      // whose schema default is `blocking` and never `deferred`, so nothing is
-      // lost by refusing the shape outright rather than widening a reader this
-      // change does not touch.
+      // no --task, unlike adjudication: the queue /cad-land reads walks the two phase homes only, so a member under a
+      // task slug would never be found. A task's only gate is risk_surface, which is never deferred, so nothing is
+      // lost.
     },
-    // THE QUEUE AS A WHOLE: every member with no `ADJUDICATION` sibling, across
-    // both homes. `--phase` is OPTIONAL here and required on every sibling row
-    // above, and the asymmetry is the point - the writers name ONE fire, while
-    // the reader answers the question `/cad-land` asks, which is about the tree
-    // and not about a phase. Absent means the whole tree; present narrows to
-    // one phase, and it takes the `phase` type its siblings take so `--phase 2`
-    // and `--phase 2.1` address the directory the caller spelled.
+    // The queue as a whole: every member with no ADJUDICATION sibling, across both homes. --phase is optional here
+    // because the writers name one fire and this reader answers about the tree. Present, it takes the phase type so
+    // `2` and `2.1` hit the spelled directory.
     'deferred list': {
       '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
-    // THE CARRY a milestone close runs before `milestone-prune` deletes the
-    // phase directory (D-10). `--phase` is REQUIRED and there is no whole-tree
-    // form: this face MOVES committed artifacts, and a mistyped or absent flag
-    // that carried every phase at once would be indistinguishable from the one
-    // the caller meant. It takes no other flag - the SET it moves is exactly
-    // what `deferred list --phase` returns, derived rather than named.
+    // The carry a milestone close runs before milestone-prune deletes the phase directory. --phase is required with no
+    // whole-tree form: a mistyped or absent flag that carried every phase would look like the one meant.
     'deferred carry': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
-    // THE RISK_SURFACE RULINGS a milestone close carries out of the phase
-    // directory before `milestone-prune` deletes it (LND-02, D-01), so
-    // `land-cleanup.mjs gate` still has records to derive its verdict from.
-    // `--phase` is REQUIRED and there is no whole-tree form, for the reason
-    // `deferred carry` above gives: this face WRITES, and a mistyped or absent
-    // flag that carried every phase at once would be indistinguishable from the
-    // one the caller meant. It takes no other flag - the SET it copies is
-    // derived from the phase directory's own contents, never named on the
-    // command line, so no argument can widen it past the `risk_surface` trigger.
+    // The risk_surface rulings a milestone close carries out before milestone-prune deletes the phase directory, so
+    // land-cleanup.mjs gate still has records to derive its verdict from. --phase is required, as on `deferred carry`.
     'risk-carry': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
-    // `--detail-file` is `--detail`'s path transport, for a detail the CALLER
-    // derived: the inline form puts that text in a double-quoted shell word,
-    // where `$(...)` and a backtick execute before Node starts. Additive - the
-    // inline form stays for a human typing at a shell (lib/text-flag-file.mjs).
-    // `--read-file` is `--read`'s path transport, split by the same comma
-    // grammar. It is NOT on the close row below: `--read` is not either, and
-    // the transport never widens what a subcommand accepts.
-    // `--trigger` names WHICH review trigger an event belongs to, structured so
-    // an `outcome` receipt can be joined to the fire that produced it -
-    // `risk-check status` demands one for a matched range (GAT-04/D-12). It is
-    // listed here or check 2 reports `unknown-flag` against correct prose. Not
-    // on the `close` row below, for the reason `--read` is not: `close` fixes
-    // its own family and event, and a flag row never widens what a subcommand
-    // accepts.
-    // `--survivors`, `--downgraded` and `--refuted` are the SETTLED figures of
-    // a fire, structured for the reason `--raised` beside them is: `--detail`
-    // is not a machine-join surface (one trigger was spelled four different
-    // ways across 35 shipped `outcome/adjudication` events), so a count parsed
-    // back out of it is exactly as trustworthy as the substitution that slot is
-    // already condemned for. This ROW is what makes the flag the only route:
-    // without it check 2 answers `unknown-flag` against the receipt prose, and
-    // a coordinator with nowhere structured to put the figure folds it into the
-    // free text. They are DERIVED by the `adjudication` seam above from the
-    // record's own rulings and copied here, never counted by hand - which is
-    // what lets the seam recount the record and refuse a receipt that disagrees
-    // with it (D-01).
-    // `--round` names WHICH round of a capped re-arm a receipt settles, so that
-    // recount reads the round's own record: a settle after a re-arm that names
-    // no round resolves round ONE's filename and checks round two's figures
-    // against round one's stale rulings, passing whenever the two happen to
-    // coincide. Optional and defaulting to 1, the same rule the `adjudication`
-    // row states, so the write side and the receipt side resolve one filename
-    // by one rule.
-    // All four are OFF the `close` row below, for the reason `--raised` is off
-    // it: a flag row never widens what a subcommand accepts.
-    // `--anchor` names the WINDOW a receipt settles, as the sha that window's
-    // own `lifecycle/phase_start` carried. lib/trace.mjs's `correlationId`
-    // derives a run's id off the phase's NEWEST anchor, so a settlement written
-    // after the phase re-anchored is stamped with the new window and can never
-    // settle the fire that ran under the old one - the state GH-227 reports,
-    // repaired today by hand-appending the line. The value is that anchor's SHA
-    // and never a whole correlation id: the id is then derived through the one
-    // derivation in the tree, so a receipt can only name a window of the phase
-    // it already declares and the two spellings cannot drift. REFUSES on both
-    // axes, the `--trigger` disposition and for its reason - a blank anchor
-    // reads as "no anchor" while the caller believes the receipt was bound.
-    // Nothing checks that the named window EXISTS, and that is the accepted
-    // cost stated rather than hidden (D-01): a receipt can name a window it
-    // does not belong to, and `risk-check status`'s range check is what objects.
-    // `--authorization-id` is the id of the HUMAN ANSWER a receipt descends
-    // from. One authorization applied to two ranges is two receipts by
-    // construction, and nothing on either said they came from one decision:
-    // measured over `/code/smithers`'s nine `outcome/override` events, grouping
-    // by exact `--detail` text collapses two duplicate pairs and misses the
-    // phase-3 trio - three receipts with three distinct texts on one standing
-    // authorization - so a key DERIVED from the reason text answers two cases
-    // of three and misses the one that motivated GH-220. The id is therefore
-    // minted and typed by the coordinator when the engineer answers, never
-    // hashed or normalized out of anything (D-02), and it rides a declared flag
-    // rather than a substring of `--detail` for the reason `--trigger` does: on
-    // this repository's 35 `outcome/adjudication` events the trigger is spelled
-    // four different ways inside that free text. It LABELS the pair for a
-    // reader and never widens what a receipt settles (D-03) - `risk-check
-    // status` still requires every fired record to carry its own receipt naming
-    // both ends of its own range. REFUSES on both axes, the `--agent-id` row
-    // character for character and for its reason: a blank id would read as "no
-    // id" while the caller believes the receipt was labelled.
     'trace append': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--family': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--event': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --plan, --sha, --base and --detail fall back on both axes, the drop the shared body already performs. --step,
+      // --reviewer, --trigger and --role refuse a bare flag: a bare --role once wrote a record that `trace render`
+      // aggregated under the empty-string key.
       '--plan': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--base': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--sha': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--detail': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+      // --detail-file is --detail's path transport: inline, $(...) runs inside a double-quoted shell word
       '--detail-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --tokens falls back on the value axis alone, on both trace rows: the body takes a comma-grouped integer
+      // (146,405, the form this plugin prints) and refuses a negative one, which is wider than `int`. Refusing
+      // 146,405 once stranded a worker unpaired after the dispatch half was written. The bare axis refuses.
       '--tokens': { required: false, type: 'int', value: 'fallback', bare: 'refuse' },
+      // --raised is the adjudicated arm's raised-finding count, so a 0-of-0 fire and a 0-of-9 one stop reading alike
       '--raised': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      // --survivors, --downgraded and --refuted are a fire's settled figures. --detail isn't a machine-join surface
+      // (one trigger was spelled four ways), so this is the only structured route. The seam derives them from the
+      // record's rulings, which is how it can recount and refuse a disagreeing receipt.
       '--survivors': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--downgraded': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--refuted': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      // --round names which round of a capped re-arm a receipt settles, so the recount reads that round's record
       '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      // --read is one comma-separated value, never a repeated flag (parseArgs keeps the last); elements are verbatim
       '--read': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --read-file is --read's path transport, same comma grammar; not on close, since --read isn't either
       '--read-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --step names the workflow step a coordinator marker marks; it stays off a worker bracket
       '--step': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --reviewer names the reviewer that ran a fire, so a cross-model and a subagent fire of one trigger differ
       '--reviewer': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --trigger names the trigger an event belongs to so a receipt joins its fire; risk-check status needs one
       '--trigger': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --anchor names the window a receipt settles, as the sha its own phase_start carried. lib/trace.mjs derives a
+      // run's id off the phase's newest anchor, so a settlement after a re-anchor got the new window and could never
+      // settle the old fire (GH-227). The value is the sha, never a whole correlation id. Refuses on both axes: a
+      // blank anchor reads as "no anchor" while the caller believes the receipt was bound. risk-check status's range
+      // check is what objects.
       '--anchor': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --authorization-id is the id of the human answer a receipt descends from, minted when the engineer answers. One
+      // answer applied to two ranges is two receipts, and nothing said they came from one decision (GH-220). Refuses on
+      // both axes, like --agent-id: a blank id reads as "no id" while the caller believes it was labelled.
       '--authorization-id': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
-    // family is fixed to `lifecycle` in the seam and the arm is inferred from
-    // `--detail` (present -> `checkpoint`, absent -> `return`), so a close site
-    // states what it closes and nothing about how the record spells it. A row
-    // that listed them would let the restated spelling back in through the lint.
-    // The inference reads the RESOLVED detail, so `--detail-file` selects the
-    // checkpoint arm exactly as the inline form does.
-    // `--turns` is the tool-call count on the same subagent return `--tokens`
-    // is read off - the second of the two terms a run's price is made of, and
-    // the reason it is a STRUCTURED flag rather than a phrase inside `--detail`
-    // is that `--detail` is not a machine-join surface (one trigger name was
-    // spelled four different ways across 35 shipped events). Listed on the
-    // CLOSE row only, exactly as `--raised` is listed on `append` only: the
-    // flag is validated in the ONE shared `append|close` body, and this row is
-    // a prose allowlist that never widens what a subcommand accepts.
-    // `--duration-ms` is the THIRD figure on that same return, and it is
-    // declared `string` rather than `int` for the reason `--tokens` declares
-    // `fallback` on its value axis: the host surfaces this figure formatted,
-    // inside `Done (N tool uses - X tokens - Ys)`, so the only spelling an
-    // orchestrator can copy is `1m 23s`. An `int` row refuses that at the door
-    // AFTER the dispatch half of the bracket is already written, stranding the
-    // worker unpaired forever - a recording error escalated into loss of the
-    // bracket it was recording. The real grammar - a plain millisecond count,
-    // or number-plus-unit terms over h/m/s/ms - is WIDER than any type here can
-    // state and lives in the shared body, exactly where `--tokens`'
-    // comma-grouping exception does. Both axes still REFUSE: `string` refuses
-    // only a blank, and the body refuses everything outside that closed
-    // grammar, so a mistyped duration appends nothing rather than silently
-    // dropping the field. Listed on the CLOSE row alone, as `--turns` is.
+    // The close half of a worker bracket. No --family or --event: the family is fixed to lifecycle in the seam and
+    // the arm is inferred from --detail (present -> checkpoint, absent -> return). The inference reads the resolved
+    // detail, so --detail-file selects checkpoint exactly as the inline form does.
     'trace close': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--plan': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--tokens': { required: false, type: 'int', value: 'fallback', bare: 'refuse' },
+      // --turns is the tool-call count off the same return as --tokens; close row only, like --raised on append
       '--turns': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      // --duration-ms is string, not int, like --tokens: the host prints "Done (N tool uses - X tokens - Ys)", so the
+      // only copyable spelling is `1m 23s`. The real grammar (plain ms, or number-plus-unit terms) lives in the
+      // shared body, which refuses anything outside it, so a typo appends nothing.
       '--duration-ms': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--detail': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--detail-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--reviewer': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-      // The host's own id for the worker this close belongs to. REFUSES like
-      // every other join key here: a blank one would read as "no id" while the
-      // caller believes the close was bound, which is the one failure this
-      // flag exists to remove.
+      // the host's id for the worker this close belongs to; refuses like every join key, since a blank reads as "no id"
       '--agent-id': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-      // THIS DISPATCH PERFORMED NO WORK because the work was already in HEAD.
-      // Structured, and deliberately not a `--detail`: the close arm INFERS
-      // `checkpoint` vs `return` from that flag being non-blank, so a replay
-      // note written there would bill a finished dispatch as an unusable one -
-      // the exact arm the record exists to keep separate. It rides the event
-      // only when true, so an ordinary close writes the bytes it always did.
+      // this dispatch did no work because it was already in HEAD. Structured, not a --detail: the close arm infers
+      // checkpoint vs return from --detail being non-blank, so a replay note there would bill a finished dispatch as
+      // unusable. It rides the event only when true, so an ordinary close writes the bytes it always did.
       '--replay': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // `--events` asks for the RAW event array. The default response carries the
-    // paired `brackets` rows plus every `outcome` event instead, which is what
-    // the two shipped readers (triage-gate's `rearm` lookup, report.md's
-    // dispatch table) actually consume - and one to three of the bytes.
+    // --events asks for the raw event array; the default is paired brackets plus the outcome events, in fewer bytes
     'trace render': {
       '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--events': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
@@ -1076,13 +514,10 @@ export const CONTRACTS = {
     'trace suggest': {
       '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
-    // The dispatch-window report. `--phase` ALONE, and the absence of every
-    // other flag is the point: the ceilings are CONFIG (six
-    // `workflow.max_dispatch_tokens.<role>` keys), so a flag that could name a
-    // role or a number here would be a second, un-layered way to set one - the
-    // ad-hoc override that makes a run's report disagree with the project's own
-    // configured bound. `--phase` only scopes which brackets are read, exactly
-    // as it does on `render` and `suggest`.
+    // The dispatch-window report: --phase alone, and the absence of every other flag is the point. The ceilings are
+    // config (the six workflow.max_dispatch_tokens.<role> keys), so a flag naming a role or number would be a second,
+    // un-layered way to set one and the report would disagree with the project's own bound. --phase only scopes which
+    // brackets are read.
     'trace window': {
       '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
@@ -1090,10 +525,7 @@ export const CONTRACTS = {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--check': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // `--file` overrides `<dir>/CAPTURE.md`, for `/cad-capture --cadence`'s
-    // global queue alone - there is no `--section`, and that absence is the
-    // point: a caller that could name a heading is how five filed bullets
-    // landed outside the recall walk.
+    // --file overrides <dir>/CAPTURE.md for the global queue; no --section, or bullets land outside the recall walk
     capture: {
       '--kind': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--text': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -1101,18 +533,11 @@ export const CONTRACTS = {
       '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // The read side of the same file, and the same `--file` override. No
-    // `--section` and no allowlist flag either: the census is unconditional
-    // (D-06), and a flag that could hide a section is what would have hidden
-    // the five lost bullets.
+    // the read side of the same file, same --file override; no flag can hide a section, which is what lost five bullets
     'capture-sections': {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // The health verdict over the same file, and the same `--file` override.
-    // No flag names the BOUND, and that absence is the
-    // point - the bound is `planning.max_capture_bullets` in the config layer,
-    // so a flag here would be a second, un-layered way to set one and a run's
-    // report would stop agreeing with the project's own configured number.
+    // the health verdict over the same file; no flag names the bound, it's planning.max_capture_bullets
     'capture-check': {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
@@ -1134,11 +559,7 @@ export const CONTRACTS = {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // `check` takes `--global` for the same reason `set` does, and answers about
-    // the same layer: it is the INSPECT face of the write-time refusal, so a
-    // caller can ask what a global write would be told before it is told. Same
-    // grammar as its three siblings. It takes no `--file` row on purpose - the
-    // question is the user-global LAYER, not an arbitrary path.
+    // check takes --global to inspect the write-time refusal; no --file row, since the question is the global layer
     check: {
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
@@ -1146,26 +567,17 @@ export const CONTRACTS = {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // `unset` selects its layer exactly as `set` does, and the row has to exist
-    // rather than merely be accepted: `optFile` READS the declaration, so a
-    // subcommand taking these flags without declaring them is not expressible
-    // here (see the `get` note below for the class). The keys it removes are
-    // positional words, so there is no third row.
+    // unset picks its layer as set does and needs a row because optFile reads it; its keys are positional words
     unset: {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // `--global` sits on every face that takes a file, with the same grammar on
-    // each. It was live on `get` and declared only on its siblings, and
-    // self-verify was green solely because no workflow prose spelled the pair -
-    // so correct prose naming it would have been reported `unknown-flag`
-    // against a flag the seam accepts.
+    // --global is on every face that takes a file; it was live on get but undeclared, and no prose spelled it
     get: {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // `--walk` narrows the read to the keys that hold a `question`; bare `keys`
-    // still returns the whole map. `boolean` is presence-only, like `--global`.
+    // --walk narrows the read to the keys that hold a `question`; bare `keys` still returns the whole map
     keys: {
       '--walk': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
@@ -1175,13 +587,11 @@ export const CONTRACTS = {
       '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     decide: {
+      // --branch, --base, --remote, --merged and --version fall back on the bare form: their seams answer `|| fallback`
       '--branch': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
     },
-    // The read-only tags arm. No flags of its own: `--dir` is the whole input
-    // and it is BOTH the directory the question is asked from and the project
-    // root the answer must belong to (TAG-01), so a second flag here would be
-    // the way to ask one of those two questions without the other - which is
-    // the upward discovery the bound closed.
+    // The read-only tags arm. No flags of its own: --dir is both where the question is asked from and the project
+    // root the answer must belong to, so a second flag would ask one without the other.
     tags: {},
   },
   'git-publish.mjs': {
@@ -1210,37 +620,18 @@ export const CONTRACTS = {
     },
     gate: {},
   },
-  // The setup-time half of the forge pair: `forge.mjs` decides where issue
-  // writes will go, `issue-check.mjs` reads that decision back at land time.
-  // `--dir` is spelled IDENTICALLY on both, deliberately - the same workflow
-  // prose invokes them and a flag that refuses in one seam and defaults in the
-  // other is how a caller learns the wrong rule.
+  // forge.mjs decides where issue writes go and issue-check.mjs reads that back at land; --dir is spelled alike on both
   'forge.mjs': {
     '*': {
       '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // `detect` stays the FIRST non-`*` key: arg-contract-adoption.test.mjs's
-    // census exercises the script-global `--dir` through the first face it
-    // finds, and `detect` is the one that spawns no forge CLI at all.
+    // detect stays the first non-'*' key: arg-contract-adoption.test.mjs tests the global --dir through it
     detect: {},
-    // The create face. Both selectors REFUSE on both axes: a valueless
-    // `--provider` would fall through to a table lookup on `undefined`, and a
-    // valueless `--repo` would name no repository at all - and this subcommand
-    // is the one place in the phase that MUTATES a forge.
-    //
-    // `--confirmed` is `boolean`, so its whole grammar is presence and neither
-    // disposition can fire; both are declared `fallback` rather than omitted,
-    // per this file's own rule about an omitted field. Its required-ness is
-    // `false` HERE and enforced in the seam, which is the same split
-    // `issue-check.mjs` keeps for `--timeout-ms`'s positivity: a
-    // `missing-flag-value` refusal would name the flag and stop, where the
-    // seam's own refusal names the CONFIRMATION the caller owes the user.
-    //
-    // `--remote-url` is REQUIRED BY THE PROVIDER, not by the row: the two
-    // providers whose pinned create argv wires no git remote need it and the
-    // one that wires its own does not, so the row states `false` and the seam
-    // states which arm. It refuses on both axes for the reason the selectors
-    // do, sharpened: a valueless one would point `origin` at nothing.
+    // The create face. Both selectors refuse on both axes: a valueless --provider would look up undefined, a
+    // valueless --repo would name no repository, and this is the one subcommand here that mutates a forge.
+    // --confirmed is `required: false` here and enforced in the seam, whose refusal names the confirmation the caller
+    // owes the user. --remote-url is required by the provider, not the row, so the seam says which arm; a valueless
+    // one would point origin at nothing.
     create: {
       '--provider': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--repo': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -1254,20 +645,13 @@ export const CONTRACTS = {
     },
     check: {
       '--base': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+      // --timeout-ms falls back on a malformed value too: that seam never fails a land or makes an unbounded call
       '--timeout-ms': { required: false, type: 'int', value: 'fallback', bare: 'fallback' },
     },
   },
-  // The filing seam (CAP-01, CAP-02). Both faces take the SAME flag with the
-  // same grammar, and the row is written twice rather than hoisted into `*`:
-  // required-ness is per subcommand in this table, and `--payload` is required
-  // on both only because both faces happen to need one - a third face that did
-  // not would have to un-declare it out of `*`, which is the shape this file's
-  // own header calls a bound one face does not hold.
-  //
-  // `--payload` REFUSES on both axes. It names the FILE the whole answer is
-  // read from: a bare one would fall through to reading `undefined` as a path,
-  // and a whitespace-only one names no file at all. There is no fallback that
-  // could be right - a filing seam with no payload has nothing to file.
+  // The filing seam. Both faces take the same flag with the same grammar, and the row is written twice, not hoisted
+  // into '*': a third face without --payload would have to un-declare it. --payload refuses on both axes: it names
+  // the file the whole answer is read from, and no fallback could be right.
   'issue-filing.mjs': {
     '*': {
       '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -1284,6 +668,7 @@ export const CONTRACTS = {
       '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     bump: {
+      // --version falls back on a bare spelling; --date refuses it, or a valueless --date would silently date today
       '--version': { required: false, type: 'string', value: 'refuse', bare: 'fallback' },
       '--date': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
@@ -1294,34 +679,20 @@ export const CONTRACTS = {
       '--role': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--attempt': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-      // REFUSE on both axes, reversed from `warn` when this flag became a FLOOR
-      // input (CER-01 D-09). The old disposition answered a typo by computing a
-      // floor from the CURSOR's phase - a different phase's declared files -
-      // and the resolved bundle gave the caller nothing to notice it by.
-      // Refusing is loud at the call site and is the only disposition that
-      // cannot silently route a phase off another phase's plans. An ABSENT
-      // flag still falls to the cursor, unchanged: this is a VALUE door.
+      // refuses on both axes, reversed from warn when this flag became a risk-floor input: the old disposition
+      // answered a typo by flooring off the cursor's phase, a different phase's files, with nothing in the bundle to
+      // notice it. An absent flag still falls to the cursor: this is a value door.
       '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--bracket-read': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--bracket-plan': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-      // `--plan` narrows the risk FLOOR's scope from the phase's union to one
-      // plan, which is what an executor dispatch floors on (CER-01 D-06). It is
-      // `plan-key` for the reason `risk-check`'s two faces are - one predicate,
-      // lib/plan-key.mjs's, judges every value a `--plan` may carry - and it
-      // REFUSES on both axes, unlike its `--bracket-plan` neighbour: a valueless
-      // plan flag would silently take the phase UNION for a caller that asked
-      // about one plan, which is the wrong arm and a wider one.
-      //
-      // A SEPARATE FLAG from `--bracket-plan`, deliberately. That value is the
-      // trace WORKER key and is the ROLE NAME for every non-executor dispatch,
-      // so reading it as a floor key would make a phase-scoped role
-      // indistinguishable from a plan key naming no file - and those two take
-      // opposite arms, the union versus fail-closed.
+      // --plan narrows the risk floor's scope from the phase's union to one plan, which is what an executor dispatch
+      // floors on. It refuses on both axes, unlike --bracket-plan: a valueless one would silently take the phase
+      // union for a caller asking about one plan. It's a separate flag because --bracket-plan is the trace worker
+      // key, the role name for every non-executor dispatch, which can't tell a phase-scoped role from a plan key
+      // naming no file.
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
     },
-    // The prefixed name for the two reviews that resolve no routing (MOD-04):
-    // they dispatch the base `cad-reviewer`, and a bare name is the user's to
-    // own, so they ask for `<plugin>:<stem>` without touching config or trace.
+    // the prefixed name for the two reviews that resolve no routing: they dispatch the base cad-reviewer
     'agent-type': {
       '--stem': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },
@@ -1336,11 +707,7 @@ export const CONTRACTS = {
     '*': {
       '--key-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // `--trigger` names the review trigger the call was fired for; it rides the
-    // provider trace event so a cross-model fire JOINS to its trigger through
-    // the correlation id, which is what makes it distinguishable from the
-    // subagent fire of the same trigger (RVW-02). Optional and review-only: a
-    // consult has no trigger.
+    // --trigger rides the provider trace event so a cross-model fire joins its trigger. Review-only: consults have none
     review: {
       '--provider': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--model': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -1362,44 +729,37 @@ export const CONTRACTS = {
     '*': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // '' is the bare form, `weight.mjs --root <path>`: without it the prose lint reads the first flag as the subcommand
     '': {},
     resident: {
       '--command': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
   },
-  // Two scripts with no subcommand at all. They carry rows because check 14
-  // requires one, and the rows have teeth: the bare form's flag list is what
-  // check 2 lints `self-verify.mjs --root <path>` against.
+  // self-verify.mjs has no subcommand, so it carries a bare row like the hooks below; the prose lint checks its flags
   'self-verify.mjs': {
     '*': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     '': {},
   },
-  // git-guard.mjs is the commit hook - it reads its input on stdin and takes
-  // no flags, so the bare form allows none.
+  // git-guard.mjs is the commit hook: input on stdin, no flags, so the bare form allows none
   'git-guard.mjs': {
     '*': {},
     '': {},
   },
 
-  // read-trace.mjs is the PostToolUse recorder - like git-guard.mjs it reads
-  // its input on stdin and takes no flags and no subcommand at all.
+  // read-trace.mjs is the PostToolUse recorder: stdin input, no flags and no subcommand, like git-guard.mjs
   'read-trace.mjs': {
     '*': {},
     '': {},
   },
-  // subagent-trace.mjs is the SubagentStop hook that closes a bracket the
-  // orchestrator opened. Same empty shape and the same reason as the two hooks
-  // above: the payload arrives on stdin, and it takes no flags and no
-  // subcommand at all.
+  // subagent-trace.mjs is the SubagentStop hook that closes a bracket the orchestrator opened; empty like the others
   'subagent-trace.mjs': {
     '*': {},
     '': {},
   },
-  // skim.mjs takes a FILE as its positional argument, never a subcommand, so
-  // the bare row carries the whole flag set.
+  // skim.mjs takes a file as its positional argument, never a subcommand, so the bare row carries the whole flag set
   'skim.mjs': {
     '*': {},
     '': {
@@ -1407,11 +767,9 @@ export const CONTRACTS = {
       '--no-numbers': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
   },
-  // why.mjs takes a QUERY (`<path>[:<line>]`) as its positional argument,
-  // never a subcommand, so the bare row carries the whole flag set - the
-  // skim.mjs precedent. `--dir` is the repository root and lives on `'*'`
-  // with every other seam's `--dir`/`--root` row; `--top` is this seam's own,
-  // task 2's entry cap (CONTEXT D-13).
+  // why.mjs takes a query (<path>[:<line>]) as its positional argument, never a subcommand, so the bare row carries
+  // the whole flag set, as skim.mjs does. --dir is the repository root and sits on '*' like every seam's
+  // --dir/--root; --top is its entry cap.
   'why.mjs': {
     '*': {
       '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -1423,32 +781,11 @@ export const CONTRACTS = {
 };
 
 // --- the conditional presence rules: script -> subcommand -> one rule --------
-//
-// The SECOND declared structure the header names, read by `evaluatePresence`
-// and by nothing else. `when` is the conditioning flag, `is` the values that
-// arm the rule, and `requires` the flags ONE of which must then be present.
-// Every flag a rule names is declared on that same subcommand's `CONTRACTS`
-// row, which arg-contract.test.mjs walks: a rule naming a flag no row declares
-// is a requirement a caller cannot satisfy without tripping self-verify check
-// 2, and a misspelled one is a rule that silently never fires.
-//
-// THE ONE RULE TODAY, and what it closes. A review fire is settled by an
-// `adjudication`, `gate_pass` or `override` receipt, and the figures it settles
-// on are what planning/trace.mjs recounts against the committed
-// `ADJUDICATION-*.json`. Carrying NONE of them skipped that recount before it
-// opened anything: measured on the shipped tree, a `gate_pass` naming only
-// `--trigger`, `--plan`, `--base` and `--sha`, over a record holding a survived
-// blocker marked `overridden: true`, was appended, and `risk-check status` then
-// reported the range `recorded` - a blocking range cleared by a receipt that
-// asserted nothing (RSK-08, UAT item 3). `rearm` and `deferral` stay unbound on
-// purpose: neither settles anything, and references/triage-gate.md's fenced
-// commands for both carry no figures by contract, so binding them would refuse
-// a documented line.
-//
-// IT LIVES AT THE ARGUMENT DOOR and not in the seam. planning/trace.mjs states
-// it carries "never a runtime refusal keyed to an event name" and that property
-// is unchanged; planning/risk-check.mjs's `if (e.event === 'override')` arm is
-// the shipped precedent for event-name knowledge living outside that seam.
+// The second declared structure, read by `evaluatePresence` alone, and never a fifth field in a row, since the prose
+// lint reads a row's keys as flag names.
+// The one rule: a review fire is settled by an adjudication, gate_pass or override receipt, and trace.mjs recounts the
+// figures against the committed record. A gate_pass carrying none once cleared a blocking range asserting nothing.
+// It lives at the argument door because trace.mjs has no runtime refusal keyed to an event name.
 export const PRESENCE_RULES = {
   'planning.mjs': {
     'trace append': {
@@ -1460,15 +797,10 @@ export const PRESENCE_RULES = {
 };
 
 /**
- * The flag NAMES a row declares, for the prose lint that reads this table from
- * the other side. self-verify.mjs check 2 asks it twice per invocation it finds
- * in prose - once for the subcommand's own row and once for the script's `'*'`
- * row - and unions the two.
- *
- * It exists so the lint never spreads a row DIRECTLY: a row is a value-grammar
- * object, and a check that spread one would read its four grammar fields as
- * flag names. Asking for the names is what lets ONE table serve the prose lint
- * and the CLI refusals at once (D-06).
+ * The flag names a row declares, for the prose lint that reads this table from the other side. It asks twice per
+ * invocation it finds in prose, once for the subcommand's row and once for `'*'`, and unions them. Asking for names is
+ * what lets one table serve the lint and the CLI refusals: a row is a value-grammar object, and a check that spread one
+ * would read its four grammar fields as flag names.
  * @param {Record<string, any>|undefined} row
  * @returns {string[]}
  */

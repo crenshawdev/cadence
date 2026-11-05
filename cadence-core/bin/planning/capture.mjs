@@ -1,6 +1,5 @@
 // @ts-check
-// planning/capture.mjs - `capture`: one bullet into .planning/CAPTURE.md, under
-// the heading its kind owns.
+// planning/capture.mjs - `capture`: one bullet into .planning/CAPTURE.md, under the heading its kind owns
 'use strict';
 
 import { readFileSync } from 'node:fs';
@@ -10,14 +9,7 @@ import { CAPTURE_KINDS, appendCapture } from '../lib/capture-file.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 
-// ---------------------------------------------------------------------------
-// capture - one bullet into `.planning/CAPTURE.md`, under the heading its kind
-// owns. The whole point is that the heading is NOT an argument: the append used
-// to be `/cad-capture` prose holding `Write`/`Edit`, and five filed bullets were
-// lost to a heading the recall walk does not visit. The format, the section and
-// the file I/O live in lib/capture-file.mjs; this owns the flag contract and the
-// envelope.
-// ---------------------------------------------------------------------------
+// the heading is not an argument: the append used to be prose, and five bullets were lost to the wrong heading
 function cmdCapture(dir, opts) {
   const kind = typeof opts.kind === 'string' ? opts.kind.trim() : '';
   if (!CAPTURE_KINDS.includes(kind)) {
@@ -26,12 +18,7 @@ function cmdCapture(dir, opts) {
       'send one of the kinds the detail lists - it decides which heading of CAPTURE.md the item is'
       + ' filed under, and the recall walk reads them differently');
   }
-  // `--text-file` is the SAFE transport and the one the workflows prescribe.
-  // `--text "<item>"` puts caller-derived prose inside a double-quoted shell
-  // word, so an item carrying `$(...)` or a backtick executes before Node
-  // starts. A path cannot: the caller writes the sentence with a file tool and
-  // names the file here. `--text` stays for a human typing at a shell, where
-  // the text is the user's own.
+  // --text-file is the safe transport: a double-quoted `--text` word lets $(...) run before Node starts
   if ('text-file' in opts && (typeof opts['text-file'] !== 'string' || opts['text-file'].trim() === '')) {
     return fail('bad-args', 'capture --text-file needs a path after it: --text-file <path>',
       'write the sentence to a file and name it after the flag - nothing was captured, so the'
@@ -58,9 +45,7 @@ function cmdCapture(dir, opts) {
         + ' is what a write that never landed looks like');
     }
   } else {
-    // parseArgs hands a VALUELESS flag the boolean `true`, so a bare `--text`
-    // has to be refused here - written through, it captures the literal word
-    // "true" and the user's sentence is gone with an ok:true envelope (#42/#45).
+    // parseArgs hands a valueless flag the boolean true, so a bare --text is refused or it would capture "true"
     text = typeof opts.text === 'string' ? opts.text.trim() : '';
     if (!text) {
       return fail('bad-args',
@@ -73,9 +58,7 @@ function cmdCapture(dir, opts) {
   /** @type {string|undefined} */
   let phase;
   if ('phase' in opts) {
-    // Admitted with `todo` ALONE. A seed or a note carrying `--phase` would be
-    // written with no tag, leaving the caller believing it tagged something -
-    // so the flag is refused rather than dropped.
+    // todo only: a seed or note with --phase would be written untagged and the caller would think it tagged
     if (kind !== 'todo') {
       return fail('bad-args', 'capture --phase is admitted only with --kind todo'
         + ' - a seed and a note carry no phase tag',
@@ -89,30 +72,19 @@ function cmdCapture(dir, opts) {
         'send a plain phase number, or drop --phase to file the item untagged - nothing was'
         + ' captured');
     }
-    // The caller's OWN spelling, so `--phase 1.10` tags `(phase 1.10)`.
-    // THE STANDING EXEMPTION from the tree-aware `phaseSpellingCollision` check
-    // every other `--phase` face under `planning/` now carries (CONTEXT D-08):
-    // this one resolves no `phases/<N>/` path at all - `raw` is a TAG appended
-    // to CAPTURE.md below - and `capture-file.test.mjs:93-98` pins that
-    // `--phase 1.10` produces `(phase 1.10)` whatever is on disk.
+    // the caller's own spelling, so a 1.10 phase is tagged 1.10 and not 1.1
+    // exempt from phaseSpellingCollision on purpose: no phases/<N>/ path is resolved, raw is only a tag in CAPTURE.md
     phase = parsed.raw;
   }
-  // Same present-but-unusable refusal `debt-harvest --root` carries: a flag with
-  // nothing usable after it is never silently answered about the default path,
-  // which would write a different file than the caller named (#42/#45).
+  // same refusal as debt-harvest --root: an unusable flag value never silently falls back to the default path
   if ('file' in opts && (typeof opts.file !== 'string' || opts.file.trim() === '')) {
     return fail('bad-args', 'capture --file needs a path after it: --file <path to CAPTURE.md>',
       'name the CAPTURE.md to append to, or drop --file to use the one under --dir - nothing was'
       + ' captured');
   }
   const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
-  // `--file` is `/cad-capture --cadence`'s arm alone (lib/arg-contract.mjs), and
-  // its entry carries `host: <origin URL>` built from `git remote get-url
-  // origin`, whose userinfo can be a credential (gap 7, D-14). The strip is
-  // here, once, rather than in the prose that builds the line. It is
-  // `redactUrl`'s URL-position rule, so `ssh://git@host` becomes
-  // `ssh://<redacted>@host` - over-redacted, accepted (D-14). The project arm
-  // (no `--file`) is the user's own queue and writes the text unchanged.
+  // --file is the /cad-capture --cadence arm and its `host: <origin URL>` can carry credentials, so strip once here
+  // ssh://git@host becomes ssh://<redacted>@host, over-redacted and accepted; the project arm writes the text unchanged
   if (typeof opts.file === 'string') text = redactUrl(text);
   const res = appendCapture(file, kind, text, phase);
   if (res.ok === false) {

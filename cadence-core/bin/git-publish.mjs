@@ -1,94 +1,26 @@
 #!/usr/bin/env node
 // @ts-check
-// git-publish.mjs - the ONE seam that actually MUTATES, on two of its three
-// subcommands: `publish` and `reap` ACT (they run git), `authorized` only
-// ANSWERS - it runs no git, spawns no process at all, and touches nothing. It
-// lives here rather than in a file of its own because the question it answers,
-// "did both config layers authorize an unattended close", is the same question
-// gate 1 of `publish` asks, and one seam asking it twice is one place it can
-// drift. cad-land's autonomous
-// GitHub close (git.auto_close) needs the local-only integration branch on a
-// remote before `gh pr create`, and rail 3's push guard (git-guard.mjs) asks on
-// every Bash `git push` unconditionally. This seam runs its git as a SUBPROCESS
-// (execFileSync argv, not a Bash tool call), so the Bash PreToolUse hook never
-// sees it and there is no prompt - the code-guarded exception that replaced
-// git-guard's deleted command-string exemption. (TOK-02 later deleted the
-// destructive rail, so a Bash `git branch -D` no longer prompts at all; the
-// push guard's unconditional ask is the one prompt this seam still exists to
-// keep out of the unattended close.)
-//
-// Why a new file, not a land-cleanup.mjs subcommand: land-cleanup.mjs and its
-// lib/close-decision.mjs are ADVISORY - they decide from config + state and
-// NEVER run live git. git-publish is the one seam that ACTS (it runs the push
-// and the reap). Folding a live push into an advisory file would destroy the
-// advisory/acting boundary, so it gets its own file, CONTRACTS row, test file,
-// and git-* name - and the reap lands here for the same reason rather than
-// beside the advice that gates it. All the safety lives in the pure
-// lib/publish-decision.mjs (node --test), separated from this thin I/O wrapper
-// (D-10).
-//
-// Subcommands (each prints one JSON line, seam convention lib/seam-io.mjs):
-//   publish [--dir <path>] [--remote <name>]
-//     --dir     repo/planning root. An ABSENT --dir is the process cwd; an
-//               EMPTY or valueless one REFUSES (`missing-flag-value`, exit 1,
-//               nothing run) rather than pushing or reaping in a tree the
-//               caller never named (phase 2 D-01). Applies to all three
-//               subcommands.
-//     --remote  the remote to publish to (default `origin`).
-//   reap [--dir <path>] --branch <name>
-//     --branch  the merged local integration branch to delete.
-//   authorized [--dir <path>]
-//     answers only: did BOTH config layers authorize an unattended publish or
-//     merge (D-02). Mutates nothing and runs nothing, so a host whose publishing CLI
-//     does its own pushing (GitLab: `glab mr create` publishes the source
-//     branch itself) still has one authorization answer to consult BEFORE it
-//     mutates, instead of no gate at all.
-//   verify-publish [--dir <path>] [--remote <name>]
-//     /cad-verify's push so CI can run on the branch. Authorized ONLY by
-//     `cadence.publishForVerification` true in this repository's own .git/config
-//     (lib/publish-authorization.mjs); git.auto_close is not consulted. Same
-//     branch and remote rules as publish, and its git calls run with the
-//     repository-local env variables (GIT_DIR, ...) removed from the process.
-// publish refuses (ok:false + reason, pushes nothing) unless git.auto_close is
-// true in BOTH this repository's .planning/config.json and the user-global
-// config AND HEAD is a non-protected branch whose name is safe AND the remote is
-// a configured bare name. Either half alone authorizes nothing (D-02, keeping
-// D-08 and adding its converse): a cloned repository's committed config cannot
-// turn on an unattended push, and a home-directory value cannot speak for a
-// repository. The read is lib/repo-auto-close.mjs `autoCloseLayers`, never the
-// merged value; the refusal's `detail` names which file to fix
-// (lib/publish-decision.mjs authorizationDetail). skills/cad-land/SKILL.md
-// step 3 branches on `authorized`, so the ask it skips is this same answer.
-// reap refuses on a missing, unsafe, protected or checked-out branch, and
-// SKIPS an already-absent one (ok:true) so a close stays idempotent. It runs no
-// merged check - land-cleanup.mjs cleanup owns that verdict - and no auto_close
-// check: deleting a local branch publishes nothing.
+// the one seam that mutates: publish, verify-publish and reap run git, authorized only answers
+// a subprocess push, not a Bash call, so git-guard's push ask never fires on an unattended close
+// an empty or valueless --dir refuses instead of acting on the cwd
+// publish needs git.auto_close true in both the repo and user-global config; either half alone authorizes nothing
+// verify-publish is authorized only by cadence.publishForVerification in this repo's own .git/config
+// reap skips an absent branch (ok:true) so a close stays idempotent
 'use strict';
 
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
-// The both-layer `git.auto_close` read (D-02), never the merged one. Its module
-// header carries why each half is a raw read and why it must fail closed.
+// both layers, never the merged value: each half is a raw read that fails closed
 import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { authorizationDetail, decidePublish, decideReap, decideVerificationPublish, tornLayerRefusal } from './lib/publish-decision.mjs';
-// The ONE reader of `cadence.publishForVerification`, and the env scrub the
-// verification publish's own git calls run under (D-02).
+// the verification publish's authorization read and the env scrub its git calls run under
 import { localGitEnv, publishAuthorized } from './lib/publish-authorization.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
-// The argument contract (ARG-06). This file states no flag rule of its own any
-// more: what each flag may be, and what it costs when it is not, are DECLARED
-// rows in lib/arg-contract.mjs, and `requireFlag` raises the refusal in the
-// throwing form the catch arm at the foot of this file already renders. `--dir`
-// declares `refuse` because it names the tree this seam pushes into and deletes
-// branches from, so an empty or valueless one must refuse rather than default
-// to the cwd (D-01). Every other flag here declares `fallback` and legitimately
-// defaults.
+// requireFlag raises the refusal the catch at the foot renders; --dir refuses when empty so it can't default to the cwd
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
-// The current-branch reader, shared with git-guard.mjs and git-branch.mjs. It
-// degrades to '' rather than throwing; here that '' reaches decidePublish as
-// "no branch", which refuses the push.
+// a failed read degrades to '', which decidePublish sees as no branch and refuses
 import { readCurrentBranch } from './lib/git-head.mjs';
 import { redactUrl, redactAndCap } from './lib/redact-url.mjs';
 
@@ -101,31 +33,13 @@ function readRemotes(dir) {
   } catch { return []; }
 }
 
-/** The protected-branch list for the repo at `dir`, coerced by the ONE shared
- * reader lib/protected-branches.mjs - which carries the #38 lone-string
- * tolerance (a hand-edit names the branch the user means to protect; do not
- * silently swap the list) and the empty-list rule.
+/** The protected-branch list for the repo at `dir`, plus the merge's `warnings` and `tornLayers`.
  *
- * Returns the merge's `warnings` AND its `tornLayers` alongside the list rather
- * than dropping either: this list is what stops the ONE mutating seam from
- * pushing off a protected branch, so a torn layer means that refusal is running
- * on the default `["main","master"]` and not on the user's. Both callers put
- * the warnings on their envelope AND refuse to mutate on the torn class - see
- * `tornLayerRefusal` in lib/publish-decision.mjs.
+ * A torn layer means the protected list ran as the default ["main","master"], so both mutating arms refuse on it.
+ * Only `tornLayers` counts, not every warning, or each new diagnostic would stop a land.
  *
- * The two are separate answers on purpose. `warnings` is a MESSAGE channel that
- * carries every diagnostic the merge can produce; refusing on all of it made
- * each new diagnostic a land-stopper, which is why phase 1 had to route its
- * global-only-key warning around this seam (D-18). `tornLayers` is the CLASS
- * this gate actually means.
- *
- * It also returns the MERGED `git.auto_close`, because this is the one place the
- * file merges anything, and asking the merge a second question costs nothing
- * while a second `mergeLayers(` callsite would both re-read the same files and
- * move a count self-verify.test.mjs pins tree-wide. That value decides NOTHING
- * here: `authorized` reports it as `requested`, what `config.mjs get` would
- * show, so `/cad-land` can tell a user who set one half why the ask came back.
- * The verdict is `autoCloseLayers`' both-layer read. */
+ * It also returns the merged `git.auto_close`, because a second merge call here would move a count self-verify pins.
+ * That value decides nothing: `authorized` reports it as `requested` and the both-layer read is the verdict. */
 function readProtectedBranches(dir) {
   const { config, warnings, tornLayers } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
@@ -133,10 +47,7 @@ function readProtectedBranches(dir) {
   return { branches, autoCloseRequested: git.auto_close === true, warnings, tornLayers };
 }
 
-/** Does `refs/heads/<branch>` exist in the repo at `dir`? The probe argument is
- * always `refs/heads/` + the name, so it can never begin with a `-` however the
- * name was spelled - and an unsafe name is refused by decideReap's earlier gate
- * regardless of what this answers. */
+/** Does `refs/heads/<branch>` exist? Always probed with the `refs/heads/` prefix, so a name can't pass as an option. */
 function branchExists(dir, branch) {
   if (typeof branch !== 'string' || !branch) return false; // decideReap refuses first
   try {
@@ -146,14 +57,7 @@ function branchExists(dir, branch) {
   } catch { return false; }
 }
 
-/** The next step per GATE, keyed on the ARM and then on the reason
- * lib/publish-decision.mjs decided. A table rather than one sentence because
- * the gates have different remedies and a hint covering all of them would name
- * none of them - and keyed on the arm as well because three tokens mean
- * different things on the two: `no-branch` is a detached HEAD when publishing
- * and an unnamed `--branch` when reaping. `gateHint` falls back to a general
- * line, so a gate added to the pure core later still says something rather than
- * emitting a bare `undefined`. */
+/** The next step per gate, keyed by arm then reason, since `no-branch` means different things on publish and reap. */
 const GATE_HINTS = Object.freeze({
   publish: Object.freeze({
     'auto-close-off': 'the unattended close needs `git.auto_close` true in BOTH this repository\'s `.planning/config.json` and the user-global config - the detail names which file to fix - or push by hand',
@@ -189,12 +93,7 @@ function publish(dir, remote) {
   const autoClose = autoCloseLayers(dir);
   const { branches: protectedBranches, warnings, tornLayers } = readProtectedBranches(dir);
 
-  // No push while a config layer is torn (lib/publish-decision.mjs
-  // `tornLayerRefusal`), checked BEFORE decidePublish. Under the both-layer read
-  // a torn layer always makes one half false, so gate 1 would otherwise answer
-  // first and report a parse failure as a missing opt-in. Checking first masks
-  // no other gate's reason: with a torn layer gate 1 is the only gate
-  // decidePublish can reach. `reap` keeps its order - it has no auto-close gate.
+  // checked before decidePublish: a torn layer makes gate 1 report a parse failure as a missing opt-in
   const tornPublish = tornLayerRefusal({ warnings, tornLayers });
   if (tornPublish) {
     emit({ ok: false, reason: 'config-parse-failed', branch: currentBranch,
@@ -206,8 +105,7 @@ function publish(dir, remote) {
 
   const decision = decidePublish({ autoClose, currentBranch, protectedBranches, remote, configuredRemotes });
   if (decision.action !== 'publish') {
-    // `detail` is undefined on every gate but the auto-close one, and
-    // JSON.stringify drops an undefined value, so those envelopes are unchanged.
+    // detail is undefined on every gate but auto-close, and JSON drops undefined
     emit({ ok: false, reason: decision.reason, branch: decision.branch, remote: decision.remote,
       detail: decision.detail, hint: gateHint('publish', decision.reason), warnings });
     return;
@@ -216,26 +114,16 @@ function publish(dir, remote) {
   pushDecided(dir, decision, warnings);
 }
 
-/** Run the push `decision` built, then emit its envelope. Shared by `publish` and
- * `verify-publish` so the push, and the one credential-redacting error site,
- * exist once.
+/** Run the push `decision` built, then emit its envelope. Shared, so the redacting error site exists once.
  *
- * The program is the literal 'git' and the args are a JS array (execve, never
- * /bin/sh); no command string is ever built. The only variable tokens are
- * `dir` (right after -C, a path), the validated `remote`, and the `branch`
- * (only inside the refspec the decider built). No -c/--config/global option. */
+ * The program is the literal 'git' and args are an array: no shell, no command string, no -c or --config. */
 function pushDecided(dir, decision, warnings) {
   try {
     execFileSync('git', ['-C', dir, ...decision.argv],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     emit({ ok: true, action: 'published', branch: decision.branch, remote: decision.remote, warnings });
   } catch (e) {
-    // git's stderr names the remote URL, and on the transports it does not
-    // anonymize that URL still carries its userinfo - this is the one site a
-    // credential actually reaches an envelope through (lib/redact-url.mjs). The
-    // remote is the caller's, so the message is also free-form: both redactors,
-    // then the 1024-byte cap (D-13). reap-failed and internal below keep
-    // `redactUrl` only.
+    // git's stderr can carry the remote URL with userinfo, so redact and cap before it reaches an envelope
     emit({ ok: false, reason: 'push-failed',
       detail: redactAndCap(e && e.message ? e.message : String(e)),
       hint: 'git itself refused: pull and rebase if it names a non-fast-forward, or fix the credentials for this remote, then re-run',
@@ -243,15 +131,9 @@ function pushDecided(dir, decision, warnings) {
   }
 }
 
-/** The verification publish: push the current branch so CI can run on it, when
- * and only when this repository's own `.git/config` says
- * `cadence.publishForVerification` is true. `git.auto_close` is not read.
+/** Push the current branch so CI can run on it, only when this repo's own `.git/config` allows it.
  *
- * The repository-local variables (`GIT_DIR`, ...) are deleted from this
- * process's environment first, the same set lib/publish-authorization.mjs
- * `localGitEnv` removes for its read. This is a one-shot CLI process, so that
- * one scrub covers the shared branch reader, the remote read and the push, and
- * none of them can be pointed at another repository. */
+ * The repo-local GIT_* variables are deleted from this process first, so nothing here can be aimed at another repo. */
 function verifyPublish(dir, remote) {
   const clean = localGitEnv();
   for (const name of Object.keys(process.env)) if (!(name in clean)) delete process.env[name];
@@ -267,8 +149,7 @@ function verifyPublish(dir, remote) {
     return;
   }
 
-  // The protected-branch list is what stopped a protected push above, so a torn
-  // layer (the list ran as the default) refuses here, before the mutation.
+  // a torn layer means the protected list ran as the default, so refuse before the push
   const torn = tornLayerRefusal({ warnings, tornLayers });
   if (torn) {
     emit({ ok: false, reason: 'config-parse-failed', branch: currentBranch, remote, detail: torn,
@@ -288,8 +169,7 @@ function reap(dir, branch) {
     exists: branchExists(dir, branch),
   });
   if (decision.action === 'skip') {
-    // Idempotent close: the platform's own --delete-branch may already have
-    // taken it. Nothing to do is a success, not a failure.
+    // idempotent close: the platform's own --delete-branch may already have taken it, and nothing to do is a success
     emit({ ok: true, action: 'already-absent', branch: decision.branch, warnings });
     return;
   }
@@ -299,11 +179,7 @@ function reap(dir, branch) {
     return;
   }
 
-  // No branch deletion while the protected list is unprovable - this is the arm
-  // the reproduction hit. Sited at the MUTATION, so every refusal decideReap
-  // reached keeps its own named reason, and it is what keeps `reap`'s already-absent SKIP above at `ok:true`:
-  // cad-land's close is idempotent, and a torn layer must not break a re-run
-  // that deletes nothing.
+  // sited at the mutation so other refusals keep their reason and an already-absent skip stays ok:true
   const tornReap = tornLayerRefusal({ warnings, tornLayers });
   if (tornReap) {
     emit({ ok: false, reason: 'config-parse-failed', branch: decision.branch,
@@ -313,16 +189,7 @@ function reap(dir, branch) {
     return;
   }
 
-  // Same execve discipline as publish: the program is the literal 'git', the
-  // args are a JS array, no command string is ever built, and the only variable
-  // tokens are `dir` (right after -C) and the SAFE_BRANCH-validated name behind
-  // a `--` end-of-options separator. The rail this comment used to cite was the
-  // destructive-op guard v2.2.0 deleted, so a Bash `git branch -D` now prompts
-  // nowhere at all (see the header): running the reap here rather than as Bash
-  // prose is what keeps the branch name from ever becoming shell, and the one
-  // prompt this seam still exists to keep out of the unattended close is the
-  // push guard's unconditional ask on the publish half
-  // (references/git-publish.md rail 3).
+  // execve with a literal 'git' and an array, the name validated and behind `--`, so the branch never becomes shell
   try {
     execFileSync('git', ['-C', dir, ...decision.argv],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -335,28 +202,11 @@ function reap(dir, branch) {
   }
 }
 
-/** The read-only arm: did BOTH config layers authorize an unattended publish or
- * merge of the repository at `dir` (D-02)? Answers the same question `publish`'s gate 1 asks, from the
- * same pure core (lib/publish-decision.mjs authorizationDetail), so the two can
- * never word it differently - one core, two emits.
+/** Did both config layers authorize an unattended publish or merge? Same pure core as publish's gate 1, so no drift.
  *
- * It exists for the hosts whose publishing CLI pushes the branch itself. On
- * GitHub and Forgejo the chain has to come through `publish` to get the branch
- * onto the remote, so the refusal above stops it; on GitLab `glab mr create`
- * publishes the source branch, no seam call happens, and an unattended merge
- * proceeded on a value nobody authorized. This arm is what that path consults
- * first (skills/cad-land/SKILL.md step 3(b)), and what step 3 itself branches
- * on, so the ask it skips is exactly the close this arm authorizes.
+ * Hosts like GitLab push the branch from their own CLI (`glab mr create`) and never reach `publish`.
  *
- * It runs no git and spawns nothing at all - it reads two config layers. That
- * is deliberate: a seam that ran `glab` would put a third-party network CLI's
- * failure modes on the same envelope as a merge authorization.
- *
- * It deliberately does NOT apply `tornLayerRefusal`, unlike the two mutating
- * arms. Nothing mutates here, and the both-layer read already fails closed on
- * a torn layer: that half reads `unreadable`, so the answer is `auto-close-off`
- * with a detail naming the file that could not be read - the real cause, which
- * `/cad-land` step 3 prints. The merge's warnings still ride the envelope. */
+ * It runs no git, and skips `tornLayerRefusal` because nothing mutates; a torn layer already reads auto-close-off. */
 function authorized(dir) {
   const { autoCloseRequested, warnings } = readProtectedBranches(dir);
   const detail = authorizationDetail(autoCloseLayers(dir));
@@ -368,25 +218,16 @@ function authorized(dir) {
     hint: gateHint('publish', 'auto-close-off'), warnings });
 }
 
-// --- dispatch ----------------------------------------------------------------
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** This script's declared rows. A subcommand's own row wins over the `'*'` row,
- * where the flags allowed on every arm - here `--dir` - are declared once. */
+/** This script's declared rows. A subcommand's own row wins over the `'*'` row, where flags every arm takes live. */
 const ROWS = CONTRACTS['git-publish.mjs'];
-/** One flag of `sub`, read through its DECLARED row. The row owns the rule and
- * this binding owns nothing: it is an adapter over this file's own argv, never
- * a second statement of what a flag may be. */
+/** One flag of `sub`, read through its declared row. The row owns the rule; this just adapts our argv. */
 const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
-  // `--dir` declares `refuse` on both axes, so a genuinely ABSENT one still
-  // reads as undefined and the cwd default below is unchanged while the empty,
-  // valueless and flag-shaped spellings raise the refusal the e.seam arm names.
-  // `--remote` and `--branch` declare `fallback` (D-12): a spelling carrying no
-  // usable value reads as absent, so `|| 'origin'` still answers for the remote
-  // and `reap` still refuses `no-branch` rather than reaping a guessed one.
+  // --dir refuses when empty, valueless or flag-shaped; --remote and --branch fall back (origin, and reap's no-branch)
   if (cmd === 'publish') {
     publish(arg('publish', '--dir') || process.cwd(), arg('publish', '--remote') || 'origin');
   } else if (cmd === 'verify-publish') {
@@ -401,12 +242,7 @@ try {
         + ' | authorized [--dir <path>]' });
   }
 } catch (e) {
-  // The seam arm is what a `refuse` row costs its bin (D-08/D-09): the raised
-  // refusal object carries no `message`, so without this arm a valueless --dir
-  // would surface as
-  // {"ok":false,"reason":"internal","detail":"[object Object]"}. It goes out
-  // through emit on stdout like every other verdict (D-02) - stderr is a
-  // channel no workflow reading this seam parses.
+  // a refusal carries no message, so without this a valueless --dir surfaces as internal "[object Object]"
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
     hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });

@@ -1,32 +1,10 @@
 // @ts-check
-// trace-suggest.mjs - evidence-backed config suggestions read off the joined
-// run record. The pure half of `planning.mjs trace suggest`: renderTrace()
-// produces the render, this file turns it into suggestions, and the caller
-// owns the envelope. No I/O here, deliberately - every rule is a pure
-// function over the render so a test can pin exact outputs to exact traces.
-//
-// The posture is the triage gate's, applied to configuration: suggestions are
-// INPUT to a decision the user makes, never applied by anything. Each carries
-// its evidence inline (counts drawn from the record, not adjectives), the
-// exact config key it concerns, and a kind:
-//   - `suggest` - the record supports changing a key; the user decides.
-//   - `info`    - a receipt worth seeing that asks for nothing.
-//
-// Every rule needs a floor of evidence before it speaks (MIN_* below). A
-// suggestion computed from one event is a guess wearing a verdict, and the
-// whole point of reading the trace is to not guess.
-//
-// A keyed suggestion also names WHICH WAY to move the key and what it holds now
-// (SGT-01), and that is why `suggestFromRender` takes a second argument. The
-// values behind those keys live on disk - the merged config layers, the gate
-// ladder in `config.schema.json`, the resolved task ceiling - and reading them
-// here would end the purity above. So the CALLER resolves them and passes them
-// in: `planning.mjs`'s `suggest` arm owns every read, this file owns every
-// rule, and the argument is optional so a test can still call
-// `suggestFromRender(render(...))` with one argument and get an honest "unset"
-// rather than a throw. `direction` is assigned per RULE rather than by the
-// caller (phase 5 plan-2 note): the caller cannot know whether R1 fired on its
-// gate arm or its reviewer arm until these rules have run.
+// trace-suggest.mjs - config suggestions read off the run record, the pure half of `planning.mjs trace suggest`.
+// No I/O: every rule is pure over the render, so a test can pin exact outputs to exact traces.
+// Nothing applies a suggestion; each carries its evidence, config key and kind: `suggest` or `info` (a receipt).
+// Every rule needs a floor of evidence first: a suggestion from one event is a guess wearing a verdict.
+// Keyed suggestions say which way to move the key and what it holds now, passed in so the rules stay pure.
+// `direction` is set per rule: the caller can't know which arm of R1 fired.
 
 /**
  * @typedef {{kind: 'suggest'|'info', subject: string, evidence: string,
@@ -47,55 +25,22 @@
  *            coordinatorFiles: number}} InDispatchReads
  */
 
-// Evidence floors. Below these a rule stays silent rather than extrapolating.
-/**
- * R1's floor, counted in UNVETOED EMPTY fires - fires that adjudicated zero
- * survivors and were not the fire a re-arm round came back to fix - never in a
- * trigger's fires overall. A trigger that fires ten times and comes back empty
- * once is not evidence about the gate; two empty fires are the least that can
- * be.
- */
+/** R1's floor, in unvetoed empty fires: a fire that forced a re-arm round doesn't count. */
 export const MIN_FIRES_FOR_GATE_SUGGESTION = 2;
 export const MIN_DISPATCHES_FOR_RUNG_INFO = 4;
 export const MIN_ESCALATIONS_FOR_RUNG_SUGGESTION = 2;
 export const MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION = 2;
-/**
- * R9's floor, counted in OVERRIDE RECEIPTS carrying one trigger - the WRITES,
- * never the authorizations behind them. Two is the least that can be: a single
- * receipt cannot be the second application of an answer, so one override says
- * nothing about whether a decision was reused.
- */
+/** R9's floor, in override receipts for one trigger: one receipt can't be a second use of an answer. */
 export const MIN_OVERRIDES_FOR_AUTHORIZATION_INFO = 2;
-/**
- * The coordinator receipt's floor, in milliseconds. Ten minutes: below that the
- * residue is dominated by the second or two between a step's marker and the
- * dispatch that follows it, which is a measurement artefact rather than time
- * anyone spent. The other floors count events; this one cannot, because one
- * marker can carry a whole afternoon and a hundred can carry nothing.
- */
+/** The coordinator receipt's floor, ten minutes: below it the residue is mostly the gap before a first dispatch. */
 export const MIN_RESIDUE_MS_FOR_COORDINATOR_INFO = 600000;
 
 /**
- * R7's floor, PER ROLE, and the map is the gate rather than the number: a role
- * this object does not name never produces an in-dispatch entry whatever its
- * ratio.
- *
- * Only two roles are named because only two showed signal.
- * `.planning/spikes/read-set-redundancy/SPIKE.md` measured, in-dispatch:
- * `cad-executor` 3.64 over 78 dispatches, `cad-verifier` 2.05 over 31,
- * `cad-planner` 1.88, `cad-assumptions-analyzer` 1.78, `cad-reviewer` 1.74.
- * The last three sit in a band the spike calls noise - a rule firing on them
- * spends the user's attention to save nothing - so a global threshold picked
- * low enough to keep `cad-verifier` would speak on all five.
- *
- * The two numbers, derived rather than chosen:
- *   - `cad-verifier` sits at the spike's own C2 bar of 2.0, the level at which
- *     it declared the redundancy real, and clears it at 2.05.
- *   - `cad-executor` sits ABOVE that bar because that role legitimately returns
- *     to a file once per task across up to `workflow.max_plan_tasks` tasks in
- *     one dispatch, so the same 2.0 would report ordinary per-task work as
- *     repetition. 3.00 leaves it speaking on today's 3.64 and goes quiet on a
- *     real improvement, which is the whole test of a floor.
+ * R7's floor per role, and the map is the gate: a role it doesn't name never produces an in-dispatch entry.
+ * Only two roles are named because only two showed signal; the other three measured 1.74 to 1.88, which the
+ * spike called noise.
+ * `cad-verifier` sits at 2.0, the spike's bar for real redundancy. `cad-executor` is higher at 3.0 because it
+ * legitimately returns to a file once per task in one dispatch, and today's 3.64 still speaks.
  */
 export const IN_DISPATCH_FLOORS = Object.freeze({
   'cad-executor': 3.00,
@@ -103,38 +48,12 @@ export const IN_DISPATCH_FLOORS = Object.freeze({
 });
 
 /**
- * The two sources the recorded token total DOES NOT include, in the words
- * every reader of that total states.
- *
- * Exported and frozen for the reason `lib/trace.mjs` exports
- * `DISPATCH`/`TERMINAL`/`ANCHOR` rather than letting the bracket census hold
- * its own copy of them: this claim has TWO readers - R5's `evidence` string
- * below, which `/cad-suggest` relays unchanged, and the spend line in
- * `cadence-core/workflows/report.md` - and a second copy of the list is green
- * on the day the two stop claiming the same thing. `prose-agreement.test.mjs`
- * reads THIS array to check the prose, so there is one list and one claim.
- *
- * Why these two, and why they are not a hedge:
- *   1. the orchestrator's own turns - a figure is read off a subagent RETURN
- *      and the coordinator has no return, so it contributes nothing to a total
- *      that most of the run's spend belongs to;
- *   2. figureless returns - a close that carried no `--tokens`, the advisory
- *      fire among them, counted under `unrecorded` rather than as a zero.
- *
- * THREE until v3.7.10, when `'cross-model provider calls'` was DROPPED from
- * this list - and it must not come back. The entry's stated reason was that the
- * arm had no lifecycle bracket and no token field at all; the seam now records
- * the provider's own reported usage on the `provider/request` event,
- * `planning/trace.mjs` folds it into `provider_spend`, and
- * `workflows/report.md` prints it on its own `Cross-model reviews` line. That
- * spend is a DIFFERENT denomination and still never sums into this total, so
- * the arithmetic did not move - but "excluded" became the wrong word for it,
- * because it is reported rather than missing, and naming it here would send a
- * reader hunting for a figure already on the page.
- *
- * No third entry is a ratio or a correction factor, and none is coming: the
- * terms are what MSR-03 and PLN-01 need, and a stored product is the
- * maintenance loop `v2.7.0` deleted.
+ * The two sources the recorded token total doesn't include, worded once for both readers: R5's evidence string
+ * and the spend line in `workflows/report.md`.
+ * Exported and frozen so `prose-agreement.test.mjs` checks the prose against this one list, not a copy.
+ * Cross-model provider calls were dropped in v3.7.10 and must not come back: that usage has its own line in a
+ * different denomination, so it isn't excluded.
+ * No ratio or correction factor goes in here, a stored product is the maintenance loop v2.7.0 deleted.
  */
 export const SPEND_EXCLUDES = Object.freeze([
   "the orchestrator's own turns",
@@ -142,7 +61,7 @@ export const SPEND_EXCLUDES = Object.freeze([
 ]);
 
 /**
- * A duration in whole minutes, the unit a run record is read in.
+ * Whole minutes, the unit a run record is read in.
  * @param {number} ms
  */
 function minutes(ms) {
@@ -150,10 +69,8 @@ function minutes(ms) {
 }
 
 /**
- * The value a config layer (or the caller's schema-default fallback) holds for
- * `key`, or `undefined` when nothing does. `null` reads as nothing on purpose:
- * on the keys this seam names it is the sentinel for "no layer pins this", not
- * a value anybody set.
+ * The value a config layer (or the caller's schema-default fallback) holds for `key`, or `undefined`.
+ * `null` reads as nothing: on these keys it means no layer pins it.
  * @param {Resolution|undefined} resolution
  * @param {string} key
  */
@@ -166,28 +83,15 @@ function resolved(resolution, key) {
   return v === undefined || v === null ? undefined : v;
 }
 
-/**
- * What an unset key prints as `current`: the refusal `config.mjs get` makes, in
- * the same words and for the same reason (D-06). It names the DECIDER and never
- * the value that decider would fire, because printing an effective value
- * invites the user to set it and pin a key the schema is already answering.
- *
- * The decider used to be the routing LEVEL the record carried, interpolated
- * into the sentence. That level is gone and the schema's own default is what
- * answers, so the sentence names that instead - and takes no `resolution`
- * reading at all, because every historical `routing/resolve` row still carries
- * the retired level string that the resolver no longer produces, and rendering
- * it would name a decider that does not decide (D-05).
- */
+/** What an unset key prints as `current`: `config.mjs get`'s refusal, naming the decider, not the value. */
 function unsetCurrent() {
   return 'unset: no config layer pins this, so the schema default decides it';
 }
 
 /**
- * `current` and, where one can be READ rather than guessed, `proposed` - as the
- * fragment a suggestion spreads into itself. `proposed` is OMITTED rather than
- * set to null or 0 (D-07/D-12), the omit-not-zero rule `--turns` already
- * follows: a key nobody computed a target for must be invisible, not zero.
+ * `current` and, where one can be read rather than guessed, `proposed`, as a fragment a suggestion spreads into
+ * itself.
+ * `proposed` is omitted, never null or 0: a key nobody computed a target for must be invisible.
  * @param {Resolution|undefined} resolution
  * @param {string} key
  * @param {(current: any) => any} [target] priced only when the key is SET
@@ -202,14 +106,10 @@ function keyState(resolution, key, target) {
 }
 
 /**
- * The rung the record shows a role's escalated resolves landing on, kept only
- * where it names an actual RAISE. A rung a config layer SET is compared against
- * it on the caller's rung ladder and must sit strictly BELOW it, so a target
- * equal to the current rung - a retune that changes nothing - or under it -
- * a target contradicting the `raise` it ships beside - is omitted instead.
- * An UNSET key has no rung to compare and keeps the target: the record's rung
- * is still a change from a default nobody stated. No ladder means no
- * comparison and no target, the same omission `oneStepDown` reports.
+ * The rung the record shows a role's escalated resolves landing on, kept only where it is a real raise.
+ * A set rung must sit strictly below it on the ladder, or the target is omitted: a retune that changes nothing,
+ * or contradicts the `raise` beside it.
+ * An unset key has no rung to compare and keeps the target. No ladder means no comparison and no target.
  * @param {Resolution|undefined} resolution
  * @param {string} key
  * @param {string|undefined} rung
@@ -225,10 +125,9 @@ function raiseTarget(resolution, key, rung) {
 }
 
 /**
- * One step DOWN the gate ladder `config.schema.json` states, or `undefined` when
- * there is no ladder, the value is not on it, or it is already the bottom rung.
- * The ladder is the caller's: an absent one omits `proposed`, and that omission
- * IS the report - no ladder is substituted from memory here.
+ * One step down the gate ladder from `config.schema.json`, or `undefined` with no ladder, an off-ladder value
+ * or the bottom rung.
+ * The ladder is the caller's: absent, `proposed` is omitted and that omission is the report.
  * @param {string[]|undefined} gates
  * @param {any} value
  */
@@ -239,37 +138,13 @@ function oneStepDown(gates, value) {
 }
 
 /**
- * Parse an adjudication EVENT: the trigger and survivor count out of its
- * `<trigger>: <n> survivors; voices <...>` detail line (review-triggers.md
- * step 5's shape), and the RAISED count - how many findings the reviewers put
- * up before adjudication killed them.
- *
- * A bare detail STRING is accepted as well as the event, because the trigger
- * and survivor half has always been readable from the string alone and callers
- * that only hold one must keep working.
- *
- * Resolution order for `raised`, and it is the whole point of the widening:
- *   1. the event's structured `raised` field (planning.mjs `--raised`);
- *   2. else a legacy `of <m>` clause written into the detail by hand, before
- *      the flag existed - read only immediately after the survivor count, so a
- *      stray "of" further down the voice list cannot be mistaken for one;
- *   3. else `null`, meaning UNKNOWN - never 0. A fire whose raised count
- *      nobody recorded is not a fire that raised nothing, and collapsing the
- *      two is the exact conflation the flag exists to end.
- *
- * The trigger/survivor regex stays as permissive as it has always been: D-03
- * measured that tightening it drops the historical fires already on disk and
- * takes R1's evidence floor down with them.
- *
- * A RE-ARM round's adjudication is spelled `<trigger> rearm:` or
- * `<trigger> re-arm:` on disk - both spellings live in this project's own
- * record, written by hand months apart - and both read as the BASE trigger
- * carrying `rearm: true` (D-04). Never a trigger of its own: that would mint
- * the phantom config key `review.triggers.risk_surface rearm.gate`, which this
- * file's own schema test refuses. Those two spellings are the ONLY embedded
- * space admitted; any other token with a space in it stays unparseable exactly
- * as it is today, because counting it as a fire would feed R1 evidence it does
- * not have.
+ * Parse an adjudication event: the trigger and survivor count from its `<trigger>: <n> survivors; voices <...>`
+ * detail line, plus how many findings were raised.
+ * `raised` comes from the event's `raised` field, else a hand-written `of <m>` after the count, else `null`.
+ * Never 0: a fire nobody counted isn't a fire that raised nothing.
+ * The trigger regex stays permissive: tightening it drops historical fires and takes R1's floor down with them.
+ * `<trigger> rearm:` and `<trigger> re-arm:` both exist on disk and read as the base trigger with `rearm: true`,
+ * or they'd mint a phantom config key.
  * @param {unknown} input an adjudication event, or its detail string
  * @returns {{trigger: string, survivors: number, raised: number|null,
  *            rearm: boolean}|null}
@@ -294,17 +169,11 @@ export function parseAdjudication(input) {
 }
 
 /**
- * All suggestions the render supports, most actionable first (`suggest`
- * before `info`, then by subject for a stable order tests can pin).
+ * All suggestions the render supports, `suggest` before `info`, then by subject so the order is stable for
+ * tests.
  * @param {RenderLike} render
- * @param {Resolution} [resolution] the values the caller read off disk for the
- *   keys these rules name - absent, every keyed suggestion still carries a
- *   direction and reports its `current` as unset.
- * @param {InDispatchReads} [reads] the per-role in-dispatch file figures
- *   `lib/read-trace.mjs`'s `inDispatchReads` folded off `.planning/reads.jsonl`,
- *   for the same reason `resolution` is a parameter and not a read: the rules
- *   stay pure and the caller owns every open. Absent - which is every one- and
- *   two-argument call - R7 stays silent and nothing else changes.
+ * @param {Resolution} [resolution] values read off disk for the keys these rules name; absent, `current` is unset
+ * @param {InDispatchReads} [reads] per-role in-dispatch file figures, passed in to keep the rules pure; R7 needs them
  * @returns {Suggestion[]}
  */
 export function suggestFromRender(render, resolution, reads) {
@@ -312,15 +181,9 @@ export function suggestFromRender(render, resolution, reads) {
   const out = [];
   const events = Array.isArray(render.events) ? render.events : [];
 
-  // --- gather ---------------------------------------------------------------
-  // One row per FIRE, in file order, because that is the unit a re-arm veto
-  // acts on (D-03). A trigger's lifetime totals cannot carry the veto: nothing
-  // prunes `.planning/trace.jsonl` at a close, so a re-arm recorded in one
-  // cycle muted its trigger four cycles after the gate stopped finding
-  // anything. The record now ROTATES at its size bound (TRC-08), which bounds
-  // "the life of the file" at that cut rather than leaving it permanent - and
-  // changes nothing here: a bound measured in mebibytes is not a scoping rule,
-  // and one row per fire is what makes the veto act on the fire it belongs to.
+  // --- gather ---
+  // one row per fire, in file order: a re-arm veto acts on a fire, and lifetime totals once muted a trigger
+  // four cycles after it stopped being empty
   /** @type {{corr: string, trigger: string, survivors: number, raised: number|null,
    *          rearm: boolean, vetoed: boolean}[]} */
   const fires = [];
@@ -332,32 +195,28 @@ export function suggestFromRender(render, resolution, reads) {
    */
   const corrOf = (e) => (typeof e.corr === 'string' || typeof e.corr === 'number' ? String(e.corr) : '');
   /**
-   * The authorization an override receipt descends from, as a comparable
-   * string - the SAME guard `corrOf` applies to `corr`, because this value is a
-   * join key too and an object or an array must not become the group key
-   * `[object Object]`. Empty string means unlabelled, which R9 reads as an
-   * unknown rather than as a shared answer. Trimmed for the reason the writer
-   * trims it: a padded copy of an id must not read as a second decision.
+   * The authorization an override receipt descends from, as a string, guarded like `corrOf` so an object can't
+   * become the group key `[object Object]`.
+   * Empty means unlabelled, which R9 reads as unknown, not a shared answer. Trimmed so a padded copy of an id
+   * isn't a second decision.
    * @param {any} e
    */
   const authOf = (e) => (typeof e.authorization_id === 'string' || typeof e.authorization_id === 'number'
     ? String(e.authorization_id).trim()
     : '');
   /**
-   * Per role: the resolve counts R3 reads, and the rung its ESCALATED resolves
-   * actually landed on, off the `effort` field those events carry. That rung is
-   * R3's `proposed` - a rung the routing table really resolved for this role,
-   * rather than a legal one it would never produce (D-07).
+   * Per role: the resolve counts R3 reads, and the rung its escalated resolves landed on, off the `effort` they
+   * carry.
+   * That rung is R3's `proposed`: one the routing table really resolved, not a legal one it would never
+   * produce.
    * @type {Map<string, {resolves: number, escalated: number, rung?: string}>}
    */
   const rungs = new Map();
   /** @type {Map<string, number>} */
   const checkpoints = new Map();
   /**
-   * Per trigger, R9's two figures: the override receipts WRITTEN, and the
-   * distinct authorizations that stood behind them. The labelled ids go in the
-   * set and the rest are counted, because an unlabelled receipt is its own
-   * decision - see R9 for why that half is load-bearing.
+   * Per trigger, R9's two figures: override receipts written, and the distinct authorizations behind them.
+   * Labelled ids go in the set and the rest are counted, since an unlabelled receipt is its own decision.
    * @type {Map<string, {writes: number, ids: Set<string>, unlabelled: number}>}
    */
   const overrides = new Map();
@@ -379,13 +238,7 @@ export function suggestFromRender(render, resolution, reads) {
       const trigger = typeof e.detail === 'string' ? e.detail.trim() : '';
       if (!trigger) continue;
       rearmed.add(trigger);
-      // The veto lands on exactly ONE fire: the nearest fire BEFORE this one in
-      // the same `(corr, trigger)` group - the fire that forced the round.
-      // Nearest rather than oldest, because an earlier fire in the same phase
-      // was answered by its own adjudication and this round says nothing about
-      // it. A re-arm round's OWN adjudication is skipped: it is the second
-      // round's RESULT, not the fire that forced the round. A fire already
-      // vetoed is skipped too, so two re-arms mute two fires rather than one.
+      // veto the nearest earlier fire in the same `(corr, trigger)`, skipping re-arm rounds and fires already vetoed
       const corr = corrOf(e);
       for (let i = fires.length - 1; i >= 0; i--) {
         const f = fires[i];
@@ -399,8 +252,7 @@ export function suggestFromRender(render, resolution, reads) {
       if (!role) continue;
       const row = rungs.get(role) || { resolves: 0, escalated: 0 };
       row.resolves++;
-      // Either spelling of a climb counts: the seam's own `escalated` flag, or
-      // a retry attempt (`--attempt 2`) that lands on the retry rung.
+      // a climb is either the `escalated` flag or a retry attempt (`--attempt 2`) landing on the retry rung
       if (e.escalated === true || (typeof e.attempt === 'number' && e.attempt >= 2)) {
         row.escalated++;
         if (typeof e.effort === 'string' && e.effort.trim()) row.rung = e.effort.trim();
@@ -411,12 +263,7 @@ export function suggestFromRender(render, resolution, reads) {
       if (!role) continue;
       checkpoints.set(role, (checkpoints.get(role) || 0) + 1);
     } else if (e.family === 'outcome' && e.event === 'override') {
-      // The trigger comes off the STRUCTURED field and is never parsed out of
-      // `detail` (D-12), the same rule `risk-check status` holds when it reads
-      // these events: on this repository's own record the trigger is spelled
-      // four different ways in that free text. An override carrying no
-      // structured trigger reaches no reader today - the gate filters on the
-      // same field - so it is grouped by nothing here either.
+      // read the trigger off the structured field, never `detail`: that free text spells it four different ways
       const trigger = typeof e.trigger === 'string' ? e.trigger.trim() : '';
       if (!trigger) continue;
       const row = overrides.get(trigger) || { writes: 0, ids: new Set(), unlabelled: 0 };
@@ -428,23 +275,11 @@ export function suggestFromRender(render, resolution, reads) {
     }
   }
 
-  // --- rules ----------------------------------------------------------------
-  // R1: an adjudicated trigger that keeps coming back empty. Read a FIRE at a
-  // time: a fire counts as evidence when it adjudicated zero survivors and no
-  // re-arm came back to it - a gate that forced a fix round has already paid
-  // for itself on THAT fire, whatever its adjudication said, and says nothing
-  // about the other fires the same trigger had. The evidence names the empty
-  // count out of the trigger's fires overall, so a reader sees the productive
-  // fires beside the empty ones instead of a bare total.
-  //
-  // Two OUTCOMES on the same evidence floor, because "nothing survived" means
-  // two opposite things (D-16). Nothing raised at all is a gate finding
-  // nothing; nine raised and nine killed is a gate doing real work in front of
-  // a reviewer that cannot tell a finding from an opinion - and proposing to
-  // turn that gate off is the wrong move on the same row. The raised total is
-  // summed over the EMPTY fires alone, and an UNKNOWN raised count contributes
-  // 0 rather than being invented, so every trace written before `--raised`
-  // existed keeps landing on the gate arm it lands on today.
+  // R1: an adjudicated trigger that keeps coming back empty, read a fire at a time. A fire counts when it adjudicated
+  // zero survivors and no re-arm came back to it: a gate that forced a fix round paid for itself on that fire.
+  // Two outcomes on the same floor, because "nothing survived" means opposite things. Nothing raised is a gate finding
+  // nothing; nine raised and nine killed is a reviewer that can't tell a finding from an opinion, so don't turn it off.
+  // The raised total sums the empty fires only, and an unknown count adds 0, so older traces land on the gate arm.
   /** @type {Map<string, {total: number, empty: number, raised: number}>} */
   const triggers = new Map();
   for (const f of fires) {
@@ -458,13 +293,7 @@ export function suggestFromRender(render, resolution, reads) {
   }
   for (const [trigger, row] of [...triggers.entries()].sort()) {
     if (row.empty >= MIN_FIRES_FOR_GATE_SUGGESTION) {
-      // The two arms move OPPOSITE ways, which is the whole reason the split
-      // exists: the gate arm's evidence is fires that keep coming back empty,
-      // so the move is DOWN the ladder; the reviewer arm's evidence is a gate
-      // catching work in front of a reviewer set that killed all of it, so the
-      // move is to STRENGTHEN that set. `raise`/`lower` is the whole vocabulary
-      // - widening it is a schema-shaped decision, and `lower` on the reviewer
-      // arm would name the opposite move.
+      // the arms move opposite ways: empty fires lower the gate, a reviewer set that killed real work gets strengthened
       out.push(row.raised > 0
         ? {
           kind: 'suggest',
@@ -473,9 +302,7 @@ export function suggestFromRender(render, resolution, reads) {
             + ' - the gate caught work; the reviewer set is what looks miscalibrated',
           action: 'review.reviewers',
           direction: 'raise',
-          // No `proposed`: which backend to add is not a thing the record
-          // names, and a guessed reviewer set beside two measured targets is
-          // the credibility the no-fabricated-figures guardrail protects.
+          // no `proposed`: which backend to add isn't in the record, and a guess costs credibility
           ...keyState(resolution, 'review.reviewers'),
         }
         : {
@@ -484,16 +311,14 @@ export function suggestFromRender(render, resolution, reads) {
           evidence: `${row.empty} of ${row.total} adjudicated fire(s), 0 survivors, no re-arm`,
           action: `review.triggers.${trigger}.gate`,
           direction: 'lower',
-          // Priced only off a value a LAYER set: an unset gate has no position
-          // on the ladder to step down from, and reading the level's value to
-          // find one is exactly what D-06 refuses.
+          // priced only off a value a layer set: an unset gate has no position on the ladder to step down from
           ...keyState(resolution, `review.triggers.${trigger}.gate`,
             (current) => oneStepDown(resolution && resolution.gates, current)),
         });
     }
   }
 
-  // R2: a gate that caught real work. Receipt only - nothing to change.
+  // R2: a gate that caught real work. Receipt only.
   for (const trigger of [...rearmed].sort()) {
     out.push({
       kind: 'info',
@@ -506,11 +331,7 @@ export function suggestFromRender(render, resolution, reads) {
   // R3: escalation pressure per role, both directions.
   for (const [role, row] of [...rungs.entries()].sort()) {
     if (row.escalated >= MIN_ESCALATIONS_FOR_RUNG_SUGGESTION) {
-      // The target is a rung the record SHOWS this role's escalated resolves
-      // landing on, never a step guessed off `rung_order`: a rung the routing
-      // table actually resolved cannot be one the table would never produce.
-      // It still has to name a CHANGE against the rung in force - see
-      // `raiseTarget`.
+      // the target is a rung the record shows, never a guessed step; `raiseTarget` makes it a real change
       const proposed = raiseTarget(resolution, `model.effort.${role}`, row.rung);
       out.push({
         kind: 'suggest',
@@ -531,27 +352,13 @@ export function suggestFromRender(render, resolution, reads) {
     }
   }
 
-  // R4: executor checkpoint pressure. A checkpoint is a fresh-context
-  // continuation paid at full dispatch price; repeated ones say the plans are
-  // outrunning one context.
-  //
-  // SUPPRESSED - not returned with a caveat - when every checkpoint it counted
-  // maps to a readable plan whose task count is UNDER the resolved ceiling
-  // (D-08). A suggestion the evidence does not support is the thing that made
-  // `/cad-suggest` read as a report rather than advice: telling a user to lower
-  // a ceiling their plans never reached is a sentence they can only ignore, and
-  // a caveat printed beside it still leaves the retune list to be sorted by
-  // hand. This is a new class of check, not a tightened floor - the four MIN_*
-  // constants above are untouched.
-  //
-  // The comparison is against the ceiling the suggestion PRINTS as `current`,
-  // never a hardcoded 8 (D-10): a project that raised it to 12 must not be told
-  // to lower one its plans never touched. An unknown count - a checkpoint whose
-  // plan file cannot be read - is never under-ceiling (D-09), so a single one
-  // leaves the rule speaking; a count EQUAL to the ceiling is not under it
-  // either. And with no ceiling resolved at all, or no per-checkpoint counts
-  // passed, there is nothing to bind against and the rule speaks exactly as it
-  // did before this check existed.
+  // R4: executor checkpoint pressure. A checkpoint is a fresh-context continuation at full dispatch price, and
+  // repeats say plans are outrunning one context.
+  // Suppressed, not returned with a caveat, when every counted checkpoint maps to a readable plan under the
+  // resolved ceiling: telling someone to lower a ceiling their plans never reached is a sentence they can only
+  // ignore.
+  // It compares against the ceiling this prints as `current`, never a hardcoded 8. An unknown count is never
+  // under it, and neither is one equal to it.
   const execCp = checkpoints.get('cad-executor') || 0;
   const ceiling = resolved(resolution, 'workflow.max_plan_tasks');
   const counted = resolution && Array.isArray(resolution.checkpointTasks)
@@ -567,20 +374,12 @@ export function suggestFromRender(render, resolution, reads) {
       evidence: `${execCp} checkpoint return(s) - plans may exceed one context`,
       action: 'workflow.max_plan_tasks',
       direction: 'lower',
-      // No `proposed`, and none is derivable: no field in the record names a
-      // plan's task count, so the only target available would be a number
-      // invented here (D-07). The key is OMITTED rather than sent as null.
+      // no `proposed`: nothing in the record names a plan's task count, so any target would be invented
       ...keyState(resolution, 'workflow.max_plan_tasks'),
     });
   }
 
-  // R5: the spend receipt. Names where the recorded tokens went and what that
-  // total is NOT - the two `SPEND_EXCLUDES` names ride the evidence string
-  // rather than the envelope, because `workflows/suggest.md` relays evidence
-  // unchanged and adds no flag, so this is the only way the caveat reaches a
-  // `/cad-suggest` reader at all. Asks for nothing: still `kind: 'info'`,
-  // still `action: null`, still silent when no role carried a figure, and the
-  // only arithmetic is the share it already computed.
+  // R5: spend receipt; the `SPEND_EXCLUDES` caveat rides the evidence string, which `suggest.md` relays unchanged
   const roles = render.roles && typeof render.roles === 'object' ? render.roles : {};
   let top = null;
   let total = 0;
@@ -598,33 +397,16 @@ export function suggestFromRender(render, resolution, reads) {
     });
   }
 
-  // R6: the coordinator's own share of the run. The counterpart to R5 - that
-  // one names where the TOKENS went, this one names the time no worker was
-  // billed for. Receipt only, and `action` is null on purpose: no
-  // `config.schema.json` key governs coordinator spend, and this file's own
-  // test refuses an action naming a key the schema lacks.
-  //
-  // The figure it relays is CORR-SCOPED (phase 5 D-01): `lib/trace.mjs` keys the
-  // residue accumulators on `corr`, so each run's last marker closes at that
-  // run's own last event and no window spans the clock between two runs that
-  // share a phase number. A `--phase` render can still pool several runs, and
-  // this receipt then relays the sum of their windows - never a span across
-  // them. The evidence string below is unchanged byte for byte: D-02 keeps the
-  // name, which the corrected arithmetic earns rather than outgrows.
-  //
-  // SILENT on a render with no `coordinator` block, never an "absent
-  // coordinator record" line (D-06). Every trace written before the marker
-  // existed - Cadence's own and the committed fixture - would otherwise gain a
-  // suggestion line saying nothing about the run it read.
+  // R6: the coordinator's own share of the run, R5's counterpart: time no worker was billed for. Receipt only,
+  // `action` null because no schema key governs coordinator spend.
+  // Scoped by `corr`, so no window spans the clock between two runs sharing a phase number. Silent without a
+  // `coordinator` block, or every older trace would gain a line saying nothing.
   const coord = render.coordinator;
   const residue = coord && typeof coord.residue_ms === 'number' && Number.isFinite(coord.residue_ms)
     ? coord.residue_ms
     : null;
   if (residue !== null && residue >= MIN_RESIDUE_MS_FOR_COORDINATOR_INFO) {
-    // The figures are the render's own (lib/trace.mjs computes the residue
-    // once, so this rule and `/cad-report` cannot disagree); the only
-    // arithmetic here is the share, and it is skipped rather than divided by a
-    // zero or absent wall.
+    // the figures are the render's own, so this and `/cad-report` can't disagree; the share skips a zero wall
     const steps = Array.isArray(coord.steps) ? coord.steps : [];
     /** @type {{step: any, residue_ms: number}|null} */
     let top = null;
@@ -646,47 +428,11 @@ export function suggestFromRender(render, resolution, reads) {
     });
   }
 
-  // R7: in-dispatch re-reading, per role. `.planning/reads.jsonl` has recorded
-  // what a worker actually OPENED for four cycles and nothing has ever acted on
-  // the number; this is the rule that does.
-  //
-  // `action` is null, and that is this phase's ANSWER rather than an omission:
-  // no key in `cadence-core/config.schema.json` governs in-dispatch re-reading.
-  // The falsifying check was run over all 78 keys - counted as
-  // `Object.keys(schema.keys).length`, so the denominator is re-runnable - and
-  // the three closest candidates all fail:
-  //   - `workflow.max_dispatch_tokens.<role>` is report-only by its own purpose
-  //     text; moving it changes when `trace window` complains, never what a
-  //     worker opens.
-  //   - `workflow.max_plan_tasks` counts TASKS. It was re-decided at 8 in
-  //     `v3.5.3` under PLN-01 against cold-prefix cost and context risk,
-  //     neither of which is in-dispatch re-reading, and lowering it moves the
-  //     same file opens into MORE dispatches rather than removing them -
-  //     improving this ratio while raising the bill. R4 above already moves
-  //     that key on checkpoint evidence, so a second rule moving it on
-  //     unrelated evidence would put two entries for one key in the same list.
-  //   - `model.effort.*` and `model.overrides.*` choose a rung and a model.
-  // The remedy that does exist is DISCIPLINE rather than configuration -
-  // symbol or line anchors on a plan's `files:` entries, and targeted reads
-  // over whole-file ones - filed at `.planning/CAPTURE.md:271` as parts 2 and 3
-  // of a three-part fix whose part 1 is the unshipped `workflow.max_plan_tokens`.
-  // Minting a key here to have somewhere to point would ship a key nothing
-  // reads. So the entry names the remedy in WORDS, exactly the precedent R6
-  // sets with its own null action.
-  //
-  // Everything the entry has to state rides the EVIDENCE string - the
-  // direction, the coverage, the scope and the exclusion - because
-  // `cadence-core/workflows/suggest.md` relays evidence unchanged and adds no
-  // flag, the same reason R5 carries `SPEND_EXCLUDES` there rather than on the
-  // envelope. The `Suggestion` vocabulary stays closed: an info entry gains no
-  // `direction`, `current` or `proposed`, which this file's own D-12 test pins
-  // and which `suggest.md`'s ask step depends on, since it builds
-  // `/cad-config <key>=<value>` tokens out of `action` plus `proposed`.
-  //
-  // SILENT - nothing at all, never an entry saying nothing - when the argument
-  // is absent, the role is not in `IN_DISPATCH_FLOORS`, the ratio is null, or
-  // the ratio is under the role's floor. A null ratio is never rendered as `0`:
-  // that is the reading which says the worker opened each file once.
+  // R7: in-dispatch re-reading, per role, off `.planning/reads.jsonl`, which nothing had ever acted on.
+  // `action` is null: no schema key governs it. `workflow.max_plan_tasks` is closest, but lowering it turns the
+  // same opens into more dispatches, a better ratio with a bigger bill.
+  // The remedy is discipline (anchors on a plan's `files:` entries, targeted reads), so the entry says it in
+  // words, as R6 does. Silent without a floor for the role; a null ratio is never rendered as 0.
   const inDispatch = reads && Array.isArray(reads.roles) ? reads.roles : [];
   for (const row of inDispatch) {
     if (!row || typeof row !== 'object') continue;
@@ -697,9 +443,7 @@ export function suggestFromRender(render, resolution, reads) {
     const ratio = typeof row.ratio === 'number' && Number.isFinite(row.ratio) ? row.ratio : null;
     if (ratio === null || ratio < floor) continue;
     const worst = row.worst;
-    // A non-null ratio has at least one counted file behind it, so this guard
-    // is unreachable - it is here so the sentence below can never name a file
-    // nothing measured.
+    // unreachable with a non-null ratio; it keeps the sentence from naming a file nothing measured
     if (!worst || typeof worst.path !== 'string') continue;
     const where = worst.phase == null && worst.plan == null
       ? ''
@@ -731,31 +475,12 @@ export function suggestFromRender(render, resolution, reads) {
     });
   }
 
-  // R8: the worker wall clock, the receipt denominated in the figure the HOST
-  // reported for the worker itself. The counterpart to R6 from the other end:
-  // that one names the time no worker was billed for, this one names the time
-  // the workers themselves reported. Receipt only, `action` null, for R6's
-  // reason - no `config.schema.json` key governs how long a worker runs.
-  //
-  // The two clocks are named APART in the evidence, the way `lib/trace.mjs`'s
-  // `TraceRender` typedef names them under TWO ELAPSED FIGURES: a bracket's
-  // `ms` is dispatch-to-close and includes whatever the orchestrator did
-  // between the two writes, while `duration_ms` is what the host reported for
-  // the worker. A reader handed one figure and no name for it would price a
-  // worker with the step's clock.
-  //
-  // The dispatches whose close carried no wall clock are COUNTED beside the sum
-  // rather than folded in as zeros (D-04) - a zero would claim a worker that
-  // took no time, which is not a measurement anyone made.
-  //
-  // SILENT - nothing at all, never an entry saying nothing - when no bracket in
-  // scope carries a `duration_ms`. That is R6's posture for a render with no
-  // coordinator block, and it is the only reading that fits the record: with 6
-  // of 386 live brackets carrying one (measured 2026-08-26), a scope where none
-  // does has no figure to denominate a receipt IN, rather than a run that took
-  // no worker time. R6's `coordinator.residue_ms` is NOT re-based on this
-  // figure for the same measurement (D-02): 380 of those brackets would
-  // contribute zero worker time and fire R6 on every run.
+  // R8: the worker wall clock, in the figure the host reported for the worker itself. R6's counterpart from the other
+  // end. Receipt only, `action` null.
+  // The clocks are named apart in the evidence: a bracket's `ms` includes the orchestrator's time between the writes,
+  // `duration_ms` is the worker's own run. One unnamed figure would price a worker with the step's clock.
+  // Dispatches whose close carried no wall clock are counted beside the sum, not folded in as zeros.
+  // Silent when no bracket in scope carries a `duration_ms`; R6 isn't re-based on it because most brackets carry none.
   const brackets = Array.isArray(render.brackets) ? render.brackets : [];
   let workerMs = 0;
   let priced = 0;
@@ -784,27 +509,12 @@ export function suggestFromRender(render, resolution, reads) {
     });
   }
 
-  // R9: one human authorization, written as two receipts (AUT-03). An override
-  // re-applied to a second range is TWO events by construction - `risk-check
-  // status` requires every fired range to carry a receipt naming its own base
-  // and head, and a shared id never changes that (D-03) - so nothing on either
-  // event said the pair came from one answer, and a reader could not tell it
-  // from one range settled twice by hand. `trace append --authorization-id`
-  // carries the id the coordinator minted when the engineer answered, and this
-  // rule counts DECISIONS against WRITES off it.
-  //
-  // An UNLABELLED receipt counts as its OWN decision, and that half is the
-  // load-bearing one: every override written before the flag existed carries no
-  // id, and reading those as one shared answer would report a reuse on every
-  // trace already on disk. Unrecorded is never a match - the same disposition
-  // the token and turn totals take.
-  //
-  // SILENT where the two figures agree, which is every unlabelled trace and
-  // every run whose overrides were genuinely separate answers: `2 decisions
-  // from 2 writes` is a line added to every render that says nothing about the
-  // run it read, which is R6's disposition for a render with no coordinator
-  // block. `action` is null because no `config.schema.json` key governs this -
-  // the receipt is for a reader, not a retune.
+  // R9: one human authorization, written as two receipts. An override re-applied to a second range is two events by
+  // construction (`risk-check status` wants one per fired range), so nothing said the pair came from one answer.
+  // `trace append --authorization-id` carries the id minted at the answer; this counts decisions against writes.
+  // An unlabelled receipt counts as its own decision: overrides from before the flag have no id, and reading them as
+  // one answer would report a reuse on every old trace.
+  // Silent where the figures agree, or every render gains a "2 decisions from 2 writes" line; `action` is null.
   for (const [trigger, row] of [...overrides.entries()].sort()) {
     if (row.writes < MIN_OVERRIDES_FOR_AUTHORIZATION_INFO) continue;
     const decisions = row.ids.size + row.unlabelled;

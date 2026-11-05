@@ -1,20 +1,13 @@
 // @ts-check
 // config-value.mjs - the one answer to "does this key accept this value".
-//
-// `config.mjs` runs its dispatch on import, so nothing else can import it, and
-// self-verify's explanation check has to answer exactly as `validate` and `set`
-// do. These rules live here so both read one copy; a second one would be a
-// second opinion about what a key accepts. Moved from config.mjs unchanged.
-//
+// config.mjs runs its dispatch on import, so nothing else can import it, and self-verify's explanation check has
+// to answer exactly as validate and set do. The rules live here so both read one copy, moved over unchanged.
 // Pure: no fs, no emit, no process.
 import { isForgeSlug, splitForgeHost } from './forge-decision.mjs';
 import { isModelId } from './model-id.mjs';
 
-// Validate a single already-parsed value's TYPE against a schema spec.
-// Returns null if ok, else an error string. checkValue below is what callers
-// reach: it runs this first and only then the optional per-key grammar, so a
-// value of the wrong type reports the type rather than a grammar it could never
-// have satisfied.
+// Checks one parsed value's type against a schema spec: null if ok, else an error string. Callers reach
+// checkValue, which runs this first, so a wrong-typed value reports the type and not a grammar it could never meet.
 /** @param {{type:string, min?:number, max?:number, values?:any[]}} spec @param {any} v */
 export function checkType(spec, v) {
   switch (spec.type) {
@@ -30,10 +23,7 @@ export function checkType(spec, v) {
     case 'string_or_null':
       return v === null || typeof v === 'string' ? null : 'expected a string or null';
     case 'enum':
-      // `null` is rendered as the literal, not left to Array#join's empty
-      // string: every `default: null` enum ends its accepted set with null, and
-      // joining it produced a dangling `", "` that reads as a truncated message
-      // rather than as the settable value it is ("must be one of: high, xhigh, ").
+      // null prints as the literal: Array#join left a dangling ", " that read as a truncated message
       return spec.values.includes(v) ? null
         : `must be one of: ${spec.values.map((x) => (x === null ? 'null' : x)).join(', ')}`;
     case 'array_string':
@@ -48,28 +38,10 @@ export function checkType(spec, v) {
   }
 }
 
-// The named grammars a schema key may claim, as a FROZEN registry of one
-// predicate each rather than a branch per key inside checkValue.
-//
-// WHY A NARROWING AT ALL, and why here. `git.forge_repo` and `git.forge_host`
-// are typed `string_or_null`, which admitted `forge example.com/../x` and every
-// other shape no forge serves - and both values are TYPED BY A USER at setup
-// and then interpolated onto a command line, first into the `config.mjs set`
-// line the workflow prints and then into a `tea`/`gh`/`glab` argument vector.
-// The write face is where a typed answer can still be refused with the user
-// still there to retype it, which is why the check lives at `checkValue` (the
-// one point `set`, `check` and `validate` all reach) and not at each reader.
-//
-// The predicates are IMPORTED, never restated: from lib/forge-decision.mjs,
-// `isForgeSlug` is already the one answer to "what may a repository selector
-// be" and `splitForgeHost` the one answer for an instance address; from
-// lib/model-id.mjs, `isModelId` is the one answer to "what may a provider
-// model id be", shared with route.mjs and review-provider.mjs. A second
-// spelling here is how a rule comes to be enforced in two strengths.
-//
-// Each entry carries its own sentence because the two keys refuse for different
-// reasons, and what a user reads has to say what is WRONG with the value rather
-// than that it failed.
+// Named grammars a schema key may claim, one predicate each, so checkValue doesn't grow a branch per key.
+// forge_repo and forge_host were string_or_null and let `forge example.com/../x` through onto a command line.
+// The predicates come from forge-decision and model-id, never restated: a second spelling enforces at two strengths.
+// Each entry carries its own sentence, so the user reads what's wrong with the value.
 export const GRAMMARS = Object.freeze({
   forge_slug: Object.freeze({
     ok: (v) => isForgeSlug(v),
@@ -89,17 +61,10 @@ export const GRAMMARS = Object.freeze({
   }),
 });
 
-// Evaluate a spec's optional `grammar` marker, AFTER its type has passed.
-//
-// A `null` value skips the grammar: null is the schema default on every key
-// that carries one and means the question was never asked, so failing it would
-// refuse the scaffolded templates/config.json.
-//
-// A marker naming a predicate the registry does not hold is an ERROR, in the
-// same shape checkType's `default:` arm answers an unknown `spec.type`, and
-// NEVER a no-op. A marker silently treated as satisfied would let a future key
-// claim a grammar nothing enforces - the silent pass lib/schema-eval.mjs's
-// header refuses at length, for this reason.
+// Runs a spec's optional `grammar` once its type has passed. A null skips it: null is the default on every key
+// with a grammar and means the question was never asked, so failing it would refuse the scaffolded template.
+// An unknown grammar name is an error, never a no-op, same as checkType's unknown type. A marker quietly treated
+// as satisfied would let a key claim a grammar nothing enforces.
 /** @param {{grammar?:string}} spec @param {any} v */
 export function checkGrammar(spec, v) {
   const name = spec.grammar;
@@ -110,9 +75,7 @@ export function checkGrammar(spec, v) {
   return grammar.ok(v) ? null : grammar.error;
 }
 
-// Validate a single already-parsed value against a schema spec: its type, then
-// the per-key grammar when the spec claims one. The one point `set`, `check`
-// and `validate` all reach.
+// A value against its spec: type first, then the per-key grammar. The one point set, check and validate all reach.
 /** @param {{type:string, min?:number, max?:number, values?:any[], grammar?:string}} spec @param {any} v */
 export function checkValue(spec, v) {
   const typeError = checkType(spec, v);

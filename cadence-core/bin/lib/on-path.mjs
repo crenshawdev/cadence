@@ -1,47 +1,20 @@
 // @ts-check
-// on-path.mjs - the ONE statement of "does this NAME resolve as an executable",
-// asked by two seams that must not answer it differently. `issue-check.mjs`
-// asks it about a forge CLI before it spawns one; `planning.mjs`'s
-// `detect-commands` asks it about the driver of a lint or typecheck command
-// before it NAMES that command to an executor. The second caller is why the
-// rule left issue-check.mjs: a seam that tells an executor to run `ruff check .`
-// on a machine with no ruff has answered about a project's manifests rather
-// than about a command anyone can run, and two seams deciding "reachable"
-// their own way is how an advisory arm and an enforcing arm start disagreeing.
-//
-// PURE fs. No subprocess, ever: `detect-commands` probes one tool per slot, in
-// up to two places, on the path an executor runs before EVERY commit, and
-// `command -v` per arm would put child processes there where the seam has none
-// today (phase 3 D-10). No `emit`, no envelope, no I/O beyond `accessSync` - callers
-// own their own warning text, the way `lib/require-int.mjs` leaves the reason
-// string to its callers.
-//
-// NO CADENCE ENV OVERRIDE IS READ HERE, and that omission is load-bearing.
-// `issue-check.mjs`'s header promises that a test injects a stub by prepending
-// a directory to the CHILD's PATH so the PRODUCTION resolver is what runs, and
-// an override honoured inside this module would break that promise for both
-// callers at once. `detect-commands` needs one for its own fixtures, so it
-// keeps it at ITS call site, behind the `CADENCE_TEST_SEAM` sentinel.
-//
-// WIN32 IS NOT A DIFFERENT ANSWER, it is a different spelling (phase 3 D-09).
-// `npm`, `eslint` and `tsc` ship on Windows as `.cmd`/`.ps1` shims, so a bare
-// `join(dir, bin)` finds nothing for any of them and both callers would report
-// every tool unreachable on a platform no file in this tree excludes. The
-// lookup therefore tries `PATHEXT`'s extensions after the bare name, which is
-// the OS's own rule, and nowhere else does the platform change what is asked.
+// on-path.mjs - the one statement of "does this name resolve as an executable", shared by `issue-check.mjs` and
+// `detect-commands`, because two answers is how an advisory arm and an enforcing arm drift.
+// Pure fs, no subprocess: `detect-commands` runs before every executor commit, so `command -v` would spawn each time.
+// No env override is read here, on purpose: tests prepend a directory to PATH so the production resolver runs.
+// Win32 is a different spelling, not a different answer: tools ship there as `.cmd` shims, so `PATHEXT` is tried too.
 'use strict';
 
 import { accessSync, constants } from 'node:fs';
 import { delimiter, extname, join } from 'node:path';
 
-/** What `cmd.exe` uses when PATHEXT is unset. Not consulted off win32. */
+/** What `cmd.exe` uses when PATHEXT is unset; not consulted off win32. */
 const DEFAULT_PATHEXT = '.COM;.EXE;.BAT;.CMD';
 
 /**
- * The filenames `bin` may be spelled as on this platform, in probe order: the
- * name itself first everywhere, then - on win32 only - the name plus each
- * PATHEXT extension. A name that ALREADY carries one of those extensions is
- * probed as itself alone, so `tsc.cmd` is never probed as `tsc.cmd.cmd`.
+ * The filenames `bin` may be spelled as on this platform, bare name first, then on win32 each PATHEXT extension.
+ * A name already carrying one is probed as itself, so `tsc.cmd` never becomes `tsc.cmd.cmd`.
  * @param {string} bin @returns {string[]}
  */
 function spellings(bin) {
@@ -54,12 +27,9 @@ function spellings(bin) {
 }
 
 /**
- * Does `bin` resolve as an executable inside THIS ONE directory?
- *
- * The half `detect-commands` asks first for eslint and tsc, which a project
- * installs into `<root>/node_modules/.bin` and which need not be on PATH at all.
- * Anything that is not a non-empty string on either side is false rather than
- * a throw: the callers hand this whatever their own inputs held.
+ * Does `bin` resolve as an executable inside this one directory?
+ * `detect-commands` asks this first for eslint and tsc, which sit in `<root>/node_modules/.bin` and needn't be on PATH.
+ * Anything that isn't a non-empty string is false, not a throw.
  * @param {unknown} dir @param {unknown} bin @returns {boolean}
  */
 export function executableIn(dir, bin) {
@@ -71,11 +41,8 @@ export function executableIn(dir, bin) {
 }
 
 /**
- * Is `bin` an executable on the CHILD's PATH? The one resolution site.
- *
- * PATH is read at CALL time, never captured at import: `issue-check.mjs` is a
- * short-lived seam either way, but a module-load capture would make the value a
- * test prepends depend on import order rather than on the environment.
+ * Is `bin` an executable on the child's PATH? The one resolution site.
+ * PATH is read at call time, not at import, or a test's prepended directory would depend on import order.
  * @param {unknown} bin @returns {boolean}
  */
 export function onPath(bin) {

@@ -14,11 +14,8 @@ concurrency:
 
 jobs:
   node-test:
-    # One job per GROUP, so a red arm names the seam that broke and the arms
-    # run in parallel. The groups are declared in test.mjs in the cadence-tests
-    # repository, mounted at tests/; anything it does not name lands in
-    # `other`, which is in this matrix, so a new test file is never silently
-    # unrun.
+    # One job per group, so a red arm names the seam that broke. The groups live in test.mjs in
+    # cadence-tests; anything it doesn't name lands in `other`, which is in the matrix.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -26,18 +23,11 @@ jobs:
         node: ['22', '24']
         group: [routing, git, planning, prose, review, other]
     steps:
-      # fetch-depth: 0, not the default shallow depth-1. `why-record.test.mjs`
-      # (the `other` group) reads THIS repository's own history, not the tests
-      # repository's, as its fixture corpus - archived SUMMARY tables joined to
-      # the commits they name - so a depth-1 checkout fails 23 of its arms with
-      # `invalid object name <sha>^`. The step after it clones the cadence-tests
-      # repository into tests/ at the commit .github/tests-pin names; only this
-      # job and coverage need it. It is a plain clone, not a submodule: the
-      # plugin directory refuses a submodule set to `update = none`, and without
-      # that setting a plugin install pulls the suite into the user's plugin
-      # cache. The other jobs below, apart from coverage, walk no history, keep
-      # the shallow default and clone no suite, so they see the tree a GitHub
-      # install receives.
+      # fetch-depth: 0 because why-record.test.mjs (the `other` group) reads this repo's own history
+      # and fails 23 arms on a depth-1 checkout. tests/ is a plain clone of cadence-tests at the
+      # .github/tests-pin commit, not a submodule: the plugin dir refuses one set to `update = none`,
+      # and without that setting a plugin install pulls the suite into the user's cache.
+      # Only this job and coverage need it; the others keep the shallow default.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -54,21 +44,15 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
-      # Zero-dep repo: no install step, the built-in runner is the framework.
+      # Zero-dep repo, so no install step.
       - run: node tests/test.mjs ${{ matrix.group }}
 
   coverage:
-    # The whole suite in one run with Node's built-in coverage, written as LCOV
-    # for SonarQube. The scan runs in this job after the report is written, so
-    # no artifact passes between jobs. node --test runs the files directly
-    # because test.mjs passes no runner flags through; the env line does what
-    # test.mjs does, pointing the suite at a user-global config that does not
-    # exist. Node 26, because --test-coverage-include-all needs Node 26.7 or
-    # later; it counts files no test loads, and the two guards after the run
-    # catch an empty scope and a file that was never loaded. fetch-depth: 0 because why-record.test.mjs reads this repository's
-    # history (see node-test), and the scan uses blame to find new code.
-    # persist-credentials: false keeps the job token out of .git/config, where
-    # the scan action could read it.
+    # whole suite in one run with coverage, written as LCOV for SonarQube; the scan runs here so no artifact hops jobs
+    # node --test runs the files directly (test.mjs passes no runner flags), so the env line does test.mjs's job
+    # Node 26 because --test-coverage-include-all needs 26.7; the two guards catch empty scope and unloaded files
+    # fetch-depth: 0 for why-record.test.mjs and the scan's blame
+    # persist-credentials: false keeps the job token out of .git/config, where the scan action could read it
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -134,8 +118,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   self-verify:
-    # The prose<->code drift linter: every config key, script invocation, and
-    # plugin-root path named in the live prose must exist in the code.
+    # Prose/code drift: every config key, script call and plugin-root path named in prose has to exist.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -145,10 +128,8 @@ jobs:
       - run: node cadence-core/bin/self-verify.mjs
 
   typecheck:
-    # Honor the @ts-check pragmas. The repo has no package.json; typescript +
-    # @types/node are installed ephemerally for this job only (tsconfig.ci.json),
-    # pinned to exact versions that move by hand: .github/dependabot.yml carries
-    # no npm ecosystem and there is no manifest for it to read.
+    # Honors the @ts-check pragmas. typescript and @types/node install ephemerally for this job only,
+    # pinned by hand because dependabot has no npm ecosystem here and there's no manifest to read.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -159,17 +140,12 @@ jobs:
       - run: node_modules/.bin/tsc -p tsconfig.ci.json
 
   plugin-validate:
-    # The host's own validator over both manifests, strict, so a check Claude
-    # Code tightens fails here before it fails someone's install. Then the
-    # plugin is added from this checkout as a marketplace, installed, and its
-    # installed config.mjs launched from outside the checkout, with no secret
-    # or credential in any step: the plugin runs as a user receives it. The CLI
-    # is pinned to the only version those commands were tried on; the pin moves
-    # by hand, since .github/dependabot.yml carries no npm ecosystem and the
-    # repository has no package.json. An unpinned global install has no lockfile, which is what
-    # zizmor's adhoc-packages audit looks for. --ignore-scripts keeps every
-    # package's install script from running; Claude Code's own script only links
-    # its native binary into place, so we run that one by name.
+    # The host's own strict validator over both manifests, so a check Claude Code tightens fails
+    # here before it fails someone's install. Then the plugin is installed from this checkout and its
+    # config.mjs launched from outside it, with no secret or credential in any step, the way a user gets it.
+    # The CLI pin is the one version those commands were tried on and moves by hand.
+    # An unpinned global install has no lockfile, which is what zizmor's adhoc-packages audit flags.
+    # --ignore-scripts stops every install script; Claude Code's only links its native binary, so it runs by name
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

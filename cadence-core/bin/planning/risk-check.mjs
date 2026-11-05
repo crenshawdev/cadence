@@ -1,19 +1,8 @@
 // @ts-check
-// planning/risk-check.mjs - the `risk-check` family: the detection the blocking
-// `risk_surface` gate fires on, and the record that proves it ran.
-//
-// All THREE handlers live here because `cmdRiskCheck` dispatches to
-// `cmdRiskCheckRun` and `cmdRiskCheckStatus` - the second of the two
-// handler-to-handler call edges the single-file layout had (D-07).
-//
-// `surfaceVocabulary`, `RISK_TRIGGER`, `FIRE_RECEIPTS` and
-// `REVIEWER_TEXT_PATHSPECS` are read by this family and nothing else, so they
-// travel with it (D-05). The last of the four is EXPORTED, for its own stated
-// reason: the suite has to drive itself off the same list the read uses.
-//
-// The `mergeLayers(` callsite in `cmdRiskCheckRun` destructures
-// `warnings: surfaceWarnings` and carries it into the envelope, which is arm (a)
-// of self-verify check 12 - no header marker needed (D-11).
+// planning/risk-check.mjs - the `risk-check` family: the detector behind the risk_surface gate, and its run record
+// cmdRiskCheck calls the other two handlers, which is why all three live in this one file
+// RISK_TRIGGER, FIRE_RECEIPTS, surfaceVocabulary and REVIEWER_TEXT_PATHSPECS are read here and nowhere else
+// cmdRiskCheckRun carries the merge `warnings` into the envelope, so no header marker is needed
 'use strict';
 
 import { execFileSync } from 'node:child_process';
@@ -32,18 +21,9 @@ import { CATEGORIES, answeredSurfaces } from '../lib/surface-scan.mjs';
 import { appendEvent, renderTrace } from '../lib/trace.mjs';
 
 /**
- * The risk-surface vocabulary `config.schema.json` states - the SAME list
- * `route.mjs` hands `answeredSurfaces`, read here so the seam that REFUSES on
- * the one-time surface question and the resolve that REPORTS it cannot
- * disagree about which tokens are a valid answer. A table naming a proper
- * subset is the case that separates them: a configured category outside it is
- * unanswered to `route.mjs`, and reading `CATEGORIES` here instead would let
- * this seam accept that same value and narrow a blocking gate's scope to a set
- * the routing authority had rejected.
- *
- * An unreadable or malformed table falls back to the eight rather than to
- * nothing: no vocabulary at all would read every configured answer as invalid
- * and refuse every call.
+ * The risk-surface vocabulary `config.schema.json` states, the same list route.mjs hands answeredSurfaces.
+ * Read from the schema and not CATEGORIES, so this seam and the resolve can't disagree on a valid answer.
+ * Falls back to the eight when the table is unreadable, since no vocabulary would refuse every call.
  * @returns {readonly string[]}
  */
 function surfaceVocabulary() {
@@ -51,46 +31,12 @@ function surfaceVocabulary() {
 }
 
 /**
- * The four `.planning/phases/` artifacts the range read WITHHOLDS, spelled as
- * git pathspecs that append after the `git diff` revision separator (D-01,
- * D-02).
- *
- * WHY A PATHSPEC AND NOT AN EXEMPTION INSIDE `scanDiff`. `lib/risk-diff.mjs`
- * states at `:424-433`, `:464-470` and `:500-505` that the exemptions
- * `scanDeclared` carries are SCOPED TO THAT FACE and deliberately not to
- * `scanDiff`, because `scanDiff` reads a HUNK where a match is a line someone
- * actually ADDED, and its rule is that the fix belongs at the MENTION and never
- * at a path or a filename. Withholding the file from the DIFF honours that rule
- * instead of bending it: `scanDiff` never receives the hunk, its face is
- * untouched, and no signal leaves the table (D-03).
- *
- * WHY THESE FOUR SHAPES AND NOT `.planning/`. Each of the four stores reviewer
- * text VERBATIM by design - `references/review-record.md` requires a stored
- * restatement to match the reviewer's returned text byte for byte - so a docs
- * commit landing a finding that quotes a destructive command re-tripped the
- * very gate that found it, and the user had to override a gate to file what the
- * gate had told them. The scope stops at these four filename shapes: a
- * destructive command written into a PLAN.md Action is the text an executor is
- * handed to RUN, so a plan file under the same directory stays scanned, and
- * nothing outside `.planning/phases/` is withheld at all.
- *
- * WHAT IT DOES TO `empty`. A range whose changed files are ALL withheld now
- * reads `empty: true` - the SCANNED range held nothing, rather than the range
- * itself being empty - and that answer still clears as a COMPLETED check, the
- * arm `risk-check status` already treats as recorded. Taking a SECOND
- * unexcluded `git diff` to keep `empty` meaning what it meant before is
- * deliberately not done: it doubles the read on every gate fire to make one
- * boolean narrower, and no decision here asks for it.
- *
- * `:(top,exclude)` in long form on purpose. `top` anchors each pattern at the
- * working-tree root rather than at the process cwd, so the answer is the
- * repository's and not the caller's. The `:!` shorthand says the same thing
- * without naming which two magics are in play, at the site where a reader is
- * deciding whether to widen the list.
- *
- * EXPORTED so the suite drives itself off this list rather than off a second
- * spelling of it (D-04) - a second spelling is how a list and its test drift
- * apart.
+ * The four `.planning/phases/` artifacts the range read withholds, as git pathspecs after the `git diff` separator.
+ * They store reviewer text verbatim, so a finding quoting a destructive command re-tripped the gate that found it.
+ * A pathspec and not a scanDiff exemption: the fix goes at the mention, never at a path. Plan files stay scanned.
+ * A range whose changed files are all withheld reads `empty: true` and still clears.
+ * `:(top,exclude)` in long form on purpose: `top` anchors at the repo root, not the cwd.
+ * Exported so the suite drives off this list.
  * @type {readonly string[]}
  */
 const REVIEWER_TEXT_PATHSPECS = Object.freeze([
@@ -100,24 +46,8 @@ const REVIEWER_TEXT_PATHSPECS = Object.freeze([
   ':(top,exclude).planning/phases/*/verifier-findings.json',
 ]);
 
-// ---------------------------------------------------------------------------
-// risk-check - the detection the blocking `risk_surface` gate fires on, and the
-// record that proves it ran (RSK-01/RSK-02).
-//
-// The defect it closes: detection was `workflows/execute.md` telling a model to
-// check a diff against the eight-category prose list in
-// references/review-triggers.md. A fire wrote a lifecycle event and a NON-match
-// wrote nothing, so the run record could not tell "the detection step was
-// skipped" from "it ran and matched nothing", and an omitted check was
-// indistinguishable from a clean one.
-//
-// What changed is not the heuristics - those stay heuristics, in lib/
-// risk-diff.mjs - it is that the answer is computed by something that always
-// returns one and always appends it. `run` records on EVERY invocation that got
-// past argument validation, including the no-match path and the git-failure
-// path; `status` refuses a phase holding a completed executor range with no
-// record.
-// ---------------------------------------------------------------------------
+// the check used to be prose telling a model to scan a diff, and a skipped one looked the same as a clean one
+// run records on every call past arg validation, and status refuses a phase with a completed range and no record
 
 function cmdRiskCheckRun(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
@@ -127,14 +57,8 @@ function cmdRiskCheckRun(dir, opts) {
   }
   const n = parsedPhase.value;
 
-  // THE WORKER KEY, through the one grammar both faces read (RSK-03, D-02).
-  // Not `requireInt`: `status` derives what it demands from the lifecycle
-  // brackets, where `references/seams.md` permits a non-numeric worker key, so
-  // a fix pass bracketed `1-fix` used to leave a blocking gate no argv could
-  // satisfy - `run --plan 1-fix` answered `bad-args`. The VAL-01 rail
-  // `requireInt` was standing for survives inside the predicate: a VALUELESS
-  // flag arrives as the boolean `true`, `Number(true)` is `1`, and a non-string
-  // is refused first.
+  // same key grammar as status, which derives keys like `1-fix`; requireInt refused them and left the gate stuck
+  // a valueless flag arrives as boolean true and Number(true) is 1, so refuse a non-string first
   let plan;
   if ('plan' in opts) {
     const parsedPlan = requirePlanKey(opts.plan);
@@ -147,27 +71,14 @@ function cmdRiskCheckRun(dir, opts) {
     plan = parsedPlan.key;
   }
 
-  // THE SCOPE, IN EXACTLY ONE MACHINE SPELLING PER SHAPE (OQ-1).
-  //
-  // A COMMITTED range is `--base <ref> --head <ref>`. The STAGED scope - the
-  // index against a base, which is what `workflows/verify.md` and
-  // `workflows/debug.md` describe in prose and what two projects improvised
-  // `HEAD..STAGED` for (verbatim 2026-08-30T18:28:50, weathervane
-  // 2026-08-31T11:21:11) - is `--base <ref> --staged`. Neither end is ever
-  // defaulted on either shape: a defaulted head is a range the caller never
-  // stated, and this record is the evidence of what was checked.
-  //
-  // `--staged` is read by PRESENCE, the way `cmdLeaseCheck` reads
-  // `opts['plan-time']`: it carries no value at all, and the arg contract
-  // declares it boolean with `fallback` on both axes for that reason.
+  // a scope is `--base <ref> --head <ref>` for a committed range or `--base <ref> --staged` for the index
+  // neither end is defaulted: a defaulted head is a range the caller never stated, and this record is the evidence
+  // `--staged` is read by presence like `opts['plan-time']` in cmdLeaseCheck, so the contract declares it boolean
   const base = riskRef(opts.base);
   const head = riskRef(opts.head);
   const staged = 'staged' in opts;
-  // TWO SPELLINGS OF ONE SCOPE is a malformed call, never a precedence
-  // question. Picking one would hand the caller a verdict over a scope it did
-  // not ask about, on the one gate the schema defaults to blocking. The
-  // test is `'head' in opts` and not the VALIDATED head, so a flag-shaped
-  // `--head` beside `--staged` is refused here rather than silently dropped.
+  // both spellings is a malformed call, not a precedence question: picking one answers for a scope nobody asked about
+  // tests `'head' in opts`, not the validated head, so a flag-shaped `--head` beside `--staged` is refused, not dropped
   if ('head' in opts && staged) {
     return fail('bad-args',
       'risk-check run takes --head <ref> or --staged, never both - they are two spellings of one'
@@ -183,19 +94,8 @@ function cmdRiskCheckRun(dir, opts) {
       + ' index against --base - then re-run this check');
   }
 
-  // The scope of the check, narrowed only by what the caller named. A token
-  // outside the eight is a malformed CALL - refused, with NOTHING appended, the
-  // rule `trace append --tokens` already states - because a caller who mistyped
-  // the scope of a blocking gate must see a refusal rather than a narrowed
-  // clean answer.
-  // THE ONE-TIME SURFACE QUESTION, read BEFORE the `--surfaces` branch so both
-  // arms see the same two facts.
-  //
-  // mergeLayers warnings[]: a layer that did not PARSE is refused here whatever
-  // the caller passed - this envelope is the surfacing, and the detail names
-  // what tore. It sits ahead of the branch deliberately: a torn layer that only
-  // an unflagged call noticed would be a fail-closed rule an explicit flag
-  // could step around, which is not a rule.
+  // mergeLayers warnings[]: a torn layer is refused whatever the caller passed, and the detail names what tore
+  // ahead of the --surfaces branch so a flag can't step around a torn layer
   const { config: surfaceConfig, warnings: surfaceWarnings } = mergeLayers(join(dir, 'config.json'));
   if (surfaceWarnings.length) {
     return fail('surfaces-unanswered',
@@ -217,6 +117,7 @@ function cmdRiskCheckRun(dir, opts) {
         "list this run's scope as one comma-separated value, or drop --surfaces to use the set the"
         + ' project already answered');
     }
+    // a token outside the eight is refused with nothing appended: a mistyped scope must not narrow a blocking gate
     const unknown = tokens.filter((t) => !CATEGORIES.includes(t));
     if (unknown.length) {
       return fail('bad-args',
@@ -226,23 +127,9 @@ function cmdRiskCheckRun(dir, opts) {
     }
     categories = [...new Set(tokens)];
   } else {
-    // THE TEETH ON THE ONE-TIME SURFACE QUESTION.
-    // `references/review-triggers.md` states that a `risk_surface` fire whose
-    // resolve reports `surfaces_answered: false` "does not proceed to detection
-    // until the project has answered". Detection is THIS subcommand, and until
-    // now that sentence was enforced by nothing: `route.mjs` emitted the flag,
-    // every consumer read the surfaces array beside it, and an unanswered
-    // project was byte-identical to an answered one at every point after the
-    // resolve. Measured on a sibling project 2026-08-19: seven blocking
-    // `risk_surface` fires across three phases, the question never put to the
-    // user, found only because the user asked why no scan had happened.
-    //
-    // A caller that NAMED `--surfaces` has already resolved the scope and is
-    // untouched by this arm - the refusal is precisely for the caller that
-    // let the default stand, because that default is the all-eight set nobody
-    // chose. `detail` names the two commands that settle it rather than only
-    // reporting the state, since the ask lives on this path alone
-    // (`detect-surfaces` has no other caller in the tree).
+    // review-triggers.md says an unanswered project doesn't go on to detection, and nothing enforced it until this
+    // a caller that named --surfaces already resolved the scope; this refuses the one that left the all-eight default
+    // detail names the two commands that settle it, since detect-surfaces has no other caller
     const decided = answeredSurfaces(wrote, surfaceVocabulary());
     if (!decided.answered) {
       return fail('surfaces-unanswered',
@@ -259,87 +146,33 @@ function cmdRiskCheckRun(dir, opts) {
 
   let body = null;
   let diffError = null;
-  // The IDS the caller's refs name, resolved before anything is read: they are
-  // this record's range identity, and `risk-check status` compares them rather
-  // than the spellings (see resolveRange).
-  //
-  // THE END THAT RESOLVED IS KEPT whichever way the other one went. Both ids
-  // used to be dropped the moment either ref failed, so a record left by a
-  // caller who mistyped one end could not say which commit the OTHER end named,
-  // and its reader could not tell a bad ref from a bad repository.
-  // `resolveRange` returns `''` for the end git could not name and the full id
-  // for the end it could, so only the FAILING end goes null here.
+  // ids for the caller's refs, resolved before any read: status compares ids, not spellings
+  // a failed ref keeps the other end's id: resolveRange returns '' for the end git couldn't name, so only it is null
   let baseId = null;
   let headId = null;
-  /** The STAGED scope's second end, and null on every ref range: the index has
-   * no commit id, so `git write-tree` names its contents instead (resolveIndex).
+  /** the staged scope's second end, null on a ref range: the index has no commit id, so `git write-tree` names it
    * @type {string|null} */
   let indexId = null;
   /**
-   * The `git diff` argv this run's scope names, or null when the scope did not
-   * resolve and there is nothing to read. Built per arm and READ once below, so
-   * the two scopes share one catch rather than one each - which is also what
-   * holds the `planning-detail-sites` census where it stands.
-   *
-   * Common to both: `-C top`, the way cmdLeaseCheck reads its staged set, so the
-   * read is the repository's and not the cwd's, and the resolved IDS rather than
-   * the spellings, so the body read is exactly the scope recorded. The trailing
-   * `--` ends the revision list: a ref that also names a path cannot turn into a
-   * pathspec here. REVIEWER_TEXT_PATHSPECS goes AFTER that separator, so that
-   * rule holds for those arguments too, and the four record artifacts that store
-   * reviewer text verbatim never reach `scanDiff` at all. See the constant for
-   * why the fix is here and not in that face.
-   *
-   * `--no-ext-diff --no-textconv` are what make the EMPTY answer mean what
-   * scanDiff reports it to mean. A `diff=<driver>` attribute in a checked-in
-   * `.gitattributes` binds to a `diff.<driver>.command` or `.textconv` in the
-   * reader's OWN git config, so a repository the user merely cloned can route
-   * this read through a helper that prints nothing and exits 0 - and no attacker
-   * is needed for it, since a `textconv` for pdf/docx in `~/.gitconfig` does it
-   * by accident. `git diff <base> <head> --` then emits zero bytes for a file
-   * whose changed line is a recursive delete, and scanDiff answers
-   * `checked: true, empty: true, matches: []`: a COMPLETED clear on the one gate
-   * the schema defaults to blocking. Both flags are diff-generation
-   * switches only - they change no id, no range and no exit status, so the
-   * empty/unreadable split is untouched.
+   * The `git diff` argv this scope names, or null when it didn't resolve and there's nothing to read.
+   * Built per arm and read once so both scopes share one catch, which also holds the `planning-detail-sites` census.
+   * `-C top` reads the repo and not the cwd, ids and not spellings, and the trailing `--` stops a ref becoming a path.
+   * `--no-ext-diff --no-textconv`: a `diff=<driver>` attribute in a cloned repo can print nothing and fake a clear.
    * @type {string[] | null}
    */
   let diffArgs = null;
   if (staged) {
-    // THE STAGED SCOPE, RESOLVED AS ONE END (the locked OQ-1 answer). This arm
-    // sits BEFORE `resolveRange` is ever reached, so that function learns no
-    // staged spelling and nothing that is not a rev passes `riskRef`: the index
-    // is not a commit, so there is no ref a caller could have named for it and
-    // a stand-in head would be a range nobody asked about. `resolveRef` is the
-    // single-ref half `resolveRange` is itself built on, so both arms resolve a
-    // ref through one function and one refusal vocabulary.
-    //
-    // The scope is the INDEX against the base: a file written into the worktree
-    // and never added is outside this diff, which is the point - the gate fires
-    // before the commit lands (git-guard.md:123) and what it must judge is what
-    // is about to be committed. The diff names the index by the TREE OBJECT
-    // `write-tree` returned rather than by `--cached`, for the reason below.
+    // staged sits before resolveRange so that function never learns a staged spelling; the index isn't a commit
+    // resolveRef is the single-ref half resolveRange is built on, so both arms share one refusal vocabulary
+    // the scope is the index against the base: the gate fires before the commit, so unadded worktree files are outside
+    // the diff names the index by the write-tree object and not `--cached`, for the reason below
     const b = resolveRef('base', base);
     baseId = b.id || null;
     if (!b.ok) diffError = b.error;
     else {
-      // THE INDEX'S IDENTITY, TAKEN BEFORE THE BODY IS READ, and the scope's
-      // other end: a staged record identified by its base alone was satisfiable
-      // by any LATER index over that same unmoved base, so a risky change staged
-      // after the run cleared the gate having never been scanned.
-      //
-      // THE BODY IS READ FROM THAT SAME TREE OBJECT, never from `--cached`. Two
-      // git calls against the live index leave a window between them, and an
-      // index swapped inside it and restored after would record this id against
-      // a body that scanned something else. Diffing `<base> <tree>` closes the
-      // window by construction: the id and the bytes are one object, and an
-      // index that moves after `write-tree` is simply a different tree the next
-      // status ask reports `stale` on.
-      //
-      // An index git cannot name fails the check the way an unresolvable ref
-      // does - no read, a `no-diff` refusal, and the cause on the row. A record
-      // written without this id is a staged record no later ask can match, and
-      // scanning to write one would be work no gate can ever clear.
+      // the index id is taken before the body is read: a record keyed by the base alone satisfied any later index
+      // the body comes from that same tree, never `--cached`: two reads of the live index leave a swap window
+      // an index git can't name fails like a bad ref: no read and a `no-diff` refusal, as its record could never match
       const ix = resolveIndex(b.top);
       indexId = ix.id || null;
       if (!ix.ok) diffError = ix.error;
@@ -363,73 +196,38 @@ function cmdRiskCheckRun(dir, opts) {
       body = execFileSync('git', diffArgs,
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: RISK_DIFF_MAX_BUFFER });
     } catch (e) {
-      // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set`
-      // applies: a git failure detail can carry a remote URL with credentials.
+      // redacted like cmdLeaseCheck's no-staged-set detail, since a git failure can carry a remote URL with credentials
       diffError = redactUrl(e && e.message ? e.message : String(e));
     }
   }
 
   const scan = scanDiff(body, categories);
 
-  // Appended BEFORE the envelope is emitted, and on every path past argument
-  // validation - the no-match path and the git-failure path included - so even
-  // a refusal leaves the record saying the check was ATTEMPTED. `appendEvent`
-  // never throws and never speaks; its `{written, reason}` rides the envelope
-  // so a trace that could not be written is reported rather than silently
-  // dropped, and it may NOT change the verdict.
-  //
-  // `plan` is the caller's OWN spelling, verbatim, exactly as a prose
-  // `trace append --plan` stores it - the two must be one string or the receipt
-  // settles nothing (D-01's stated cost). `risk-check status` stringifies both
-  // sides before comparing, the way lib/trace.mjs's own `key()` does, so a
-  // record written `1` and a bracket written `"1"` still join.
+  // appended on every path past arg validation, refusals included, so the record says the check was attempted
+  // `plan` is the caller's own spelling, like `trace append --plan`; status stringifies both sides, so `1` joins `"1"`
   const res = appendEvent(dir, {
     phase: parsedPhase.raw,
     family: 'outcome',
     event: 'risk_check',
     ...(plan === undefined ? {} : { plan }),
-    // Both spellings AND both ids, always: the spelling is what the reader
-    // recognises, the id is the range's identity. Written even when null, so a
-    // record from a run that resolved nothing is visibly unidentifiable rather
-    // than silently absent a field.
+    // both spellings and both ids, written even when null, so an unresolved run is visibly unidentifiable
     base,
-    // HONESTLY NULL on the staged arm, both spelling and id: the index is not a
-    // commit, so there is no head this run had and writing the caller's absent
-    // flag as `undefined` would drop the field a reader checks.
+    // null on the staged arm: the index isn't a commit, and an `undefined` flag would drop the field a reader checks
     head: staged ? null : head,
     base_id: baseId,
     head_id: headId,
-    // ONLY THE STAGED ARM CARRIES THEM. A ref-range row written before this arm
-    // existed is honestly not staged, so its absence and a `false` would say the
-    // same thing - which is not the case `empty` was in (D-03), where an absent
-    // field marked a record the seam could not speak for. `index_id` rides the
-    // same spread for the same reason and for one more: a ref range HAS no index
-    // end, so the field would be null on every row that is not about the index.
-    // Written even when null on this arm, exactly as the two ids above are, so a
-    // staged record the gate can never match says so rather than omitting it.
+    // only the staged arm writes these, so a row without them reads as a ref range; index_id rides the same spread
+    // written even when null, like the ids above, so a staged record the gate can never match says so
     ...(staged ? { staged: true, index_id: indexId } : {}),
     checked: scan.checked,
     categories: scan.categories,
-    // TOKENS on the record, the `{category, signal}` pairs on the envelope: the
-    // record is joined and counted, the envelope is read by the fire site that
-    // has to state a reason.
+    // tokens on the record, `{category, signal}` pairs on the envelope: the record is counted, the fire site needs why
     matches: scan.matches.map((m) => m.category),
     inconclusive: scan.inconclusive,
-    // The range was READ and held nothing - a completed check, not an
-    // unchecked one (D-01/D-02). Written beside `checked` on the record and on
-    // the envelope both, so the record a later `status` joins and the envelope
-    // the coordinator reads cannot disagree about it.
+    // an empty range was read and held nothing: a completed check, on the record and envelope so both agree
     empty: scan.empty,
-    // THE CAUSE, ON THE ROW and not on the envelope alone. Both failure arms -
-    // an unresolved range and the `git diff` catch - appended a bare
-    // `checked: false, inconclusive: true` with the redacted message reaching
-    // only the envelope's `detail`, so a trace reader saw an inconclusive it
-    // could proceed past and nothing on the record said why the range was never
-    // read (smithers 2026-08-27T23:55:38 and 2026-08-28T14:28:12). `detail` is
-    // the field trace rows already carry a free-text cause on - `override`'s
-    // reason, `uat_verdict`'s result word - and this is the SAME redacted string
-    // the envelope emits, so the record and the envelope cannot disagree about
-    // the cause. A run that READ its range adds nothing.
+    // the cause goes on the row too: a bare `checked: false, inconclusive: true` looked skippable and said nothing why
+    // `detail` is the cause field trace rows already carry, the same redacted string the envelope emits
     ...(diffError === null ? {} : { detail: diffError }),
   });
 
@@ -449,8 +247,7 @@ function cmdRiskCheckRun(dir, opts) {
     trace: { written: res.written, ...(res.reason ? { reason: res.reason } : {}) },
   };
 
-  // A range that could not be READ is never ok: a caller must not be able to
-  // take "git refused" for "clean".
+  // a range that couldn't be read is never ok, so a caller can't take "git refused" for "clean"
   if (diffError !== null) {
     return emit({ ok: false, reason: 'no-diff', detail: diffError, ...envelope,
       hint: staged
@@ -462,43 +259,18 @@ function cmdRiskCheckRun(dir, opts) {
   return ok(envelope);
 }
 
-/** The trigger a risk RECEIPT has to name. One constant, because the detector
- * that writes the record and the gate that fires on it are the same trigger,
- * and a second spelling is how the two halves start clearing each other. */
+/** The trigger a risk receipt has to name; one spelling, or the detector and the gate stop matching. */
 const RISK_TRIGGER = 'risk_surface';
-/** The outcome event a caller appends IN PLACE of a check for a plan that landed
- * no commits (RSK-10). Read by `status` so the row that skip stands in for is
- * `skipped` rather than `missing`; the three sites that write it are named on
- * the `skips` map in `cmdRiskCheckStatus`. */
+/** Appended in place of a check for a plan that landed no commits, so status reads that row as `skipped`. */
 const RISK_SKIP_EVENT = 'risk_check_skipped';
 
 /**
- * The five `outcome` event names a `risk_surface` fire can settle at, and the
- * whole vocabulary `risk-check status` accepts as proof the fire HAPPENED
- * (GAT-04):
- *   - `adjudication` - the adjudicated arm reported its survivors
- *   - `rearm`        - the one-round re-arm fired a narrowed second round
- *   - `gate_pass`    - the fire came back with nothing blocker/high
- *   - `override`     - the user cleared a FAIL deliberately, reason on file
- *   - `deferral`     - a gate resolved `deferred` queued what it found
- * `gate_pass` is here because the roadmap's stated acceptance set has no arm
- * for a clean pass and a blocking PASS wrote nothing: without it, every matched
- * range whose fire found no blocker would be permanently unclearable, and this
- * tree has already stated its verdict on that shape - an unclearable gate is
- * one that gets bypassed.
- *
- * `deferral` is the FIFTH name this list once said nothing produces, and what
- * produces it is the `deferred` gate mode: that arm runs the reviewer, persists
- * the findings and writes a queue member, then lets the run continue - it
- * settles by QUEUING rather than by adjudicating, so none of the four names
- * above describes it. It cannot borrow one either: `gate_pass` reads as a clean
- * gate in every downstream recount, and `override` is the coordinator's own
- * say-so, which is the manufactured clear the receipt machinery exists to
- * refuse. Without an accepted receipt of its own, `cmdRiskCheckStatus` reports
- * the matched range `unfired` forever and the run halts at exactly the step
- * deferring it was meant to let through.
- *
- * The producers are references/triage-gate.md and references/review-triggers.md.
+ * The five `outcome` events a risk_surface fire can settle at, all accepted by `risk-check status` as proof:
+ * `adjudication` (survivors reported), `rearm` (narrowed second round), `gate_pass` (nothing blocker/high),
+ * `override` (user cleared a FAIL, reason on file) and `deferral` (a deferred gate queued what it found).
+ * `gate_pass` exists because a clean pass wrote nothing, so a matched clean range could never clear.
+ * `deferral` has its own name: `gate_pass` reads as clean in every recount, and `override` is the manufactured clear.
+ * Producers: references/triage-gate.md and references/review-triggers.md.
  */
 const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override', 'deferral'];
 
@@ -510,15 +282,8 @@ function cmdRiskCheckStatus(dir, opts) {
   }
   const n = parsedPhase.value;
 
-  // A NAMED RANGE IS ALL OF IT OR NONE OF IT. A plan number alone is not a
-  // range identity, and a partly named one would read as the phase-wide arm and
-  // pass on a record some other range left.
-  //
-  // What "all of it" is: `--plan <k> --base <ref>` plus EXACTLY ONE scope -
-  // `--head <ref>` for a committed range, `--staged` for the index against the
-  // base. The second is the OTHER half of the locked OQ-1 answer: `run` records
-  // a staged scope, so the gate that reports on records has to be able to ask
-  // about one, or a staged run would be written and never found.
+  // a named range is all or none: a plan number alone isn't a range identity, and a partial one reads as phase-wide
+  // all of it is `--plan <k> --base <ref>` plus one scope, `--head <ref>` or `--staged`, since run records both
   const given = ['plan', 'base', 'head', 'staged'].filter((f) => f in opts);
   const staged = 'staged' in opts;
   /** @type {{plan: string, base: string, head: string|null, base_id: string,
@@ -534,9 +299,7 @@ function cmdRiskCheckStatus(dir, opts) {
         + ' the index against --base - or none of them for the phase-wide answer; a half-named'
         + ' range would report on a record some other range left');
     }
-    // The SAME predicate `risk-check run` reads (D-02). One consultation each,
-    // so the face that enforces the question and the face that reports it
-    // cannot disagree about which spellings are keys at all.
+    // the same predicate risk-check run reads, so enforce and report can't disagree on what a key is
     const parsedPlan = requirePlanKey(opts.plan);
     if (!parsedPlan.ok) {
       return fail('bad-args', 'risk-check status --plan needs the worker key after it - a plan '
@@ -553,33 +316,15 @@ function cmdRiskCheckStatus(dir, opts) {
         'name the scope you are asking about, as refs this repository can resolve - --base <ref>'
         + ' --head <ref>, or --base <ref> --staged - then re-run this check');
     }
-    // The COMMIT PAIR is the identity, not the spelling (see resolveRange), so
-    // the asked range is resolved here and compared as ids below. A ref that
-    // cannot be resolved is a REFUSAL and never a match: a gate that shrugged
-    // at an unresolvable range would answer about a range nobody can point at,
-    // and the only safe answer to "which commits are these" is the one git
-    // gives.
-    //
-    // The STAGED ask resolves its base ALONE, through the single-ref half
-    // `resolveRange` is built on, and never reaches `resolveRange` at all: the
-    // index is not a commit, so there is no second ref to hand it and a stand-in
-    // head would be a range nobody asked about. Its `head_id` stays null, which
-    // is also what makes a staged record and a ref-range record unable to match
-    // each other below.
+    // ids are the identity, so the asked range resolves here; an unresolvable ref is a refusal, never a match
+    // a staged ask resolves only its base; head_id stays null, which keeps staged and ref-range rows apart below
     let baseId;
     let headId = null;
     let indexId = null;
     if (staged) {
       const b = resolveRef('base', base);
-      // BOTH ENDS OF THE STAGED SCOPE, and the index is the second one
-      // (resolveIndex): the ask resolves it here the way the ref arm below
-      // resolves its head, because a staged ask that cannot name the index it is
-      // asking about could only fall back to matching on the base - and the base
-      // alone is precisely the identity a later, unscanned index satisfied.
-      //
-      // ONE refusal for both ends: the base's own error rides through the
-      // stand-in, so an unresolvable `--base` still answers with the detail that
-      // names it and an unnameable index answers with one that names `index`.
+      // the staged scope has two ends, the index second: a base-only match is the hole an unscanned index slipped in
+      // one refusal for both: a bad `--base` answers with its own detail, an unnameable index names `index`
       const ix = b.ok ? resolveIndex(b.top) : { ok: false, id: '', error: b.error };
       if (!ix.ok) {
         return emit({
@@ -621,65 +366,14 @@ function cmdRiskCheckStatus(dir, opts) {
       ...(staged ? { staged: true, index_id: indexId } : {}) };
   }
 
-  // ONE reader of the record, through renderTrace and nothing else: a second
-  // reader is how two readers of one record start disagreeing about what
-  // closed, which is the reason renderTrace exposes its paired `brackets` at
-  // all.
+  // one reader of the record, through renderTrace; a second reader is how two readers disagree on what closed
   const r = renderTrace(dir, parsedPhase.raw);
 
-  /**
-   * THIS RUN, not every cycle that ever used this phase number.
-   *
-   * `.planning/trace.jsonl` is append-only across the whole project and phase
-   * numbers restart every milestone, so `--phase 1` reaches every previous
-   * cycle's phase 1 - on this repository, seven prior runs' executor brackets,
-   * two of them for a plan 2 that predates this seam. Scanning all of them
-   * demanded a risk record for ranges committed under a v3.4.x cycle and made
-   * the gate unsatisfiable on any project with more than one milestone of
-   * history: the check built to stop "not run" passing as "ran clean" never
-   * passed at all.
-   *
-   * The scope is `renderTrace`'s own `corr` - the id derived from the phase's
-   * NEWEST anchor - which is the same identity the ONE-round re-arm cap in
-   * references/triage-gate.md keys on ("a `rearm` outcome for this trigger
-   * already recorded under that same id"), and the same id `appendEvent`
-   * stamped on the record `risk-check run` wrote moments earlier. Both scans
-   * take it, for one reason: a record left under a previous cycle's id must not
-   * satisfy this cycle's range either, or scoping the brackets alone would
-   * trade an unsatisfiable gate for a forgeable one.
-   *
-   * A trace with no readable id to scope by (`corr` null or empty, which
-   * `requirePhaseArg` should already have made impossible) keeps the unscoped
-   * behaviour: requiring MORE is the safe direction here, and silently matching
-   * nothing would turn the whole gate into a blanket pass.
-   */
-  /**
-   * THIS CYCLE, bounded by the phase's own last sign-off - not the newest
-   * anchor alone.
-   *
-   * Scoping to `renderTrace`'s `corr` alone was too narrow in the other
-   * direction. `workflows/execute.md` anchors each invocation at
-   * `git rev-parse --short HEAD`, so a phase run across more than one
-   * /cad-execute - a resumed session, a continuation after a checkpoint - takes
-   * a DIFFERENT id the moment its first commits land, and every range the
-   * earlier invocation completed fell outside the filter. That is the same
-   * silence this gate exists to break, arriving as an exemption rather than an
-   * absence.
-   *
-   * The bound is the phase's own `uat_verdict` `complete` outcome, which
-   * `workflows/verify.md` appends when the phase passes: everything after the
-   * newest one is the cycle in hand, everything at or before it belongs to a
-   * cycle that was already signed off. `partial` is deliberately not a bound -
-   * a partial UAT session is the middle of a cycle, and cutting there would
-   * exempt the work that preceded it. A phase with no sign-off at all has
-   * never completed, so its whole history IS the current cycle and nothing is
-   * dropped.
-   */
-  // EPOCH MILLISECONDS, never the raw string. A lexicographic compare over
-  // whatever `ts` happens to hold is a gate that opens on a typo: a sign-off
-  // stamped `"zzzz"` sorts above every real ISO timestamp, so every completed
-  // range in the file falls before the bound and the phase reports clean with
-  // no rows at all. An unparseable timestamp is not a later one.
+  // this cycle, bounded by the phase's own last sign-off and not by the newest anchor alone
+  // phase numbers restart every milestone, so an unbounded scan demanded records for old cycles and could never be met
+  // renderTrace's corr alone is too narrow: execute.md anchors at the short HEAD, so a resumed session takes a new id
+  // the bound is the newest `uat_verdict` `complete` outcome; `partial` isn't one, and no sign-off drops nothing
+  // epoch ms, not the raw string: a sign-off stamped "zzzz" sorts above every timestamp. An unparseable one isn't later
   const stamp = (/** @type {any} */ v) => {
     if (typeof v !== 'string') return null;
     const ms = Date.parse(v);
@@ -689,39 +383,23 @@ function cmdRiskCheckStatus(dir, opts) {
   let signoff = null;
   for (const e of r.events) {
     if (e.family !== 'outcome' || e.event !== 'uat_verdict' || e.detail !== 'complete') continue;
-    // An unreadable sign-off is NOT a bound. It cannot say when the cycle
-    // closed, and the only safe reading of "I do not know" here is that no
-    // cycle closed - which requires more, never less.
+    // an unreadable sign-off isn't a bound: it can't say when the cycle closed, so it requires more, never less
     const ts = stamp(e.ts);
     if (ts === null) continue;
     if (signoff === null || ts > signoff) signoff = ts;
   }
-  /**
-   * Everything is in the cycle unless it can be PROVED to sit at or before a
-   * readable sign-off. The direction is the whole point: an event carrying no
-   * `ts`, an unparseable one, or one written by a clock that moved backwards
-   * stays REQUIRED rather than silently exempt, because a completed range this
-   * gate cannot place is exactly the range it must not clear. `>=`, not `>`,
-   * for the same reason - an event sharing the sign-off's own instant is
-   * ambiguous, and ambiguity resolves toward requiring the record.
-   */
+  /** In the cycle unless proven at or before a readable sign-off; a bad `ts` or a tie stays required. */
   const inCycle = (/** @type {{ts?: any}} */ e) => {
     if (signoff === null) return true;
     const ts = stamp(e.ts);
     return ts === null || ts >= signoff;
   };
 
-  /** A row identity is the RUN and the plan together. Pairing a bracket with a
-   * record under its own `corr` is what makes a multi-invocation phase answer
-   * per invocation: the ranges invocation 1 completed need invocation 1's
-   * records, and invocation 2 cannot clear them by checking its own. */
+  /** Row identity is run plus plan, so invocation 2 can't clear invocation 1's ranges by checking its own. */
   const rowKey = (/** @type {any} */ corr, /** @type {any} */ plan) =>
     `${planKey(corr)}\u0000${planKey(plan)}`;
 
-  /** Completed ranges, keyed by plan. A COMPLETED range is an executor bracket
-   * whose terminal is a `return`; a `checkpoint` closed a dispatch that came
-   * back unfinished and requires nothing. Grouping by plan is what makes a
-   * checkpoint-then-return continuation count once rather than twice. */
+  /** Completed ranges by plan: a bracket ending in `return`; a `checkpoint` requires nothing. */
   /** @type {Map<string, {run: string|null, plan: string|null, completed: number}>} */
   const completed = new Map();
   const planRow = (/** @type {any} */ corr, /** @type {any} */ plan) => {
@@ -738,24 +416,10 @@ function cmdRiskCheckStatus(dir, opts) {
     return row;
   };
   /**
-   * A bracket carrying a key the worker-key grammar REFUSES (RSK-03).
-   *
-   * The ONE bounded exception to "status does not narrow" (D-01), and it is the
-   * opposite of the exclusion arm that decision rejected. A key `lib/plan-key.mjs`
-   * refuses is not a legal worker key at all, so `risk-check run --plan <it>`
-   * can never write the record this gate would demand: requiring one leaves a
-   * gate the schema defaults to blocking permanently unsatisfiable, with
-   * no exit but an `override`. So it is REPORTED, on its own `malformed` list,
-   * rather than silently dropped - which is exactly what made the excluded-key
-   * arm fail-open. A key the predicate ACCEPTS is never dropped.
-   *
-   * An ABSENT plan is NOT malformed and keeps its row: `risk-check run` with no
-   * `--plan` writes a record that keys to '' and joins it, so an unidentified
-   * completed range stays required, exactly as the row comment above says.
-   * Nothing in the tree mints a refused key today - `workflows/execute.md` now
-   * states the continuation key - so this guards the write face D-03 leaves
-   * open on purpose, where `trace append --plan` still stores any non-empty
-   * string.
+   * A bracket carrying a key the worker-key grammar refuses.
+   * The one exception to "status doesn't narrow": no `risk-check run --plan` can write a record for it.
+   * Reported on its own `malformed` list and not dropped, which is what made the excluded-key arm fail open.
+   * An absent plan isn't malformed: run with no `--plan` writes a record keyed '' and joins it.
    * @type {Set<string>}
    */
   const malformed = new Set();
@@ -766,39 +430,18 @@ function cmdRiskCheckStatus(dir, opts) {
     if (spelled !== '' && !requirePlanKey(b.plan).ok) { malformed.add(spelled); continue; }
     planRow(b.corr, b.plan).completed++;
   }
-  // A named range is required whether or not its return has landed yet: the
-  // caller states the range it just committed, and a bracket that never paired
-  // must not turn the gate off. It rides THIS invocation's id, which is the
-  // one the caller is reporting for.
+  // a named range is required whether or not its return landed: a bracket that never paired must not turn the gate off
   if (wanted) planRow(r.corr, wanted.plan);
 
   /**
-   * Every record the phase holds, keyed by plan, carrying its VERDICT fields
-   * beside its refs - because a record is not the same thing as a check.
-   * `risk-check run` appends on every path past argument validation, the
-   * git-failure path included, so a `checked:false` line means the check was
-   * ATTEMPTED and read no diff at all. Matching a ref pair off one of those and
-   * reporting `recorded` is the exact state RSK-02 exists to refuse: completion
-   * would pass on a check that never saw the range.
-   *
-   * `inconclusive` is the OPPOSITE call, deliberately. A `checked:true,
-   * inconclusive:true` record IS a completed check - the seam read the range
-   * and honestly reported that part of it cannot be judged - so it satisfies
-   * this gate and rides the row with the flag visible rather than collapsed.
-   * "An unjudged range is not a cleared one" is enforced at the FIRE site,
-   * which is where a response to it exists: `workflows/execute.md` fires
-   * `risk_surface` on `inconclusive: true` exactly as it does on a match.
-   * Refusing here instead would make a range holding a binary file or a
-   * submodule bump permanently unclearable - the caller cannot make git render
-   * it - and an unclearable gate is one that gets bypassed.
+   * Every record the phase holds, keyed by plan: `checked: false` is an attempt with no diff read.
+   * `checked: true, inconclusive: true` is a completed check that can't judge some of the range; it still satisfies.
+   * Refusing it here would leave a binary or submodule range unclearable, and an unclearable gate gets bypassed.
    * @type {Map<string, {base: any, head: any, base_id: string|null, head_id: string|null,
    *   checked: boolean, inconclusive: boolean, staged: boolean, index_id: string|null}[]>}
    */
   const records = new Map();
-  /** The same records keyed by PLAN alone, for the named-range arm. That arm
-   * identifies a range by its resolved commit pair, which is a stronger
-   * identity than the invocation that wrote it, so a record for exactly those
-   * two commits satisfies it wherever in the cycle it was written.
+  /** The same records keyed by plan alone, for the named-range arm: the commit pair beats the run as identity.
    * @type {Map<string, any[]>} */
   const byPlan = new Map();
   for (const e of r.events) {
@@ -811,57 +454,22 @@ function cmdRiskCheckStatus(dir, opts) {
     const rec = {
       base: e.base === undefined ? null : e.base,
       head: e.head === undefined ? null : e.head,
-      // The resolved ids the range is IDENTIFIED by, null when the record does
-      // not carry them - a record written before `run` resolved its refs, or by
-      // a run whose refs did not resolve. Null never matches, so such a record
-      // reports `stale` and the range is re-run: the safe direction, and the
-      // only one available, since the spelling it does carry cannot say which
-      // commits it meant.
+      // resolved ids the range is identified by; null when the record has none, and null never matches, so it's `stale`
       base_id: typeof e.base_id === 'string' && e.base_id ? e.base_id : null,
       head_id: typeof e.head_id === 'string' && e.head_id ? e.head_id : null,
-      // THE SCOPE THE RECORD WAS WRITTEN OVER. `=== true` for the reason every
-      // verdict field below is: a ref-range row carries no such field at all,
-      // and an absent one is not a staged scope. It is what keeps the two
-      // scopes from satisfying each other in `sameRange`.
+      // `=== true` because a ref-range row has no such field; it keeps the two scopes from satisfying each other
       staged: e.staged === true,
-      // THE INDEX THE STAGED RECORD WAS WRITTEN OVER - the identity that makes
-      // a staged scope a scope, since its base can sit unmoved across any number
-      // of different indexes. Null on every ref range, and null for a staged row
-      // whose run could not name the index or that predates the field: null
-      // never matches below, so such a record reports `stale` and the range is
-      // re-run, which is the same safe direction the two ids above take.
+      // the index a staged record was written over; null on a ref range or an older row, and null never matches
       index_id: typeof e.index_id === 'string' && e.index_id ? e.index_id : null,
-      // `=== true`, never truthiness: a record written by an older seam carries
-      // neither field, and an absent verdict is not a passing one.
+      // `=== true` and never truthiness: an older seam wrote neither field, and an absent verdict isn't a passing one
       checked: e.checked === true,
       inconclusive: e.inconclusive === true,
-      // WHY a range with nothing in it is `recorded` and not a refusal. An
-      // empty committed range is a check that RAN, so it arrives here
-      // `checked: true, inconclusive: false, matches: []` and reaches
-      // `recorded` through the arms below unaided - no fifth state name, which
-      // `offending` (`row.state !== 'recorded'`) would turn into an automatic
-      // `ok:false`, and no extra clause in `fired`. The flag is read for the
-      // reader's sake alone: it rides the reported `records` array so an
-      // auditor can see WHY a row is `recorded` with nothing matched.
-      //
-      // `=== true` for the reason stated two fields up: 69 `outcome/risk_check`
-      // events on this repository's own trace were written before the seam
-      // separated an empty range from an unread one, and an absent field is not
-      // an empty range.
+      // an empty range is a check that ran, so it reaches `recorded` unaided; a fifth state would force ok:false
+      // `=== true` for the same reason: older events predate the seam telling an empty range from an unread one
       empty: e.empty === true,
-      // The category TOKENS `cmdRiskCheckRun` writes onto every record and this
-      // reader used to drop. They are what makes a range FIRED: a record
-      // carrying one is a range workflows/execute.md was obliged to fire the
-      // blocking `risk_surface` gate on. A non-array (an older seam, a
-      // hand-edited line) reads as no tokens, never as a match nobody can name.
+      // the category tokens run writes; a record carrying one is a range execute.md fires the blocking gate on
       matches: Array.isArray(e.matches) ? e.matches.filter((m) => typeof m === 'string') : [],
-      // A non-empty `matches` whose elements are not strings is a range the
-      // detector MATCHED and this reader cannot name. Filtering it to `[]`
-      // silently turned a fired range into a clean one, so the two cases are
-      // separated: `matches` stays the tokens that can be reported, and this
-      // flag carries "something matched" independently. Widening is the only
-      // safe direction on the one gate the schema defaults to blocking,
-      // which is the same rule `inconclusive` already encodes.
+      // non-string matches still matched; filtering them to [] turned a fired range clean, so this flag carries it
       matched_unnamed: Array.isArray(e.matches) && e.matches.length > 0
         && e.matches.filter((m) => typeof m === 'string').length === 0,
     };
@@ -870,26 +478,14 @@ function cmdRiskCheckStatus(dir, opts) {
   }
 
   /**
-   * THE SKIP a caller writes IN PLACE of a check (RSK-10). A plan that landed
-   * no commits leaves HEAD where it was, so the range its coordinator would have
-   * named has one commit at both ends; `workflows/execute.md`, `workflows/task.md`
-   * and `references/execute-parallel.md` append `outcome/risk_check_skipped`
-   * carrying that commit as `sha` rather than asking `run` for a `checked:true,
-   * empty:true` row over nothing. This reader has to know the event, or the row
-   * those sites wrote it for stays `missing`: every executor return bracket in
-   * the cycle is a row here, so on a multi-plan phase one skipped plan refused
-   * every LATER plan's own `status` call - a gate the schema defaults to
-   * blocking, with no exit but an `override`.
-   *
-   * A skip carrying NO sha satisfies nothing, the rule fire receipts already
-   * follow: a skip that cannot name the commit it stood at cannot say which
-   * range it stood in for. A skip satisfies its row as `skipped`, never as
-   * `recorded` - a reader can still tell a range nobody had to read from one
-   * the detector read and cleared.
+   * The skip a caller writes in place of a check.
+   * A plan that landed no commits leaves HEAD put, so the workflows append `outcome/risk_check_skipped` with that sha.
+   * Unknown to this reader, that row stays `missing` and one skipped plan refuses every later plan's status call.
+   * A skip with no sha satisfies nothing. It answers its row as `skipped`, never `recorded`, so unread ranges show.
    * @type {Map<string, {sha: string}[]>}
    */
   const skips = new Map();
-  /** The same skips keyed by PLAN alone, for the named-range arm. @type {Map<string, {sha: string}[]>} */
+  /** The same skips keyed by plan alone, for the named-range arm. @type {Map<string, {sha: string}[]>} */
   const skipsByPlan = new Map();
   for (const e of r.events) {
     if (!inCycle(e)) continue;
@@ -905,30 +501,11 @@ function cmdRiskCheckStatus(dir, opts) {
   }
 
   /**
-   * THE FIRE'S OWN RECEIPTS, keyed the same way the records are (GAT-04).
-   *
-   * The defect: `risk-check status` proved a range was READ and RECORDED, and
-   * stopped there. A coordinator could run the detector, watch it match
-   * `secrets`, skip the blocking `risk_surface` fire entirely and still be told
-   * `ok:true` - the gate reporting success for the one thing it exists to make
-   * unskippable. "The detector ran" and "the fire happened" are two different
-   * claims, so they are two different receipts and this reader demands both.
-   *
-   * Five event names, because those are the five outcomes a fire can reach: the
-   * adjudicated arm's `adjudication`, the capped re-arm's `rearm`,
-   * references/triage-gate.md's two settle points - `gate_pass` when nothing
-   * blocker/high survived, `override` when the user cleared a FAIL deliberately
-   * - and `deferral`, which the `deferred` gate mode writes when it queues what
-   * it found instead of halting. The list itself is FIRE_RECEIPTS, one
-   * consultation, and its block comment states why each name is on it.
-   *
-   * The trigger is read off the STRUCTURED `trigger` field and never parsed out
-   * of `detail` (D-12): measured on this repository's 35 `outcome/adjudication`
-   * events the trigger is spelled four different ways in that free text, so a
-   * reader that parsed it would clear a range on a spelling and refuse an
-   * identical one on another.
-   * Each receipt carries the row identity it was written under plus the RANGE
-   * it settled, so a later matched range cannot ride in on an earlier fire.
+   * The fire's own receipts, keyed the same way the records are.
+   * "The detector ran" and "the fire happened" are different claims; proving only the first passed a skipped fire.
+   * Five event names, the five outcomes a fire can reach; FIRE_RECEIPTS is the list.
+   * The trigger is read off the structured `trigger` field, never parsed out of `detail`, where it has four spellings.
+   * Each receipt carries its row identity and the range it settled, so a later range can't ride an earlier fire.
    * @type {{key: string, sha: string|null, base: string|null}[]}
    */
   const receipts = [];
@@ -936,12 +513,7 @@ function cmdRiskCheckStatus(dir, opts) {
     if (!inCycle(e)) continue;
     if (e.family !== 'outcome' || !FIRE_RECEIPTS.includes(e.event)) continue;
     if (e.trigger !== RISK_TRIGGER) continue;
-    // An `override` is the one receipt a coordinator writes on its OWN say-so
-    // rather than as the settled outcome of a review, so it is the one that has
-    // to carry a reason. Without this, `trace append --family outcome --event
-    // override --trigger risk_surface --plan k` with no detail at all mints a
-    // clear for a fire nobody made - the same manufactured-receipt shape the
-    // structured `--trigger` field exists to refuse (D-12).
+    // override is the one receipt written on a coordinator's own say-so, so it needs a reason
     if (e.event === 'override') {
       const why = typeof e.detail === 'string' ? e.detail.trim() : '';
       if (!why) continue;
@@ -950,23 +522,10 @@ function cmdRiskCheckStatus(dir, opts) {
   }
 
   /**
-   * Does a receipt settle THIS range?
-   *
-   * The join used to be `rowKey(corr, plan)` alone, and that cleared every later
-   * matched range for the plan on the strength of one earlier fire: run the
-   * detector, fire once, fix something, re-run the detector on the widened
-   * range, skip the second fire - and status still answered `ok:true`. That is
-   * the defect GAT-04 exists to close, one level up inside the control itself.
-   *
-   * So a receipt names the range it settles, with `trace append --sha <head>`.
-   * Short and full spellings both resolve to the same commit, so the comparison
-   * is prefix-wise in whichever direction is shorter, exactly as a caller who
-   * passed `git rev-parse --short HEAD` would expect.
-   *
-   * A receipt carrying NO sha settles nothing. That is the transition cost,
-   * stated rather than hidden: a receipt that cannot say which range it judged
-   * is the ambiguity this fix removes, and accepting it as a wildcard would
-   * leave the hole open under a different name.
+   * Does a receipt settle this range?
+   * Joining on rowKey alone let one fire clear every later range, so a receipt names its range with `--sha <head>`.
+   * Short and full spellings are the same commit, so the compare is prefix-wise in whichever direction is shorter.
+   * A receipt with no sha settles nothing; as a wildcard it would reopen the hole.
    */
   const shaMatches = (/** @type {string|null} */ a, /** @type {string|null} */ b) => {
     if (!a || !b) return false;
@@ -974,34 +533,18 @@ function cmdRiskCheckStatus(dir, opts) {
     return x.length >= 7 && y.startsWith(x);
   };
   /**
-   * Does a receipt settle THIS ONE record?
-   *
-   * Both ends of the range, not the head alone: two records can share a head
-   * and differ at the base, and they are then different diffs over different
-   * risk surfaces. A receipt for `B..C` must not settle `A..C`.
-   *
-   * A record that carries no resolved ids has no range identity to bind to - it
-   * predates those fields, or its refs did not resolve - so the join falls back
-   * to the run and the plan for THAT record alone. The alternative is a range
-   * no receipt can ever settle, and an unclearable gate is one that gets
-   * bypassed. Every record `risk-check run` writes today carries the ids, so
-   * this is the legacy arm, exactly as wide as the records that lack them.
+   * Does a receipt settle this one record?
+   * Both ends of the range, not the head alone: B..C and A..C share a head and are different diffs.
+   * A record with no resolved ids joins on run and plan alone, or no receipt could settle it. Only legacy ones.
    */
   const settledBy = (/** @type {any} */ rc, /** @type {any} */ f) => (
     f.head_id === null && f.base_id === null
       ? true
-      // Both ends REQUIRED, never "matched if supplied". Letting a receipt with
-      // no `--base` pass on the head alone reopened the widened-range bypass
-      // under a different name: a fire over `B..C` would settle `A..C`, which
-      // is a different diff over a different surface.
+      // both ends required: a receipt with no `--base` matching on head alone let a fire over B..C settle A..C
       : shaMatches(rc.sha, f.head_id) && shaMatches(rc.base, f.base_id));
   /**
-   * EVERY fired record this row answers for needs its own receipt.
-   *
-   * `.some()` here was the blocker's second half: on the phase-wide arm
-   * `satisfying` is every usable record for the plan, so one receipted range
-   * cleared a later unreceipted one - the same defect the range binding closed
-   * on the named arm, still open one branch over.
+   * Every fired record this row answers for needs its own receipt.
+   * `.some()` let one receipted range clear a later unreceipted one; the phase-wide arm checks every usable record.
    */
   const settles = (/** @type {string} */ k, /** @type {any[]} */ satisfying) =>
     satisfying
@@ -1012,31 +555,15 @@ function cmdRiskCheckStatus(dir, opts) {
     const asked0 = wanted && planKey(wanted.plan) === planKey(row.plan)
       && row.run === (planKey(r.corr) === '' ? null : planKey(r.corr));
     const found = asked0 ? (byPlan.get(planKey(row.plan)) || []) : (records.get(k) || []);
-    // Only a record whose read SUCCEEDED can satisfy the gate; the rest are
-    // reported so the reader sees an attempt rather than an absence.
+    // only a record whose read succeeded can satisfy the gate; the rest are reported so an attempt isn't an absence
     const usable = found.filter((f) => f.checked);
     const asked = asked0
       ? { base: wanted.base, head: wanted.head, base_id: wanted.base_id, head_id: wanted.head_id,
         ...(wanted.staged ? { staged: true, index_id: wanted.index_id } : {}) }
       : null;
-    // COMMIT IDS on both sides. Comparing the spellings is what let a record
-    // left under `--head HEAD` satisfy a later, wider `--head HEAD` - the very
-    // spelling workflows/execute.md documents for both calls.
-    //
-    // A STAGED ASK MATCHES A STAGED ROW AND NOTHING ELSE. A ref-range row over
-    // the same base is a different scope entirely and must not answer for it.
-    // The reverse needs no clause - a staged row's `head_id` is null, so the ref
-    // arm's own two-id test already refuses it.
-    //
-    // TWO ENDS ON THIS ARM TOO, and the second one is the INDEX. Matching on the
-    // base and the scope alone left the mutable half of a staged scope out of
-    // its identity: HEAD does not move when a file is staged, so a record
-    // written over a benign index answered for every later index over that same
-    // base, and a risky change staged after the run cleared the gate having
-    // never been scanned. `index_id` is the tree `git write-tree` names, so a
-    // single changed staged byte makes this row STALE and the detector runs
-    // again. A row carrying no index id never matches, the same way a record
-    // with no resolved commit ids never satisfies the ref arm.
+    // commit ids on both sides: comparing spellings let a record under `--head HEAD` satisfy a later, wider one
+    // a staged ask matches a staged row only; a staged row's head_id is null, so the ref arm's two-id test refuses it
+    // the index is the second end: without it a benign index's record answered for every later index over that base
     const sameRange = (/** @type {{base_id: string|null, head_id: string|null,
      *   staged: boolean, index_id: string|null}} */ f) =>
       (asked.staged
@@ -1044,40 +571,14 @@ function cmdRiskCheckStatus(dir, opts) {
           && f.index_id !== null && f.index_id === asked.index_id
         : f.base_id !== null && f.head_id !== null
           && f.base_id === asked.base_id && f.head_id === asked.head_id);
-    // STALE, not satisfied: a plan re-dispatched over a widened range
-    // (execute.md's "re-dispatch the remainder" arm) is exactly the case that
-    // would otherwise pass on the record its earlier, narrower range left. Both
-    // ref pairs are named so the reader can see which one it has. UNCHECKED is
-    // the third state: the range was named and attempted, and nothing was read.
-    //
-    // The records that actually SATISFY the row, which is a narrower set than
-    // `usable` on the named-range arm: only a record for the asked commit pair
-    // answers there. Both the state below and the fire receipt read this same
-    // set, so the row cannot be `recorded` on one record and judged fired on
-    // another.
+    // stale, not satisfied: a plan re-dispatched over a widened range would pass on the record its narrower range left
+    // the named-range arm satisfies from a narrower set than `usable`; state and receipt read the same set
     const satisfying = asked ? usable.filter(sameRange) : usable;
-    // A FIRED range: the detector read it and came back with category tokens or
-    // with `inconclusive: true`, which is the pair of conditions
-    // workflows/execute.md fires the blocking `risk_surface` gate on. Anything
-    // else is a range the gate had no reason to fire on, and demanding a
-    // receipt for it would refuse a clean phase.
+    // fired is tokens or `inconclusive: true`, what execute.md fires on; demanding more would refuse a clean phase
     const fired = satisfying.some((f) => f.matches.length > 0 || f.inconclusive || f.matched_unnamed);
-    // UNFIRED is the fifth state, and it sits ON TOP of the four above rather
-    // than in place of any of them: a record that never read its range is still
-    // `unchecked`, a stale one is still `stale`. This one is reached only where
-    // the range WAS read and recorded, matched, and no receipt says the fire
-    // that had to follow ever happened. The join is the row's own identity -
-    // `rowKey(corr, plan)`, which for the asked row is the
-    // `planRow(r.corr, wanted.plan)` this invocation registered.
-    //
-    // SKIPPED is the sixth, and it is reached only where NO record answers the
-    // row: a record the detector wrote is always the stronger claim about the
-    // same plan, so a skip never overrides one. On the phase-wide arm any skip
-    // that names its commit stands in for the plan. On the named-range arm a
-    // skip answers only for the range it describes - the two asked ends are ONE
-    // commit and the skip names it - and never for a staged ask, which names an
-    // index with bytes in it that the skip did not read. A staged ask carries
-    // `head_id: null`, so the equal-ends test below already refuses it.
+    // unfired sits on top of the states above: read and recorded, matched, and no receipt says the fire happened
+    // skipped is reached only where no record answers the row; a skip never answers a staged ask, whose index is unread
+    // phase-wide, any skip naming its commit stands in for the plan; named-range, only for the range it describes
     const skipped = asked ? (skipsByPlan.get(planKey(row.plan)) || []) : (skips.get(k) || []);
     const skipMatches = (/** @type {{sha: string}} */ s) =>
       (asked
@@ -1092,12 +593,10 @@ function cmdRiskCheckStatus(dir, opts) {
       : (usable.length ? (fired && !settles(k, satisfying) ? 'unfired' : 'recorded')
         : found.length ? 'unchecked'
           : skipped.some(skipMatches) ? 'skipped' : 'missing');
-    // `matched_unnamed` is this reader's own conservative flag, not part of the
-    // record a caller wrote, so it stays out of the reported shape - the rows
+    // matched_unnamed is this reader's own flag, not something a caller wrote, so it stays out of the reported shape
     // report what the trace holds.
     const pub = found.map(({ matched_unnamed: _u, ...rest }) => rest);
-    // The skips ride the row only where one exists, so a row that has none
-    // keeps the shape every reader of it already pins.
+    // skips ride the row only where one exists, so a row without them keeps the shape every reader of it already pins
     return {
       ...row, state, records: pub,
       ...(skipped.length ? { skips: skipped.map((s) => s.sha) } : {}),
@@ -1107,25 +606,16 @@ function cmdRiskCheckStatus(dir, opts) {
 
   const offending = rows.filter((row) => row.state !== 'recorded' && row.state !== 'skipped');
   if (offending.length) {
-    // The hint names the step that is actually MISSING. Every offending row in
-    // the `unfired` state has its record already: telling that caller to re-run
-    // the detector would send it to re-do the half it did, and leave the gate
-    // refusing for the same reason a second time. Where the offending set is
-    // mixed, the record hint leads - the fire cannot be recorded for a range
-    // nothing has read.
+    // the hint names the missing step: an unfired row has its record already; a mixed set leads with the record hint
     const unfiredOnly = offending.every((row) => row.state === 'unfired');
-    // Emitted directly rather than through fail(): its reason/detail/hint shape
-    // has no channel for the list, and the list is the whole point of the
-    // refusal - exactly as cmdLeaseCheck's `undeclared-files` arm reasons.
+    // emitted directly, not through fail: its shape has no channel for the list, and the list is the point
     return emit({
       ok: false,
       reason: unfiredOnly ? 'risk-fire-missing' : 'risk-record-missing',
       phase: n,
       plans: rows,
       missing: offending.map((row) => row.plan),
-      // Never folded into `missing`: these are not ranges awaiting a record,
-      // they are keys no record can be written for, and a caller sent to
-      // `risk-check run --plan <one of them>` would be sent to a refusal.
+      // never folded into `missing`: no record can be written for these keys, so run would send the caller to a refusal
       ...(malformed.size ? { malformed: [...malformed] } : {}),
       hint: unfiredOnly
         ? `fire the blocking ${RISK_TRIGGER} review for each plan listed and record its outcome`
@@ -1137,12 +627,7 @@ function cmdRiskCheckStatus(dir, opts) {
           + ' then re-run this check',
     });
   }
-  // Nothing to require is not a failure: a phase with no completed executor
-  // range at all is ok:true with an empty list, or a gate here would block the
-  // first plan of every phase. A malformed key rides the PASS too, for the
-  // reason it exists: the reader has to be able to see that a bracket was
-  // skipped rather than judged, and a pass that said nothing about it would be
-  // the silent exclusion D-01 refused.
+  // nothing to require isn't a failure, or a gate would block every phase's first plan; a malformed key rides the pass
   ok({ phase: n, plans: rows, ...(malformed.size ? { malformed: [...malformed] } : {}) });
 }
 

@@ -1,11 +1,6 @@
 // @ts-check
-// planning/detect-surfaces.mjs - `detect-surfaces`: the disk half of
-// lib/surface-scan.mjs, and the evidence the one-time risk-surface question is
-// asked against.
-//
-// `SCAN_SKIP_DIRS`, `SCAN_MANIFESTS` and `manifestDeps` are the walk's own and
-// are read from nowhere else (D-05). The `--root` default is the declared row's,
-// applied at the dispatch door in planning.mjs.
+// planning/detect-surfaces.mjs - `detect-surfaces`: the disk half of lib/surface-scan.mjs (the risk-surface evidence)
+// SCAN_SKIP_DIRS, SCAN_MANIFESTS and manifestDeps are the walk's own and read nowhere else
 'use strict';
 
 import { readdirSync } from 'node:fs';
@@ -13,25 +8,10 @@ import { join } from 'node:path';
 import { fail, ok, read } from './core.mjs';
 import { CATEGORIES, interviewOptions, scanTree } from '../lib/surface-scan.mjs';
 
-// ---------------------------------------------------------------------------
-// detect-surfaces - the disk half of lib/surface-scan.mjs, and the evidence the
-// one-time `review.triggers.risk_surface.surfaces` question is asked against.
-// A seam and not model judgment for the reason detect-commands is one: a model
-// reading a tree and deciding what it "looks like" is the keyword pass D-14
-// measured and rejected, and nothing in CI can prove a judgment fired.
-//
-// `--root` is the PROJECT root, deliberately NOT `--dir`. It is read TWO
-// LEVELS deep - one more than detect-commands, because that is the depth D-14's
-// own measurement used and because `db/migrate` and `packages/api` are where
-// the structure actually shows. Ignored trees (node_modules, .git, build
-// output) are skipped: they are not the project's structure, and walking
-// node_modules would declare every category on every JS project.
-//
-// Finding nothing is ok:true with `inconclusive:true` and all eight
-// recommended - a successful check with a negative answer, like plan-overlap.
-// A manifest that cannot be read or parsed contributes nothing and is NAMED in
-// warnings[] rather than throwing.
-// ---------------------------------------------------------------------------
+// a seam, not model judgment: a model guessing what a tree "looks like" is the keyword pass that was rejected
+// --root is the project root, not --dir, read two levels deep: `db/migrate` and `packages/api` are where structure is
+// ignored trees (node_modules, .git, build output) are skipped, or every JS project would declare every category
+// finding nothing is ok:true with `inconclusive:true` and all eight recommended; a bad manifest warns, never throws
 
 /** Directory names never descended into: not the project's own structure. */
 const SCAN_SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'out',
@@ -42,10 +22,8 @@ const SCAN_MANIFESTS = ['package.json', 'Cargo.toml', 'pyproject.toml',
   'go.mod', 'requirements.txt'];
 
 /**
- * Dependency names declared by one manifest. Each arm reads the shape it can
- * read exactly and returns [] otherwise: a name this misses costs a broader
- * recommendation, and a name it invents costs a user narrowing to a category
- * they do not have.
+ * Dependency names declared by one manifest. Each arm reads the shape it can read exactly and returns [] otherwise:
+ * a name this misses costs a broader recommendation, a name it invents costs a narrowing to a category they lack.
  * @param {string} name @param {string} text @returns {string[]}
  */
 function manifestDeps(name, text) {
@@ -57,8 +35,7 @@ function manifestDeps(name, text) {
         ? Object.keys(pkg[k]) : []));
   }
   if (name === 'go.mod') {
-    // `module.path/name v1.2.3` inside or outside a require block; the LAST
-    // path segment is the package name a signal table can match.
+    // `module.path/name v1.2.3` in or out of a require block; the last path segment is what a signal table matches
     return text.split('\n')
       .map((l) => l.replace(/\/\/.*$/, '').trim())
       .filter((l) => /^(require\s+)?[a-z0-9][\w.\-]*(\.[a-z]{2,})?\/\S+\s+v/.test(l))
@@ -70,9 +47,7 @@ function manifestDeps(name, text) {
       .filter((l) => /^[A-Za-z][\w.\-]*/.test(l))
       .map((l) => (l.match(/^[A-Za-z][\w.\-]*/) || [''])[0]);
   }
-  // Cargo.toml / pyproject.toml: TOML, read by SECTION rather than by line, so
-  // `name = "my-app"` under [package] is not collected as a dependency of
-  // itself. Only a table whose header mentions dependencies contributes.
+  // Cargo.toml and pyproject.toml are read by section, so `name = "my-app"` under [package] isn't its own dependency
   /** @type {string[]} */
   const out = [];
   let inDeps = false;
@@ -81,23 +56,16 @@ function manifestDeps(name, text) {
     const line = raw.replace(/#.*$/, '').trim();
     const header = line.match(/^\[+([^\]]+)\]+$/);
     if (header) { inDeps = /dependencies/i.test(header[1]); inDepArray = false; continue; }
-    // PEP 621 puts `dependencies = ["flask>=3", ...]` under `[project]` - a
-    // header the section test above never matches - so a section-scoped read
-    // alone loses every pyproject-only project's evidence. Track the ARRAY by
-    // its KEY instead, across however many lines it spans, which is the one
-    // place a dependency list can hide under an unrelated header.
-    // The closing `]` is looked for OUTSIDE the quotes: a PEP 508 extra
-    // (`"requests[socks]"`) carries its own bracket, and treating that as the
-    // end of the array drops every entry after it.
+    // PEP 621 puts `dependencies = ["flask>=3", ...]` under `[project]`, which the section test never matches
+    // so track the array by its key across however many lines it spans
+    // the closing `]` is looked for outside the quotes: a PEP 508 extra like `"requests[socks]"` has its own bracket
     const unquoted = (s) => s.replace(/(["']).*?\1/g, '');
     if (inDepArray) {
       for (const m of line.matchAll(/["']([A-Za-z][\w.\-]*)[^"']*["']/g)) out.push(m[1]);
       if (unquoted(line).includes(']')) inDepArray = false;
       continue;
     }
-    // Anchored to the EXACT key: a tool table's `ignored-dependencies` is a
-    // setting, not a dependency, and reading it evidences a surface the
-    // project does not have.
+    // anchored to the exact key: a tool table's `ignored-dependencies` is a setting and would evidence a false surface
     const depArray = line.match(/^["']?dependencies["']?\s*=\s*\[/i);
     if (depArray) {
       for (const m of line.matchAll(/["']([A-Za-z][\w.\-]*)[^"']*["']/g)) out.push(m[1]);
@@ -107,7 +75,7 @@ function manifestDeps(name, text) {
     if (!inDeps) continue;
     const key = line.match(/^["']?([A-Za-z][\w.\-]*)["']?\s*=/);
     if (key) out.push(key[1]);
-    // A dependency table whose values are arrays (`dev = ["pytest"]`).
+    // a dependency table whose values are arrays, like `dev = ["pytest"]`
     for (const m of line.matchAll(/["']([A-Za-z][\w.\-]*)[^"']*["']/g)) out.push(m[1]);
   }
   return out;
@@ -120,14 +88,9 @@ function manifestDeps(name, text) {
  *   has answered
  */
 function cmdDetectSurfaces(root, answeredArg) {
-  // The ALREADY-ANSWERED set, read exactly the way `risk-check run` reads
-  // `--surfaces`: split, trim, drop empties, then refuse. It arrives as a flag
-  // and is never read from config HERE, so `/cad-config`'s re-entrant arm hands
-  // over the effective value it already resolved through the read face and this
-  // seam stays the pure map from a tree to an answer. A token outside the eight
-  // is a malformed CALL - refused rather than dropped, because a caller who
-  // mistyped the set they hold would otherwise be offered a narrower option
-  // list built from an answer nobody gave.
+  // the already-answered set is read the way `risk-check run` reads --surfaces: split, trim, drop empties, then refuse
+  // it arrives as a flag, never from config, so /cad-config's re-entrant arm hands over the value it resolved
+  // a token outside the eight is refused, not dropped: a mistyped set would get a list built from an answer nobody gave
   /** @type {string[]} */
   let answered = [];
   if (answeredArg !== undefined) {
@@ -164,10 +127,8 @@ function cmdDetectSurfaces(root, answeredArg) {
   /** The errno the ROOT listing failed with, when it did. */
   let rootError = null;
   /**
-   * One directory level: its entries recorded, its subdirectories returned -
-   * or null when the level could not be listed at all, which only the ROOT
-   * treats as a failure (a subdirectory that cannot be read is one warning and
-   * a narrower scan, never a refusal to answer).
+   * One directory level: entries recorded, subdirectories returned, or null when the level couldn't be listed at all.
+   * Only the root treats that as a failure; a subdirectory that can't be read is one warning and a narrower scan.
    * @param {string} dir @param {string} label @returns {string[] | null}
    */
   const level = (dir, label) => {
@@ -218,21 +179,15 @@ function cmdDetectSurfaces(root, answeredArg) {
   const scan = scanTree({ dirs, files, extensions: [...extensions], dependencies });
   ok({
     root,
-    // ALWAYS present, every field, even when empty - the same always-report
-    // convention detect-commands states for its `source` block. A caller has to
-    // be able to tell "the structure evidences nothing" from "did not look".
+    // every field is always present, even empty, so "the structure evidences nothing" differs from "did not look"
     manifests,
     evidenced: scan.evidenced,
     silent: scan.silent,
     unspeakable: scan.unspeakable,
     inconclusive: scan.inconclusive,
     recommended: scan.recommended,
-    // The QUESTION itself, built here rather than composed by a model at the
-    // ask site. Always present, like every field above it: an empty tree still
-    // gets its one all-eight choice, so "the structure evidences nothing" and
-    // "nobody built a list" stay distinguishable. #206 is what a composed list
-    // cost - the same eight categories in slot 1 and in the last slot, with no
-    // value for any check to read.
+    // the question is built here, not composed by a model at the ask site
+    // an empty tree still gets its one all-eight choice; a composed list once gave the same eight twice (#206)
     options: interviewOptions(scan, answered),
     ...(warnings.length ? { warnings } : {}),
   });

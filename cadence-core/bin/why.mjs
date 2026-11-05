@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
-// why.mjs - "why is this code like this", answered from the record already on
-// disk (WHY-01, CONTEXT phase 1 plan 1 D-01). A new top-level script rather
-// than a `planning.mjs` subcommand: its primary argument is a REPOSITORY
-// PATH, where every one of `planning.mjs`'s 16 git calls is `-C <root>`
-// against `.planning` itself.
+// why.mjs - "why is this code like this", answered from the record already on disk.
+// not a planning.mjs subcommand: its git calls run against `.planning`, not a repo path
 //
 // Usage: why.mjs <path>[:<line>] [--dir <repo>] [--top <n>]
 //   <path>[:<line>]  a repository-relative path, or that path with a 1-based
@@ -13,65 +10,13 @@
 //   --dir             the repository the query runs against. ABSENT means
 //                      `process.cwd()`; empty, valueless or flag-shaped
 //                      REFUSES (issue-check.mjs's disposition).
-//   --top              task 2's entry cap, default 6 (lib/why-render.mjs's
-//                      DEFAULT_TOP, which states the measurement behind it).
+//   --top              the entry cap, default 6 (DEFAULT_TOP in
+//                      lib/why-render.mjs).
 //
-// THE FLAG DOOR RUNS BEFORE THE POSITIONAL REFUSAL, deliberately, and this is
-// the first bin in this tree that needs the ordering stated (D-01 continued).
-// `arg-contract-adoption.test.mjs` spawns this script with a refusing flag
-// LAST and NO positional argument at all, to prove the declared refusal fires
-// - so a dispatch that checked the missing query first would answer every one
-// of those probes with "missing-query" and never name the flag the census is
-// actually testing. Reading `--dir` and `--top` FIRST, through the declared
-// row, is what keeps that provable.
-//
-// ONE JSON OBJECT ON STDOUT (lib/seam-io.mjs), never a subagent: `git` is the
-// only child process this script spawns, structurally asserted by
-// why.test.mjs reading its own source.
-//
-// ONE INDEX BUILD PER INVOCATION (plan 2). `lib/why-corpus.mjs` walks the live
-// and archived phase directories ONCE and every entry in the chain resolves
-// against that one index - never a per-entry walk, which on a 144-commit chain
-// would re-read 28 summaries 144 times. The join hangs off the entry as a
-// single `join` object, which is the ONE attach point `lib/why-render.mjs`
-// reads and every later edge extends.
-//
-// AND THAT INDEX IS FOUR TIERS, NOT TWO (plan 3, then phase 3 plan 2). A
-// `--mode delete` close left no directory in either on-disk tier, so 16 of this
-// repository's 25 closes are readable only out of git history.
-// `buildRecoveredIndex` recovers each close's SUMMARY tables from its prune
-// commit's parent and `mergeCommitIndexes` puts them BEHIND the on-disk record
-// rather than beside it, so an archived phase - which both tiers can
-// legitimately claim - resolves to the copy a reader can actually open.
-// Measured 2026-08-23: 108 ms for the whole merged build, 256 on-disk rows plus
-// 734 recovered ones.
-//
-// THE FOURTH TIER IS OFF THE ROADMAP ENTIRELY (FST-01, phase 3 D-02). A
-// `/cad-task` run leaves `.planning/tasks/<slug>/RECORD.md` and no phase
-// directory at all, so `buildTaskIndex` indexes those records as a tier of
-// their own - ordered AFTER the on-disk phase spine, which stays the authority
-// when both name one commit, and AHEAD of the git-recovered tier, on the same
-// argument the disk tier already makes against it. It costs ONE directory
-// listing plus ONE read per task record, which is what keeps the eager
-// index-once-per-invocation form cheap: this repository holds one record today
-// against 28 phase directories and 79 `git show` calls.
-//
-// AND THE BARE ARM ASKS GIT TWICE (WHY-02, v3.6.1 phase 1 D-01). The chain
-// query keeps `--follow`, which git's default history simplification comes
-// attached to; a SECOND query - `comparandArgv`, `--full-history` and no
-// `--follow` - measures what that simplification left out, and the difference
-// rides the envelope as `excluded` and is stated in `text`. The two flags do
-// not compose (measured: `--follow --full-history` returns the `--follow`
-// answer exactly), so this is a second invocation rather than a flag, and it
-// runs on the BARE arm only - the `-L` arm carries its own simplification and
-// WHY-02 is scoped to the bare path. It runs only after the chain query
-// succeeded, and a non-zero exit from it contributes an ABSENT report rather
-// than failing the query, on the same fail-open argument the index makes below.
-//
-// AN UNREADABLE PLANNING ARTIFACT NEVER FAILS THE QUERY. The index fails open
-// with `warnings[]`, and those warnings ride the envelope beside the answer:
-// `git log` already told this seam what the commits are, and a summary nobody
-// can read makes the join thinner, not the chain wrong.
+// flags are read before the positional, so a refusing flag with no positional is named, not "missing-query"
+// one JSON object on stdout; git is the only child process (why.test.mjs checks)
+// the bare arm asks git twice because --follow and --full-history don't compose; a failed second query reports absent
+// an unreadable planning artifact never fails the query; it adds to warnings[] and thins the join
 'use strict';
 
 import { join as joinPath } from 'node:path';
@@ -90,10 +35,7 @@ import {
 import { decisionsFor, declaringTasks, parseDeviations } from './lib/why-record.mjs';
 
 /**
- * Run `git <args>` in `dir`, never throwing: a non-zero exit or a spawn
- * failure comes back as a classifiable result instead of an uncaught error,
- * because `classifyResult` (lib/why-query.mjs) is what turns that into a
- * stated outcome without a raw `fatal:` reaching this seam's stdout.
+ * Run `git <args>` in `dir` without throwing, so a failure reaches classifyResult and no raw `fatal:` lands on stdout.
  * @param {string} dir @param {string[]} args
  * @returns {{status: number, stdout: string, stderr: string}}
  */
@@ -110,8 +52,7 @@ function runGit(dir, args) {
 }
 
 /**
- * Split raw `git log --format=<LOG_FORMAT>` stdout into chain entries. One
- * record per line, `\x1f`-joined (lib/why-query.mjs's `LOG_FORMAT`).
+ * Split raw `git log` stdout into chain entries: one record per line, `\x1f`-joined (LOG_FORMAT in lib/why-query.mjs).
  * @param {string} stdout @returns {{sha: string, date: string, subject: string}[]}
  */
 function parseEntries(stdout) {
@@ -122,10 +63,7 @@ function parseEntries(stdout) {
 }
 
 /**
- * Split raw `git log --format=<COMPARAND_FORMAT>` stdout into comparand
- * records. One record per line: the full sha, then the space-separated parent
- * list, which is EMPTY on a root commit (lib/why-query.mjs's
- * `COMPARAND_FORMAT`).
+ * Split raw `git log` stdout into comparand records: full sha, then space-separated parents (empty on a root commit).
  * @param {string} stdout @returns {{sha: string, parents: string[]}[]}
  */
 function parseComparand(stdout) {
@@ -136,15 +74,8 @@ function parseComparand(stdout) {
 }
 
 /**
- * What git's default history simplification left out of the bare arm's answer
- * (WHY-02, CONTEXT D-01). A SECOND query, never a flag on the first: `--follow`
- * and `--full-history` do not compose, and `--follow` is measured-justified
- * already, so the chain keeps rename-following and this measures the cost.
- *
- * IT FAILS OPEN AND IT FAILS SILENT - `null`, never a refusal. `git log` has
- * already told this seam what the commits are; a comparand that could not run
- * makes the answer thinner, not wrong, which is the same discipline the index
- * takes with `warnings[]`.
+ * What history simplification left out of the bare arm. A second query, since --follow and --full-history don't mix.
+ * Fails open with null: git log already said what the commits are, so a missing comparand only thins the answer.
  * @param {string} dir @param {string} path
  * @param {{sha: string}[]} entries the chain the bare arm already answered
  * @returns {{sha: string, parentCount: number}[]|null}
@@ -156,10 +87,8 @@ function simplificationReport(dir, path, entries) {
 }
 
 /**
- * One index row as the entry carries it: the directory's OWN label, milestone
- * and phase number, plus the commits table's plan, task and description cells
- * verbatim. Flat and serializable, because it rides the JSON envelope beside
- * the rendered text.
+ * One index row as the entry carries it: the directory's label, milestone and phase,
+ * plus the commits table's plan, task and description cells verbatim. Flat, since it rides the JSON envelope.
  * @param {any} m @returns {any}
  */
 function brief(m) {
@@ -171,22 +100,16 @@ function brief(m) {
     task: m.task,
     description: m.description,
   };
-  // A row from the GIT-RECOVERED tier carries the tree it was recovered from,
-  // so the renderer can say so rather than print a directory name that no
-  // longer resolves to anything a reader could open.
+  // a git-recovered row carries its source tree so the renderer doesn't print a directory name that no longer opens
   if (m.dir.recovered) out.recovered = { ...m.dir.recovered };
-  // A row from the off-roadmap TASKS tier carries its slug, which is the MARKER
-  // the renderer tells a task directory from a phase directory by - never by
-  // parsing the label (`buildTaskIndex` in lib/why-corpus.mjs). `phase` and
-  // `milestone` above are `null` on that tier for the same reason: there is no
-  // number to print, and a placeholder here would be printed as one.
+  // a task-tier row carries its slug, how the renderer tells it from a phase directory (never the label)
+  // phase and milestone are null there, because a placeholder would print as a number
   if (m.dir.slug) out.slug = m.dir.slug;
   return out;
 }
 
 /**
- * The ONE attach point (see the header). Every later edge adds a key to the
- * object this returns.
+ * The one attach point: every later edge adds a key to the object this returns.
  * @param {any} index @param {string} sha @returns {any}
  */
 function joinFor(index, sha) {
@@ -197,11 +120,7 @@ function joinFor(index, sha) {
 }
 
 /**
- * Resolve every commit in `raws` against the index and hang the record edges
- * off each one. ONE pass over the chain and ONE read per phase directory: a
- * 144-commit chain against a 28-directory corpus must not become 144 walks,
- * and the memo is keyed by the directory and plan cell the entry resolved to,
- * which is exactly the granularity a phase's artifacts are stored at.
+ * Resolve each commit in `raws` against the index and hang the record edges off it, memoized per directory and plan.
  * @param {string} dir @param {string} path the queried repo-relative path
  * @param {any} index @param {{sha: string, date: string, subject: string}[]} raws
  * @returns {{entries: any[], warnings: string[]}}
@@ -226,18 +145,14 @@ function joinChain(dir, path, index, raws) {
     return reviews.get(d.label);
   };
 
-  /** `base..head` resolved ONCE per distinct range, for the whole chain. */
+  /** `base..head` resolved once per distinct range, for the whole chain. */
   const membersOf = (/** @type {string} */ base, /** @type {string} */ head) => {
     const key = `${base}..${head}`;
     if (!ranges.has(key)) ranges.set(key, rangeMembers(dir, base, head));
     return ranges.get(key);
   };
 
-  /**
-   * Which surviving findings cover `sha`, and which could not be decided. A
-   * finding whose range does not resolve is never dropped and never claimed:
-   * it is carried in `unresolved`, where the renderer says so.
-   */
+  /** Which findings cover `sha`; one whose range doesn't resolve goes in `unresolved`, not dropped and not claimed. */
   const reviewFor = (/** @type {any} */ d, /** @type {string} */ sha) => {
     const records = reviewsIn(d);
     const findings = [];
@@ -278,11 +193,7 @@ function joinChain(dir, path, index, raws) {
     return { ...e, join };
   });
 
-  // THE NAMED GAP, in one further pass (AC4's second half). It runs after the
-  // resolution rather than inside it because both of its git-side facts are
-  // fetched for the WHOLE unresolved set at once: one `git show --name-only`
-  // for every touched path, and the closes the index already carries. An entry
-  // that resolved costs nothing here.
+  // the named gap, after resolution: one `git show --name-only` covers the whole unresolved set
   const open = /** @type {any[]} */ (entries).filter((e) => e.join.state === 'unresolved');
   if (open.length) {
     const paths = touchedPaths(dir, open.map((e) => e.sha));
@@ -300,13 +211,8 @@ function joinChain(dir, path, index, raws) {
   return { entries, warnings: [...warnings] };
 }
 
-/** A conventional commit's scope, as the subject line spells it - `1-3` out of
- * `feat(1-3): ...`. CORROBORATION ONLY (D-06): phase numbers reset every
- * milestone, `feat(1-1)` exists in seven cycles of this repository, both
- * candidate directories legitimately exist, and so reading it as the phase key
- * fails invisibly. Measured over 1,711 commits: 749 carry `(N-M)`, 190 carry
- * `(N)`, 526 are conventional with no scope and 135 are not conventional at
- * all, so it is absent or uninformative on 39% of them anyway.
+/** A conventional commit's scope as the subject spells it, `1-3` out of `feat(1-3): ...`.
+ * Corroboration only: phase numbers reset every milestone, so reading it as the phase key fails invisibly.
  * @param {string} subject @returns {string|null} */
 function commitScope(subject) {
   const m = String(subject || '').match(/^[a-zA-Z]+\(([^)\n]*)\)!?:/);
@@ -314,10 +220,7 @@ function commitScope(subject) {
 }
 
 /**
- * The one non-flag token, skipping any value that immediately follows `--dir`
- * or `--top` so a flag's OWN value can never be misread as the query - the
- * hazard skim.mjs's simpler `.find(a => !a.startsWith('--'))` does not carry
- * because none of its flags take a value.
+ * The one non-flag token, skipping the value after `--dir` or `--top` so a flag's own value is never read as the query.
  * @param {string[]} argv @returns {string|undefined}
  */
 function positionalQuery(argv) {
@@ -330,17 +233,15 @@ function positionalQuery(argv) {
   return undefined;
 }
 
-/** The next step for a `git-failed` refusal, written once because both the
- * probe and the chain query reach it. Neither knows WHICH git fact failed -
- * `classifyResult` collapses every non-clean exit into this one outcome - so
- * the hint names the repository state the command needs rather than guessing
- * at a cause. */
+/**
+ * Next step for `git-failed`, shared by the probe and the chain query. classifyResult collapses every non-clean exit
+ * into it, so the hint names the repo state the command needs rather than guess a cause.
+ */
 const GIT_FAILED_HINT = 'this query needs a readable git repository: run it inside one, or point --dir at a working tree where `git log` answers, then re-run';
 
 const argv = process.argv.slice(2);
 const ROWS = CONTRACTS['why.mjs'];
-/** One flag, read through its DECLARED row - the `''` row wins when it
- * declares the flag, else the script-global `'*'` row. */
+/** One flag read through its declared row: the `''` row if it declares the flag, else the script-global `'*'` row. */
 const arg = (name) => requireFlag(argv, name, ROWS[''][name] || ROWS['*'][name]);
 
 try {
@@ -348,8 +249,7 @@ try {
   const top = arg('--top');
 
   const query = positionalQuery(argv);
-  // Cast rather than let `strict: false` fail to narrow this JSDoc union
-  // (arg-contract.mjs's own header measures the same TS2339 on this pattern).
+  // cast because `strict: false` won't narrow this JSDoc union
   const parsed = /** @type {any} */ (parseQuery(query));
   if (!parsed.ok) {
     emit({ ok: false, reason: 'bad-query', detail: parsed.reason,
@@ -357,9 +257,7 @@ try {
   } else {
     const { path, line } = parsed;
 
-    // The explicit not-in-history probe (D-16), run BEFORE either chain query
-    // so a mistyped path is answered by the smallest invocation that can
-    // answer it, and an empty chain is never silently reported as one.
+    // probe first, so a mistyped path gets the smallest invocation that can answer it and no empty chain goes unsaid
     const probe = runGit(dir, probeArgv(path));
     const probeResult = classifyResult({
       status: probe.status, stderr: probe.stderr, stdoutEmpty: probe.stdout.trim() === '',
@@ -394,20 +292,14 @@ try {
           detail: line === undefined ? 'the bare-path chain query' : 'the line-scoped chain query',
           hint: GIT_FAILED_HINT });
       } else {
-        // ONE merged index per invocation, over four tiers: the live phase
-        // directories, the `_archive-v<ver>/` trees, the off-roadmap
-        // `tasks/<slug>/` records, and git history alone for the closes that
-        // left neither on-disk phase tier (CONTEXT D-03, phase 3 D-02). The
-        // tiers are ORDERED, not flattened - `mergeCommitIndexes` states why.
+        // one merged index per invocation (not per entry) over four tiers; the disk record wins when two claim a phase
         const index = mergeCommitIndexes(
           buildCommitIndex(joinPath(dir, '.planning')),
           buildTaskIndex(joinPath(dir, '.planning')),
           buildRecoveredIndex(dir),
         );
         const raws = parseEntries(chain.stdout);
-        // The BARE arm only: the `-L` arm carries its own simplification and
-        // WHY-02 is scoped to the bare path. And only after the chain query
-        // succeeded, so a failed query never pays for a second one.
+        // bare arm only, since -L carries its own simplification, and only after the chain succeeded
         const excluded = line === undefined ? simplificationReport(dir, path, raws) : null;
         const joined = joinChain(dir, path, index, raws);
         const rendered = renderChain(joined.entries, { top, excluded, path });
