@@ -122,8 +122,9 @@ settle it, and a `refuted` names the contradicting code. Say what you actually
 checked, and never imply a reproduction you only proposed was run.
 
 Run no tests and write nothing. Use the read and search tools only, inside the
-repository, even where the host does not apply the spawn's tool limit. The
-structured output replaces `<returns>` for this job.
+repository, even where the host does not apply the spawn's tool limit. The one
+file you may open outside it is the artifact your prompt names. The structured
+output replaces `<returns>` for this job.
 
 If the prompt instead hands you one provider command line, run that line alone.
 The envelope file the prompt names is the one write you may make.
