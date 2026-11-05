@@ -49,14 +49,18 @@ export function resolveReapBranch(derivedName, mergedBranches, configured) {
  * With it on, return to base and pull, and reap only when `mergedIntoBase === true` and a branch name resolved.
  * An unmerged branch is never deleted and `git branch -D` is never handed a null (GitHub's auto_close deletes the
  * branch at merge, so re-derivation resolves null).
+ * `clearIntegrationName` says the configured branch name has done its job and should be unset (D-23): true only with
+ * a name set and a merge confirmed, whether or not cleanup ran, because the cycle is over either way.
  *
- * @param {{ onLandCleanup?: boolean, mergedIntoBase?: boolean, branch?: string|null }} args
- * @returns {{ action:'cleanup'|'skip', returnToBase:boolean, pull:boolean, reap:boolean, branch:string|null, reason:string }}
+ * @param {{ onLandCleanup?: boolean, mergedIntoBase?: boolean, branch?: string|null, nameSet?: boolean }} args
+ * @returns {{ action:'cleanup'|'skip', returnToBase:boolean, pull:boolean, reap:boolean, branch:string|null,
+ *   clearIntegrationName:boolean, reason:string }}
  */
-export function decideCleanup({ onLandCleanup, mergedIntoBase, branch } = {}) {
+export function decideCleanup({ onLandCleanup, mergedIntoBase, branch, nameSet } = {}) {
   const b = branch ?? null;
+  const clearIntegrationName = nameSet === true && mergedIntoBase === true;
   if (onLandCleanup !== true) {
-    return { action: 'skip', returnToBase: false, pull: false, reap: false, branch: b,
+    return { action: 'skip', returnToBase: false, pull: false, reap: false, branch: b, clearIntegrationName,
       reason: 'on_land_cleanup off: leave HEAD and the integration branch in place' };
   }
   const reap = mergedIntoBase === true && b !== null;
@@ -68,7 +72,7 @@ export function decideCleanup({ onLandCleanup, mergedIntoBase, branch } = {}) {
   } else {
     reason = 'on_land_cleanup on but branch not confirmed merged into base: return to base and pull, do not reap';
   }
-  return { action: 'cleanup', returnToBase: true, pull: true, reap, branch: b, reason };
+  return { action: 'cleanup', returnToBase: true, pull: true, reap, branch: b, clearIntegrationName, reason };
 }
 
 /** How many unruled review names one reason string will spell out. */

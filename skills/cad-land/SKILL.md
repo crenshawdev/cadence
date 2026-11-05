@@ -338,6 +338,16 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    purpose, so a retry still reads the blocker it stopped on. Do it whatever the
    reap seam answered - an `action:"skip"` is about the branch, not about the
    records. Untracked by construction, so this stages nothing.
+
+   **Then stop the branch name applying.** When either cleanup envelope says
+   `clearIntegrationName:true` (the branch name setting is set and the merge is
+   confirmed), run
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset --file .planning/config.json git.integration_branch_name`
+   so the next cycle can't reuse the name. Do it whatever the reap seam
+   answered, and with `git.on_land_cleanup` off too. An open-PR-only land has no
+   confirmed merge, so the key stays. Report it in the final state line, and
+   where the repository tracks `.planning/config.json` say that file is now
+   modified and rides the next docs commit: this skill never auto-commits.
 </process>
 
 <guardrails>

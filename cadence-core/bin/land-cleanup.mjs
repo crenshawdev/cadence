@@ -97,7 +97,7 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
   const refused = refuseBase(dir, base);
   if (refused) {
     return emit({ ok: true, action: 'skip', returnToBase: false, pull: false, reap: false,
-      baseRefused: true, branch: null, reason: `${refused}: leave HEAD and the integration branch in place`,
+      baseRefused: true, branch: null, clearIntegrationName: false, reason: `${refused}: leave HEAD and the integration branch in place`,
       base, warnings });
   }
   const mergedList = readMergedBranches(dir, base);
@@ -116,7 +116,9 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
   const mergedIntoBase = mergedArg !== undefined
     ? mergedArg === 'true'
     : (branch !== null && mergedList.includes(branch));
-  const decision = decideCleanup({ onLandCleanup, mergedIntoBase, branch });
+  // any value in the key counts as set, a bad one included: it should stop applying too
+  const nameSet = git.integration_branch_name !== undefined && git.integration_branch_name !== null;
+  const decision = decideCleanup({ onLandCleanup, mergedIntoBase, branch, nameSet });
   emit({ ok: true, ...decision, base, warnings });
 }
 
