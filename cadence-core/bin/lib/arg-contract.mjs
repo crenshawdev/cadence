@@ -444,6 +444,9 @@ export const CONTRACTS = {
     },
     'workflow-claim release': {
       '--fire': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      // the id the winning take printed; release matches it, never the label. --stale is for a holder that has no id
+      '--id': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--stale': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
     // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {
