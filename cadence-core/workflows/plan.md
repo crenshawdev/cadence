@@ -506,7 +506,10 @@ Review line then reports the gate as off rather than as a pass:
   a numbered list the user triages, NONE is the default, and only what the user
   names is acted on - RE-READ
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
-  before presenting, since this workflow does not preload it.
+  before presenting, since this workflow does not preload it. On the workflow
+  path (`references/review-workflow.md`) that wait is the launch ending the
+  turn and the notice resuming this step, with nothing else dispatched in
+  between, and the triage and the applying continue from the notice.
 
 Do not re-enter the checker loop afterward - this trigger is the second
 opinion, not another iteration.

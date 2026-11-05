@@ -52,3 +52,12 @@ A call the seam refuses has already run and spent its agents, so today's path is
 Merge duplicates and group shared root causes by editing `survivors.json`: join the `voices` of survivors that are one finding and set a one-line `root_cause` on those that share one. The rulings are already in `payload.json` per voice, so the merge costs the record nothing.
 
 Then run the review file seam on `survivors.json`, write the record and the receipts from `payload.json`, and triage, as `references/review-record.md` and `references/triage-gate.md` state.
+
+## Where each site resumes
+
+The launch ends the turn at every site, and the notice resumes the site's own step 4. Triage and applying what the user named then continue there:
+
+- `plan` (`/cad-plan`, `/cad-plan-review`): the triage, then the named survivors into the plan files, then the commit step.
+- `diff` and `phase_diff` (`/cad-execute`): the triage, then the named survivors through the executor continuation, then the next plan's dispatch.
+- `/cad-verify`'s fix diagnosis: the triage, then step 2's proposal for only what the user named.
+- `risk_surface` from `/cad-debug` and `/cad-task` at `adjudicated`: the triage, then their own step that fired it.

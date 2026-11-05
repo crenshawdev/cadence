@@ -352,7 +352,12 @@ For each item with `status: fail` and no recorded cause:
    list is ALWAYS triaged before any of it becomes a proposed fix: the
    survivors are a numbered list the user triages, NONE is the default, and
    only what the user names goes on to step 2, so an unpicked finding never
-   reaches step 3's "Apply now". RE-READ
+   reaches step 3's "Apply now". With no reviewer set or tier on a route line,
+   it takes `claude-subagent` alone, `verify` as the record's trigger token and
+   `verify-<short HEAD sha>` as its discriminator on review-triggers.md step 5's
+   grammar. It takes the workflow path when step 4's both-layer answer and the
+   tool say so (`references/review-workflow.md`), and today's path otherwise.
+   RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
    before presenting, since this workflow does not preload it.
 2. **Propose the fix**, then ask the user (ask-user seam):

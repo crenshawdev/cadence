@@ -465,7 +465,10 @@ waiting on the same tail - the gate, not the overlap, picks the bracket's
 writer. When
 `review.triggers.diff.gate` resolves it to `adjudicated` instead, the fire
 BLOCKS before the next dispatch - triage can change what ships, and answering
-about plan 1 while plan 2 commits is answering about a tree that is gone. The
+about plan 1 while plan 2 commits is answering about a tree that is gone. On
+the workflow path (`references/review-workflow.md`) that block is the launch
+ending the turn and the notice resuming this step, with nothing else dispatched
+in between, and the triage still precedes the next plan's dispatch. The
 survivors are a numbered list the user triages, NONE is the default, and only
 what the user names is acted on - by the same continuation `cad-executor`
 under worker key `<k>` the FAIL arm above dispatches, restated no further
