@@ -106,8 +106,18 @@ export function tagCarrying(publishedVersions, version) {
  * @returns {string | null}
  */
 export function integrationBranchName(projectText, roadmapText) {
-  const version = activeVersion(projectText) || titleVersion(roadmapText);
+  const version = milestoneVersion(projectText, roadmapText);
   return version ? `cadence/${version}` : null;
+}
+
+/**
+ * The milestone version in prose, `PROJECT.md ### Active` first and the `ROADMAP.md` title as fallback, or null.
+ * The already-published guard reads this directly, whatever the branch is called.
+ * @param {string} projectText @param {string} roadmapText
+ * @returns {string | null}
+ */
+export function milestoneVersion(projectText, roadmapText) {
+  return activeVersion(projectText) || titleVersion(roadmapText);
 }
 
 /**
@@ -117,16 +127,16 @@ export function integrationBranchName(projectText, roadmapText) {
  * - milestone on a protected base: auto -> create, off -> stay, ask -> ask. With no derivable name, auto and ask
  *   downgrade to a naming-problem `ask`.
  * - milestone off a protected base: stay. Creation is once per cycle, so this branch is the merge target.
- * - auto/ask where `publishedVersions` carries the derived version: `ask`, since an already-tagged version is the
+ * - auto/ask where `publishedVersions` carries `version`, the milestone version the caller read from prose: `ask`, since an already-tagged version is the
  *   v2.4.0 collision (#87).
  *
  * @param {{ mode?: string, autoBranch?: string, currentBranch?: string,
- *   protectedBranches?: string[], integrationName?: string | null,
+ *   protectedBranches?: string[], integrationName?: string | null, version?: string | null,
  *   publishedVersions?: string[] | null }} args
  * @returns {{ action: 'create'|'stay'|'ask', branch: string|null, reason: string }}
  */
 export function decideBranch({ mode, autoBranch, currentBranch, protectedBranches, integrationName,
-  publishedVersions }) {
+  version, publishedVersions }) {
   const protectedList = Array.isArray(protectedBranches) ? protectedBranches : [];
   const name = integrationName ?? null;
 
@@ -146,13 +156,13 @@ export function decideBranch({ mode, autoBranch, currentBranch, protectedBranche
     }
     // a published version must not be offered as a new integration branch (the v2.4.0 collision, #87)
     // no tag carrying it means "nothing published this", which covers the next cycle and out-of-grammar input alike
-    const milestoneVersion = name !== null && name.startsWith('cadence/')
-      ? stripLeadingV(name.slice('cadence/'.length)) : null;
-    const publishedAs = milestoneVersion === null
-      ? null : tagCarrying(publishedVersions, milestoneVersion);
+    // the version arrives as its own argument: the name is anyone's to choose, so it is never parsed for one (D-24)
+    const bareVersion = stripLeadingV(version);
+    const publishedAs = bareVersion === null
+      ? null : tagCarrying(publishedVersions, bareVersion);
     if (publishedAs !== null && (autoBranch === 'auto' || autoBranch === 'ask')) {
       return { action: 'ask', branch: null,
-        reason: `already-published: the milestone version ${milestoneVersion} is already published as the tag ${publishedAs} - open the next milestone version in PROJECT.md ### Active, or confirm deliberately that ${name} is the branch you want` };
+        reason: `already-published: the milestone version ${bareVersion} is already published as the tag ${publishedAs} - open the next milestone version in PROJECT.md ### Active, or confirm deliberately that ${name} is the branch you want` };
     }
     switch (autoBranch) {
       case 'auto':
