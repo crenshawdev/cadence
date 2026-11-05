@@ -1,13 +1,10 @@
 // @ts-check
-// setting-explanations.mjs - holds each key's `explain` entries in config.schema.json to the key they sit on;
-// self-verify.mjs files each issue as a CI problem. The /cad-config walk offers these entries as answers, so an
-// entry the key would refuse fails on write, and a `values` member with no entry is never shown. Two rules:
-//   explained-value-refused  an entry's `value` isn't accepted by the key, judged exactly as `config.mjs validate`
-//                            does (lib/config-value.mjs). On a list key an entry is one member, so it's tested as
-//                            a one-member list. `null` on a list key defaulting to `null` passes too: `check`
-//                            refuses writing it, but what `check` accepts can't change.
-//   explained-value-missing  a key holding a `question` has a `values` member with no entry. A bool's members are
-//                            true and false. A key with no question is outside the walk, so no entries is fine.
+// setting-explanations.mjs - holds each key's `explain` entries in config.schema.json to the key they sit on.
+// self-verify.mjs files each issue as a CI problem. Two rules:
+//   explained-value-refused  an entry's `value` isn't accepted by the key, judged as `config.mjs validate` does.
+//                            On a list key an entry is tested as a one-member list.
+//   explained-value-missing  a key holding a `question` has a `values` member with no entry. A key with no question
+//                            is outside the walk.
 // Text and hints aren't checked. Pure: no fs, no emit, no process, and no CONTRACTS row since it's a lib.
 'use strict';
 import { checkValue } from './config-value.mjs';

@@ -1,15 +1,9 @@
 // @ts-check
-// base-ref.mjs - the check both land seams (issue-check.mjs `check`, land-cleanup.mjs `cleanup`) run on the
-// resolved base before it reaches a git argv. The base is committed text (`git.base_branch`), so a flag-shaped
-// value is an option to git and not a ref: `--output=<path>` in `git log <base>..HEAD` writes a file.
-//
-// It refuses a base starting with `-` without spawning anything, then needs the base to name a commit, locally or
-// as `origin/<base>` alone, because /cad-land's checkout makes the local branch from origin/<base>. It returns the
-// reason for the caller's `action:"skip"` envelope, or null when the base is usable. The base is JSON-quoted in
-// that reason since /cad-land prints it verbatim, and a raw newline in committed text would forge a second line.
-//
-// Not planning/core.mjs's `riskRef` / `resolveRef`, which are a different contract (refs for `risk-check`).
-// Node builtins only. Never throws.
+// base-ref.mjs - the check both land seams (issue-check.mjs `check`, land-cleanup.mjs `cleanup`) run on the base ref.
+// The base is committed text, so a flag-shaped one is an option to git: `--output=<path>` in `git log` writes a file.
+// It refuses a leading `-` without spawning, then needs a commit locally or as `origin/<base>`. It returns the reason
+// for the caller's `action:"skip"` envelope, or null. The reason is JSON-quoted so a raw newline can't forge a line.
+// Not planning/core.mjs's `riskRef` / `resolveRef`, which are a different contract. Node builtins only. Never throws.
 'use strict';
 
 import { spawnSync } from 'node:child_process';

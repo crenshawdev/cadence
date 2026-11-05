@@ -1,13 +1,10 @@
 // @ts-check
-// gate-agreement.mjs - the one statement of what makes the twelve `review.triggers.<t>.{gate,tier,effort}` rows
-// a usable answer. self-verify.mjs files each issue as a CI problem; route.mjs imports `gateTriggers` alone.
-// Three surfaces describe these rows: the schema `default` (what `config.mjs get` answers), the `purpose` prose a
-// user reads, and route.mjs's resolution. An `"advisory"` default once survived a move of `phase_diff` to `off`.
-// The default is the answer, so `null` isn't exempt, and both halves are mandatory: an opt-in prose rule is
-// silenced by deleting one sentence.
-// The clause the prose half reads is `defaults to <value>`, case-insensitive, optionally in backticks or quotes,
-// a member of the row's own `values`. Only a second `defaults to` naming a different member is a disagreement.
-// Pure: no fs, no emit, no process, no Date, no randomness. Each entry names the key, so nobody reads all twelve rows.
+// gate-agreement.mjs - what makes the twelve `review.triggers.<t>.{gate,tier,effort}` rows a usable answer.
+// self-verify.mjs files each issue as a CI problem; route.mjs imports `gateTriggers` alone.
+// The schema `default`, the `purpose` prose and route.mjs's resolution all describe these rows, and an "advisory"
+// default once survived a move of `phase_diff` to `off`. `null` isn't exempt, since the default is the answer.
+// The prose half reads `defaults to <value>`; only a second one naming a different member of `values` disagrees.
+// Pure: no fs, no emit, no process, no Date, no randomness.
 'use strict';
 
 /** @param {any} v */
@@ -50,16 +47,12 @@ export function gateTriggers(schemaKeys) {
 }
 
 /**
- * Every way one of the twelve rows fails to be an answer, as `{code, detail}` entries.
- * Codes:
- *   `gate-default-invalid` the row's `default` is not a member of its own `values`. `null` included: the resolver
- *                          can't answer a null default, and `config.mjs get` reports it verbatim.
- *   `gate-prose-missing`   the row's `purpose` carries no `defaults to <value>` clause (a non-string `purpose`
- *                          reads here too, and says so).
- *   `gate-prose-drift`     the `purpose` says it defaults to a member of `values` that is not the row's `default`.
- *   `gate-row-malformed`   the schema key's spec is not an object or is absent, so there's no default or purpose.
- * Nothing throws or short-circuits: a row with two faults reports two problems, so fixing one doesn't surface
- * the other on the next pass.
+ * Every way one of the twelve rows fails to be an answer, as `{code, detail}` entries. Codes:
+ *   `gate-default-invalid` the row's `default` isn't a member of its own `values`, `null` included.
+ *   `gate-prose-missing`   the row's `purpose` has no `defaults to <value>` clause.
+ *   `gate-prose-drift`     the `purpose` defaults to a member of `values` that isn't the row's `default`.
+ *   `gate-row-malformed`   the schema key's spec is absent or not an object.
+ * Nothing throws or short-circuits, so a row with two faults reports both.
  * @param {any} schemaKeys the parsed config.schema.json `keys` map, trusted for nothing
  * @returns {Array<{code: string, detail: string}>}
  */

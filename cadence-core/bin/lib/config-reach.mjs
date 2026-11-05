@@ -1,10 +1,8 @@
 // @ts-check
-// config-reach.mjs - the pure half of the config-key reach sweep: given the text of
-// cadence-core/references/config-reach.md and the schema's key map, say where they disagree. The disk half
-// lives in self-verify.mjs, split off the way lib/route-cells.mjs is from its caller.
-// It proves the table and config.schema.json agree with each other, not that either agrees with the code: a key
-// whose real reader is narrower than both is invisible here. What it buys is that a new key can't be added
-// silently, because the check fails until someone answers the reach question for it in writing.
+// config-reach.mjs - the pure half of the reach sweep: where cadence-core/references/config-reach.md and the schema's
+// key map disagree. The disk half lives in self-verify.mjs.
+// It proves the table and the schema agree, not that either matches the code. What it buys is that a new key can't
+// land silently, because the check fails until someone answers the reach question for it in writing.
 // Pure: no fs, no emit, no process, no Date, no randomness. Every issue is `{code, detail}` and names the key.
 'use strict';
 

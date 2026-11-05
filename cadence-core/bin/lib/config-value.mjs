@@ -38,13 +38,10 @@ export function checkType(spec, v) {
   }
 }
 
-// Named grammars a schema key may claim: a frozen registry of one predicate each, not a branch per key in checkValue.
-// forge_repo and forge_host are string_or_null, which let `forge example.com/../x` through, and a user types both
-// and they get interpolated onto a command line. checkValue is where set, check and validate all meet, and the
-// user is still there to retype.
-// The predicates are imported from forge-decision and model-id, never restated: a second spelling is how a rule
-// ends up enforced at two strengths.
-// Each entry carries its own sentence so the user reads what's wrong with the value, not just that it failed.
+// Named grammars a schema key may claim, one predicate each, so checkValue doesn't grow a branch per key.
+// forge_repo and forge_host were string_or_null and let `forge example.com/../x` through onto a command line.
+// The predicates come from forge-decision and model-id, never restated: a second spelling enforces at two strengths.
+// Each entry carries its own sentence, so the user reads what's wrong with the value.
 export const GRAMMARS = Object.freeze({
   forge_slug: Object.freeze({
     ok: (v) => isForgeSlug(v),

@@ -1,12 +1,8 @@
 // @ts-check
-// frontmatter.mjs - the one reader of an agent/skill frontmatter block's `skills:` value, shared by
-// self-verify.mjs and lib/resident-weight.mjs so the two can't disagree about which contracts a role preloads.
-//
-// It isn't in self-verify.mjs because that file's entry block at the foot has no `import.meta` guard: any import
-// runs the whole tree lint, and lib/seam-io.mjs's `emit` writes self-verify's envelope to stdout ahead of the
-// importer's own, so a run no longer prints one JSON object. Don't leave a re-export there either, it keeps the
-// trap alive for the next caller.
-//
+// frontmatter.mjs - the one reader of an agent/skill frontmatter block's `skills:` value, shared by self-verify.mjs
+// and lib/resident-weight.mjs so the two can't disagree about which contracts a role preloads.
+// It lives here because self-verify.mjs's entry block has no `import.meta` guard, so any import runs the whole lint.
+// Don't leave a re-export there either, it keeps the trap alive for the next caller.
 // Pure lib: no fs, no emit, no process, no Date, no randomness, nothing at top level beyond the exports.
 'use strict';
 
