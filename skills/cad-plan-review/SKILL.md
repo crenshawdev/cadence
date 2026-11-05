@@ -8,6 +8,8 @@ allowed-tools:
   - Grep
   - Task
   - AskUserQuestion
+  - Workflow
+  - Workflow(cadence:review-panel)
 ---
 
 <objective>
