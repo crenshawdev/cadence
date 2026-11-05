@@ -1,14 +1,10 @@
 // @ts-check
-// global-only-keys.mjs - the one statement of which config keys are honoured from the user-global layer alone,
-// and the strip that enforces it. A .planning/config.json arrives with a clone, and these three choose what
-// Cadence runs or where a provider key is read from, so a tracked file must not be able to set them.
-// Enforced at the merge, not at the prose sites: no .mjs reads any of the three today, so patching prose alone
-// would leave the value live for the first future reader and split inspection from enforcement again.
-// Hand-maintained on purpose, not read off config.schema.json: a cross-file read once made a cross-key check
-// fire unconditionally, CADENCE_CONFIG_SCHEMA would make it a one-variable switch that un-marks every protected
-// key, and this runs in git-guard.mjs's PreToolUse hook on every Bash call. self-verify cross-checks both ways.
-// Pure: no fs, no emit, no process, no Date, no randomness. mergeLayers puts the warning strings on a field of
-// its own and config.mjs's get folds them into its warnings.
+// global-only-keys.mjs - the config keys honoured from the user-global layer alone, and the strip that enforces it.
+// .planning/config.json arrives with a clone, and these three pick what Cadence runs or where a key is read from.
+// Enforced at the merge, not in prose: no .mjs reads these today, so patching prose would leave the value live.
+// Hand-maintained, not read off config.schema.json: this runs in git-guard's PreToolUse hook on every Bash call,
+// and a schema override would un-mark every protected key. self-verify cross-checks both ways.
+// Pure: no fs, no emit, no process, no Date, no randomness.
 'use strict';
 
 /**
@@ -47,13 +43,9 @@ function readPath(node, parts) {
 
 /**
  * The path prefix of the first ancestor that is present but not an object, or null when the walk is clean.
- * A repo layer can reach a global-only key this way without touching the key: deepMerge replaces arrays and
- * scalars wholesale, so `{"workflow": "x"}` (or `[]`, or `null`) replaces the user-global `workflow` object and
- * every global-only key under it falls to its schema default. readPath reads that as ABSENT, so the strip would
- * leave the ancestor in place and the suppression would land silently.
- * Only intermediate segments are walked; a non-object at the leaf is the ordinary case.
- * Removing such an ancestor loses nothing: a scalar or array can't carry keys, so the repo-settable siblings
- * (`workflow.max_plan_tasks`, `review.mode`) were already unreachable through it.
+ * A repo layer can suppress a global-only key without touching it: `{"workflow": "x"}` replaces the user-global
+ * `workflow` object wholesale, and readPath reads that as ABSENT, so the strip alone would miss it.
+ * Only intermediate segments are walked. Removing the ancestor loses nothing, a scalar can't carry sibling keys.
  * @param {any} node @param {string[]} parts
  * @returns {string[]|null}
  */
@@ -80,7 +72,7 @@ function withoutPath(node, parts) {
     delete copy[head];
     return copy;
   }
-  // defineProperty over assignment, as in lib/config-merge.mjs: never assign into a parsed layer, even when the name is safe
+  // defineProperty, as in lib/config-merge.mjs: never assign into a parsed layer, even under a safe name
   Object.defineProperty(copy, head, {
     value: withoutPath(node[head], rest), writable: true, enumerable: true, configurable: true,
   });
@@ -136,14 +128,10 @@ export function stripGlobalOnly(layer, file) {
 }
 
 /**
- * The two ways this set and `config.schema.json`'s `src` marker can disagree. The pair keeps the
- * hand-maintained set honest without a runtime read of the schema.
- * - `missing-global-only-marker` - a key the merge strips whose spec carries no `src: "global"`, so the scope
- *   is enforced but invisible to the user. A key the schema doesn't hold at all reads here too, and says so.
- * - `undeclared-global-only-key` - a key the schema marks that the merge doesn't strip, so the marker promises
- *   what nothing keeps.
- * A key with no `src` is repo-settable and isn't reported: the marker is demanded on the enforced set alone, so
- * this stays one edit rather than an explicit `"src": "repo"` on every other key.
+ * The two ways this set and `config.schema.json`'s `src` marker can disagree, so the hand-kept set stays honest.
+ * - `missing-global-only-marker` - a stripped key whose spec has no `src: "global"`, or isn't in the schema at all.
+ * - `undeclared-global-only-key` - a key the schema marks that the merge doesn't strip.
+ * A key with no `src` is repo-settable and isn't reported.
  * @param {any} schemaKeys the schema's `keys` object (key -> spec)
  * @returns {{code: string, detail: string}[]}
  */

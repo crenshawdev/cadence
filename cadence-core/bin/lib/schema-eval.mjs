@@ -1,13 +1,8 @@
 // @ts-check
-// schema-eval.mjs - a keyword-limited, zero-dep JSON Schema evaluator that makes `FINDING_SCHEMA` (what
-// review-provider.mjs sends) and `validateFindings` (what it asserts on return) agree by machine, not by a
-// reviewer's say-so. The agreement test in review-provider.test.mjs runs every fixture through both sides.
-// Test-only, but in lib/ because tsconfig.ci.json typechecks every .mjs there except *.test.mjs, and the whole
-// verdict rests on this being right.
-// It implements only the keywords `FINDING_SCHEMA` uses and throws on any other: an evaluator that ignored an
-// unknown keyword would call it satisfied, and a new one with no mirror in validateFindings would go green unchecked.
-// minLength and maxLength count code points, not 16-bit units (an emoji is 2 in `.length`). Both sides were
-// written together, so two `.length`s would agree and both be wrong; the non-BMP fixtures pin it.
+// schema-eval.mjs - a keyword-limited, zero-dep JSON Schema evaluator, so `FINDING_SCHEMA` and `validateFindings`
+// agree by machine and not on someone's say-so. Test-only, but in lib/ so tsconfig.ci.json typechecks it.
+// It throws on any keyword `FINDING_SCHEMA` doesn't use: ignoring an unknown one would call a value satisfied.
+// minLength and maxLength count code points, not 16-bit units, because two matching `.length`s would both be wrong.
 // Pure: null for a conforming value, else a string naming the first violation. Throws only on a bad schema.
 'use strict';
 
@@ -49,7 +44,7 @@ function assertSupported(schema, path) {
     throw new Error(`schema-eval: unimplemented type \`${JSON.stringify(schema.type)}\` at ${path}`);
   }
   if ('additionalProperties' in schema && schema.additionalProperties !== false) {
-    // false is the only form FINDING_SCHEMA uses. A subschema would need real evaluation and true is a no-op, and guessing is what this module refuses.
+    // false is the only form FINDING_SCHEMA uses; a subschema would need real evaluation, and guessing is out
     throw new Error(`schema-eval: unimplemented additionalProperties at ${path}`);
   }
   if ('properties' in schema) {

@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 // @ts-check
 // config.mjs - zero-dep validator seam for .planning/config.json. Every subcommand prints one JSON line.
-// The schema in ../config.schema.json is the single source of truth, and the cad-config workflow calls this so
-// no invalid value gets written. Never blocks the spine: callers degrade on {ok:false}.
-//   validate [--file <path>|--global]         validate a whole config file
-//   check <key=value> ...                     validate dotted key=value pairs
-//   set [--file <path>|--global] <key=value>  validate, then write into the file
-//   unset [--file <path>|--global] <key> ...  remove keys from that one file, never the merged view; any dotted path
-//   get [--file <path>] [key ...]             effective values (repo > global > defaults), the way a workflow reads config
-//   keys [--walk]                             the schema key map; --walk is only keys holding a `question`, by section
-// --file defaults to .planning/config.json. --global is the user-global layer, which set creates and route.mjs merges.
+// ../config.schema.json is the source of truth. Callers degrade on {ok:false}, never block.
+//   validate [--file <path>|--global]
+//   check <key=value> ...
+//   set [--file <path>|--global] <key=value>
+//   unset [--file <path>|--global] <key> ...  removes from that one file, never the merged view
+//   get [--file <path>] [key ...]             repo > global > defaults
+//   keys [--walk]                             --walk is only keys holding a `question`
+// --file defaults to .planning/config.json, --global is the user-global layer.
 
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -25,8 +24,7 @@ import { checkValue, checkGrammar } from './lib/config-value.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 // loaded inside the dispatch try below, so a missing or broken schema answers {ok:false} instead of crashing at import
 let SCHEMA;
-// The override only counts under the `CADENCE_TEST_SEAM` sentinel and is ignored silently otherwise (no dispatch
-// exists yet to carry a warning). The gate matters: the schema decides which keys are known and which are `src: "global"`.
+// the override only counts under the `CADENCE_TEST_SEAM` sentinel: the schema decides which keys are known and global
 const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
   || join(HERE, '..', 'config.schema.json');
 
@@ -106,7 +104,7 @@ function checkPairs(tokens, targetsGlobal) {
     // before the schema lookup: a retired key is gone from it, so unknown-key would hide the replacement
     const retired = retiredKeyError(key);
     if (retired) { errors.push({ key, error: retired }); continue; }
-    // hasOwn again, so `constructor` and friends don't pass as a spec with no type. retiredKeyError has its own half of this.
+    // hasOwn again, so `constructor` and friends don't pass as a spec with no type
     const spec = Object.hasOwn(SCHEMA, key) ? SCHEMA[key] : undefined;
     if (!spec) { errors.push({ key, error: 'unknown key' }); continue; }
     const value = parseToken(raw);
@@ -200,12 +198,9 @@ function set(file, tokens, create) {
   out({ ok: true, file, changed: pairs });
 }
 
-// Removes dotted paths from exactly one layer file, never the merged view: "gone from the file" is a claim about a file.
-// It validates nothing on purpose. Removing what validate refuses is its whole job, and the workflow forbids
-// hand-editing config JSON, so refusing a retired key here would leave a migration with no seam.
-// Nothing removed means nothing written: atomicWrite re-serializes at two-space indent, so a no-op write would
-// reformat a hand-spaced layer and move its sha256 while reporting `removed: []`. An absent file answers the
-// same and creates nothing, because only set has a value that has to land somewhere.
+// Removes dotted paths from exactly one layer file, never the merged view.
+// It validates nothing on purpose: refusing a retired key here would leave a migration with no way to remove it.
+// Nothing removed, nothing written: a no-op atomicWrite re-indents a hand-spaced layer and moves its sha256.
 // An emptied container isn't pruned: flatten skips an object with no entries, so validate passes over it.
 function unset(file, keys) {
   let cfg;
@@ -223,7 +218,7 @@ function unset(file, keys) {
     const parts = key.split('.');
     let node = cfg;
     let depth = 0;
-    // hasOwn at every hop: a bare node[part] walks the prototype chain, so `unset toString` would find a function to delete
+    // hasOwn at every hop, or a bare node[part] walks the prototype chain and `unset toString` finds a function
     for (; depth < parts.length - 1; depth++) {
       const next = Object.hasOwn(node, parts[depth]) ? node[parts[depth]] : undefined;
       if (!isPlainObject(next)) break;
@@ -269,7 +264,7 @@ function get(file, keys, asGlobal) {
       allWarnings.push(`${k}: the stored value is not a model id and was read as null`);
       values[k] = null;
     }
-    // no special case for the review.triggers rows or retired `stakes`: a layered value or a schema default always answers
+    // no special case for review.triggers or retired `stakes`: a layered value or a schema default always answers
   }
   out({ ok: true, values, source, ...(allWarnings.length ? { warnings: allWarnings } : {}) });
 }
@@ -314,12 +309,8 @@ function optFile(tokens) {
   }
   const i = tokens.indexOf('--file');
   if (i < 0) return { file: '.planning/config.json', global: false, tokens };
-  // --file reads through its declared row in lib/arg-contract.mjs. The row is per subcommand and read at the
-  // call, not at load, since check and keys declare none and never get here.
-  // It catches what the hand-written rule missed. An unset `--file $VAR` gives no token or an empty one, and
-  // both fell through as file: undefined, so set died as internal, validate said "cannot read/parse undefined"
-  // and get read the global layer alone. A flag-shaped token did the same: `validate --file --nonsense` answered
-  // about a file nobody named.
+  // --file goes through its row in lib/arg-contract.mjs, read at the call since check and keys declare none
+  // `--file $VAR` unset, or `--file --nonsense`, once gave file: undefined and get read only the global layer
   // The refusal keeps this bin's own usage wording; the contract mints no reason code.
   const parsed = evaluateFlag(tokens, '--file', CONTRACTS['config.mjs'][cmd]['--file']);
   if (!parsed.ok) {
