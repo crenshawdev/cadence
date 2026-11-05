@@ -1,23 +1,18 @@
 // @ts-check
 // deferred-queue.mjs - the one statement of what a deferred gate fire leaves behind, and what that artifact is called
-// a deferred gate runs its reviewer, persists the result and lets the run continue: the finding stops the land, not the run,
-// so it has to still be there at land time in a form the refusal can name and a human can triage
-// a committed file and not the trace: trace.jsonl is gitignored and `renderTrace` drops a phase's events at `uat_verdict complete`,
-// so a trace-resident queue evaporates on a fresh clone and at sign-off while every in-session test stays green
-// findings are stored verbatim, not counted: `/cad-milestone` prunes the phase directory, and a count whose bodies lived in a
-// deleted REVIEW file names a number nobody can act on. They go through `findingIssue` so the shape matches what an adjudication accepts
-// no ruling lives here, a finding with no ruling is a refusal and not a fourth ruling, so membership is this file existing
-// with no superseding record beside it, never absence of a record alone (an advisory fire also leaves a REVIEW file with none)
-// one flat return on both paths, never a JSDoc discriminated union: CI typecheck runs `strict: false`, where narrowing by a boolean literal doesn't happen
+// a deferred gate lets the run continue, so the finding has to still be there at land time
+// a committed file, not the trace: trace.jsonl is gitignored and drops a phase's events at `uat_verdict complete`
+// findings are stored verbatim: `/cad-milestone` prunes the phase dir, and a bare count is nothing to act on
+// membership is this file existing with no superseding record beside it
+// one flat return, no JSDoc union: CI typecheck runs `strict: false`, so narrowing doesn't happen
 'use strict';
 
 import { findingIssue } from './adjudication-record.mjs';
 import { isPlainObject } from './text-util.mjs';
 
 /**
- * A queue member's filename, built the way `recordName` builds the record's: same discriminator, same round suffix, different stem.
- * The stems differ because the two sit in one directory and mean opposite things, one saying a fire was judged and the other
- * that it wasn't. Sharing the round rule lets the supersession test be a filename comparison and not a second index.
+ * A queue member's filename, built the way `recordName` builds the record's: same discriminator and round.
+ * The stems differ because the two share a directory and mean opposite things: judged, and not judged.
  *
  * @param {string} trigger @param {string} discriminator @param {number} round
  */
@@ -25,11 +20,9 @@ export const queueName = (trigger, discriminator, round) =>
   `DEFERRED-${trigger}-${discriminator}${round > 1 ? `-r${round}` : ''}.json`;
 
 /**
- * Classify the payload a deferred fire defers: the reviewer's own `{findings: [...]}` object, the same file the fire wrote to
- * the sibling REVIEW file.
- * An empty findings array is accepted and isn't the same as a clean gate: what a fire found is the reviewer's answer, and the
- * arm it settles at is the gate's decision. Refusing an empty member would decide the second from the first, and the run would
- * stall at a `deferred` gate whose panel came back with nothing.
+ * Classify the payload a deferred fire defers: the reviewer's own `{findings: [...]}` object.
+ * An empty array is accepted and is not a clean gate: refusing it would decide the gate's arm from the findings,
+ * and the run would stall at a `deferred` gate whose panel came back empty.
  *
  * @param {unknown} payload
  * @returns {{ok: boolean, detail: string, findings: any[]}} `ok: false` names
@@ -50,17 +43,15 @@ export function buildQueue(payload) {
     const issue = findingIssue(findings[i], `payload.findings[${i}]`);
     if (issue) return no(issue);
   }
-  // the reviewer's own objects passed straight through: the caller writes what it's given, and a copy built field by field here would be the paraphrase the record beside it refuses
+  // pass the reviewer's objects straight through: a field-by-field copy is the paraphrase the record refuses
   return { ok: true, detail: '', findings };
 }
 
 /**
  * Is `name` a queue member's filename, whatever fire wrote it?
- * A prefix/suffix test and never a parse, because `DEFERRED-<trigger>-<discriminator>` can't be split back into its two tokens:
- * both admit `-`, so `DEFERRED-diff-plan-1.json` reads equally as trigger `diff` with discriminator `plan-1` and as trigger
- * `diff-plan` with discriminator `1`. A reader that guessed would resolve the wrong ADJUDICATION sibling and report a settled
- * fire as queued or a queued one as settled. So the identity comes off the member's own fields, and `queueIdentity` closes the
- * loop by rebuilding this name from them.
+ * A prefix/suffix test and never a parse: `DEFERRED-diff-plan-1.json` reads as trigger `diff` with discriminator
+ * `plan-1` and as `diff-plan` with `1`, since both tokens admit `-`. Identity comes off the member's own fields,
+ * and `queueIdentity` closes the loop by rebuilding this name from them.
  *
  * @param {unknown} name one directory-entry name
  * @returns {boolean}
@@ -71,12 +62,10 @@ export const isQueueName = (name) => typeof name === 'string'
 
 /**
  * Classify one candidate queue file: the name it's filed under and the value its bytes parsed to.
- * The name is rebuilt and compared because it's the only rail tying a member's contents to its filename, and the
- * caller's supersession test is a filename comparison built from these fields. Without it a member whose `trigger`
- * said `diff` under another trigger's name would be cleared by an adjudication of a fire it doesn't belong to, the
- * queue silently emptying itself, the one failure a land refusal can't survive.
- * A malformed member isn't a skip: the caller lists it as unreadable and refuses the land, because an unprovable
- * queue isn't an empty one, and an unreadable file wearing this name is evidence a fire was deferred.
+ * The name is rebuilt and compared because it's the only rail tying contents to filename: without it a member whose
+ * `trigger` said `diff` under another trigger's name would be cleared by that trigger's adjudication.
+ * A malformed member isn't a skip: the caller lists it as unreadable and refuses the land, since an unprovable queue
+ * isn't an empty one.
  * Findings are counted and their bodies not returned, so reviewer text never rides a path with no file transport.
  *
  * @param {unknown} name the directory-entry name the value was read from
@@ -95,11 +84,11 @@ export function queueIdentity(name, parsed) {
       return no(`queue member .${k} must be a non-blank string`);
     }
   }
-  // the same bound fireIdentity applies at the write face; a round below 1 or a fractional one names a file queueName never mints
+  // the bound fireIdentity applies at the write face: a round below 1 or a fractional one names a file nothing mints
   if (!Number.isSafeInteger(round) || round < 1) {
     return no('queue member .round must be an integer of at least 1');
   }
-  // the bodies were validated at the write face, and re-checking would block every land on a member that failed a later tightening of that shape
+  // validated at the write face, and re-checking would block every land on a member that failed a later tightening
   if (!Array.isArray(findings)) return no('queue member .findings must be an array');
   const spelled = queueName(trigger, discriminator, round);
   if (spelled !== name) {

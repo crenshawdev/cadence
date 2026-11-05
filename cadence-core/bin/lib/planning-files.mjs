@@ -37,15 +37,13 @@ export function renderCursor(c) {
 const PHASE_LINE = /^- \[( |x)\] \*\*Phase (\d+(?:\.\d+)?): (.+?)\*\*(?:\s*-\s*(.*))?$/;
 
 /**
- * Parse the `## Phases` list, sorted numerically (decimal insertions land between their neighbours),
- * or [] when the section is missing or empty. Whether that's fatal is the caller's call.
+ * Parse the `## Phases` list, sorted numerically (decimal insertions land between their neighbours), or [] when the
+ * section is missing or empty.
  *
- * Uses `normalizeCrlf`, not `normalize`: a CRLF checkout has to parse, but a lone-CR file must stay
- * unparseable or the write paths that split raw bytes on `\n` corrupt it.
- * Both ends come from `sectionSpan`. Splitting on the heading read the fenced example in the shipped
- * ROADMAP template as the real section and returned phantom `[Name]` phases, and a fixed end bound
- * can't repair a start found inside a fence. A fenced heading is skipped and the walk goes on to the
- * next unfenced `## Phases`. A heading indented up to three spaces matches too, since CommonMark reads it as one.
+ * Uses `normalizeCrlf`, not `normalize`: a CRLF checkout has to parse, but a lone-CR file must stay unparseable
+ * or the write paths that split raw bytes on `\n` corrupt it.
+ * Both ends come from `sectionSpan`: splitting on the heading read the fenced example in the ROADMAP template as
+ * the real section and returned phantom `[Name]` phases. A heading indented up to three spaces matches too.
  * @param {string} text
  */
 export function parseRoadmapPhases(text) {
@@ -70,16 +68,10 @@ export const CLOSED_CYCLE_NAME = 'no active cycle';
 const PHASE_TOKEN = /\bPhase (\d+(?:\.\d+)?)\b/;
 
 /**
- * Classify the `## Phases` section. This classifies and parses nothing wider: `PHASE_LINE` still decides what
- * counts as a phase for status, audit, phase-done and the cursor's total. Pure, no I/O.
- *
- *   1. CRLF is normalized for parsing only, so a lone-CR file stays one giant line and lands on `no-section`.
- *   2. No unfenced `## Phases` heading is `no-section`, found by the same `sectionSpan` call parseRoadmapPhases makes.
- *   3. Any phase from parseRoadmapPhases is `live`, and a near-miss beside a real checkbox list isn't reported.
- *   4. Otherwise scan from the heading to the end of the text, skipping fenced lines (an example isn't an error),
- *      and report one issue per line holding the phase token, coded by shape. A line that already matches
- *      `PHASE_LINE` is `phase-outside-section`. No match is `closed`.
- *
+ * Classify the `## Phases` section; `PHASE_LINE` still decides what counts as a phase. Pure, no I/O.
+ * CRLF is normalized for parsing only, so a lone-CR file stays one giant line: `no-section`.
+ * Any phase from parseRoadmapPhases is `live`. Otherwise scan to the end, skipping fences: a line matching
+ * `PHASE_LINE` is `phase-outside-section`, any other phase token gets a code by shape, no match is `closed`.
  * The scan runs past the next `## ` on purpose, or a wiped checkbox list with its `### Phase N:` details left
  * under `## Phase Details` would read as a cleanly closed milestone.
  * @param {string} text
@@ -102,7 +94,7 @@ export function classifyPhaseList(text) {
     if (fenced(line)) continue;
     if (!PHASE_TOKEN.test(line)) continue;
     let code = 'phase-prose-line'; // catch-all, never silent
-    // a canonical entry down here is in the wrong section, not the wrong shape, and shape tests can't tell them apart, so check it first
+    // a canonical entry down here is in the wrong section, not the wrong shape, so check it before the shape tests
     if (PHASE_LINE.test(line)) code = 'phase-outside-section';
     else if (/^#{1,6}\s/.test(line)) code = 'phase-heading';
     else if (/^\s*[-*+]\s/.test(line)) code = 'phase-bullet';
@@ -181,7 +173,7 @@ export function setPhaseBox(text, n, checked) {
 export function setReqStatus(text, ids, status) {
   const lines = text.split('\n');
   const changed = [];
-  // one walk for both ends: the old inTable flag rewrote rows inside a code fence, and a fence-aware end can't fix a fence-blind start
+  // one walk for both ends: the old inTable flag rewrote rows inside a code fence
   const { start, end } = sectionSpan(lines, '## Traceability');
   if (start < 0) return { text, changed };
   for (let i = start + 1; i < end; i++) {
@@ -198,18 +190,18 @@ export function setReqStatus(text, ids, status) {
 
 // REQUIREMENTS.md: the Active grammar and the Traceability insert path
 
-// the `## Active` bullet grammar, byte-identical to what parseActiveIds had before the classifier, which reports lines outside it and never widens it
+// the `## Active` bullet grammar, as before the classifier: it reports lines outside it and never widens it
 const ACTIVE_BULLET = /^-\s+(?:\[[ xX]\]\s+)?\*\*([^*]+)\*\*/;
 
-// a requirement id in both shipped forms (`PREFIX-N`, `#41`). Unanchored on purpose, it scans prose, and isRequirementId is the anchored one
+// a requirement id in both shipped forms (`PREFIX-N`, `#41`). Unanchored to scan prose, unlike isRequirementId
 const REQ_ID_TOKEN = /\b[A-Z][A-Z0-9]{1,7}-\d+\b|(?:^|[^\w#])#\d+\b/;
 const REQ_ID_TOKEN_G = new RegExp(REQ_ID_TOKEN.source, 'g');
 
-// the full-string form of the same two spellings. ACTIVE_BULLET reads any bold span as an id and has to keep
-// doing so (seed-reqs depends on it), so the narrowing lives here, as the question audit asks before an id can break the verdict
-// the letter can sit anywhere in the category, not just at its head: real ids open with a digit and the head-anchored form refused them
+// the full-string form of the same two spellings. ACTIVE_BULLET reads any bold span as an id and seed-reqs needs that,
+// so the narrowing lives here, where audit asks whether an id can break the verdict
+// the letter can sit anywhere in the category: real ids open with a digit, and a head-anchored form refused them
 // the 2-8 length is the lookahead's job, since those ids carry digits where a positional letter would have to go
-// never drop the letter requirement, this is the only filter between a bolded date or plan reference and audit's counts
+// never drop the letter requirement: it's the only filter between a bolded date or plan reference and audit's counts
 const REQ_ID_EXACT = /^(?:(?=[A-Z0-9]{2,8}-)[A-Z0-9]*[A-Z][A-Z0-9]*-\d+|#\d+)$/;
 
 /**
@@ -266,22 +258,20 @@ export function phaseRequirements(text, phase) {
   return { found: true, ids, goal: goalLine ? goalLine[1].trim() : '' };
 }
 
-// both live spellings of the criteria heading and no third: the template writes the bold capital form, this repo's own roadmap the bare lower-c one
-// anchor to the template alone and every phase here reports "no criteria declared", and since absence is not zero that would be silent
+// both live spellings of the criteria heading: the template's bold form and the bare one this roadmap uses
+// matching the template alone would silently report "no criteria declared" for every phase here
 // the bold markers stay balanced, a half-written `**Success criteria:` is a spelling nothing writes
 const CRITERIA_HEADING = /^(?:\*\*Success Criteria:\*\*|Success Criteria:)[ \t]*$/im;
 
-// top-level items only, anchored at column 0: a wrapped criterion continues on an indented line, so allowing indentation would count it twice
+// column 0 only, since a wrapped criterion continues on an indented line and would count twice
 const CRITERIA_ITEM_G = /^\d+[.)]\s+\S/gm;
 
 /**
- * How many success criteria a phase's ROADMAP detail block declares: the numbered items under either
- * heading spelling, up to the next `^#{1,3} ` heading so the next phase's list isn't counted here.
- * Same contract as phaseRequirements: no heading gives `{found: false, count: 0}`, so a phase nobody
- * wrote criteria for is never compared against a floor.
- * Fenced lines are dropped first, or a roadmap that shows the grammar in a fenced example has the
- * example's items counted and reports a compliant phase over its ceiling. The block boundary is still
- * fence-blind, so a fenced `### Phase N:` heading can end a block early.
+ * How many success criteria a phase's ROADMAP detail block declares: the numbered items under either heading
+ * spelling, up to the next `^#{1,3} ` heading. No heading gives `{found: false, count: 0}`, as phaseRequirements
+ * does, so a phase nobody wrote criteria for is never compared against a floor.
+ * Fenced lines are dropped first, or a fenced example's items get counted. The block boundary is still fence-blind,
+ * so a fenced `### Phase N:` heading can end a block early.
  *
  * @param {string} text the ROADMAP.md bytes
  * @param {string|number} phase the caller's own spelling
@@ -350,22 +340,17 @@ function trailingBoldSpans(s) {
 }
 
 /**
- * Classify the `## Active` section: the ids it declares, plus the lines that look like they declare one but
- * fall outside `ACTIVE_BULLET`. ACTIVE_BULLET still decides what seed-reqs and audit treat as declared. Pure and total.
- * The raw text is split on `\n` and not normalized, because the REQUIREMENTS.md write paths split raw bytes too.
- * No unfenced heading gives `{ids: null, issues: []}`, the state of every project scaffolded before v1.4.0.
- * Both ends come from `sectionSpan` and fenced lines are skipped whole, or the template's example ids get declared.
- * A line naming an id token gets at most one issue, coded by shape. Those fire however many bullets parsed, but
- * `active-prose-line` needs a section with no admissible ids and an id found nowhere else in the file, so a closed
- * milestone's "shipped X, Y" paragraph stays quiet.
- * Sharp edge: a bold span that isn't id-shaped is still read as an id (`- **Note**: ...` declares `Note`), since
- * narrowing ACTIVE_BULLET would change seed-reqs. It's reported, and audit admits only isRequirementId ids into `unpicked`.
+ * Classify the `## Active` section: the ids it declares, plus lines that look like they declare one but don't.
+ * The raw text is split on `\n`, not normalized, because the REQUIREMENTS.md write paths split raw bytes too.
+ * Both ends come from `sectionSpan` and fenced lines are skipped, or the template's example ids get declared.
+ * Sharp edge: any bold span reads as an id (`- **Note**: ...` declares `Note`), since narrowing ACTIVE_BULLET would
+ * change seed-reqs. It's reported, and audit admits only isRequirementId ids into `unpicked`.
  * @param {string} text
  * @returns {{ids: string[]|null, issues: Issue[]}}
  */
 export function classifyActiveSection(text) {
   const lines = text.split('\n');
-  // both ends from one scanner: a fence-blind start can't be repaired by a fence-aware end, and `elsewhere` slices on these indices
+  // both ends from one scanner: a fence-blind start can't be repaired by a fence-aware end
   const { start: heading, end } = sectionSpan(lines, '## Active');
   if (heading === -1) return { ids: null, issues: [] };
 
@@ -385,7 +370,7 @@ export function classifyActiveSection(text) {
       if (id && !isRequirementId(id)) {
         found.push({ issue: { line: i + 1, code: 'active-non-id-bullet', text: issueText(line) }, prose: null });
       }
-      // a second id-shaped bold span would vanish with `issues: []`; report only id-shaped extras, since taking every bold span would mint ids out of emphasis
+      // a second id-shaped bold span would vanish silently; only id-shaped extras, or emphasis would mint ids
       const extra = trailingBoldSpans(line).filter(isRequirementId);
       if (extra.length > 0) {
         found.push({ issue: { line: i + 1, code: 'active-multi-id-bullet', text: issueText(line) }, prose: null });
@@ -396,7 +381,7 @@ export function classifyActiveSection(text) {
     let code = 'active-prose-line'; // catch-all, never silent
     if (/^\s*\|/.test(line)) code = 'active-table-row';
     else if (/^\s*[-*+]\s/.test(line)) {
-      // name the cause: an indented bullet is unread because it's indented, a `*` or `+` one because the grammar reads `-` only
+      // name the cause: an indented bullet is unread for the indent, a `*` or `+` one for the marker
       if (/^\s/.test(line)) code = 'active-indented-bullet';
       else if (/^[*+]\s/.test(line)) code = 'active-nondash-bullet';
       else code = 'active-unbolded-bullet';
@@ -407,7 +392,7 @@ export function classifyActiveSection(text) {
       prose: code === 'active-prose-line' ? idTokensIn(line) : null,
     });
   }
-  // prose candidates survive only in a section that declared nothing and name an id the rest of the file doesn't record,
+  // prose candidates survive only where the section declared nothing and the id appears nowhere else in the file,
   // so a closed milestone's "shipped X, Y" paragraph isn't nagged. Filtered last to keep line order
   // narrowed by isRequirementId so "declared ids" means the same here as in audit's arithmetic
   const declared = ids.filter(isRequirementId);
@@ -433,31 +418,26 @@ export function parseActiveIds(text) {
 }
 
 /**
- * Insert `## Traceability` rows for `rows: [{id, phase}]` that have no row yet, at Status `Pending`.
- * Pending is a literal, not a parameter, so this seam can't create a row at any other status, which keeps
- * "no writer but cad-verify ever writes a non-`Pending` Status" true by construction.
+ * Insert `## Traceability` rows for `rows: [{id, phase}]` with no row yet, at Status `Pending`.
+ * Pending is a literal, not a parameter, so no writer but cad-verify can create any other Status.
  *
- * The section is bounded by `sectionSpan`, as in parseRequirements and setReqStatus. With no separator row
- * the text comes back unchanged with `error: 'no-traceability-table'`, never a fabricated table.
- * An id that already has a row goes to `skipped`, and also to `mismatched` as `{id, row_phase}` when its Phase
- * cell differs, so a renumber that left a row pointing elsewhere can't pass as a clean skip.
- * New rows land after the last contiguous `|` line below the separator. The `Phase N` spelling is mandatory:
- * shiftPhaseTokens and shiftPendingReqRows only recognize that token, and a bare number would desync the table.
- * The anchor line's ending is kept (a CRLF anchor gets a CRLF row), since normalize stays off write paths.
+ * With no separator row the text comes back unchanged with `error: 'no-traceability-table'`.
+ * An id that already has a row goes to `skipped`, and to `mismatched` when its Phase cell differs (a stale renumber).
+ * The `Phase N` spelling is mandatory: a bare number would desync the table from shiftPhaseTokens.
+ * The anchor line's ending is kept, since normalize stays off write paths.
  * @param {string} text @param {Array<{id: string, phase: number}>} rows
  * @returns {{text: string, inserted: string[], skipped: string[], mismatched: Array<{id: string, row_phase: number|null}>, error?: string}}
  */
 export function insertReqRows(text, rows) {
   const lines = text.split('\n');
-  // both ends from sectionSpan: the fence-blind start took the `## Traceability` in the REQUIREMENTS template's own fence
-  // for the section, and seed-reqs then wrote rows into the example. No section outside a fence still means text back
-  // unchanged with `no-traceability-table`, this seam never fabricates a table
+  // both ends from sectionSpan: a fence-blind start took the `## Traceability` in the template's own fence, and
+  // seed-reqs then wrote rows into the example. No section outside a fence means text back unchanged, never a new table
   const { start, end } = sectionSpan(lines, '## Traceability');
   if (start === -1) {
     return { text, inserted: [], skipped: [], mismatched: [], error: 'no-traceability-table' };
   }
 
-  // the separator is a `|`-bounded row of only dashes, colons and whitespace, the same blacklist parseRequirements skips with
+  // the separator is a `|`-bounded row of only dashes, colons and whitespace, as parseRequirements skips it
   let sepLine = -1;
   for (let i = start + 1; i < end; i++) {
     if (!lines[i].startsWith('|')) continue;
@@ -496,7 +476,7 @@ export function insertReqRows(text, rows) {
   return { text: lines.join('\n'), inserted, skipped, mismatched };
 }
 
-// recall corpus snippets for BM25. A missing section is data, never a throw, and template placeholders (`None...`, `<...>`) are skipped
+// recall corpus snippets for BM25. A missing section is data, not a throw; template placeholders are skipped
 
 /**
  * One `## Heading` section's body, cut at the next `## `, or null when the heading is absent.
@@ -577,16 +557,12 @@ const CAPTURE_PHASE_TAG = /^\((?:v\d+(?:\.\d+)*\s)?phase (\d+(?:\.\d+)?)(?:,[^)]
 
 /**
  * CAPTURE.md snippets: every `- ` bullet under CAPTURE_WALK_SECTIONS, checkbox and phase tag stripped.
- * The tag becomes the numeric `phase` field, omitted when there is none.
  *
- * An admitted tag is stripped whole, so a version or label inside it leaves the indexed text. That's the
- * trade, keeping the remainder would synthesize text nobody wrote.
- * Any checkbox state is stripped before the tag is read (a checked box used to block that). Closed captures
- * stay in the corpus, they carry the reasoning behind the fix, and get a literal `[closed] ` prefix so a
- * planner doesn't read a shipped fix as live evidence. It rides the string to leave the result shape alone.
- * The number must round-trip, `String(Number(n)) === n`, or the tag emits no `phase` and stays in the text.
- * A bare Number() put Infinity in the corpus for a 400-digit tag and a neighbouring phase's number for
- * 9007199254740993 or 1.10. isSafeInteger would strip every legal sub-phase tag, and a magnitude bound still admits 9007199254740990.1.
+ * An admitted tag is stripped whole: keeping the remainder of a version or label inside it would synthesize text.
+ * Closed captures stay in the corpus, they carry the reasoning behind the fix, with a literal `[closed] ` prefix so a
+ * planner doesn't read a shipped fix as live evidence.
+ * The number must round-trip, `String(Number(n)) === n`: a bare Number() put Infinity in the corpus for a 400-digit
+ * tag, and isSafeInteger would strip every legal sub-phase tag.
  * @param {string} text @returns {Array<{text:string, phase?:number}>}
  */
 export function parseCaptureSnippets(text) {
@@ -617,17 +593,13 @@ export function parseCaptureSnippets(text) {
 }
 
 /**
- * Census of every `## ` section in a CAPTURE.md: its name, its bullet count, and whether
- * parseCaptureSnippets visits it, in document order.
+ * Census of every `## ` section in a CAPTURE.md: name, bullet count, and whether parseCaptureSnippets visits it.
  *
- * Unconditional, no allowlist. Exempting the sections everyone expects to be out of the walk would have
- * reported nothing on the incident this exists for, all five lost bullets sat under `## Archive`.
- * Whether an out-of-walk section is fine is the reader's call from a stated count.
+ * Unconditional, no allowlist: exempting the sections expected to be out of the walk would have reported nothing on
+ * the incident this exists for, where all five lost bullets sat under `## Archive`.
  * `heading` has no `## ` prefix, the spelling CAPTURE_WALK_SECTIONS uses, so `in-walk` is a membership test.
- * Fence-aware, since a fenced `## Debt markers` in someone's bullet is an example and would report a phantom
- * out-of-walk heading. It normalizes through `normalize` because nothing here writes back, and a CRLF
- * checkout must count like its LF twin.
- * Limit: a bullet above the first `## ` belongs to no section and counts nowhere, and no writer here makes one.
+ * Fence-aware, and normalized so a CRLF checkout counts like its LF twin.
+ * Limit: a bullet above the first `## ` belongs to no section and counts nowhere.
  * @param {string} text
  * @returns {Array<{heading: string, bullets: number, inWalk: boolean}>}
  */
@@ -704,14 +676,11 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
 /**
  * ARCHIVE.md rows in document order, as the `{text, source, phase}` shape cmdRecall builds its corpus from.
  *
- * `source` joins the milestone label and the origin path (`v3.5.2/phases/1/SUMMARY.md`), so one result names
- * the artifact and the milestone that retired it, and `phase` keeps the meaning every live row gives it.
- * Anything that isn't a row is skipped, so a human note can't mint a corpus entry. That includes a row above
- * the first `## ` heading and one whose phase number doesn't round-trip (`String(Number(n)) !== n`): its path
- * names a directory nothing here can address, and a bare Number() put Infinity and a neighbouring phase's number
- * into the corpus. Not isSafeInteger, which would drop every legal `phases/1.1/` row. `phase` stays a number
- * because widening it to null would change cmdRecall's corpus and the alreadyArchived set.
- * It normalizes through `normalize` like captureSections, so a CRLF checkout indexes as its LF twin.
+ * `source` joins the milestone label and the origin path (`v3.5.2/phases/1/SUMMARY.md`).
+ * Anything that isn't a row is skipped, so a human note can't mint a corpus entry. So is a row above the first `## `
+ * heading and one whose phase number doesn't round-trip (`String(Number(n)) !== n`), since a bare Number() put Infinity
+ * into the corpus. Not isSafeInteger, which would drop every legal `phases/1.1/` row.
+ * Normalized like captureSections.
  * @param {string} text
  * @returns {Array<{text: string, source: string, phase: number, label: string, origin: string}>}
  */
@@ -736,12 +705,11 @@ export function parseArchiveRows(text) {
 }
 
 /**
- * Land `rows` under `label`'s section in ARCHIVE.md `text` and return the new text. They go after that
- * section's last row, so a resumed close extends its heading instead of minting a second one, or into a new
- * section at the end. Empty text gets ARCHIVE_PREAMBLE first. No I/O, never throws, the rest is byte-preserved.
- * Snippet and label are flattened on write, as renderUat does: an embedded newline becomes its own line on the
- * next parse, which silently skips a snippet's tail or splits a label. A row empty after flattening is dropped,
- * since an empty corpus entry ranks against every query and says nothing.
+ * Land `rows` under `label`'s section in ARCHIVE.md `text` and return the new text. They go after that section's last
+ * row, so a resumed close extends its heading instead of minting a second one, or into a new section at the end.
+ * Empty text gets ARCHIVE_PREAMBLE first. No I/O, never throws, the rest is byte-preserved.
+ * Snippet and label are flattened on write, as renderUat does: an embedded newline becomes its own line on the next
+ * parse. A row empty after flattening is dropped, since an empty corpus entry ranks against every query.
  *
  * @param {string} text @param {string} label
  * @param {Array<{origin: string, text: string}>} rows
@@ -779,23 +747,18 @@ export function appendArchiveRows(text, label, rows) {
 }
 
 // FILED.md: the recall pointer a filed issue leaves behind
-// cmdRecall reads no forge, so a finding routed to the tracker would drop out of the corpus and "a bullet
-// /cad-capture writes is reachable by /cad-plan's recall" would stop being true. One pointer row per filed issue fixes that
-// accepted issues only: a declined title mirrored here would bring back the pile of declined findings one indirection later
-// a pointer, not the finding: no body, just enough to find the issue again. It indexes what was filed, it isn't a queue
+// cmdRecall reads no forge, so a finding routed to the tracker would drop out of the corpus
+// accepted issues only: a declined title mirrored here would bring back the pile of declined findings
+// a pointer, not the finding: no body, just enough to find the issue again
 // its own file because CAPTURE.md and ARCHIVE.md both have to stay byte-unchanged
 
 /**
  * One filed row: a column-0 `- `, an ISO date, the provider, the repository slug, the fingerprint token, a colon,
- * a space, then the title to end of line.
- * Everything before the `: ` is constrained, which lets the title carry a colon, backtick or pipe with no
- * escaping rule, as ARCHIVE_ROW does. Nothing after it is parsed.
- * `unconfirmed` marks a create nobody could determine the outcome of: a nonzero create collapses a refusal, a
- * timeout kill and a dropped connection, and the last two can follow a forge that already made the issue. The
- * row is written anyway so a retry reads "don't file this again" without waiting on a search index. It sits
- * before the colon because that side is grammar, and a marker in the title is one a title could forge.
- * A title that merely begins with the word isn't misread: a confirmed row writes `<fingerprint>: unconfirmed ...`,
- * and the optional group needs the space and colon on its own side.
+ * a space, then the title to end of line. Everything before the `: ` is constrained, so the title can carry a colon,
+ * backtick or pipe with no escaping rule.
+ * `unconfirmed` marks a create nobody could confirm: a timeout kill can follow a forge that already made the issue.
+ * The row is written anyway so a retry reads "don't file this again". It sits before the colon because that side is
+ * grammar, and a marker in the title is one a title could forge.
  */
 const FILED_ROW = /^- (\d{4}-\d{2}-\d{2}) ([a-z]+) (\S+) ([0-9a-f]+)( unconfirmed)?: (.*)$/;
 
@@ -845,12 +808,10 @@ the seam reads.
 
 /**
  * FILED.md rows in document order, as the `{text, source}` shape cmdRecall builds its corpus from.
- * `text` is the title alone, the only part a query shares words with. Date, provider and slug are addressing
- * and would dilute the score. `source` is the flat `FILED.md`, as the CAPTURE.md walk spells a top-level file.
+ * `text` is the title alone, the only part a query shares words with: date, provider and slug would dilute the score.
+ * `source` is the flat `FILED.md`, as the CAPTURE.md walk spells a top-level file.
  * A non-row line is skipped, and so is a blank title, for the reason appendArchiveRows drops an empty snippet.
- * An `unconfirmed` row comes back with `unconfirmed: true` and nothing else different, so the marker never
- * reaches the corpus. The field is absent on a confirmed row rather than `false`, to leave existing readers alone.
- * It normalizes through `normalize` like captureSections, so a CRLF checkout indexes as its LF twin.
+ * An `unconfirmed` row carries `unconfirmed: true`; the field is absent on a confirmed row, not `false`.
  * @param {string} text
  * @returns {Array<{text: string, source: string, provider: string, slug: string,
  *   fingerprint: string, date: string, unconfirmed?: true}>}
@@ -891,16 +852,12 @@ function parseRows(text, source) {
 }
 
 /**
- * Land one filed row at the end of FILED.md `text` and return the new text. Empty text gets FILED_PREAMBLE
- * first. No I/O, never throws, everything already there is byte-preserved.
- * Every field is flattened on write, as appendArchiveRows does: an embedded newline becomes its own line on
- * the next parse and the row's tail is silently skipped.
- * A row whose fixed fields don't fit the grammar is refused by returning the text unchanged, since a row this
- * file's own parser couldn't read back is noise in the recall corpus.
- * `unconfirmed: true` writes the marker before the colon. Its absence means confirmed, so older callers and
- * fixtures write the bytes they always did.
- * The fingerprint dedup doesn't live here: a second meaning for "returned its input" would be indistinguishable
- * from the first, and mirrorFiled reads that return as "the grammar said no".
+ * Land one filed row at the end of FILED.md `text`. Empty text gets FILED_PREAMBLE first. No I/O, never throws.
+ * Every field is flattened on write, as appendArchiveRows does, or an embedded newline skips the row's tail.
+ * A row that doesn't fit the grammar is refused by returning the text unchanged: this file's own parser couldn't
+ * read it back.
+ * `unconfirmed: true` writes the marker before the colon; absent means confirmed, same bytes as before.
+ * The fingerprint dedup doesn't live here: mirrorFiled reads "returned its input" as "the grammar said no".
  *
  * @param {string} text
  * @param {{date: string, provider: string, slug: string, fingerprint: string,
@@ -946,24 +903,22 @@ function appendRow(text, row, preamble) {
 // plan's `requirements:` would read as a requirement id and mint a phantom `orphans.plan_ids` entry in audit
 const CRITERION_HEAD = /^- \[( |x|X)\] (AC\d+):[ \t]*(.*)$/;
 
-// any column-0 checkbox bullet, so `criterion-unidded` can catch one naming no id, the legacy shape this grammar exists for
+// any column-0 checkbox bullet, so `criterion-unidded` catches one naming no id, the legacy shape
 const CRITERION_BOX = /^- \[[ xX]\]\s/;
 
 // a checkbox bullet with something id-shaped in head position that CRITERION_HEAD refused: a second space,
-// emphasis, a lowercase `ac`, a missing colon. Anchored after the checkbox on purpose, an id named later in the
-// text is an unidded bullet whose prose mentions one, and calling that malformed sends the author after a fault that isn't there
+// emphasis, a lowercase `ac`, a missing colon. Anchored there on purpose: a later id is an unidded bullet's prose
 const CRITERION_HEAD_NEAR = /^- \[[ xX]\]\s*\**\s*AC\d+\b/i;
 
-// an `AC<N>` token anywhere on a line, only to decide whether an out-of-grammar line is worth reporting. Unanchored, like REQ_ID_TOKEN
+// an `AC<N>` token anywhere on a line, to decide whether an out-of-grammar line is worth reporting
 const CRITERION_TOKEN = /\bAC\d+\b/;
 
-// an indented bullet starting with an `AC<N>` token: a criterion the grammar can't see, so it reports instead of passing as continuation prose
+// an indented bullet starting with an `AC<N>` token: a criterion the grammar can't see, so it reports
 const CRITERION_SUB = /^\s+[-*+]\s+(?:\[[ xX]\]\s+)?AC\d+\b/;
 
 // an `AC<N>` token in declaration position: head of the line after at most one list or heading marker, a checkbox,
-// and any emphasis or code wrapper. Not part of the grammar, it only answers declaresIds: did the author write an id here at all?
-// wider than CRITERION_HEAD_NEAR on purpose, its one consumer is an exemption that must not claim "declared nothing" while an id sits in the text
-// anchored at the head like CRITERION_HEAD_NEAR, a later mention is prose and that bullet is `criterion-unidded`
+// and any emphasis or code wrapper. It only answers declaresIds, and is wider than CRITERION_HEAD_NEAR on purpose:
+// its consumer is an exemption that must not claim "declared nothing" while an id sits in the text
 // each run of spaces belongs to exactly one `\s*`, so a long run can't backtrack
 const CRITERION_ID_DECLARED = /^\s*(?:(?:[-*+]|#{1,6}|\d+[.)])\s*)?(?:\[[ xX]\]\s*)?(?:[*_`]+\s*)?AC\d+\b/i;
 
@@ -989,15 +944,10 @@ function fenceScanner() {
 
 /**
  * Classify the `## Acceptance criteria` section of a context file: the criteria it declares as `{id, text}`, plus
- * the lines that look like they declare one and fall outside the canonical head. Pure and total.
- * No exact heading is `{criteria: null, issues: []}`, "nothing declared", because the file is optional. A near-miss
- * heading (`## Acceptance Criteria`, a trailing colon, `###`) reports `criteria-heading-near-miss` and still returns
- * null, since a typo'd heading would silently drop declared criteria out of coverage.
- * An indented non-blank line under an open criterion is a continuation, appended and never classified, so a wrapped
- * criterion that names another id stays silent. `CRITERION_SUB` is the exception, it reports.
- * Every other line gets at most one issue, and those fire however many criteria parsed: one idded bullet beside
- * six bare ones is the mixed migration case this exists to catch.
- * Trailing prose after the criterion text, `(human-verify: needs <tool>)` included, stays in `text` verbatim.
+ * lines that look like they declare one but fall outside the canonical head. Pure and total.
+ * No exact heading is `{criteria: null, issues: []}`. A near-miss heading (`## Acceptance Criteria`, `###`) reports
+ * `criteria-heading-near-miss` and still returns null, or a typo would drop criteria silently.
+ * An indented line under an open criterion is a continuation, never classified; `CRITERION_SUB` is the exception.
  * @param {string} text
  * @returns {{criteria: Array<{id: string, text: string}>|null, issues: Issue[],
  *            declaresIds: 'none'|'some'|'unknown'}}
@@ -1011,12 +961,12 @@ export function classifyAcceptanceCriteria(text) {
     if (/^## Acceptance criteria\s*$/.test(lines[i])) { heading = i; break; }
   }
   if (heading === -1) {
-    // no exact heading: look for a line meant to be it (capital C, trailing colon, `###`), or the section leaves coverage in silence and the gate stays green
+    // no exact heading: look for a line meant to be it (capital C, trailing colon, `###`), or coverage goes silent
     const nearFenced = fenceScanner();
     for (let i = 0; i < lines.length; i++) {
       if (nearFenced(lines[i])) continue;
       if (/^#{1,6}\s*acceptance\s+criteri/i.test(lines[i])) {
-        // 'unknown', never 'none': the section under that heading is never walked, and an exemption meaning "declared nothing" mustn't be handed a typo
+        // 'unknown', never 'none': the section is never walked, so a typo mustn't earn the "declared nothing" exemption
         return { criteria: null, declaresIds: 'unknown',
           issues: [{ line: i + 1, code: 'criteria-heading-near-miss', text: issueText(lines[i]) }] };
       }
@@ -1031,9 +981,9 @@ export function classifyAcceptanceCriteria(text) {
   const seen = new Set();
   /** @type {{id: string, text: string}|null} The criterion continuations extend. */
   let open = null;
-  // a head-shaped bullet whose criterion wasn't pushed (a duplicate id) still absorbs its continuation lines, so a wrapped duplicate reports once
+  // a duplicate-id bullet isn't pushed but still absorbs its continuation lines, so it reports once
   let absorbing = false;
-  // a fenced block in the section is skipped whole, or the example in the grammar's own docs parses as a live criterion and mints a phantom id
+  // fenced blocks are skipped whole, or the grammar's own docs example parses as a live criterion with a phantom id
   const fenced = fenceScanner();
   for (let i = heading + 1; i < lines.length; i++) {
     const line = lines[i];
@@ -1068,7 +1018,7 @@ export function classifyAcceptanceCriteria(text) {
     }
     open = null;
     absorbing = false;
-    // a checkbox bullet that isn't a criterion: if its head position holds an id, "add the id" is a no-op fix, so tell malformed from unidded
+    // a checkbox bullet that isn't a criterion: tell malformed from unidded, since "add the id" fixes only the latter
     if (CRITERION_BOX.test(line)) {
       issues.push({ line: i + 1, text: issueText(line),
         code: CRITERION_HEAD_NEAR.test(line) ? 'criterion-malformed-id' : 'criterion-unidded' });
@@ -1084,9 +1034,8 @@ export function classifyAcceptanceCriteria(text) {
     else if (/^#{1,6}\s/.test(line)) code = 'criterion-heading';
     issues.push({ line: i + 1, code, text: issueText(line) });
   }
-  // decided here against the source lines, not issues[].text, which is a trimmed display copy. Fenced lines never reach issues,
-  // so a documented example declares nothing here. An empty `criteria` can mean nothing declared, a refused id or an unread
-  // section, and callers reasoning about "declared nothing" need those apart
+  // decided against the source lines, not issues[].text, a trimmed display copy. Fenced lines never reach issues,
+  // so a documented example declares nothing. An empty `criteria` can mean nothing declared, a refused id or no section
   const declared = criteria.length > 0
     || issues.some((i) => CRITERION_ID_DECLARED.test(lines[i.line - 1]));
   return { criteria, issues, declaresIds: declared ? 'some' : 'none' };
@@ -1097,7 +1046,7 @@ export function classifyAcceptanceCriteria(text) {
 // item field order in the rendered file, pinned so rewrites are stable
 // a field has to be registered to survive: parseUat takes any `key: value` line but renderUat filters against this
 // list, so an unregistered field survives `init` and the first `record` destroys it
-// `criterion` and `origin` sit right after `expected` because that's where a hand-added line must be for the first rewrite not to move it
+// `criterion` and `origin` sit right after `expected`, so a hand-added line there isn't moved by the first rewrite
 const UAT_FIELDS = ['expected', 'criterion', 'origin', 'why_human', 'status',
   'job', 'commit', 'first_pass', 'source', 'evidence', 'reported', 'severity', 'cause', 'fix',
   'reason'];
@@ -1107,7 +1056,8 @@ const UAT_FIELDS = ['expected', 'criterion', 'origin', 'why_human', 'status',
 // walk-executed pass looked like a user answer with nothing reporting the drop
 export const UAT_SOURCES = ['user', 'verifier', 'model'];
 
-// `criterion` marks a criterion-derived item by its presence, so `origin: criterion` only repairs a lost link. `verifier` and `smoke` are the only origins criteria-coverage exempts from `untraced`
+// `criterion` marks a criterion-derived item by its presence, so `origin: criterion` only repairs a lost link
+// `verifier` and `smoke` are the only origins criteria-coverage exempts from `untraced`
 export const UAT_ORIGINS = ['criterion', 'verifier', 'smoke'];
 
 // positive marker that a seam knowing `criterion` and `origin` wrote the checklist. Inferring "pre-field" from the
@@ -1116,10 +1066,11 @@ export const UAT_ORIGINS = ['criterion', 'verifier', 'smoke'];
 // phase's context to declare no `AC<N>` ids, since that grammar post-dates the fields. A marker-less checklist beside
 // declared ids is a dropped link, reported as a `fieldless-checklist` break
 export const UAT_FIELDS_VERSION = '1';
-// the commit `test-policy ci-status` last passed every required job for. That seam is its only writer, so nobody can claim "CI-verified" by typing it
+// the commit `test-policy ci-status` last passed every required job for, written only by that seam
 const UAT_FM_FIELDS = ['status', 'phase', 'fields_version', 'sources', 'started', 'updated', 'ci'];
 
-// `pending_ci` shows only when an item holds it, so older checklists render as before. Own keys only: `in` walks the prototype and a hand-written `status: constructor` would make a count NaN
+// `pending_ci` shows only when an item holds it, so older checklists render as before
+// own keys only: `in` walks the prototype, and a hand-written `status: constructor` would make a count NaN
 function countStatuses(items) {
   /** @type {Record<string, number>} */
   const counts = { pass: 0, fail: 0, pending: 0, skipped: 0, blocked: 0 };
@@ -1156,10 +1107,9 @@ export function sectionBound(lines) {
  * Both ends of one `## ` section as absolute indices into `lines`: `{start, end}`, the heading's own line and the
  * next `## ` after it (or `lines.length`). Both are -1 when the heading doesn't occur outside a fence.
  *
- * One scanner, one walk, on purpose. sectionBound fixed the end only, and finding the heading with a fence-blind
- * `findIndex` took a fenced example of it in an earlier section for the real one. The scan resumed from that false
- * start read the block's closing fence as an opener and swallowed every later heading, and CAPTURE.md lost
- * `## Seeds` and `## Notes` outright. A fence-blind start can't be repaired by a fence-aware end, so callers get both.
+ * One scanner, one walk, on purpose: a fence-blind `findIndex` took a fenced example of the heading in an earlier
+ * section for the real one, and the scan resumed from there read the closing fence as an opener and swallowed every
+ * later heading (CAPTURE.md lost `## Seeds` and `## Notes`). A fence-blind start can't be fixed by a fence-aware end.
  * @param {string[]} lines @param {string} heading
  * @returns {{start: number, end: number}}
  */
@@ -1167,7 +1117,7 @@ export function sectionSpan(lines, heading) {
   const fenced = fenceScanner();
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
-    // fed every line in order and never restarted, so the fence state at `start` is what a reader of the whole document would have
+    // fed every line in order and never restarted, so the fence state at `start` is the whole document's
     if (fenced(lines[i])) continue;
     if (start < 0) {
       if (lines[i].trim() === heading) start = i;
@@ -1183,7 +1133,7 @@ const UAT_FIELD = /^(\w+):\s*(\S(?:.*\S)?|[^\S\n\r\u2028\u2029](?=[\n\r\u2028\u2
 const UAT_HEAD = /^(\d+)\.\s+(\S(?:.*\S)?|[^\S\n\r\u2028\u2029](?=[\n\r\u2028\u2029]*$))\s*$/;
 
 /**
- * Parse UAT: full frontmatter plus items with their field lines. Counts are recomputed from the items, never read from Summary.
+ * Parse UAT: full frontmatter plus items with their field lines. Counts are recomputed from the items, not Summary.
  *
  * An item head is anchored to the first line of its `### ` chunk. A numbered line deeper in (`1. check the
  * logs` inside a hand-written `### Manual notes`) is prose and must never mint an item.
@@ -1288,13 +1238,11 @@ export function normalize(text) {
 }
 
 /**
- * The roadmap parse normalizer: BOM and `\r\n` only, leaving a lone `\r` alone. The roadmap's write paths
- * (`setPhaseBox`, `cutPhaseDetail`, `cmdRenumber`'s list filter) split the raw bytes on `\n`, so parsing a lone-CR
- * file into real phases hands them one giant line: `renumber remove --n 1` returned `ok:true` while leaving the
- * old phase line in place and deleting its detail sections.
- * CRLF is safe because every write path matches without a `$` anchor or under `/m`, where `$` matches before
- * `\r`, so a CRLF line round-trips byte for byte. A lone-CR file has no such guarantee, so it stays unparseable
- * and the caller bails.
+ * The roadmap parse normalizer: BOM and `\r\n` only, leaving a lone `\r` alone. The write paths split the raw bytes
+ * on `\n`, so parsing a lone-CR file into real phases hands them one giant line: `renumber remove --n 1` returned
+ * `ok:true` while leaving the old phase line in place and deleting its detail sections.
+ * CRLF is safe because every write path matches without a `$` anchor or under `/m`, so a CRLF line round-trips byte
+ * for byte. A lone-CR file has no such guarantee, so it stays unparseable and the caller bails.
  * @param {string} text
  */
 function normalizeCrlf(text) {
@@ -1331,17 +1279,13 @@ function scanValue(s) {
 }
 
 /**
- * Resolve one comment-stripped, trimmed candidate (an inline list element, a block-item payload or a key line's
- * scalar remainder) at its own boundary.
+ * Resolve one comment-stripped, trimmed candidate (list element, block-item payload or key remainder).
  *
- * Empty `raw` resolves to `{value:'', codes:[]}`. A leading quote ends the value at the next occurrence of that same
- * character, and none found gives `['unterminated-quote']`. Otherwise it ends at the first whitespace, so an
- * unquoted value can't contain a space (every shipped plan's value is one token, so nothing regresses).
- * Whatever follows is the "rest", and a non-whitespace rest pushes `trailing-value-content` with the value before
- * it still standing: parse, then diagnose.
- * `residual-quote` fires on a value with a backslash (the only way a one-element escape like `files: ["a\"]`
- * shows, it has no rest and no surviving quote) or the same quote that wrapped it (either, if unquoted), payload
- * kept. Not a bare "contains a quote" test, it would fire on the grammar's own spelling of an apostrophe path.
+ * A leading quote ends the value at the next same quote, none found gives `['unterminated-quote']`. Otherwise it
+ * ends at the first whitespace, so an unquoted value can't contain a space; a non-whitespace rest pushes
+ * `trailing-value-content` with the value still standing: parse, then diagnose.
+ * `residual-quote` fires on a value with a backslash (the only way `files: ["a\"]` shows) or the quote that wrapped it.
+ * Not a bare "contains a quote" test: it would fire on the grammar's own apostrophe path.
  * @param {string} raw @returns {{value: string, codes: string[]}}
  */
 function resolveValue(raw) {
@@ -1365,11 +1309,10 @@ function resolveValue(raw) {
     (quoted ? value.includes(raw[0]) : (value.includes('"') || value.includes("'")));
   if (residual) codes.push('residual-quote');
   // a backtick at the start or end of a resolved value is markdown that leaked into data. The grammar has no backtick
-  // rule, so the value stands byte-exact and is reported, not rewritten: the old backtick strip was a silent path rewrite
-  // boundary, not containment and not a matched pair. Containment would fire on a real path like lib/a`b.mjs, and a
-  // matched pair misses every near-miss: a half wrap, a wrap plus punctuation, a wrap the whitespace rule already cut in
-  // half, and the sharpest, a backtick-wrapped id where scanValue's unquoted-# rule cuts `#41` to a lone backtick before
-  // this runs, minting a one-character phantom id that audit reports as an orphan
+  // rule, so the value stands byte-exact and is reported, not rewritten (the old strip was a silent path rewrite)
+  // a boundary test, not containment or a matched pair: containment fires on a real path like lib/a`b.mjs, and a pair
+  // misses every near-miss, sharpest being a backtick-wrapped id where scanValue's unquoted-# rule cuts `#41` to a
+  // lone backtick before this runs, minting a one-character phantom id that audit reports as an orphan
   if (value.startsWith('`') || value.endsWith('`')) {
     codes.push('backtick-wrapped-value');
   }
@@ -1385,16 +1328,12 @@ const VALUE_LEVEL_CODES = new Set([
 ]);
 
 /**
- * Scope value-level codes to the two list keys the seams actually read. A defect in the bytes of `goal:` or
- * `plan:` isn't about a list, and letting it reach readFrontmatterList put it in plan-overlap's
- * `frontmatter_issues` and the risk-floor bail as if the plan's file list were unreadable.
- * Not "only the key the caller asked for": a `requirements:` defect still reaches a `files:` read and vice
- * versa, since a plan with one list misparsed should be fixed before anything routes off the other.
- * It's applied at the push sites, where the owning key is in scope, so `Issue` gains no field.
- * The structural codes own no key and skip this: they must reach every key's read, or a `requirements:` block
- * truncated by a stray line reaches plan-overlap clean and `choose_path` reads it as proved independence.
- * A `null` key (an item with no block open) owns no list key, so its value-level codes go too, and
- * `item-without-key` still fires on that line.
+ * Scope value-level codes to the two list keys the seams read. A defect in `goal:` or `plan:` isn't about a list,
+ * and would reach plan-overlap's `frontmatter_issues` and the risk-floor bail as if the file list were unreadable.
+ * A `requirements:` defect still reaches a `files:` read and vice versa. Applied at the push sites.
+ * The structural codes own no key and skip this: they must reach every key's read, or a truncated `requirements:`
+ * block reaches plan-overlap clean and `choose_path` reads it as proved independence.
+ * A `null` key owns no list key, so its value-level codes go too.
  * @param {string|null} key @param {string[]} codes @returns {string[]}
  */
 function scopeToListKeys(key, codes) {
@@ -1434,14 +1373,12 @@ function splitDepth0(s) {
 }
 
 /**
- * Parse an inline flow list value, already comment-stripped by scanValue and known to start with `[`. The closing
- * `]` is found at quote depth 0 by the same left-to-right scan, never a `\[(.*)\]` capture: neither the greedy nor
- * the lazy form can see quoting.
- * No closing bracket gives no items plus `['unterminated-inline-list']`. Non-whitespace after it gives
- * `trailing-inline-content`, pushed first, with the payload still parsed rather than discarded.
- * The payload splits on commas at depth 0 with no escape state, so a quote span an escaped quote was meant to keep
- * open still closes at the first matching character. Element codes are appended after the bracket-level one, in
- * order and not deduped here, the caller dedupes per line.
+ * Parse an inline flow list value, already comment-stripped by scanValue and known to start with `[`. The closing `]`
+ * is found at quote depth 0 by the same left-to-right scan, never a `\[(.*)\]` capture: neither the greedy nor the
+ * lazy form can see quoting.
+ * No closing bracket gives `['unterminated-inline-list']`; non-whitespace after it gives `trailing-inline-content`.
+ * The payload splits on commas at depth 0 with no escape state, so an escaped quote still closes at the first match.
+ * Element codes follow the bracket-level one, and the caller dedupes per line.
  * @param {string} value @returns {{items: string[], codes: string[]}}
  */
 function parseInlineList(value) {
@@ -1467,7 +1404,7 @@ function parseInlineList(value) {
   return { items, codes };
 }
 
-// any column-0 `key:` or `key: value` line: the anchor for a key's value and one of the three block-list terminators (fence, key line, end of block)
+// any column-0 `key:` line: a key's anchor, and one of the three things that end a block list
 const KEY_LINE = /^([A-Za-z_][A-Za-z0-9_.-]*):(\s|$)/;
 const FENCE_LINE = /^---\s*$/;
 const BLANK_LINE = /^\s*$/;
@@ -1476,21 +1413,15 @@ const COMMENT_LINE = /^\s*#/;
 // payload contributes nothing, like a comment-only item. The whitespace is required, so a bare `-` falls through to
 // `unknown-line` instead of reading as an empty item. There's no indentation or nesting rule
 const ITEM_LINE = /^\s*-\s+(.*)$/;
-// key-shaped but missing KEY_LINE's whitespace after the colon (`requirements:["#41"]`). KEY_LINE stays strict, or a bare `http://example.com` parses as a key
+// key-shaped but with no space after the colon (`requirements:["#41"]`); KEY_LINE stays strict so a URL isn't a key
 const MALFORMED_KEY_LINE = /^[A-Za-z_][A-Za-z0-9_.-]*:/;
 
 /**
- * Classify every line of a plan's leading frontmatter block in one pass and return each key's resolved value
- * list with every line that fell outside the grammar. `readFrontmatterList` is a thin selector over this.
- *
- * One pass, not one scan per key, so the structural diagnostics don't depend on which key the caller asked for:
- * audit reads only `requirements` and plan-overlap only `files`, and with the template's inline `[]` form no
- * block scan runs at all, so a stray line could reach neither.
+ * Classify every line of a plan's leading frontmatter block in one pass: each key's value list and the stray lines.
+ * One pass, not one scan per key, so the structural diagnostics don't depend on which key the caller asked for.
  * A key with an empty remainder opens a block that runs to another key line, the closing fence or the end of the
- * block. Anything else is `unknown-line` and skipped, never a fourth terminator, or an unknown line would
- * truncate a list the items below it still belong to.
- * An item with no block key open is `item-without-key` and dropped, never attached to the last key: merging an
- * inline value with a following block would fuse two statements under a rule the grammar doesn't state.
+ * block. Anything else is `unknown-line` and skipped, never a fourth terminator, or it would truncate a list.
+ * An item with no block key open is `item-without-key` and dropped, never attached to the last key.
  * @param {string} text
  * @returns {{keys: Map<string, string[]>, issues: Issue[]}}
  */
@@ -1572,7 +1503,7 @@ export function parseFrontmatter(text) {
       const scanned = scanValue(im[1]);
       if (scanned.code) {
         pushIssues(issues, lineNo, line, scopeToListKeys(currentKey, [scanned.code]));
-        // this arm returns before the no-block-key diagnosis below, so it makes that call itself or the line reports nothing
+        // this arm returns before the no-block-key diagnosis below, so it makes that call itself
         if (!currentKey) issues.push({ line: lineNo, code: 'item-without-key', text: issueText(line) });
         continue;
       }
@@ -1582,7 +1513,7 @@ export function parseFrontmatter(text) {
       if (currentKey) {
         if (resolved.value) keys.get(currentKey).push(resolved.value);
       } else {
-        // no block key is open: the item is diagnosed and dropped, never attached to the latest key, and a repeated key name doesn't reopen a block
+        // no block key open: the item is diagnosed and dropped, never attached to the latest key
         issues.push({ line: lineNo, code: 'item-without-key', text: issueText(line) });
       }
       continue;
@@ -1596,7 +1527,7 @@ export function parseFrontmatter(text) {
       continue;
     }
 
-    // neither item, comment, blank, key nor malformed key: recorded and skipped, it doesn't stop an active block so nothing below it is lost
+    // not an item, comment, blank or key: recorded and skipped, and an active block carries on
     issues.push({ line: lineNo, code: 'unknown-line', text: issueText(line) });
   }
 
@@ -1673,17 +1604,12 @@ const WRAP_PAIRS = /** @type {const} */ ([
 ]);
 
 /**
- * The file paths a plan declares it touches: the frontmatter `files:` list unioned with every task's
- * `- **Files:** a, b` line (either alone can go stale), plus the frontmatter arm's issues.
- *
- * The arms normalize differently. Frontmatter items are already grammar-resolved, so running them through `add()`'s
- * parenthetical and backtick strip is a second silent route to a wrong `overlaps`: they're added verbatim.
- * The task-line arm also adds its raw trimmed form as a bridge, or one path would reach the Set as two strings
- * depending on the arm and plan-overlap would greenlight two plans writing one file. Adding both only adds entries,
- * so it fails toward a phantom overlap that routes sequential, the safe direction.
- * `markdown-decorated-path` is reported on the frontmatter arm only and never repaired: the declaration stays
- * byte-exact so `overlaps` doesn't come to mean "intersect after repair", and execute routes any non-empty
- * `frontmatter_issues` to the sequential path.
+ * The file paths a plan declares it touches: the frontmatter `files:` list unioned with every task's `- **Files:**`
+ * line, plus the frontmatter arm's issues (either alone can go stale).
+ * Frontmatter items are grammar-resolved already, so `add()`'s strip would be a second silent route to a wrong
+ * `overlaps`: they go in verbatim. The task-line arm also adds its raw form, or plan-overlap could greenlight two
+ * plans writing one file; extra entries only fail toward a phantom overlap, the safe direction.
+ * `markdown-decorated-path` is reported on the frontmatter arm only and never repaired.
  * @param {string} text @returns {{files: string[], issues: Issue[]}}
  */
 export function parsePlanFiles(text) {
@@ -1691,16 +1617,12 @@ export function parsePlanFiles(text) {
   /** The task-line arm's normalization: backticks and one trailing parenthetical. */
   const normalizeTaskItem = (raw) => raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
   /**
-   * Markdown decoration around a declared path, every shape under one code: a matched wrap (`WRAP_PAIRS`: bold,
-   * italic, autolink, bare bracket), the link form (`[src/a.rs](src/a.rs)`), and a matched interior backtick pair
-   * (`` src/`a`.rs ``), meaning two or more backticks strictly inside the value.
+   * Markdown decoration around a declared path, every shape under one code: a matched wrap (`WRAP_PAIRS`), the link
+   * form (`[src/a.rs](src/a.rs)`), and a matched interior backtick pair (`` src/`a`.rs ``), two or more inside.
    *
-   * A wrap is matched or it's nothing: `_` and `[` are legal path bytes, so a bare one never counts. The residual
-   * over-fire is a path that opens and closes on the same emphasis byte (`__main__`), which reports and is returned
-   * byte-exact, since a phantom diagnostic routes sequential, the safe direction.
-   * The interior count keeps this additive to resolveValue's boundary rule: a path in backticks has none and a
-   * wrap-plus-punctuation has one, so both keep reporting `backtick-wrapped-value` alone. Backticks stay out of
-   * WRAP_PAIRS to avoid double-reporting.
+   * A wrap is matched or it's nothing: `_` and `[` are legal path bytes. A path that opens and closes on the same
+   * emphasis byte (`__main__`) over-fires and stays byte-exact, since a phantom diagnostic routes sequential, the safe
+   * way. Backticks stay out of WRAP_PAIRS so a path in backticks keeps reporting `backtick-wrapped-value` alone.
    * @param {string} v @returns {boolean}
    */
   const isDecoratedPath = (v) => {
@@ -1716,11 +1638,10 @@ export function parsePlanFiles(text) {
   };
   const { items, issues } = readFrontmatterList(text, 'files');
 
-  // refuse the lease spellings on both arms: `./a.txt`, `src/./a.txt` and `src//a.txt` name the same file as their plain
-  // spelling but lease-grammar reads them as different files, so they're dropped here with a diagnostic. Refusing on the
-  // frontmatter arm alone would let the spelling reach lease-check through the task-line door
-  // not pushed down into parseFrontmatter or readFrontmatterList: those serve `requirements:` too, where `//` and a
-  // leading `./` aren't path syntax
+  // refuse the lease spellings on both arms: `./a.txt`, `src/./a.txt` and `src//a.txt` name the same file as the plain
+  // spelling, but lease-grammar reads them as different files. One arm alone would let them through the other's door
+  // not pushed down into parseFrontmatter or readFrontmatterList: those serve `requirements:` too, where `//` and `./`
+  // aren't path syntax
   const region = filesListRegion(text);
   let row = 0;
   let col = 0;
@@ -1756,7 +1677,7 @@ export function parsePlanFiles(text) {
     files.add(f); // verbatim, no rewriting after the grammar
   }
   for (const m of text.matchAll(/^\s*-\s*\*\*Files:\*\*\s*(.+)$/gm)) {
-    // measure to the `**Files:**` marker, not `m.index`: the leading `\s*` matches newlines, so `m.index` names an earlier line
+    // measure to the `**Files:**` marker, not `m.index`: the leading `\s*` matches newlines and names an earlier line
     const line = text.slice(0, (m.index ?? 0) + m[0].indexOf('**Files:**')).split('\n').length;
     for (const raw of m[1].split(',')) {
       const f = normalizeTaskItem(raw); // the normalized form
@@ -1773,7 +1694,7 @@ export function parsePlanFiles(text) {
   return { files: [...files], issues };
 }
 
-// renumbering: shift `Phase K` tokens and `phases/K/` paths in one pass. Lowercase prose refs are reported, never rewritten, that edit needs judgment
+// renumbering: shift `Phase K` tokens and `phases/K/` paths in one pass; lowercase prose refs are reported only
 
 /**
  * Shift every integer `Phase K` token and `phases/K/` path where K >= from by delta, in a single pass so a shifted
@@ -1816,15 +1737,11 @@ export function nextNamesPhase(next, n) {
 
 /**
  * `renumber`'s REQUIREMENTS.md edit for both ops: `delta` 1 inserts at `at` (K >= at moves up one), -1 removes phase
- * `at` (K >= at+1 moves down). Only `## Traceability` rows whose Status is exactly `Pending` change, and every other
- * line comes back byte for byte. Section first, then status: status alone would rewrite `## Deferred` bullets and
- * `## Shipped` rows. It splits on `\n` only, so a CRLF line keeps its `\r`.
- * On a remove, a Pending row citing integer `Phase <at>` is an orphan: its Phase cell is blanked to `|  |` so audit
- * sees no-phase and not the shifted neighbour, and its id goes in `orphans`. One test decides both, so they can't disagree.
- * `changes` is built in the same walk so the confirmation gate shows what gets written.
- * `movedComplete` holds Complete rows citing a phase this op moves or deletes. They stay as written, since neither
- * rewriting nor leaving them is safe to pick for the user, so the caller names them.
- * `refs` is `in_text_refs` minus the frozen lines (Shipped, non-Pending Traceability rows), which would invite hand-edits of history.
+ * `at` (K >= at+1 moves down). Only `## Traceability` rows whose Status is exactly `Pending` change, the rest comes
+ * back byte for byte; section first, then status.
+ * On a remove, a Pending row citing `Phase <at>` is an orphan: its Phase cell is blanked to `|  |` so audit sees
+ * no-phase, not the shifted neighbour, and its id goes in `orphans`.
+ * `movedComplete` holds Complete rows citing a phase this op moves or deletes: left as written for the caller to name.
  * @param {string} text @param {number} at @param {1 | -1} [delta]
  * @returns {{text: string, changes: Array<{line: number, before: string, after: string}>, movedComplete: string[], refs: Array<{line: number, text: string}>, orphans: string[]}}
  */
@@ -1909,14 +1826,12 @@ export function cutPhaseDetail(text, n) {
   return text.slice(0, start) + text.slice(end);
 }
 
-// atomic write: STATE and UAT are rewritten constantly, so write a sibling temp file and rename over the target, and a crash never leaves a torn file
-// the temp name is unique per call (`<file>.<pid>.<n>.tmp`) and stays a sibling, so the rename is still atomic and two writers don't share a temp path
-// writers still last-write-wins the target, so a `uat record` racing a `phase-done` loses an edit: no lock, no O_EXCL retry, no fsync
-// the suffix is derived, never random, so a test can name the temp paths this process will use
-// a symlink at the temp path is refused with a throw: a planted `ROADMAP.md.tmp` link used to write the caller's bytes wherever it pointed.
-// A throw because no caller reads a result, and they all already tolerate one
-// only the temp path is guarded, the target is replaced even if it's a symlink, which heals a tree an attack already touched.
-// Cost: a planning file symlinked into a dotfiles tree is replaced on the next write
+// atomic write: write a sibling temp file and rename over the target, so a crash never leaves a torn file
+// the temp name is unique per call (`<file>.<pid>.<n>.tmp`) and derived, never random
+// last-write-wins on the target: a `uat record` racing a `phase-done` loses an edit
+// a symlink at the temp path is refused with a throw: a planted `ROADMAP.md.tmp` link used to write bytes anywhere
+// only the temp path is guarded, a symlinked target is replaced, which heals a tree an attack already touched
+// cost: a planning file symlinked into a dotfiles tree is replaced on the next write
 
 /** Bumped on every atomicWrite call, so no two share a temp path. */
 let tmpSeq = 0;
@@ -1928,7 +1843,7 @@ let tmpSeq = 0;
  */
 export function atomicWrite(file, text) {
   const tmp = `${file}.${process.pid}.${tmpSeq++}.tmp`;
-  // lstatSync so the link is classified, not its target. A stale temp from a crashed process is still overwritten so it can't wedge every write
+  // lstatSync so the link is classified, not its target. A stale temp from a crashed process is overwritten, no wedge
   let st = null;
   try { st = lstatSync(tmp); } catch { /* ENOENT is the ordinary case */ }
   if (st && st.isSymbolicLink()) {

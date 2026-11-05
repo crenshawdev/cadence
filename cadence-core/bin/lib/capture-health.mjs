@@ -1,12 +1,9 @@
 // @ts-check
-// lib/capture-health.mjs - the pure reading of a `.planning/CAPTURE.md` body: text in, findings out, no filesystem or verdict
-// CAPTURE.md holds the phase in flight and nothing else, and that fails while an item can be settled without leaving the file:
-// this repo's queue went to zero on 2026-08-08 and regrew to 276 walked bullets in sixteen days, 185 relocated under a
-// `## Archive` heading in the same file and twelve annotated in place. Both moves leave the bytes where they were, so this
-// answers three questions: how many substantive bullets the walk holds, which were adjudicated by annotation, and whether
-// there's an `## Archive` heading at all
-// it decides nothing, the bound is configured and the verdict is the caller's (`planning.mjs capture-check`, `phase-done`)
-// pure so it's testable by fixture, which every check needs: the live tree has no annotation or archive heading and would pass them vacuously
+// lib/capture-health.mjs - the pure reading of a CAPTURE.md body: text in, findings out, no filesystem, no verdict
+// an item can be settled without leaving the file: the queue regrew from zero to 276 bullets in sixteen days,
+// 185 moved under `## Archive` and twelve annotated in place, so this counts what the walk holds
+// it decides nothing: the bound is configured and the verdict is the caller's (`planning.mjs capture-check`)
+// pure so a fixture can test it, since the live tree has no annotation or archive heading and would pass vacuously
 'use strict';
 
 import { CAPTURE_WALK_SECTIONS, sectionSpan, normalize } from './planning-files.mjs';
@@ -19,18 +16,17 @@ import { CAPTURE_WALK_SECTIONS, sectionSpan, normalize } from './planning-files.
 export const ARCHIVE_HEADING = 'Archive';
 
 /**
- * The placeholder `EMPTY_CAPTURE` writes under all three walked headings, as it appears after the checkbox strip. A freshly
- * created queue is three of these and must count zero.
- * `captureSections` counts it as an ordinary bullet and keeps doing so, since it's a section report whose numbers are read
- * elsewhere and the walk really does index this line. This is a second count with a different definition, hence its own home.
+ * The placeholder `EMPTY_CAPTURE` writes under all three walked headings, after the checkbox strip. A fresh queue is
+ * three of these and must count zero.
+ * `captureSections` still counts it as a bullet, because other numbers read from that and the walk indexes this line.
  */
 const PLACEHOLDER = 'None.';
 
 /**
- * The two annotation shapes an in-place adjudication leaves behind. An item is resolved by removal (filed on the tracker or
- * dropped), so a bullet that gained a re-verification note got longer instead of leaving, twelve times in this repo's own queue.
- * `KEPT` is case-sensitive with a date after it, because the hand that keeps an item writes it in caps and lowercase `kept` is
- * ordinary prose. `recorded not fixed` is case-insensitive, nobody writes that phrase by accident.
+ * The two annotation shapes an in-place adjudication leaves behind. Items are resolved by removal, so a bullet that
+ * grew a re-verification note instead of leaving is the tell (twelve in this repo's own queue).
+ * `KEPT` is case-sensitive with a date after it: whoever keeps an item writes caps, and lowercase `kept` is prose.
+ * `recorded not fixed` is case-insensitive, nobody writes that phrase by accident.
  */
 const ANNOTATIONS = Object.freeze([
   /\bKEPT \d{4}-\d{2}-\d{2}/,
@@ -50,8 +46,8 @@ function short(line) {
 }
 
 /**
- * The bullet's text with its checkbox stripped, or `null` when the line isn't a bullet: anything but a column-0 `- ` (an
- * indented continuation, a `* ` line, a table row, prose) isn't indexed.
+ * The bullet's text with its checkbox stripped, or `null` when the line isn't a bullet: only a column-0 `- ` counts
+ * (indented continuations, `* ` lines, table rows and prose aren't indexed).
  * @param {string} line
  * @returns {string|null}
  */
@@ -75,13 +71,12 @@ function bulletText(line) {
 /**
  * Read a CAPTURE.md body.
  *
- * Sections are located with the exported `sectionSpan`, bounded at both ends by one fence-aware scanner, never a bare heading
- * scan: a fenced example of a heading was taken as the real one and the walk that resumed there read the block's closing
- * fence as an opener, swallowing `## Seeds` and `## Notes` outright.
- * Inside a section the line test is the walk's own, the same `^-\s+` parseCaptureSnippets indexes by with no fence state, so a
- * `- ` line inside a fenced block in someone's bullet counts here as the recall corpus counts it. This number answers "what
- * does the walk hold", not "what would a markdown renderer draw".
- * Line numbers are 1-based into the normalized text (BOM, CRLF, lone CR collapsed), so a CRLF checkout reports its LF twin's numbers.
+ * Sections are located with the exported `sectionSpan`, bounded by one fence-aware scanner, never a bare heading scan:
+ * a fenced example of a heading was taken as the real one, and the walk read its closing fence as an opener and
+ * swallowed `## Seeds` and `## Notes`.
+ * Inside a section the line test is the walk's own (the `^-\s+` parseCaptureSnippets indexes by, no fence state), so
+ * this answers "what does the walk hold", not "what would a markdown renderer draw".
+ * Line numbers are 1-based into the normalized text (BOM, CRLF, lone CR collapsed), so CRLF gets its LF twin's numbers.
  * @param {string} text
  * @returns {CaptureHealth}
  */
@@ -91,8 +86,8 @@ export function captureHealth(text) {
   const sections = [];
   /** @type {Array<{section: string, line: number, text: string}>} */
   const annotations = [];
-  // every substantive bullet, named: the count answers /cad-health's bound question, but the list is what the phase close
-  // reports, since "the queue has 4 items" names nothing a reader can act on. Uncapped on purpose, the only bound is the queue's own
+  // every substantive bullet, named: "the queue has 4 items" is nothing a reader can act on, so the close lists them
+  // uncapped on purpose, the only bound is the queue's own
   /** @type {Array<{section: string, line: number, text: string}>} */
   const items = [];
   let substantive = 0;
@@ -100,7 +95,7 @@ export function captureHealth(text) {
   for (const section of CAPTURE_WALK_SECTIONS) {
     const { start, end } = sectionSpan(lines, `## ${section}`);
     let count = 0;
-    // an absent heading is data: start < 0 skips the body loop and the section reports zero, as a queue that never had it holds
+    // an absent heading is data: start < 0 skips the loop and the section reports zero
     for (let i = start + 1; start >= 0 && i < end; i++) {
       const body = bulletText(lines[i]);
       if (body === null) continue;
