@@ -224,7 +224,7 @@ Sequential (default) unless ALL of these hold:
 </step>
 
 <step name="execute_sequential">
-For each plan in the dispatch set, in order: dispatch ONE cad-executor via the
+For each plan in the dispatch set, in numeric order: dispatch ONE cad-executor via the
 spawn-agent seam (references/seam-spawn-agent.md), in the normal working tree,
 no worktrees, and wait for it to finish before starting the next.
 Print the dispatching line `locate` states before each dispatch.

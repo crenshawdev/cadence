@@ -17,6 +17,13 @@ const MAX_PLAN_BYTES = 512 * 1024;
 // numbered PLAN-<k>.md files in a split phase, PLAN.md in an unsplit one, and nothing else in the directory is a plan
 export const PLAN_FILE = /^PLAN(-\d+)?\.md$/;
 
+/** `PLAN-<k>.md` is k and a bare `PLAN.md` is 1, matching the path the executor writes its report to. */
+export const planNumber = (/** @type {string} */ f) => Number(/^PLAN-(\d+)\.md$/.exec(f)?.[1] ?? 1);
+
+/** Sort comparator for plan filenames: by plan number, then by name so `PLAN.md` beside `PLAN-1.md` stays fixed. */
+export const byPlanNumber = (/** @type {string} */ a, /** @type {string} */ b) =>
+  planNumber(a) - planNumber(b) || (a < b ? -1 : a > b ? 1 : 0);
+
 /**
  * The file in `names` that holds plan `key`: `PLAN-<key>.md`, or the bare `PLAN.md` for the first plan.
  * @param {string[]} names @param {string} key @returns {string|undefined}
@@ -108,11 +115,11 @@ function readOnePlan(file, acc, seen) {
   }
 }
 
-/** The conforming plan files in one directory, sorted, or null when it couldn't be read (the ordinary pre-plan state).
+/** The conforming plan files in one directory, in plan-number order, or null when it couldn't be read (the ordinary pre-plan state).
  * A directory that reads but holds no plan is `[]`: nothing was there, as opposed to nothing could be looked at. */
 function planFilesIn(dir) {
   try {
-    return readdirSync(dir, { encoding: 'utf8' }).filter((e) => PLAN_FILE.test(e)).sort();
+    return readdirSync(dir, { encoding: 'utf8' }).filter((e) => PLAN_FILE.test(e)).sort(byPlanNumber);
   } catch {
     return null;
   }
