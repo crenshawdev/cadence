@@ -55,6 +55,24 @@ silently reduced to one voice while the gate reports clean - the dropped
 cross-model reviewer is only half of it. Name the set that RAN, never the set
 the trigger asked for.
 
+## The review file
+
+At gate `adjudicated` and at `/cad-verify`'s fire, write the REVIEW file with
+this seam before triage (`references/review-triggers.md` step 5 says which fires).
+Compose its payload as a file in this run's scratch directory, as below:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" review-file --phase <N> --trigger <trigger> --discriminator <discriminator> --base <base> --head <head> --payload <path> [--round <round>] [--task <slug>]
+```
+
+The payload is `{raised, survivors: [...]}`, with `raised` the count of
+findings the voices raised and the survivors in triage's order. Each survivor
+carries `file`, `line`, `severity`, `voices` and the six texts `what_breaks`,
+`why_care`, `what_triggers`, `what_proves`, `what_uncertain` and
+`recommendation`, plus an optional one-line `root_cause` shared by survivors with
+one cause. A survivor missing any of the six is refused, and so is a second write
+to the same name: a re-arm passes `--round 2`.
+
 ## The adjudication record
 
 Then WRITE THE ADJUDICATION RECORD: the rulings themselves, not a count of them.

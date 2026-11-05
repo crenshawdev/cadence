@@ -288,6 +288,21 @@ Then report `<n> survivors of <m> raised` to the user at this step - the line
 that makes a nine-findings-all-killed fire visible in the session and not only
 in the record.
 
+**The adjudicated gate writes the REVIEW file as Markdown.** As you open the
+cited code and rule each finding, fill six headings for each survivor: What
+breaks, Why I should care, What triggers it, What proves it, What is still
+uncertain, Your recommendation. Compose them as a file in this run's scratch
+directory, the way `references/review-record.md` composes its payload, and run
+`planning.mjs review-file` before triage; that file is
+`.planning/phases/<N>/REVIEW-<trigger>-<discriminator>[-rN].md`. The GATE
+decides the file's format and `review.mode` does not. Only gate `adjudicated`
+and `/cad-verify`'s fire, which is always triaged as `adjudicated`, write it.
+This arm is also reached by a `blocking` or `deferred` gate under
+`review.mode: adjudicated`, the schema default, and those keep their JSON
+object (`references/risk-surface.md`, and the `deferred` bullet of
+`references/triage-gate.md`). So each gate has one rule and the seam never
+meets a path already written.
+
 A RE-ARM PASSES `--round 2`, and the fire site is the only actor that knows
 which round it is on. A capped re-arm (`references/triage-gate.md`, ONE round)
 is a SECOND fire of the same trigger on the same plan, so it resolves to the

@@ -12,7 +12,9 @@ reviewer ran.
   `{ "findings": [...] }` object written to
   `.planning/phases/<N>/REVIEW-<trigger>-<discriminator>.md`, on the same
   discriminator grammar (`plan-<k>` for a per-plan fire, `<command>-<short HEAD
-  sha>` otherwise, and no unsuffixed path). Then pass THAT SAME FILE as the
+  sha>` otherwise, and no unsuffixed path). This arm's file stays JSON whatever
+  `review.mode` says, because `deferred record --payload` parses it; only gate
+  `adjudicated` writes the Markdown review file. Then pass THAT SAME FILE as the
   queue member's payload:
 
 ```
