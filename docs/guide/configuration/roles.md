@@ -22,10 +22,13 @@ The 3.11.0 resolver recognizes `opus`, `sonnet`, `haiku` and `fable`. The config
 | `cad-reviewer` | Review a plan, diff or decision. | `medium` |
 | `cad-verifier` | Check whether the phase achieved its goal. | `high` |
 | `cad-plan-checker` | Check a plan against its context before implementation. | `low` |
+| `cad-mapper` | Read one module of the repository for the code map. | `high` |
 
 For effort, the order is `roles.<role>.effort`, then the role's schema default. Setting the key to `null` removes its answer, so the schema default applies.
 
 The five effort levels are `low`, `medium`, `high`, `xhigh` and `max`. A role's effort selects an agent file carrying that effort. Review-provider effort is a separate setting on the [reviews page](reviews.md).
+
+`cad-mapper` is not in the interview. `/cadence:cad-config --roles` asks about the other six roles, and the two `cad-mapper` keys have no question. They apply only while `planning.code_map` is on.
 
 All settings on this page can be set in either configuration layer. The older per-role model and effort keys are retired; a config that still holds one warns and names its `roles.*` replacement.
 
@@ -66,6 +69,12 @@ Model for `cad-executor`. With it unset, use the session model.
 **Default:** `null` · **Type:** string or null · **Scope:** repository or user-global.
 
 Model for `cad-plan-checker`. With it unset, use the session model.
+
+### `roles.cad-mapper.model`
+
+**Default:** `null` · **Type:** string or null · **Scope:** repository or user-global.
+
+Model for `cad-mapper`. With it unset, use the session model. It has no question in the interview and applies only while `planning.code_map` is on.
 
 ### `roles.cad-planner.effort`
 
@@ -114,6 +123,14 @@ Starting effort for `cad-executor`. See the resolution order above for `null`.
 **Allowed values:** `"low"`, `"medium"`, `"high"`, `"xhigh"`, `"max"`, `null`.
 
 Starting effort for `cad-plan-checker`. See the resolution order above for `null`.
+
+### `roles.cad-mapper.effort`
+
+**Default:** `"high"` · **Type:** enum · **Scope:** repository or user-global.
+
+**Allowed values:** `"low"`, `"medium"`, `"high"`, `"xhigh"`, `"max"`, `null`.
+
+Starting effort for `cad-mapper`. See the resolution order above for `null`. It has no question in the interview and applies only while `planning.code_map` is on.
 
 ### `model.escalate_on_failure`
 

@@ -79,7 +79,7 @@ after it asks how you want to publish rather than choosing for you.*
 
 Model is overridable at dispatch time. Reasoning effort is not; it is frozen in
 the agent file's own frontmatter. That single constraint is why the ladder
-exists as **thirty files across six roles** rather than a parameter:
+exists as **thirty-five files across seven roles** rather than a parameter:
 dispatching a role harder means dispatching a different file.
 
 | Rung | Where it sits |
@@ -100,9 +100,11 @@ it is filed under.*
 
 ### Where each role starts
 
-Twelve keys, two per role: `roles.<role>.model` and `roles.<role>.effort`. The
+Fourteen keys, two per role: `roles.<role>.model` and `roles.<role>.effort`. The
 thirteen-question interview behind `/cad-config --roles` is where a project
-answers them, and nothing derives one role's answer from another's.
+answers them for the first six roles, and nothing derives one role's answer from
+another's. `cad-mapper` is asked nothing: its two keys apply only while
+`planning.code_map` is on.
 
 | Role | Model when the key is unset | Starting rung, by default |
 |---|---|---|
@@ -112,9 +114,10 @@ answers them, and nothing derives one role's answer from another's.
 | `cad-executor` | your own session's model | `high` |
 | `cad-reviewer` | your own session's model | `medium` |
 | `cad-verifier` | your own session's model | `high` |
+| `cad-mapper` | your own session's model | `high` |
 
 An unset model key sends no model parameter at all, which is not the same as
-naming a default. Any of the five rungs is reachable for any of the six roles.
+naming a default. Any of the five rungs is reachable for any of the seven roles.
 The model key is a free string, so a name this host does not accept still
 resolves: the parameter is dropped and the string comes back in `warnings[]`,
 never a silent redirect of spend. A bundle the resolver cannot assemble at all
@@ -123,13 +126,13 @@ default rather than dispatching a half-resolved one.
 
 ## 5. Who spawns what
 
-Six routable roles, each with a contract that lives in exactly one place and is
+Seven routable roles, each with a contract that lives in exactly one place and is
 preloaded into every rung file for that role. The fan-out is deliberately
 narrow: one planner, not a committee.
 
 ![Command to agent map: cad-context spawns one assumptions analyzer, cad-plan spawns one planner and one plan checker, cad-execute spawns one executor per plan, cad-verify spawns one verifier, and the review seam fire spawns one subagent plus any cross-model reviewers.](figures/spawn-map.svg)
 
-*Thirty agent files, six roles, one contract per role. The rung files are
+*Thirty-five agent files, seven roles, one contract per role. The rung files are
 pointer-only stubs so the behaviour is written down exactly once.*
 
 ---
