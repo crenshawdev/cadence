@@ -7,7 +7,7 @@
 import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fail, ok } from './core.mjs';
-import { addEdges } from '../lib/codemap-edges.mjs';
+import { addEdges, stripEdges } from '../lib/codemap-edges.mjs';
 import { readFacts, readNested } from '../lib/codemap-facts.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
 import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '../lib/codemap-partition.mjs';
@@ -18,10 +18,11 @@ const MAP_DIR = 'codemap';
 const INDEX_FILE = 'index.json';
 
 /**
- * The map's directory, created when it's missing. A clone can track `.planning` or `.planning/codemap` as a symlink,
- * and a write through one would land outside the repository, so anything there that isn't a real directory is refused.
+ * The map's directory path, or null when it can't be trusted. A clone can track `.planning` or `.planning/codemap` as a
+ * symlink, and a write through one would land outside the repository, so anything there that isn't a real directory is
+ * refused. Nothing is created: the scan makes the directory once it knows it has something to write.
  * @param {string} dir the planning directory
- * @returns {string|null} the path, or null when it can't be trusted
+ * @returns {string|null}
  */
 function mapDir(dir) {
   // resolve drops a trailing slash, which would make lstat follow a link
@@ -31,16 +32,14 @@ function mapDir(dir) {
   };
   if (real(dir) === false) return null;
   const map = join(dir, MAP_DIR);
-  const state = real(map);
-  if (state === false) return null;
-  if (state === null) mkdirSync(map, { recursive: true });
-  return map;
+  return real(map) === false ? null : map;
 }
 
 // the index holds a row per tracked path and its symbols, so a big repository writes a big one. Measured on a file of
 // `{},` repeated: 64 MiB parsed in 4.1 s at 2,049 MiB RSS, 128 MiB in 17.4 s at 4,044 MiB, and 256 MiB dumped core, an
-// abort no catch sees. A larger file is a fresh cut for scan, and status refuses it by name. An entry file is one
-// module's, so it keeps the smaller limit
+// abort no catch sees. A scan never writes a larger one: it sheds the edges, then the symbols, and refuses if that is
+// not enough. A larger file is a leftover or a clone's, a fresh cut for scan, and status and slice refuse it by name. An
+// entry file is one module's, so it keeps the smaller limit
 const MAX_INDEX = 128 * 1024 * 1024;
 const MAX_ENTRY = 64 * 1024 * 1024;
 
@@ -112,6 +111,47 @@ function stateOf(map, modules, rows) {
   };
 }
 
+/**
+ * The bytes `JSON.stringify` would print for a row, summed a symbol at a time so a row of huge symbols is never one string.
+ * @param {any} row @param {number} limit stop adding once past this
+ */
+function rowSize(row, limit) {
+  const { symbols, ...rest } = row;
+  if (!Array.isArray(symbols)) return Buffer.byteLength(JSON.stringify(row));
+  // `"symbols":` and its brackets, with a comma before them when the row holds anything else
+  let n = Buffer.byteLength(JSON.stringify(rest)) + (Object.keys(rest).length ? 1 : 0) + 10 + 2 + Math.max(0, symbols.length - 1);
+  for (const s of symbols) {
+    n += Buffer.byteLength(JSON.stringify(s));
+    if (n > limit) break;
+  }
+  return n;
+}
+
+/**
+ * The bytes the index would print, summed a row, a module and a path at a time, so a whole too big for a string is never built.
+ * @param {{rows: any[], modules: any[], nested_paths: string[]}} index @param {number} limit stop adding once past this
+ * @returns {number} the size, or something past `limit` when it's over
+ */
+function indexSize(index, limit) {
+  const { rows, modules, nested_paths: nested, ...rest } = index;
+  let n = Buffer.byteLength(JSON.stringify({ ...rest, rows: [], modules: [], nested_paths: [] }));
+  try {
+    for (const [items, size] of /** @type {[any[], (x: any) => number][]} */ ([
+      [rows, (r) => rowSize(r, limit)], [modules, (m) => Buffer.byteLength(JSON.stringify(m))], [nested, (p) => Buffer.byteLength(JSON.stringify(p))],
+    ])) {
+      n += Math.max(0, items.length - 1);
+      for (const x of items) {
+        n += size(x);
+        if (n > limit) return n;
+      }
+    }
+  } catch {
+    // a string too long to build is over any limit
+    return Infinity;
+  }
+  return n;
+}
+
 /** @param {string} dir the planning directory */
 function cmdStatus(dir) {
   const root = dirname(resolve(dir));
@@ -121,7 +161,7 @@ function cmdStatus(dir) {
   const { modules: stored, tooLarge } = real ? storedModules(map) : { modules: null, tooLarge: false };
   if (tooLarge) {
     return fail('index-too-large', `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so status won't read it`,
-      'a scan re-cuts the modules every run on a map this big; run `planning.mjs codemap scan` to rebuild the list');
+      'run `planning.mjs codemap scan` to rebuild the map');
   }
   if (!Array.isArray(stored)) {
     return fail('no-index', `there is no code map at ${map}`, 'run `planning.mjs codemap scan` first to build the module list');
@@ -165,6 +205,23 @@ function cmdScan(dir) {
   const { modules, oversized } = partition(rows, storedModules(map).modules);
   const byPath = new Map(rows.map((r) => [r.path, r]));
   const listed = modules.map((m) => ({ name: m.name, entry: entryFile(m.name), no_reader: startsNoReader(m, byPath), paths: m.paths }));
+  // never an index over the limit: the edges go first, then the symbols, and a row left with neither says so in the marks
+  /** @type {{edges_shed?: true, symbols_shed?: true}} */
+  let marks = {};
+  const index = () => ({ version: 1, rows, modules: listed, nested_paths: nested.paths, ...marks });
+  if (indexSize(index(), MAX_INDEX) > MAX_INDEX) {
+    stripEdges(rows, false);
+    marks = { edges_shed: true };
+    if (indexSize(index(), MAX_INDEX) > MAX_INDEX) {
+      stripEdges(rows, true);
+      marks = { edges_shed: true, symbols_shed: true };
+      if (indexSize(index(), MAX_INDEX) > MAX_INDEX) {
+        return fail('map-too-large', `the code map for ${root} is over ${MAX_INDEX / 1024 / 1024} MiB even with every edge and symbol left out`,
+          'this repository is too large for a code map; nothing was written');
+      }
+    }
+  }
+  mkdirSync(map, { recursive: true });
   const ignore = join(map, '.gitignore');
   // read only a regular file of exactly the 2 bytes it should hold; anything else, a link included, is replaced by the write
   let held = null;
@@ -173,7 +230,7 @@ function cmdScan(dir) {
     if (st.isFile() && st.size === 2) held = readFileSync(ignore, 'utf8');
   } catch { /* absent is the first write */ }
   if (held !== '*\n') atomicWrite(ignore, '*\n');
-  atomicWrite(join(map, INDEX_FILE), JSON.stringify({ version: 1, rows, modules: listed, nested_paths: nested.paths }));
+  atomicWrite(join(map, INDEX_FILE), JSON.stringify(index()));
   // an entry file no module names is an orphan of a re-cut or a removed module; only our own spelling is ever deleted
   const named = new Set(listed.map((m) => m.entry));
   for (const f of readdirSync(map)) {
@@ -184,7 +241,7 @@ function cmdScan(dir) {
   return ok({
     action: 'scan', files: rows.length, text: count('text'), binary: count('binary'), over_cap: count('over_cap'),
     symlinks: count('symlink'), gitlinks: count('gitlink'), missing: count('missing'),
-    ...stateOf(map, modules, rows), oversized,
+    ...stateOf(map, modules, rows), oversized, ...marks,
   });
 }
 
@@ -210,8 +267,12 @@ function cmdSlice(dir, opts) {
     return fail('index-too-large', `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so slice won't read it`,
       'run `planning.mjs codemap scan` to rebuild the map');
   }
+  const isObject = (/** @type {any} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  // the index comes from a file a clone can supply: every row has a path, and its symbols are objects
   const wellFormed = index && Array.isArray(index.rows) && Array.isArray(index.modules)
-    && index.modules.every((/** @type {any} */ m) => m && typeof m.name === 'string' && Array.isArray(m.paths));
+    && index.modules.every((/** @type {any} */ m) => m && typeof m.name === 'string' && Array.isArray(m.paths))
+    && index.rows.every((/** @type {any} */ r) => isObject(r) && typeof r.path === 'string'
+      && (r.symbols === undefined || (Array.isArray(r.symbols) && r.symbols.every(isObject))));
   if (!wellFormed) {
     return fail('no-index', `there is no code map at ${map}`, 'run `planning.mjs codemap scan` first to build the map');
   }
@@ -236,7 +297,11 @@ function cmdSlice(dir, opts) {
     if (entry && (state === 'built' || state === 'stale')) entries.set(m.name, entry);
   }
   const base = `${basename(resolve(dir))}/${MAP_DIR}`;
-  return ok(slice({ rows: index.rows, modules: index.modules, states, entries, select, entryPath: (name) => `${base}/${entryFile(name)}` }));
+  const marks = { ...(index.edges_shed === true ? { edges_shed: true } : {}), ...(index.symbols_shed === true ? { symbols_shed: true } : {}) };
+  return ok(slice({
+    rows: index.rows, modules: index.modules, states, entries, select, entryPath: (name) => `${base}/${entryFile(name)}`,
+    current: new Set(current.map((r) => r.path)), marks,
+  }));
 }
 
 /**

@@ -6,23 +6,46 @@
 
 // D-20: an inline answer at or under this many bytes, whole
 export const LIMIT = 10000;
-// the names of the entries left out are listed this far, then counted: a broad term must not fill the answer with a list of omissions
+// the names of the entries left out are listed while there are under this many and the list is under the byte budget, then
+// counted: a name can be hundreds of bytes, and a broad term must not fill the answer with a list of omissions
 const OMITTED_CAP = 20;
+const OMITTED_BYTES = 4000;
 
 /** @typedef {{path: string, quoted?: true, kind: string, hash: string|null, bytes: number|null, symbols?: any[], imports?: any, pinned_by?: any}} Row */
 
 const bytesOf = (/** @type {any} */ v) => Buffer.byteLength(JSON.stringify(v));
 
 /**
- * A row as the answer carries it: the file's facts, its module, and a stale mark when its module is stale.
- * @param {Row} r @param {string|undefined} module @param {boolean} stale
+ * A row as the answer carries it: the file's facts, its module, and a stale mark when its module is stale or the file
+ * is no longer tracked. `bare` leaves out the symbols and edges, the form a row can always be shed to.
+ * @param {Row} r @param {string|undefined} module @param {boolean} stale @param {boolean} [bare]
  */
-function shape(r, module, stale) {
+function shape(r, module, stale, bare = false) {
   const { path, quoted, kind, hash, bytes, symbols, imports, pinned_by: pinnedBy } = r;
   return {
     path, ...(quoted ? { quoted } : {}), kind, hash, bytes, ...(module !== undefined ? { module } : {}), ...(stale ? { stale: true } : {}),
-    ...(symbols ? { symbols } : {}), ...(imports ? { imports } : {}), ...(pinnedBy ? { pinned_by: pinnedBy } : {}),
+    ...(symbols && !bare ? { symbols } : {}), ...(imports && !bare ? { imports } : {}), ...(pinnedBy && !bare ? { pinned_by: pinnedBy } : {}),
   };
+}
+
+/**
+ * What `--terms` searches in an entry: its string values lowercased and joined by newlines, never its field names or
+ * its JSON encoding. Walked with a stack, because the entry comes from a file a clone can supply and may nest deep.
+ * @param {unknown} entry @returns {string}
+ */
+function textOf(entry) {
+  /** @type {string[]} */
+  const out = [];
+  const stack = [entry];
+  while (stack.length) {
+    const v = stack.pop();
+    if (typeof v === 'string') out.push(v);
+    else if (v && typeof v === 'object') {
+      const kids = Array.isArray(v) ? v : Object.values(v);
+      for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]);
+    }
+  }
+  return out.join('\n').toLowerCase();
 }
 
 /** @param {any} row the row without its callers */
@@ -46,9 +69,11 @@ const hasEdges = (/** @type {any} */ row) => has(row, 'imports') || has(row, 'pi
  * @param {Map<string, any>} input.entries a module name to its parsed entry, for the modules that have one
  * @param {{files: string[], symbols: string[], terms: string[]}} input.select
  * @param {(module: string) => string} input.entryPath the root-relative file an entry lives in
+ * @param {Set<string>} input.current the paths the repository tracks now: a row outside it is stale whatever its module says
+ * @param {{edges_shed?: true, symbols_shed?: true}} [input.marks] what the scan left out of the index, copied into the answer
  * @returns {Record<string, any>} the answer's body; the caller puts `ok:true` in front of it
  */
-export function slice({ rows, modules, states, entries, select, entryPath }) {
+export function slice({ rows, modules, states, entries, select, entryPath, current, marks = {} }) {
   /** @type {Map<string, string>} */
   const moduleOf = new Map();
   for (const m of modules) for (const p of m.paths) moduleOf.set(p, m.name);
@@ -64,7 +89,7 @@ export function slice({ rows, modules, states, entries, select, entryPath }) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     const { built_from: _builtFrom, ...rest } = entry;
     shown.set(name, rest);
-    if (terms.length) entryText.set(name, JSON.stringify(rest).toLowerCase());
+    if (terms.length) entryText.set(name, textOf(rest));
   }
 
   const matched = rows.filter((r) => {
@@ -77,35 +102,73 @@ export function slice({ rows, modules, states, entries, select, entryPath }) {
     return terms.some((t) => path.includes(t) || names.some((n) => n.includes(t)) || text.includes(t));
   });
   const total = matched.length;
+  const markHead = { ...(marks.edges_shed === true ? { edges_shed: true } : {}), ...(marks.symbols_shed === true ? { symbols_shed: true } : {}) };
 
+  // the working rows: every matched row until even the bare forms stop fitting. Whole rows drop from the end, so a row
+  // past that point never survives, and building it would cost time for nothing. The floor leaves out any entry
+  const floor = bytesOf({ ok: true, action: 'slice', total, truncated: true, rows: [], ...markHead }) + 1;
   /** @type {any[]} */
-  let out = matched.map((r) => shape(r, moduleOf.get(r.path), states.get(moduleOf.get(r.path) ?? '') === 'stale'));
-  const rowBytes = out.map(bytesOf);
+  const out = [];
+  /** @type {number[]} */
+  const rowBytes = [];
+  let rowSum = 0;
+  let bareSum = 0;
+  let truncated = false;
+  for (const r of matched) {
+    const module = moduleOf.get(r.path);
+    const stale = states.get(module ?? '') === 'stale' || !current.has(r.path);
+    bareSum += bytesOf(shape(r, module, stale, true)) + (out.length ? 1 : 0);
+    if (floor + bareSum > LIMIT) { truncated = true; break; }
+    const row = shape(r, module, stale);
+    out.push(row);
+    rowBytes.push(bytesOf(row));
+    rowSum += rowBytes[rowBytes.length - 1];
+  }
   // the entries of the matched modules, in module order
   const names = [...new Set(matched.map((r) => moduleOf.get(r.path)).filter((n) => n !== undefined && shown.has(n)))].sort();
   const entryBytes = new Map(names.map((n) => [n, bytesOf(n) + 1 + bytesOf(shown.get(n))]));
   /** @type {Set<string>} */
   let omitted = new Set();
-  let truncated = false;
 
+  // the entries left out: listed while under the cap and the byte budget, in module order, and every other one counted
   const head = () => {
     const kept = names.filter((n) => !omitted.has(n));
-    const listed = names.filter((n) => omitted.has(n)).slice(0, OMITTED_CAP);
+    /** @type {{module: string, file: string}[]} */
+    const listed = [];
+    let used = 0;
+    let more = 0;
+    for (const module of names) {
+      if (!omitted.has(module)) continue;
+      const item = { module, file: entryPath(module) };
+      const b = bytesOf(item) + 1;
+      if (listed.length < OMITTED_CAP && used + b <= OMITTED_BYTES) { listed.push(item); used += b; } else more++;
+    }
     return {
-      action: 'slice', total, truncated, rows: [],
+      action: 'slice', total, truncated, rows: [], ...markHead,
       ...(kept.length ? { entries: {} } : {}),
-      ...(omitted.size ? { entries_omitted: listed.map((module) => ({ module, file: entryPath(module) })),
-        ...(omitted.size > OMITTED_CAP ? { entries_omitted_more: omitted.size - OMITTED_CAP } : {}) } : {}),
+      ...(omitted.size ? { entries_omitted: listed, ...(more ? { entries_omitted_more: more } : {}) } : {}),
     };
   };
-  // exact: the head with its empty rows and entries measured as printed, then what fills them and the commas between
-  const size = () => {
+  // exact: the head with its empty rows and entries measured as printed, then what fills them and the commas between.
+  // It changes only when `truncated` or `omitted` does, so it's held and refreshed there; the rows' sum is kept running
+  let fixed = 0;
+  const refresh = () => {
     const kept = names.filter((n) => !omitted.has(n));
-    const rowsSize = rowBytes.reduce((a, b) => a + b, 0) + Math.max(0, rowBytes.length - 1);
-    const entriesSize = kept.reduce((a, n) => a + /** @type {number} */ (entryBytes.get(n)), 0) + Math.max(0, kept.length - 1);
-    return bytesOf({ ok: true, ...head() }) + 1 + rowsSize + entriesSize;
+    fixed = bytesOf({ ok: true, ...head() }) + 1 + kept.reduce((a, n) => a + /** @type {number} */ (entryBytes.get(n)), 0) + Math.max(0, kept.length - 1);
   };
+  const size = () => fixed + rowSum + Math.max(0, out.length - 1);
   const fits = () => size() <= LIMIT;
+  refresh();
+
+  /** @param {number} i @param {any} row */
+  const put = (i, row) => {
+    out[i] = row;
+    const b = bytesOf(row);
+    rowSum += b - rowBytes[i];
+    rowBytes[i] = b;
+  };
+  // any shedding sets `truncated`, which is in the head, so the head is measured again at the first
+  const mark = () => { if (!truncated) { truncated = true; refresh(); } };
 
   // the cheapest loss first: every row's callers, then its other edges, then its symbols, the largest row each time
   /** @param {(row: any) => boolean} eligible @param {(row: any) => any} strip */
@@ -114,9 +177,8 @@ export function slice({ rows, modules, states, entries, select, entryPath }) {
       let best = -1;
       out.forEach((row, i) => { if (eligible(row) && (best < 0 || rowBytes[i] > rowBytes[best])) best = i; });
       if (best < 0) return;
-      out[best] = strip(out[best]);
-      rowBytes[best] = bytesOf(out[best]);
-      truncated = true;
+      mark();
+      put(best, strip(out[best]));
     }
   };
   shed(hasCallers, noCallers);
@@ -126,29 +188,33 @@ export function slice({ rows, modules, states, entries, select, entryPath }) {
     let best = -1;
     out.forEach((row, i) => { if (row.symbols?.length && (best < 0 || rowBytes[i] > rowBytes[best])) best = i; });
     if (best < 0) break;
-    truncated = true;
+    mark();
     const row = { ...out[best], symbols: [...out[best].symbols] };
     while (row.symbols.length && !fits()) {
       row.symbols.pop();
-      out[best] = row;
-      rowBytes[best] = bytesOf(row);
+      put(best, row);
     }
-    if (!row.symbols.length) { const { symbols: _s, ...bare } = row; out[best] = bare; rowBytes[best] = bytesOf(bare); }
+    if (!row.symbols.length) { const { symbols: _s, ...bare } = row; put(best, bare); }
   }
   // the rows are as bare as they get: an entry that doesn't fit in what's left is left out whole, never cut
   if (!fits()) {
-    truncated = true;
+    mark();
     omitted = new Set(names);
+    refresh();
     for (const n of names) {
       omitted.delete(n);
+      refresh();
       if (!fits()) omitted.add(n);
     }
+    refresh();
   }
   // and only then do whole rows go, from the end
-  while (!fits() && out.length) {
-    truncated = true;
-    out.pop();
-    rowBytes.pop();
+  if (!fits() && out.length) {
+    mark();
+    while (!fits() && out.length) {
+      rowSum -= /** @type {number} */ (rowBytes.pop());
+      out.pop();
+    }
   }
 
   const kept = names.filter((n) => !omitted.has(n));

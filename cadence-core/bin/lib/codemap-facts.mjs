@@ -230,14 +230,16 @@ export function readFacts(root, withSymbols = false) {
  * `test` directly under `root`, holding its own `.git` and not tracked by the outer repository. Its tracked paths come
  * from `git ls-files` run in it, its text is read under the same lstat and cap rules as the outer files, and every
  * path is spelled root-relative with the clone's directory on the front. It joins no module and gets no reader. A
- * clone git can't read, or one that isn't there, is left out and the scan goes on.
+ * clone git can't read, or one that isn't there, is left out and the scan goes on. No text is held here: a clone of
+ * thousands of 1 MiB files would fill the heap before the first was used, so each file is read when its turn comes.
  * @param {string} root @param {{path: string}[]} rows the outer repository's rows
- * @returns {{paths: string[], files: {path: string, text: string}[]}} every path git lists, and the readable text ones
+ * @returns {{paths: string[], files: {path: string, dir: string, raw: Buffer}[]}} every path git lists, and what
+ *   `readText(dir, raw)` needs to read each one
  */
 export function readNested(root, rows) {
   /** @type {string[]} */
   const paths = [];
-  /** @type {{path: string, text: string}[]} */
+  /** @type {{path: string, dir: string, raw: Buffer}[]} */
   const files = [];
   for (const name of ['tests', 'test']) {
     const dir = join(root, name);
@@ -259,8 +261,7 @@ export function readNested(root, rows) {
       seen.add(key);
       const { path } = spellPath(Buffer.concat([Buffer.from(`${name}/`), raw]));
       paths.push(path);
-      const text = readText(dir, raw);
-      if (text !== null) files.push({ path, text });
+      files.push({ path, dir, raw });
     }
   }
   const byPath = (/** @type {{path: string}} */ a, /** @type {{path: string}} */ b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);

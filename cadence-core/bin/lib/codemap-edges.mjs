@@ -9,7 +9,8 @@ import { rawPath, readText } from './codemap-facts.mjs';
 
 // D-20 measured the row at 10 callers per symbol, and a pinned_by list keeps the same ten
 export const CALLER_CAP = 10;
-// a name or a stem held by more files than this is `main` or `index`: its edges say nothing, and the work per file would grow with the holders
+// a name or a stem held by more files than this is `main` or `index`: it gets one shared tally for all its holders, because a tally
+// each would make the work per file grow with the holders. Holders count by distinct file, never by symbol row
 const MAX_DEFINERS = 100;
 // the longest symbol name the facts keep
 const WORD_CAP = 200;
@@ -17,9 +18,11 @@ const WORD_CAP = 200;
 const CODE_EXT = new Set(['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.mts', '.cts', '.rs', '.py', '.go']);
 // a heading or a JSON key is a label and not something code calls
 const NOT_CALLED = new Set(['heading', 'key']);
-const WORD = /[\w$]+/g;
+// letters, numbers and marks of any script, so `fooébar` is one word and `données` can be a stem
+const WORD = /[\p{L}\p{N}\p{M}_$]+/gu;
+const WORD_NAME = /^[\p{L}\p{N}\p{M}_$]+$/u;
 // a file stem keeps its hyphens: `workflow-run` is the measured case
-const STEM_WORD = /[\w-]+/g;
+const STEM_WORD = /[\p{L}\p{N}\p{M}_-]+/gu;
 const TEST_DIRS = new Set(['tests', 'test', '__tests__', 'spec']);
 
 const JS_EXT = new Set(['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.mts', '.cts']);
@@ -85,17 +88,29 @@ function specifiers(ext, text) {
 
 /**
  * A relative JS or TS specifier's tracked path, or null: as written, then with an extension, then as a directory's index.
- * @param {string} from the importing file @param {string} spec @param {Set<string>} tracked
- * @returns {string|null}
+ * `.`, `..` and a specifier ending in `/` name a directory and only try its index.
+ * @param {string} from the importing file, as its row spells it @param {string} spec @param {Set<string>} tracked
+ * @returns {string|null} the tracked spelling
  */
 function resolveRelative(from, spec, tracked) {
-  if (!spec.startsWith('./') && !spec.startsWith('../')) return null;
-  const base = posix.normalize(posix.join(posix.dirname(from), spec));
-  if (base.startsWith('../')) return null;
+  if (spec !== '.' && spec !== '..' && !spec.startsWith('./') && !spec.startsWith('../')) return null;
+  const dirForm = spec === '.' || spec === '..' || spec.endsWith('/');
+  // a quoted row is its escaped text between quotes, and the directory comes from the text, not from the quote on its front
+  const plain = from.startsWith('"') ? from.slice(1, -1) : from;
+  let base = posix.normalize(posix.join(posix.dirname(plain), spec));
+  if (base === '..' || base.startsWith('../')) return null;
+  if (base.endsWith('/')) base = base.slice(0, -1);
+  const dir = base === '.' ? '' : `${base}/`;
+  const index = TRY_EXT.map((e) => `${dir}index${e}`);
   const ext = extname(base);
-  const tries = [base, ...TRY_EXT.map((e) => base + e), ...(TS_FOR[ext] || []).map((e) => base.slice(0, -ext.length) + e),
-    ...TRY_EXT.map((e) => `${base}/index${e}`)];
-  return tries.find((t) => tracked.has(t)) ?? null;
+  const tries = dirForm || base === '.' ? index : [base, ...TRY_EXT.map((e) => base + e),
+    ...(TS_FOR[ext] || []).map((e) => base.slice(0, -ext.length) + e), ...index];
+  for (const t of tries) {
+    if (tracked.has(t)) return t;
+    // a tracked path that is quoted holds the same escaped text inside quotes
+    if (tracked.has(`"${t}"`)) return `"${t}"`;
+  }
+  return null;
 }
 
 /**
@@ -160,13 +175,23 @@ function stemWordsOf(text) {
 }
 
 const tally = () => ({ files: /** @type {string[]} */ ([]), total: 0 });
-/** @param {{files: string[], total: number}} t @param {string} path */
+/** @typedef {ReturnType<typeof tally>} Tally */
+/** @param {Tally} t @param {string} path */
 function add(t, path) {
   t.total++;
   if (t.files.length < CALLER_CAP) t.files.push(path);
 }
-/** @param {{files: string[], total: number}} t */
+/** @param {Tally} t */
 const listOf = (t) => ({ files: t.files, total: t.total, approximate: true });
+
+/**
+ * A shared tally's list for one holder: the holder's own file is no caller or pin of itself, so it comes out of the copy
+ * and off the count. The tally counted it only if `counted`, which is whether this file's text was read for that list.
+ * @param {string[]} files @param {number} total @param {string} own @param {boolean} counted
+ */
+function withoutOwn(files, total, own, counted) {
+  return { files: files.filter((p) => p !== own), total: counted ? total - 1 : total, approximate: true };
+}
 
 /**
  * Adds to the rows, from one read of each text file's words looked up against the symbols and never a process per
@@ -178,43 +203,62 @@ const listOf = (t) => ({ files: t.files, total: t.total, approximate: true });
  * - `pinned_by` on each non-test file whose stem a test names and each symbol a test holds as a whole word, in the
  *   order the tests were read: tracked tests in path order, then the nested clone's. A test is never a caller. A Rust
  *   file holding `#[cfg(test)]` is in its own `pinned_by`.
+ * A name or stem held by more than MAX_DEFINERS files keeps one tally for all its holders, each of which gets that list
+ * without its own file, so the work per file stays flat.
  * @param {string} root
  * @param {{path: string, quoted?: true, kind: string, symbols?: any[]}[]} rows in path order
- * @param {{files: {path: string, text: string}[]}} [nested] the nested clone's readable text, root-relative
+ * @param {{files: {path: string, dir: string, raw: Buffer}[]}} [nested] the nested clone's files, root-relative paths
  */
 export function addEdges(root, rows, nested = { files: [] }) {
-  /** @type {Map<string, {row: any, sym: any, callers: ReturnType<typeof tally>[], pins: ReturnType<typeof tally>}[]>} */
+  /** @type {Map<string, {holders: {row: any, syms: any[], callers?: Tally[], pins?: Tally}[], shared?: {callers: Tally[], pins: Tally}}>} */
   const byName = new Map();
-  /** @type {Map<string, number>} */
-  const definers = new Map();
   for (const row of rows) {
     for (const sym of row.symbols || []) {
-      if (NOT_CALLED.has(sym.kind) || !/^[\w$]+$/.test(sym.name)) continue;
-      definers.set(sym.name, (definers.get(sym.name) || 0) + 1);
-      if (!byName.has(sym.name)) byName.set(sym.name, []);
-      /** @type {any} */ (byName.get(sym.name)).push({ row, sym, callers: [tally(), tally(), tally()], pins: tally() });
+      if (NOT_CALLED.has(sym.kind) || !WORD_NAME.test(sym.name)) continue;
+      let g = byName.get(sym.name);
+      if (!g) byName.set(sym.name, g = { holders: [] });
+      const last = g.holders[g.holders.length - 1];
+      if (last && last.row === row) last.syms.push(sym);
+      else g.holders.push({ row, syms: [sym] });
     }
   }
-  for (const [name, n] of definers) if (n > MAX_DEFINERS) byName.delete(name);
+  for (const g of byName.values()) {
+    if (g.holders.length > MAX_DEFINERS) g.shared = { callers: [tally(), tally(), tally()], pins: tally() };
+    else for (const h of g.holders) { h.callers = [tally(), tally(), tally()]; h.pins = tally(); }
+  }
   /** every file a test can pin, by stem; a test file is what pins, so it has no entry */
-  /** @type {Map<string, {row: any, pins: ReturnType<typeof tally>}>} */
+  /** @type {Map<string, {row: any, pins: Tally}>} */
   const pinnable = new Map();
-  /** @type {Map<string, {row: any, pins: ReturnType<typeof tally>}[]>} */
+  /** @type {Map<string, {list: {row: any, pins: Tally}[], shared?: Tally}>} */
   const stems = new Map();
   for (const row of rows) {
     const stem = stemOf(row.path);
     if (isTestPath(row.path) || !stem) continue;
     const e = { row, pins: tally() };
     pinnable.set(row.path, e);
-    if (!stems.has(stem)) stems.set(stem, []);
-    /** @type {any} */ (stems.get(stem)).push(e);
+    let g = stems.get(stem);
+    if (!g) stems.set(stem, g = { list: [] });
+    g.list.push(e);
   }
-  for (const [stem, list] of stems) if (list.length > MAX_DEFINERS) stems.delete(stem);
+  // a shared stem's tally counts tests; the entry's own keeps a Rust file's pin on itself
+  for (const g of stems.values()) if (g.list.length > MAX_DEFINERS) g.shared = tally();
 
   /** @param {string} path @param {string} text */
   const pin = (path, text) => {
-    for (const w of wordsOf(text)) for (const t of byName.get(w) || []) if (t.row.path !== path) add(t.pins, path);
-    if (stems.size) for (const w of stemWordsOf(text)) for (const e of stems.get(w) || []) add(e.pins, path);
+    for (const w of wordsOf(text)) {
+      const g = byName.get(w);
+      if (!g) continue;
+      if (g.shared) add(g.shared.pins, path);
+      else for (const h of g.holders) if (h.row.path !== path) add(/** @type {Tally} */ (h.pins), path);
+    }
+    if (stems.size) {
+      for (const w of stemWordsOf(text)) {
+        const g = stems.get(w);
+        if (!g) continue;
+        if (g.shared) add(g.shared, path);
+        else for (const e of g.list) add(e.pins, path);
+      }
+    }
   };
 
   const tracked = new Set(rows.map((r) => r.path));
@@ -230,17 +274,62 @@ export function addEdges(root, rows, nested = { files: [] }) {
     if (!byName.size) continue;
     const tier = tierOf(row.path);
     for (const w of wordsOf(text)) {
-      for (const t of byName.get(w) || []) if (t.row !== row) add(t.callers[tier], row.path);
+      const g = byName.get(w);
+      if (!g) continue;
+      if (g.shared) add(g.shared.callers[tier], row.path);
+      else for (const h of g.holders) if (h.row !== row) add(/** @type {Tally[]} */ (h.callers)[tier], row.path);
     }
   }
-  for (const f of nested.files) pin(f.path, f.text);
+  // one file at a time, like the outer ones: the clone's text is never all in memory
+  for (const f of nested.files) {
+    const text = readText(f.dir, f.raw);
+    if (text !== null) pin(f.path, text);
+  }
 
-  for (const list of byName.values()) {
-    for (const t of list) {
-      const total = t.callers[0].total + t.callers[1].total + t.callers[2].total;
-      if (total) t.sym.callers = { files: t.callers.flatMap((c) => c.files).slice(0, CALLER_CAP), total, approximate: true };
-      if (t.pins.total) t.sym.pinned_by = listOf(t.pins);
+  for (const g of byName.values()) {
+    const sh = g.shared;
+    const all = sh ? sh.callers.flatMap((c) => c.files).slice(0, CALLER_CAP) : [];
+    const allTotal = sh ? sh.callers[0].total + sh.callers[1].total + sh.callers[2].total : 0;
+    for (const h of g.holders) {
+      // a holder that is a test is no caller, and one that isn't is counted by the pass
+      const test = isTestPath(h.row.path);
+      let callers;
+      let pins;
+      if (sh) {
+        callers = withoutOwn(all, allTotal, h.row.path, !test);
+        pins = withoutOwn(sh.pins.files, sh.pins.total, h.row.path, test);
+      } else {
+        const cs = /** @type {Tally[]} */ (h.callers);
+        callers = { files: cs.flatMap((c) => c.files).slice(0, CALLER_CAP), total: cs[0].total + cs[1].total + cs[2].total, approximate: true };
+        pins = listOf(/** @type {Tally} */ (h.pins));
+      }
+      for (const sym of h.syms) {
+        if (callers.total) sym.callers = callers;
+        if (pins.total) sym.pinned_by = pins;
+      }
     }
   }
-  for (const e of pinnable.values()) if (e.pins.total) e.row.pinned_by = listOf(e.pins);
+  for (const g of stems.values()) {
+    for (const e of g.list) {
+      if (!g.shared) { if (e.pins.total) e.row.pinned_by = listOf(e.pins); continue; }
+      const files = g.shared.files.slice();
+      if (e.pins.total && files.length < CALLER_CAP) files.push(e.row.path);
+      const total = g.shared.total + e.pins.total;
+      if (total) e.row.pinned_by = { files, total, approximate: true };
+    }
+  }
+}
+
+/**
+ * Takes the edges out of the rows, for an index that would otherwise be too big: every row's `imports` and `pinned_by`
+ * and every symbol's `callers` and `pinned_by`, and with `symbols` the symbols too.
+ * @param {{imports?: any, pinned_by?: any, symbols?: any[]}[]} rows changed in place @param {boolean} symbols
+ */
+export function stripEdges(rows, symbols) {
+  for (const row of rows) {
+    delete row.imports;
+    delete row.pinned_by;
+    if (symbols) delete row.symbols;
+    else for (const sym of row.symbols || []) { delete sym.callers; delete sym.pinned_by; }
+  }
 }
