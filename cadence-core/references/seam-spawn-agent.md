@@ -15,7 +15,7 @@ How a workflow dispatches work to a fresh-context subagent.
   is one rung among the others rather than the lowest. Self-verify fails in both
   directions: a rung with no file, and a rung file no role maps.
 - A turn bound, but no timeout and no cancel. Every `agents/*.md` carries
-  `maxTurns: 200` in its frontmatter, one uniform value across all 30 rung
+  `maxTurns: 200` in its frontmatter, one uniform value across all 35 rung
   files, so that is the bound a dispatch runs under - and it is the only one
   this seam has: no wall-clock kill, and no way to cancel a dispatch already
   running. Plan size is still the real
@@ -258,7 +258,8 @@ mixed phase is not raised by its risky sibling; a key naming no plan file takes
 the fail-closed arm rather than widening back to the union. `cad-planner` and
 `cad-assumptions-analyzer` are exempt and always have been - dispatched before a
 plan exists, they read none, so the floor computes nothing for them and says
-so.
+so. `cad-mapper` is exempt too: a reader works from no plan, and the cursor's
+phase would give it a floor from another phase's file list.
 
 - Pass `--attempt 2` (3, ...) when re-dispatching the SAME role after its prior
   run failed: with `model.escalate_on_failure: true` (an opt-in - the default

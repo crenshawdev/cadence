@@ -120,7 +120,7 @@ purpose test runs against the reach the author just replaced.
 | `roles.cad-reviewer.effort` | universal | `bin/route.mjs` - names the rung this role starts at; unset takes this key's own schema default, and no risk floor moves it |
 | `roles.cad-executor.effort` | universal | `bin/route.mjs` - names the rung this role starts at; unset takes this key's own schema default, and no risk floor moves it |
 | `roles.cad-plan-checker.effort` | universal | `bin/route.mjs` - names the rung this role starts at; unset takes this key's own schema default, and no risk floor moves it |
-| `roles.cad-mapper.effort` | code map readers only | `bin/route.mjs` - names the rung this role starts at; unset takes this key's own schema default, and no risk floor moves it. A reader starts only from `/cad-map`, so the key does nothing while `planning.code_map` is off |
+| `roles.cad-mapper.effort` | code map readers only | `bin/route.mjs` - names the rung this role starts at; unset takes this key's own schema default, and no floor reaches it (pre-plan role, dispatched before the PLAN the floor reads). A reader starts only from `/cad-map`, so the key does nothing while `planning.code_map` is off |
 | `workflow.research` | new-project research step only | `workflows/new-project.md`'s research pass; no other workflow reads it |
 | `workflow.plan_check` | universal | `workflows/plan.md` - whether the plan checker runs before code |
 | `workflow.verifier` | universal | `workflows/verify.md` - off switch for the goal-backward pass |

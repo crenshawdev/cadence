@@ -97,7 +97,8 @@ const riskCategories = () => schemaValues('review.triggers.risk_surface.surfaces
 const WAIVER_KEY = 'review.triggers.risk_surface.waive_routing_floor';
 
 // Roles dispatched before a plan exists get no floor; one off another phase's file list would be silently wrong.
-const PRE_PLAN_ROLES = Object.freeze(['cad-planner', 'cad-assumptions-analyzer']);
+// A mapper reader works from no plan at all, so the cursor's phase would hand it a floor from files it never reads.
+const PRE_PLAN_ROLES = Object.freeze(['cad-planner', 'cad-assumptions-analyzer', 'cad-mapper']);
 
 // Per-file read cap, since a cloned `files:` list could point a resolve at a device node or a huge file.
 const MAX_BODY_BYTES = 512 * 1024;
