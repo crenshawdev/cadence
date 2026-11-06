@@ -21,7 +21,8 @@ const OWN_DIR = 1e9;
 /** @param {string} p */
 const dirOf = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 /** @param {string} p */
-const isPlanning = (p) => p.startsWith(PLANNING);
+// a non-UTF-8 path is spelled quoted, and a real path that starts with a quote is spelled `"\"...`, so this can't match by accident
+const isPlanning = (p) => p.startsWith(PLANNING) || p.startsWith(`"${PLANNING}`);
 /** @param {Module} m */
 const planningModule = (m) => m.paths.every(isPlanning);
 /** @param {string} a @param {string} b */
@@ -198,6 +199,8 @@ export function partition(rows, stored, ceiling = CEILING) {
       const fits = modules
         .filter((m) => planningModule(m) === planning)
         .filter((m) => bytes <= ceiling && size(m) + bytes <= 2 * ceiling)
+        // one file over the ceiling is a module of its own, whatever room it has left
+        .filter((m) => !(m.paths.length === 1 && size(m) > ceiling))
         .map((m) => ({ m, depth: shared(m, dir) }))
         .sort((a, b) => b.depth - a.depth || byText(a.m.name, b.m.name));
       if (fits.length) fits[0].m.paths.push(r.path);
@@ -213,12 +216,16 @@ export function partition(rows, stored, ceiling = CEILING) {
   return { modules, oversized };
 }
 
+// the kinds a reader can't open; a missing or `other` path isn't one, so it keeps its module in the staleness check
+const NO_TEXT = new Set(['binary', 'symlink', 'gitlink', 'over_cap']);
+
 /**
- * A module starts no reader when it holds no text a reader could open: all `.planning`, or no text file in it.
+ * A module starts no reader when it holds no text a reader could open: all `.planning`, or every path binary, a
+ * symlink, a gitlink or over the cap.
  * @param {Module} m @param {Map<string, Row>} byPath
  */
 export function startsNoReader(m, byPath) {
-  return planningModule(m) || !m.paths.some((p) => byPath.get(p)?.kind === 'text');
+  return planningModule(m) || m.paths.every((p) => NO_TEXT.has(byPath.get(p)?.kind));
 }
 
 /**

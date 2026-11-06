@@ -83,19 +83,23 @@ function readIndex(root) {
 }
 
 /**
- * `git hash-object` over regular files, filters applied the way the index hash was made. One batch, and one call
- * per path when the batch fails, so a file that vanished between the lstat and here costs only its own hash.
+ * `git hash-object` over regular files, on their raw bytes: `--no-filters` because a clone's config can name a clean
+ * filter and a read must not run one, so a dirty file under a filter reads stale at worst. Paths go in absolute, since
+ * `--stdin-paths` resolves a relative one against the top level, which is wrong for a root below it. One batch, and
+ * one call per path when the batch fails, so a file that vanished between the lstat and here costs only its own hash.
  * @param {string} root @param {Buffer[]} paths @returns {(string|null)[]}
  */
 function hashFiles(root, paths) {
   if (paths.length === 0) return [];
-  const lines = (list) => Buffer.from(`${list.map((p) => quotePath(p)).join('\n')}\n`, 'latin1');
+  const base = Buffer.concat([Buffer.from(root), Buffer.from('/')]);
+  const lines = (list) => Buffer.from(`${list.map((p) => quotePath(Buffer.concat([base, p]))).join('\n')}\n`, 'latin1');
+  const args = ['hash-object', '--no-filters', '--stdin-paths'];
   try {
-    const out = git(root, ['hash-object', '--stdin-paths'], lines(paths)).toString('latin1').split('\n');
+    const out = git(root, args, lines(paths)).toString('latin1').split('\n');
     if (out.length === paths.length + 1) return out.slice(0, -1);
   } catch { /* fall through to one at a time */ }
   return paths.map((p) => {
-    try { return git(root, ['hash-object', '--stdin-paths'], lines([p])).toString('latin1').trim() || null; } catch { return null; }
+    try { return git(root, args, lines([p])).toString('latin1').trim() || null; } catch { return null; }
   });
 }
 
@@ -139,6 +143,10 @@ export function readFacts(root, withSymbols = false) {
   const entries = readIndex(root);
   const dirty = new Set(nulFields(git(root, ['diff-files', '--name-only', '-z', '--relative']))
     .map((r) => r.toString('latin1')));
+  // diff-files skips a path marked assume-unchanged (lowercase tag) or skip-worktree (S), so those are hashed whatever it says
+  for (const rec of nulFields(git(root, ['ls-files', '-v', '-z']))) {
+    if (/^[a-zS] /.test(rec.subarray(0, 2).toString('latin1'))) dirty.add(rec.subarray(2).toString('latin1'));
+  }
   const base = Buffer.concat([Buffer.from(root), Buffer.from('/')]);
   /** @type {number[]} */
   const toHash = [];
@@ -166,7 +174,8 @@ export function readFacts(root, withSymbols = false) {
     const k = probe(file, st.size, withSymbols);
     row.kind = k ? k.kind : 'other';
     if (k && k.text !== undefined) {
-      const symbols = symbolsFor(path, k.text);
+      // a quoted spelling would hide the extension behind its closing quote, so the extension is read from the raw bytes
+      const symbols = symbolsFor(quoted ? e.raw.toString('latin1') : path, k.text);
       if (symbols.length) /** @type {any} */ (row).symbols = symbols;
     }
     return row;

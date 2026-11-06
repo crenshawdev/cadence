@@ -99,7 +99,8 @@ function markdown(text) {
   const lines = text.split('\n');
   let fenced = false;
   for (let i = 0; i < lines.length && out.length < MAX_SYMBOLS; i++) {
-    const line = lines[i].length > LINE_CAP ? lines[i].slice(0, LINE_CAP) : lines[i];
+    let line = lines[i].length > LINE_CAP ? lines[i].slice(0, LINE_CAP) : lines[i];
+    if (line.endsWith('\r')) line = line.slice(0, -1);
     if (/^ {0,3}(?:```|~~~)/.test(line)) { fenced = !fenced; continue; }
     if (fenced) continue;
     const m = /^ {0,3}#{1,6}[ \t]+(\S.*)$/.exec(line);
@@ -129,7 +130,8 @@ export function symbolsFor(path, text) {
   const ext = extname(path).toLowerCase();
   let found;
   if (JS_EXT.has(ext)) {
-    const code = skim(text);
+    // skim's per-line whitespace strip is quadratic on a long run, so no line reaches it longer than the cap
+    const code = skim(text.split('\n').map((l) => (l.length > LINE_CAP ? l.slice(0, LINE_CAP) : l)).join('\n'));
     found = [...byLines(code, JS_LINES), ...exportLists(code)];
     // one name found twice (`export function f` is a function and a declaration) keeps its first reading
     const seen = new Set();
