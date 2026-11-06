@@ -9,7 +9,7 @@
 import { extname } from 'node:path';
 import { skim } from './skim.mjs';
 
-// a declaration past this column isn't worth finding, and the cap keeps every pattern's work per line bounded
+// a declaration past this column isn't worth finding, and the cap keeps the line patterns' work per line bounded
 const LINE_CAP = 2000;
 // one file can't fill the index with names, whatever it repeats
 const MAX_SYMBOLS = 500;
@@ -130,8 +130,9 @@ export function symbolsFor(path, text) {
   const ext = extname(path).toLowerCase();
   let found;
   if (JS_EXT.has(ext)) {
-    // skim's per-line whitespace strip is quadratic on a long run, so no line reaches it longer than the cap
-    const code = skim(text.split('\n').map((l) => (l.length > LINE_CAP ? l.slice(0, LINE_CAP) : l)).join('\n'));
+    // skim's whitespace walks are quadratic on a long run, so a run of 257 or more shrinks to one space; no other
+    // character is cut, so a comment delimiter or a closing quote survives and skim's state stays right
+    const code = skim(text.replace(/[^\S\n]{257,}/g, ' '));
     found = [...byLines(code, JS_LINES), ...exportLists(code)];
     // one name found twice (`export function f` is a function and a declaration) keeps its first reading
     const seen = new Set();

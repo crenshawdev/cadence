@@ -35,23 +35,28 @@ function mapDir(dir) {
   return map;
 }
 
-// the index holds a row per tracked path and its symbols, so a big repository writes a big one; this is about where a
-// JS string runs out, and a larger file is a fresh cut. An entry file is one module's, so it keeps the smaller limit
-const MAX_INDEX = 512 * 1024 * 1024;
+// the index holds a row per tracked path and its symbols, so a big repository writes a big one. Measured on a file of
+// `{},` repeated: 64 MiB parsed in 4.1 s at 2,049 MiB RSS, 128 MiB in 17.4 s at 4,044 MiB, and 256 MiB dumped core, an
+// abort no catch sees. A larger file is a fresh cut for scan, and status refuses it by name. An entry file is one
+// module's, so it keeps the smaller limit
+const MAX_INDEX = 128 * 1024 * 1024;
 const MAX_ENTRY = 64 * 1024 * 1024;
 
 /**
- * The stored module list, or null. The map is derived, so an absent, oversized, torn or non-regular index means a fresh cut.
+ * The stored module list, or null. The map is derived, so an absent, oversized, torn or non-regular index means a fresh
+ * cut; `tooLarge` says which of those it was, for status to name.
  * @param {string} map
+ * @returns {{modules: any, tooLarge: boolean}}
  */
 function storedModules(map) {
   try {
     const file = join(map, INDEX_FILE);
     const st = lstatSync(file);
-    if (!st.isFile() || st.size > MAX_INDEX) return null;
-    return JSON.parse(readFileSync(file, 'utf8')).modules ?? null;
+    if (st.isFile() && st.size > MAX_INDEX) return { modules: null, tooLarge: true };
+    if (!st.isFile()) return { modules: null, tooLarge: false };
+    return { modules: JSON.parse(readFileSync(file, 'utf8')).modules ?? null, tooLarge: false };
   } catch {
-    return null;
+    return { modules: null, tooLarge: false };
   }
 }
 
@@ -105,7 +110,11 @@ function cmdStatus(dir) {
   const map = join(dir, MAP_DIR);
   let real = false;
   try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
-  const stored = real ? storedModules(map) : null;
+  const { modules: stored, tooLarge } = real ? storedModules(map) : { modules: null, tooLarge: false };
+  if (tooLarge) {
+    return fail('index-too-large', `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so status won't read it`,
+      'a scan re-cuts the modules every run on a map this big; run `planning.mjs codemap scan` to rebuild the list');
+  }
   if (!Array.isArray(stored)) {
     return fail('no-index', `there is no code map at ${map}`, 'run `planning.mjs codemap scan` first to build the module list');
   }
@@ -142,7 +151,7 @@ function cmdScan(dir) {
     return fail('unsafe-dir', `${join(dir, MAP_DIR)} or ${dir} exists and is not a real directory`,
       'remove it or replace it with a directory; nothing was written, because a write through a link would leave the repository');
   }
-  const { modules, oversized } = partition(rows, storedModules(map));
+  const { modules, oversized } = partition(rows, storedModules(map).modules);
   const byPath = new Map(rows.map((r) => [r.path, r]));
   const listed = modules.map((m) => ({ name: m.name, entry: entryFile(m.name), no_reader: startsNoReader(m, byPath), paths: m.paths }));
   const ignore = join(map, '.gitignore');
