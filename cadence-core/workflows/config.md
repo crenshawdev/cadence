@@ -99,9 +99,13 @@ walk is the flat way.
    where every pick matched the value already in force (step 2's no-op rule).
    Only a value that DIFFERS from what is in force is a diff, and only diffs are
    applied.
-4. After the last page, show the changed keys as a diff and write once via the
-   **Validation seam** (`config.mjs set`) - one atomic, validated write. The user
-   may pick `Skip rest` on any page to stop and write what changed so far.
+4. After the last page, show the changed keys as a diff, run
+   `config.mjs preview <key=value>…` once for the whole batch, show what it
+   answers and ask for a yes in a turn of its own, then write via the
+   **Validation seam** (`config.mjs set`) - one atomic, validated write per file.
+   The preview's `files` says which file gets what; a batch for both layers is
+   two `set` calls. The user may pick `Skip rest` on any page to stop and
+   preview and write what changed so far.
 5. `review.providers` is not in the page walk - offer it as a final step
    (`Configure review providers now?`) that enters **Review provider setup**.
 6. Then run **Worktree base ref** below - a HOST setting, offered only when
@@ -120,6 +124,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset <key>…        #
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get   [key …]       # EFFECTIVE values (repo > global > defaults)
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys                # dump schema (types/enums/defaults/purpose)
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys --walk         # the walk's rows only: question + value explanations
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" preview <key=value>…  # read-only: the file, before and after, what changes
 ```
 
 `get` is how every workflow reads config - the only read that sees the global
@@ -133,8 +138,8 @@ migration**, which reads both files for a key it is about to remove from them.
 Each prints one JSON line (`{ok, …}`); `--file <path>` overrides the default
 `.planning/config.json`, and `--global` targets the user-global layer at
 `~/.claude/cadence/config.json` (`CADENCE_GLOBAL_CONFIG` relocates it), which
-`set` auto-creates. Collect the menu's diffs and apply them with a single `set`
-call so the write is one atomic, validated operation.
+`set` auto-creates. Collect the menu's diffs and apply them with one `set` call
+per file, so each write is one atomic, validated operation.
 
 **Config layering.** At read time `bin/route.mjs` deep-merges global under repo
 (precedence **repo > global > built-in defaults**); nested objects merge, arrays

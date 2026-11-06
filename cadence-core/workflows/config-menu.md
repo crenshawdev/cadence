@@ -70,9 +70,31 @@ set up ahead of its gate, so end that line with "You can still set it now." and 
   nothing and the pick equals the value in force. So picking false over a repo true is written, and the menu can
   undo its own write.
 
-**The write.** Name the key, the value and the file, and ask for a yes in a turn of its own. Only after the yes,
-call `set`. The file follows the key: the repo's `.planning/config.json` by default, `set --global` for `src:
-global`, and the repo for `repo_only`.
+**The preview.** Once the new value is known and before anything is written, run the preview. It writes nothing:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" preview <key>=<value>
+```
+
+It answers `files` (each with its `file` and `pairs`: `before` and `after` in force, `stored` on the four keys above,
+and `second_file` with `stays_off` for a setting that needs both files), `resolves` (each role with its `changes`),
+`starts` and `stops` (each a key with `why`). An `ok:false` is shown as it is, with its next step, and nothing is
+written. Print it under the setting's block:
+
+```
+If you pick <value>:
+             Writes <key>=<value> to <file>.
+             <field>: <before> becomes <after>        (one line per entry of `changes`)
+             <key> starts applying.   <key> stops applying: <why>.
+             <second_file.file> also has to set it: it stays off until both files are set.
+```
+
+Leave out a line with nothing to say. When nothing in force changes, say "Nothing changes right now." and, on a key
+with `stored`, what the file stores before and after.
+
+**The write.** With the preview on screen, ask for a yes in a turn of its own. Only after the yes, call `set`. The file
+follows the key: the repo's `.planning/config.json` by default, `set --global` for `src: global`, and the repo for
+`repo_only`.
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set [--global] <key>=<value>
