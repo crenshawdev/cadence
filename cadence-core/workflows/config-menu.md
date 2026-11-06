@@ -30,4 +30,55 @@ One line per group, in the answer's order. Leave out a number that is 0, and the
 Show `warnings` above the list, one line each. A count the answer gives as `unreadable` is not a number: write
 "unreadable" and the file name from `unreadable` where the count would be, and never show it as 0.
 
-A reply that is only a number from 1 to 6 opens that group. Any other reply: ask which number it belongs to.
+A reply that is only a number from 1 to 6 opens that group (**A group**). Any other reply: ask which number it belongs to.
+
+## A group
+
+Opened by a number from the opening screen, with that group's `name`:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" layers --group "<name>"
+```
+
+It answers `rows` (the group's shown settings in order, each with `key`, `value`, `winner`, `default`, `global` and
+`repo`) and `advanced` (the keys the group keeps under Advanced).
+
+**The list.** A numbered list of the rows by dotted key, each with its value and who set it: `this repo`, `your
+global config` or `the default` from `winner`. A row with no `winner` is on only when both files set it, so say
+which one is missing. A cell in state `ignored` says the value is ignored there, and `unreadable` names its file.
+Below the list, an `A. Advanced` line when `advanced` is not empty, and the group's guided setup: `--roles` for
+Models and effort, `--surfaces` for When reviews run, `--review` for Who reviews, `--testing` for Testing. Git and
+landing and How work runs have none. Naming one opens that arm of config.md. Plain text that ends the turn, never a
+choice box.
+
+**A pick.** A number opens that setting. Read it with `layers --key <key>` and show a block: the key, `Now:` with
+its value and who set it, the default, global and repo values with who wins, and what it does, which is its
+`question` with each `explain` text beside its value. Ask for the new value in the turn's last line.
+
+- `type` says how a value is typed: `bool` and `enum` are picked from the `explain` values, `int`, `string` and
+  `string_or_null` are typed (empty becomes `null`), `array_string` and `array_enum` are comma-typed and written
+  as an array. A `hint` is shown as text.
+- A `null` on a list key is not written, because `set` refuses it.
+- `review.triggers.risk_surface.surfaces` opens **Risk surfaces** instead of being typed.
+- A value equal to the one in force writes nothing. Four keys can have a value in force that differs from what the
+  target file stores: `git.auto_close`, `workflow.use_workflows`, `workflow.multi_workflow` and `review.reviewers`.
+  On those, a pick writes nothing only when it equals what the target file stores, or when that file stores
+  nothing and the pick equals the value in force. So picking false over a repo true is written, and the menu can
+  undo its own write.
+
+**The write.** Name the key, the value and the file, and ask for a yes in a turn of its own. Only after the yes,
+call `set`. The file follows the key: the repo's `.planning/config.json` by default, `set --global` for `src:
+global`, and the repo for `repo_only`.
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set [--global] <key>=<value>
+```
+
+Echo the seam's `changed`, then show the list again.
+
+**Advanced.** Opening the entry reads `layers --group "<name>" --advanced` and lists those keys with their
+`purpose`. A pick takes the same pick and write path, with `purpose` in place of the question it does not have.
+`review.providers.*` goes to **Review provider setup**, never typed.
+
+**Leaving.** Run **Worktree base ref** when `parallelization.use_worktrees` is on, and **Wrap-up**'s dangling
+enrollment check when review settings changed. Many settings at once is the full `--walk`.
