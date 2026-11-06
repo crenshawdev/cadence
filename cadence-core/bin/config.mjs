@@ -10,9 +10,12 @@
 //   keys [--walk]                             --walk is only keys holding a `question`
 //   workflow-layers                           the two workflow switches, each on only when both layers set it
 //   layers [--group <name> [--advanced]|--key <key>]  where each setting's value comes from, for the /cad-config menu
+//   preview <key=value> ...                   read-only: the file, before and after, and what changes if `set` ran
 // --file defaults to .planning/config.json, --global is the user-global layer.
 
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GLOBAL_CONFIG, layerIdentity, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
@@ -27,6 +30,7 @@ import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { flatten, layerRows } from './lib/config-layers.mjs';
 import { dependentsOf } from './lib/setting-conditions.mjs';
 import { dottedKeyPaths, withoutDottedKeys } from './lib/global-only-keys.mjs';
+import { targetLayer, rolesFor, candidateKeys, buildPreview } from './lib/config-preview.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // loaded inside the dispatch try below, so a missing or broken schema answers {ok:false} instead of crashing at import
@@ -325,6 +329,100 @@ function layersRead(group, advanced, key) {
 }
 
 // --- dispatch ----------------------------------------------------------------
+// The preview: what a `set` of these pairs would do, with nothing written. Both sides come from one scratch copy of the
+// two layers, so the only difference between them is the change. GLOBAL_CONFIG is fixed at module load, so every read
+// of the copy is a child process pointed at it, and the real files, the plans and trace.jsonl are never touched.
+function previewRead(tokens) {
+  const INVALID_HINT = 'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts';
+  if (!tokens.length) fail('usage', 'preview needs key=value pairs after it: preview <key=value>...');
+  const checked = checkPairs(tokens, false);
+  const pairs = checked.pairs;
+  const errors = [...checked.errors];
+  const globalTokens = tokens.filter((t) => pairs.some((p) => t.startsWith(`${p.key}=`) && targetLayer(SCHEMA[p.key]) === 'global'));
+  if (globalTokens.length) errors.push(...checkPairs(globalTokens, true).errors);
+  if (errors.length) fail('invalid', errors, INVALID_HINT);
+
+  const cwd = process.cwd();
+  const repoFile = join(cwd, '.planning', 'config.json');
+  const layerOf = (key) => targetLayer(SCHEMA[key]);
+  // Each layer is read once, here: an absent file is an unset layer, one that won't parse is refused, never guessed at.
+  const readCopy = (file) => {
+    if (!file) return null;
+    let text;
+    try { text = readFileSync(file, 'utf8'); } catch (e) {
+      if (e.code === 'ENOENT') return null;
+      return fail('read', `cannot read ${file}: ${e.message}`, 'make the file readable and re-run');
+    }
+    let parsed;
+    try { parsed = JSON.parse(text); } catch (e) {
+      return fail('read', `cannot read/parse ${file}: ${e.message}`,
+        'repair the JSON in the file the detail names and re-run - a preview of a layer it could not read would be a guess');
+    }
+    if (!isPlainObject(parsed)) fail('read', `cannot read/parse ${file}: top-level config must be a JSON object`,
+      'make the top level of the file a JSON object - an empty {} is a valid layer - then re-run');
+    return text;
+  };
+  const repoText = readCopy(repoFile);
+  const globalText = readCopy(GLOBAL_CONFIG);
+  if (repoText === null && pairs.some((p) => layerOf(p.key) === 'repo')) {
+    fail('read', `cannot read ${repoFile}: no such file`, 'create this repo\'s config with /cad-new-project or /cad-adopt, then re-run');
+  }
+  if (!GLOBAL_CONFIG && pairs.some((p) => layerOf(p.key) === 'global')) {
+    fail('read', 'no user-global config path: the home directory could not be found', 'set CADENCE_GLOBAL_CONFIG to the file and re-run');
+  }
+  const shared = layerIdentity(GLOBAL_CONFIG) !== null && layerIdentity(GLOBAL_CONFIG) === layerIdentity(repoFile);
+
+  const scratch = mkdtempSync(join(tmpdir(), 'cad-preview-'));
+  try {
+    const scratchRepo = join(scratch, '.planning', 'config.json');
+    const scratchGlobal = shared ? scratchRepo : join(scratch, 'global', 'config.json');
+    mkdirSync(dirname(scratchRepo), { recursive: true });
+    if (repoText !== null) writeFileSync(scratchRepo, repoText);
+    if (!shared && globalText !== null) { mkdirSync(dirname(scratchGlobal), { recursive: true }); writeFileSync(scratchGlobal, globalText); }
+    const env = { ...process.env, CADENCE_GLOBAL_CONFIG: scratchGlobal };
+    const run = (script, args, where) => {
+      const r = spawnSync(process.execPath, [join(HERE, script), ...args], { cwd: where, env, encoding: 'utf8' });
+      let body;
+      try { body = JSON.parse(r.stdout); } catch { fail('internal', `${script} ${args[0]} answered nothing readable: ${r.stderr || r.stdout}`); }
+      return body;
+    };
+    const keys = pairs.map((p) => p.key);
+    const candidates = candidateKeys(SCHEMA, keys);
+    const roles = rolesFor(keys);
+    const readSide = () => {
+      const rows = {};
+      for (const key of candidates) {
+        const r = run('config.mjs', ['layers', '--key', key], scratch);
+        if (r.ok !== true) { out(r); throw DONE; }
+        rows[key] = r.row;
+      }
+      const decisions = {};
+      for (const role of roles) {
+        decisions[role] = run('route.mjs', ['resolve', '--role', role, '--file', scratchRepo,
+          '--planning-root', join(cwd, '.planning'), '--no-record'], cwd);
+      }
+      return { rows, decisions };
+    };
+    const before = readSide();
+    const apply = (args) => { const r = run('config.mjs', ['set', ...args], scratch); if (r.ok !== true) { out(r); throw DONE; } };
+    const tokensFor = (layer) => tokens.filter((t) => pairs.some((p) => t.startsWith(`${p.key}=`) && layerOf(p.key) === layer));
+    if (shared) apply(['--file', scratchRepo, ...tokens]);
+    else {
+      if (tokensFor('repo').length) apply(['--file', scratchRepo, ...tokensFor('repo')]);
+      if (tokensFor('global').length) apply(['--global', ...tokensFor('global')]);
+    }
+    const after = readSide();
+    const files = [];
+    for (const layer of ['repo', 'global']) {
+      const mine = pairs.filter((p) => (shared ? 'repo' : layerOf(p.key)) === layer);
+      if (mine.length) files.push({ layer, file: layer === 'repo' ? repoFile : GLOBAL_CONFIG, pairs: mine });
+    }
+    out({ ok: true, ...buildPreview({ files, otherFile: { repo: repoFile, global: GLOBAL_CONFIG }, before, after, candidates }) });
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -381,6 +479,7 @@ try {
     else out({ ok: true, keys: SCHEMA });
   }
   // the repo's cwd, like every other default here; `get` would answer on a repo-only value, so deciders read this
+  else if (cmd === 'preview') previewRead(rest);
   else if (cmd === 'workflow-layers') {
     const r = workflowLayers(process.cwd());
     const unreadable = [];
@@ -402,7 +501,7 @@ try {
     }
     layersRead(g.value, advanced, k.value);
   }
-  else fail('usage', 'subcommand: validate | check | set | unset | get | keys | workflow-layers | layers');
+  else fail('usage', 'subcommand: validate | check | set | unset | get | keys | workflow-layers | layers | preview');
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

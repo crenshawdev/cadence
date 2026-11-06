@@ -626,6 +626,8 @@ export const CONTRACTS = {
     },
     // reads no flag: the repo is the cwd and the global layer is CADENCE_GLOBAL_CONFIG
     'workflow-layers': {},
+    // read-only: takes the key=value tokens `set` takes and no flag, since each key's own target decides the file
+    preview: {},
     // the menu's read of where each setting's value comes from; the repo is the cwd, a group name or a dotted key narrows it
     layers: {
       '--group': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
