@@ -94,6 +94,8 @@ const COMMANDS = {
   // may a workflow launch now: take answers launch or names the holder, release frees only the caller's own claim
   'workflow-claim': async (dir, sub, opts) =>
     (await import('./planning/workflow-claim.mjs')).cmdWorkflowClaim(dir, sub, opts),
+  // the facts layer, two words like `workflow-claim`; --dir names .planning and the project root is its parent
+  codemap: async (dir, sub, opts) => (await import('./planning/codemap.mjs')).cmdCodemap(dir, sub, opts),
   // moves the risk_surface rulings out of a phase directory before a milestone close deletes it
   'risk-carry': async (dir, _sub, opts) =>
     (await import('./planning/risk-carry.mjs')).cmdRiskCarry(dir, opts),
