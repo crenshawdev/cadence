@@ -86,13 +86,14 @@ key this workflow uses, the batched form seven other sites already ship:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
-  memory.backend planning.commit_docs testing.scope testing.required_jobs
+  memory.backend planning.commit_docs testing.scope testing.required_jobs planning.code_map
 ```
 
 `planning.commit_docs` is not needed until the `commit` step at the very end.
 Read it HERE and carry the value forward. `testing.scope` and
 `testing.required_jobs` ride the same call for `acceptance_criteria`, which
-carries them forward too.
+carries them forward too. `planning.code_map` rides it for `analyze` only, and the
+skip arm never reads it.
 
 When `memory.backend` is `builtin` (the schema default), run recall for the
 phase goal:
@@ -162,7 +163,23 @@ prompt names no planning path at all, and the analyzer's contract
 entry. Prior phases' decisions reach it as the `<prior_decisions>` summary in
 the payload, distilled from the (at most 3) files load_priors read.
 
-This keeps raw file contents out of the main context. Prompt payload:
+This keeps raw file contents out of the main context.
+
+When `planning.code_map`, read in `spend_gate`, is `true`, the payload carries a code map block, and one local scan with no model feeds it. Before the payload is assembled, make the scan once:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codemap scan
+```
+
+On a good answer, add the block below to the payload, after `<recalled_memory>` and before its last line. On `ok:false`, or output that won't parse, print nothing about it, leave the block out and dispatch the analyzer anyway. With the key not `true`, the payload carries none of it.
+
+```text
+<code_map>
+A code map is available. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/code-map.md once and follow it.
+</code_map>
+```
+
+Prompt payload:
 
 ```
 Analyze the codebase for Phase {N}: {phase_name}.
