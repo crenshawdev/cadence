@@ -56,7 +56,7 @@ choice box.
 its value and who set it, the default, global and repo values with who wins, and what it does, which is its
 `question` with each `explain` text beside its value. When `applies` is false, add `No effect right now:` with each
 sentence of `no_effect`. Add `Works with:` with the `interacts` text and each of `works_with` as its key beside its
-value. Ask for the new value in the turn's last line. A setting with no effect can still be picked, because it may be
+value, and leave the line out when both are empty. Ask for the new value in the turn's last line. A setting with no effect can still be picked, because it may be
 set up ahead of its gate, so end that line with "You can still set it now." and change nothing else in the flow.
 
 - `type` says how a value is typed: `bool` and `enum` are picked from the `explain` values, `int`, `string` and
