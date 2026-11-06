@@ -112,7 +112,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'bulk-output-register',
     holder: 'tests/bulk-output.test.mjs',
-    counts: "the register's row count and its two transport splits - 18, 4 "
+    counts: "the register's row count and its two transport splits - 20, 5 "
       + 'redirect and 3 file',
     asserted_by: 'the test named `the register pins its row count`',
     subjects: ['cadence-core/bin/lib/bulk-output.mjs'],
