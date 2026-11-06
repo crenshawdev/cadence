@@ -8,8 +8,9 @@ import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'nod
 import { dirname, join, resolve } from 'node:path';
 import { fail, ok } from './core.mjs';
 import { readFacts } from '../lib/codemap-facts.mjs';
-import { ENTRY_FILE, entryFile, partition, startsNoReader } from '../lib/codemap-partition.mjs';
+import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '../lib/codemap-partition.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
+import { LIST_CAP } from '../lib/workflow-run.mjs';
 
 const MAP_DIR = 'codemap';
 const INDEX_FILE = 'index.json';
@@ -50,6 +51,72 @@ function storedModules(map) {
   }
 }
 
+/**
+ * One module's entry file, or null when it's absent, not a regular file, too big or won't parse: all of them read as unbuilt.
+ * @param {string} map @param {string} entry
+ */
+function readEntry(map, entry) {
+  try {
+    const file = join(map, entry);
+    const st = lstatSync(file);
+    if (!st.isFile() || st.size > MAX_INDEX) return null;
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Each module's state and the figures a launch would be priced on. A reader opens only the regular text files at or
+ * under the cap in a stale or unbuilt module, so `reader_bytes` counts those and a one-module refresh stays small.
+ * @param {string} map @param {{name: string, paths: string[]}[]} modules @param {any[]} rows
+ */
+function stateOf(map, modules, rows) {
+  const byPath = new Map(rows.map((r) => [r.path, r]));
+  /** @type {Record<string, string[]>} */
+  const names = { built: [], stale: [], unbuilt: [], no_reader: [] };
+  let readerBytes = 0;
+  for (const m of modules) {
+    const state = moduleState(m, readEntry(map, entryFile(m.name)), byPath);
+    names[state].push(m.name);
+    if (state === 'stale' || state === 'unbuilt') {
+      for (const p of m.paths) if (byPath.get(p)?.kind === 'text') readerBytes += byPath.get(p).bytes || 0;
+    }
+  }
+  const listed = (key) => ({
+    [key]: names[key].length, [`${key}_modules`]: names[key].slice(0, LIST_CAP),
+    ...(names[key].length > LIST_CAP ? { [`${key}_more`]: names[key].length - LIST_CAP } : {}),
+  });
+  return {
+    modules: modules.length, bytes: rows.reduce((n, r) => n + (r.bytes || 0), 0),
+    built: names.built.length, no_reader: names.no_reader.length,
+    readers: names.stale.length + names.unbuilt.length, reader_bytes: readerBytes,
+    ...listed('stale'), ...listed('unbuilt'),
+  };
+}
+
+/** @param {string} dir the planning directory */
+function cmdStatus(dir) {
+  const root = dirname(resolve(dir));
+  const map = join(dir, MAP_DIR);
+  let real = false;
+  try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
+  const stored = real ? storedModules(map) : null;
+  if (!Array.isArray(stored)) {
+    return fail('no-index', `there is no code map at ${map}`, 'run `planning.mjs codemap scan` first to build the module list');
+  }
+  let rows;
+  try {
+    rows = readFacts(root);
+  } catch {
+    return fail('no-git', `${root} is not inside a git repository, so there is nothing to compare`,
+      'run from the project\'s repository, or pass --dir naming its .planning directory');
+  }
+  // the stored list placed against the files as they are now, so a file added or removed since the scan counts and nothing is written
+  const { modules } = partition(rows, stored);
+  return ok({ action: 'status', ...stateOf(map, modules, rows) });
+}
+
 /** @param {string} dir the planning directory */
 function cmdScan(dir) {
   const root = dirname(resolve(dir));
@@ -83,18 +150,19 @@ function cmdScan(dir) {
   return ok({
     action: 'scan', files: rows.length, text: count('text'), binary: count('binary'), over_cap: count('over_cap'),
     symlinks: count('symlink'), gitlinks: count('gitlink'), missing: count('missing'),
-    modules: listed.length, no_reader: listed.filter((m) => m.no_reader).length, oversized,
+    ...stateOf(map, modules, rows), oversized,
   });
 }
 
 /**
  * @param {string} dir the planning directory
- * @param {string} sub scan
+ * @param {string} sub scan | status
  * @param {any} _opts
  */
 function cmdCodemap(dir, sub, _opts) {
   if (sub === 'scan') return cmdScan(dir);
-  return fail('usage', 'codemap <scan>');
+  if (sub === 'status') return cmdStatus(dir);
+  return fail('usage', 'codemap <scan|status>');
 }
 
 export { cmdCodemap };

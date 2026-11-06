@@ -449,6 +449,7 @@ export const CONTRACTS = {
     },
     // takes no flag beyond --dir: the root is its parent, so there is no second path to name
     'codemap scan': {},
+    'codemap status': {},
     // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },

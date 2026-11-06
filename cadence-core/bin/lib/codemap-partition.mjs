@@ -220,3 +220,24 @@ export function partition(rows, stored, ceiling = CEILING) {
 export function startsNoReader(m, byPath) {
   return planningModule(m) || !m.paths.some((p) => byPath.get(p)?.kind === 'text');
 }
+
+/**
+ * A module's state against its entry, by the hashes the entry was built from and never by the previous scan (D-06).
+ * No reader beats everything. No entry, or one without a `built_from` map, is unbuilt, which is not stale. Any path
+ * whose hash differs, any path only on one side, and any tracked path with no hash makes a built module stale.
+ * @param {Module & {no_reader?: boolean}} m @param {any} entry the parsed entry file, or null
+ * @param {Map<string, Row & {hash?: string|null}>} byPath the current facts
+ * @returns {'no_reader'|'unbuilt'|'stale'|'built'}
+ */
+export function moduleState(m, entry, byPath) {
+  if (startsNoReader(m, byPath)) return 'no_reader';
+  const from = entry && typeof entry === 'object' ? entry.built_from : null;
+  if (!from || typeof from !== 'object' || Array.isArray(from)) return 'unbuilt';
+  const built = Object.keys(from);
+  if (built.length !== m.paths.length) return 'stale';
+  for (const p of m.paths) {
+    const hash = byPath.get(p)?.hash;
+    if (!hash || !Object.prototype.hasOwnProperty.call(from, p) || from[p] !== hash) return 'stale';
+  }
+  return 'built';
+}
