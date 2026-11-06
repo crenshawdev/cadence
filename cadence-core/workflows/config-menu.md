@@ -1,7 +1,7 @@
 # cad-config menu (cold branch)
 
-Loaded from config.md when `/cad-config` ran with no arguments, or when the reply to the opening screen is a
-number. Direct set never reads it. Every count and value on a screen comes from `config.mjs layers`, never from a
+Loaded from config.md when `/cad-config` ran with no arguments or with a sentence, or when the reply to the opening
+screen is a number or a sentence. Direct set never reads it. Every count and value on a screen comes from `config.mjs layers`, never from a
 raw config file.
 
 ## Opening screen
@@ -30,7 +30,8 @@ One line per group, in the answer's order. Leave out a number that is 0, and the
 Show `warnings` above the list, one line each. A count the answer gives as `unreadable` is not a number: write
 "unreadable" and the file name from `unreadable` where the count would be, and never show it as 0.
 
-A reply that is only a number from 1 to 6 opens that group (**A group**). Any other reply: ask which number it belongs to.
+A reply that is only a number from 1 to 6 opens that group (**A group**). Any other reply is read as a sentence
+(**A sentence**), the same as a sentence on the command line.
 
 ## A group
 
@@ -108,3 +109,58 @@ Echo the seam's `changed`, then show the list again.
 
 **Leaving.** Run **Worktree base ref** when `parallelization.use_worktrees` is on, and **Wrap-up**'s dangling
 enrollment check when review settings changed. Many settings at once is the full `--walk`.
+
+## A sentence
+
+Reached when `/cad-config` got text that is not a flag or a list of `key=value`, or when the reply to the opening
+screen is not a number. The sentence names what the person wants, such as `make reviews cheaper`. Nothing is
+written until a yes.
+
+**Matching.** `catalog` answers every setting's `key`, `question`, `purpose`, `explain` and value in force, which is
+too big for the transcript, so it goes to a file in a directory this run makes. Run it, and copy the printed
+directory and token as literals into the read-back:
+
+```
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-config-XXXXXX")" && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
+  && node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" catalog > "$D/catalog.json" \
+  && echo "scratch dir: $D  run token: $T"
+```
+
+Write the words the sentence turns on, and near ones, as a JSON array to `<D>/terms.json` with the Write tool. Read
+back only the settings whose `question`, `purpose` or `explain` holds one of them:
+
+```
+node -e 'const f=require("fs");const d=process.argv[1];let tok;try{tok=f.readFileSync(d+"/run-token","utf8")}catch(e){console.error("scratch-stale: no run token in "+d);process.exit(1)}if(tok!==process.argv[2]){console.error("scratch-stale: "+d+" belongs to another run");process.exit(1)}let c,t;try{c=JSON.parse(f.readFileSync(d+"/catalog.json","utf8"));t=JSON.parse(f.readFileSync(d+"/terms.json","utf8"))}catch(e){console.error("scratch-unreadable: "+e.message);process.exit(1)}if(!Array.isArray(c.settings)||!Array.isArray(t)){console.error("scratch-shape: catalog.json has no settings array or terms.json is not an array in "+d);process.exit(1)}const w=t.map((x)=>String(x).toLowerCase()).filter((x)=>x);for(const s of c.settings){const x=[s.question,s.purpose].concat((s.explain||[]).map((e)=>e.value+" "+(e.text||""))).join(" ").toLowerCase();if(w.some((v)=>x.includes(v)))console.log([s.key,JSON.stringify(s.value),s.question||s.purpose,(s.explain||[]).map((e)=>e.value).join("|")].join("\t"))}' "<the echoed scratch directory>" "<the echoed run token>"
+```
+
+Each line is a key, its value in force, its text and its values. A refusal on stderr (`scratch-stale`,
+`scratch-unreadable`, `scratch-shape`) means no match was read: say so and stop. From the lines, pick the settings
+the sentence asks to change and the value each should take, by what `question`, `purpose` and `explain` say. Nothing
+matched: say so, name the groups from the opening screen, and write nothing.
+
+**Scratch value.** A value taken from the sentence is written as JSON to its own file in that directory with the
+Write tool (`<D>/v1.json`, `<D>/v2.json`), before anything uses it. The preview and `set` take it as
+`<key>="$(cat <path>)"` (`references/conventions.md`, Caller-derived text), because a double-quoted word carrying
+`$(...)` runs before Node starts, and the preview comes before the yes.
+
+**Showing.** Run the preview from **A group** once for all the picks:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" preview <key>="$(cat <D>/v1.json)" <key>="$(cat <D>/v2.json)"
+```
+
+Show each match with its key, `Now:` the value in force, `New:` the value from the file, and the file from the
+preview's `files`, then the preview's other lines as **A group** prints them. An `ok:false` is shown as it is, and
+nothing is written.
+
+**Writing.** Ask for a yes in a turn of its own. Only after the yes, call `set`, one call per file the preview
+named (`set --global` for the global file), each value through its file:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set [--global] <key>="$(cat <D>/v1.json)"
+```
+
+Echo the seam's `changed`.
+
+**Leaving.** The same follow-ups as **A group**: **Worktree base ref** when `parallelization.use_worktrees` is on,
+and **Wrap-up**'s dangling enrollment check when review settings changed.

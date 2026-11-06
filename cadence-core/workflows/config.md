@@ -29,10 +29,11 @@ Parse `$ARGUMENTS`:
   the full thirteen against the user-global layer instead of writing repo diffs.
 - `--walk`: go to **Interactive menu (no args)** - the full walk of every knob.
 - Every token is `<key>=<value>`: go to **Direct set**.
-- Empty: Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-menu.md` and
-  follow its **Opening screen**. That file is also where the reply to the
-  screen goes; Direct set never reads it.
-- Any other text: the same opening screen, which asks which number it belongs to.
+- Any other text is a sentence: Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-menu.md`
+  and follow its **A sentence**. A reply to the opening screen that is not a
+  number from 1 to 6 goes the same way.
+- Empty: Read the same file and follow its **Opening screen**. That file is also
+  where the reply to the screen goes; Direct set never reads it.
 
 ## Interactive menu (no args)
 

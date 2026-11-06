@@ -44,6 +44,14 @@ export const BULK_SHAPES = Object.freeze([
     why: 'measured 8,617 B on this repository, 2026-08-17 - UNDER the threshold, and watched anyway because it is the second-largest seam response in the tree and its size is a property of the corpus rather than of the call',
   }),
   Object.freeze({
+    shape: 'config catalog',
+    token: /\bcatalog\b/g,
+    seam: 'config.mjs',
+    bounded: Object.freeze([]),
+    forms: Object.freeze([]),
+    why: 'measured 54,116 B on a template repository, 2026-11-05 - every setting\'s text and value in force, which the sentence match reads from a file',
+  }),
+  Object.freeze({
     shape: 'git diff',
     token: /\bgit diff\b/g,
     seam: null,
@@ -108,6 +116,13 @@ export const BULK_OUTPUT = Object.freeze([
     shape: 'recall', call: 'recall "<terms>"',
     bytes: 8617, measured: '2026-08-17', transport: 'none',
     reason: 'the reference that documents the envelope rather than a step that spends it - the call is written to show what one JSON line holds, and it is under the threshold either way',
+  }),
+
+  // --- config catalog: the sentence match ------------------------------------
+  Object.freeze({
+    surface: 'cadence-core/workflows/config-menu.md',
+    shape: 'config catalog', call: 'catalog',
+    bytes: 54116, measured: '2026-11-05', transport: 'redirect',
   }),
 
   // --- git diff: the four that already write to a file -----------------------
