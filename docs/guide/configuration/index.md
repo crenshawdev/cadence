@@ -23,7 +23,7 @@ Pick a setting and the menu shows its value in each layer (the default, your glo
 
 Before anything is written, the menu previews the change: the file it goes to, the value before and after, which roles resolve differently, and which settings start or stop applying. Nothing changes until you say yes. A `key=value` on the command line and the guided flags skip the preview.
 
-Each group ends with an Advanced entry for the settings the menu doesn't ask about. They show what they do instead of a question. Provider model settings in Advanced use their guided setup (`--review`) rather than being typed.
+A group that holds settings the menu doesn't ask about ends with an Advanced entry, and a group with none shows no such entry. Those settings show what they do instead of a question. Provider model settings in Advanced use their guided setup (`--review`) rather than being typed.
 
 ## Repository, user-global, then defaults
 

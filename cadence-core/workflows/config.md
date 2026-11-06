@@ -104,7 +104,7 @@ walk is the flat way.
    `Other` can carry `$(...)`, which runs before Node starts, and the preview
    comes before the yes, so write each changed value as JSON to its own file in
    a directory this run made
-   (`D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && echo "$D"`) and pass the
+   (`D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "$D"`) and pass the
    preview and `set` each key as `<key>="$(cat <path>)"` (`references/conventions.md`,
    Caller-derived text). Run `config.mjs preview <key>="$(cat <path>)"…` once for
    the whole batch, show what it answers and ask for a yes in a turn of its own,
@@ -361,7 +361,7 @@ site - this section). This section points at them and restates none.
    `<key>="$(cat <path>)"` (`references/conventions.md`, Caller-derived text):
 
    ```
-   D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && echo "$D"
+   D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "$D"
    ```
 
    ```
