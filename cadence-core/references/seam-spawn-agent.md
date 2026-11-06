@@ -294,25 +294,13 @@ so.
   `roles.<role>.effort` with no value takes its own schema default, which is
   `high` for the planner, the analyzer, the verifier and the executor, `medium`
   for the reviewer and `low` for the plan checker.
-- **The two older families are the narrower fallbacks UNDER them.**
-  `model.overrides.<role>` answers the model when `roles.<role>.model` names
-  none, and `model.effort.<role>` answers the rung when `roles.<role>.effort`
-  names none. Silence falls back per KEY rather than per role, so a global layer
-  naming only the model composes with a repo layer naming only the rung.
-  Setting a roles key and its older sibling for one role adds a `warnings[]`
-  entry naming which key won; the roles key wins. A rung the role has no file
-  for is refused by the write face, naming the set that role does have, and at
-  resolve time the next source down answers with the loser named in
-  `warnings[]`.
 - **An unaccepted model omits the parameter.** The model names the host takes
   are `opus`, `sonnet`, `haiku` and `fable`, and `roles.<role>.model` is a free
   string, so anything else can be written into it. A string the host does not
   accept resolves `ok:true`, dispatches with NO model parameter - the session's
   model runs - and names the rejected string in `warnings[]`. A typo must never
-  silently redirect the spend, and it never falls through to
-  `model.overrides.<role>` either: a roles key that is SET owns the answer for
-  that role whether or not its value is accepted, and falling through would hand
-  the role back to an older key on the typo alone. `fable` is accepted but
+  silently redirect the spend: a roles key that is SET owns the answer for that
+  role whether or not its value is accepted. `fable` is accepted but
   deliberately never offered by the interview: it requires 30-day data
   retention, so a zero-data-retention org gets a hard `400` on every request;
   its safety classifiers refuse cyber-adjacent content, and Cadence reviews its
@@ -320,18 +308,10 @@ so.
   `review.request_timeout_ms` inside the host's Bash ceiling. Choosing it is the
   user's assertion about their own org.
 - **`model_source` says which key decided.** It is always present and carries
-  the dotted key that chose the model - `roles.<role>.model` or
-  `model.overrides.<role>` - or the string `session` when no key did, a set key
-  whose value the host rejected included. It rides the `routing.resolve` trace
-  event too. `pinned` stays FALSE when the roles block chose the model: it means
-  `model.overrides` chose it, which is what the announcement rule below is keyed
-  on, so read `model_source` and not `pinned` to learn what decided.
-- **Tell the user when a pin fires.** A dispatch is approved through a UI that
-  generally shows the agent name and not the model, so a pinned dispatch looks
-  identical to a routed one at the moment of approval. When `pinned` is true,
-  say so on its own line before spawning - "dispatching cad-planner on fable
-  (pinned, routing would have picked opus)". Burying it in a preamble does not
-  count; the user cannot verify what the dialog does not show.
+  `roles.<role>.model` when that key chose the model, or the string `session`
+  when no key did, a set key whose value the host rejected included. It rides
+  the `routing.resolve` trace event too. `pinned` stays in the envelope and on
+  the event, always false.
 
 **Concurrent dispatch.** Independent dispatches over disjoint payloads (the
 per-plan executors of a parallel phase, per-doc verifiers, the two reviewers of

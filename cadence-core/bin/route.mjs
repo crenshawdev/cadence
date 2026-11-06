@@ -111,9 +111,6 @@ function readConfig(file) {
   const m = c.model || {};
   return {
     escalate_on_failure: m.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
-    overrides: m.overrides ?? {},
-    // Its own map: `overrides` is the per-role model pin, and a start rung there would read as an unknown alias.
-    effort: m.effort ?? {},
     // Own map, so no entry gets two writers. No per-role merge on purpose: config-merge recurses by key, so global
     // `model` composes with repo `effort`.
     roles: rolesIn(c),
@@ -533,28 +530,19 @@ function resolve(opts) {
   // This role's roles-block entry, read once for the rung here and the model below.
   const roleEntry = roleEntryIn(cfg.roles, opts.role);
 
-  // The start rung comes from the first of three sources naming a rung this role has a file for: `roles.<role>.effort`,
-  // `model.effort.<role>`, then that key's schema default.
+  // The start rung comes from the first of two sources naming a rung this role has a file for: `roles.<role>.effort`,
+  // then that key's schema default.
   // A source naming a rung this role lacks loses its turn with a warning; only a hand-edited config gets there, and
   // holding the dispatch would drop the caller to the base agent.
   // Never hand an unfiled rung to `agentFor`: it fails open to the unsuffixed file while `effort` still reports the
-  // rung asked for. Both keys set warns even if they agree, since it's one quantity spelled twice.
+  // rung asked for.
   const rolesEffortKey = `roles.${opts.role}.effort`;
-  const legacyEffortKey = `model.effort.${opts.role}`;
   const rolesEffort = roleEntry.effort;
-  const legacyEffort = cfg.effort[opts.role];
   const rolesEffortSet = rolesEffort !== null && rolesEffort !== undefined;
-  const legacyEffortSet = legacyEffort !== null && legacyEffort !== undefined;
-  if (rolesEffortSet && legacyEffortSet) {
-    warnings.push(`${rolesEffortKey}=${JSON.stringify(rolesEffort)} (config) wins over `
-      + `${legacyEffortKey}=${JSON.stringify(legacyEffort)}, which names the same rung `
-      + 'one key out; the roles block decides');
-  }
   const hasRungs = Object.keys(RUNG_FILES[opts.role] || {});
   const schemaEffort = schemaRow(rolesEffortKey).default;
   const rungSources = [
     ...(rolesEffortSet ? [{ key: rolesEffortKey, value: rolesEffort, set: true }] : []),
-    ...(legacyEffortSet ? [{ key: legacyEffortKey, value: legacyEffort, set: true }] : []),
     { key: `config.schema.json's ${rolesEffortKey}`, value: schemaEffort, set: false },
   ];
   /** @type {string|null} */
@@ -783,25 +771,18 @@ function resolve(opts) {
     }
   }
 
-  // Model comes from `roles.<role>.model`, else the narrower `model.overrides.<role>`. Unset is `model: null`, the
-  // session's model. Neither touches effort, which is fixed per agent file.
+  // Model comes from `roles.<role>.model`. Unset is `model: null`, the session's model. It never touches effort, which is
+  // fixed per agent file.
   // A string the host won't accept is dropped with a warning: ok:false would lose the rung with the model, and a
   // pass-through fails the host's validation on every dispatch.
-  // `pinned` still means `model.overrides` chose it, because references/seam-spawn-agent.md keys an announcement on it.
+  // `pinned` is always false now and stays in the envelope and on the event, because seam JSON is additive only.
   /** @type {string|null} */
   let model = null;
-  let pinned = false;
+  const pinned = false;
   let modelSource = 'session';
   const rolesModel = roleEntry.model;
   const rolesModelKey = `roles.${opts.role}.model`;
-  const pin = cfg.overrides[opts.role];
   if (rolesModel !== null && rolesModel !== undefined) {
-    // A roles key, once set, owns the answer even if the host rejects it; falling through on a typo would hand the role
-    // back to a replaced key.
-    if (pin != null) {
-      warnings.push(`${rolesModelKey}=${JSON.stringify(rolesModel)} (config) decides this `
-        + `role's model; model.overrides.${opts.role}=${JSON.stringify(pin)} does not apply`);
-    }
     if (HOST_MODELS.includes(rolesModel)) {
       reason.push(`${rolesModelKey}=${rolesModel} (config)`);
       model = rolesModel;
@@ -811,18 +792,6 @@ function resolve(opts) {
         + `accepts (${HOST_MODELS.join(', ')}); no model parameter is sent and the dispatch `
         + "runs at the session's model");
       reason.push(`${rolesModelKey} ignored (the host does not accept it); no model parameter`);
-    }
-  } else if (pin != null) {
-    if (HOST_MODELS.includes(pin)) {
-      reason.push(`override ${opts.role}=${pin} (config)`);
-      model = pin;
-      pinned = true;
-      modelSource = `model.overrides.${opts.role}`;
-    } else {
-      warnings.push(`model.overrides.${opts.role}=${JSON.stringify(pin)} is not a model the host `
-        + `accepts (${HOST_MODELS.join(', ')}); no model parameter is sent and the dispatch `
-        + "runs at the session's model");
-      reason.push('override ignored (the host does not accept it); no model parameter');
     }
   } else {
     reason.push('no model key set; no model parameter, the session\'s model runs');
