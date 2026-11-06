@@ -71,10 +71,19 @@ set up ahead of its gate, so end that line with "You can still set it now." and 
   nothing and the pick equals the value in force. So picking false over a repo true is written, and the menu can
   undo its own write.
 
+**The value.** What the person typed never goes on the command line as typed: a double-quoted word carrying `$(...)`
+runs before Node starts, and the preview comes before the yes. Make a directory for the run, write the new value as
+JSON to a file in it with the Write tool (`<D>/value.json`), and pass the preview and `set` the key as
+`<key>="$(cat <D>/value.json)"` (`references/conventions.md`, Caller-derived text). A picked value takes the same way.
+
+```
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-config-XXXXXX")" && echo "$D"
+```
+
 **The preview.** Once the new value is known and before anything is written, run the preview. It writes nothing:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" preview <key>=<value>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" preview <key>="$(cat <D>/value.json)"
 ```
 
 It answers `files` (each with its `file` and `pairs`: `before` and `after` in force, `stored` on the four keys above,
@@ -98,7 +107,7 @@ follows the key: the repo's `.planning/config.json` by default, `set --global` f
 `repo_only`.
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set [--global] <key>=<value>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set [--global] <key>="$(cat <D>/value.json)"
 ```
 
 Echo the seam's `changed`, then show the list again.

@@ -100,9 +100,15 @@ walk is the flat way.
    where every pick matched the value already in force (step 2's no-op rule).
    Only a value that DIFFERS from what is in force is a diff, and only diffs are
    applied.
-4. After the last page, show the changed keys as a diff, run
-   `config.mjs preview <key=value>…` once for the whole batch, show what it
-   answers and ask for a yes in a turn of its own, then write via the
+4. After the last page, show the changed keys as a diff. A value typed through
+   `Other` can carry `$(...)`, which runs before Node starts, and the preview
+   comes before the yes, so write each changed value as JSON to its own file in
+   a directory this run made
+   (`D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && echo "$D"`) and pass the
+   preview and `set` each key as `<key>="$(cat <path>)"` (`references/conventions.md`,
+   Caller-derived text). Run `config.mjs preview <key>="$(cat <path>)"…` once for
+   the whole batch, show what it answers and ask for a yes in a turn of its own,
+   then write via the
    **Validation seam** (`config.mjs set`) - one atomic, validated write per file.
    The preview's `files` says which file gets what; a batch for both layers is
    two `set` calls. The user may pick `Skip rest` on any page to stop and
