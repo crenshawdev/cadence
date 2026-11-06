@@ -4,10 +4,11 @@
 // still lists consistent paths; the facts live in .planning/codemap/, which a nested .gitignore keeps out of every commit
 'use strict';
 
-import { lstatSync, mkdirSync, readFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fail, ok } from './core.mjs';
 import { readFacts } from '../lib/codemap-facts.mjs';
+import { ENTRY_FILE, entryFile, partition, startsNoReader } from '../lib/codemap-partition.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
 
 const MAP_DIR = 'codemap';
@@ -31,6 +32,24 @@ function mapDir(dir) {
   return map;
 }
 
+// a map past this is not one we wrote; it is read to reuse its module list and a bigger file is a fresh cut
+const MAX_INDEX = 64 * 1024 * 1024;
+
+/**
+ * The stored module list, or null. The map is derived, so an absent, oversized, torn or non-regular index means a fresh cut.
+ * @param {string} map
+ */
+function storedModules(map) {
+  try {
+    const file = join(map, INDEX_FILE);
+    const st = lstatSync(file);
+    if (!st.isFile() || st.size > MAX_INDEX) return null;
+    return JSON.parse(readFileSync(file, 'utf8')).modules ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** @param {string} dir the planning directory */
 function cmdScan(dir) {
   const root = dirname(resolve(dir));
@@ -46,15 +65,25 @@ function cmdScan(dir) {
     return fail('unsafe-dir', `${join(dir, MAP_DIR)} or ${dir} exists and is not a real directory`,
       'remove it or replace it with a directory; nothing was written, because a write through a link would leave the repository');
   }
+  const { modules, oversized } = partition(rows, storedModules(map));
+  const byPath = new Map(rows.map((r) => [r.path, r]));
+  const listed = modules.map((m) => ({ name: m.name, entry: entryFile(m.name), no_reader: startsNoReader(m, byPath), paths: m.paths }));
   const ignore = join(map, '.gitignore');
   let held = null;
   try { held = readFileSync(ignore, 'utf8'); } catch { /* absent is the first write */ }
   if (held !== '*\n') atomicWrite(ignore, '*\n');
-  atomicWrite(join(map, INDEX_FILE), JSON.stringify({ version: 1, rows }));
+  atomicWrite(join(map, INDEX_FILE), JSON.stringify({ version: 1, rows, modules: listed }));
+  // an entry file no module names is an orphan of a re-cut or a removed module; only our own spelling is ever deleted
+  const named = new Set(listed.map((m) => m.entry));
+  for (const f of readdirSync(map)) {
+    if (!ENTRY_FILE.test(f) || named.has(f)) continue;
+    try { unlinkSync(join(map, f)); } catch { /* a directory wearing an entry's name is left as it is */ }
+  }
   const count = (kind) => rows.filter((r) => r.kind === kind).length;
   return ok({
     action: 'scan', files: rows.length, text: count('text'), binary: count('binary'), over_cap: count('over_cap'),
     symlinks: count('symlink'), gitlinks: count('gitlink'), missing: count('missing'),
+    modules: listed.length, no_reader: listed.filter((m) => m.no_reader).length, oversized,
   });
 }
 
