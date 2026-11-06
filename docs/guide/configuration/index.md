@@ -6,15 +6,24 @@ You don't need to tune every setting to start using Cadence. Setup asks about th
 
 | Command | Use it for |
 |---|---|
-| `/cadence:cad-config` | Open on six groups of settings, with what this repo and your global config set. Pick a number to list a group. |
+| `/cadence:cad-config` | Open on six groups of settings, with what this repo and your global config set. Reply with a number to list a group, or say what you want to change. |
 | `/cadence:cad-config --walk` | Walk every setting in the menu, page by page. |
 | `/cadence:cad-config --roles` | Choose each role's model and effort for this project. Add `--global` for machine-wide answers. |
 | `/cadence:cad-config --review` | Configure review providers and detect models. |
 | `/cadence:cad-config --surfaces` | Revisit the project's risk surfaces. |
 | `/cadence:cad-config --testing` | Accept or adjust the testing policy and separately choose verification-publishing authorization. |
+| `/cadence:cad-config make reviews cheaper` | Say what you want in a sentence. Cadence finds the settings you mean, shows each one's current value, new value and file, and writes only after you say yes. |
 | `/cadence:cad-config parallelization.enabled=false` | Set a known repository option directly. |
 
-The menu doesn't expose every key. Provider model settings use their guided setup; other advanced keys can be set through the validated configuration command.
+## What the menu shows
+
+`/cadence:cad-config` opens on six groups. Each line says how many settings the group holds and how many your global config and this repo set. Reply with a number to list that group's settings, or with a sentence.
+
+Pick a setting and the menu shows its value in each layer (the default, your global config and this repo) and which one wins. A setting that has no effect right now, such as a review tier when its gate is off, says so and why. You can still set it ahead of time. [Scope and authorization exceptions](#scope-and-authorization-exceptions) lists the settings that follow their own layer rules.
+
+Before anything is written, the menu previews the change: the file it goes to, the value before and after, which roles resolve differently, and which settings start or stop applying. Nothing changes until you say yes. A `key=value` on the command line and the guided flags skip the preview.
+
+Each group ends with an Advanced entry for the settings the menu doesn't ask about. They show what they do instead of a question. Provider model settings in Advanced use their guided setup (`--review`) rather than being typed.
 
 ## Repository, user-global, then defaults
 
