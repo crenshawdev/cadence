@@ -411,7 +411,14 @@ function previewRead(tokens) {
       return { rows, decisions };
     };
     const before = readSide();
-    const apply = (args) => { const r = run('config.mjs', ['set', ...args], scratch); if (r.ok !== true) { out(r); throw DONE; } };
+    // a refusal from the scratch set names the scratch files, which are gone by the time it's read: say the real ones
+    const realPaths = (answer) => {
+      const esc = (p) => JSON.stringify(p).slice(1, -1);
+      let text = JSON.stringify(answer);
+      if (!shared && GLOBAL_CONFIG) text = text.split(esc(scratchGlobal)).join(esc(GLOBAL_CONFIG));
+      return JSON.parse(text.split(esc(scratchRepo)).join(esc(repoFile)));
+    };
+    const apply = (args) => { const r = run('config.mjs', ['set', ...args], scratch); if (r.ok !== true) { out(realPaths(r)); throw DONE; } };
     const tokensFor = (layer) => tokens.filter((t) => pairs.some((p) => t.startsWith(`${p.key}=`) && layerOf(p.key) === layer));
     if (shared) apply(['--file', scratchRepo, ...tokens]);
     else {
