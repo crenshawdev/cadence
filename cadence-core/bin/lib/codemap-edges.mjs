@@ -186,11 +186,12 @@ const listOf = (t) => ({ files: t.files, total: t.total, approximate: true });
 
 /**
  * A shared tally's list for one holder: the holder's own file is no caller or pin of itself, so it comes out of the copy
- * and off the count. The tally counted it only if `counted`, which is whether this file's text was read for that list.
+ * and off the count. The tally counted it only if `counted`, which the pass sets when it took that file for that list: a file
+ * it couldn't read, a word over WORD_CAP and a name the text doesn't hold leave it false, and a total never goes below zero.
  * @param {string[]} files @param {number} total @param {string} own @param {boolean} counted
  */
 function withoutOwn(files, total, own, counted) {
-  return { files: files.filter((p) => p !== own), total: counted ? total - 1 : total, approximate: true };
+  return { files: files.filter((p) => p !== own), total: Math.max(0, counted ? total - 1 : total), approximate: true };
 }
 
 /**
@@ -210,7 +211,8 @@ function withoutOwn(files, total, own, counted) {
  * @param {{files: {path: string, dir: string, raw: Buffer}[]}} [nested] the nested clone's files, root-relative paths
  */
 export function addEdges(root, rows, nested = { files: [] }) {
-  /** @type {Map<string, {holders: {row: any, syms: any[], callers?: Tally[], pins?: Tally}[], shared?: {callers: Tally[], pins: Tally}}>} */
+  /** @typedef {{row: any, syms: any[], callers?: Tally[], pins?: Tally, ownCaller?: true, ownPin?: true}} Holder */
+  /** @type {Map<string, {holders: Holder[], shared?: {callers: Tally[], pins: Tally, byPath: Map<string, Holder>}}>} */
   const byName = new Map();
   for (const row of rows) {
     for (const sym of row.symbols || []) {
@@ -223,7 +225,7 @@ export function addEdges(root, rows, nested = { files: [] }) {
     }
   }
   for (const g of byName.values()) {
-    if (g.holders.length > MAX_DEFINERS) g.shared = { callers: [tally(), tally(), tally()], pins: tally() };
+    if (g.holders.length > MAX_DEFINERS) g.shared = { callers: [tally(), tally(), tally()], pins: tally(), byPath: new Map(g.holders.map((h) => [h.row.path, h])) };
     else for (const h of g.holders) { h.callers = [tally(), tally(), tally()]; h.pins = tally(); }
   }
   /** every file a test can pin, by stem; a test file is what pins, so it has no entry */
@@ -248,8 +250,11 @@ export function addEdges(root, rows, nested = { files: [] }) {
     for (const w of wordsOf(text)) {
       const g = byName.get(w);
       if (!g) continue;
-      if (g.shared) add(g.shared.pins, path);
-      else for (const h of g.holders) if (h.row.path !== path) add(/** @type {Tally} */ (h.pins), path);
+      if (g.shared) {
+        add(g.shared.pins, path);
+        const own = g.shared.byPath.get(path);
+        if (own) own.ownPin = true;
+      } else for (const h of g.holders) if (h.row.path !== path) add(/** @type {Tally} */ (h.pins), path);
     }
     if (stems.size) {
       for (const w of stemWordsOf(text)) {
@@ -276,8 +281,11 @@ export function addEdges(root, rows, nested = { files: [] }) {
     for (const w of wordsOf(text)) {
       const g = byName.get(w);
       if (!g) continue;
-      if (g.shared) add(g.shared.callers[tier], row.path);
-      else for (const h of g.holders) if (h.row !== row) add(/** @type {Tally[]} */ (h.callers)[tier], row.path);
+      if (g.shared) {
+        add(g.shared.callers[tier], row.path);
+        const own = g.shared.byPath.get(row.path);
+        if (own) own.ownCaller = true;
+      } else for (const h of g.holders) if (h.row !== row) add(/** @type {Tally[]} */ (h.callers)[tier], row.path);
     }
   }
   // one file at a time, like the outer ones: the clone's text is never all in memory
@@ -291,13 +299,11 @@ export function addEdges(root, rows, nested = { files: [] }) {
     const all = sh ? sh.callers.flatMap((c) => c.files).slice(0, CALLER_CAP) : [];
     const allTotal = sh ? sh.callers[0].total + sh.callers[1].total + sh.callers[2].total : 0;
     for (const h of g.holders) {
-      // a holder that is a test is no caller, and one that isn't is counted by the pass
-      const test = isTestPath(h.row.path);
       let callers;
       let pins;
       if (sh) {
-        callers = withoutOwn(all, allTotal, h.row.path, !test);
-        pins = withoutOwn(sh.pins.files, sh.pins.total, h.row.path, test);
+        callers = withoutOwn(all, allTotal, h.row.path, h.ownCaller === true);
+        pins = withoutOwn(sh.pins.files, sh.pins.total, h.row.path, h.ownPin === true);
       } else {
         const cs = /** @type {Tally[]} */ (h.callers);
         callers = { files: cs.flatMap((c) => c.files).slice(0, CALLER_CAP), total: cs[0].total + cs[1].total + cs[2].total, approximate: true };

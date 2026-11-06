@@ -132,20 +132,24 @@ export function slice({ rows, modules, states, entries, select, entryPath, curre
 
   // the entries left out: listed while under the cap and the byte budget, in module order, and every other one counted
   const head = () => {
-    const kept = names.filter((n) => !omitted.has(n));
     /** @type {{module: string, file: string}[]} */
     const listed = [];
     let used = 0;
     let more = 0;
+    let seen = 0;
     for (const module of names) {
+      // past the cap nothing more is built: the rest of the omitted are counted without a look
+      if (listed.length >= OMITTED_CAP) break;
       if (!omitted.has(module)) continue;
+      seen++;
       const item = { module, file: entryPath(module) };
       const b = bytesOf(item) + 1;
-      if (listed.length < OMITTED_CAP && used + b <= OMITTED_BYTES) { listed.push(item); used += b; } else more++;
+      if (used + b <= OMITTED_BYTES) { listed.push(item); used += b; } else more++;
     }
+    more += omitted.size - seen;
     return {
       action: 'slice', total, truncated, rows: [], ...markHead,
-      ...(kept.length ? { entries: {} } : {}),
+      ...(names.length > omitted.size ? { entries: {} } : {}),
       ...(omitted.size ? { entries_omitted: listed, ...(more ? { entries_omitted_more: more } : {}) } : {}),
     };
   };

@@ -3,6 +3,7 @@
 // JS and TS run through `skim` first so a name inside a comment isn't one; Rust, Python and Go are line-anchored patterns
 // with no comment stripping, and `lib/skim.mjs` is left alone because adding their extensions would change what
 // agents' `bin/skim.mjs` accepts, and `skim` mishandled a Rust lifetime
+// a name is letters, numbers and marks of any script (the class `WORD` reads in codemap-edges.mjs), so `créer` is held whole
 // the text is untrusted and can be 1 MiB: every pattern runs on one line, capped, with no nested quantifier
 'use strict';
 
@@ -22,27 +23,27 @@ const JS_EXT = new Set(['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.mts', '.
 // [pattern, kind, which group is the name]; each is anchored and has no quantifier nested in another
 /** @type {[RegExp, string][]} */
 const JS_LINES = [
-  [/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([\w$]+)/, 'function'],
-  [/^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([\w$]+)/, 'class'],
-  [/^(?:export\s+)?(?:declare\s+)?(?:const\s+)?(?:enum|interface|type|namespace)\s+([\w$]+)/, 'type'],
-  [/^(?:export\s+)?(?:declare\s+)?(?:const|let|var)\s+([\w$]+)/, 'variable'],
-  [/^(?:module\.)?exports\.([\w$]+)\s*=/, 'export'],
+  [/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([\p{L}\p{N}\p{M}_$]+)/u, 'function'],
+  [/^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([\p{L}\p{N}\p{M}_$]+)/u, 'class'],
+  [/^(?:export\s+)?(?:declare\s+)?(?:const\s+)?(?:enum|interface|type|namespace)\s+([\p{L}\p{N}\p{M}_$]+)/u, 'type'],
+  [/^(?:export\s+)?(?:declare\s+)?(?:const|let|var)\s+([\p{L}\p{N}\p{M}_$]+)/u, 'variable'],
+  [/^(?:module\.)?exports\.([\p{L}\p{N}\p{M}_$]+)\s*=/u, 'export'],
 ];
 /** @type {[RegExp, string][]} */
 const RUST_LINES = [
-  [/^\s*(?:pub(?:\([^)]*\))?\s+)?(?:const\s+|async\s+|unsafe\s+)*fn\s+(\w+)/, 'function'],
-  [/^(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait|union|mod|type|const|static)\s+(?:mut\s+)?(\w+)/, 'type'],
+  [/^\s*(?:pub(?:\([^)]*\))?\s+)?(?:const\s+|async\s+|unsafe\s+)*fn\s+([\p{L}\p{N}\p{M}_]+)/u, 'function'],
+  [/^(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait|union|mod|type|const|static)\s+(?:mut\s+)?([\p{L}\p{N}\p{M}_]+)/u, 'type'],
 ];
 /** @type {[RegExp, string][]} */
 const PYTHON_LINES = [
-  [/^\s*(?:async\s+)?def\s+(\w+)/, 'function'],
-  [/^\s*class\s+(\w+)/, 'class'],
+  [/^\s*(?:async\s+)?def\s+([\p{L}\p{N}\p{M}_]+)/u, 'function'],
+  [/^\s*class\s+([\p{L}\p{N}\p{M}_]+)/u, 'class'],
 ];
 /** @type {[RegExp, string][]} */
 const GO_LINES = [
-  [/^func\s+(?:\([^)]*\)\s*)?(\w+)/, 'function'],
-  [/^type\s+(\w+)/, 'type'],
-  [/^(?:var|const)\s+(\w+)/, 'variable'],
+  [/^func\s+(?:\([^)]*\)\s*)?([\p{L}\p{N}\p{M}_]+)/u, 'function'],
+  [/^type\s+([\p{L}\p{N}\p{M}_]+)/u, 'type'],
+  [/^(?:var|const)\s+([\p{L}\p{N}\p{M}_]+)/u, 'variable'],
 ];
 
 /**
@@ -72,7 +73,7 @@ function exportLists(text) {
   const out = [];
   const lines = text.split('\n');
   for (let i = 0; i < lines.length && out.length < MAX_SYMBOLS; i++) {
-    const open = /^export\s*(?:type\s*)?\{(.*)$/.exec(lines[i].length > LINE_CAP ? lines[i].slice(0, LINE_CAP) : lines[i]);
+    const open = /^export\s*(?:type\s*)?\{(.*)$/u.exec(lines[i].length > LINE_CAP ? lines[i].slice(0, LINE_CAP) : lines[i]);
     if (!open) continue;
     let body = open[1];
     let closed = body.includes('}');
@@ -84,7 +85,7 @@ function exportLists(text) {
       body += `,${next}`;
     }
     for (const part of body.split('}')[0].split(',')) {
-      const m = /^\s*(?:type\s+)?(?:[\w$]+\s+as\s+)?([\w$]+)\s*$/.exec(part);
+      const m = /^\s*(?:type\s+)?(?:[\p{L}\p{N}\p{M}_$]+\s+as\s+)?([\p{L}\p{N}\p{M}_$]+)\s*$/u.exec(part);
       if (m) out.push({ name: m[1], kind: 'export', line: i + 1, approximate: true });
     }
     i = j;
