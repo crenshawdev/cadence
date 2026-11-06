@@ -21,6 +21,7 @@ import {
 } from './lib/rung-agent.mjs';
 import { gateAgreementIssues } from './lib/gate-agreement.mjs';
 import { settingExplanationIssues } from './lib/setting-explanations.mjs';
+import { settingConditionIssues } from './lib/setting-conditions.mjs';
 import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
 import { globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
 import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
@@ -493,11 +494,11 @@ function run(root) {
     problems.push({ kind: 'missing-input', file: 'INTERNALS.md', detail: 'always-expected input absent' });
   }
 
-  // 1 to 3 over the schema's walk text (question, explain text, hint); forward scan only, so it never feeds 1b
+  // 1 to 3 over the schema's walk text (question, explain text, hint, interacts); forward scan only, so it never feeds 1b
   for (const key of schemaKeys) {
     const spec = schema[key];
     if (!spec || typeof spec !== 'object') continue;
-    const texts = [spec.question, ...(Array.isArray(spec.explain) ? spec.explain.map((e) => e && e.text) : []), spec.hint];
+    const texts = [spec.question, ...(Array.isArray(spec.explain) ? spec.explain.map((e) => e && e.text) : []), spec.hint, spec.interacts];
     for (const t of texts) {
       if (typeof t === 'string') lintProse(t, 'cadence-core/config.schema.json', false, `${key}: `);
     }
@@ -769,6 +770,11 @@ function run(root) {
     problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
   }
 
+  // 29. each key's applies_when against the keys it names: a key the schema doesn't hold, a value that key refuses
+  for (const { code, detail } of settingConditionIssues(schema)) {
+    problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
+  }
+
   // 9. the reach table against config.schema.json both ways, plus the narrow-reach-must-be-stated rule. Root-relative,
   // so a fixture can supply its own doc, and a full tree missing it is a missing-input. Read and parse are guarded: a
   // malformed table is problems on the table, not an unwind to internal that drops the rest (#49.1).
@@ -931,7 +937,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations, workflow-scripts', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations, setting-conditions, workflow-scripts', problems });
 } catch (e) {
   // a thrown seam object has no message, so without this arm the refusal's detail is "[object Object]"
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
