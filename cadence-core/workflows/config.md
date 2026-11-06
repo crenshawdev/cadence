@@ -35,9 +35,25 @@ Parse `$ARGUMENTS`:
 - Empty: Read the same file and follow its **Opening screen**. That file is also
   where the reply to the screen goes; Direct set never reads it.
 
+The menu is opt-in. Before either of those last two arms, read the switch (a
+repo value counts):
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.config_menu
+```
+
+- `true`: the arms above work as written.
+- Not `true` (the default is `false`): empty goes to **Interactive menu (no
+  args)**, the walk, exactly as `/cad-config` did before the menu. A sentence, or
+  a pick of a group, is not taken: say in one line that the menu is off, give
+  `/cad-config workflow.config_menu=true` as the command that turns it on, read
+  no menu file and write nothing.
+
+A flag, `--walk` and `<key>=<value>` never read the switch.
+
 ## Interactive menu (no args)
 
-Reached with `--walk`. Goal: let the user adjust every knob the walk carries, presented as
+Reached with `--walk`, or with no arguments while `workflow.config_menu` is off. Goal: let the user adjust every knob the walk carries, presented as
 selectable lists, the twelve `roles.<role>.model` and `.effort` keys included. Two sets stay out:
 `review.providers.*`, which needs live detection, so the menu routes it to
 **Review provider setup** rather than free-typing model ids; and

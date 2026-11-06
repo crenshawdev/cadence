@@ -31,10 +31,13 @@ Routing:
 - **`<key>=<value>` ...**: set config keys directly (validated against the config schema).
 - **--walk**: walk every knob as a selectable list (batched pages), each
   preselected to its current value.
-- **a sentence**: find the settings it means, show each one's current value,
+- **a sentence** (menu on): find the settings it means, show each one's current value,
   new value and file with a preview, and write only after a yes.
-- **default** (no args): open on six groups with what this repo and your global
-  config set; a number lists that group's settings, and a sentence is read as above.
+- **default** (no args): while `workflow.config_menu` is true, open on six groups
+  with what this repo and your global config set; a number lists that group's
+  settings, and a sentence is read as above. The menu is opt-in and off by
+  default: with it off, no args opens the walk, and a sentence is answered with
+  the command that turns it on, `/cad-config workflow.config_menu=true`.
 </objective>
 
 <execution_context>

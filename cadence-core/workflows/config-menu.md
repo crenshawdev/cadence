@@ -1,7 +1,9 @@
 # cad-config menu (cold branch)
 
 Loaded from config.md when `/cad-config` ran with no arguments or with a sentence, or when the reply to the opening
-screen is a number or a sentence. Direct set never reads it. Every count and value on a screen comes from `config.mjs layers`, never from a
+screen is a number or a sentence, and only while `workflow.config_menu` is true: config.md's Route reads that switch
+first, and with it off sends no arguments to the walk and answers a sentence with the command that turns it on. Direct
+set never reads it. Every count and value on a screen comes from `config.mjs layers`, never from a
 raw config file.
 
 ## Opening screen

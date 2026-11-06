@@ -6,14 +6,24 @@ You don't need to tune every setting to start using Cadence. Setup asks about th
 
 | Command | Use it for |
 |---|---|
-| `/cadence:cad-config` | Open on six groups of settings, with what this repo and your global config set. Reply with a number to list a group, or say what you want to change. |
-| `/cadence:cad-config --walk` | Walk every setting in the menu, page by page. |
+| `/cadence:cad-config` | With the menu on, open on six groups of settings, with what this repo and your global config set. Reply with a number to list a group, or say what you want to change. With it off, the default, this opens the full walk. |
+| `/cadence:cad-config --walk` | Walk every setting in the menu, page by page. Works with the menu on or off. |
 | `/cadence:cad-config --roles` | Choose each role's model and effort for this project. Add `--global` for machine-wide answers. |
 | `/cadence:cad-config --review` | Configure review providers and detect models. |
 | `/cadence:cad-config --surfaces` | Revisit the project's risk surfaces. |
 | `/cadence:cad-config --testing` | Accept or adjust the testing policy and separately choose verification-publishing authorization. |
-| `/cadence:cad-config make reviews cheaper` | Say what you want in a sentence. Cadence finds the settings you mean, shows each one's current value, new value and file, and writes only after you say yes. |
+| `/cadence:cad-config make reviews cheaper` | With the menu on, say what you want in a sentence. Cadence finds the settings you mean, shows each one's current value, new value and file, and writes only after you say yes. |
 | `/cadence:cad-config parallelization.enabled=false` | Set a known repository option directly. |
+
+## Turn the menu on
+
+The menu is new, so it is off until you turn it on. With it off, `/cadence:cad-config` opens the full walk, as it did before the menu, and a sentence is answered with how to turn the menu on. To turn it on:
+
+```
+/cadence:cad-config workflow.config_menu=true
+```
+
+Set it back to `false` to go back to the walk. `--walk`, `key=value` and the guided flags work the same either way, and the walk still previews a change before it writes.
 
 ## What the menu shows
 
