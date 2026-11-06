@@ -72,7 +72,8 @@ set up ahead of its gate, so end that line with "You can still set it now." and 
   target file stores: `git.auto_close`, `workflow.use_workflows`, `workflow.multi_workflow` and `review.reviewers`.
   On those, a pick writes nothing only when it equals what the target file stores, or when that file stores
   nothing and the pick equals the value in force. So picking false over a repo true is written, and the menu can
-  undo its own write.
+  undo its own write. Picking true where the repo already stores true writes nothing to the repo, and **The second
+  file** still runs.
 
 **The value.** What the person typed never goes on the command line as typed: a double-quoted word carrying `$(...)`
 runs before Node starts, and the preview comes before the yes. Make a directory for the run, write the new value as
@@ -117,7 +118,17 @@ follows the key: the repo's `.planning/config.json` by default, `set --global` f
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set [--global] <key>="$(cat <D>/value.json)"
 ```
 
-Echo the seam's `changed`, then show the list again.
+Echo the seam's `changed`. Take **The second file** when the preview named one, then show the list again.
+
+**The second file.** `git.auto_close`, `workflow.use_workflows` and `workflow.multi_workflow` stay off until both files
+set them, so a repo value alone leaves the setting off. When the preview names a `second_file`, say in a turn of its own
+that the setting is still off, that `<second_file.file>` has to set it too, and that a value there counts for any repo
+that also sets this key, then ask for a yes. Only after that yes, write the global file with the same value file. A no
+leaves the repo value as it is and the setting off.
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set --global <key>="$(cat <D>/value.json)"
+```
 
 **Advanced.** Opening the entry reads `layers --group "<name>" --advanced` and lists those keys with their
 `purpose`. A pick takes the same pick and write path, with `purpose` in place of the question it does not have.
@@ -187,7 +198,8 @@ named (`set --global` for the global file), each value through its file:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set [--global] <key>="$(cat <D>/v1.json)"
 ```
 
-Echo the seam's `changed`.
+Echo the seam's `changed`. A pick whose preview named a `second_file` then takes **The second file** from **A group**,
+with its own value file.
 
 **Leaving.** The same follow-ups as **A group**: **Worktree base ref** when `parallelization.use_worktrees` is on,
 and **Wrap-up**'s dangling enrollment check when review settings changed.
