@@ -332,14 +332,14 @@ export function suggestFromRender(render, resolution, reads) {
   for (const [role, row] of [...rungs.entries()].sort()) {
     if (row.escalated >= MIN_ESCALATIONS_FOR_RUNG_SUGGESTION) {
       // the target is a rung the record shows, never a guessed step; `raiseTarget` makes it a real change
-      const proposed = raiseTarget(resolution, `model.effort.${role}`, row.rung);
+      const proposed = raiseTarget(resolution, `roles.${role}.effort`, row.rung);
       out.push({
         kind: 'suggest',
         subject: role,
         evidence: `${row.escalated} of ${row.resolves} resolves climbed to the retry rung`,
-        action: `model.effort.${role}`,
+        action: `roles.${role}.effort`,
         direction: 'raise',
-        ...keyState(resolution, `model.effort.${role}`),
+        ...keyState(resolution, `roles.${role}.effort`),
         ...(proposed ? { proposed } : {}),
       });
     } else if (row.escalated === 0 && row.resolves >= MIN_DISPATCHES_FOR_RUNG_INFO) {
