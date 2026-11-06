@@ -122,7 +122,7 @@ function cmdScan(dir) {
   const root = dirname(resolve(dir));
   let rows;
   try {
-    rows = readFacts(root);
+    rows = readFacts(root, true);
   } catch {
     return fail('no-git', `${root} is not inside a git repository, so there is nothing to scan`,
       'run from the project\'s repository, or pass --dir naming its .planning directory');

@@ -6,6 +6,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, readlinkSync } from 'node:fs';
+import { symbolsFor } from './codemap-symbols.mjs';
 
 // the over-cap line: a file bigger than this is opened by nobody, its hash and byte count are all we keep
 export const OVER_CAP = 1024 * 1024;
@@ -107,16 +108,18 @@ function hashBytes(root, text) {
  * Whether a regular file within the cap is text. It's opened only here, only after an lstat said regular, and
  * without following a link or blocking on a pipe that replaced it since.
  * @param {Buffer} file @param {number} size
- * @returns {'text'|'binary'|null} null when it couldn't be opened as a regular file
+ * @param {boolean} whole read the whole file, for the symbols of a text one
+ * @returns {{kind: 'text'|'binary', text?: string}|null} null when it couldn't be opened as a regular file
  */
-function probe(file, size) {
+function probe(file, size, whole) {
   let fd;
   try {
     fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     if (!fstatSync(fd).isFile()) return null;
-    const head = Buffer.alloc(Math.min(size, PROBE));
-    const n = readSync(fd, head, 0, head.length, 0);
-    return head.subarray(0, n).includes(0) ? 'binary' : 'text';
+    const buf = Buffer.alloc(whole ? Math.min(size, OVER_CAP) : Math.min(size, PROBE));
+    const n = readSync(fd, buf, 0, buf.length, 0);
+    if (buf.subarray(0, Math.min(n, PROBE)).includes(0)) return { kind: 'binary' };
+    return whole ? { kind: 'text', text: buf.subarray(0, n).toString('utf8') } : { kind: 'text' };
   } catch {
     return null;
   } finally {
@@ -127,11 +130,12 @@ function probe(file, size) {
 /**
  * The scan's rows: one per tracked path, in path order. `kind` is text, binary, over_cap, symlink, gitlink, other or
  * missing; `hash` is null for a path with nothing to hash, which a staleness check reads as changed.
+ * `withSymbols` reads each text file whole for the names it declares; a staleness check wants hashes only and leaves it off.
  * Throws when `root` isn't inside a git repository.
- * @param {string} root
- * @returns {{path: string, quoted?: true, kind: string, hash: string|null, bytes: number|null}[]}
+ * @param {string} root @param {boolean} [withSymbols]
+ * @returns {{path: string, quoted?: true, kind: string, hash: string|null, bytes: number|null, symbols?: any[]}[]}
  */
-export function readFacts(root) {
+export function readFacts(root, withSymbols = false) {
   const entries = readIndex(root);
   const dirty = new Set(nulFields(git(root, ['diff-files', '--name-only', '-z', '--relative']))
     .map((r) => r.toString('latin1')));
@@ -159,8 +163,12 @@ export function readFacts(root) {
     row.bytes = st.size;
     if (isDirty) { toHash.push(i); row.hash = null; }
     if (st.size > OVER_CAP) { row.kind = 'over_cap'; return row; }
-    const k = probe(file, st.size);
-    row.kind = k || 'other';
+    const k = probe(file, st.size, withSymbols);
+    row.kind = k ? k.kind : 'other';
+    if (k && k.text !== undefined) {
+      const symbols = symbolsFor(path, k.text);
+      if (symbols.length) /** @type {any} */ (row).symbols = symbols;
+    }
     return row;
   });
   const done = hashFiles(root, toHash.map((i) => entries[i].raw));
