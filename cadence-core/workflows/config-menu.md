@@ -48,7 +48,8 @@ It answers `rows` (the group's shown settings in order, each with `key`, `value`
 
 **The list.** A numbered list of the rows by dotted key, each with its value and who set it: `this repo`, `your
 global config` or `the default` from `winner`. A row with no `winner` is on only when both files set it, so say
-which one is missing. A cell in state `ignored` says the value is ignored there, and `unreadable` names its file. A row whose `applies` is
+which one is missing. A cell in state `ignored` says the value is ignored there, and `unreadable` names its file. A row with `dropped` says
+each name there is not in force, because your global `review.reviewers` has to name it too. A row whose `applies` is
 false is marked `(no effect right now)`.
 Below the list, an `A. Advanced` line when `advanced` is not empty, and the group's guided setup: `--roles` for
 Models and effort, `--surfaces` for When reviews run, `--review` for Who reviews, `--testing` for Testing. Git and
@@ -58,7 +59,7 @@ choice box.
 **A pick.** A number opens that setting. Read it with `layers --key <key>` and show a block: the key, `Now:` with
 its value and who set it, the default, global and repo values with who wins, and what it does, which is its
 `question` with each `explain` text beside its value. When `applies` is false, add `No effect right now:` with each
-sentence of `no_effect`. Add `Works with:` with the `interacts` text and each of `works_with` as its key beside its
+sentence of `no_effect`. When the row has `dropped`, say the same thing the list says about those names. Add `Works with:` with the `interacts` text and each of `works_with` as its key beside its
 value, and leave the line out when both are empty. Ask for the new value in the turn's last line. A setting with no effect can still be picked, because it may be
 set up ahead of its gate, so end that line with "You can still set it now." and change nothing else in the flow.
 
