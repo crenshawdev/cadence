@@ -138,6 +138,11 @@ Each line is a key, its value in force, its text and its values. A refusal on st
 the sentence asks to change and the value each should take, by what `question`, `purpose` and `explain` say. Nothing
 matched: say so, name the groups from the opening screen, and write nothing.
 
+**Provider hand-off.** When a match touches `review.providers.*`, or adds a cross-model name to `review.reviewers`,
+go to **Review provider setup** (`config.md`) and show nothing here. The test is the matched keys, not the words
+used: `set up OpenAI reviews` matches the provider keys, and model ids need live detection while enrolling a provider
+needs the global-layer question only that setup asks.
+
 **Scratch value.** A value taken from the sentence is written as JSON to its own file in that directory with the
 Write tool (`<D>/v1.json`, `<D>/v2.json`), before anything uses it. The preview and `set` take it as
 `<key>="$(cat <path>)"` (`references/conventions.md`, Caller-derived text), because a double-quoted word carrying
