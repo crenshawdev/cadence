@@ -68,6 +68,7 @@ Commands below use the short names. In Claude Code, use the `/cadence:` prefix, 
 |---|---|
 | `/cad-context <phase>` | Settle the decisions and acceptance criteria. |
 | `/cad-plan <phase>` | Turn them into a plan with a bounded testing scope when a policy is active. |
+| `/cad-map` | Build or refresh the code map the planner reads. It runs only with `planning.code_map` on, after a typed yes. |
 | `/cad-execute <phase>` | Build the plan and run its checks. |
 | `/cad-verify <phase>` | Check whether the phase delivered what it promised. |
 | `/cad-progress` | Read the project state and find the next step. |

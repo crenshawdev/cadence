@@ -44,6 +44,8 @@ Context7 is used when it's installed and skipped when it's not, and Cadence does
 
 `/cadence:cad-plan`, `/cadence:cad-plan-review`, `/cadence:cad-execute`, `/cadence:cad-verify`, `/cadence:cad-task`, `/cadence:cad-debug` list `Workflow` in `allowed-tools`. It runs the review panel as a workflow, and only when `workflow.use_workflows` is true in both your repository's config and your user-global config, which is off by default. When it runs, Cadence reads the host's run file for that workflow, `workflows/<run id>.json` under the session directory, read-only, to price each agent and to take the result.
 
+`/cadence:cad-map` also lists `Workflow`, to run the code map's readers. It doesn't read `workflow.use_workflows`: it runs only with `planning.code_map` on and only after you type a yes to a prompt that names the readers it would start, so a repository's committed setting alone can't start one.
+
 ## Outside the project
 
 What Cadence writes outside your repository:
