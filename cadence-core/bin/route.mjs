@@ -448,7 +448,9 @@ function floorFor(ctx) {
 function resolve(opts) {
   // Trace phase is `--phase` when it parses, else the cursor; with neither nothing is recorded, since an event keyed to
   // no phase joins nothing.
-  const planningRoot = dirname(opts.file);
+  // `--planning-root` moves where the phase, the plans and the risk floor are read from, apart from `--file`, which
+  // still says which config is read. A scratch config copy would otherwise move the floor's tree with it.
+  const planningRoot = opts.planningRoot || dirname(opts.file);
   let tracePhase = null;
   try {
     // Only set when it parsed clean: `parseArgs` already refused a malformed spelling.
@@ -465,7 +467,9 @@ function resolve(opts) {
   // and its tokens. Best effort: `appendEvent` never throws and a failed bracket changes no envelope byte.
   // The one unbracketed arm is a schema that fails to parse, where the close shows as unpaired in `trace render`; that
   // is signal on an arm so rare.
-  if (opts.bracketRead && tracePhase !== null) {
+  // `--no-record` skips both appends whatever `--phase` or `--bracket-read` say: a preview resolves twice and writes nothing.
+  const record = !opts.noRecord;
+  if (record && opts.bracketRead && tracePhase !== null) {
     try {
       const read = opts.bracketRead.split(',').map((s) => s.trim()).filter(Boolean);
       appendEvent(planningRoot, {
@@ -802,7 +806,7 @@ function resolve(opts) {
   // Best effort: `appendEvent` never throws and this sits in its own try, so a trace that can't be written leaves the
   // envelope byte-identical.
   try {
-    if (tracePhase !== null) {
+    if (record && tracePhase !== null) {
       appendEvent(planningRoot, {
         phase: tracePhase,
         family: 'routing',
@@ -838,7 +842,7 @@ function resolve(opts) {
 // so the refusal is the help.
 // A role with nothing usable after it gets the specific sentence in the table below.
 const SYNOPSIS = 'resolve --role <name> [--attempt N] [--file <config>] [--phase N]'
-  + ' [--plan <key>] [--bracket-read <csv> [--bracket-plan <key>]]';
+  + ' [--plan <key>] [--bracket-read <csv> [--bracket-plan <key>]] [--no-record] [--planning-root <dir>]';
 
 // The rows in lib/arg-contract.mjs own each flag's rule and this table owns only the sentence, since route.mjs mints
 // no reason code of its own: every refusal is `usage`. Order is load-bearing, the first failing flag names the refusal.
@@ -859,6 +863,9 @@ const RESOLVE_FLAGS = {
   '--plan': ['plan', 'resolve --plan needs a plan key after it: --plan <k>'],
   // Last, so the older flags still name the refusal first on a call malformed in two places.
   '--phase': ['phase', 'resolve --phase must be a phase number: --phase <N|N.M>'],
+  // Presence only. A valueless `--planning-root` refuses: it would read plans off the wrong tree unnoticed.
+  '--no-record': ['noRecord', 'resolve --no-record takes no value'],
+  '--planning-root': ['planningRoot', 'resolve --planning-root needs a directory after it: --planning-root <.planning dir>'],
 };
 
 function parseArgs(a) {

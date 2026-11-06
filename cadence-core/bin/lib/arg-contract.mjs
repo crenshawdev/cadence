@@ -742,6 +742,10 @@ export const CONTRACTS = {
       // key, the role name for every non-executor dispatch, which can't tell a phase-scoped role from a plan key
       // naming no file.
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
+      // the config preview resolves twice over a scratch copy: --no-record keeps both trace appends out of the real
+      // run record, and --planning-root keeps the phase, plans and floor on the real tree while --file names the copy
+      '--no-record': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+      '--planning-root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // the prefixed name for the two reviews that resolve no routing: they dispatch the base cad-reviewer
     'agent-type': {
