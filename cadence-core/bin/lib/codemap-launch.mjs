@@ -8,12 +8,13 @@
 'use strict';
 
 import { spawnSync } from 'node:child_process';
-import { lstatSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { lstatSync, realpathSync, rmSync } from 'node:fs';
 import { isAbsolute, join, posix, sep } from 'node:path';
+import { isTestPath } from './codemap-edges.mjs';
 import { SYMBOL_MAX } from './codemap-entry.mjs';
 import { entryFile } from './codemap-partition.mjs';
 import { atomicWrite } from './planning-files.mjs';
+import { localGitEnv } from './publish-authorization.mjs';
 import { LIST_CAP } from './workflow-run.mjs';
 
 export const LAUNCH_FILE = 'launch.json';
@@ -49,21 +50,22 @@ function oldBlob(root, hash) {
 }
 
 /**
- * A name from a stored file as root-relative, normalized, or null when it is absolute, empty, holds a NUL or climbs out of the root.
+ * A name from a stored file as root-relative, normalized, or null when it is absolute, empty, holds a NUL or a backslash, or climbs out of the root.
  * @param {unknown} p @returns {string|null}
  */
 function rootRel(p) {
-  if (typeof p !== 'string' || !p || p.includes('\0') || isAbsolute(p)) return null;
+  if (typeof p !== 'string' || !p || p.includes('\0') || p.includes('\\') || isAbsolute(p)) return null;
   const n = posix.normalize(p);
   return n === '.' || n === '..' || n.startsWith('../') ? null : n;
 }
 
 /**
- * Whether a stored test path is safe to hand a reader to open now: root-relative, no climb, a regular file by `lstat`, and
+ * Whether a stored test path is safe to hand a reader to open now: a test file by name with no `.git` segment, root-relative, no climb, a regular file by `lstat`, and
  * its directory resolving inside the root. A symlink, a missing file and a path in a stored file that lies are dropped.
  * @param {string} realRoot @param {string} root @param {string} n a normalized root-relative path
  */
 function openable(realRoot, root, n) {
+  if (!isTestPath(n) || n.split('/').includes('.git')) return false;
   try {
     if (!lstatSync(join(root, n)).isFile()) return false;
     const dir = realpathSync(join(root, posix.dirname(n)));
@@ -74,22 +76,16 @@ function openable(realRoot, root, n) {
 /**
  * The hunks of a diff between an old blob and the file as it is now, working-tree edits included. `--no-index` reads the
  * blob from stdin and the file from disk, so nothing is stored and the index is not asked. Git's own header names a
- * temporary side, so it's replaced by the path.
- * @param {string} root @param {string} rel @param {Buffer} blob
+ * temporary side, so it's replaced by the path. Git runs from `outDir` with no repository and no config layer to read.
+ * @param {string} root @param {string} outDir @param {string} rel @param {Buffer} blob
  * @returns {string|null}
  */
-function diffOf(root, rel, blob) {
-  // run from a fresh directory outside any repository with no attributes file, so no tracked `.gitattributes` and no
-  // configured one can name a filter for git to run on the working-tree file
-  const away = mkdtempSync(join(tmpdir(), 'cad-diff-'));
-  let r;
-  try {
-    r = spawnSync('git', [...GIT, '-c', 'core.attributesFile=', 'diff', '--no-index', '--no-color', '--no-ext-diff', '--no-textconv', '--', '-', join(root, rel)],
-      { cwd: away, input: blob, maxBuffer: MAX_DIFF, env: { ...ENV, GIT_ATTR_NOSYSTEM: '1', GIT_CEILING_DIRECTORIES: tmpdir() } });
-  } finally {
-    rmSync(away, { recursive: true, force: true });
-  }
-  // 1 is "they differ", which is the answer; anything else is a diff that didn't happen
+function diffOf(root, outDir, rel, blob) {
+  // no GIT_DIR that exists, no config layer read: git finds no repository, so no filter can be named, whichever .gitattributes it sees
+  const env = { ...localGitEnv(ENV), GIT_DIR: '/dev/null/cad-no-git-dir', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_ATTR_NOSYSTEM: '1' };
+  const r = spawnSync('git', [...GIT, '-c', 'core.attributesFile=', 'diff', '--no-index', '--no-color', '--no-ext-diff', '--no-textconv', '--', '-', join(root, rel)],
+    { cwd: outDir, input: blob, maxBuffer: MAX_DIFF, env });
+
   if (r.status !== 0 && r.status !== 1) return null;
   const lines = String(r.stdout).split('\n');
   const at = lines.findIndex((l) => l.startsWith('@@'));
@@ -122,7 +118,7 @@ function refreshOf(root, outDir, m, entry, byPath, read, names) {
     rmSync(diffFile, { force: true });
     return { ...refresh, refresh: 'whole' };
   }
-  const parts = changed.map((p, i) => (read.has(p) ? diffOf(root, p, /** @type {Buffer} */ (blobs[i])) : ''));
+  const parts = changed.map((p, i) => (read.has(p) ? diffOf(root, outDir, p, /** @type {Buffer} */ (blobs[i])) : ''));
   if (parts.some((d) => d === null)) {
     rmSync(diffFile, { force: true });
     return { ...refresh, refresh: 'whole' };
