@@ -120,8 +120,8 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'rung-agent-files',
     holder: 'tests/rung-agent.test.mjs',
-    counts: 'the 30 rung file stems across the six roles, each serving exactly one rung',
-    asserted_by: 'the test named `RUNG_FILES names 30 files across the six '
+    counts: 'the 35 rung file stems across the seven roles, each serving exactly one rung',
+    asserted_by: 'the test named `RUNG_FILES names 35 files across the seven '
       + 'roles, and is frozen`',
     subjects: ['cadence-core/bin/lib/rung-agent.mjs'],
   }),

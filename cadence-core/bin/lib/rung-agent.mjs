@@ -2,7 +2,7 @@
 // rung-agent.mjs - the one statement of which agent file carries which rung of which role. route.mjs resolves a rung
 // to an agent name from it, self-verify proves every name exists, and read-trace and subagent-trace use
 // roleOfAgent and rungOfAgent. Spelling the map twice is the resolved-then-silently-wrong class (#39, #43, #64).
-// RUNG_FILES is a stated table, not a naming convention, because no convention is true of all 30 files.
+// RUNG_FILES is a stated table, not a naming convention, because no convention is true of all 35 files.
 // Pure lib: no fs, no emit, no process, no Date, no randomness. It returns names and problem codes.
 'use strict';
 
@@ -64,6 +64,13 @@ export const RUNG_FILES = Object.freeze({
     high: 'cad-plan-checker-high',
     xhigh: 'cad-plan-checker-xhigh',
     max: 'cad-plan-checker-max',
+  }),
+  'cad-mapper': Object.freeze({
+    low: 'cad-mapper-low',
+    medium: 'cad-mapper-medium',
+    high: 'cad-mapper',
+    xhigh: 'cad-mapper-xhigh',
+    max: 'cad-mapper-max',
   }),
 });
 
