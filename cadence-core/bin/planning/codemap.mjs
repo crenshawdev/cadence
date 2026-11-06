@@ -367,7 +367,7 @@ function cmdWrite(dir, opts) {
   const symbols = new Map(rows.filter((r) => r.symbols).map((r) => [r.path, new Set(r.symbols.map((/** @type {any} */ s) => s.name))]));
 
   // the main session retypes the launch file into `args`, so a mistyped hash or a dropped module would otherwise go unnoticed
-  /** @type {Map<string, any>|null} */
+  /** @type {Map<string, {built_from: any, item: unknown}>|null} */
   let launch = null;
   let launchCheck = 'not-given';
   if (opts['launch-file'] !== undefined) {
@@ -376,7 +376,7 @@ function cmdWrite(dir, opts) {
     let l = null;
     try { l = r.text === null ? null : JSON.parse(r.text); } catch { /* judged below */ }
     if (isPlainObject(l) && Array.isArray(l.items) && l.items.every((/** @type {any} */ i) => isPlainObject(i) && typeof i.name === 'string' && isPlainObject(i.built_from))) {
-      launch = new Map(l.items.map((/** @type {any} */ i) => [i.name, i.built_from]));
+      launch = new Map(l.items.map((/** @type {any} */ i) => [i.name, { built_from: i.built_from, item: i.item }]));
       launchCheck = 'ran';
     } else {
       launchCheck = 'not-run';
@@ -400,13 +400,15 @@ function cmdWrite(dir, opts) {
       const m = byName.get(name);
       if (!m) { no('not a module the facts hold'); continue; }
       if (startsNoReader(m, byPath)) { no('a module that starts no reader'); continue; }
-      const pinned = launch ? launch.get(name) : null;
-      if (launch && !pinned) { no('the launch file does not name this module'); continue; }
+      const given = launch ? launch.get(name) : null;
+      const pinned = given ? given.built_from : null;
+      if (launch && !given) { no('the launch file does not name this module'); continue; }
       if (row.entry === null) { dead.push(name); continue; }
       const from = row.built_from;
       if (!isPlainObject(from) || !Object.values(from).every((h) => typeof h === 'string' && OBJECT_NAME.test(h))) {
         no('built_from is not a map of paths to hashes'); continue;
       }
+      if (given && (typeof row.item !== 'string' || row.item !== given.item)) { no('item differs from the launch file\'s or is missing, so the reader may have opened the wrong file'); continue; }
       if (pinned && !sameHashes(from, pinned)) { no('built_from differs from the launch file\'s, so a hash or a path was changed on the way'); continue; }
       const verdict = judgeEntry(row.entry, { root, module: new Set(m.paths), tracked, nested: nestedPaths, symbols });
       if (!verdict.ok) { no(verdict.why); continue; }

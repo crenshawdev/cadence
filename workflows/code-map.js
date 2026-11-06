@@ -7,16 +7,19 @@ export const meta = {
 //   root and items are `codemap status --out-dir`'s launch file, retyped by the main session. item is the absolute path of that module's item file,
 //   which the reader opens with Read, so no repository path rides in the prompt. The main session adds the rung's agent_type, its model or null,
 //   and how many readers may run at once.
-// Returns { modules: [{ name, entry: <schema object>|null, built_from }] } in the order given. built_from is copied from args and never from a reader,
-//   so an edit made during the run leaves that module stale. A reader that died has entry null, and `codemap write` bills it and names it.
+// Returns { modules: [{ name, item, entry: <schema object>|null, built_from }] } in the order given. built_from and item are copied from args and never
+//   from a reader, so an edit made during the run leaves that module stale, and `codemap write` can compare both with the launch file's.
+//   A reader that died has entry null, and `codemap write` bills it and names it.
 
 let a = args;
 if (typeof a === 'string') { try { a = JSON.parse(a); } catch { a = null; } }
 const text = (v) => typeof v === 'string' && v.trim() !== '';
+// A module name is a directory name, which can be whitespace alone, so it only has to be a non-empty string.
+const named = (v) => typeof v === 'string' && v !== '';
 const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const usable = a && typeof a === 'object'
   && text(a.root) && text(a.agent_type)
-  && Array.isArray(a.items) && a.items.length > 0 && a.items.every((i) => plain(i) && text(i.name) && plain(i.built_from) && text(i.item))
+  && Array.isArray(a.items) && a.items.length > 0 && a.items.every((i) => plain(i) && named(i.name) && plain(i.built_from) && text(i.item))
   && (a.model === null || a.model === undefined || text(a.model))
   && Number.isSafeInteger(a.batch_size) && a.batch_size > 0;
 if (!usable) {
@@ -79,7 +82,7 @@ const promptFor = (item) => [
 
 const read = async (item) => {
   const entry = await ask(promptFor(item), { ...base, schema: ENTRY_SCHEMA, label: `map ${item.name}` }, `reader ${item.name}`);
-  return { name: item.name, entry: entry || null, built_from: { ...item.built_from } };
+  return { name: item.name, item: item.item, entry: entry || null, built_from: { ...item.built_from } };
 };
 
 // No one pipeline call is assumed to hold a whole build, so each batch is awaited before the next starts.
@@ -87,6 +90,6 @@ const modules = [];
 for (let at = 0; at < a.items.length; at += a.batch_size) {
   const batch = a.items.slice(at, at + a.batch_size);
   const done = await pipeline(batch, read);
-  batch.forEach((item, i) => modules.push(done[i] || { name: item.name, entry: null, built_from: { ...item.built_from } }));
+  batch.forEach((item, i) => modules.push(done[i] || { name: item.name, item: item.item, entry: null, built_from: { ...item.built_from } }));
 }
 return { modules };
