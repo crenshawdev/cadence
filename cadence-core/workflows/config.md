@@ -67,7 +67,7 @@ walk is the flat way.
 
 ### The walk
 
-1. Read the current config. Show a one-screen summary (each knob = current value).
+1. Read the current config. Show a one-screen summary (each knob = current value). Reached with no arguments, end it with this line: `A menu of six settings groups is off. /cad-config workflow.config_menu=true turns it on.`
 2. Read the walk's rows with
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys --walk`
    (sections in walk order).
