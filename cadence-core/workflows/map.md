@@ -56,7 +56,7 @@ Only now pin the hashes, so they are the launch's and not the question's:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codemap status --out-dir <the scratch directory>
 ```
 
-A refusal is named in one line and the claim released. The answer's `launch` holds `file`, `items` and `bytes`. With `items` 0 the map went current since the question: say so, release the claim and start nothing. Otherwise Read `launch.file`.
+A refusal is named in one line and the claim released. The answer's `launch` holds `file`, `items` and `bytes`. With `items` 0 the map went current since the question: say so, release the claim and start nothing. Otherwise Read `launch.file`. If `Read` answers a partial view, follow its instruction to read the whole file; if the whole file can't be had, name that in one line, release the claim and start nothing, and never launch from a partial view.
 
 `args` is that file whole, retyped exactly: `root`, then `items`, each with its `name`, `built_from` and `item`, with not a name, a path, a hash or a byte changed. Add the resolve's `agent_type` and `model` (null when it answered none) and `batch_size`, the `parallelization.max_concurrent_agents` read in step 1.
 
@@ -75,6 +75,6 @@ The notice holds run totals and cuts a result short, so the seam reads the run f
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codemap write --run-file <run file> --launch-file <the launch file status printed> [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
 ```
 
-Pass the notice's totals as plain whole numbers, for the case the run file has no agent rows. Release the claim right after this call returns, whether it succeeded or refused, with step 3's release line and the same `id`. A take that printed no id has nothing to release.
+Pass the notice's totals as plain whole numbers, for the case the run file has no agent rows. A `bad-args` refusal has billed and written nothing and the run file is still good, so correct the flag it names and run the same call again before you stop, or `/cad-map` pays for those readers twice. Release the claim right after the call returns any other answer, whether it succeeded or refused, with step 3's release line and the same `id`. A take that printed no id has nothing to release.
 
-The call bills every agent in the run, one bracket each, before it judges anything. Print `written`, each `refused` module with the reason it names, each `dead` reader, and each `missing` module, with `launch_note` when it is present. Say those modules stay stale and that `/cad-map` again rebuilds only them. A refusal of the call is named in one line: its agents are already billed.
+The call bills every agent in the run, one bracket each, before it judges anything. Print `written`, each `refused` module with the reason it names, each `dead` reader, and each `missing` module, with `launch_note` when it is present. Say those modules stay stale and that `/cad-map` again rebuilds only them. A refusal of the call is named in one line. One carrying `brackets` has billed its agents, and a `bad-args` one has billed nothing.
