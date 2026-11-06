@@ -25,6 +25,7 @@ import { checkValue, checkGrammar } from './lib/config-value.mjs';
 import { workflowLayers, WORKFLOW_KEYS } from './lib/workflow-layers.mjs';
 import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { flatten, layerRows } from './lib/config-layers.mjs';
+import { dottedKeyPaths, withoutDottedKeys } from './lib/global-only-keys.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // loaded inside the dispatch try below, so a missing or broken schema answers {ok:false} instead of crashing at import
@@ -66,8 +67,9 @@ function validate(file) {
       errors: [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }],
       hint: 'make the top level of this file a JSON object of key/value pairs - an empty {} is a valid layer - then re-run' });
   }
-  const leaves = flatten(cfg, '', {});
-  const errors = [];
+  // a dotted key is not a setting anywhere else, so it is reported here and never walked as one
+  const leaves = flatten(withoutDottedKeys(cfg), '', {});
+  const errors = dottedKeyPaths(cfg).map((key) => ({ key, error: 'unknown key: a key spelled with a dot is not a setting - nest it' }));
   for (const [path, v] of Object.entries(leaves)) {
     // hasOwn, not SCHEMA[path]: a `__proto__` leaf found Object.prototype and read as "unknown schema type undefined"
     const spec = Object.hasOwn(SCHEMA, path) ? SCHEMA[path] : undefined;
