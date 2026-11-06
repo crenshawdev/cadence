@@ -33,10 +33,7 @@ Parse `$ARGUMENTS`:
 ## Interactive menu (no args)
 
 Goal: let the user adjust every knob the walk carries, presented as
-selectable lists, the twelve `roles.<role>.model` and `.effort` keys included. The older `model.overrides` and `model.effort` families stay
-edit-the-file-only: they are the narrower fallbacks UNDER the roles keys,
-reachable by direct set (`/cad-config model.effort.cad-executor=medium`) for a
-config that already carries them. Two more sets stay out:
+selectable lists, the twelve `roles.<role>.model` and `.effort` keys included. Two sets stay out:
 `review.providers.*`, which needs live detection, so the menu routes it to
 **Review provider setup** rather than free-typing model ids; and
 `review.decision_review`'s two keys, which belong to an on-demand command

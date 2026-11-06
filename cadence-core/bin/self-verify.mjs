@@ -754,7 +754,7 @@ function run(root) {
     }
   }
 
-  // 8b. the shipped model.effort.<role> enums against RUNG_FILES, filed against the schema a maintainer edits
+  // 8b. the shipped roles.<role>.effort enums against RUNG_FILES, filed against the schema a maintainer edits
   for (const { code, detail } of effortEnumIssues(schema, RUNG_ORDER)) {
     problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
   }

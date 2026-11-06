@@ -1,6 +1,6 @@
 # How settings resolve
 
-You don't need to tune every setting to start using Cadence. Setup asks about the choices the project needs, and `/cadence:cad-config` lets you revisit them. This reference covers every key in the 3.11.0 schema, including older fallback keys and settings outside the interactive menu.
+You don't need to tune every setting to start using Cadence. Setup asks about the choices the project needs, and `/cadence:cad-config` lets you revisit them. This reference covers every key in the 3.11.0 schema, including settings outside the interactive menu.
 
 ## Choose the right entry point
 
@@ -13,7 +13,7 @@ You don't need to tune every setting to start using Cadence. Setup asks about th
 | `/cadence:cad-config --testing` | Accept or adjust the testing policy and separately choose verification-publishing authorization. |
 | `/cadence:cad-config parallelization.enabled=false` | Set a known repository option directly. |
 
-The menu doesn't expose every key. Provider model settings use their guided setup; older role fallbacks and other advanced keys can be set through the validated configuration command.
+The menu doesn't expose every key. Provider model settings use their guided setup; other advanced keys can be set through the validated configuration command.
 
 ## Repository, user-global, then defaults
 
@@ -25,7 +25,7 @@ The normal read order is:
 
 `CADENCE_GLOBAL_CONFIG` can relocate the user-global file. Nested objects merge by key. Lists replace the lower layer's list in full; they aren't appended.
 
-An absent setting can inherit a value. An explicit `null` replaces the lower layer's value and has the meaning documented for that key. It isn't a general synonym for removing the setting. For role settings, the older fallback keys can still participate after a `null`; see [roles and models](roles.md).
+An absent setting can inherit a value. An explicit `null` replaces the lower layer's value and has the meaning documented for that key. It isn't a general synonym for removing the setting.
 
 ## Scope and authorization exceptions
 
