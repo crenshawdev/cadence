@@ -626,6 +626,12 @@ export const CONTRACTS = {
     },
     // reads no flag: the repo is the cwd and the global layer is CADENCE_GLOBAL_CONFIG
     'workflow-layers': {},
+    // the menu's read of where each setting's value comes from; the repo is the cwd, a group name or a dotted key narrows it
+    layers: {
+      '--group': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--advanced': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+      '--key': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
   },
   'git-branch.mjs': {
     '*': {

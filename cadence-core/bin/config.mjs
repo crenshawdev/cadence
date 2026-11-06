@@ -9,6 +9,7 @@
 //   get [--file <path>] [key ...]             repo > global > defaults
 //   keys [--walk]                             --walk is only keys holding a `question`
 //   workflow-layers                           the two workflow switches, each on only when both layers set it
+//   layers [--group <name> [--advanced]|--key <key>]  where each setting's value comes from, for the /cad-config menu
 // --file defaults to .planning/config.json, --global is the user-global layer.
 
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -21,8 +22,9 @@ import { DONE, emit } from './lib/seam-io.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { checkValue, checkGrammar } from './lib/config-value.mjs';
-import { workflowLayers } from './lib/workflow-layers.mjs';
-import { flatten } from './lib/config-layers.mjs';
+import { workflowLayers, WORKFLOW_KEYS } from './lib/workflow-layers.mjs';
+import { autoCloseLayers } from './lib/repo-auto-close.mjs';
+import { flatten, layerRows } from './lib/config-layers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // loaded inside the dispatch try below, so a missing or broken schema answers {ok:false} instead of crashing at import
@@ -279,6 +281,45 @@ function walkRead() {
   return groups;
 }
 
+// The menu's read: where each setting's value comes from. The repo is the cwd, as workflow-layers has it.
+// Bare gives the opening screen's counts. --group adds that group's shown rows and the names of its Advanced keys,
+// --group with --advanced the Advanced rows with `purpose`, --key one row with the key's full text.
+function layersRead(group, advanced, key) {
+  const cwd = process.cwd();
+  const repoFile = join(cwd, '.planning', 'config.json');
+  const { config, layers, warnings, scopeWarnings, tornLayers } = mergeLayers(repoFile);
+  const wl = workflowLayers(cwd);
+  const ac = autoCloseLayers(cwd);
+  const both = {
+    [WORKFLOW_KEYS.use]: wl.keys[WORKFLOW_KEYS.use],
+    [WORKFLOW_KEYS.multi]: wl.keys[WORKFLOW_KEYS.multi],
+    'git.auto_close': { on: ac.authorized },
+  };
+  const read = layerRows({ keys: SCHEMA, merged: { config, layers, tornLayers }, files: { repo: repoFile, global: GLOBAL_CONFIG }, both });
+  const allWarnings = [...(warnings || []), ...(scopeWarnings || []), ...read.warnings];
+  const head = { ok: true, unreadable: read.unreadable, ...(allWarnings.length ? { warnings: allWarnings } : {}) };
+  const plain = ({ group: _g, shown: _s, position: _p, ...r }) => r;
+  if (key !== undefined) {
+    if (!Object.hasOwn(SCHEMA, key)) fail('unknown-key', [key],
+      'run `config.mjs keys` for the keys this schema carries, then ask for one of those');
+    const spec = SCHEMA[key];
+    const row = read.rows.find((r) => r.key === key);
+    const { type, question, explain, hint, purpose, src, repo_only } = spec;
+    out({ ...head, row: { ...plain(row), group: spec.section, type, question, explain, hint, purpose, src, repo_only } });
+    return;
+  }
+  if (group === undefined) { out({ ...head, groups: read.groups, totals: read.totals }); return; }
+  const found = read.groups.find((g) => g.name === group);
+  if (!found) fail('unknown-group', read.groups.map((g) => g.name),
+    'ask for one of the group names the detail lists, spelled as it is there');
+  const inGroup = read.rows.filter((r) => r.group === group);
+  if (advanced) {
+    out({ ...head, group: found, rows: inGroup.filter((r) => !r.shown).map((r) => ({ ...plain(r), purpose: SCHEMA[r.key].purpose })) });
+    return;
+  }
+  out({ ...head, group: found, rows: inGroup.filter((r) => r.shown).map(plain), advanced: inGroup.filter((r) => !r.shown).map((r) => r.key) });
+}
+
 // --- dispatch ----------------------------------------------------------------
 
 const argv = process.argv.slice(2);
@@ -343,7 +384,21 @@ try {
     if (Object.values(r.keys).some((k) => k.global === 'unreadable')) unreadable.push(r.globalFile);
     out({ ok: true, ...r, unreadable });
   }
-  else fail('usage', 'subcommand: validate | check | set | unset | get | keys | workflow-layers');
+  else if (cmd === 'layers') {
+    const row = CONTRACTS['config.mjs'].layers;
+    const next = 'use `layers`, `layers --group <name>`, `layers --group <name> --advanced` or `layers --key <key>`';
+    const g = evaluateFlag(rest, '--group', row['--group']);
+    const k = evaluateFlag(rest, '--key', row['--key']);
+    if (!g.ok || !k.ok) fail('usage', `${g.ok ? '--key' : '--group'} needs a value after it`, next);
+    const advanced = evaluateFlag(rest, '--advanced', row['--advanced']).value === true;
+    const used = new Set(['--group', '--key', '--advanced', g.value, k.value]);
+    const stray = rest.filter((t) => !used.has(t));
+    if (stray.length || (g.value !== undefined && k.value !== undefined) || (advanced && g.value === undefined)) {
+      fail('usage', stray.length ? `unexpected: ${stray.join(' ')}` : '--advanced goes with --group, and --group and --key do not combine', next);
+    }
+    layersRead(g.value, advanced, k.value);
+  }
+  else fail('usage', 'subcommand: validate | check | set | unset | get | keys | workflow-layers | layers');
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
