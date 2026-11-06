@@ -144,6 +144,12 @@ Run reviews as workflows, with one agent per reviewer and one per finding, rathe
 
 Allow more than one workflow at a time. Several at once multiply the usage burn of each, so with this off a second workflow waits for the first to finish. It counts only when both the repository and user-global configuration set it to `true`.
 
+### `workflow.config_menu`
+
+**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
+
+Turn on the new `/cadence:cad-config` menu. With it on, no arguments opens six groups of settings, and you can pick a setting by number or say what you want to change in a sentence. Each change is previewed and written only after you say yes. With it off, no arguments opens the full walk as it did before the menu, and a sentence is answered with the command that turns this on. `--walk`, `key=value` and the guided flags work either way.
+
 ### `parallelization.enabled`
 
 **Default:** `true` · **Type:** boolean · **Scope:** repository or user-global.
