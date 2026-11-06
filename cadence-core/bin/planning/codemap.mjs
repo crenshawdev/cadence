@@ -9,6 +9,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fail, ok } from './core.mjs';
 import { addEdges } from '../lib/codemap-edges.mjs';
 import { readFacts, readNested } from '../lib/codemap-facts.mjs';
+import { slice } from '../lib/codemap-slice.mjs';
 import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '../lib/codemap-partition.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
 import { LIST_CAP } from '../lib/workflow-run.mjs';
@@ -44,21 +45,27 @@ const MAX_INDEX = 128 * 1024 * 1024;
 const MAX_ENTRY = 64 * 1024 * 1024;
 
 /**
- * The stored module list, or null. The map is derived, so an absent, oversized, torn or non-regular index means a fresh
- * cut; `tooLarge` says which of those it was, for status to name.
+ * The stored index, or null. The map is derived, so an absent, oversized, torn or non-regular index means a fresh cut;
+ * `tooLarge` says which of those it was, for status to name.
  * @param {string} map
- * @returns {{modules: any, tooLarge: boolean}}
+ * @returns {{index: any, tooLarge: boolean}}
  */
-function storedModules(map) {
+function storedIndex(map) {
   try {
     const file = join(map, INDEX_FILE);
     const st = lstatSync(file);
-    if (st.isFile() && st.size > MAX_INDEX) return { modules: null, tooLarge: true };
-    if (!st.isFile()) return { modules: null, tooLarge: false };
-    return { modules: JSON.parse(readFileSync(file, 'utf8')).modules ?? null, tooLarge: false };
+    if (st.isFile() && st.size > MAX_INDEX) return { index: null, tooLarge: true };
+    if (!st.isFile()) return { index: null, tooLarge: false };
+    return { index: JSON.parse(readFileSync(file, 'utf8')), tooLarge: false };
   } catch {
-    return { modules: null, tooLarge: false };
+    return { index: null, tooLarge: false };
   }
+}
+
+/** @param {string} map @returns {{modules: any, tooLarge: boolean}} the stored module list, or null */
+function storedModules(map) {
+  const { index, tooLarge } = storedIndex(map);
+  return { modules: index?.modules ?? null, tooLarge };
 }
 
 /**
@@ -181,15 +188,67 @@ function cmdScan(dir) {
   });
 }
 
+/** @param {unknown} v a comma-separated flag @returns {string[]} its non-blank items */
+const listOf = (v) => (typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : []);
+
+/**
+ * The rows asked for, and no way to ask for all of them: a call naming none of the selectors is refused.
+ * @param {string} dir the planning directory @param {any} opts
+ */
+function cmdSlice(dir, opts) {
+  const select = { files: listOf(opts.files), symbols: listOf(opts.symbols), terms: listOf(opts.terms) };
+  if (!select.files.length && !select.symbols.length && !select.terms.length) {
+    return fail('usage', 'codemap slice needs --files, --symbols or --terms, each a comma-separated list',
+      'name what to read, such as `--files a.mjs,b.mjs`; the whole map is never printed');
+  }
+  const root = dirname(resolve(dir));
+  const map = join(dir, MAP_DIR);
+  let real = false;
+  try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
+  const { index, tooLarge } = real ? storedIndex(map) : { index: null, tooLarge: false };
+  if (tooLarge) {
+    return fail('index-too-large', `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so slice won't read it`,
+      'run `planning.mjs codemap scan` to rebuild the map');
+  }
+  const wellFormed = index && Array.isArray(index.rows) && Array.isArray(index.modules)
+    && index.modules.every((/** @type {any} */ m) => m && typeof m.name === 'string' && Array.isArray(m.paths));
+  if (!wellFormed) {
+    return fail('no-index', `there is no code map at ${map}`, 'run `planning.mjs codemap scan` first to build the map');
+  }
+  let current;
+  try {
+    current = readFacts(root);
+  } catch {
+    return fail('no-git', `${root} is not inside a git repository, so there is nothing to compare`,
+      'run from the project\'s repository, or pass --dir naming its .planning directory');
+  }
+  // staleness is the way status takes it: the stored list placed against the files as they are now, each entry's built_from against current hashes
+  const { modules } = partition(current, index.modules);
+  const byPath = new Map(current.map((r) => [r.path, r]));
+  /** @type {Map<string, string>} */
+  const states = new Map();
+  /** @type {Map<string, any>} */
+  const entries = new Map();
+  for (const m of modules) {
+    const entry = readEntry(map, entryFile(m.name));
+    const state = moduleState(m, entry, byPath);
+    states.set(m.name, state);
+    if (entry && (state === 'built' || state === 'stale')) entries.set(m.name, entry);
+  }
+  const base = `${basename(resolve(dir))}/${MAP_DIR}`;
+  return ok(slice({ rows: index.rows, modules: index.modules, states, entries, select, entryPath: (name) => `${base}/${entryFile(name)}` }));
+}
+
 /**
  * @param {string} dir the planning directory
- * @param {string} sub scan | status
- * @param {any} _opts
+ * @param {string} sub scan | status | slice
+ * @param {any} opts
  */
-function cmdCodemap(dir, sub, _opts) {
+function cmdCodemap(dir, sub, opts) {
   if (sub === 'scan') return cmdScan(dir);
   if (sub === 'status') return cmdStatus(dir);
-  return fail('usage', 'codemap <scan|status>');
+  if (sub === 'slice') return cmdSlice(dir, opts);
+  return fail('usage', 'codemap <scan|status|slice>');
 }
 
 export { cmdCodemap };

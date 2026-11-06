@@ -450,6 +450,12 @@ export const CONTRACTS = {
     // takes no flag beyond --dir: the root is its parent, so there is no second path to name
     'codemap scan': {},
     'codemap status': {},
+    // at least one is owed, which the handler enforces: a row can't state that, and a bare flag is no list
+    'codemap slice': {
+      '--files': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--symbols': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--terms': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
