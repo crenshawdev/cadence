@@ -46,10 +46,46 @@ export function spellPath(raw) {
   return { path: quotePath(raw), quoted: true };
 }
 
+/**
+ * The raw bytes of a row's path, the inverse of `spellPath`: a quoted spelling is C-unquoted, a plain one is its UTF-8.
+ * @param {{path: string, quoted?: true}} row
+ * @returns {Buffer}
+ */
+export function rawPath(row) {
+  if (!row.quoted) return Buffer.from(row.path, 'utf8');
+  const inner = row.path.slice(1, -1);
+  const out = [];
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i];
+    if (c !== '\\') { out.push(inner.charCodeAt(i)); continue; }
+    const oct = /^[0-7]{3}$/.test(inner.slice(i + 1, i + 4)) ? inner.slice(i + 1, i + 4) : null;
+    if (oct) { out.push(parseInt(oct, 8)); i += 3; } else out.push(inner.charCodeAt(++i));
+  }
+  return Buffer.from(out);
+}
+
 /** @param {string} root @param {string[]} args @param {Buffer} [input] @returns {Buffer} */
 function git(root, args, input) {
   return execFileSync('git', [...GIT, '-C', root, ...args],
     { maxBuffer: MAX_BUFFER, stdio: [input ? 'pipe' : 'ignore', 'pipe', 'ignore'], ...(input ? { input } : {}) });
+}
+
+/**
+ * The text of a tracked regular file under `root`, or null: absent, not a regular file, over the cap, binary, or
+ * unreadable. The same lstat and open rules as the scan's own read, so a second pass over a file is as safe as the first.
+ * @param {string} root @param {Buffer} raw the path's bytes
+ * @returns {string|null}
+ */
+export function readText(root, raw) {
+  const file = Buffer.concat([Buffer.from(root), Buffer.from('/'), raw]);
+  try {
+    const st = lstatSync(file);
+    if (!st.isFile() || st.size > OVER_CAP) return null;
+    const k = probe(file, st.size, true);
+    return k && k.kind === 'text' ? /** @type {string} */ (k.text) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** @param {Buffer} buf @returns {Buffer[]} the NUL-terminated fields */

@@ -7,6 +7,7 @@
 import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fail, ok } from './core.mjs';
+import { addEdges } from '../lib/codemap-edges.mjs';
 import { readFacts } from '../lib/codemap-facts.mjs';
 import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '../lib/codemap-partition.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
@@ -136,6 +137,7 @@ function cmdScan(dir) {
   let rows;
   try {
     rows = readFacts(root, true);
+    addEdges(root, rows);
   } catch {
     return fail('no-git', `${root} is not inside a git repository, so there is nothing to scan`,
       'run from the project\'s repository, or pass --dir naming its .planning directory');
