@@ -130,7 +130,8 @@ const viaProvider = (voice) => {
     'It prints one JSON line. Return that JSON through the schema, copying each value as printed and adding nothing. If it printed nothing, return {"ok": false, "reason": "no-output"}.',
   ].join('\n');
   const kept = { envelope: p.envelope, model: p.model };
-  return ask(prompt, { agentType: a.wrapper_agent_type, ...(text(a.model) ? { model: a.model } : {}), schema: PROVIDER_SCHEMA, label: `provider ${voice}`, disallowedTools: ['Read', 'Glob', 'Grep'] }, `provider ${voice}`)
+  // Haiku is plenty for a copy job, and a bad copy only costs a ruling, since the envelope file wins.
+  return ask(prompt, { agentType: a.wrapper_agent_type, model: 'haiku', schema: PROVIDER_SCHEMA, label: `provider ${voice}`, disallowedTools: ['Read', 'Glob', 'Grep'] }, `provider ${voice}`)
     .then((r) => {
       if (!r) return none(voice, 'the provider wrapper returned nothing', kept);
       if (r.ok !== true) return none(voice, text(r.reason) ? `the provider reported ${r.reason}` : 'the provider reported ok:false with no reason', kept);
