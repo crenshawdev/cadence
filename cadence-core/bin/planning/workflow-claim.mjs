@@ -25,7 +25,7 @@ function cmdWorkflowClaim(dir, sub, opts) {
   const label = opts.fire;
   if (typeof label !== 'string' || !label.trim() || label.length > MAX_LABEL) {
     return fail('bad-args', `workflow-claim ${sub} needs --fire <label> of 1 to ${MAX_LABEL} characters`,
-      'pass the fire\'s `<trigger>-<discriminator>` label, or the analyzer\'s');
+      'pass the fire\'s `<trigger>-<discriminator>` label');
   }
   const id = typeof opts.id === 'string' && opts.id.trim() ? opts.id.trim() : null;
   const stale = opts.stale === true;

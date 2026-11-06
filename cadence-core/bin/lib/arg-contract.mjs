@@ -436,11 +436,8 @@ export const CONTRACTS = {
       '--notice-tokens': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--notice-turns': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--notice-duration-ms': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
-      // --analyzer reads a finished workflows/analyzer.js run instead: its readers are billed under the analyzer's role and the
-      // report lands whole in the out-dir. No answers, trigger or discriminator apply.
-      '--analyzer': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // take/release share one row's shape: --fire is `<trigger>-<discriminator>` or the analyzer's, and release frees only a match
+    // take/release share one row's shape: --fire is `<trigger>-<discriminator>`, and release frees only a match
     'workflow-claim take': {
       '--fire': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },

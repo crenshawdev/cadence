@@ -10,7 +10,7 @@ import { linkSync, lstatSync, readFileSync, renameSync, unlinkSync, writeFileSyn
 import { join } from 'node:path';
 
 export const CLAIM_FILE = 'cadence-workflow-claim';
-/** A label is `<trigger>-<discriminator>` or the analyzer's; this keeps a runaway one out of the file. */
+/** A label is `<trigger>-<discriminator>`; this keeps a runaway one out of the file. */
 export const MAX_LABEL = 200;
 
 /**
