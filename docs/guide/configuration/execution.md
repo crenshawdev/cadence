@@ -150,6 +150,12 @@ Allow more than one workflow at a time. Several at once multiply the usage burn 
 
 Turn on the new `/cadence:cad-config` menu. With it on, no arguments opens six groups of settings, and you can pick a setting by number or say what you want to change in a sentence. Each change is previewed and written only after you say yes. With it off, no arguments opens the full walk as it did before the menu, and a sentence is answered with the command that turns this on. `--walk`, `key=value` and the guided flags work either way.
 
+### `planning.code_map`
+
+**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
+
+Turn on the code map. With it on, `/cadence:cad-plan` and `/cadence:cad-context` each make one local scan of the repository, with no model, and add a short block to the agent's dispatch that points it at the map, so it can see what the code is, what touches what and which tests pin it without reading the whole repository again. `/cadence:cad-map` builds and refreshes the map. A `true` committed in a repository can only add that scan: no agent starts until you type `/cadence:cad-map` and answer yes. `/cadence:cad-map` waits its turn behind a running workflow, but it doesn't need `workflow.use_workflows`. With it off, those dispatches carry nothing about a map, and `/cadence:cad-map` tells you the command that turns it on and stops.
+
 ### `parallelization.enabled`
 
 **Default:** `true` · **Type:** boolean · **Scope:** repository or user-global.
