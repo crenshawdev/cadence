@@ -41,7 +41,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.max_plan_bytes \
   planning.commit_docs \
   git.protected_branches git.on_protected \
-  git.base_branch memory.backend testing.scope
+  git.base_branch memory.backend testing.scope planning.code_map
 ```
 
 `testing.scope` set means the project accepted a testing policy. Then run, once:
@@ -217,6 +217,20 @@ is `false`.
 A testing policy is active for this project. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md once and follow it.
 {gate_found false: No CI job enforces the policy yet, so this plan's first task builds or extends them as an ordinary plan task, including any required job no workflow defines yet, such as a packaging job. Extend an existing workflow; never overwrite it. Take the commands, thresholds and required jobs from the values `test-policy.md` says how to read, and commit `.github/cadence/coverage-policy.json` in that task.}
 </testing_policy>
+```
+
+When `planning.code_map` read in `parse` is `true`, the prompt carries a code map block, and one local scan with no model feeds it. Before assembling the prompt, make the scan once:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codemap scan
+```
+
+On a good answer, print one line with its `stale` and `unbuilt` counts and `/cad-map`: `Code map: {stale} stale, {unbuilt} unbuilt. /cad-map builds or refreshes it.` A module with no entry reads as unbuilt, so a map nobody built still prints a line that prompts the first `/cad-map`. Then place the block below where `<testing_policy>` goes, and after it when both are present. On `ok:false`, or output that won't parse, print nothing about it, leave the block out and go on planning. This step starts nothing else: a refresh is `/cad-map`'s and the user's to type, and launching one here would end the turn mid-plan. Gaps and revision modes reuse this prompt and so carry the block, with no second scan. With the key not `true` the prompt carries none of it.
+
+```text
+<code_map>
+A code map is available. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/code-map.md once and follow it.
+</code_map>
 ```
 
 Revision mode: dispatch a FRESH cad-planner (never resume the prior run - the
