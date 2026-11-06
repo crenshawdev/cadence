@@ -6,13 +6,17 @@
 
 import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
+import { emit } from '../lib/seam-io.mjs';
 import { fail, ok } from './core.mjs';
+import { judgeEntry } from '../lib/codemap-entry.mjs';
 import { addEdges, stripEdges } from '../lib/codemap-edges.mjs';
 import { readFacts, readNested } from '../lib/codemap-facts.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
 import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '../lib/codemap-partition.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
-import { LIST_CAP } from '../lib/workflow-run.mjs';
+import { LIST_CAP, MAX_RUN_BYTES, parseCompleted } from '../lib/workflow-run.mjs';
+import { isPlainObject } from '../lib/text-util.mjs';
+import { readCapped } from './workflow-run.mjs';
 
 const MAP_DIR = 'codemap';
 const INDEX_FILE = 'index.json';
@@ -245,6 +249,130 @@ function cmdScan(dir) {
   });
 }
 
+// text from a run file shown in an answer, cut so a hostile name can't fill it
+const SHOWN = 200;
+/** @param {unknown} v */
+const shown = (v) => (typeof v === 'string' ? v : JSON.stringify(v) ?? 'undefined').slice(0, SHOWN);
+// a hash a clone's file may name: a full hex object name and nothing else
+const OBJECT_NAME = /^[0-9a-f]{40,64}$/;
+
+/** @param {Record<string, unknown>} a @param {Record<string, unknown>} b whether both name the same paths with the same hashes */
+function sameHashes(a, b) {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => Object.prototype.hasOwnProperty.call(b, k) && b[k] === a[k]);
+}
+
+/**
+ * A list's count, its first LIST_CAP items and the count of the rest.
+ * @param {string} key @param {any[]} list
+ */
+const capped = (key, list) => ({
+  [key]: list.length, [`${key}_modules`]: list.slice(0, LIST_CAP),
+  ...(list.length > LIST_CAP ? { [`${key}_more`]: list.length - LIST_CAP } : {}),
+});
+
+/**
+ * `codemap write`: a finished code map run, read from the host's run file, becomes the map's entries. Each module is judged
+ * on its own against a fresh scan (D-17): a good one is written with the `built_from` the run returned, so an edit during
+ * the run leaves it stale (D-14), and a refused one is named with its old entry untouched. A module's name from the run file
+ * only selects a module the facts hold; the file it writes is derived from the stored name by hash and never from the run's text.
+ * @param {string} dir the planning directory @param {any} opts
+ */
+function cmdWrite(dir, opts) {
+  const runPath = String(opts['run-file']);
+  const root = dirname(resolve(dir));
+  const runRead = readCapped(runPath, MAX_RUN_BYTES);
+  /** @param {string} reason @param {string} [detail] @param {string} [hint] */
+  const refuse = (reason, detail, hint) => emit({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}) });
+
+  if (runRead.text === null) {
+    return refuse(runRead.tooLarge ? 'run-too-large' : 'run-unreadable', `the run file ${runRead.why}`,
+      'no entry was written');
+  }
+  const parsed = parseCompleted(runRead.text);
+  if (!parsed.ok) return refuse(/** @type {string} */ (parsed.reason), parsed.detail, 'no entry was written - a run that did not complete is not a map');
+  const result = parsed.run.result;
+  if (!isPlainObject(result) || !Array.isArray(result.modules)) {
+    return refuse('run-bad-result', 'the result is not the code map\'s: it has no modules list', 'no entry was written.');
+  }
+
+  const map = mapDir(dir);
+  if (!map) {
+    return refuse('unsafe-dir', `${join(dir, MAP_DIR)} or ${dir} exists and is not a real directory`, 'nothing was written, because a write through a link would leave the repository');
+  }
+  const { index } = storedIndex(map);
+  if (!index || !Array.isArray(index.modules)) {
+    return refuse('no-index', `there is no code map at ${map}`, 'run `planning.mjs codemap scan` first; no entry was written');
+  }
+  let rows;
+  let nested;
+  try {
+    rows = readFacts(root, true);
+    nested = readNested(root, rows);
+  } catch {
+    return refuse('no-git', `${root} is not inside a git repository, so there is nothing to judge against`, 'no entry was written');
+  }
+  const { modules } = partition(rows, index.modules);
+  const byName = new Map(modules.map((m) => [m.name, m]));
+  const byPath = new Map(rows.map((r) => [r.path, r]));
+  const tracked = new Set(byPath.keys());
+  const nestedPaths = new Set(nested.paths);
+  /** @type {Map<string, Set<string>>} */
+  const symbols = new Map(rows.filter((r) => r.symbols).map((r) => [r.path, new Set(r.symbols.map((/** @type {any} */ s) => s.name))]));
+
+  // the main session retypes the launch file into `args`, so a mistyped hash or a dropped module would otherwise go unnoticed
+  /** @type {Map<string, any>|null} */
+  let launch = null;
+  let launchCheck = 'not-given';
+  if (opts['launch-file'] !== undefined) {
+    const r = readCapped(String(opts['launch-file']), MAX_RUN_BYTES);
+    /** @type {any} */
+    let l = null;
+    try { l = r.text === null ? null : JSON.parse(r.text); } catch { /* judged below */ }
+    if (isPlainObject(l) && Array.isArray(l.items) && l.items.every((/** @type {any} */ i) => isPlainObject(i) && typeof i.name === 'string' && isPlainObject(i.built_from))) {
+      launch = new Map(l.items.map((/** @type {any} */ i) => [i.name, i.built_from]));
+      launchCheck = 'ran';
+    } else {
+      launchCheck = 'not-run';
+    }
+  }
+
+  const written = [];
+  /** @type {{name: string, why: string}[]} */
+  const refused = [];
+  const dead = [];
+  const seen = new Set();
+  for (const row of result.modules) {
+    if (!isPlainObject(row) || typeof row.name !== 'string') { refused.push({ name: shown(isPlainObject(row) ? row.name : row), why: 'a module row without a name' }); continue; }
+    const name = row.name;
+    /** @param {string} reason */
+    const no = (reason) => { refused.push({ name: shown(name), why: reason.slice(0, 2 * SHOWN) }); };
+    if (seen.has(name)) { no('listed twice, so only the first was judged'); continue; }
+    seen.add(name);
+    const m = byName.get(name);
+    if (!m) { no('not a module the facts hold'); continue; }
+    if (startsNoReader(m, byPath)) { no('a module that starts no reader'); continue; }
+    const pinned = launch ? launch.get(name) : null;
+    if (launch && !pinned) { no('the launch file does not name this module'); continue; }
+    if (row.entry === null) { dead.push(name); continue; }
+    const from = row.built_from;
+    if (!isPlainObject(from) || !Object.values(from).every((h) => typeof h === 'string' && OBJECT_NAME.test(h))) {
+      no('built_from is not a map of paths to hashes'); continue;
+    }
+    if (pinned && !sameHashes(from, pinned)) { no('built_from differs from the launch file\'s, so a hash or a path was changed on the way'); continue; }
+    const verdict = judgeEntry(row.entry, { root, module: new Set(m.paths), tracked, nested: nestedPaths, symbols });
+    if (!verdict.ok) { no(verdict.why); continue; }
+    atomicWrite(join(map, entryFile(m.name)), JSON.stringify({ built_from: from, ...verdict.entry }));
+    written.push(name);
+  }
+  const missing = launch ? [...launch.keys()].filter((n) => !seen.has(n)) : [];
+  return ok({
+    action: 'write', launch_check: launchCheck,
+    ...(launchCheck === 'not-run' ? { launch_note: 'the launch file could not be read as a launch file, so built_from was not compared with it' } : {}),
+    ...capped('written', written), ...capped('refused', refused), ...capped('dead', dead), ...capped('missing', missing),
+  });
+}
+
 /** @param {unknown} v a comma-separated flag @returns {string[]} its non-blank items */
 const listOf = (v) => (typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : []);
 
@@ -306,14 +434,15 @@ function cmdSlice(dir, opts) {
 
 /**
  * @param {string} dir the planning directory
- * @param {string} sub scan | status | slice
+ * @param {string} sub scan | status | slice | write
  * @param {any} opts
  */
 function cmdCodemap(dir, sub, opts) {
   if (sub === 'scan') return cmdScan(dir);
   if (sub === 'status') return cmdStatus(dir);
+  if (sub === 'write') return cmdWrite(dir, opts);
   if (sub === 'slice') return cmdSlice(dir, opts);
-  return fail('usage', 'codemap <scan|status|slice>');
+  return fail('usage', 'codemap <scan|status|slice|write>');
 }
 
 export { cmdCodemap };

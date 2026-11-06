@@ -456,6 +456,12 @@ export const CONTRACTS = {
       '--symbols': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--terms': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // A finished code map run to the map's entries. --run-file is the host's `<session>/workflows/<run id>.json`, read whole.
+    // --launch-file is the file `codemap status --out-dir` wrote, which the write compares each module's built_from with.
+    'codemap write': {
+      '--run-file': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--launch-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },

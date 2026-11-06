@@ -26,7 +26,7 @@ const MAX_ENVELOPE_BYTES = 1024 * 1024;
  * @param {string} file @param {number} cap
  * @returns {{text: string|null, why: string, tooLarge?: boolean}}
  */
-function readCapped(file, cap) {
+export function readCapped(file, cap) {
   const cannot = (/** @type {any} */ e) => ({ text: null, why: `cannot be read (${(e && e.code) || 'error'})` });
   let st;
   try { st = lstatSync(file); } catch (e) { return cannot(e); }

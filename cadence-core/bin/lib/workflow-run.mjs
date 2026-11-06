@@ -177,7 +177,7 @@ function providerFindings(voice, env) {
  * @param {string} text
  * @returns {{ok: boolean, reason?: string, detail?: string, run?: any}}
  */
-function parseCompleted(text) {
+export function parseCompleted(text) {
   /** @type {any} */
   let run;
   try { run = JSON.parse(text); } catch { return refuse('run-not-json', 'the run file is not JSON'); }
