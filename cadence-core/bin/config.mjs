@@ -22,6 +22,7 @@ import { testSeamOpen } from './lib/test-seam.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { checkValue, checkGrammar } from './lib/config-value.mjs';
 import { workflowLayers } from './lib/workflow-layers.mjs';
+import { flatten } from './lib/config-layers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // loaded inside the dispatch try below, so a missing or broken schema answers {ok:false} instead of crashing at import
@@ -41,22 +42,6 @@ const fail = (reason, detail, hint) => {
 // JSON where it parses (true, 12, null, "s", [...]), else a bare string, so mode=interactive is "interactive".
 function parseToken(raw) {
   try { return JSON.parse(raw); } catch { return raw; }
-}
-
-// Flattens a config object to dotted leaf paths. Arrays and null are leaves.
-// The skip is exactly `_meta`, not every `_`-prefixed key: a prefix rule also swallowed `__proto__`, so validate
-// said {"ok":true,"checked":0} about a hostile config the guard was already obeying.
-// Accumulating with defineProperty matters for the same reason: assigning a top-level leaf named `__proto__`
-// runs Object.prototype's setter and reparents acc instead of recording a key.
-/** @param {Record<string, any>} obj @param {string} prefix @param {Record<string, any>} acc */
-function flatten(obj, prefix, acc) {
-  for (const [k, v] of Object.entries(obj)) {
-    if (k === '_meta') continue;
-    const path = prefix ? `${prefix}.${k}` : k;
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) flatten(v, path, acc);
-    else Object.defineProperty(acc, path, { value: v, writable: true, enumerable: true, configurable: true });
-  }
-  return acc;
 }
 
 function splitPair(tok) {
