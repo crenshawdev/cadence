@@ -1,7 +1,7 @@
 ---
 name: cad-config
 description: "Configure Cadence's config.json - workflow toggles, the per-role model and effort interview, and interactive cross-model review provider setup"
-argument-hint: "[--review [redetect] | --surfaces | --testing | --roles [--global] | <key>=<value> ...]"
+argument-hint: "[--walk | --review [redetect] | --surfaces | --testing | --roles [--global] | <key>=<value> ...]"
 allowed-tools:
   - Read
   - Write
@@ -29,8 +29,10 @@ Routing:
   repo-layer diffs by default; `--global` re-enters the full thirteen against
   the user-global layer.
 - **`<key>=<value>` ...**: set config keys directly (validated against the config schema).
-- **default** (no args): walk every knob as a selectable list (batched pages),
-  each preselected to its current value.
+- **--walk**: walk every knob as a selectable list (batched pages), each
+  preselected to its current value.
+- **default** (no args): open on six groups with what this repo and your global
+  config set; a number lists that group's settings.
 </objective>
 
 <execution_context>

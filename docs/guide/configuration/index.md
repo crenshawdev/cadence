@@ -6,7 +6,8 @@ You don't need to tune every setting to start using Cadence. Setup asks about th
 
 | Command | Use it for |
 |---|---|
-| `/cadence:cad-config` | Walk the configuration menu. |
+| `/cadence:cad-config` | Open on six groups of settings, with what this repo and your global config set. Pick a number to list a group. |
+| `/cadence:cad-config --walk` | Walk every setting in the menu, page by page. |
 | `/cadence:cad-config --roles` | Choose each role's model and effort for this project. Add `--global` for machine-wide answers. |
 | `/cadence:cad-config --review` | Configure review providers and detect models. |
 | `/cadence:cad-config --surfaces` | Revisit the project's risk surfaces. |

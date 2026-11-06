@@ -27,12 +27,16 @@ Parse `$ARGUMENTS`:
 - Starts with `--roles`: go to **Roles interview** - the thirteen questions
   that say what each of the six roles costs. A trailing `--global` re-enters
   the full thirteen against the user-global layer instead of writing repo diffs.
-- Contains `<key>=<value>` tokens: go to **Direct set**.
-- Empty: go to **Interactive menu** - walk every knob as a selectable list.
+- `--walk`: go to **Interactive menu (no args)** - the full walk of every knob.
+- Every token is `<key>=<value>`: go to **Direct set**.
+- Empty: Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-menu.md` and
+  follow its **Opening screen**. That file is also where the reply to the
+  screen goes; Direct set never reads it.
+- Any other text: the same opening screen, which asks which number it belongs to.
 
 ## Interactive menu (no args)
 
-Goal: let the user adjust every knob the walk carries, presented as
+Reached with `--walk`. Goal: let the user adjust every knob the walk carries, presented as
 selectable lists, the twelve `roles.<role>.model` and `.effort` keys included. Two sets stay out:
 `review.providers.*`, which needs live detection, so the menu routes it to
 **Review provider setup** rather than free-typing model ids; and

@@ -54,7 +54,7 @@ See [finish and publish](../working/publish.md) before using the closing command
 | `/cadence:cad-report` | `[N] [--all]` | Read a phase's run record, including dispatch costs and review outcomes. `--all` gives the milestone view. |
 | `/cadence:cad-suggest` | `[N]` | Propose configuration changes supported by the run record. With no phase, read the whole record. Applies no changes itself. |
 | `/cadence:cad-capture` | `[todo, seed or note] <text> [--phase N] [--cadence]` | Save an idea without changing the current task's scope. `--cadence` writes to the Cadence-wide queue beside your global configuration. |
-| `/cadence:cad-config` | `[key=value ...]`, `--review [redetect]`, `--surfaces`, `--testing`, or `--roles [--global]` | Configure the project through a menu, direct setting or guided setup. See the [configuration reference](../configuration/index.md). |
+| `/cadence:cad-config` | `[key=value ...]`, `--walk`, `--review [redetect]`, `--surfaces`, `--testing`, or `--roles [--global]` | Configure the project through six groups of settings, the full `--walk`, a direct setting or guided setup. See the [configuration reference](../configuration/index.md). |
 | `/cadence:cad-health` | None | Report structural problems in `.planning/`, configuration and the active testing-policy setup. |
 | `/cadence:cad-help` | `[command name]` | Show the command reference inside a session, or help for one command. |
 
