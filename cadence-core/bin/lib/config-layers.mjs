@@ -10,6 +10,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { checkGrammar } from './config-value.mjs';
 import { RETIRED_KEYS, retiredKeysIn } from './retired-keys.mjs';
+import { appliesAnswer } from './setting-conditions.mjs';
 import { isPlainObject } from './text-util.mjs';
 
 // Flattens a config object to dotted leaf paths. Arrays and null are leaves.
@@ -131,6 +132,15 @@ export function layerRows({ keys, merged, files, both }) {
     }
     row.value = value;
     rows.push(row);
+  }
+
+  // whether each setting does anything, read against the value in force of every key
+  const values = Object.create(null);
+  for (const r of rows) values[r.key] = r.value;
+  for (const r of rows) {
+    const answer = appliesAnswer(keys[r.key].applies_when, values);
+    r.applies = answer.applies;
+    if (!answer.applies) r.no_effect = answer.why;
   }
 
   // retired and unknown keys stay out of every count; a section set to a non-object over keys the schema holds

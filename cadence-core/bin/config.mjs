@@ -25,6 +25,7 @@ import { checkValue, checkGrammar } from './lib/config-value.mjs';
 import { workflowLayers, WORKFLOW_KEYS } from './lib/workflow-layers.mjs';
 import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { flatten, layerRows } from './lib/config-layers.mjs';
+import { dependentsOf } from './lib/setting-conditions.mjs';
 import { dottedKeyPaths, withoutDottedKeys } from './lib/global-only-keys.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -306,8 +307,9 @@ function layersRead(group, advanced, key) {
       'run `config.mjs keys` for the keys this schema carries, then ask for one of those');
     const spec = SCHEMA[key];
     const row = read.rows.find((r) => r.key === key);
-    const { type, question, explain, hint, purpose, src, repo_only } = spec;
-    out({ ...head, row: { ...plain(row), group: spec.section, type, question, explain, hint, purpose, src, repo_only } });
+    const { type, question, explain, hint, purpose, src, repo_only, interacts } = spec;
+    const worksWith = dependentsOf(SCHEMA, key).map((k) => ({ key: k, value: read.rows.find((r) => r.key === k).value }));
+    out({ ...head, row: { ...plain(row), group: spec.section, type, question, explain, hint, purpose, src, repo_only, interacts, works_with: worksWith } });
     return;
   }
   if (group === undefined) { out({ ...head, groups: read.groups, totals: read.totals }); return; }
