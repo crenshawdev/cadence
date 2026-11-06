@@ -8,8 +8,10 @@
 'use strict';
 
 import { spawnSync } from 'node:child_process';
-import { rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { lstatSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join, posix, sep } from 'node:path';
+import { SYMBOL_MAX } from './codemap-entry.mjs';
 import { entryFile } from './codemap-partition.mjs';
 import { atomicWrite } from './planning-files.mjs';
 import { LIST_CAP } from './workflow-run.mjs';
@@ -19,6 +21,9 @@ const GIT = ['-c', 'core.fsmonitor=false'];
 // a blob name from a file a clone can supply: only a full hex object name ever reaches git
 const OBJECT_NAME = /^[0-9a-f]{40,64}$/;
 const MAX_DIFF = 16 * 1024 * 1024;
+// a missing object is asked for by a read: with a promisor remote configured git would lazy-fetch it, running core.sshCommand
+// or reaching the network, and could store the blob
+const ENV = { ...process.env, GIT_NO_LAZY_FETCH: '1' };
 
 /** @param {string} name a module's name @returns {{item: string, old: string, diff: string}} scratch names derived the way the entry's is, never from the name's characters */
 export function scratchNames(name) {
@@ -28,7 +33,7 @@ export function scratchNames(name) {
 
 /** @param {string} root @param {string[]} args @param {string} [input] */
 function git(root, args, input) {
-  return spawnSync('git', [...GIT, '-C', root, ...args], { maxBuffer: MAX_DIFF, ...(input !== undefined ? { input } : {}) });
+  return spawnSync('git', [...GIT, '-C', root, ...args], { maxBuffer: MAX_DIFF, env: ENV, ...(input !== undefined ? { input } : {}) });
 }
 
 /**
@@ -44,6 +49,29 @@ function oldBlob(root, hash) {
 }
 
 /**
+ * A name from a stored file as root-relative, normalized, or null when it is absolute, empty, holds a NUL or climbs out of the root.
+ * @param {unknown} p @returns {string|null}
+ */
+function rootRel(p) {
+  if (typeof p !== 'string' || !p || p.includes('\0') || isAbsolute(p)) return null;
+  const n = posix.normalize(p);
+  return n === '.' || n === '..' || n.startsWith('../') ? null : n;
+}
+
+/**
+ * Whether a stored test path is safe to hand a reader to open now: root-relative, no climb, a regular file by `lstat`, and
+ * its directory resolving inside the root. A symlink, a missing file and a path in a stored file that lies are dropped.
+ * @param {string} realRoot @param {string} root @param {string} n a normalized root-relative path
+ */
+function openable(realRoot, root, n) {
+  try {
+    if (!lstatSync(join(root, n)).isFile()) return false;
+    const dir = realpathSync(join(root, posix.dirname(n)));
+    return dir === realRoot || dir.startsWith(realRoot + sep);
+  } catch { return false; }
+}
+
+/**
  * The hunks of a diff between an old blob and the file as it is now, working-tree edits included. `--no-index` reads the
  * blob from stdin and the file from disk, so nothing is stored and the index is not asked. Git's own header names a
  * temporary side, so it's replaced by the path.
@@ -51,8 +79,16 @@ function oldBlob(root, hash) {
  * @returns {string|null}
  */
 function diffOf(root, rel, blob) {
-  const r = spawnSync('git', [...GIT, '-C', root, 'diff', '--no-index', '--no-color', '--no-ext-diff', '--no-textconv', '--', '-', join(root, rel)],
-    { input: blob, maxBuffer: MAX_DIFF });
+  // run from a fresh directory outside any repository with no attributes file, so no tracked `.gitattributes` and no
+  // configured one can name a filter for git to run on the working-tree file
+  const away = mkdtempSync(join(tmpdir(), 'cad-diff-'));
+  let r;
+  try {
+    r = spawnSync('git', [...GIT, '-c', 'core.attributesFile=', 'diff', '--no-index', '--no-color', '--no-ext-diff', '--no-textconv', '--', '-', join(root, rel)],
+      { cwd: away, input: blob, maxBuffer: MAX_DIFF, env: { ...ENV, GIT_ATTR_NOSYSTEM: '1', GIT_CEILING_DIRECTORIES: tmpdir() } });
+  } finally {
+    rmSync(away, { recursive: true, force: true });
+  }
   // 1 is "they differ", which is the answer; anything else is a diff that didn't happen
   if (r.status !== 0 && r.status !== 1) return null;
   const lines = String(r.stdout).split('\n');
@@ -73,11 +109,13 @@ function refreshOf(root, outDir, m, entry, byPath, read, names) {
   const abs = (/** @type {string} */ p) => join(root, p);
   const held = new Set(m.paths);
   const changed = m.paths.filter((p) => Object.prototype.hasOwnProperty.call(from, p) && from[p] !== byPath.get(p)?.hash);
-  const added = m.paths.filter((p) => !Object.prototype.hasOwnProperty.call(from, p));
-  const removed = Object.keys(from).filter((p) => !held.has(p));
+  // an added path is offered to be opened, so only one in `read` is named; a symlink or binary added is in built_from alone
+  const added = m.paths.filter((p) => !Object.prototype.hasOwnProperty.call(from, p) && read.has(p));
+  // a removed name is a key of the stored entry, never opened: it stays root-relative, and one that climbs out of the root is dropped
+  const removed = Object.keys(from).filter((p) => !held.has(p)).map(rootRel).filter((p) => p !== null);
   const oldEntry = join(outDir, names.old);
   atomicWrite(oldEntry, JSON.stringify(entry));
-  const refresh = { old_entry: oldEntry, changed: changed.map(abs), added: added.map(abs), removed: removed.map(abs) };
+  const refresh = { old_entry: oldEntry, changed: changed.map(abs), added: added.map(abs), removed };
   const blobs = changed.map((p) => oldBlob(root, from[p]));
   const diffFile = join(outDir, names.diff);
   if (blobs.some((b) => b === null)) {
@@ -109,12 +147,17 @@ export function writeLaunch({ root, outDir, modules, rows, indexRows }) {
   const stored = new Map(indexRows.map((r) => [r.path, r]));
   const abs = (/** @type {string} */ p) => join(root, p);
   let readerBytes = 0;
+  // the stored index is a file a clone can supply, so each test path it names is checked against the disk once
+  const realRoot = realpathSync(root);
+  /** @type {Map<string, boolean>} */
+  const safe = new Map();
   const items = modules.map((m) => {
     const names = scratchNames(m.name);
     // a path whose hash is null has nothing to pin; it keeps the module stale until it is a file again
     const builtFrom = Object.fromEntries(m.paths.filter((p) => byPath.get(p)?.hash).map((p) => [p, byPath.get(p).hash]));
     // symlinks, gitlinks, binaries and over-cap files are pinned and never opened: a tracked symlink can point outside the repository
-    const read = m.paths.filter((p) => byPath.get(p)?.kind === 'text');
+    // a quoted spelling is git's escape of a name, not a path that exists, so it is pinned and never opened
+    const read = m.paths.filter((p) => byPath.get(p)?.kind === 'text' && !p.startsWith('"'));
     for (const p of read) readerBytes += byPath.get(p).bytes || 0;
     /** @type {Map<string, number>} */
     const pins = new Map();
@@ -122,14 +165,20 @@ export function writeLaunch({ root, outDir, modules, rows, indexRows }) {
       const row = stored.get(p);
       if (!row) continue;
       for (const list of [row.pinned_by, ...(row.symbols || []).map((/** @type {any} */ s) => s.pinned_by)]) {
-        for (const t of Array.isArray(list?.files) ? list.files : []) if (typeof t === 'string' && !t.startsWith('"')) pins.set(t, (pins.get(t) || 0) + 1);
+        for (const t of Array.isArray(list?.files) ? list.files : []) {
+          const n = rootRel(t);
+          if (n === null || n.startsWith('"')) continue;
+          if (!safe.has(n)) safe.set(n, openable(realRoot, root, n));
+          if (safe.get(n)) pins.set(n, (pins.get(n) || 0) + 1);
+        }
       }
     }
     const tests = [...pins].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([t]) => abs(t));
     /** @type {Record<string, string[]>} */
     const symbols = {};
     for (const p of read) {
-      const declared = [...new Set((byPath.get(p).symbols || []).map((/** @type {any} */ s) => s.name))];
+      // the schema bounds a symbol, so a longer name is not offered: a reader that cited it would have its module refused
+      const declared = [...new Set((byPath.get(p).symbols || []).map((/** @type {any} */ s) => s.name))].filter((n) => typeof n === 'string' && n.length <= SYMBOL_MAX);
       if (declared.length) symbols[abs(p)] = declared;
     }
     const itemFile = join(outDir, names.item);

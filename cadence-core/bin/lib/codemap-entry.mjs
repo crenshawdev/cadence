@@ -12,10 +12,12 @@ import { isAbsolute, posix, relative, resolve, sep } from 'node:path';
 import { isTestPath } from './codemap-edges.mjs';
 
 const str = (/** @type {number} */ maxLength) => ({ type: 'string', minLength: 1, maxLength });
+/** The longest symbol the schema takes; the launch file lists no longer one, so nothing it calls citable is refused for its length. */
+export const SYMBOL_MAX = 120;
 // a symbol is optional: evidence can be a path alone
 const where = {
   type: 'object', additionalProperties: false, required: ['path'],
-  properties: { path: str(300), symbol: str(120) },
+  properties: { path: str(300), symbol: str(SYMBOL_MAX) },
 };
 
 export const ENTRY_SCHEMA = {
@@ -70,8 +72,10 @@ function problem(schema, value, at) {
     return null;
   }
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return `${at} is not an object`;
-  for (const k of Object.keys(value)) if (!(k in schema.properties)) return `${at} carries an unknown key: ${k}`;
-  for (const k of schema.required) if (!(k in value)) return `${at} lacks ${k}`;
+  // own keys only: `constructor`, `toString` and `__proto__` are inherited names, and a stored entry may carry them as data
+  const own = (/** @type {object} */ o, /** @type {string} */ k) => Object.prototype.hasOwnProperty.call(o, k);
+  for (const k of Object.keys(value)) if (!own(schema.properties, k)) return `${at} carries an unknown key: ${k}`;
+  for (const k of schema.required) if (!own(value, k)) return `${at} lacks ${k}`;
   for (const k of Object.keys(value)) {
     const p = problem(schema.properties[k], value[k], `${at}.${k}`);
     if (p) return p;

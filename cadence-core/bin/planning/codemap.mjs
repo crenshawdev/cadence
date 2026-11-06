@@ -277,7 +277,10 @@ function cmdScan(dir) {
 // text from a run file shown in an answer, cut so a hostile name can't fill it
 const SHOWN = 200;
 /** @param {unknown} v */
-const shown = (v) => (typeof v === 'string' ? v : JSON.stringify(v) ?? 'undefined').slice(0, SHOWN);
+const shown = (v) => {
+  // stringifying a hostile value can itself throw (a list nested deep enough), so this one never does
+  try { return (typeof v === 'string' ? v : JSON.stringify(v) ?? 'undefined').slice(0, SHOWN); } catch { return '(a value that could not be shown)'; }
+};
 // a hash a clone's file may name: a full hex object name and nothing else
 const OBJECT_NAME = /^[0-9a-f]{40,64}$/;
 
@@ -306,9 +309,12 @@ const capped = (key, list) => ({
  * @param {string} dir the planning directory @param {any} opts
  */
 function cmdWrite(dir, opts) {
+  if (typeof opts['run-file'] !== 'string' || !opts['run-file'].trim()) {
+    return fail('bad-args', 'codemap write needs --run-file <value>', 'pass the host\'s run file and re-run - nothing was billed or written');
+  }
   const noticed = noticeTotals(opts, 'codemap write');
   if (!noticed.ok) return fail('bad-args', noticed.detail, 'copy the notice\'s figure as a plain number - nothing was written');
-  const runPath = String(opts['run-file']);
+  const runPath = opts['run-file'];
   const root = dirname(resolve(dir));
   const runRead = readCapped(runPath, MAX_RUN_BYTES);
   /** @type {any} */
@@ -383,33 +389,38 @@ function cmdWrite(dir, opts) {
   const dead = [];
   const seen = new Set();
   for (const row of result.modules) {
-    if (!isPlainObject(row) || typeof row.name !== 'string') { refused.push({ name: shown(isPlainObject(row) ? row.name : row), why: 'a module row without a name' }); continue; }
-    const name = row.name;
-    /** @param {string} reason */
-    const no = (reason) => { refused.push({ name: shown(name), why: reason.slice(0, 2 * SHOWN) }); };
-    if (seen.has(name)) { no('listed twice, so only the first was judged'); continue; }
-    seen.add(name);
-    const m = byName.get(name);
-    if (!m) { no('not a module the facts hold'); continue; }
-    if (startsNoReader(m, byPath)) { no('a module that starts no reader'); continue; }
-    const pinned = launch ? launch.get(name) : null;
-    if (launch && !pinned) { no('the launch file does not name this module'); continue; }
-    if (row.entry === null) { dead.push(name); continue; }
-    const from = row.built_from;
-    if (!isPlainObject(from) || !Object.values(from).every((h) => typeof h === 'string' && OBJECT_NAME.test(h))) {
-      no('built_from is not a map of paths to hashes'); continue;
+    // one module's row never takes down the others: anything thrown while handling it refuses that row and the loop goes on
+    try {
+      if (!isPlainObject(row) || typeof row.name !== 'string') { refused.push({ name: shown(isPlainObject(row) ? row.name : row), why: 'a module row without a name' }); continue; }
+      const name = row.name;
+      /** @param {string} reason */
+      const no = (reason) => { refused.push({ name: shown(name), why: reason.slice(0, 2 * SHOWN) }); };
+      if (seen.has(name)) { no('listed twice, so only the first was judged'); continue; }
+      seen.add(name);
+      const m = byName.get(name);
+      if (!m) { no('not a module the facts hold'); continue; }
+      if (startsNoReader(m, byPath)) { no('a module that starts no reader'); continue; }
+      const pinned = launch ? launch.get(name) : null;
+      if (launch && !pinned) { no('the launch file does not name this module'); continue; }
+      if (row.entry === null) { dead.push(name); continue; }
+      const from = row.built_from;
+      if (!isPlainObject(from) || !Object.values(from).every((h) => typeof h === 'string' && OBJECT_NAME.test(h))) {
+        no('built_from is not a map of paths to hashes'); continue;
+      }
+      if (pinned && !sameHashes(from, pinned)) { no('built_from differs from the launch file\'s, so a hash or a path was changed on the way'); continue; }
+      const verdict = judgeEntry(row.entry, { root, module: new Set(m.paths), tracked, nested: nestedPaths, symbols });
+      if (!verdict.ok) { no(verdict.why); continue; }
+      atomicWrite(join(map, entryFile(m.name)), JSON.stringify({ built_from: from, ...verdict.entry }));
+      written.push(name);
+    } catch (e) {
+      refused.push({ name: shown(isPlainObject(row) ? row.name : row), why: `could not be judged: ${shown(e instanceof Error ? e.message : e)}` });
     }
-    if (pinned && !sameHashes(from, pinned)) { no('built_from differs from the launch file\'s, so a hash or a path was changed on the way'); continue; }
-    const verdict = judgeEntry(row.entry, { root, module: new Set(m.paths), tracked, nested: nestedPaths, symbols });
-    if (!verdict.ok) { no(verdict.why); continue; }
-    atomicWrite(join(map, entryFile(m.name)), JSON.stringify({ built_from: from, ...verdict.entry }));
-    written.push(name);
   }
   const missing = launch ? [...launch.keys()].filter((n) => !seen.has(n)) : [];
   return ok({
     action: 'write', launch_check: launchCheck,
     ...(launchCheck === 'not-run' ? { launch_note: 'the launch file could not be read as a launch file, so built_from was not compared with it' } : {}),
-    ...capped('written', written), ...capped('refused', refused), ...capped('dead', dead), ...capped('missing', missing), brackets,
+    ...capped('written', written), ...capped('refused', refused), ...capped('dead', dead), ...capped('missing', missing.map(shown)), brackets,
   });
 }
 
