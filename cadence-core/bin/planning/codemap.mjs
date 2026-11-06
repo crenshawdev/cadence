@@ -11,6 +11,7 @@ import { fail, ok } from './core.mjs';
 import { judgeEntry } from '../lib/codemap-entry.mjs';
 import { addEdges, stripEdges } from '../lib/codemap-edges.mjs';
 import { readFacts, readNested } from '../lib/codemap-facts.mjs';
+import { writeLaunch } from '../lib/codemap-launch.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
 import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '../lib/codemap-partition.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
@@ -156,13 +157,27 @@ function indexSize(index, limit) {
   return n;
 }
 
-/** @param {string} dir the planning directory */
-function cmdStatus(dir) {
+/**
+ * @param {string} dir the planning directory
+ * @param {any} opts `--out-dir` names an existing directory where the launch file and an item file per module are written
+ */
+function cmdStatus(dir, opts) {
   const root = dirname(resolve(dir));
   const map = join(dir, MAP_DIR);
+  /** @type {string|null} */
+  let outDir = null;
+  if (opts['out-dir'] !== undefined) {
+    outDir = resolve(String(opts['out-dir']));
+    let st = null;
+    try { st = lstatSync(outDir); } catch { /* refused below */ }
+    if (!st || !st.isDirectory()) {
+      return fail('bad-args', `--out-dir ${outDir} is not a directory`, 'make the scratch directory first and pass it - nothing was written');
+    }
+  }
   let real = false;
   try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
-  const { modules: stored, tooLarge } = real ? storedModules(map) : { modules: null, tooLarge: false };
+  const { index, tooLarge } = real ? storedIndex(map) : { index: null, tooLarge: false };
+  const stored = index?.modules ?? null;
   if (tooLarge) {
     return fail('index-too-large', `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so status won't read it`,
       'run `planning.mjs codemap scan` to rebuild the map');
@@ -172,14 +187,24 @@ function cmdStatus(dir) {
   }
   let rows;
   try {
-    rows = readFacts(root);
+    rows = readFacts(root, outDir !== null);
   } catch {
     return fail('no-git', `${root} is not inside a git repository, so there is nothing to compare`,
       'run from the project\'s repository, or pass --dir naming its .planning directory');
   }
   // the stored list placed against the files as they are now, so a file added or removed since the scan counts and nothing is written
   const { modules } = partition(rows, stored);
-  return ok({ action: 'status', ...stateOf(map, modules, rows) });
+  const state = stateOf(map, modules, rows);
+  if (outDir === null) return ok({ action: 'status', ...state });
+  const byPath = new Map(rows.map((r) => [r.path, r]));
+  const toRead = [];
+  for (const m of modules) {
+    const entry = readEntry(map, entryFile(m.name));
+    const s = moduleState(m, entry, byPath);
+    if (s === 'stale' || s === 'unbuilt') toRead.push({ ...m, entry: s === 'stale' ? entry : null });
+  }
+  const launch = writeLaunch({ root, outDir, modules: toRead, rows, indexRows: Array.isArray(index?.rows) ? index.rows : [] });
+  return ok({ action: 'status', ...state, launch });
 }
 
 /** @param {string} dir the planning directory */
@@ -454,7 +479,7 @@ function cmdSlice(dir, opts) {
  */
 function cmdCodemap(dir, sub, opts) {
   if (sub === 'scan') return cmdScan(dir);
-  if (sub === 'status') return cmdStatus(dir);
+  if (sub === 'status') return cmdStatus(dir, opts);
   if (sub === 'write') return cmdWrite(dir, opts);
   if (sub === 'slice') return cmdSlice(dir, opts);
   return fail('usage', 'codemap <scan|status|slice|write>');

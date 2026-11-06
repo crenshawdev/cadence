@@ -449,7 +449,10 @@ export const CONTRACTS = {
     },
     // takes no flag beyond --dir: the root is its parent, so there is no second path to name
     'codemap scan': {},
-    'codemap status': {},
+    // --out-dir is an existing directory: with it, status also writes the launch file and one item file per module to read
+    'codemap status': {
+      '--out-dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // at least one is owed, which the handler enforces: a row can't state that, and a bare flag is no list
     'codemap slice': {
       '--files': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
