@@ -457,10 +457,15 @@ export const CONTRACTS = {
       '--terms': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // A finished code map run to the map's entries. --run-file is the host's `<session>/workflows/<run id>.json`, read whole.
-    // --launch-file is the file `codemap status --out-dir` wrote, which the write compares each module's built_from with.
+    // --launch-file is the file `codemap status --out-dir` wrote, which the write compares each module's built_from with. The
+    // three --notice-* flags are `workflow-run`'s, billed as one bracket only when the run file gives no per-agent rows. The
+    // phase is always 0 and the read set is the index, so neither is a flag.
     'codemap write': {
       '--run-file': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--launch-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--notice-tokens': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--notice-turns': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--notice-duration-ms': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
     // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {

@@ -78,7 +78,7 @@ function loadAnswers(outDir, answersFile) {
  * @param {string} phase @param {string} runId @param {{plan: string, dispatch: any, terminal: any}[]} list
  * @returns {{written: number, already: number, failed: {plan: string, reason: string}[]}}
  */
-function writeBrackets(dir, phase, runId, list) {
+export function writeBrackets(dir, phase, runId, list) {
   const events = renderTrace(dir, phase).events.filter((e) => e.family === 'lifecycle');
   const dispatched = new Set(events.filter((e) => e.event === 'dispatch').map((e) => String(e.plan)));
   const closed = new Set(events.filter((e) => TERMINAL.includes(e.event)).map((e) => String(e.plan)));
@@ -116,6 +116,23 @@ function readEnvelopes(run) {
   return found;
 }
 
+/**
+ * The completion notice's run totals from the three `--notice-*` flags, or what is wrong with one. `codemap write` takes the same three.
+ * @param {any} opts @param {string} seam the command's name, for the message
+ * @returns {{ok: true, totals: {tokens?: number, turns?: number, duration_ms?: number}} | {ok: false, detail: string}}
+ */
+export function noticeTotals(opts, seam) {
+  /** @type {{tokens?: number, turns?: number, duration_ms?: number}} */
+  const totals = {};
+  for (const [flag, key] of [['notice-tokens', 'tokens'], ['notice-turns', 'turns'], ['notice-duration-ms', 'duration_ms']]) {
+    if (!(flag in opts)) continue;
+    const n = requireInt(opts[flag]);
+    if (!n.ok || n.value < 0) return { ok: false, detail: `${seam} --${flag} needs a non-negative whole number` };
+    totals[key] = n.value;
+  }
+  return { ok: true, totals };
+}
+
 function cmdWorkflowRun(dir, opts) {
   const phase = requirePhaseArg(opts.phase);
   if (!phase.ok) {
@@ -126,14 +143,9 @@ function cmdWorkflowRun(dir, opts) {
       return fail('bad-args', `workflow-run needs --${flag} <value>`, `pass --${flag} and re-run - nothing was written`);
     }
   }
-  /** @type {{tokens?: number, turns?: number, duration_ms?: number}} */
-  const totals = {};
-  for (const [flag, key] of [['notice-tokens', 'tokens'], ['notice-turns', 'turns'], ['notice-duration-ms', 'duration_ms']]) {
-    if (!(flag in opts)) continue;
-    const n = requireInt(opts[flag]);
-    if (!n.ok || n.value < 0) return fail('bad-args', `workflow-run --${flag} needs a non-negative whole number`, 'copy the notice\'s figure as a plain number - nothing was written');
-    totals[key] = n.value;
-  }
+  const noticed = noticeTotals(opts, 'workflow-run');
+  if (!noticed.ok) return fail('bad-args', noticed.detail, 'copy the notice\'s figure as a plain number - nothing was written');
+  const totals = noticed.totals;
   const outDir = resolve(opts['out-dir']);
   let outStat = null;
   try { outStat = lstatSync(outDir); } catch { /* refused below */ }

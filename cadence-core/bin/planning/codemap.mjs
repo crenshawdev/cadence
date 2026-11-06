@@ -14,9 +14,9 @@ import { readFacts, readNested } from '../lib/codemap-facts.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
 import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '../lib/codemap-partition.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
-import { LIST_CAP, MAX_RUN_BYTES, parseCompleted } from '../lib/workflow-run.mjs';
+import { LIST_CAP, MAX_RUN_BYTES, agentBrackets, agentRows, noticeBracket, parseCompleted } from '../lib/workflow-run.mjs';
 import { isPlainObject } from '../lib/text-util.mjs';
-import { readCapped } from './workflow-run.mjs';
+import { noticeTotals, readCapped, writeBrackets } from './workflow-run.mjs';
 
 const MAP_DIR = 'codemap';
 const INDEX_FILE = 'index.json';
@@ -272,28 +272,43 @@ const capped = (key, list) => ({
 });
 
 /**
- * `codemap write`: a finished code map run, read from the host's run file, becomes the map's entries. Each module is judged
- * on its own against a fresh scan (D-17): a good one is written with the `built_from` the run returned, so an edit during
- * the run leaves it stale (D-14), and a refused one is named with its old entry untouched. A module's name from the run file
- * only selects a module the facts hold; the file it writes is derived from the stored name by hash and never from the run's text.
+ * `codemap write`: a finished code map run, read from the host's run file, becomes the map's entries. The run is billed
+ * before anything is judged (D-16), under phase 0 with no `--phase` flag, because an agent that spent tokens on a killed
+ * or refused run is still billed. Each module is then judged on its own against a fresh scan (D-17): a good one is
+ * written with the `built_from` the run returned, so an edit during the run leaves it stale (D-14), and a refused one is named
+ * with its old entry untouched. A module's name from the run file only selects a module the facts hold; the file it
+ * writes is derived from the stored name by hash and never from the run's text.
  * @param {string} dir the planning directory @param {any} opts
  */
 function cmdWrite(dir, opts) {
+  const noticed = noticeTotals(opts, 'codemap write');
+  if (!noticed.ok) return fail('bad-args', noticed.detail, 'copy the notice\'s figure as a plain number - nothing was written');
   const runPath = String(opts['run-file']);
   const root = dirname(resolve(dir));
   const runRead = readCapped(runPath, MAX_RUN_BYTES);
-  /** @param {string} reason @param {string} [detail] @param {string} [hint] */
-  const refuse = (reason, detail, hint) => emit({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}) });
+  /** @type {any} */
+  let file = null;
+  if (runRead.text !== null) { try { file = JSON.parse(runRead.text); } catch { /* the bracket falls back below */ } }
+  const runId = isPlainObject(file) && typeof file.runId === 'string' && file.runId ? file.runId : basename(runPath, '.json');
+  const at = { phase: '0', runId, payloadRef: `${basename(resolve(dir))}/${MAP_DIR}/${INDEX_FILE}` };
+  const fromFile = agentRows(file).length > 0;
+  const why = runRead.text === null ? `the run file ${runRead.why}` : (file === null ? 'the run file is not JSON' : 'the run file holds no agent rows');
+  const brackets = {
+    source: fromFile ? 'run-file' : 'notice-totals',
+    ...writeBrackets(dir, '0', runId, fromFile ? agentBrackets(file, at) : [noticeBracket({ ...at, why, totals: noticed.totals, role: 'cad-mapper' })]),
+  };
+  /** Every answer from here on says what was billed. @param {string} reason @param {string} [detail] @param {string} [hint] */
+  const refuse = (reason, detail, hint) => emit({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}), brackets });
 
   if (runRead.text === null) {
     return refuse(runRead.tooLarge ? 'run-too-large' : 'run-unreadable', `the run file ${runRead.why}`,
-      'no entry was written');
+      'no entry was written - the notice\'s totals were billed as one bracket');
   }
   const parsed = parseCompleted(runRead.text);
-  if (!parsed.ok) return refuse(/** @type {string} */ (parsed.reason), parsed.detail, 'no entry was written - a run that did not complete is not a map');
+  if (!parsed.ok) return refuse(/** @type {string} */ (parsed.reason), parsed.detail, 'no entry was written - a run that did not complete is not a map. Its agents were billed');
   const result = parsed.run.result;
   if (!isPlainObject(result) || !Array.isArray(result.modules)) {
-    return refuse('run-bad-result', 'the result is not the code map\'s: it has no modules list', 'no entry was written.');
+    return refuse('run-bad-result', 'the result is not the code map\'s: it has no modules list', 'no entry was written. Its agents were billed');
   }
 
   const map = mapDir(dir);
@@ -369,7 +384,7 @@ function cmdWrite(dir, opts) {
   return ok({
     action: 'write', launch_check: launchCheck,
     ...(launchCheck === 'not-run' ? { launch_note: 'the launch file could not be read as a launch file, so built_from was not compared with it' } : {}),
-    ...capped('written', written), ...capped('refused', refused), ...capped('dead', dead), ...capped('missing', missing),
+    ...capped('written', written), ...capped('refused', refused), ...capped('dead', dead), ...capped('missing', missing), brackets,
   });
 }
 

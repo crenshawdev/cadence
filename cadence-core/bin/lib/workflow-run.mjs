@@ -508,7 +508,8 @@ export function agentBrackets(run, at) {
 
 /**
  * The one bracket for a run whose file gave no per-agent rows, carrying the notice's totals and saying why it is one.
- * @param {{phase: string, runId: string, payloadRef: string, why: string,
+ * `role` is the review's by default; a code map run bills it as its own.
+ * @param {{phase: string, runId: string, payloadRef: string, why: string, role?: string,
  *   totals: {tokens?: number, turns?: number, duration_ms?: number}}} at
  */
 export function noticeBracket(at) {
@@ -516,7 +517,7 @@ export function noticeBracket(at) {
   const figures = {};
   for (const [key, v] of Object.entries(at.totals)) if (figure(v) !== undefined) figures[key] = v;
   return bracket({
-    phase: at.phase, plan: `${at.runId}-notice`, role: WORKFLOW_ROLE, read: at.payloadRef, figures,
+    phase: at.phase, plan: `${at.runId}-notice`, role: at.role || WORKFLOW_ROLE, read: at.payloadRef, figures,
     terminal: 'return',
     detail: `the run's totals from the completion notice, because ${at.why}`,
   });
