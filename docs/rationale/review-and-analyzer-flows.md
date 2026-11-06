@@ -1,4 +1,4 @@
-# Review and analyzer flows
+# Review flows
 
 A workflow script runs agents and nothing else. It can't read files or run `planning.mjs`, so the main session stays responsible for everything that has to land on disk: the run record, the adjudication record and the questions to the user.
 
@@ -14,7 +14,7 @@ Steps 1 to 3 of `fire(trigger)` stay on the main session. A fire launches the wo
 %%{init: {'theme':'dark'}}%%
 flowchart TD
   context["/cad-context"] --> spend{"Buy the analyzer pass?"}
-  spend -->|yes| analyzer["Analyzer flow"]
+  spend -->|yes| analyzer["One analyzer agent"]
   spend -->|no| questions["Questions for the user"]
   analyzer --> questions
   questions --> contextfile["CONTEXT.md"]
@@ -29,40 +29,13 @@ flowchart TD
   panel --> triage["Triage: the user picks what to act on"]
 ```
 
-## Analyzer flow
+## The analyzer is one agent
 
-Three readers on fixed angles run in parallel. The script itself renders their structured results into the contract's report format, so there is no combine agent and `close_gray_areas` parses the report as it does today. Each reader is held to the contract's 5 to 15 files. If every reader returns null, the run takes `analyze`'s existing failure arm.
+The analyzer is not a workflow. `/cad-context` runs one `cad-assumptions-analyzer` agent on every path, whatever `workflow.use_workflows` says, and that setting now gates only the review panel.
 
-On the workflow path `route.mjs resolve` runs without opening a bracket, because the main session can't know the agents in advance. After the notice a seam writes the brackets and hands over the report. The single agent stays as the old path, with its bracket opened on the resolve, and a launch the host refuses takes that path too, its resolve and bracket included. The seam writes the brackets on the workflow path, so the main session's `trace close` belongs to the single agent alone.
+Phase 2 measured three ways to run it. One agent took 12.4 minutes and 1.33M tokens summed across every turn. Three readers on angles took 9.5 minutes and 2.87M. Three readers on slices took 9.7 minutes and 2.19M. A blind judge preferred the single agent's report over the angles report. The judge for the slices report was stopped before it finished. The workflows saved under three minutes and cost 1.6 to 2.2 times the tokens, with no better report.
 
-```mermaid
-%%{init: {'theme':'dark'}}%%
-flowchart TD
-  buy["Spend question answered yes"] --> available{"Workflow setting on in both config layers, and Workflow tool available?"}
-  available -->|no| resolveold["Main session: route.mjs resolve opens the bracket"]
-  resolveold --> single["One cad-assumptions-analyzer agent, as today"]
-  available -->|yes| resolvenew["Main session: route.mjs resolve with no bracket"]
-  resolvenew --> launch{"Launch accepted by the host?"}
-  launch -->|no| resolveold
-  launch -->|yes| ended["Main session ends its turn"]
-
-  ended --> readers
-
-  subgraph script["Workflow script"]
-    readers["Three readers on fixed angles, in parallel, each held to 5 to 15 files"]
-    readers --> allnull{"Every reader null?"}
-    allnull -->|no| render["The script renders their structured results into the contract's report format"]
-  end
-
-  allnull -->|yes| failure["analyze's existing failure arm"]
-  render --> notice["Completion notice resumes the main session"]
-  notice --> seam["Seam: writes the brackets and hands over the report"]
-  seam --> gray["close_gray_areas: questions for the user"]
-  single --> close["Main session: trace close, single-agent path only"]
-  close --> gray
-```
-
-Evidence for the shape. On the finished by-angle spike run `wf_ddf6d7ce-70f` the readers took 12.9 to 14.9 minutes and the combine agent took 8 minutes with one tool call, against the single analyzer's 17 minutes. That combine step only reformatted, which is why the script does it. The by-subsystem run was stopped at about 32 minutes with its combine step unfinished. Which split finds more was never tested, so the by-angle choice rests on time and on shape, not on findings.
+John's call: "i'm thinking the one agent for analyzer".
 
 ## Review panel flow
 

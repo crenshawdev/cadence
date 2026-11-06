@@ -136,7 +136,7 @@ Override the executor's pre-commit lint command. With no override, command detec
 
 **Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
 
-Run reviews and the assumptions analyzer as workflows, with one agent per reviewer and one per finding, rather than one main session opening the file. Workflows burn usage fast, so this is off by default. It counts only when both the repository's `.planning/config.json` and your user-global configuration set it to `true`; either alone leaves the old path, so a value committed to a repository can't turn it on for whoever clones it. Each run takes exactly one path.
+Run reviews as workflows, with one agent per reviewer and one per finding, rather than one main session opening the file. Workflows burn usage fast, so this is off by default. It counts only when both the repository's `.planning/config.json` and your user-global configuration set it to `true`; either alone leaves the old path, so a value committed to a repository can't turn it on for whoever clones it. Each run takes exactly one path.
 
 ### `workflow.multi_workflow`
 
