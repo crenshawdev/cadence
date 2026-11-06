@@ -10,8 +10,6 @@ allowed-tools:
   - Glob
   - AskUserQuestion
   - Task
-  - Workflow
-  - Workflow(cadence:analyzer)
 ---
 
 <objective>

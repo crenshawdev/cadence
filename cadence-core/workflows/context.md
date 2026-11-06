@@ -153,55 +153,6 @@ the blocking ones via the ask-user seam first, and do NOT bake an unverified
 scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
 wastes the whole pass and forces a mid-analysis interruption.
 
-Branch once here, before the dispatch below. `spend_gate` ran first either way.
-Take the workflow path only when the `Workflow` tool is in this session's tool
-list and the both-layer read says the setting is on:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" workflow-layers
-```
-
-`keys["workflow.use_workflows"].on` is the answer. Never the batched `config.mjs
-get`, which answers on a committed repo value alone, and an answer you cannot
-read is off. Off, or no `Workflow` tool: start no workflow and run the dispatch
-below as written, one agent.
-
-On the workflow path, resolve `cad-assumptions-analyzer` through the
-spawn-agent seam without the bracket flag, because the readers are billed after
-the run. Make a scratch directory and print it: `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`.
-Keep the printed path: the call on the notice runs in another Bash invocation, where `$D` is empty.
-Claim before the launch, labelled `analyzer-<N>`:
-`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-claim take --fire analyzer-<N>`.
-`launch: true` goes on, which is every call with multi-workflow on, and a win prints the
-claim's `id`: keep it as a literal for the release, which runs in a later turn. With the setting on no id is printed and there is nothing to release. On `launch:
-false` the seam names the `holder`, its `holder_id` and its `age_seconds`. If a run of this
-session holds it, wait for that run's notice and claim again. Otherwise name the
-holder and its age and ask through the ask-user seam: check again, or run the
-dispatch below as written. A claim left by a dead session is cleared through that
-same ask, with `workflow-claim release --fire <the holder it named> --id <its holder_id>`
-(`--stale` in place of `--id` when `holder_id` is null).
-Launch the `Workflow` tool by its named entry `cadence:analyzer`, or with
-`scriptPath` set to `${CLAUDE_PLUGIN_ROOT}/workflows/analyzer.js` if the name
-does not resolve. `args` holds the payload's fields below: `phase`,
-`phase_name`, `goal`, `prior_decisions`, `search_terms`, `recalled_memory`
-(omit it when empty), plus the resolve's `agent_type` and `model` (null when it
-answered none). The result prints `Transcript dir` and `Run ID`, so keep both.
-A launch the host refuses is named in one line, the claim is released at once
-(`workflow-claim release --fire analyzer-<N> --id <the id take printed>`), and the dispatch below runs, its
-resolve and bracket included. Otherwise end the turn and dispatch nothing else.
-On the completion notice:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --analyzer --phase <N> --run-file <Transcript dir's session directory>/workflows/<Run ID>.json --out-dir <the scratch dir printed above> --payload-ref ".planning/ROADMAP.md" [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
-```
-
-Release the claim right after that call, whether it answered or refused:
-`workflow-claim release --fire analyzer-<N> --id <the id take printed>`. It bills one bracket per reader,
-so the close below is the old path's alone.
-Read the `report` path it prints and continue at "Parse:". If `nulls` names
-readers, say so in one line. An `ok:false` or a missing report takes the "If
-the agent fails" arm below, naming what the seam said.
-
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seam-spawn-agent.md), the bracket on its resolve:
 `--bracket-read ".planning/ROADMAP.md"`. That read-set is what this SITE causes
