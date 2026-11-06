@@ -53,8 +53,8 @@ each name there is not in force, because your global `review.reviewers` has to n
 false is marked `(no effect right now)`.
 Below the list, an `A. Advanced` line when `advanced` is not empty, and the group's guided setup: `--roles` for
 Models and effort, `--surfaces` for When reviews run, `--review` for Who reviews, `--testing` for Testing. Git and
-landing and How work runs have none. Naming one opens that arm of config.md. Plain text that ends the turn, never a
-choice box.
+landing and How work runs have none. Naming one opens that arm of config.md. The last line says `done` finishes the
+group. Plain text that ends the turn, never a choice box.
 
 **A pick.** A number opens that setting. Read it with `layers --key <key>` and show a block: the key, `Now:` with
 its value and who set it, the default, global and repo values with who wins, and what it does, which is its
@@ -123,8 +123,9 @@ Echo the seam's `changed`, then show the list again.
 `purpose`. A pick takes the same pick and write path, with `purpose` in place of the question it does not have.
 `review.providers.*` goes to **Review provider setup**, never typed.
 
-**Leaving.** Run **Worktree base ref** when `parallelization.use_worktrees` is on, and **Wrap-up**'s dangling
-enrollment check when review settings changed. Many settings at once is the full `--walk`.
+**Leaving.** When they say `done`, or otherwise that they're finished, run **Worktree base ref** when
+`parallelization.use_worktrees` is on, and **Wrap-up**'s dangling enrollment check when review settings changed. Many
+settings at once is the full `--walk`.
 
 ## A sentence
 
