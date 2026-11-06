@@ -628,6 +628,8 @@ export const CONTRACTS = {
     'workflow-layers': {},
     // read-only: takes the key=value tokens `set` takes and no flag, since each key's own target decides the file
     preview: {},
+    // the sentence match's read of every setting's text and value in force; no flag, the repo is the cwd
+    catalog: {},
     // the menu's read of where each setting's value comes from; the repo is the cwd, a group name or a dotted key narrows it
     layers: {
       '--group': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },

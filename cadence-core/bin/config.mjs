@@ -291,7 +291,7 @@ function walkRead() {
 // The menu's read: where each setting's value comes from. The repo is the cwd, as workflow-layers has it.
 // Bare gives the opening screen's counts. --group adds that group's shown rows and the names of its Advanced keys,
 // --group with --advanced the Advanced rows with `purpose`, --key one row with the key's full text.
-function layersRead(group, advanced, key) {
+function layersRead(group, advanced, key, catalog) {
   const cwd = process.cwd();
   const repoFile = join(cwd, '.planning', 'config.json');
   const { config, layers, warnings, scopeWarnings, tornLayers } = mergeLayers(repoFile);
@@ -306,6 +306,13 @@ function layersRead(group, advanced, key) {
   const allWarnings = [...(warnings || []), ...(scopeWarnings || []), ...read.warnings];
   const head = { ok: true, unreadable: read.unreadable, ...(allWarnings.length ? { warnings: allWarnings } : {}) };
   const plain = ({ group: _g, shown: _s, position: _p, ...r }) => r;
+  if (catalog) {
+    out({ ...head, settings: read.rows.map((r) => {
+      const { question, purpose, explain } = SCHEMA[r.key];
+      return { key: r.key, question: question ?? null, purpose: purpose ?? null, explain: explain ?? null, value: r.value };
+    }) });
+    return;
+  }
   if (key !== undefined) {
     if (!Object.hasOwn(SCHEMA, key)) fail('unknown-key', [key],
       'run `config.mjs keys` for the keys this schema carries, then ask for one of those');
@@ -487,6 +494,7 @@ try {
     if (Object.values(r.keys).some((k) => k.global === 'unreadable')) unreadable.push(r.globalFile);
     out({ ok: true, ...r, unreadable });
   }
+  else if (cmd === 'catalog') layersRead(undefined, false, undefined, true);
   else if (cmd === 'layers') {
     const row = CONTRACTS['config.mjs'].layers;
     const next = 'use `layers`, `layers --group <name>`, `layers --group <name> --advanced` or `layers --key <key>`';
@@ -501,7 +509,7 @@ try {
     }
     layersRead(g.value, advanced, k.value);
   }
-  else fail('usage', 'subcommand: validate | check | set | unset | get | keys | workflow-layers | layers | preview');
+  else fail('usage', 'subcommand: validate | check | set | unset | get | keys | workflow-layers | layers | catalog | preview');
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
