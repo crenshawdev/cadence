@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, readlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { symbolsFor } from './codemap-symbols.mjs';
 
 // the over-cap line: a file bigger than this is opened by nobody, its hash and byte count are all we keep
@@ -222,4 +223,47 @@ export function readFacts(root, withSymbols = false) {
   const done = hashFiles(root, toHash.map((i) => entries[i].raw));
   toHash.forEach((i, n) => { rows[i].hash = done[n]; });
   return rows.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/**
+ * A nested clone of tests under the root (D-11), read as a source and nothing else: a real directory named `tests` or
+ * `test` directly under `root`, holding its own `.git` and not tracked by the outer repository. Its tracked paths come
+ * from `git ls-files` run in it, its text is read under the same lstat and cap rules as the outer files, and every
+ * path is spelled root-relative with the clone's directory on the front. It joins no module and gets no reader. A
+ * clone git can't read, or one that isn't there, is left out and the scan goes on.
+ * @param {string} root @param {{path: string}[]} rows the outer repository's rows
+ * @returns {{paths: string[], files: {path: string, text: string}[]}} every path git lists, and the readable text ones
+ */
+export function readNested(root, rows) {
+  /** @type {string[]} */
+  const paths = [];
+  /** @type {{path: string, text: string}[]} */
+  const files = [];
+  for (const name of ['tests', 'test']) {
+    const dir = join(root, name);
+    try {
+      if (!lstatSync(dir).isDirectory()) continue;
+      const dotGit = lstatSync(join(dir, '.git'));
+      if (!dotGit.isDirectory() && !dotGit.isFile()) continue;
+    } catch {
+      continue;
+    }
+    // a path the outer repository tracks there (a gitlink included) is already a fact of its own
+    if (rows.some((r) => r.path === name || r.path.startsWith(`${name}/`) || r.path.startsWith(`"${name}/`))) continue;
+    let listed;
+    try { listed = nulFields(git(dir, ['ls-files', '-z'])); } catch { continue; }
+    const seen = new Set();
+    for (const raw of listed) {
+      const key = raw.toString('latin1');
+      if (!raw.length || seen.has(key)) continue;
+      seen.add(key);
+      const { path } = spellPath(Buffer.concat([Buffer.from(`${name}/`), raw]));
+      paths.push(path);
+      const text = readText(dir, raw);
+      if (text !== null) files.push({ path, text });
+    }
+  }
+  const byPath = (/** @type {{path: string}} */ a, /** @type {{path: string}} */ b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+  paths.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return { paths, files: files.sort(byPath) };
 }

@@ -8,7 +8,7 @@ import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'nod
 import { basename, dirname, join, resolve } from 'node:path';
 import { fail, ok } from './core.mjs';
 import { addEdges } from '../lib/codemap-edges.mjs';
-import { readFacts } from '../lib/codemap-facts.mjs';
+import { readFacts, readNested } from '../lib/codemap-facts.mjs';
 import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '../lib/codemap-partition.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
 import { LIST_CAP } from '../lib/workflow-run.mjs';
@@ -135,9 +135,11 @@ function cmdStatus(dir) {
 function cmdScan(dir) {
   const root = dirname(resolve(dir));
   let rows;
+  let nested;
   try {
     rows = readFacts(root, true);
-    addEdges(root, rows);
+    nested = readNested(root, rows);
+    addEdges(root, rows, nested);
   } catch {
     return fail('no-git', `${root} is not inside a git repository, so there is nothing to scan`,
       'run from the project\'s repository, or pass --dir naming its .planning directory');
@@ -164,7 +166,7 @@ function cmdScan(dir) {
     if (st.isFile() && st.size === 2) held = readFileSync(ignore, 'utf8');
   } catch { /* absent is the first write */ }
   if (held !== '*\n') atomicWrite(ignore, '*\n');
-  atomicWrite(join(map, INDEX_FILE), JSON.stringify({ version: 1, rows, modules: listed }));
+  atomicWrite(join(map, INDEX_FILE), JSON.stringify({ version: 1, rows, modules: listed, nested_paths: nested.paths }));
   // an entry file no module names is an orphan of a re-cut or a removed module; only our own spelling is ever deleted
   const named = new Set(listed.map((m) => m.entry));
   for (const f of readdirSync(map)) {
