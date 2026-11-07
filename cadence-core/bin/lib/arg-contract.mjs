@@ -319,6 +319,12 @@ export const CONTRACTS = {
       '--plan': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
       '--plan-time': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
+    // --out-dir is an existing directory: with it the brief is written there, without it the brief is composed and checked only
+    brief: {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--plan': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--out-dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },

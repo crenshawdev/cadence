@@ -66,6 +66,7 @@ const COMMANDS = {
     (await import('./planning/task-record.mjs')).cmdTaskRecord(dir, opts),
   'lease-check': async (dir, _sub, opts) =>
     (await import('./planning/lease-check.mjs')).cmdLeaseCheck(dir, opts),
+  brief: async (dir, _sub, opts) => (await import('./planning/brief.mjs')).cmdBrief(dir, opts),
   // --root, never --dir, since it names the PROJECT root
   // a --root with nothing usable after it is refused at the door, or it answers about the cwd and not the tree named
   'detect-commands': async (_dir, _sub, opts) =>
