@@ -46,7 +46,10 @@ const CEILING = 32 * 1024;
 
 const DECISION_ID = /^D-\d+(?:\.\d+)?$/;
 
-/** The bullet lines of both decision sections in a CONTEXT.md, by id; the first line for an id wins. */
+/**
+ * Each decision of both decision sections in a CONTEXT.md, by id; the first for an id wins. A decision is its bullet line
+ * and the indented lines under it (a wrapped sentence, nested bullets), up to the next column-0 line, trailing blanks dropped.
+ */
 function contextDecisions(/** @type {string|null} */ contextText) {
   /** @type {Map<string, string>} */
   const byId = new Map();
@@ -55,9 +58,15 @@ function contextDecisions(/** @type {string|null} */ contextText) {
   for (const heading of ['## Durable decisions', '## Decisions']) {
     const { start, end } = sectionSpan(lines, heading);
     if (start < 0) continue;
-    for (const line of lines.slice(start + 1, end)) {
-      const id = /^- (D-\d+(?:\.\d+)?)/.exec(line)?.[1];
-      if (id !== undefined && !byId.has(id)) byId.set(id, line);
+    const body = lines.slice(start + 1, end);
+    for (let i = 0; i < body.length; i += 1) {
+      // \b so `- D-10a` is not read as D-10, the way the other id readers end
+      const id = /^- (D-\d+(?:\.\d+)?)\b/.exec(body[i])?.[1];
+      if (id === undefined || byId.has(id)) continue;
+      let stop = i + 1;
+      while (stop < body.length && (body[stop].trim() === '' || /^\s/.test(body[stop]))) stop += 1;
+      while (stop > i + 1 && body[stop - 1].trim() === '') stop -= 1;
+      byId.set(id, body.slice(i, stop).join('\n'));
     }
   }
   return byId;
@@ -119,7 +128,7 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
 
   /** @type {string[]} */
   const out = [h1, ''];
-  out.push(`This brief stands in for \`${planRel}\`, \`.planning/PROJECT.md\` and \`${contextRel}\`. All three are still there to open when the brief doesn't settle something.`);
+  out.push(`This brief stands in for \`${planRel}\`, \`.planning/PROJECT.md\` and \`${contextRel}\`. Any of these the project has are still there to open when the brief doesn't settle something.`);
   out.push(`Where your contract speaks of the plan file your dispatch names, \`${planRel}\` is the one meant: derive \`<plandir>\` and \`k\` from it.`);
   if (named.length === 0 && decisions.size > 0) {
     out.push(`No decision was carried: no task names one. \`${contextRel}\` holds this phase's decisions, so read it for any that bind the work.`);
