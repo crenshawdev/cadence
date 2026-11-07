@@ -28,4 +28,4 @@ After writing the plans, run this yourself for the phase:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-overlap --phase <N>
 ```
 
-Its `waves` order the plans, and the width is the plan count of the widest wave. Your `## PLANNING COMPLETE` return states the width, plus one line of reason when it is 1 (`overlaps` names the files that made it so). It is information and no gate: a narrow phase is returned as written, never reshaped to look wider.
+Its `waves` order the plans, and the width is the plan count of the widest wave. Your `## PLANNING COMPLETE` return states the width, plus one line of reason when it is 1 (`overlaps` names the files that made it so). It is information and no gate: a narrow phase is returned as written, never reshaped to look wider. A `frontmatter_issues` entry in that answer means a plan you wrote is wrong, so fix it and run it again before you return.
