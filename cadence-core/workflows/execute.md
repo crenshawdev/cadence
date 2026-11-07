@@ -179,7 +179,8 @@ Sequential (default) unless ALL of these hold:
 - `parallelization.enabled` is true
 - plan count >= `parallelization.min_plans_for_parallel`
 - no plan builds on another's output (your judgment, from the plans' goals
-  and ordering)
+  and ordering, for plans that name nothing; any valid `depends_on` entry is
+  that answer, read off `waves` below)
 - the declared file lists do not overlap - this half is arithmetic, not
   judgment; run the seam and require empty `overlaps`:
 
@@ -191,7 +192,9 @@ Sequential (default) unless ALL of these hold:
   which files. Any `undeclared` entry -> sequential too: a plan declaring
   no files cannot be proven independent. Any `frontmatter_issues` entry ->
   sequential for the same reason: a plan whose frontmatter did not fully
-  parse cannot be proven independent either. `ok:false` -> sequential (the
+  parse cannot be proven independent either. More than one entry in `waves`
+  -> sequential: with no overlap, only a valid `depends_on` entry makes a
+  second wave. `ok:false` -> sequential (the
   check could not run; never parallelize unproven).
 - `parallelization.use_worktrees` is true (parallel dispatch without
   isolation is not supported - fall back to sequential)
