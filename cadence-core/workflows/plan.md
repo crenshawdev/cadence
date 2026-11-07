@@ -268,6 +268,12 @@ disk, and do not continue while it refuses.
 With `testing.scope` set, read `references/test-policy.md` once and follow it
 as spawn_planner's `<testing_policy>` block says: the testing scope in each
 task's `Verify:`, and the CI task first when `gate_found` is `false`.
+
+The scan and the printed line in spawn_planner's `planning.code_map` stretch
+apply here too, under the same prohibition on a second spelling: with that key
+`true`, make that scan once and print that line before planning, and on
+`ok:false`, or output that won't parse, print nothing about it and go on
+planning. An inline plan has no prompt, so it carries no block.
 </step>
 
 <step name="handle_return">
