@@ -156,6 +156,12 @@ Turn on the new `/cadence:cad-config` menu. With it on, no arguments opens six g
 
 Turn on the code map. With it on, `/cadence:cad-plan` and `/cadence:cad-context` each make one local scan of the repository, with no model, and add a short block to the agent's dispatch that points it at the map, so it can see what the code is, what touches what and which tests pin it without reading the whole repository again. `/cadence:cad-map` builds and refreshes the map. A `true` committed in a repository can only add that scan: no agent starts until you type `/cadence:cad-map` and answer yes. `/cadence:cad-map` waits its turn behind a running workflow, but it doesn't need `workflow.use_workflows`. With it off, those dispatches carry nothing about a map, and `/cadence:cad-map` tells you the command that turns it on and stops.
 
+### `planning.workflow_plans`
+
+**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
+
+Turn on plans a workflow can run. With it on, the planner writes each plan with what it builds on (`depends_on`) and, for each task, where to start reading (`Reads`), which decisions bind it (`Decisions`) and which tests pin it (`Pins`), and it states in its return how many plans could run side by side. `/cadence:cad-plan` checks each plan's brief, and `/cadence:cad-execute` gives each executor that brief in place of `PROJECT.md`, `CONTEXT.md` and the plan file. It works with `planning.code_map` off and gives thinner briefs then. With it off, every path is as it was.
+
 ### `parallelization.enabled`
 
 **Default:** `true` · **Type:** boolean · **Scope:** repository or user-global.
