@@ -430,23 +430,20 @@ function cmdWrite(dir, opts) {
 const listOf = (v) => (typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : []);
 
 /**
- * The rows asked for, and no way to ask for all of them: a call naming none of the selectors is refused.
- * @param {string} dir the planning directory @param {any} opts
+ * The stored map as `slice` reads it: the index with its checks, the current facts, each module's state and entry, and the
+ * marks. A failure comes back as `error` instead of a refusal, so a seam that can do without a map reads it as no map.
+ * @param {string} dir the planning directory
+ * @returns {{error: {reason: string, message: string, hint: string}} | {error?: undefined, index: any, states: Map<string, string>, entries: Map<string, any>, entryPath: (name: string) => string, current: Set<string>, marks: {edges_shed?: true, symbols_shed?: true}}}
  */
-function cmdSlice(dir, opts) {
-  const select = { files: listOf(opts.files), symbols: listOf(opts.symbols), terms: listOf(opts.terms) };
-  if (!select.files.length && !select.symbols.length && !select.terms.length) {
-    return fail('usage', 'codemap slice needs --files, --symbols or --terms, each a comma-separated list',
-      'name what to read, such as `--files a.mjs,b.mjs`; the whole map is never printed');
-  }
+function readStoredMap(dir) {
   const root = dirname(resolve(dir));
   const map = join(dir, MAP_DIR);
   let real = false;
   try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
   const { index, tooLarge } = real ? storedIndex(map) : { index: null, tooLarge: false };
   if (tooLarge) {
-    return fail('index-too-large', `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so slice won't read it`,
-      'run `planning.mjs codemap scan` to rebuild the map');
+    return { error: { reason: 'index-too-large', message: `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so slice won't read it`,
+      hint: 'run `planning.mjs codemap scan` to rebuild the map' } };
   }
   const isObject = (/** @type {any} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   // the index comes from a file a clone can supply: every row has a path, and its symbols are objects
@@ -455,14 +452,14 @@ function cmdSlice(dir, opts) {
     && index.rows.every((/** @type {any} */ r) => isObject(r) && typeof r.path === 'string'
       && (r.symbols === undefined || (Array.isArray(r.symbols) && r.symbols.every(isObject))));
   if (!wellFormed) {
-    return fail('no-index', `there is no code map at ${map}`, 'run `planning.mjs codemap scan` first to build the map');
+    return { error: { reason: 'no-index', message: `there is no code map at ${map}`, hint: 'run `planning.mjs codemap scan` first to build the map' } };
   }
   let current;
   try {
     current = readFacts(root);
   } catch {
-    return fail('no-git', `${root} is not inside a git repository, so there is nothing to compare`,
-      'run from the project\'s repository, or pass --dir naming its .planning directory');
+    return { error: { reason: 'no-git', message: `${root} is not inside a git repository, so there is nothing to compare`,
+      hint: 'run from the project\'s repository, or pass --dir naming its .planning directory' } };
   }
   // staleness is the way status takes it: the stored list placed against the files as they are now, each entry's built_from against current hashes
   const { modules } = partition(current, index.modules);
@@ -479,10 +476,23 @@ function cmdSlice(dir, opts) {
   }
   const base = `${basename(resolve(dir))}/${MAP_DIR}`;
   const marks = { ...(index.edges_shed === true ? { edges_shed: true } : {}), ...(index.symbols_shed === true ? { symbols_shed: true } : {}) };
-  return ok(slice({
-    rows: index.rows, modules: index.modules, states, entries, select, entryPath: (name) => `${base}/${entryFile(name)}`,
-    current: new Set(current.map((r) => r.path)), marks,
-  }));
+  return { index, states, entries, entryPath: (name) => `${base}/${entryFile(name)}`, current: new Set(current.map((r) => r.path)), marks };
+}
+
+/**
+ * The rows asked for, and no way to ask for all of them: a call naming none of the selectors is refused.
+ * @param {string} dir the planning directory @param {any} opts
+ */
+function cmdSlice(dir, opts) {
+  const select = { files: listOf(opts.files), symbols: listOf(opts.symbols), terms: listOf(opts.terms) };
+  if (!select.files.length && !select.symbols.length && !select.terms.length) {
+    return fail('usage', 'codemap slice needs --files, --symbols or --terms, each a comma-separated list',
+      'name what to read, such as `--files a.mjs,b.mjs`; the whole map is never printed');
+  }
+  const stored = readStoredMap(dir);
+  if (stored.error) return fail(stored.error.reason, stored.error.message, stored.error.hint);
+  const { index, states, entries, entryPath, current, marks } = stored;
+  return ok(slice({ rows: index.rows, modules: index.modules, states, entries, select, entryPath, current, marks }));
 }
 
 /**
@@ -498,4 +508,4 @@ function cmdCodemap(dir, sub, opts) {
   return fail('usage', 'codemap <scan|status|slice|write>');
 }
 
-export { cmdCodemap };
+export { cmdCodemap, readStoredMap };
