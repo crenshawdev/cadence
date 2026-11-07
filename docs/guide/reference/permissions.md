@@ -55,7 +55,7 @@ What Cadence writes outside your repository:
 - the `worktree.baseRef` key, merged into `.claude/settings.json` or `~/.claude/settings.json`, only after you pick the file at `/cadence:cad-config`;
 - scratch directories from `mktemp` under `TMPDIR`, or `/tmp` when it's unset.
 
-What it reads outside it: your user-global config, the host's workflow run file under the session directory, `providers.env` or the `review.key_file` file during a provider call, and `~/.claude/settings.json` and the platform's `managed-settings.json` to learn `worktree.baseRef` before running plans in parallel worktrees.
+What it reads outside it: your user-global config, the host's workflow run file under the session directory, `providers.env` or the `review.key_file` file during a provider call, and `~/.claude/settings.json` and the platform's `managed-settings.json` to learn `worktree.baseRef` before running plans in parallel worktrees, and, with `planning.workflow_plans` on, an executor's brief from a scratch directory the run made.
 
 ## Shell commands
 
