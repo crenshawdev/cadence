@@ -1,12 +1,16 @@
 # PLAN.md frontmatter grammar
 
-The stated grammar for the `requirements:` and `files:` lists in a plan
-file's leading `---`-fenced block (`templates/PLAN.md`). Read every shipped
+The stated grammar for the `requirements:`, `files:` and `depends_on:` lists in
+a plan file's leading `---`-fenced block (`templates/PLAN.md`). Read every shipped
 form to exactly the ids/files declared, and report anything outside this
 grammar rather than silently over- or under-reading it. The single
 implementation is `readFrontmatterList` in
 `cadence-core/bin/lib/planning-files.mjs` (a thin selector over
 `parseFrontmatter`, which walks the block once and classifies every line).
+
+`depends_on:` is optional: a list of earlier plan numbers in the same phase
+that this plan builds on. Absent or empty means no dependency. Only
+`plan-overlap` checks the entries, since only it knows the phase's plans.
 
 ## Normalization
 
@@ -218,7 +222,9 @@ key the caller asked for. Two sets:
 - **Only where a LIST key owns the line.** The four VALUE-level codes -
   `unterminated-quote`, `trailing-value-content`, `residual-quote`,
   `backtick-wrapped-value` - are raised only when the key that owns the value
-  is `requirements:` or `files:`, the two keys the seams read as lists. A
+  is `requirements:`, `files:` or `depends_on:`, the three keys the seams read
+  as lists. A `depends_on:` defect is reported, never dropped, because dropped
+  it would read as no dependency. A
   backtick or a stray quote in the bytes of `goal:` or `plan:` is a defect in a
   value nothing reads as a list, and reporting it would put it in
   `plan-overlap`'s `frontmatter_issues` and the risk floor's declared-files

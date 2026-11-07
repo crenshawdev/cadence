@@ -1328,16 +1328,18 @@ const VALUE_LEVEL_CODES = new Set([
 ]);
 
 /**
- * Scope value-level codes to the two list keys the seams read. A defect in `goal:` or `plan:` isn't about a list,
- * and would reach plan-overlap's `frontmatter_issues` and the risk-floor bail as if the file list were unreadable.
- * A `requirements:` defect still reaches a `files:` read and vice versa. Applied at the push sites.
+ * Scope value-level codes to the three list keys the seams read: `requirements`, `files` and `depends_on`. A defect in
+ * `goal:` or `plan:` isn't about a list, and would reach plan-overlap's `frontmatter_issues` and the risk-floor bail
+ * as if the file list were unreadable. A `depends_on` defect dropped here would read as no dependency, and two plans
+ * that build on each other could look independent.
+ * A defect under one list key still reaches a read of another. Applied at the push sites.
  * The structural codes own no key and skip this: they must reach every key's read, or a truncated `requirements:`
  * block reaches plan-overlap clean and `choose_path` reads it as proved independence.
  * A `null` key owns no list key, so its value-level codes go too.
  * @param {string|null} key @param {string[]} codes @returns {string[]}
  */
 function scopeToListKeys(key, codes) {
-  if (key === 'requirements' || key === 'files') return codes;
+  if (key === 'requirements' || key === 'files' || key === 'depends_on') return codes;
   return codes.filter((c) => !VALUE_LEVEL_CODES.has(c));
 }
 
@@ -1536,9 +1538,9 @@ export function parseFrontmatter(text) {
 
 /**
  * Read one frontmatter key as a string list plus the pass's issues: every structural issue whatever key it sits
- * under, and the value-level four only where the owner is `requirements:` or `files:` (scopeToListKeys, applied at
- * the push sites). A thin selector over parseFrontmatter.
- * One reader for both keys because two copies of the pattern would drift, and audit would accept a plan shape
+ * under, and the value-level four only where the owner is `requirements:`, `files:` or `depends_on:` (scopeToListKeys,
+ * applied at the push sites). A thin selector over parseFrontmatter.
+ * One reader for every list key because copies of the pattern would drift, and audit would accept a plan shape
  * the parallel-safety overlap check rejects.
  * @param {string} text @param {string} key
  * @returns {{items: string[], issues: Issue[]}}
