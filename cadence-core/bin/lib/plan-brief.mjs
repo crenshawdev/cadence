@@ -169,7 +169,7 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
   /** @type {string[]} */
   const out = [h1, ''];
   out.push(`This brief stands in for \`${planRel}\`, \`.planning/PROJECT.md\` and \`${contextRel}\`. Any of these the project has are still there to open when the brief doesn't settle something.`);
-  out.push(`Where your contract speaks of the plan file your dispatch names, \`${planRel}\` is the one meant: derive \`<plandir>\` and \`k\` from it.`);
+  out.push(`Where your contract speaks of the plan file your dispatch names, \`${planRel}\` is the one meant: derive \`<plandir>\` and \`k\` from it. Where it says to read that file, reading this brief covers it: the plan's goal, truths, context and tasks are all below.`);
   if (named.length === 0 && decisions.size > 0) {
     out.push(`No decision was carried: no task names one. \`${contextRel}\` holds this phase's decisions, so read it for any that bind the work.`);
   }
