@@ -5,11 +5,38 @@
 import { join } from 'node:path';
 import { fail, phaseSpellingCollision, listPlanFiles, ok, read } from './core.mjs';
 import { intersects } from '../lib/lease-grammar.mjs';
+import { byPlanNumber } from '../lib/phase-plans.mjs';
 import { parsePlanFiles } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 
 // pairwise intersection of a phase's declared file lists; choose_path needs empty overlaps to run plans concurrently
 // overlaps found is still ok:true, a successful check with a negative answer: branch on overlaps.length
+// `waves` comes back on every call and this seam reads no config: whether to act on it is the caller's
+
+/**
+ * A plan's wave is one more than the highest wave of the earlier plans it waits for, and wave 1 when it waits for none.
+ * Earlier is the plan number compared as a number, so PLAN-10.md follows PLAN-2.md. Every declared file counts and no
+ * code names one, so a housekeeping file two plans both list orders them like any other.
+ * @param {string[]} plans the phase's plan files
+ * @param {(earlier: string, later: string) => boolean} waitsFor
+ * @returns {string[][]} plan files grouped by wave, each wave in plan order
+ */
+function wavesOf(plans, waitsFor) {
+  const ordered = [...plans].sort(byPlanNumber);
+  /** @type {number[]} */
+  const wave = [];
+  /** @type {string[][]} */
+  const waves = [];
+  ordered.forEach((plan, j) => {
+    let w = 0;
+    for (let i = 0; i < j; i++) {
+      if (waitsFor(ordered[i], plan)) w = Math.max(w, wave[i] + 1);
+    }
+    wave.push(w);
+    (waves[w] ||= []).push(plan);
+  });
+  return waves;
+}
 
 function cmdPlanOverlap(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
@@ -45,6 +72,7 @@ function cmdPlanOverlap(dir, opts) {
   if (planFiles.length < 2) {
     return ok({
       phase: n, plans: [], overlaps: [],
+      waves: planFiles.length ? [planFiles] : [],
       note: 'fewer than two plans - nothing to intersect',
       ...(nonconforming.length ? { nonconforming_plans: nonconforming } : {}),
       ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
@@ -72,10 +100,14 @@ function cmdPlanOverlap(dir, opts) {
     }
   }
   const undeclared = declared.filter((d) => !d.files.length).map((d) => d.plan);
+  // "share" is the pairs above, so a directory lease separates waves exactly where it reports an overlap
+  const shares = new Set(overlaps.map((o) => o.plans.join('\0')));
+  const waves = wavesOf(planFiles, (a, b) => shares.has(`${a}\0${b}`) || shares.has(`${b}\0${a}`));
   ok({
     phase: n,
     plans: declared.map((d) => ({ plan: d.plan, files: d.files.length })),
     overlaps,
+    waves,
     // a plan declaring no files can't be proven independent; the caller treats these as unsafe
     ...(undeclared.length ? { undeclared } : {}),
     ...(nonconforming.length ? { nonconforming_plans: nonconforming } : {}),
