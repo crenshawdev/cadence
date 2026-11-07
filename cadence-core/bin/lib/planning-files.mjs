@@ -1251,7 +1251,7 @@ function normalizeCrlf(text) {
 }
 
 /** Trim and truncate an offending line to 120 chars with a trailing `...`. */
-function issueText(line) {
+export function issueText(line) {
   const t = line.trim();
   return t.length > 120 ? `${t.slice(0, 120)}...` : t;
 }

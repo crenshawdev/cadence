@@ -5,13 +5,14 @@
 import { join } from 'node:path';
 import { fail, phaseSpellingCollision, listPlanFiles, ok, read } from './core.mjs';
 import { intersects } from '../lib/lease-grammar.mjs';
-import { byPlanNumber } from '../lib/phase-plans.mjs';
-import { parsePlanFiles } from '../lib/planning-files.mjs';
+import { byPlanNumber, planNumber } from '../lib/phase-plans.mjs';
+import { issueText, normalize, parsePlanFiles, readFrontmatterList } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 
 // pairwise intersection of a phase's declared file lists; choose_path needs empty overlaps to run plans concurrently
 // overlaps found is still ok:true, a successful check with a negative answer: branch on overlaps.length
 // `waves` comes back on every call and this seam reads no config: whether to act on it is the caller's
+// a `depends_on` entry orders its plan like a shared file does; choose_path reads a second wave with no overlap as sequential
 
 /**
  * A plan's wave is one more than the highest wave of the earlier plans it waits for, and wave 1 when it waits for none.
@@ -61,9 +62,27 @@ function cmdPlanOverlap(dir, opts) {
   }
 
   // parsed before the fewer-than-two-plans early return, so a one-plan phase's grammar diagnostic still gets out
+  // an entry is valid when it's a plain integer naming a plan of this phase with a lower number; anything else is one
+  // `invalid-depends-on` issue, which routes the phase sequential, so an invalid entry orders nothing itself
+  const numbers = new Set(planFiles.map(planNumber));
   const declared = planFiles.map((f) => {
-    const { files, issues } = parsePlanFiles(read(join(pdir, f)) || '');
-    return { plan: f, files, issues };
+    const text = read(join(pdir, f)) || '';
+    const { files, issues } = parsePlanFiles(text);
+    const own = planNumber(f);
+    /** @type {Set<number>} */
+    const deps = new Set();
+    let bad = false;
+    for (const e of readFrontmatterList(text, 'depends_on').items) {
+      const k = /^\d+$/.test(e) ? Number(e) : NaN;
+      if (k < own && numbers.has(k)) deps.add(k);
+      else bad = true;
+    }
+    if (bad) {
+      const lines = normalize(text).split('\n');
+      const at = lines.findIndex((l) => /^depends_on:(\s|$)/.test(l));
+      issues.push({ line: at + 1, code: 'invalid-depends-on', text: issueText(lines[at]) });
+    }
+    return { plan: f, files, issues, deps };
   });
   const frontmatterIssues = declared
     .filter((d) => d.issues.length)
@@ -102,7 +121,9 @@ function cmdPlanOverlap(dir, opts) {
   const undeclared = declared.filter((d) => !d.files.length).map((d) => d.plan);
   // "share" is the pairs above, so a directory lease separates waves exactly where it reports an overlap
   const shares = new Set(overlaps.map((o) => o.plans.join('\0')));
-  const waves = wavesOf(planFiles, (a, b) => shares.has(`${a}\0${b}`) || shares.has(`${b}\0${a}`));
+  const depsOf = new Map(declared.map((d) => [d.plan, d.deps]));
+  const waves = wavesOf(planFiles, (a, b) => shares.has(`${a}\0${b}`) || shares.has(`${b}\0${a}`)
+    || Boolean(depsOf.get(b)?.has(planNumber(a))));
   ok({
     phase: n,
     plans: declared.map((d) => ({ plan: d.plan, files: d.files.length })),
