@@ -377,6 +377,8 @@ Once per plan file the phase has, because `--plan` names one plan file:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase {N} --plan <k>
 ```
 
+In a `--gaps` run, skip a plan whose `reports/plan-<k>.md` opens `PLAN COMPLETE`: `/cad-execute` never dispatches it. If its brief would have been refused, say so in one line and re-dispatch nothing for it.
+
 With no `--out-dir` it writes nothing. On `ok:false`, say what the answer names out loud, and re-dispatch ONCE:
 
 - A bad id goes to a fresh revision-mode planner, bracketed the way `check_gate`'s revision is, with the refusal in its `<checker_issues>`.
