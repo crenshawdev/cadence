@@ -10,6 +10,8 @@ export const LIMIT = 10000;
 // counted: a name can be hundreds of bytes, and a broad term must not fill the answer with a list of omissions
 const OMITTED_CAP = 20;
 const OMITTED_BYTES = 4000;
+// the least an item can cost, so a list with less than this left can stop looking: the rest are counted, same answer
+const MIN_ITEM = Buffer.byteLength(JSON.stringify({ module: '', file: '' })) + 1;
 
 /** @typedef {{path: string, quoted?: true, kind: string, hash: string|null, bytes: number|null, symbols?: any[], imports?: any, pinned_by?: any}} Row */
 
@@ -71,9 +73,12 @@ const hasEdges = (/** @type {any} */ row) => has(row, 'imports') || has(row, 'pi
  * @param {(module: string) => string} input.entryPath the root-relative file an entry lives in
  * @param {Set<string>} input.current the paths the repository tracks now: a row outside it is stale whatever its module says
  * @param {{edges_shed?: true, symbols_shed?: true}} [input.marks] what the scan left out of the index, copied into the answer
+ * @param {number} [input.limit] the answer's byte bound, LIMIT unless a caller wants less; `codemap slice` never passes one
  * @returns {Record<string, any>} the answer's body; the caller puts `ok:true` in front of it
  */
-export function slice({ rows, modules, states, entries, select, entryPath, current, marks = {} }) {
+export function slice({ rows, modules, states, entries, select, entryPath, current, marks = {}, limit = LIMIT }) {
+  // the omitted-entry list scales down with a smaller limit, or that list alone could overrun it; at LIMIT it's OMITTED_BYTES exactly
+  const omittedBytes = Math.min(OMITTED_BYTES, Math.floor(limit * OMITTED_BYTES / LIMIT));
   /** @type {Map<string, string>} */
   const moduleOf = new Map();
   for (const m of modules) for (const p of m.paths) moduleOf.set(p, m.name);
@@ -118,7 +123,7 @@ export function slice({ rows, modules, states, entries, select, entryPath, curre
     const module = moduleOf.get(r.path);
     const stale = states.get(module ?? '') === 'stale' || !current.has(r.path);
     bareSum += bytesOf(shape(r, module, stale, true)) + (out.length ? 1 : 0);
-    if (floor + bareSum > LIMIT) { truncated = true; break; }
+    if (floor + bareSum > limit) { truncated = true; break; }
     const row = shape(r, module, stale);
     out.push(row);
     rowBytes.push(bytesOf(row));
@@ -139,12 +144,12 @@ export function slice({ rows, modules, states, entries, select, entryPath, curre
     let seen = 0;
     for (const module of names) {
       // past the cap nothing more is built: the rest of the omitted are counted without a look
-      if (listed.length >= OMITTED_CAP) break;
+      if (listed.length >= OMITTED_CAP || omittedBytes - used < MIN_ITEM) break;
       if (!omitted.has(module)) continue;
       seen++;
       const item = { module, file: entryPath(module) };
       const b = bytesOf(item) + 1;
-      if (used + b <= OMITTED_BYTES) { listed.push(item); used += b; } else more++;
+      if (used + b <= omittedBytes) { listed.push(item); used += b; } else more++;
     }
     more += omitted.size - seen;
     return {
@@ -161,7 +166,7 @@ export function slice({ rows, modules, states, entries, select, entryPath, curre
     fixed = bytesOf({ ok: true, ...head() }) + 1 + kept.reduce((a, n) => a + /** @type {number} */ (entryBytes.get(n)), 0) + Math.max(0, kept.length - 1);
   };
   const size = () => fixed + rowSum + Math.max(0, out.length - 1);
-  const fits = () => size() <= LIMIT;
+  const fits = () => size() <= limit;
   refresh();
 
   /** @param {number} i @param {any} row */
