@@ -4,7 +4,7 @@
 // the plan's sections go in word for word, because a paraphrase is a second statement of what "done" means
 'use strict';
 
-import { normalize, sectionSpan } from './planning-files.mjs';
+import { normalize, readFrontmatterList, sectionSpan } from './planning-files.mjs';
 
 // the plan sections an executor builds from, in the order the plan template writes them; `## Notes` stays out
 const SECTIONS = ['## Goal', '## Must be true when done', '## Context', '## Tasks'];
@@ -45,11 +45,14 @@ function filesBlock(/** @type {string[]} */ fm) {
 const CEILING = 32 * 1024;
 
 const UNCHECKED = 'The `Reads` entries were not checked: this project has no usable code map to check them against.';
+const ROWS_HEADING = "## Code map rows for this plan's files and reads";
+const ROWS_LEFT_OUT = 'The code map rows were left out: the brief had no room for them.';
 
 /**
  * @typedef {object} BriefMap
  * @property {{path: string, symbols?: {name: string}[]}[]} rows the stored index's rows
  * @property {boolean} symbolsShed the index lost its symbols, so a symbol can't be judged
+ * @property {(files: string[], limit: number) => Record<string, any>} slice the rows for these files, shed to the byte limit
  */
 
 /** D-15: whether the index lacks a `path#symbol` or bare `path` entry: the path first, then the symbol's name. */
@@ -155,7 +158,8 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
 
   // a Reads entry is only ever compared with the index: nothing a plan names is opened
   const reads = [...new Set(namedField(taskLines, 'Reads').map((n) => n.entry))];
-  const map = reads.length ? loadMap() : null;
+  const filesAsked = readFrontmatterList(normalize(planText), 'files').items.filter((f) => typeof f === 'string' && f);
+  const map = reads.length || filesAsked.length ? loadMap() : null;
   const readsUnchecked = reads.length > 0 && map === null;
   const readsMissing = map === null ? [] : reads.filter((e) => readMissing(map, e));
 
@@ -186,20 +190,21 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
     const c = sectionText(normalize(projectText).split('\n'), '## Constraints');
     if (c !== null) out.push(c, '');
   }
-  const textOf = (/** @type {string[]} */ report) => [...out, ...report].join('\n').replace(/\n+$/, '\n');
+  // rows come before the Reads report, so the report's count line is the last line when it is cut
+  const textOf = (/** @type {string[]} */ rows, /** @type {string[]} */ report) => [...out, ...rows, ...report].join('\n').replace(/\n+$/, '\n');
   const bytesOf = (/** @type {string} */ t) => Buffer.byteLength(t);
-  let text = textOf([]);
+  let text = textOf([], []);
   let bytes = bytesOf(text);
   if (bytes > CEILING) {
     return { ok: false, detail: `${planFile}'s brief is ${bytes} bytes, over the ${CEILING}-byte ceiling, and nothing in it can be cut`,
       hint: `split ${planFile} into smaller plans, then re-run` };
   }
 
-  // D-17: what is left after the parts never cut goes to the Reads report
+  // D-17: what is left after the parts never cut goes to the Reads report first, then to the rows
   /** @type {string[]} */
   let report = [];
   if (readsMissing.length) {
-    const fits = (/** @type {number} */ k) => bytesOf(textOf(readsBlock(readsMissing, k))) <= CEILING;
+    const fits = (/** @type {number} */ k) => bytesOf(textOf([], readsBlock(readsMissing, k))) <= CEILING;
     if (fits(readsMissing.length)) report = readsBlock(readsMissing, readsMissing.length);
     else if (fits(0)) {
       // size grows with k below the full list, because an entry costs more than the count line's digits save
@@ -213,7 +218,22 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
     }
   }
 
-  text = textOf(report);
+  /** @type {string[]} */
+  let rows = [];
+  const asked = [...new Set([...filesAsked, ...reads.map((e) => (e.includes('#') ? e.slice(0, e.indexOf('#')) : e))].filter(Boolean))];
+  if (map !== null && asked.length) {
+    // one byte stands in for the answer's line, so the limit is exactly what the line may take, its newline included
+    const limit = CEILING - bytesOf(textOf([ROWS_HEADING, '', 'x', ''], report)) + 2;
+    const answer = map.slice(asked, limit);
+    if (answer.total > 0) {
+      const json = JSON.stringify({ ok: true, ...answer });
+      if (bytesOf(json) + 1 <= limit) rows = [ROWS_HEADING, '', json, ''];
+      else if (bytesOf(textOf([ROWS_LEFT_OUT, ''], report)) <= CEILING) rows = [ROWS_LEFT_OUT, ''];
+    }
+  }
+
+  text = textOf(rows, report);
   bytes = bytesOf(text);
+  if (bytes > CEILING) { text = textOf([], report); bytes = bytesOf(text); }
   return { ok: true, text, bytes, readsMissing, readsUnchecked };
 }

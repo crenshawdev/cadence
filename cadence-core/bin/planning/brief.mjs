@@ -7,13 +7,14 @@ import { lstatSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fail, listPlanFiles, ok, phaseSpellingCollision, read } from './core.mjs';
 import { readStoredMap } from './codemap.mjs';
+import { slice } from '../lib/codemap-slice.mjs';
 import { composeBrief } from '../lib/plan-brief.mjs';
 import { planFileFor, planNumber } from '../lib/phase-plans.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 
 /**
- * The stored map for the plan's check, or null: any failure the shared read hands back, from no map to no git,
+ * The stored map for the plan's check and its rows, or null: any failure the shared read hands back, from no map to no git,
  * is no map. Nothing here opens a path a plan names.
  * @param {string} dir the planning directory
  */
@@ -21,7 +22,14 @@ function loadMap(dir) {
   try {
     const m = readStoredMap(dir);
     if (m.error) return null;
-    return { rows: m.index.rows, symbolsShed: m.index.symbols_shed === true };
+    const { index, states, entries, entryPath, current, marks } = m;
+    return {
+      rows: index.rows,
+      symbolsShed: index.symbols_shed === true,
+      slice: (/** @type {string[]} */ files, /** @type {number} */ limit) => slice({
+        rows: index.rows, modules: index.modules, states, entries, select: { files, symbols: [], terms: [] }, entryPath, current, marks, limit,
+      }),
+    };
   } catch {
     return null;
   }
