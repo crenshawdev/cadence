@@ -112,7 +112,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch \
-  testing.scope
+  testing.scope planning.workflow_plans
 ```
 
 `testing.scope` set means a testing policy is active. It gates the one line
@@ -250,6 +250,20 @@ successive executors in the phase share a cached prefix: phase-level context
 - Then the plan-specific tail: the plan file to read, commit scope
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."
+
+With `planning.workflow_plans` read in `locate` as `true`, a brief takes the place of the plan file and the two phase documents in what each executor reads. With the key not `true`, this stretch runs nothing.
+
+- **Compose.** The first time a plan needs one, make the run's scratch directory and print it: `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`. Keep the printed path as a literal, because each Bash call starts with `$D` empty. Before each plan's dispatch, ahead of the resolve that carries its bracket, run this once and keep the path the answer names:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase <N> --plan <k> --out-dir <the scratch directory>
+  ```
+
+  A parallel batch composes all its briefs before the batch's one message. The transcript gets the envelope and never the brief.
+- **Dispatch.** The shared files to read first are project `CLAUDE.md` alone, and the plan-specific tail names the brief file by that absolute path in place of the plan file, keeping the commit scope and the mode line. The surfaces bullet and the testing-policy line stay as they are. The executor reads that one file at that path even from a worktree. An executor that can't open it does no task and returns a `blocked` checkpoint naming the path, because the file's head is what names the plan file and the dispatch no longer does. That return owes no report file.
+- **Bracket.** The executor's resolve carries the same `--plan <k> --bracket-plan <k>`, and its `--bracket-read` value is `CLAUDE.md,<the brief path>`, so the read trace shows any later read of a full document. A batch member on the parallel path carries its own value on its own `dispatch` event, so no member's bracket names another's brief.
+- **Second dispatches.** A continuation and a re-dispatched remainder name that same brief file, unless that plan's executor came back `blocked` on it. Then that plan's next dispatch takes the arm below. After a first dispatch, where no task has run, it starts the plan fresh and names no report path. After a continuation or remainder it keeps what `handle_checkpoint` carries: the report path, the checkpoint outcome, "continue from task <k>" and the same pre-plan HEAD. A `risk_surface` fix pass keeps what its own paragraph lists, since it fixes findings and runs no tasks.
+- **A refused or unreadable answer.** Print one line with what it names, and dispatch that plan the way this step does with the key not `true`, because the full documents lose the executor nothing.
 
 Do NOT restate the executor's standing rules (atomic commit per task,
 deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
