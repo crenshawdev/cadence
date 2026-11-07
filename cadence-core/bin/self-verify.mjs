@@ -175,7 +175,8 @@ function workflowScriptIssues(text, rel) {
   const call = code.search(/\bagent\s*\(/);
   const guard = code.search(/\bargs\b/);
   // a mention of args only guards if a return or throw can stop the script before the first agent( call
-  if (call >= 0 && (guard < 0 || guard > call || !/\b(?:return|throw)\b/.test(code.slice(guard, call)))) {
+  // and a helper's `return await agent(` is the call itself, so that return doesn't count
+  if (call >= 0 && (guard < 0 || guard > call || !/\b(?:return|throw)\b/.test(code.slice(guard, call).replace(/\breturn\s+(?:await\s+)?$/, '')))) {
     bad('workflow-no-args-guard', 'args is not tested, with a return or throw to stop on it, before the first agent( call');
   }
   return out;
