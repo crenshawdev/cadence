@@ -40,6 +40,10 @@ function filesBlock(/** @type {string[]} */ fm) {
   return fm.slice(at, stop).join('\n');
 }
 
+// D-17: the 27 plans of Phases 1 to 3 top out at 24,492 B of word-for-word parts, so the largest fits with ~8 KB spare, and
+// with map rows of up to 10,000 B a plan that size gives up at least 1.7 KB of rows, more once it carries the new task fields
+const CEILING = 32 * 1024;
+
 const DECISION_ID = /^D-\d+(?:\.\d+)?$/;
 
 /** The bullet lines of both decision sections in a CONTEXT.md, by id; the first line for an id wins. */
@@ -140,5 +144,10 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
     if (c !== null) out.push(c, '');
   }
   const text = out.join('\n').replace(/\n+$/, '\n');
-  return { ok: true, text, bytes: Buffer.byteLength(text) };
+  const bytes = Buffer.byteLength(text);
+  if (bytes > CEILING) {
+    return { ok: false, detail: `${planFile}'s brief is ${bytes} bytes, over the ${CEILING}-byte ceiling, and nothing in it can be cut`,
+      hint: `split ${planFile} into smaller plans, then re-run` };
+  }
+  return { ok: true, text, bytes };
 }
