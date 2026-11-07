@@ -368,6 +368,23 @@ the full scope, and a check that refused what the user just authorized would be
 arguing with them. One re-dispatch, or the user's word, then continue.
 </step>
 
+<step name="check_brief">
+With `planning.workflow_plans` `true`, check each plan's brief, after `check_size` and before `check_census`. With the key not `true`, make no call and go on.
+
+Once per plan file the phase has, because `--plan` names one plan file:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase {N} --plan <k>
+```
+
+With no `--out-dir` it writes nothing. On `ok:false`, say what the answer names out loud, and re-dispatch ONCE:
+
+- A bad id goes to a fresh revision-mode planner, bracketed the way `check_gate`'s revision is, with the refusal in its `<checker_issues>`.
+- A brief over its ceiling gets `check_size`'s instruction: split this plan's tasks across more plans, sequential where they share files.
+
+Not a hard halt. After the one re-dispatch, or the user's word, continue: `/cad-execute` runs a plan whose brief is refused from the full documents.
+</step>
+
 <step name="check_census">
 The plan's lease against the hand-maintained COUNTS this repository keeps - the
 numbers a human wrote down that the code must keep true. Run after

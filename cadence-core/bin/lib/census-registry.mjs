@@ -167,7 +167,7 @@ export const CENSUSES = Object.freeze([
     id: 'seam-call-counts',
     holder: 'tests/seam-calls.test.mjs',
     counts: 'the happy-path seam invocations each measured workflow instructs - '
-      + '16 for `workflows/plan.md` and 7 for `workflows/context.md`',
+      + '17 for `workflows/plan.md` and 7 for `workflows/context.md`',
     asserted_by: 'the generated test named `<file> instructs exactly <N> seam '
       + 'invocations`, one per row of that file\'s `CENSUS` array',
     // only these two workflows carry a row and the count is per file, so the rest would refuse plans for nothing
