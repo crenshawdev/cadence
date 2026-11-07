@@ -41,7 +41,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.max_plan_bytes \
   planning.commit_docs \
   git.protected_branches git.on_protected \
-  git.base_branch memory.backend testing.scope planning.code_map
+  git.base_branch memory.backend testing.scope planning.code_map planning.workflow_plans
 ```
 
 `testing.scope` set means the project accepted a testing policy. Then run, once:
@@ -233,6 +233,14 @@ A code map is available. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/code
 </code_map>
 ```
 
+When `planning.workflow_plans` read in `parse` is `true`, the prompt carries a plan-graph block, placed after `<testing_policy>` and `<code_map>` when those are present. Gaps and revision modes reuse this prompt and so carry the block. With the key not `true` the prompt carries none of it.
+
+```text
+<plan_graph>
+Plans here can be run by a workflow. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/plan-graph.md once and follow it.
+</plan_graph>
+```
+
 Revision mode: dispatch a FRESH cad-planner (never resume the prior run - the
 plan on disk carries the grounding). Append the checker's issues verbatim in a
 `<checker_issues>` block and instruct: fix each issue with minimal edits to the
@@ -274,6 +282,8 @@ apply here too, under the same prohibition on a second spelling: with that key
 `true`, make that scan once and print that line before planning, and on
 `ok:false`, or output that won't parse, print nothing about it and go on
 planning. An inline plan has no prompt, so it carries no block.
+
+With `planning.workflow_plans` `true`, read `references/plan-graph.md` once, for its task fields section only: an inline plan never splits, so `depends_on` and the width don't apply, and it carries no block.
 </step>
 
 <step name="handle_return">
