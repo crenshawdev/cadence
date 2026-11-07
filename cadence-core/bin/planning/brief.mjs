@@ -53,6 +53,7 @@ function cmdBrief(dir, opts) {
     planRel: `.planning/phases/${parsedPhase.raw}/${planFile}`,
     planText,
     projectText: read(join(dir, 'PROJECT.md')),
+    contextText: read(join(pdir, 'CONTEXT.md')),
   });
   if (!brief.ok) return fail('bad-plan', brief.detail, brief.hint);
 
