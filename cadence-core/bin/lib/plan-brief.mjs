@@ -44,6 +44,30 @@ function filesBlock(/** @type {string[]} */ fm) {
 // with map rows of up to 10,000 B a plan that size gives up at least 1.7 KB of rows, more once it carries the new task fields
 const CEILING = 32 * 1024;
 
+const UNCHECKED = 'The `Reads` entries were not checked: this project has no usable code map to check them against.';
+
+/**
+ * @typedef {object} BriefMap
+ * @property {{path: string, symbols?: {name: string}[]}[]} rows the stored index's rows
+ * @property {boolean} symbolsShed the index lost its symbols, so a symbol can't be judged
+ */
+
+/** D-15: whether the index lacks a `path#symbol` or bare `path` entry: the path first, then the symbol's name. */
+function readMissing(/** @type {BriefMap} */ map, /** @type {string} */ entry) {
+  const at = entry.indexOf('#');
+  const path = at < 0 ? entry : entry.slice(0, at);
+  const symbol = at < 0 ? '' : entry.slice(at + 1);
+  const row = map.rows.find((r) => r.path === path);
+  if (row === undefined) return true;
+  return symbol !== '' && !map.symbolsShed && !(row.symbols ?? []).some((x) => x.name === symbol);
+}
+
+/** The Reads report: the first k entries in the order named, then a line counting the rest when some are left. */
+function readsBlock(/** @type {string[]} */ missing, /** @type {number} */ k) {
+  const rest = missing.length - k;
+  return ['## Reads the code map does not hold', '', ...missing.slice(0, k).map((e) => `- ${e}`), ...(rest > 0 ? [`- ${rest} more not listed`] : []), ''];
+}
+
 const DECISION_ID = /^D-\d+(?:\.\d+)?$/;
 
 /**
@@ -73,21 +97,22 @@ function contextDecisions(/** @type {string|null} */ contextText) {
 }
 
 /**
- * The entries of every task's `**Decisions:**` field, with the task they sit under. The value may wrap onto following
- * indented lines, since the template wraps fields; the next column-0 field or a blank line ends it.
- * @param {string[]} tasks the `## Tasks` section's lines
+ * The entries of every task's `**<field>:**` field (`Decisions` or `Reads`), with the task they sit under. The value may
+ * wrap onto following indented lines, since the template wraps fields; the next column-0 field or a blank line ends it.
+ * @param {string[]} tasks the `## Tasks` section's lines @param {string} field
  * @returns {{task: string, entry: string}[]}
  */
-function namedDecisions(tasks) {
+function namedField(tasks, field) {
+  const marker = new RegExp(`^(?:- )?\\*\\*${field}:\\*\\*(.*)$`);
   /** @type {{task: string, entry: string}[]} */
   const out = [];
   let task = '';
   for (let i = 0; i < tasks.length; i += 1) {
     const heading = /^### Task\s+([\d.]+)/.exec(tasks[i]);
     if (heading) { task = heading[1]; continue; }
-    const field = /^(?:- )?\*\*Decisions:\*\*(.*)$/.exec(tasks[i]);
-    if (!field || task === '') continue;
-    let value = field[1];
+    const hit = marker.exec(tasks[i]);
+    if (!hit || task === '') continue;
+    let value = hit[1];
     while (i + 1 < tasks.length && /^\s+\S/.test(tasks[i + 1])) { i += 1; value += ` ${tasks[i].trim()}`; }
     for (const piece of value.split(',')) {
       if (piece.trim() !== '') out.push({ task, entry: piece.trim() });
@@ -103,9 +128,10 @@ function namedDecisions(tasks) {
  * @param {string} p.planText
  * @param {string|null} p.projectText PROJECT.md, or null when the project has none
  * @param {string|null} p.contextText the phase's own CONTEXT.md, or null when it has none
- * @returns {{ok: true, text: string, bytes: number} | {ok: false, detail: string, hint: string}}
+ * @param {() => BriefMap|null} [p.loadMap] the stored map, read only when the plan has something to ask it; null is no map
+ * @returns {{ok: true, text: string, bytes: number, readsMissing: string[], readsUnchecked: boolean} | {ok: false, detail: string, hint: string}}
  */
-export function composeBrief({ planFile, planRel, planText, projectText, contextText }) {
+export function composeBrief({ planFile, planRel, planText, projectText, contextText, loadMap = () => null }) {
   const { fm, rest } = splitFrontmatter(normalize(planText));
   const lines = rest.split('\n');
   if (sectionText(lines, '## Tasks') === null) {
@@ -115,7 +141,8 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
   const decisions = contextDecisions(contextText);
   const phaseDir = planRel.slice(0, planRel.lastIndexOf('/'));
   const contextRel = `${phaseDir}/CONTEXT.md`;
-  const named = namedDecisions(sectionSpanLines(lines, '## Tasks'));
+  const taskLines = sectionSpanLines(lines, '## Tasks');
+  const named = namedField(taskLines, 'Decisions');
   const bad = named.filter((n) => !DECISION_ID.test(n.entry) || !decisions.has(n.entry));
   if (bad.length) {
     const why = (/** @type {{entry: string}} */ n) => (DECISION_ID.test(n.entry)
@@ -126,6 +153,12 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
   }
   const h1 = lines.find((l) => l.startsWith('# ')) ?? `# ${planFile}`;
 
+  // a Reads entry is only ever compared with the index: nothing a plan names is opened
+  const reads = [...new Set(namedField(taskLines, 'Reads').map((n) => n.entry))];
+  const map = reads.length ? loadMap() : null;
+  const readsUnchecked = reads.length > 0 && map === null;
+  const readsMissing = map === null ? [] : reads.filter((e) => readMissing(map, e));
+
   /** @type {string[]} */
   const out = [h1, ''];
   out.push(`This brief stands in for \`${planRel}\`, \`.planning/PROJECT.md\` and \`${contextRel}\`. Any of these the project has are still there to open when the brief doesn't settle something.`);
@@ -133,6 +166,7 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
   if (named.length === 0 && decisions.size > 0) {
     out.push(`No decision was carried: no task names one. \`${contextRel}\` holds this phase's decisions, so read it for any that bind the work.`);
   }
+  if (readsUnchecked) out.push(UNCHECKED);
   out.push('');
 
   const files = filesBlock(fm);
@@ -152,11 +186,34 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
     const c = sectionText(normalize(projectText).split('\n'), '## Constraints');
     if (c !== null) out.push(c, '');
   }
-  const text = out.join('\n').replace(/\n+$/, '\n');
-  const bytes = Buffer.byteLength(text);
+  const textOf = (/** @type {string[]} */ report) => [...out, ...report].join('\n').replace(/\n+$/, '\n');
+  const bytesOf = (/** @type {string} */ t) => Buffer.byteLength(t);
+  let text = textOf([]);
+  let bytes = bytesOf(text);
   if (bytes > CEILING) {
     return { ok: false, detail: `${planFile}'s brief is ${bytes} bytes, over the ${CEILING}-byte ceiling, and nothing in it can be cut`,
       hint: `split ${planFile} into smaller plans, then re-run` };
   }
-  return { ok: true, text, bytes };
+
+  // D-17: what is left after the parts never cut goes to the Reads report
+  /** @type {string[]} */
+  let report = [];
+  if (readsMissing.length) {
+    const fits = (/** @type {number} */ k) => bytesOf(textOf(readsBlock(readsMissing, k))) <= CEILING;
+    if (fits(readsMissing.length)) report = readsBlock(readsMissing, readsMissing.length);
+    else if (fits(0)) {
+      // size grows with k below the full list, because an entry costs more than the count line's digits save
+      let lo = 0;
+      let hi = readsMissing.length - 1;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (fits(mid)) lo = mid; else hi = mid - 1;
+      }
+      report = readsBlock(readsMissing, lo);
+    }
+  }
+
+  text = textOf(report);
+  bytes = bytesOf(text);
+  return { ok: true, text, bytes, readsMissing, readsUnchecked };
 }

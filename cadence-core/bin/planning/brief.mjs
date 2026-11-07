@@ -6,10 +6,26 @@
 import { lstatSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fail, listPlanFiles, ok, phaseSpellingCollision, read } from './core.mjs';
+import { readStoredMap } from './codemap.mjs';
 import { composeBrief } from '../lib/plan-brief.mjs';
 import { planFileFor, planNumber } from '../lib/phase-plans.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
+
+/**
+ * The stored map for the plan's check, or null: any failure the shared read hands back, from no map to no git,
+ * is no map. Nothing here opens a path a plan names.
+ * @param {string} dir the planning directory
+ */
+function loadMap(dir) {
+  try {
+    const m = readStoredMap(dir);
+    if (m.error) return null;
+    return { rows: m.index.rows, symbolsShed: m.index.symbols_shed === true };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * @param {string} dir the planning directory
@@ -54,6 +70,7 @@ function cmdBrief(dir, opts) {
     planText,
     projectText: read(join(dir, 'PROJECT.md')),
     contextText: read(join(pdir, 'CONTEXT.md')),
+    loadMap: () => loadMap(dir),
   });
   if (!brief.ok) return fail('bad-plan', brief.detail, brief.hint);
 
@@ -63,7 +80,11 @@ function cmdBrief(dir, opts) {
     path = join(outDir, `plan-${planNumber(planFile)}-brief.md`);
     atomicWrite(path, brief.text);
   }
-  return ok({ phase: parsedPhase.value, plan: planFile, bytes: brief.bytes, ...(path !== null ? { path } : {}) });
+  return ok({
+    phase: parsedPhase.value, plan: planFile, bytes: brief.bytes, ...(path !== null ? { path } : {}),
+    ...(brief.readsMissing.length ? { reads_missing: brief.readsMissing } : {}),
+    ...(brief.readsUnchecked ? { reads_unchecked: true } : {}),
+  });
 }
 
 export { cmdBrief };

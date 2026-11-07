@@ -379,7 +379,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase {N} --p
 
 In a `--gaps` run, skip a plan whose `reports/plan-<k>.md` opens `PLAN COMPLETE`: `/cad-execute` never dispatches it. If its brief would have been refused, say so in one line and re-dispatch nothing for it.
 
-With no `--out-dir` it writes nothing. On `ok:false`, say what the answer names out loud, and re-dispatch ONCE:
+With no `--out-dir` it writes nothing. An `ok:true` answer may carry `reads_missing`, the `Reads` entries the index lacks, or `reads_unchecked`: relay either in one line per plan and re-dispatch nothing for it. On `ok:false`, say what the answer names out loud, and re-dispatch ONCE:
 
 - A bad id goes to a fresh revision-mode planner, bracketed the way `check_gate`'s revision is, with the refusal in its `<checker_issues>`.
 - A brief over its ceiling gets `check_size`'s instruction: split this plan's tasks across more plans, sequential where they share files.
