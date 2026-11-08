@@ -486,9 +486,9 @@ holds it, `(in force)` when it is inherited, and an inherited option's
 Ask the role's question, word for word:
 
 - `cad-planner`: "Which model writes your plans? Everything built later follows them, so a stronger model costs more here and saves rework later."
-- `cad-assumptions-analyzer`: "Which model lists what a phase assumes, before any plan exists? It runs once a phase, so a stronger model costs little and catches a wrong premise early."
+- `cad-assumptions-analyzer`: "Which model lists what a phase assumes, before any plan exists? It runs only when you choose to have the code read, at most once a phase, and a stronger one catches a wrong premise early."
 - `cad-verifier`: "Which model checks whether a phase met its goal, not just whether its tasks ran? It runs only when the deeper check is on, and a stronger one misses less."
-- `cad-reviewer`: "Which model runs the Claude reviewer? It runs on every review, so a cheaper model saves the most here and a stronger one catches more."
+- `cad-reviewer`: "Which model runs the Claude reviewer? If you use it, it runs on every review, so a cheaper model saves the most and a stronger one catches more."
 - `cad-executor`: "Which model writes the code, one run per plan? It is the largest cost in a phase, so a cheaper model saves the most and a stronger one makes fewer mistakes."
 - `cad-plan-checker`: "Which model checks each plan before any code is written? It runs only when plan checking is on, and the work is short, so a cheaper model often does."
 
@@ -560,9 +560,10 @@ where a user meets the category names.
 
 Options:
 
-1. **Keep it for every area** `(recommended)` - "Every risky area keeps the
-   blocking plan review and the deeper check." Writes nothing, because a config
-   with no waiver key is already in that state.
+1. **Leave it as it is** `(recommended)` - "Changes nothing. Areas already
+   skipped in your config stay skipped, and with none skipped every risky area
+   keeps the blocking plan review and the deeper check." Writes nothing, and
+   leaves any waiver already on disk in place.
 2. **Choose areas to skip** - "The areas you pick no longer make the plan review
    blocking or turn on the deeper check. The review of the actual changes still
    runs." Writes `review.triggers.risk_surface.waive_routing_floor` with the
