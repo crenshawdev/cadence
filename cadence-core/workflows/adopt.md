@@ -107,11 +107,11 @@ Two stops first, before anything is written.
         question has, and three providers plus NONE is exactly four, so this
         question never splits however many resolved.
 
-        - header: "Forge"
-        - question: "Which forge hosts this project's repository?"
+        - header: "Code host"
+        - question: "Which service hosts this project's repository?"
         - options:
-          - "{provider}" - uses the {binary} command, one option for each installed forge
-          - "None of these" - none of the installed forges is the one this project uses, so setup stops here
+          - "{provider}" - uses the {binary} command, one option for each installed service
+          - "None of these" - none of these is the service this project uses, so setup stops here
      b. **Which repository**, as `owner/name`. Pre-fill it from `defaults.repo`
         when the envelope offers one, so the user CONFIRMS rather than retypes;
         ask it outright when it does not. An adopted repository usually HAS an
@@ -136,7 +136,7 @@ Two stops first, before anything is written.
         are never asked this; their hosts are fixed.
 
         - header: "Instance"
-        - question: "What address do you use in a browser to reach your Forgejo instance? Add a port only if it isn't the default one, written as host:port. This is the address you browse to, not the one git uses over SSH."
+        - question: "What address do you use in a browser to reach your Forgejo instance? Type just the host name, with no https:// and no path, and add the port as host:port only if it isn't the default one. This is the address you browse to, not the one git uses over SSH."
         - options: none, you type the address
 
      **On "None of these" the step REFUSES and stops** - it does not fall
