@@ -275,7 +275,7 @@ still surviving round two is the terminal STOP-and-ask, never a round three.
   - question: "Which of these findings do you want to act on? Nothing is changed for a finding you don't pick."
   - options:
     - "None of them - act on none of these findings"
-    - "Finding {number} - {severity}, {file and line}, one option for each finding in this question, up to three"
+    - "Finding {number} - {severity}, {file and line}" - one option for each finding in this question, up to three
 
   If the user asks
   about a number instead of answering, read that survivor's What triggers it and
@@ -307,8 +307,8 @@ answer that is neither option re-asks, and the record waits.
   - question: "The reviewer suspects this problem but hasn't proved it: {finding title}. How do you want to settle it?"
   - options:
     - "Run the check - run the check the review names, and the finding is judged again from the result"
-    - "Fix it - you make the fix, and the finding is recorded with the commit that fixes it"
-    - "Override it - ship past the finding, with a reason you give"
+    - "Fix it - Cadence makes the fix, and the finding is recorded with the commit that fixes it"
+    - "Override it - leave it unfixed and continue, and the finding is recorded as overridden with the reason you give"
 
   Running the check re-rules it, and
   `review-file --mark` marks the review file (`references/review-record.md`).
@@ -316,13 +316,15 @@ answer that is neither option re-asks, and the record waits.
   two-option ask, and so does a check that settles nothing, so this cannot
   loop. It is never downgraded.
 - **Proved and unnamed**: its own ask with two options - fix it, or override
-  with a reason.
+  with a reason. Its question says only that the finding is open, because a
+  suspected one the check settled nothing on, and a named one whose fix is not
+  made, reach it too.
 
-  - header: "Proved"
-  - question: "The reviewer proved this problem and you didn't pick it: {finding title}. It has to be fixed or overridden before the review is recorded. What do you want to do?"
+  - header: "Still open"
+  - question: "This problem is still open: {finding title}. It has to be fixed or overridden before the review is recorded. What do you want to do?"
   - options:
-    - "Fix it - you make the fix, and the finding is recorded with the commit that fixes it"
-    - "Override it - ship past the finding, with a reason you give"
+    - "Fix it - Cadence makes the fix, and the finding is recorded with the commit that fixes it"
+    - "Override it - leave it unfixed and continue, and the finding is recorded as overridden with the reason you give"
 
 - **Proved and named**: no second question, since naming it is the answer, and
   the answer is to fix. One whose fix is not then made, such as `/cad-verify`'s
@@ -424,7 +426,7 @@ and an unreadable visibility shown as public:
 - question: "These findings won't be fixed in this step. Pick the ones you want filed as issues on {repository}, which is {visibility}. A finding you pick becomes an issue there. A finding you don't pick is recorded as declined on this machine and never reaches the tracker."
 - options:
   - "None of them - record every finding as declined, and file no issue"
-  - "Finding {number} - {severity}, {file and line}, one option for each finding in this question, up to three"
+  - "Finding {number} - {severity}, {file and line}" - one option for each finding in this question, up to three
 
 Then make ONE call with the dispositions and report what was filed:
 
@@ -467,13 +469,15 @@ answer where an item stays and gains a note.
 with NONE selected TOGETHER with one or more survivors. That answer is
 contradictory and is not resolved by guessing which half the user meant:
 re-present that single question on its own and take the second answer as final.
-Only that question re-asks - the rest of the batch stands.
+Only that question re-asks - the rest of the batch stands. The "Unfixed" ask
+re-asks with its own question and options (the repository, its visibility and
+what each answer does), after the first sentence of the block below.
 
 - header: "Pick again"
 - question: "You picked None of them and also picked findings, and those can't both stand. Which findings do you want to act on?"
 - options:
   - "None of them - act on none of these findings"
-  - "Finding {number} - {severity}, {file and line}, one option for each finding in this question, up to three"
+  - "Finding {number} - {severity}, {file and line}" - one option for each finding in this question, up to three
 
 **The `git.auto_close` carve-out is a READ inside `/cad-land`, not a suppressed
 ask.** `/cad-land` fires no review of its own - v3.2.0 removed the one it had -
