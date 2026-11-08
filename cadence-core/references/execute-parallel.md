@@ -1,9 +1,10 @@
 # The parallel execution path
 
 Read at `<step name="execute_parallel">` in `cadence-core/workflows/execute.md`,
-which is the only step that reaches it. All worktree ceremony lives here and
-nowhere else, and `choose_path` has already proven `worktree.baseRef` is `head`
-before anything below runs - so an executor halting `blocked` on a missing PLAN
+and a second time by `references/execute-workflow.md`, which follows its steps 3
+to 5 after a wave. All worktree ceremony lives here and in that file, and
+`choose_path` has already proven `worktree.baseRef` is `head` before anything
+below runs - so an executor halting `blocked` on a missing PLAN
 on this path is a real defect to report, not the fork-point default.
 
 1. In batches of `parallelization.max_concurrent_agents`: dispatch one

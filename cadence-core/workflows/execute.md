@@ -724,7 +724,9 @@ verification runs in a fresh subagent.
 - THREE writers touch this run record's brackets and no fourth: the DISPATCH
   half rides each site's own `route.mjs resolve` through `--bracket-read`; the
   CLOSE half is the orchestrator's hand-written `trace close`, which alone sees
-  the return and so alone carries `--tokens`, `--turns` and `--duration-ms`; and
+  the return and so alone carries `--tokens`, `--turns` and `--duration-ms`, or
+  for a wave's executors `workflow-run`'s close, which bills each from the run
+  file's own rows; and
   the host's `SubagentStop` hook (`cadence-core/bin/subagent-trace.mjs`) writes
   a close for a dispatch whose hand-written one never ran, carrying what it
   reads off that worker rather than the return's three figures. Executors

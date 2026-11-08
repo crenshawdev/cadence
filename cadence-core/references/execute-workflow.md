@@ -65,3 +65,41 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
 ```
 
 Print one line, and run the rest of the phase on today's sequential path.
+
+## 2. On the notice
+
+The notice holds run totals and cuts a long result short, so the seam reads the run file whole: `workflows/<Run ID>.json` under the session directory `Transcript dir` names.
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --phase <N> --run-file <the run file> --out-dir <the scratch directory> --payload-ref <the scratch directory> [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
+```
+
+Release the claim right after this call returns, whether it answered or refused, with the `workflow-claim release` line from section 1 and the same `id`.
+
+The call bills every executor of the wave, each under its plan number and with its own figures, so no `trace close` is written for them. One exception: when `brackets.source` is `notice-totals`, the run file gave no agent rows and no executor was billed. Close each plan's opened dispatch yourself with one `trace close --plan <k> --role cad-executor --detail-file <path>` call, where the file names the missing agent rows, which makes the close a `checkpoint`.
+
+Its answer holds each plan's outcome in `plans`, a `digest` or null, and `restarted`. Relay each plan's outcome with its position line. For each entry of `restarted`, name that plan's agent as restarted by the host. A refusal has billed what it could: treat every plan of the wave as a dead slot (section 3) and read each from its report.
+
+Sort each plan by its outcome:
+
+- **Settled**: the digest reads `PLAN COMPLETE`. It goes on below.
+- **A checkpoint**, a `PLAN PARTIAL`, a null digest or a digest that does not parse: section 3.
+
+### A wave wider than 1
+
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` and follow steps 3 to 5 for the plans that settled, with these differences.
+
+- **Step 3, merge.** Merge each plan's branch `cadence/phase-<N>-plan-<k>` in plan order, with both HEADs recorded. A settled plan with no such branch landed nothing, so its two HEADs are one commit and step 5 takes the skip for it.
+- **The report moves after its merge.** Once a plan's branch has merged, move its report from `<the scratch directory>/reports/plan-<k>.md` into `<plandir>/reports/plan-<k>.md`. First rotate a report already there aside to the next free `plan-<k>.<n>.md`, as the executor contract's rotation rule does. Edit nothing in the moved file (D-06). A plan whose branch has not merged keeps its report in the scratch directory, so the main tree never holds a `PLAN COMPLETE` for unmerged work.
+- **Step 4, cleanup.** Remove a worktree only if the host kept it: look for the branch in `git worktree list --porcelain`. Delete each merged branch.
+- **Step 5, the suite and the risk sequence.** The suite runs after this wave, not once at the end, because the next wave forks from this merge. Then run the skip or `risk-check run` for every settled plan first. Then the fires: each `risk_surface` fire a `run` answer called for, and each plan's `diff` trigger. Then each plan's `status`, since `status` counts every executor the run closed, so a plan's done waits on its wave-mates' records. A `risk_surface` fix runs in the main tree under worker key `<k>`.
+
+The report on this path is never in a worktree and no executor commits it. The move above brings it into the main tree, and the `state` step's existing staging is its only commit.
+
+### A wave of one plan
+
+It ran in the normal tree, so nothing merges and its report is already at `<plandir>/reports/plan-<k>.md`. The plan's range is its pre-plan HEAD to HEAD. The risk sequence, the cursor write and the `diff` fire are `execute_sequential`'s, as it states them.
+
+### Then
+
+A wave is done only when each of its plans is, and a stopped plan, an open question or a conflict holds the next wave. Launch the next from section 1 when every plan of this one is done. After the last wave, fire `phase_diff` once, as step 6 of `execute-parallel.md` states. When its gate is `off` and a wave ran wider than 1, print one line saying the interaction of the merged plans went unreviewed. Then `goal_check` and on, as today.
