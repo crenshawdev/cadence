@@ -267,7 +267,17 @@ still surviving round two is the terminal STOP-and-ask, never a round three.
   print where the list prints. The recommendation is advice: nothing is
   preselected and no answer word is added. Then ask which to act on through
   `AskUserQuestion` with `multiSelect: true`, and END THE TURN on that question.
-  NONE is the first option in every question and the default. If the user asks
+  NONE is the first option in every question and the default; its label reads
+  "None of them". Each survivor option carries its number, severity and
+  `file:line`.
+
+  - header: "Findings"
+  - question: "Which of these findings do you want to act on? Nothing is changed for a finding you don't pick."
+  - options:
+    - "None of them - act on none of these findings"
+    - "Finding {number} - {severity}, {file and line}, one option for each finding in this question, up to three"
+
+  If the user asks
   about a number instead of answering, read that survivor's What triggers it and
   What proves it from the review file, answer, and ask again. Nothing is
   applied, committed, published or re-planned against a survivor the user did
@@ -291,13 +301,29 @@ They are the exception to NONE first: they carry no NONE, because NONE would
 leave the high unsettled, so only the four-questions-per-call cap applies. An
 answer that is neither option re-asks, and the record waits.
 - **Suspected**, named or not: one ask with three options - run the named
-  check, fix it, or override with a reason. Running the check re-rules it, and
+  check, fix it, or override with a reason.
+
+  - header: "Suspected"
+  - question: "The reviewer suspects this problem but hasn't proved it: {finding title}. How do you want to settle it?"
+  - options:
+    - "Run the check - run the check the review names, and the finding is judged again from the result"
+    - "Fix it - you make the fix, and the finding is recorded with the commit that fixes it"
+    - "Override it - ship past the finding, with a reason you give"
+
+  Running the check re-rules it, and
   `review-file --mark` marks the review file (`references/review-record.md`).
   Refuted is recorded `refuted` with its counter-evidence. Proved goes to the
   two-option ask, and so does a check that settles nothing, so this cannot
   loop. It is never downgraded.
 - **Proved and unnamed**: its own ask with two options - fix it, or override
   with a reason.
+
+  - header: "Proved"
+  - question: "The reviewer proved this problem and you didn't pick it: {finding title}. It has to be fixed or overridden before the review is recorded. What do you want to do?"
+  - options:
+    - "Fix it - you make the fix, and the finding is recorded with the commit that fixes it"
+    - "Override it - ship past the finding, with a reason you give"
+
 - **Proved and named**: no second question, since naming it is the answer, and
   the answer is to fix. One whose fix is not then made, such as `/cad-verify`'s
   leave-it-open or Re-plan, goes to the two-option ask.
@@ -373,6 +399,12 @@ and is not asked again. A finding from a plan or diff review gets the single ask
 whatever the visibility, and so does any finding bound for a private or internal
 repository.
 
+- header: "Public issue"
+- question: "This finding may describe a security problem. Do you want to open an issue for it on {repository}? That repository is public, so anyone can read the issue."
+- options:
+  - "Open the issue - it is created on {repository} and is public"
+  - "Don't open it - the finding is recorded as declined on this machine and never sent to the tracker"
+
 **Say plainly what each answer does**, in the question itself:
 
 - a finding the user NAMES becomes an issue on the tracker, and the question
@@ -384,6 +416,15 @@ repository.
   reaches the tracker in any form;
 - either way NOTHING is written to `.planning/CAPTURE.md`, and no finding is
   annotated, parked or carried.
+
+The question and its options, with the repository and its visibility filled in
+and an unreadable visibility shown as public:
+
+- header: "Unfixed"
+- question: "These findings won't be fixed in this step. Pick the ones you want filed as issues on {repository}, which is {visibility}. A finding you pick becomes an issue there. A finding you don't pick is recorded as declined on this machine and never reaches the tracker."
+- options:
+  - "None of them - record every finding as declined, and file no issue"
+  - "Finding {number} - {severity}, {file and line}, one option for each finding in this question, up to three"
 
 Then make ONE call with the dispositions and report what was filed:
 
@@ -427,6 +468,12 @@ with NONE selected TOGETHER with one or more survivors. That answer is
 contradictory and is not resolved by guessing which half the user meant:
 re-present that single question on its own and take the second answer as final.
 Only that question re-asks - the rest of the batch stands.
+
+- header: "Pick again"
+- question: "You picked None of them and also picked findings, and those can't both stand. Which findings do you want to act on?"
+- options:
+  - "None of them - act on none of these findings"
+  - "Finding {number} - {severity}, {file and line}, one option for each finding in this question, up to three"
 
 **The `git.auto_close` carve-out is a READ inside `/cad-land`, not a suppressed
 ask.** `/cad-land` fires no review of its own - v3.2.0 removed the one it had -

@@ -91,7 +91,7 @@
   <rect class="gate" x="932" y="114" width="208" height="72" rx="6" />
   <text class="lbl-gate" x="1036" y="138" text-anchor="middle">adjudicated gate</text>
   <text class="lbl-mut" x="1036" y="156" text-anchor="middle">numbered multi-select</text>
-  <text class="lbl-mut" x="1036" y="172" text-anchor="middle">default NONE</text>
+  <text class="lbl-mut" x="1036" y="172" text-anchor="middle">default: none of them</text>
 
   <line class="edge" x1="690" y1="150" x2="712" y2="150" marker-end="url(#ah)" />
   <line class="edge" x1="906" y1="150" x2="928" y2="150" marker-end="url(#ah)" />
