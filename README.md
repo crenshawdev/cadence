@@ -6,7 +6,7 @@
 
 **Appearance is cheap. Verification is the work.**
 
-Cadence is a Claude Code plugin for a single developer who expects to maintain the software after the session ends.
+Cadence is a Claude Code plugin that brings engineering practices to software you'll keep running after the session ends.
 
 Getting an agent to write code is usually the easy part. Keeping it working toward the thing you actually asked for takes more attention. Decisions get lost between sessions. A small change grows an abstraction nobody needed. The tests pass, but you still have to work out what they established.
 

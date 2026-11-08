@@ -2,7 +2,7 @@
 
 **Appearance is cheap. Verification is the work.**
 
-Cadence is a Claude Code plugin for a single developer who expects to maintain the software after the session ends. It keeps the project's decisions, plans and results in the repository, where the next session can find them.
+Cadence is a Claude Code plugin that brings engineering practices to software you'll keep running after the session ends. It keeps the project's decisions, plans and results in the repository, where the next session can find them.
 
 This guide follows the work: start a project, settle a phase, build it and check what it delivered. Testing has its own section because deciding when to stop is part of the job. The configuration reference is there when you need to change how Cadence behaves.
 
