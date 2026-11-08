@@ -14,7 +14,7 @@ A task with nothing for a field leaves that field out and never writes `none`: a
 
 ## Plan shape
 
-`depends_on` is an optional frontmatter list of earlier plan numbers this plan builds on, such as `depends_on: [1, 2]`. Split by what can change independently, using a map's change-together notes when you have them. Where plans must share a file, order them with `depends_on` or move the shared edit into its own plan. Put the edits to a project's test pins and size budgets in one last plan, named by what they are and not by file, so any project reads it the same way.
+`depends_on` is an optional frontmatter list of earlier plan numbers this plan builds on, such as `depends_on: [1, 2]`. Split by what can change independently, using a map's change-together notes when you have them. Where plans must share a file, order them with `depends_on` or move the shared edit into its own plan. Put the edits to a project's test pins and size budgets in one last plan, named by what they are and not by file, so any project reads it the same way. That last plan names every earlier plan in `depends_on`, because `waves` orders plans only on a shared file or a `depends_on` entry, so a plan declaring only the pins and budgets otherwise lands in wave 1 beside the plans it should follow.
 
 ## The shared-file rule
 
