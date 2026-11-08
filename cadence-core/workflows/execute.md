@@ -147,9 +147,16 @@ repo by hand. Prefer keeping `.planning/` in the code repo.
 at phase start, and none of it is any executor's. Name exactly what
 (`git diff --cached --name-status`), show that list, and ask (ask-user seam), no
 preselected default:
-1. Stash it (`git stash push --staged`, git 2.35+) and continue
-2. Commit it now as the user's own commit, message theirs, then continue
-3. Abort
+
+- header: "Staged work"
+- question: "You have changes staged in git that aren't part of this phase. What should happen to them before the phase starts?"
+- options:
+1. "Stash them - put the staged changes aside and start the phase"
+2. "Commit them now - make your own commit with a message you give, then start the phase"
+3. "Stop - leave the staged changes where they are and don't start"
+
+Option 1 runs `git stash push --staged`, which needs git 2.35 or later. Option 2
+commits with the user's message, then continues. Option 3 aborts the run.
 
 Never stash, unstage or commit the user's staged work without asking - the seam
 asks, the user chooses. Run the same check in a cross-repo phase's code repo,
@@ -240,13 +247,20 @@ Sequential (default) unless ALL of these hold:
   every executor would halt `blocked` on its own missing plan.
 
   OFFER THE FIX HERE, through the ask-user seam, and do not send the user to
-  another command to get it. Quote the exact JSON
-  (`"worktree": { "baseRef": "head" }`), name the file each option writes (the
-  project's `.claude/settings.json`, recommended, or `~/.claude/settings.json`),
-  and follow workflows/config.md's write rules: READ the target first, show the
-  current `worktree` block or that there is none, merge the one key, preserve
-  every other byte, never touch a managed-policy file. Declining is valid and
-  means sequential for this run.
+  another command to get it. Above the question, quote the exact JSON
+  (`"worktree": { "baseRef": "head" }`) and show the target file's current
+  `worktree` block, or say it has none. The first option writes the project's
+  `.claude/settings.json` and the second writes `~/.claude/settings.json`. Follow
+  workflows/config.md's write rules: READ the target first, merge the one key,
+  preserve every other byte, never touch a managed-policy file. Declining is
+  valid and means sequential for this run.
+
+  - header: "Worktrees"
+  - question: "Plans can run side by side only if each one starts from your current commit. Your Claude Code setting starts them from the remote's default branch instead, so they would miss this phase's plans. Do you want to change that setting?"
+  - options:
+    - "This project's settings file (recommended) - the change applies to this project only"
+    - "Your own settings file - the change applies to every project you open"
+    - "No - plans run one at a time in this session"
 
   On accept, re-run `worktree-base.mjs resolve`; `parallelSafe: true` now, so
   continue on the PARALLEL path. `ok:false` -> sequential (the check could not
@@ -376,17 +390,29 @@ Handle the executor's return:
 - **partial** (`PLAN PARTIAL`, a digest but no checkpoint) -> the report FILE
   is authoritative: open `<plandir>/reports/plan-<k>.md` for the task numbers
   and hashes, confirm them against `git log {pre-plan HEAD}..HEAD`, then ask
-  the user (ask-user seam): dispatch a fresh continuation executor for the
+  the user (ask-user seam):
+  - header: "Plan stopped"
+  - question: "Plan {k} stopped after {n} of {m} tasks. The finished tasks are committed. What do you want to do with the rest?"
+  - options:
+    - "Run the rest - a fresh session picks up at the next task and doesn't redo the finished ones"
+    - "Stop here - the tasks not done are listed as open items in the phase summary"
+  On the first option, dispatch a fresh continuation executor for the
   remaining tasks (prompt carrying the report PATH and "continue from task
-  <k>", as in handle_checkpoint) or stop here - the incomplete tasks become
+  <k>", as in handle_checkpoint). On the second, the incomplete tasks become
   SUMMARY open items. Never silently re-run completed tasks.
 - **turn cap or unusable return** -> two things produce this state:
   the turn cap cut the dispatch, or the return is missing or unparseable.
   The executor rewrites its report after every task commit, so a file exists
   even when nothing was returned: read `<plandir>/reports/plan-<k>.md`, confirm
   it against `git log {pre-plan HEAD}..HEAD` to see what actually landed, report
-  the state, and ask the user (ask-user seam) whether to re-dispatch the
-  remainder or stop. Never silently re-run a plan on top of partial commits.
+  the state, and ask the user (ask-user seam):
+  - header: "Plan cut off"
+  - question: "Plan {k} was cut off, or its result couldn't be read. {n} tasks are committed. What do you want to do?"
+  - options:
+    - "Run the rest again - a fresh session does the tasks not yet committed and leaves the committed ones alone"
+    - "Stop here - the tasks not done are listed as open items in the phase summary"
+  The first option re-dispatches the remainder. Never silently re-run a plan on
+  top of partial commits.
 
 **The worker key of a SECOND dispatch.** Three of those arms dispatch again, and
 the key is `<k>` - the plan number the first dispatch took, never a coined
@@ -534,10 +560,16 @@ tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
 position line `locate` states. Route by type:
 
 - **structural** (architectural change needed, plan wrong at its core) ->
-  present to the user via the ask-user seam: approve the proposed change /
-  adjust it / stop the phase. This is a consult dead-end: before that ask, run
-  offer_consult per references/consult.md with the deviation as the
+  present to the user via the ask-user seam. This is a consult dead-end: before
+  that ask, run offer_consult per references/consult.md with the deviation as the
   situation.
+
+  - header: "Plan change"
+  - question: "The executor stopped because the plan can't be carried out as written. What it needs is shown above. What do you want to do?"
+  - options:
+    - "Approve the change - the executor carries on with the change it proposed"
+    - "Adjust it - you say what to change, and the executor carries on with that"
+    - "Stop the phase - nothing more runs, and the work so far stays committed"
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
 - **suite-red** (the project's full suite is still red after the executor's one
