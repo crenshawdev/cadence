@@ -556,6 +556,32 @@ function digestsOf(run) {
 }
 
 /**
+ * Judge a wave's run file as far as the main session reads it: completed, with a plan list whose entries each name a plan once and hold a
+ * digest object or null. Hands back each plan's outcome in the order the script returned it, and names every agent the host restarted.
+ * @param {string} text
+ * @returns {{ok: boolean, reason?: string, detail?: string, plans?: {plan: string|number, digest: any}[], restarted?: {plan: string|null, agent_id: string|null, attempt: number}[]}}
+ */
+export function parseWave(text) {
+  const c = parseCompleted(text);
+  if (!c.ok) return c;
+  const r = c.run.result;
+  if (!isPlainObject(r) || !Array.isArray(r.plans)) return refuse('run-bad-wave', 'the result is not execute-wave\'s: it has no plans array');
+  const seen = new Set();
+  for (let i = 0; i < r.plans.length; i += 1) {
+    const e = r.plans[i];
+    const at = `result.plans[${i}]`;
+    if (!isPlainObject(e) || !(isText(e.plan) || Number.isSafeInteger(e.plan))) return refuse('run-bad-wave', `${at} does not name a plan`);
+    if (seen.has(String(e.plan))) return refuse('run-bad-wave', `${at} repeats plan ${e.plan}`);
+    seen.add(String(e.plan));
+    if (e.digest !== null && !isPlainObject(e.digest)) return refuse('run-bad-wave', `${at}.digest is neither a digest object nor null`);
+  }
+  const restarted = agentRows(c.run)
+    .filter((row) => Number.isSafeInteger(row.attempt) && row.attempt > 1)
+    .map((row) => ({ plan: planOfRow(row), agent_id: isText(row.agentId) ? row.agentId : null, attempt: row.attempt }));
+  return { ok: true, plans: r.plans.map((e) => ({ plan: e.plan, digest: e.digest })), restarted };
+}
+
+/**
  * How one executor's row closes. A row that is not done, or whose slot is missing or null, is a checkpoint naming that; a digest
  * carrying a checkpoint is one naming its type; `none (already applied)` is a replay; anything else is a return.
  * @param {any} row @param {any} digest the plan's digest, null for a dead slot, undefined for no entry

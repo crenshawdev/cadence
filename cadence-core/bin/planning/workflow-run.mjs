@@ -15,7 +15,7 @@ import { emit } from '../lib/seam-io.mjs';
 import { appendEvent, renderTrace, TERMINAL } from '../lib/trace.mjs';
 import {
   ANSWERS_FILE, MAX_ANSWERS_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
-  EXECUTOR_ROLE, agentBrackets, agentRows, isWaveRun, mapRun, mergeAnswers, noticeBracket, parseAnswers, parseRun, waveBrackets,
+  EXECUTOR_ROLE, agentBrackets, agentRows, isWaveRun, mapRun, mergeAnswers, noticeBracket, parseAnswers, parseRun, parseWave, waveBrackets,
 } from '../lib/workflow-run.mjs';
 
 /** A provider's teed envelope is one JSON line, so this is generous. */
@@ -203,6 +203,12 @@ function cmdWorkflowRun(dir, opts) {
   if (runRead.text === null) {
     return refuse(runRead.tooLarge ? 'run-too-large' : 'run-unreadable', `the run file ${runRead.why}`,
       'no payload was written - the notice\'s totals were billed as one bracket; read the run file named on the launch result if it is still there');
+  }
+  if (wave) {
+    // a wave has no payload, review input or answers file: those are the review's, so its plans' outcomes are the whole answer
+    const w = parseWave(runRead.text);
+    if (!w.ok) return refuse(/** @type {string} */ (w.reason), w.detail, 'no outcome was handed back - the executors were billed, so read each plan\'s report and the run file another way');
+    return ok({ phase: phase.raw, run_id: runId, plans: w.plans, restarted: w.restarted, brackets });
   }
   const parsed = parseRun(runRead.text);
   if (!parsed.ok) return refuse(/** @type {string} */ (parsed.reason), parsed.detail, 'no payload was written - a run that did not complete cleanly is not a clean review, so rule this fire another way. Its agents were billed');
