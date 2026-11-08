@@ -2,7 +2,7 @@
 // rung-agent.mjs - the one statement of which agent file carries which rung of which role. route.mjs resolves a rung
 // to an agent name from it, self-verify proves every name exists, and read-trace and subagent-trace use
 // roleOfAgent and rungOfAgent. Spelling the map twice is the resolved-then-silently-wrong class (#39, #43, #64).
-// RUNG_FILES is a stated table, not a naming convention, because no convention is true of all 30 files.
+// RUNG_FILES is a stated table, not a naming convention, because no convention is true of all 35 files.
 // Pure lib: no fs, no emit, no process, no Date, no randomness. It returns names and problem codes.
 'use strict';
 
@@ -64,6 +64,13 @@ export const RUNG_FILES = Object.freeze({
     high: 'cad-plan-checker-high',
     xhigh: 'cad-plan-checker-xhigh',
     max: 'cad-plan-checker-max',
+  }),
+  'cad-mapper': Object.freeze({
+    low: 'cad-mapper-low',
+    medium: 'cad-mapper-medium',
+    high: 'cad-mapper',
+    xhigh: 'cad-mapper-xhigh',
+    max: 'cad-mapper-max',
   }),
 });
 
@@ -273,31 +280,26 @@ export function rungBodyIssue(body, skills) {
 }
 
 /** The config-key prefix every per-role start rung is written under. */
-export const EFFORT_PREFIX = 'model.effort.';
-
-/** `roles.<role>.effort` is a second spelling of the start rung, not a rename, so both prefixes get the rules below. */
 export const ROLES_PREFIX = 'roles.';
 /** The last segment that makes a `roles.<role>.*` key a start rung. */
 export const ROLES_EFFORT_SUFFIX = '.effort';
 
 /**
- * The two keys one role's start rung can be written under, older spelling first, which is also the order issues come
- * out in.
+ * The key one role's start rung is written under.
  * @param {string} role
  * @returns {string[]}
  */
 function effortKeyNames(role) {
-  return [`${EFFORT_PREFIX}${role}`, `${ROLES_PREFIX}${role}${ROLES_EFFORT_SUFFIX}`];
+  return [`${ROLES_PREFIX}${role}${ROLES_EFFORT_SUFFIX}`];
 }
 
 /**
- * The role a start-rung key names, or null when the key is neither spelling. `roles.<role>.model` isn't one: it's
+ * The role a start-rung key names, or null when the key isn't one. `roles.<role>.model` isn't one: it's
  * `string_or_null` with nothing to drift against.
  * @param {string} key
  * @returns {string|null}
  */
 function effortKeyRole(key) {
-  if (key.startsWith(EFFORT_PREFIX)) return key.slice(EFFORT_PREFIX.length);
   if (key.startsWith(ROLES_PREFIX) && key.endsWith(ROLES_EFFORT_SUFFIX)) {
     return key.slice(ROLES_PREFIX.length, key.length - ROLES_EFFORT_SUFFIX.length);
   }
@@ -305,10 +307,8 @@ function effortKeyRole(key) {
 }
 
 /**
- * Whether the shipped `model.effort.<role>` and `roles.<role>.effort` schema enums still say what RUNG_FILES says.
+ * Whether the shipped `roles.<role>.effort` schema enums still say what RUNG_FILES says.
  * `config.mjs` takes start rungs from them, so a drifted enum accepts a rung with no file or refuses a real one.
- * Both spellings get the same rules, since the roles block wins and the older prefix alone leaves it unguarded.
- * Only the roles spelling is checked for its default, as `model.effort.<role>` defaults to null on purpose.
  * `rungOrder` lets a caller hold a drifted ladder against the enums; an empty one skips that arm.
  * Every detail names the key to edit.
  * @param {any} schema the `keys` map of config.schema.json, trusted for nothing
@@ -347,18 +347,14 @@ export function effortEnumIssues(schema, rungOrder) {
             role} at ${JSON.stringify(want)}` });
         continue;
       }
-      // The default half, roles spelling only: it answers when no layer names a rung, so it must name a rung this role
-      // has a file for. `model.effort.<role>` is exempt, its null default being the fall-through the precedence is
-      // built on.
-      if (key.startsWith(ROLES_PREFIX)) {
-        const def = spec.default;
-        if (typeof def !== 'string'
-          || !Object.prototype.hasOwnProperty.call(RUNG_FILES[role], def)) {
-          out.push({ code: 'effort-default-invalid',
-            detail: `${key} defaults to ${def === undefined ? '(absent)' : JSON.stringify(def)}, `
-              + `which is not one of ${role}'s rungs (${Object.keys(RUNG_FILES[role]).join(', ')}) `
-              + '- this default IS the rung route.mjs resolves when no layer sets one' });
-        }
+      // The default answers when no layer names a rung, so it must name a rung this role has a file for.
+      const def = spec.default;
+      if (typeof def !== 'string'
+        || !Object.prototype.hasOwnProperty.call(RUNG_FILES[role], def)) {
+        out.push({ code: 'effort-default-invalid',
+          detail: `${key} defaults to ${def === undefined ? '(absent)' : JSON.stringify(def)}, `
+            + `which is not one of ${role}'s rungs (${Object.keys(RUNG_FILES[role]).join(', ')}) `
+            + '- this default IS the rung route.mjs resolves when no layer sets one' });
       }
 
       if (!order.length) continue;

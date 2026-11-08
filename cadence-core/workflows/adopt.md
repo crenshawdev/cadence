@@ -106,10 +106,22 @@ Two stops first, before anything is written.
         states that an always-present option consumes one of the four slots a
         question has, and three providers plus NONE is exactly four, so this
         question never splits however many resolved.
+
+        - header: "Code host"
+        - question: "Which service hosts this project's repository?"
+        - options:
+          - "{provider}" - uses the {binary} command, one option for each installed service
+          - "None of these" - none of these is the service this project uses, so setup stops here
      b. **Which repository**, as `owner/name`. Pre-fill it from `defaults.repo`
         when the envelope offers one, so the user CONFIRMS rather than retypes;
         ask it outright when it does not. An adopted repository usually HAS an
         origin, so this is usually a confirmation.
+
+        - header: "Repository"
+        - question: "Which repository is this project on {provider}? Write it as owner/name."
+        - options:
+          - "{owner}/{name}" - the repository this project's remote already points to, shown only when setup found one, otherwise you type it
+
      c. **Which Forgejo instance** - asked ONLY when the chosen provider is
         `forgejo` and the envelope's `host` is null. Open-ended per the ask-user
         seam, because the value is typed rather than picked from a set, and with
@@ -122,6 +134,10 @@ Two stops first, before anything is written.
         `host:port` - `forge.example.com:3001` - and that it is the port the
         BROWSER reaches, never the SSH port. `github` and `gitlab`
         are never asked this; their hosts are fixed.
+
+        - header: "Instance"
+        - question: "What address do you use in a browser to reach your Forgejo instance? Type just the host name, with no https:// and no path, and add the port as host:port only if it isn't the default one. This is the address you browse to, not the one git uses over SSH."
+        - options: none, you type the address
 
      **On "None of these" the step REFUSES and stops** - it does not fall
      through. Say it in the same shape the `refuse` action uses, two lines: a
@@ -256,7 +272,13 @@ repo's current tag: /cad-health rule 7 reports drift when the Active version is
 a member of `git tag --list`, so naming the version already shipped fails the
 first health check the user runs. Propose the next one from the tag list
 (`v1.4.0` shipped -> `v1.5.0` proposed), and offer the alternatives rather than
-deciding alone.
+deciding alone:
+
+- header: "Next version"
+- question: "Which version should the next release of this project be? The latest one already released is {latest tag}."
+- options:
+  - "{proposed version}" - the next version after {latest tag}
+  - "{alternative version}" - another version after {latest tag}, such as a larger step
 </step>
 
 <step name="write_requirements">
@@ -343,12 +365,12 @@ phase and its numbers) and take it through the approval gate (ask-user seam):
 - header: "Roadmap"
 - question: "Does this roadmap structure work for you?"
 - options:
-  - "Approve" - write state and finish
-  - "Adjust phases" - tell me what to change
-  - "Review full file" - show raw ROADMAP.md
+  - "Approve" - save the roadmap and finish setup
+  - "Change phases" - you tell me what to change, and I update the roadmap
+  - "Show the whole file" - I print the roadmap file as written, then ask again
 
-On "Adjust phases", take the feedback, revise ROADMAP.md inline, re-present, and
-loop until approved. On "Review full file", show the file and re-ask.
+On "Change phases", take the feedback, revise ROADMAP.md inline, re-present, and
+loop until approved. On "Show the whole file", show the file and re-ask.
 </step>
 
 <step name="state">

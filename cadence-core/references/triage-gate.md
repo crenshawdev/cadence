@@ -12,7 +12,9 @@ reviewer ran.
   `{ "findings": [...] }` object written to
   `.planning/phases/<N>/REVIEW-<trigger>-<discriminator>.md`, on the same
   discriminator grammar (`plan-<k>` for a per-plan fire, `<command>-<short HEAD
-  sha>` otherwise, and no unsuffixed path). Then pass THAT SAME FILE as the
+  sha>` otherwise, and no unsuffixed path). This arm's file stays JSON whatever
+  `review.mode` says, because `deferred record --payload` parses it; only gate
+  `adjudicated` writes the Markdown review file. Then pass THAT SAME FILE as the
   queue member's payload:
 
 ```
@@ -258,20 +260,83 @@ uses. The cap is then answered by reading what is on disk rather than by
 remembering it, whoever asks and from whichever session. A `blocker`/`high`
 still surviving round two is the terminal STOP-and-ask, never a round three.
 - **adjudicated** - the survivors are already grounded, so what remains is the
-  USER's choice, not the model's. Present them as a NUMBERED list, one line per
-  survivor: severity, `file:line`, claim. Then ask which to act on through
+  USER's choice, not the model's. Present them as a NUMBERED list with one entry
+  per survivor: severity, `file:line`, then What breaks, Why I should care, What
+  is still uncertain and Your recommendation, each from the review file
+  `.planning/phases/<N>/REVIEW-<trigger>-<discriminator>[-rN].md`, whose path you
+  print where the list prints. The recommendation is advice: nothing is
+  preselected and no answer word is added. Then ask which to act on through
   `AskUserQuestion` with `multiSelect: true`, and END THE TURN on that question.
-  NONE is the first option in every question and the default. Nothing is
+  NONE is the first option in every question and the default; its label reads
+  "None of them". Each survivor option carries its number, severity and
+  `file:line`.
+
+  - header: "Findings"
+  - question: "Which of these findings do you want to act on? Nothing is changed for a finding you don't pick."
+  - options:
+    - "None of them - act on none of these findings"
+    - "Finding {number} - {severity}, {file and line}" - one option for each finding in this question, up to three
+
+  If the user asks
+  about a number instead of answering, read that survivor's What triggers it and
+  What proves it from the review file, answer, and ask again. Nothing is
   applied, committed, published or re-planned against a survivor the user did
   not name. When nothing survives, say the review RAN and adjudication killed
   everything, not a bare "no findings". A return that is not the
   `{ "findings": [...] }` object `skills/cad-reviewer-contract/SKILL.md`'s
   `<returns>` block specifies is not that state at all: the gate
   could not be evaluated - say so and ask, the same arm the `blocking` bullet
-  states, and never present it as adjudication having killed everything. Here
+  states, and never present it as adjudication having killed everything. A
+  workflow run that ran no voice, which the seam refuses as `run-no-voice`, is
+  that same gate. Here
   too the test is the return's SHAPE, never a host-side stop signal. The
   NON-SURVIVORS, and every survivor the user did not name, are settled in the
   same step, by "What happens to a finding this fire will not fix" below.
+
+**A `blocker` or `high` survivor ends settled.** NONE is the default, but
+`buildEntries` and `issue-filing unfixed` both refuse a survived `blocker` or
+`high` with none of `fix_commit`, `fix_file` or `overridden: true`, so what follows the
+multi-select is stated here. These asks come after it and leave it as it is.
+They are the exception to NONE first: they carry no NONE, because NONE would
+leave the high unsettled, so only the four-questions-per-call cap applies. An
+answer that is neither option re-asks, and the record waits.
+- **Suspected**, named or not: one ask with three options - run the named
+  check, fix it, or override with a reason.
+
+  - header: "Suspected"
+  - question: "The reviewer suspects this problem but hasn't proved it: {finding title}. How do you want to settle it?"
+  - options:
+    - "Run the check - run the check the review names, and the finding is judged again from the result"
+    - "Fix it - Cadence makes the fix, and the finding is recorded with the commit that fixes it"
+    - "Override it - leave it unfixed and continue, and the finding is recorded as overridden with the reason you give"
+
+  Running the check re-rules it, and
+  `review-file --mark` marks the review file (`references/review-record.md`).
+  Refuted is recorded `refuted` with its counter-evidence. Proved goes to the
+  two-option ask, and so does a check that settles nothing, so this cannot
+  loop. It is never downgraded.
+- **Proved and unnamed**: its own ask with two options - fix it, or override
+  with a reason. Its question says only that the finding is open, because a
+  suspected one the check settled nothing on, and a named one whose fix is not
+  made, reach it too.
+
+  - header: "Still open"
+  - question: "This problem is still open: {finding title}. It has to be fixed or overridden before the review is recorded. What do you want to do?"
+  - options:
+    - "Fix it - Cadence makes the fix, and the finding is recorded with the commit that fixes it"
+    - "Override it - leave it unfixed and continue, and the finding is recorded as overridden with the reason you give"
+
+- **Proved and named**: no second question, since naming it is the answer, and
+  the answer is to fix. One whose fix is not then made, such as `/cad-verify`'s
+  Leave open or Re-plan, goes to the two-option ask.
+- **Settling**: a fix names its commit in `fix_commit`. An override writes
+  `overridden: true` and carries the user's words on the `override` receipt
+  above. A fix that leaves no commit, because the file is one git does not
+  track (a plan under an uncommitted `.planning/`), holds `fix_file` with that
+  file's repo-relative path: neither a downgrade nor `overridden: true`, which
+  would say the finding stood.
+- **Order**: the record, its receipts and `issue-filing unfixed` wait until
+  every such survivor is settled (`references/review-triggers.md` step 5).
 
 **Two caps, two different numbers.** One question carries at most four options
 and NONE occupies one of them, so N survivors become `ceil(N/3)` questions - at
@@ -336,6 +401,12 @@ and is not asked again. A finding from a plan or diff review gets the single ask
 whatever the visibility, and so does any finding bound for a private or internal
 repository.
 
+- header: "Public issue"
+- question: "This finding may describe a security problem. Do you want to open an issue for it on {repository}? That repository is public, so anyone can read the issue."
+- options:
+  - "Open the issue - it is created on {repository} and is public"
+  - "Don't open it - the finding is recorded as declined on this machine and never sent to the tracker"
+
 **Say plainly what each answer does**, in the question itself:
 
 - a finding the user NAMES becomes an issue on the tracker, and the question
@@ -347,6 +418,15 @@ repository.
   reaches the tracker in any form;
 - either way NOTHING is written to `.planning/CAPTURE.md`, and no finding is
   annotated, parked or carried.
+
+The question and its options, with the repository and its visibility filled in
+and an unreadable visibility shown as public:
+
+- header: "Unfixed"
+- question: "These findings won't be fixed in this step. Pick the ones you want filed as issues on {repository}, which is {visibility}. A finding you pick becomes an issue there. A finding you don't pick is recorded as declined on this machine and never reaches the tracker."
+- options:
+  - "None of them - record every finding as declined, and file no issue"
+  - "Finding {number} - {severity}, {file and line}" - one option for each finding in this question, up to three
 
 Then make ONE call with the dispositions and report what was filed:
 
@@ -389,7 +469,15 @@ answer where an item stays and gains a note.
 with NONE selected TOGETHER with one or more survivors. That answer is
 contradictory and is not resolved by guessing which half the user meant:
 re-present that single question on its own and take the second answer as final.
-Only that question re-asks - the rest of the batch stands.
+Only that question re-asks - the rest of the batch stands. The "Unfixed" ask
+re-asks with its own question and options (the repository, its visibility and
+what each answer does), after the first sentence of the block below.
+
+- header: "Pick again"
+- question: "You picked None of them and also picked findings, and those can't both stand. Which findings do you want to act on?"
+- options:
+  - "None of them - act on none of these findings"
+  - "Finding {number} - {severity}, {file and line}" - one option for each finding in this question, up to three
 
 **The `git.auto_close` carve-out is a READ inside `/cad-land`, not a suppressed
 ask.** `/cad-land` fires no review of its own - v3.2.0 removed the one it had -

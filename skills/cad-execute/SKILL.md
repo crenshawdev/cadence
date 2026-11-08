@@ -10,6 +10,9 @@ allowed-tools:
   - Glob
   - AskUserQuestion
   - Task
+  - Workflow
+  - Workflow(cadence:review-panel)
+  - Workflow(cadence:execute-wave)
 ---
 
 <objective>

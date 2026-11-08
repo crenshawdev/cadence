@@ -10,6 +10,8 @@ allowed-tools:
   - Glob
   - AskUserQuestion
   - Task
+  - Workflow
+  - Workflow(cadence:review-panel)
 ---
 
 <objective>

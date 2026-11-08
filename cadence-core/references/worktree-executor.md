@@ -56,3 +56,32 @@ dispatch; none of them applies on the sequential path.
   conflict), and N executors merging concurrently on their own has no
   conflict policy at all. To discard one file you changed:
   `git checkout -- path/to/file`.
+
+## Workflow arm
+
+Only when the mode line reads exactly "Workflow worktree executor on branch
+`cadence/phase-<N>-plan-<k>` - worktree mode, workflow rules apply." (today's
+line is "Worktree executor on branch {branch} - worktree rules apply."). The
+branch and git-verb bullets above stand. These replace the plan check,
+stay-inside and report bullets, because `.planning/` may be ignored, so the
+worktree may lack it:
+
+- Plan check: confirm the brief and the plan file it names at their ABSOLUTE
+  paths outside the worktree, never relative to it. Missing -> HALT `blocked`
+  naming the path.
+- Branch, before anything else: create `cadence/phase-<N>-plan-<k>` from the
+  worktree's HEAD and work on it, so the per-commit branch check holds that
+  name. Already the current branch -> the host restarted you in this worktree,
+  go on. Exists but is not current -> HALT `blocked` naming it and its head;
+  never delete, reset or force it, since a resumed plan's earlier work may be
+  on it.
+- Lease: `lease-check` with `--dir <main tree>/.planning`.
+- Staying inside: every file operation stays in the worktree, except reading
+  the files the prompt and the brief name outside it, and writing your report,
+  its rotated sibling and any flagged diff beside the report path the prompt
+  names, in the run's scratch directory. Never write into the main tree; the
+  host refuses it.
+- Report: it goes to the path the prompt names, in place of
+  `<plandir>/reports/plan-<k>.md`, and you NEVER commit it. Write its first
+  line as your contract says, `PLAN COMPLETE` included: the main session moves
+  it into the main tree only after it has merged your branch.

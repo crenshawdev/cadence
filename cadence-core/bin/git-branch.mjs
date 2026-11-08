@@ -13,7 +13,7 @@
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
-import { integrationBranchName, decideBranch } from './lib/branch-decision.mjs';
+import { integrationBranchName, configuredNameProblem, milestoneVersion, decideBranch } from './lib/branch-decision.mjs';
 // shared with the audit so the two can't drift apart
 import { readTags } from './lib/git-tags.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
@@ -34,14 +34,18 @@ function decide(dir, branchOverride) {
   // one coercion for protected_branches, or this advises a named branch unprotected while git-guard honors it
   const protectedBranches = resolveProtectedBranches(git);
   const branch = branchOverride !== undefined ? branchOverride : readCurrentBranch(dir);
-  const integrationName = integrationBranchName(
-    readText(join(dir, '.planning', 'PROJECT.md')),
-    readText(join(dir, '.planning', 'ROADMAP.md')),
-  );
+  const projectText = readText(join(dir, '.planning', 'PROJECT.md'));
+  const roadmapText = readText(join(dir, '.planning', 'ROADMAP.md'));
+  // the configured name wins; one failing the grammar on read is a naming problem, never a `create` under it
+  const configured = git.integration_branch_name;
+  const nameProblem = configuredNameProblem(configured);
+  const integrationName = integrationBranchName(projectText, roadmapText, configured);
+  // the guard reads the version itself, so it holds under any branch name
+  const version = milestoneVersion(projectText, roadmapText);
   // the whole tag list, unranked: `decideBranch` only tests membership
   // `dir` is the project root, so it's both where the question is asked and the root the answer must belong to
-  const d = decideBranch({ mode, autoBranch, currentBranch: branch, protectedBranches, integrationName,
-    publishedVersions: readTags(dir, dir) });
+  const d = decideBranch({ mode, autoBranch, currentBranch: branch, protectedBranches, integrationName, nameProblem,
+    version, publishedVersions: readTags(dir, dir) });
   emit({ ok: true, action: d.action, branch: d.branch, mode, currentBranch: branch, reason: d.reason, warnings });
 }
 

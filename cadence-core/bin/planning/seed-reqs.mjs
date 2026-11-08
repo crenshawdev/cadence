@@ -9,7 +9,7 @@ import {
   atomicWrite, insertReqRows, parseActiveIds, parsePlanRequirements,
 } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
-import { PLAN_FILE } from '../lib/phase-plans.mjs';
+import { PLAN_FILE, byPlanNumber } from '../lib/phase-plans.mjs';
 
 // bounded by ## Active, called by /cad-plan where the plan is written: the Traceability table had no write path before
 function cmdSeedReqs(dir, opts) {
@@ -41,7 +41,7 @@ function cmdSeedReqs(dir, opts) {
 
   const pdir = join(dir, 'phases', pname);
   let planFiles = [];
-  try { planFiles = readdirSync(pdir).filter((f) => PLAN_FILE.test(f)).sort(); }
+  try { planFiles = readdirSync(pdir).filter((f) => PLAN_FILE.test(f)).sort(byPlanNumber); }
   catch {
     return fail('no-phase-dir', `${pdir} not found`,
       'run /cad-plan <N> first - the ids seeded here come from the `requirements:` lines of the'

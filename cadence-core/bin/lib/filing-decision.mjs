@@ -6,7 +6,7 @@
 'use strict';
 
 import { createHash } from 'node:crypto';
-import { buildEntries } from './adjudication-record.mjs';
+import { buildEntries, fixFileIssue } from './adjudication-record.mjs';
 import { redactUrl, redactCredentials } from './redact-url.mjs';
 
 /**
@@ -34,7 +34,7 @@ export const usableFixCommit = (value) => typeof value === 'string' && FIX_COMMI
 /**
  * What a record's entries mean to a fire that is settling: which reach the user's ask (`filing`), which cleared halt
  * a caller has to see (`haltingSurvivors`) and which stop a close (`halting`).
- * A usable `fix_commit` is asked first and ends the question: a fixed entry is in none of the three sets, even with
+ * A usable `fix_commit` or `fix_file` (a fix to an untracked file) is asked first and ends the question: a fixed entry is in none of the three sets, even with
  * `overridden: true`, or filter order would make one a permanent override.
  * `haltingSurvivors` are survived at blocker or high with no commit and `overridden`; they're in `filing` too.
  * `halting` is the fail-closed rail, only non-empty over a record another tool wrote or a hand edit.
@@ -53,7 +53,7 @@ export function unfixedFromEntries(entries) {
   const halting = [];
   for (const e of Array.isArray(entries) ? entries : []) {
     if (e === null || typeof e !== 'object' || Array.isArray(e)) continue;
-    if (usableFixCommit(e.fix_commit)) continue;
+    if (usableFixCommit(e.fix_commit) || (e.fix_file !== undefined && fixFileIssue(e.fix_file) === '')) continue;
     const stoodAtAHalt = e.ruling === 'survived' && HALTING_SEVERITIES.includes(e.severity);
     if (stoodAtAHalt && e.overridden !== true) { halting.push(e); continue; }
     filing.push(e);

@@ -269,10 +269,12 @@ when the branch it belongs to merged outside Cadence.
 
 Ordering note (intentional, not a latent bug): this chain runs AFTER step 4
 evolved PROJECT.md `### Active` to the NEXT version, so cad-land can no longer
-re-derive the just-shipped branch name by version. It reaps via the
-`land-cleanup.mjs` `cadence/*`-merged fallback (resolveReapBranch): the sole
-`cadence/*` branch actually merged into base is the shipped
-`cadence/<this-version>`, so it is still reaped correctly.
+re-derive the just-shipped branch name by version. A project that sets
+`git.integration_branch_name` is reaped by that name first, and the sole merged
+branch in its namespace next. Otherwise it reaps via the `land-cleanup.mjs`
+`cadence/*`-merged fallback (resolveReapBranch): the sole `cadence/*` branch
+actually merged into base is the shipped `cadence/<this-version>`, so it is
+still reaped correctly.
 
 ## 8. Retune check
 The record this milestone wrote prices its own configuration. Invoke

@@ -4,7 +4,7 @@
 // decideReap lives here for the same SAFE_BRANCH rule, and a security regex copied across two modules is how they drift
 
 // safe in a refspec: starts alphanumeric so a leading '-' can't read as an option, and has no ':' to smuggle src:dst
-const SAFE_BRANCH = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/;
+export const SAFE_BRANCH = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/;
 // a bare remote name: no leading '-' and no '/', ':' or '@', so a path or URL can never be the push destination
 const REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 

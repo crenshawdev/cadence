@@ -1,7 +1,7 @@
 ---
 name: cad-config
 description: "Configure Cadence's config.json - workflow toggles, the per-role model and effort interview, and interactive cross-model review provider setup"
-argument-hint: "[--review [redetect] | --surfaces | --testing | --roles [--global] | <key>=<value> ...]"
+argument-hint: "[--walk | --review [redetect] | --surfaces | --testing | --roles [--global] | <key>=<value> ... | what you want to change]"
 allowed-tools:
   - Read
   - Write
@@ -29,8 +29,15 @@ Routing:
   repo-layer diffs by default; `--global` re-enters the full thirteen against
   the user-global layer.
 - **`<key>=<value>` ...**: set config keys directly (validated against the config schema).
-- **default** (no args): walk every knob as a selectable list (batched pages),
-  each preselected to its current value.
+- **--walk**: walk every knob as a selectable list (batched pages), each
+  preselected to its current value.
+- **a sentence** (menu on): find the settings it means, show each one's current value,
+  new value and file with a preview, and write only after a yes.
+- **default** (no args): while `workflow.config_menu` is true, open on six groups
+  with what this repo and your global config set; a number lists that group's
+  settings, and a sentence is read as above. The menu is opt-in and off by
+  default: with it off, no args opens the walk, and a sentence is answered with
+  the command that turns it on, `/cad-config workflow.config_menu=true`.
 </objective>
 
 <execution_context>

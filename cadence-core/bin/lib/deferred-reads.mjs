@@ -75,6 +75,13 @@ export const DEFERRED_READS = Object.freeze([
     file: 'cadence-core/workflows/execute.md',
   }),
   Object.freeze({
+    skill: 'cad-execute',
+    reference: 'references/execute-workflow.md',
+    anchors: Object.freeze(['execute_workflow']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/execute.md',
+  }),
+  Object.freeze({
     skill: 'cad-executor-contract',
     reference: 'references/worktree-executor.md',
     anchors: Object.freeze(['worktree_mode']),

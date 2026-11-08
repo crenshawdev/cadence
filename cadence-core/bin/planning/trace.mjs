@@ -261,7 +261,6 @@ function suggestResolution(dir, render, config) {
   // an absent or null value isn't recorded: trace-suggest reads a missing key as unset, which is what it should print
   const set = (key, value) => { if (value !== undefined && value !== null) values[key] = value; };
   const triggers = config?.review?.triggers || {};
-  const effort = config?.model?.effort || {};
   const events = Array.isArray(render?.events) ? render.events : [];
   // one entry per counted checkpoint, in record order, so the rule can tell "every one was measured" from "some were"
   /** @type {(number|null)[]} */
@@ -272,7 +271,7 @@ function suggestResolution(dir, render, config) {
       const parsed = parseAdjudication(e);
       if (parsed) set(`review.triggers.${parsed.trigger}.gate`, triggers?.[parsed.trigger]?.gate);
     } else if (e.family === 'routing' && e.event === 'resolve') {
-      if (typeof e.role === 'string' && e.role) set(`model.effort.${e.role}`, effort?.[e.role]);
+      if (typeof e.role === 'string' && e.role) set(`roles.${e.role}.effort`, config?.roles?.[e.role]?.effort);
     } else if (e.family === 'lifecycle' && e.event === 'checkpoint' && e.role === 'cad-executor') {
       checkpointTasks.push(checkpointPlanTasks(dir, e));
     }

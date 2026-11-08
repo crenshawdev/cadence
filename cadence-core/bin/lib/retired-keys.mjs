@@ -28,6 +28,20 @@ const legacyTestSwitch = (key) => Object.freeze({
 });
 
 /**
+ * The row all twelve per-role `model.*` fallbacks share. Only the key and its `roles.<role>.*` replacement differ.
+ * @param {string} key
+ * @param {string} replacement
+ * @returns {RetiredKey}
+ */
+const retiredModelKey = (key, replacement) => Object.freeze({
+  replacement,
+  since: 'v4.0.0',
+  detail: 'routing reads nothing from this key now, only the roles key does. Set it there, '
+    + `then \`config.mjs unset ${key}\` and `
+    + `\`config.mjs unset --global ${key}\` to drop this one`,
+});
+
+/**
  * Every retired config key, keyed by the exact dotted token a user writes at the CLI: `checkPairs` looks a key
  * up by that token, so the spelling here is the matched string. `since` names the milestone that retired it.
  * @type {Readonly<Record<string, RetiredKey>>}
@@ -202,6 +216,18 @@ export const RETIRED_KEYS = Object.freeze({
   'workflow.test_evidence': legacyTestSwitch('workflow.test_evidence'),
   'workflow.check_inspection': legacyTestSwitch('workflow.check_inspection'),
   'workflow.independent_rerun': legacyTestSwitch('workflow.independent_rerun'),
+  'model.overrides.cad-planner': retiredModelKey('model.overrides.cad-planner', 'roles.cad-planner.model'),
+  'model.overrides.cad-assumptions-analyzer': retiredModelKey('model.overrides.cad-assumptions-analyzer', 'roles.cad-assumptions-analyzer.model'),
+  'model.overrides.cad-verifier': retiredModelKey('model.overrides.cad-verifier', 'roles.cad-verifier.model'),
+  'model.overrides.cad-reviewer': retiredModelKey('model.overrides.cad-reviewer', 'roles.cad-reviewer.model'),
+  'model.overrides.cad-executor': retiredModelKey('model.overrides.cad-executor', 'roles.cad-executor.model'),
+  'model.overrides.cad-plan-checker': retiredModelKey('model.overrides.cad-plan-checker', 'roles.cad-plan-checker.model'),
+  'model.effort.cad-planner': retiredModelKey('model.effort.cad-planner', 'roles.cad-planner.effort'),
+  'model.effort.cad-assumptions-analyzer': retiredModelKey('model.effort.cad-assumptions-analyzer', 'roles.cad-assumptions-analyzer.effort'),
+  'model.effort.cad-verifier': retiredModelKey('model.effort.cad-verifier', 'roles.cad-verifier.effort'),
+  'model.effort.cad-reviewer': retiredModelKey('model.effort.cad-reviewer', 'roles.cad-reviewer.effort'),
+  'model.effort.cad-executor': retiredModelKey('model.effort.cad-executor', 'roles.cad-executor.effort'),
+  'model.effort.cad-plan-checker': retiredModelKey('model.effort.cad-plan-checker', 'roles.cad-plan-checker.effort'),
 });
 
 /**

@@ -40,7 +40,7 @@ pick the convenient branch.
 | `/cad-context` | Did the analyzer come back? | A failed or timed-out assumptions analyzer falls back to a plain conversational pass, and says so out loud. There is no silent degradation. |
 | `/cad-plan` | What did the planner return? | `PLANNING COMPLETE`, on to the check. `PHASE TOO BIG`, a consult is offered when one is configured, then you pick: split into PLAN-1, PLAN-2 inside this phase (recommended), split into phases with `/cad-phase add`, or plan the full scope anyway with one more dispatch. Nothing returned, plans on disk win, otherwise it stops. |
 | `/cad-plan` | Does the plan survive `plan_check`? | Opt-in (`workflow.plan_check`, off by default - the `plan` review trigger is the standing second opinion; `--skip-check` bypasses). **Passed**, continue. **Warnings only**, fold the worthwhile ones in and continue; warnings never buy a re-check. **Any blocker**, exactly one revision: a *fresh* planner at `--attempt 2`, then one re-check. Still blocked, and it goes to you. There is no third round. |
-| `/cad-plan` | The `plan` review trigger | Fires once the plan is written. **advisory**, report and carry on. **blocking**, a FAIL halts. **adjudicated**, a numbered survivor list where **NONE is the default**. It never re-enters the checker loop; this is the second opinion, not another iteration. |
+| `/cad-plan` | The `plan` review trigger | Fires once the plan is written. **advisory**, report and carry on. **blocking**, a FAIL halts. **adjudicated**, a numbered survivor list where **None of them** is the default. It never re-enters the checker loop; this is the second opinion, not another iteration. |
 | `/cad-execute` | Parallel or sequential? | Parallel only when *all* of these hold: parallelization enabled, enough plans, no plan consuming another's output, declared `files:` lists that provably do not overlap, worktrees on, and a worktree base that reports itself parallel-safe. Any overlap, any undeclared file, any seam returning not-ok: sequential. Unproven never parallelizes. |
 | `/cad-execute` | What did the executor return? | `PLAN COMPLETE`, collect the report. **Checkpoint**, route it, then dispatch a fresh continuation. `PLAN PARTIAL`, hashes confirmed against the git log, then you choose: continue from task *k*, or stop and let the rest become open items. **Silence**, inspect the log and ask. A plan is never re-run on top of its own partial commits. |
 | `/cad-execute` | What kind of checkpoint? | **Structural**, a consult is offered when one is configured, then you approve, adjust, or stop the phase - it fires when a task's Verify cannot be met, a locked decision is contradicted, or a fix needs a file outside the plan's lease. **Human-verify, decision, blocked**: relayed to you verbatim. Every continuation is a new executor. A risky diff is not a checkpoint: `risk_surface` fires once per plan on the committed range. |
@@ -50,7 +50,7 @@ pick the convenient branch.
 | `/cad-verify` | What to do with a failure | Diagnosed inline, fix proposed, then your call. **Apply now**, one atomic commit, guard and `risk_surface` fire at commit time, item back to pending for a retest. **Re-plan**, the item stays failed and you take it to `/cad-plan` yourself; it is never auto-run. **Leave open**, recorded, move on. No silent batch-fixing, no fix-retest-fix without you between rounds. |
 | `/cad-audit` | PASS or FAIL | **PASS** only with zero broken traces and zero coverage breaks. **FAIL** on any requirement untraced, unplanned, unverified, dropped or drifted, or on any coverage break at all. Frontmatter noise and scope-creep orphans are reported but do not move the verdict. There is no PASS-with-warnings. |
 | `/cad-milestone` | The audit gate | Runs `/cad-audit` first. FAIL stops the milestone unless you explicitly override. The version bump has its own halts - a downgrade or a non-upgrade stops the close - and the release tag is not cut here at all: /cad-land cuts it on the pulled base after the merge confirms. |
-| `/cad-land` | How to publish | The publish question, with **no option preselected**: push, open an MR or PR, tag, or leave it local. `/cad-land` fires no review of its own - a fourth pass over work three passes already cleared, at the one point where acting on a finding means committing on top of what is being published. With `git.auto_close: true` in both the repository's `.planning/config.json` and the user-global config, the ask is skipped and a surviving blocker or high `risk_surface` finding from this branch's own fires is a hard halt instead. Either one alone still gets the publish question. |
+| `/cad-land` | How to publish | The publish question, with **no option preselected**: **Push the branch**, **Open a pull or merge request**, **Tag a release**, or **Leave it local**. `/cad-land` fires no review of its own - a fourth pass over work three passes already cleared, at the one point where acting on a finding means committing on top of what is being published. With `git.auto_close: true` in both the repository's `.planning/config.json` and the user-global config, the ask is skipped and a surviving blocker or high `risk_surface` finding from this branch's own fires is a hard halt instead. Either one alone still gets the publish question. |
 
 > **The loop that was deliberately not built**
 >
@@ -79,7 +79,7 @@ after it asks how you want to publish rather than choosing for you.*
 
 Model is overridable at dispatch time. Reasoning effort is not; it is frozen in
 the agent file's own frontmatter. That single constraint is why the ladder
-exists as **thirty files across six roles** rather than a parameter:
+exists as **thirty-five files across seven roles** rather than a parameter:
 dispatching a role harder means dispatching a different file.
 
 | Rung | Where it sits |
@@ -100,9 +100,11 @@ it is filed under.*
 
 ### Where each role starts
 
-Twelve keys, two per role: `roles.<role>.model` and `roles.<role>.effort`. The
+Fourteen keys, two per role: `roles.<role>.model` and `roles.<role>.effort`. The
 thirteen-question interview behind `/cad-config --roles` is where a project
-answers them, and nothing derives one role's answer from another's.
+answers them for the first six roles, and nothing derives one role's answer from
+another's. `cad-mapper` is asked nothing: its two keys apply only while
+`planning.code_map` is on.
 
 | Role | Model when the key is unset | Starting rung, by default |
 |---|---|---|
@@ -112,9 +114,10 @@ answers them, and nothing derives one role's answer from another's.
 | `cad-executor` | your own session's model | `high` |
 | `cad-reviewer` | your own session's model | `medium` |
 | `cad-verifier` | your own session's model | `high` |
+| `cad-mapper` | your own session's model | `high` |
 
 An unset model key sends no model parameter at all, which is not the same as
-naming a default. Any of the five rungs is reachable for any of the six roles.
+naming a default. Any of the five rungs is reachable for any of the seven roles.
 The model key is a free string, so a name this host does not accept still
 resolves: the parameter is dropped and the string comes back in `warnings[]`,
 never a silent redirect of spend. A bundle the resolver cannot assemble at all
@@ -123,13 +126,13 @@ default rather than dispatching a half-resolved one.
 
 ## 5. Who spawns what
 
-Six routable roles, each with a contract that lives in exactly one place and is
+Seven routable roles, each with a contract that lives in exactly one place and is
 preloaded into every rung file for that role. The fan-out is deliberately
 narrow: one planner, not a committee.
 
 ![Command to agent map: cad-context spawns one assumptions analyzer, cad-plan spawns one planner and one plan checker, cad-execute spawns one executor per plan, cad-verify spawns one verifier, and the review seam fire spawns one subagent plus any cross-model reviewers.](figures/spawn-map.svg)
 
-*Thirty agent files, six roles, one contract per role. The rung files are
+*Thirty-five agent files, seven roles, one contract per role. The rung files are
 pointer-only stubs so the behaviour is written down exactly once.*
 
 ---

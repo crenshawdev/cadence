@@ -73,8 +73,16 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
    explicit ask you make at publish time.
 
 2. **Uncommitted changes.** If the tree is dirty, do NOT auto-commit. Ask
-   (ask-user seam): commit them first (then continue), leave them out of this
-   land, or stop. If HEAD is a protected branch, the protected-branch guard
+   (ask-user seam):
+
+   - header: "Uncommitted"
+   - question: "You have changes that aren't committed. What should happen to them before this work is published?"
+   - options:
+     - "Commit them first - you give a message, the changes are committed, and then publishing goes on"
+     - "Leave them out - publish only what is already committed, and the changes stay in your working tree"
+     - "Stop - publish nothing"
+
+   If HEAD is a protected branch, the protected-branch guard
    (references/git-guard.md) applies to any commit here.
 
 3. **Publish - branch on the `git.auto_close` authorization.**
@@ -122,19 +130,49 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    set, first run `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs"
    test-policy check --root . --base <base>` and print any weakening it names
    as ONE line before the question. Under a policy, when HEAD is the base
-   branch the Direct push option is absent, because a commit pushed straight
+   branch the Push the branch option is absent, because a commit pushed straight
    onto the base cannot pass the required jobs before it lands: say so and
-   point at opening a PR from another branch. Direct push of any other branch
+   point at opening a PR from another branch. Pushing any other branch
    stays. With it unset, nothing here changes.
-   - **Direct push** - push the current branch to its remote.
-   - **Open MR / PR** - the detected host's mechanism (`glab mr create` on
-     GitLab, `gh pr create` on GitHub, `tea pr create --base <base> --head
-     <branch>` on a Forgejo/Gitea remote - `tea` does not push the source
+
+   - header: "Publish"
+   - question: "How do you want to publish this work?"
+   - options:
+     - "Push the branch - send the current branch to its remote"
+     - "Open a pull or merge request - publish the branch if needed and open a request to merge it on your host"
+     - "Tag a release - create a tag on this commit, then ask whether to send it to the remote"
+     - "Leave it local - do nothing more"
+
+   What each option runs:
+   - **Push the branch** - push the current branch to its remote.
+   - **Open a pull or merge request** - the detected host's mechanism (`glab mr
+     create` on GitLab, `gh pr create` on GitHub, `tea pr create --base <base>
+     --head <branch>` on a Forgejo/Gitea remote - `tea` does not push the source
      branch itself, so push it first as part of this same chosen action). If
-     no remote, or `tea` holds no login at all, this option is absent.
-   - **Tag** - create an annotated tag (ask the name); ask separately
-     whether to push it.
-   - **Leave local** - do nothing further.
+     no remote, or `tea` holds no login at all, this option is absent. Before
+     it runs, show the title and summary and ask:
+
+     - header: "Request text"
+     - question: "Open the request with this title and summary?"
+     - options:
+       - "Use this text - open the request as shown"
+       - "Change it - you give a new title or summary, and the request opens with those"
+
+   - **Tag a release** - create an annotated tag. Ask its name:
+
+     - header: "Tag name"
+     - question: "What do you want to name the tag?"
+     - options: none, the person types the name
+
+     Then ask separately whether to push it:
+
+     - header: "Push tag"
+     - question: "Do you want to send the tag you just made to the remote?"
+     - options:
+       - "Push the tag - send it to the remote"
+       - "Keep it local - the tag stays on this machine"
+
+   - **Leave it local** - do nothing further.
 
    **Read the publish rails before a publishing answer.** When the answer is
    direct push, open MR/PR, or a tag the user chose to push, Read
@@ -306,7 +344,15 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    `git tag -a <version> -F <path>` on the now-current base - the label is a
    PROJECT.md milestone name, so it reaches git as a PATH (caller-derived text
    - references/conventions.md). Then ask separately whether to push it
-   (references/git-publish.md rails; never auto-push a tag). This is
+   (references/git-publish.md rails; never auto-push a tag):
+
+   - header: "Push tag"
+   - question: "Do you want to send the release tag you just made to the remote?"
+   - options:
+     - "Push the tag - send it to the remote"
+     - "Keep it local - the tag stays on this machine"
+
+   This is
    deliberately NOT done at /cad-milestone: a tag cut at close names a
    pre-merge commit on the integration branch, and a non-fast-forward merge
    leaves that commit off base entirely. Skip silently when `git.create_tag`
@@ -338,6 +384,16 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    purpose, so a retry still reads the blocker it stopped on. Do it whatever the
    reap seam answered - an `action:"skip"` is about the branch, not about the
    records. Untracked by construction, so this stages nothing.
+
+   **Then stop the branch name applying.** When either cleanup envelope says
+   `clearIntegrationName:true` (the branch name setting is set and the merge is
+   confirmed), run
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset --file .planning/config.json git.integration_branch_name`
+   so the next cycle can't reuse the name. Do it whatever the reap seam
+   answered, and with `git.on_land_cleanup` off too. An open-PR-only land has no
+   confirmed merge, so the key stays. Report it in the final state line, and
+   where the repository tracks `.planning/config.json` say that file is now
+   modified and rides the next docs commit: this skill never auto-commits.
 </process>
 
 <guardrails>

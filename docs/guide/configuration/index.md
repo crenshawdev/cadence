@@ -1,19 +1,39 @@
 # How settings resolve
 
-You don't need to tune every setting to start using Cadence. Setup asks about the choices the project needs, and `/cadence:cad-config` lets you revisit them. This reference covers every key in the 3.11.0 schema, including older fallback keys and settings outside the interactive menu.
+You don't need to tune every setting to start using Cadence. Setup asks about the choices the project needs, and `/cadence:cad-config` lets you revisit them. This reference covers every key in the 3.11.0 schema, including settings outside the interactive menu.
 
 ## Choose the right entry point
 
 | Command | Use it for |
 |---|---|
-| `/cadence:cad-config` | Walk the configuration menu. |
+| `/cadence:cad-config` | With the menu on, open on six groups of settings, with what this repo and your global config set. Reply with a number to list a group, or say what you want to change. With it off, the default, this opens the full walk. |
+| `/cadence:cad-config --walk` | Walk every setting in the menu, page by page. Works with the menu on or off. |
 | `/cadence:cad-config --roles` | Choose each role's model and effort for this project. Add `--global` for machine-wide answers. |
 | `/cadence:cad-config --review` | Configure review providers and detect models. |
 | `/cadence:cad-config --surfaces` | Revisit the project's risk surfaces. |
 | `/cadence:cad-config --testing` | Accept or adjust the testing policy and separately choose verification-publishing authorization. |
+| `/cadence:cad-config make reviews cheaper` | With the menu on, say what you want in a sentence. Cadence finds the settings you mean, shows each one's current value, new value and file, and writes only after you say yes. |
 | `/cadence:cad-config parallelization.enabled=false` | Set a known repository option directly. |
 
-The menu doesn't expose every key. Provider model settings use their guided setup; older role fallbacks and other advanced keys can be set through the validated configuration command.
+## Turn the menu on
+
+The menu is new, so it is off until you turn it on. With it off, `/cadence:cad-config` opens the full walk, as it did before the menu, and a sentence is answered with how to turn the menu on. To turn it on:
+
+```
+/cadence:cad-config workflow.config_menu=true
+```
+
+Set it back to `false` to go back to the walk. `--walk`, `key=value` and the guided flags work the same either way, and the walk still previews a change before it writes.
+
+## What the menu shows
+
+`/cadence:cad-config` opens on six groups. Each line says how many settings the group holds and how many your global config and this repo set. Reply with a number to list that group's settings, or with a sentence.
+
+Pick a setting and the menu shows its value in each layer (the default, your global config and this repo) and which one wins. A setting that has no effect right now, such as a review tier when its gate is off, says so and why. You can still set it ahead of time. [Scope and authorization exceptions](#scope-and-authorization-exceptions) lists the settings that follow their own layer rules.
+
+Before anything is written, the menu previews the change: the file it goes to, the value before and after, which roles resolve differently, and which settings start or stop applying. Nothing changes until you say yes. A `key=value` on the command line and the guided flags skip the preview.
+
+A group that holds settings the menu doesn't ask about ends with an Advanced entry, and a group with none shows no such entry. Those settings show what they do instead of a question. Provider model settings in Advanced use their guided setup (`--review`) rather than being typed.
 
 ## Repository, user-global, then defaults
 
@@ -25,7 +45,7 @@ The normal read order is:
 
 `CADENCE_GLOBAL_CONFIG` can relocate the user-global file. Nested objects merge by key. Lists replace the lower layer's list in full; they aren't appended.
 
-An absent setting can inherit a value. An explicit `null` replaces the lower layer's value and has the meaning documented for that key. It isn't a general synonym for removing the setting. For role settings, the older fallback keys can still participate after a `null`; see [roles and models](roles.md).
+An absent setting can inherit a value. An explicit `null` replaces the lower layer's value and has the meaning documented for that key. It isn't a general synonym for removing the setting.
 
 ## Scope and authorization exceptions
 
@@ -35,6 +55,7 @@ An absent setting can inherit a value. An explicit `null` replaces the lower lay
 | `testing.*` | Repository-only. Global writes are refused and a hand-edited global testing section is ignored. |
 | `git.forge_repo` | Must be set for this repository; the validated write refuses a global value. |
 | `git.auto_close` | Must be explicitly true in both layers to authorize unattended closing. |
+| `workflow.use_workflows`, `workflow.multi_workflow`, `workflow.execute_workflows` | Each counts only when explicitly true in both layers; either alone leaves the old, single-session path. |
 | External entries in `review.reviewers` | Must also be authorized in your user-global reviewer list. |
 | `cadence.publishForVerification` | Local Git authorization, outside the schema. Stored only in this clone's `.git/config`. |
 | `worktree.baseRef` | Claude Code host setting, outside the schema. Governs where subagent worktrees start. |

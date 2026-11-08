@@ -99,5 +99,5 @@
         <text class="lbl-mut" x="1150" y="154" text-anchor="end">advisory · report and continue</text>
         <text class="lbl-mut" x="1150" y="168" text-anchor="end">deferred · findings stop the land, not the run</text>
         <text class="lbl-mut" x="1150" y="182" text-anchor="end">blocking · a surviving blocker or high FAILs</text>
-        <text class="lbl-mut" x="1150" y="196" text-anchor="end">adjudicated · you pick, default NONE</text>
+        <text class="lbl-mut" x="1150" y="196" text-anchor="end">adjudicated · you pick, default none of them</text>
 </svg>

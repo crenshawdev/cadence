@@ -55,7 +55,29 @@ silently reduced to one voice while the gate reports clean - the dropped
 cross-model reviewer is only half of it. Name the set that RAN, never the set
 the trigger asked for.
 
+## The review file
+
+At gate `adjudicated` and at `/cad-verify`'s fire, write the REVIEW file with
+this seam before triage (`references/review-triggers.md` step 5 says which fires).
+Compose its payload as a file in this run's scratch directory, as below:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" review-file --phase <N> --trigger <trigger> --discriminator <discriminator> --base <base> --head <head> --payload <path> [--round <round>] [--task <slug>]
+```
+
+The payload is `{raised, survivors: [...]}`, with `raised` the count of
+findings the voices raised and the survivors in triage's order. Each survivor
+carries `file`, `line`, `severity`, `voices` and the six texts `what_breaks`,
+`why_care`, `what_triggers`, `what_proves`, `what_uncertain` and
+`recommendation`, plus an optional one-line `root_cause` shared by survivors with
+one cause. A survivor missing any of the six is refused, and so is a second write
+to the same name: a re-arm passes `--round 2`.
+
+A suspected `blocker` or `high` the named check then re-rules is corrected in the file, so it and the record agree. Pass the fire's identity as above and `--mark <n>`, with a payload of `{ruling: refuted|proved, found}`. It puts a line ahead of survivor `n`'s headings, a refuted one stops counting as a survivor, and a number the file lacks or one already marked is refused.
+
 ## The adjudication record
+
+When a fire holding a `blocker` or `high` survivor writes this record is `references/review-triggers.md` step 5's order.
 
 Then WRITE THE ADJUDICATION RECORD: the rulings themselves, not a count of them.
 An adjudicated-only rule would record nothing at all on most projects -
@@ -95,6 +117,8 @@ downgrade a finding to make it storable and do not invent a SHA to fill the
 field; both are false statements about what happened, and the record accepts the
 true one.
 
+A fix that leaves no commit, because it edits a file git does not track, carries `fix_file` instead: that file's repo-relative path. It is neither a downgrade nor an override. So a survived `blocker` or `high` settles one of three ways: `fix_commit`, `fix_file` or `overridden: true`. The seam refuses `fix_file` beside `fix_commit`, an absolute path or one with a `..` segment, and a file git tracks, since that fix has a commit to name. `fix_file` is weaker evidence than a commit: it names a file, and nobody can `git show` the fix.
+
 A `blocker` or `high` the USER OVERRODE carries `overridden: true` instead of a
 commit - the one survived-at-a-halting-severity case where no fix is coming, so
 no SHA exists to name. The marker is the fact ALONE: the user's own reason rides
@@ -110,6 +134,8 @@ bar there as anywhere else: an auditor runs `git show` on it, so a blank, a
 `null` or a junk string is REFUSED rather than quietly dropped from the stored
 entry. The key is VALIDATED on those rulings, never forbidden on them, and the
 refusal names both the field and the ruling it was set on.
+
+A suspected finding (`references/review-triggers.md` step 5) is a `survived` ruling with no new value or key: it shows as suspected in the review file's heading text alone. At `blocker` or `high` it is never downgraded, and the record refuses it with none of a fix commit, a fix file or `overridden: true`.
 
 Neither case is a fourth `ruling` value. The vocabulary is still `survived`,
 `downgraded`, `refuted`, and what varies is what a `survived` entry carries

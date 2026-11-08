@@ -66,6 +66,7 @@ const COMMANDS = {
     (await import('./planning/task-record.mjs')).cmdTaskRecord(dir, opts),
   'lease-check': async (dir, _sub, opts) =>
     (await import('./planning/lease-check.mjs')).cmdLeaseCheck(dir, opts),
+  brief: async (dir, _sub, opts) => (await import('./planning/brief.mjs')).cmdBrief(dir, opts),
   // --root, never --dir, since it names the PROJECT root
   // a --root with nothing usable after it is refused at the door, or it answers about the cwd and not the tree named
   'detect-commands': async (_dir, _sub, opts) =>
@@ -85,6 +86,17 @@ const COMMANDS = {
   // per-finding rulings from a gate fire, kept beside the sibling REVIEW file
   adjudication: async (dir, _sub, opts) =>
     (await import('./planning/adjudication.mjs')).cmdAdjudication(dir, opts),
+  // the adjudicated gate's Markdown review file; the other gates keep their JSON
+  'review-file': async (dir, _sub, opts) =>
+    (await import('./planning/review-file.mjs')).cmdReviewFile(dir, opts),
+  // a finished review-panel run, read from its run file, becomes the record's payload and the review file's input
+  'workflow-run': async (dir, _sub, opts) =>
+    (await import('./planning/workflow-run.mjs')).cmdWorkflowRun(dir, opts),
+  // may a workflow launch now: take answers launch or names the holder, release frees only the caller's own claim
+  'workflow-claim': async (dir, sub, opts) =>
+    (await import('./planning/workflow-claim.mjs')).cmdWorkflowClaim(dir, sub, opts),
+  // the facts layer, two words like `workflow-claim`; --dir names .planning and the project root is its parent
+  codemap: async (dir, sub, opts) => (await import('./planning/codemap.mjs')).cmdCodemap(dir, sub, opts),
   // moves the risk_surface rulings out of a phase directory before a milestone close deletes it
   'risk-carry': async (dir, _sub, opts) =>
     (await import('./planning/risk-carry.mjs')).cmdRiskCarry(dir, opts),

@@ -82,9 +82,9 @@
         <line class="edge" x1="870" y1="151" x2="884" y2="151" marker-end="url(#ah)" />
 
         <rect class="box-soft" x="890" y="8"   width="250" height="34" rx="4" />
-        <text class="lbl-sm" x="906" y="30" text-anchor="start">Direct push</text>
+        <text class="lbl-sm" x="906" y="30" text-anchor="start">Push the branch</text>
         <rect class="box-soft" x="890" y="50"  width="250" height="34" rx="4" />
-        <text class="lbl-sm" x="906" y="72" text-anchor="start">Open an MR or PR</text>
+        <text class="lbl-sm" x="906" y="72" text-anchor="start">Open a pull or merge request</text>
         <rect class="box-soft" x="890" y="92"  width="250" height="34" rx="4" />
         <text class="lbl-sm" x="906" y="114" text-anchor="start">Tag a release</text>
         <rect class="box-soft" x="890" y="134" width="250" height="34" rx="4" />

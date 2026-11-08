@@ -1,6 +1,7 @@
 <purpose>
 The skill's objective states the guarantees. What it does not: ALL worktree
-ceremony exists inside the parallel opt-in branch and nowhere else.
+ceremony exists inside the two opt-in branches, the parallel one and the
+workflow one, and nowhere else.
 
 Why each step is shaped the way it is - the measured failures, the ordering
 arguments, the rejected alternatives - is in `docs/rationale/execute.md`. It is
@@ -112,7 +113,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch \
-  testing.scope
+  testing.scope planning.workflow_plans
 ```
 
 `testing.scope` set means a testing policy is active. It gates the one line
@@ -146,9 +147,16 @@ repo by hand. Prefer keeping `.planning/` in the code repo.
 at phase start, and none of it is any executor's. Name exactly what
 (`git diff --cached --name-status`), show that list, and ask (ask-user seam), no
 preselected default:
-1. Stash it (`git stash push --staged`, git 2.35+) and continue
-2. Commit it now as the user's own commit, message theirs, then continue
-3. Abort
+
+- header: "Staged work"
+- question: "You have changes staged in git that aren't part of this phase. What should happen to them before the phase starts?"
+- options:
+1. "Stash them - put the staged changes aside and start the phase"
+2. "Commit them now - make your own commit with a message you give, then start the phase"
+3. "Stop - leave the staged changes where they are and don't start"
+
+Option 1 runs `git stash push --staged`, which needs git 2.35 or later. Option 2
+commits with the user's message, then continues. Option 3 aborts the run.
 
 Never stash, unstage or commit the user's staged work without asking - the seam
 asks, the user chooses. Run the same check in a cross-repo phase's code repo,
@@ -175,11 +183,38 @@ path and is never a reason to pause or stop.
 </step>
 
 <step name="choose_path">
+**The workflow path comes first.** Take it only when ALL of these hold:
+- `workflow.execute_workflows` is on in BOTH config layers, read with
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" workflow-layers`, whose
+  `keys["workflow.execute_workflows"].on` is the answer, and never with
+  `config.mjs get`, which answers on a committed repo value alone. An answer
+  that cannot be read is off.
+- `planning.workflow_plans` is true, as `locate` read it
+- the `Workflow` tool is in this session's tool list
+- the `plan-overlap` answer below is `ok:true` with no `undeclared` and no
+  `frontmatter_issues` entry
+- `parallelization.enabled` and `parallelization.use_worktrees` are both true
+
+The step makes that one `plan-overlap` call and reads it for both paths. On the
+workflow path an `overlaps` entry and a second wave do not route to sequential,
+because `waves` already order them, and `parallelization.min_plans_for_parallel`
+is not read. Take `waves` from the answer, drop every plan outside the dispatch
+set, and drop any wave left empty. When every wave left holds one plan, today's
+path runs and one line says why: a launch per plan would buy nothing. When any
+wave holds more than one plan, the `worktree-base.mjs resolve` check below
+applies as written, declining its fix or its `ok:false` means today's path, and
+on accept this path goes on, not the parallel one. With every condition met, go
+to `execute_workflow` and run nothing else in this step. When a condition is
+missing, today's path below runs exactly as written, and when either layer
+sets the switch (`repo` or `global` reads `"set"` in that answer) one line names
+the missing condition. With neither layer setting it, print nothing.
+
 Sequential (default) unless ALL of these hold:
 - `parallelization.enabled` is true
 - plan count >= `parallelization.min_plans_for_parallel`
 - no plan builds on another's output (your judgment, from the plans' goals
-  and ordering)
+  and ordering, for plans that name nothing; any valid `depends_on` entry is
+  that answer, read off `waves` below)
 - the declared file lists do not overlap - this half is arithmetic, not
   judgment; run the seam and require empty `overlaps`:
 
@@ -191,7 +226,9 @@ Sequential (default) unless ALL of these hold:
   which files. Any `undeclared` entry -> sequential too: a plan declaring
   no files cannot be proven independent. Any `frontmatter_issues` entry ->
   sequential for the same reason: a plan whose frontmatter did not fully
-  parse cannot be proven independent either. `ok:false` -> sequential (the
+  parse cannot be proven independent either. More than one entry in `waves`
+  -> sequential: with no overlap, only a valid `depends_on` entry makes a
+  second wave. `ok:false` -> sequential (the
   check could not run; never parallelize unproven).
 - `parallelization.use_worktrees` is true (parallel dispatch without
   isolation is not supported - fall back to sequential)
@@ -210,13 +247,20 @@ Sequential (default) unless ALL of these hold:
   every executor would halt `blocked` on its own missing plan.
 
   OFFER THE FIX HERE, through the ask-user seam, and do not send the user to
-  another command to get it. Quote the exact JSON
-  (`"worktree": { "baseRef": "head" }`), name the file each option writes (the
-  project's `.claude/settings.json`, recommended, or `~/.claude/settings.json`),
-  and follow workflows/config.md's write rules: READ the target first, show the
-  current `worktree` block or that there is none, merge the one key, preserve
-  every other byte, never touch a managed-policy file. Declining is valid and
-  means sequential for this run.
+  another command to get it. Above the question, quote the exact JSON
+  (`"worktree": { "baseRef": "head" }`) and show the target file's current
+  `worktree` block, or say it has none. The first option writes the project's
+  `.claude/settings.json` and the second writes `~/.claude/settings.json`. Follow
+  workflows/config.md's write rules: READ the target first, merge the one key,
+  preserve every other byte, never touch a managed-policy file. Declining is
+  valid and means sequential for this run.
+
+  - header: "Worktrees"
+  - question: "Plans can run side by side only if each one starts from your current commit. Your Claude Code setting starts them from the remote's default branch instead, so they would miss this phase's plans. Do you want to change that setting?"
+  - options:
+    - "This project's settings file (recommended) - the change applies to this project only"
+    - "Your own settings file - the change applies to every project you open"
+    - "No - plans run one at a time in this session"
 
   On accept, re-run `worktree-base.mjs resolve`; `parallelSafe: true` now, so
   continue on the PARALLEL path. `ok:false` -> sequential (the check could not
@@ -224,7 +268,7 @@ Sequential (default) unless ALL of these hold:
 </step>
 
 <step name="execute_sequential">
-For each plan in the dispatch set, in order: dispatch ONE cad-executor via the
+For each plan in the dispatch set, in numeric order: dispatch ONE cad-executor via the
 spawn-agent seam (references/seam-spawn-agent.md), in the normal working tree,
 no worktrees, and wait for it to finish before starting the next.
 Print the dispatching line `locate` states before each dispatch.
@@ -248,6 +292,20 @@ successive executors in the phase share a cached prefix: phase-level context
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."
 
+With `planning.workflow_plans` read in `locate` as `true`, a brief takes the place of the plan file and the two phase documents in what each executor reads. With the key not `true`, this stretch runs nothing.
+
+- **Compose.** The first time a plan needs one, make the run's scratch directory and print it: `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`. Keep the printed path as a literal, because each Bash call starts with `$D` empty. Before each plan's dispatch, ahead of the resolve that carries its bracket, run this once and keep the path the answer names:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase <N> --plan <k> --out-dir <the scratch directory>
+  ```
+
+  A parallel batch composes all its briefs before the batch's one message. The transcript gets the envelope and never the brief.
+- **Dispatch.** The shared files to read first are project `CLAUDE.md` alone, and the plan-specific tail names the brief file by that absolute path in place of the plan file, keeping the commit scope and the mode line. The surfaces bullet and the testing-policy line stay as they are. The executor reads that one file at that path even from a worktree. An executor that can't open it does no task and returns a `blocked` checkpoint naming the path, because the file's head is what names the plan file and the dispatch no longer does. That return owes no report file.
+- **Bracket.** The executor's resolve carries the same `--plan <k> --bracket-plan <k>`, and its `--bracket-read` value is `CLAUDE.md,<the brief path>`, so the read trace shows any later read of a full document. A batch member on the parallel path carries its own value on its own `dispatch` event, so no member's bracket names another's brief.
+- **Second dispatches.** A continuation and a re-dispatched remainder name that same brief file, unless that plan's executor came back `blocked` on it. Then that plan's next dispatch takes the arm below. After a first dispatch, where no task has run, it starts the plan fresh and names no report path. After a continuation or remainder it keeps what `handle_checkpoint` carries: the report path, the checkpoint outcome, "continue from task <k>" and the same pre-plan HEAD. A `risk_surface` fix pass keeps what its own paragraph lists, since it fixes findings and runs no tasks.
+- **A refused or unreadable answer.** Print one line with what it names, and dispatch that plan the way this step does with the key not `true`, because the full documents lose the executor nothing.
+
 Do NOT restate the executor's standing rules (atomic commit per task,
 deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
 report format) - `skills/cad-executor-contract/SKILL.md` already carries them as
@@ -266,7 +324,8 @@ reads the FIRST LINE alone. Nowhere else, and never back into a
 dispatch prompt - re-inlining the table returns the bytes the file exists to
 move out. Before a worktree branch is merged its report lives in the worktree,
 not here: `git worktree list --porcelain` gives the worktree root for branch
-`cadence/phase-<N>-plan-<k>`.
+`cadence/phase-<N>-plan-<k>`. On the workflow path above width 1 it lives in the
+run's scratch directory until its branch has merged.
 
 **The lifecycle bracket (both paths).** Every worker this workflow hands work to
 is bracketed in the joined run record. The DISPATCH half rides each executor's
@@ -331,17 +390,29 @@ Handle the executor's return:
 - **partial** (`PLAN PARTIAL`, a digest but no checkpoint) -> the report FILE
   is authoritative: open `<plandir>/reports/plan-<k>.md` for the task numbers
   and hashes, confirm them against `git log {pre-plan HEAD}..HEAD`, then ask
-  the user (ask-user seam): dispatch a fresh continuation executor for the
+  the user (ask-user seam):
+  - header: "Plan stopped"
+  - question: "Plan {k} stopped after {n} of {m} tasks. The finished tasks are committed. What do you want to do with the rest?"
+  - options:
+    - "Run the rest - a fresh session picks up at the next task and doesn't redo the finished ones"
+    - "Stop here - the tasks not done are listed as open items in the phase summary"
+  On the first option, dispatch a fresh continuation executor for the
   remaining tasks (prompt carrying the report PATH and "continue from task
-  <k>", as in handle_checkpoint) or stop here - the incomplete tasks become
+  <k>", as in handle_checkpoint). On the second, the incomplete tasks become
   SUMMARY open items. Never silently re-run completed tasks.
 - **turn cap or unusable return** -> two things produce this state:
   the turn cap cut the dispatch, or the return is missing or unparseable.
   The executor rewrites its report after every task commit, so a file exists
   even when nothing was returned: read `<plandir>/reports/plan-<k>.md`, confirm
   it against `git log {pre-plan HEAD}..HEAD` to see what actually landed, report
-  the state, and ask the user (ask-user seam) whether to re-dispatch the
-  remainder or stop. Never silently re-run a plan on top of partial commits.
+  the state, and ask the user (ask-user seam):
+  - header: "Plan cut off"
+  - question: "Plan {k} was cut off, or its result couldn't be read. {n} tasks are committed. What do you want to do?"
+  - options:
+    - "Run the rest again - a fresh session does the tasks not yet committed and leaves the committed ones alone"
+    - "Stop here - the tasks not done are listed as open items in the phase summary"
+  The first option re-dispatches the remainder. Never silently re-run a plan on
+  top of partial commits.
 
 **The worker key of a SECOND dispatch.** Three of those arms dispatch again, and
 the key is `<k>` - the plan number the first dispatch took, never a coined
@@ -465,7 +536,10 @@ waiting on the same tail - the gate, not the overlap, picks the bracket's
 writer. When
 `review.triggers.diff.gate` resolves it to `adjudicated` instead, the fire
 BLOCKS before the next dispatch - triage can change what ships, and answering
-about plan 1 while plan 2 commits is answering about a tree that is gone. The
+about plan 1 while plan 2 commits is answering about a tree that is gone. On
+the workflow path (`references/review-workflow.md`) that block is the launch
+ending the turn and the notice resuming this step, with nothing else dispatched
+in between, and the triage still precedes the next plan's dispatch. The
 survivors are a numbered list the user triages, NONE is the default, and only
 what the user names is acted on - by the same continuation `cad-executor`
 under worker key `<k>` the FAIL arm above dispatches, restated no further
@@ -486,10 +560,16 @@ tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
 position line `locate` states. Route by type:
 
 - **structural** (architectural change needed, plan wrong at its core) ->
-  present to the user via the ask-user seam: approve the proposed change /
-  adjust it / stop the phase. This is a consult dead-end: before that ask, run
-  offer_consult per references/consult.md with the deviation as the
+  present to the user via the ask-user seam. This is a consult dead-end: before
+  that ask, run offer_consult per references/consult.md with the deviation as the
   situation.
+
+  - header: "Plan change"
+  - question: "The executor stopped because the plan can't be carried out as written. What it needs is shown above. What do you want to do?"
+  - options:
+    - "Approve the change - the executor carries on with the change it proposed"
+    - "Adjust it - you say what to change, and the executor carries on with that"
+    - "Stop the phase - nothing more runs, and the work so far stays committed"
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
 - **suite-red** (the project's full suite is still red after the executor's one
@@ -526,7 +606,8 @@ spelling.
 </step>
 
 <step name="execute_parallel">
-(Opt-in path. All worktree ceremony lives here and nowhere else. choose_path
+(Opt-in path. All worktree ceremony lives here and in `execute_workflow`'s
+reference, and nowhere else. choose_path
 has already proven `worktree.baseRef` is `head`, so an executor halting
 `blocked` on a missing PLAN here is a real defect to report, not the
 fork-point default.)
@@ -536,6 +617,18 @@ consult site - this step) and follow it: the batching key, the sequential
 merge with both HEADs recorded, `workflow.test_command` at its only consumer,
 and which review triggers fire on this path alone. Only the opt-in path reaches
 this step, so a sequential run carries none of it.
+</step>
+
+<step name="execute_workflow">
+(Opt-in path, reached only from `choose_path`'s workflow path. Its worktree
+ceremony lives in the reference below and in `execute_parallel`'s, and nowhere
+else.)
+
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-workflow.md` (one
+consult site - this step) and follow it: a launch per wave, what this session
+does at the wave's notice, and where a wave stops. The executors run inside the
+workflow; every decision and every git merge stays here. Only the opt-in path
+reaches this step, so a sequential run carries none of it.
 </step>
 
 <step name="goal_check">
@@ -663,7 +756,9 @@ verification runs in a fresh subagent.
 - THREE writers touch this run record's brackets and no fourth: the DISPATCH
   half rides each site's own `route.mjs resolve` through `--bracket-read`; the
   CLOSE half is the orchestrator's hand-written `trace close`, which alone sees
-  the return and so alone carries `--tokens`, `--turns` and `--duration-ms`; and
+  the return and so alone carries `--tokens`, `--turns` and `--duration-ms`, or
+  for a wave's executors `workflow-run`'s close, which bills each from the run
+  file's own rows; and
   the host's `SubagentStop` hook (`cadence-core/bin/subagent-trace.mjs`) writes
   a close for a dispatch whose hand-written one never ran, carrying what it
   reads off that worker rather than the return's three figures. Executors

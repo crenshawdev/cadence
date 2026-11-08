@@ -15,7 +15,7 @@ taken, and nothing else in the review subsystem reads it.
 
 - **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): an API
   call runs nothing, so this is the one backend that cannot resolve a reference
-  itself. **This arm still gets NO lifecycle bracket, deliberately.** It is the
+  itself. The workflow path composes the payload the same way and hands the seam call to a wrapper agent (`references/review-workflow.md`). **This arm still gets NO lifecycle bracket, deliberately**, though on that path the wrapper agent's own tokens get a bracket under its label, while the provider's usage stays on its event. It is the
   one place a real API-reported usage figure exists rather than a host-reported
   one, and the seam now reads it: every adapter extracts the provider's usage
   and the `provider/request` event carries it, absent only where the response
@@ -67,8 +67,8 @@ taken, and nothing else in the review subsystem reads it.
   refused before any request is issued, while bytes added in the seam would be
   invisible to it (the cap deliberately excludes the adapters'
   schema-injection bytes) and every provider's cap would under-report by the
-  brief. The cost is measured, not unknown: about 670 estimated tokens against
-  the 120,000 default `review.max_prompt_tokens`, ~0.6% of one payload.
+  brief. The cost is measured, not unknown: about 837 estimated tokens against
+  the 120,000 default `review.max_prompt_tokens`, ~0.7% of one payload.
   The composing step takes the artifact path as its THIRD argument and the
   payload path it WRITES as its fourth. Both are arguments, and that is what
   lets all three shapes share the step: shape (b) redirects `git diff --cached`

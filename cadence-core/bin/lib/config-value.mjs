@@ -5,6 +5,7 @@
 // Pure: no fs, no emit, no process.
 import { isForgeSlug, splitForgeHost } from './forge-decision.mjs';
 import { isModelId } from './model-id.mjs';
+import { SAFE_BRANCH } from './publish-decision.mjs';
 
 // Checks one parsed value's type against a schema spec: null if ok, else an error string. Callers reach
 // checkValue, which runs this first, so a wrong-typed value reports the type and not a grammar it could never meet.
@@ -38,6 +39,15 @@ export function checkType(spec, v) {
   }
 }
 
+// A whole branch name a shell can't act on. SAFE_BRANCH is the rule `git-publish.mjs reap` enforces, so an accepted
+// name is never one reap then refuses; the extra ones are what `git checkout -b` refuses anyway: `..`, a trailing `/`
+// or `.`, a `.lock` ending, and a path component that starts with a dot. Callers on read use this.
+/** @param {unknown} v */
+export function isBranchName(v) {
+  return typeof v === 'string' && SAFE_BRANCH.test(v) && !v.includes('..') && !v.endsWith('/') && !v.endsWith('.')
+    && !v.endsWith('.lock') && !v.split('/').some((c) => c.startsWith('.'));
+}
+
 // Named grammars a schema key may claim, one predicate each, so checkValue doesn't grow a branch per key.
 // forge_repo and forge_host were string_or_null and let `forge example.com/../x` through onto a command line.
 // The predicates come from forge-decision and model-id, never restated: a second spelling enforces at two strengths.
@@ -53,6 +63,11 @@ export const GRAMMARS = Object.freeze({
     error: 'expected a hostname, optionally followed by `:<port>` - dot-separated '
       + 'labels of letters, digits and `-` where no label starts or ends with `-`, '
       + 'and a port of 1-65535 in decimal with no leading zero',
+  }),
+  branch_name: Object.freeze({
+    ok: (v) => isBranchName(v),
+    error: 'expected a branch name - letters, digits, `.`, `_`, `-` and `/`, starting with a letter or digit, '
+      + 'with no `..`, no trailing `/` or `.`, no `.lock` ending and no `/`-separated part starting with `.`',
   }),
   model_id: Object.freeze({
     ok: (v) => isModelId(v),

@@ -24,9 +24,13 @@ Store model IDs and credential-file paths in configuration, never API keys. Cred
 | `advisory` | Report findings and continue. |
 | `deferred` | Continue the work; unresolved queued reviews stop landing. |
 | `blocking` | Stop on surviving blocker or high findings. An unavailable review cannot silently pass. |
-| `adjudicated` | Evaluate findings against the cited code and present the surviving findings for your triage. |
+| `adjudicated` | Check each finding against the cited code and present the survivors for your triage. |
 
 `review.mode` controls how reviewers combine; a gate set to `adjudicated` requires adjudication regardless of the mode.
+
+Under `adjudicated`, each finding is checked by the main session on the default path. With [`workflow.use_workflows`](execution.md#workflowuse_workflows) on, one agent per finding checks it instead, and the reviewers run as agents of one workflow. The main session still merges the results, groups findings that share a root cause and runs your triage. That setting is off by default, burns usage faster, and counts only when both your repository's config and your user-global config set it. With it off, or with only one layer on, the single-agent path runs as before.
+
+Triage shows each survivor with what breaks, why it matters, what is still uncertain and a recommendation. Ask for any survivor and you also get what triggers it and what proves it. The review file holds all six. A finding the check could neither prove nor refute shows as suspected, with the next check that would settle it.
 
 ## Risk surfaces
 
@@ -42,7 +46,7 @@ Waiving a surface's routing floor withholds those plan-time effects for that sur
 
 **Allowed values:** `"single"`, `"panel"`, `"adjudicated"`.
 
-`single` uses the first available reviewer. `panel` combines and deduplicates findings. `adjudicated` runs reviewers independently, then evaluates their findings against the cited code before merging survivors.
+`single` uses the first available reviewer. `panel` combines and deduplicates findings. `adjudicated` runs reviewers independently, then checks each finding against the cited code before merging survivors. The check is one main-session pass by default, or one agent per finding when `workflow.use_workflows` is on in both config layers.
 
 ### `review.reviewers`
 

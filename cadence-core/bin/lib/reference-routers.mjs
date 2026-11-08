@@ -61,6 +61,11 @@ export const ROUTERS = Object.freeze([
     cold: 'cadence-core/references/risk-surface.md',
   }),
   Object.freeze({
+    router: 'cadence-core/references/review-triggers.md',
+    branch: "workflow (step 4, an adjudicated gate or /cad-verify's fire, the setting on in both layers, the tool present)",
+    cold: 'cadence-core/references/review-workflow.md',
+  }),
+  Object.freeze({
     // not a cut a router split made: registering it makes "every gate
     // arm is one Read from the router" a checked property
     // the one-round cap on a blocking re-arm lives only in triage-gate.md, so

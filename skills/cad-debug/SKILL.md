@@ -9,6 +9,8 @@ allowed-tools:
   - Grep
   - Glob
   - AskUserQuestion
+  - Workflow
+  - Workflow(cadence:review-panel)
 ---
 
 <objective>

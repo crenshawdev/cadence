@@ -12,7 +12,7 @@ import { recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS } from '../lib/arg-contract.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
-import { PLAN_FILE } from '../lib/phase-plans.mjs';
+import { PLAN_FILE, byPlanNumber, planNumber } from '../lib/phase-plans.mjs';
 import { parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
@@ -103,7 +103,7 @@ function derivePhases(dir, roadmapPhases) {
     const pdir = join(dir, 'phases', String(p.n));
     let plans = [];
     try {
-      plans = readdirSync(pdir).filter((f) => PLAN_FILE.test(f)).sort();
+      plans = readdirSync(pdir).filter((f) => PLAN_FILE.test(f)).sort(byPlanNumber);
     } catch { /* no dir -> unplanned */ }
     const summary = existsSync(join(pdir, 'SUMMARY.md'));
     const uatText = read(join(pdir, 'UAT.md'));
@@ -189,14 +189,11 @@ function listPlanFiles(pdir) {
     if (PLAN_FILE.test(f)) plans.push(f);
     else if (f.startsWith('PLAN') && f.endsWith('.md')) nonconforming.push(f);
   }
-  return { plans: plans.sort(), nonconforming: nonconforming.sort() };
+  return { plans: plans.sort(byPlanNumber), nonconforming: nonconforming.sort() };
 }
 
 // one definition of "this plan's report says it is complete", since replay-check and status both decide from it
 // `report` is relative to pdir, and the caller owns the `phases/<spelling>/` prefix: replay-check and status differ
-/** `PLAN-<k>.md` is k and a bare `PLAN.md` is 1, matching the path the executor writes its report to. */
-const planNumber = (f) => Number(/^PLAN-(\d+)\.md$/.exec(f)?.[1] ?? 1);
-
 /** Only the first line, trimmed: a `PLAN COMPLETE` quoted in a Note is prose about a status, not a claim of one. */
 const firstLine = (body) => (body == null ? null
   : body.slice(0, body.indexOf('\n') === -1 ? undefined : body.indexOf('\n')).trim());
@@ -219,7 +216,7 @@ function readPlanReports(pdir, plans) {
 }
 
 // where one phase's plans stand: the plan to run next, by position
-// K is the lowest plan number whose report isn't complete, not the first list entry: listPlanFiles sorts lexically
+// K is the lowest plan number whose report isn't complete, not the first list entry, which may be a complete one: listPlanFiles lists in plan-number order
 // J is the count of conforming plans, and the name comes from planName and is left off when the heading gives none
 // null when the dir is missing, has no plan or every plan is complete; `cursor set` and `status` share it
 // @param {string} pdir the phase directory

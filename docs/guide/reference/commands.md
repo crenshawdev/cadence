@@ -12,6 +12,7 @@ The commands do different kinds of work. Execution, task work, fixes, pausing an
 | `/cadence:cad-adopt` | None | Read an existing repository and establish its project record and remaining-work roadmap. |
 | `/cadence:cad-context` | `[N]` | Settle phase decisions and acceptance criteria. Writes `CONTEXT.md`; optional before planning. |
 | `/cadence:cad-plan` | `[N] [--skip-check] [--inline] [--gaps]` | Create executable plans. `--skip-check` bypasses the optional checker, `--inline` requests the inline path, and `--gaps` plans outstanding verification gaps. Plan review is separate. |
+| `/cadence:cad-map` | None | Build or refresh the code map: what the code is, what touches what and which tests pin it. Runs only with `planning.code_map` on, and starts nothing until you type a yes, on a refresh too. To cut the modules afresh, remove the stored list with `rm .planning/codemap/index.json`. |
 | `/cadence:cad-execute` | `[N] [--rerun]` | Execute plans, run checks and commit tasks. Normally it checks for already completed work; `--rerun` explicitly requests replay. |
 | `/cadence:cad-verify` | `[N] [--sweep] [--deep]` | Verify acceptance criteria and record results. With a testing policy, required checks are automated and CI-only work stays pending. `--deep` requests the goal-backward pass; `--sweep` checks across phases. |
 | `/cadence:cad-task` | `<description> [--plan]` | Implement a small off-roadmap task with commits. `--plan` asks for a plan for multi-step work. |
@@ -54,7 +55,7 @@ See [finish and publish](../working/publish.md) before using the closing command
 | `/cadence:cad-report` | `[N] [--all]` | Read a phase's run record, including dispatch costs and review outcomes. `--all` gives the milestone view. |
 | `/cadence:cad-suggest` | `[N]` | Propose configuration changes supported by the run record. With no phase, read the whole record. Applies no changes itself. |
 | `/cadence:cad-capture` | `[todo, seed or note] <text> [--phase N] [--cadence]` | Save an idea without changing the current task's scope. `--cadence` writes to the Cadence-wide queue beside your global configuration. |
-| `/cadence:cad-config` | `[key=value ...]`, `--review [redetect]`, `--surfaces`, `--testing`, or `--roles [--global]` | Configure the project through a menu, direct setting or guided setup. See the [configuration reference](../configuration/index.md). |
+| `/cadence:cad-config` | `[key=value ...]`, `<a sentence>`, `--walk`, `--review [redetect]`, `--surfaces`, `--testing`, or `--roles [--global]` | Configure the project through the full `--walk`, a direct setting or a guided setup. With the menu on (`workflow.config_menu=true`, off by default), no arguments opens six groups of settings and a sentence says what to change; with it off, no arguments opens the walk. See the [configuration reference](../configuration/index.md). |
 | `/cadence:cad-health` | None | Report structural problems in `.planning/`, configuration and the active testing-policy setup. |
 | `/cadence:cad-help` | `[command name]` | Show the command reference inside a session, or help for one command. |
 

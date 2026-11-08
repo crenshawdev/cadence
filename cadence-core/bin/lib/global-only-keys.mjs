@@ -80,6 +80,50 @@ function withoutPath(node, parts) {
 }
 
 /**
+ * The path of every own key spelled with a dot, walking plain objects (arrays are leaves, `_meta` is skipped as
+ * flatten skips it). A setting's dotted name only exists as nesting: `set` writes {"workflow":{"test_command":x}},
+ * so a literal "workflow.test_command" key is never one, and walking it as one let a clone's repo layer pick the
+ * command an agent runs. No config map takes dotted names (the schema's keys are all fixed paths), so none is lost.
+ * @param {any} node @param {string} [prefix]
+ * @returns {string[]}
+ */
+export function dottedKeyPaths(node, prefix = '') {
+  if (!isObj(node)) return [];
+  /** @type {string[]} */
+  const out = [];
+  for (const [k, v] of Object.entries(node)) {
+    if (k === '_meta') continue;
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (k.includes('.')) out.push(path);
+    else out.push(...dottedKeyPaths(v, path));
+  }
+  return out;
+}
+
+/**
+ * The same layer with every dotted key dropped, at any depth. A copy that defines each property, as withoutPath
+ * does, and the very object back when nothing is dotted.
+ * @param {any} node
+ * @returns {any}
+ */
+export function withoutDottedKeys(node) {
+  if (!isObj(node) || !dottedKeyPaths(node).length) return node;
+  /** @type {Record<string, any>} */
+  const copy = {};
+  for (const [k, v] of Object.entries(node)) {
+    if (k !== '_meta' && k.includes('.')) continue;
+    Object.defineProperty(copy, k, {
+      value: k === '_meta' ? v : withoutDottedKeys(v), writable: true, enumerable: true, configurable: true,
+    });
+  }
+  return copy;
+}
+
+/** @param {string} path @param {string} file */
+export const dottedKeyWarning = (path, file) => `config key "${path}" in ${file} was ignored: a key spelled `
+  + 'with a dot is not a setting - nest it ({"section":{"name":...}}) or write it with `config.mjs set`';
+
+/**
  * Strips every global-only key from a repo-layer object, and says which ones the file set. The halves are
  * asymmetric on purpose:
  * - the strip is value-agnostic. deepMerge returns the higher layer's value for a `null`, so a repo `null`
@@ -96,7 +140,9 @@ export function stripGlobalOnly(layer, file) {
   /** @type {string[]} */
   const warnings = [];
   if (!isObj(layer)) return { layer, warnings };
-  let out = layer;
+  // first: a literal "workflow.test_command" key never matches the nested walk below, and the merge would read it
+  for (const path of dottedKeyPaths(layer)) warnings.push(dottedKeyWarning(path, file));
+  let out = withoutDottedKeys(layer);
   for (const key of GLOBAL_ONLY_KEYS) {
     const parts = key.split('.');
     // ancestor arm first: a non-object ancestor makes readPath report ABSENT, so checking the key alone would

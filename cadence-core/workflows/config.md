@@ -27,16 +27,37 @@ Parse `$ARGUMENTS`:
 - Starts with `--roles`: go to **Roles interview** - the thirteen questions
   that say what each of the six roles costs. A trailing `--global` re-enters
   the full thirteen against the user-global layer instead of writing repo diffs.
-- Contains `<key>=<value>` tokens: go to **Direct set**.
-- Empty: go to **Interactive menu** - walk every knob as a selectable list.
+- `--walk`: go to **Interactive menu (no args)** - the full walk of every knob.
+- Starts with a `<key>=` token (a dotted key name, then `=`): go to **Direct set**.
+  A value runs to the next `<key>=` token or the end, so it may hold spaces
+  (`git.protected_branches=["main", "develop"]`). An `=` further into the text
+  does not make it a setting.
+- Any other text is a sentence: Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-menu.md`
+  and follow its **A sentence**. A reply to the opening screen that is not a
+  number from 1 to 6 goes the same way.
+- Empty: Read the same file and follow its **Opening screen**. That file is also
+  where the reply to the screen goes; Direct set never reads it.
+
+The menu is opt-in. Before either of those last two arms, read the switch (a
+repo value counts):
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.config_menu
+```
+
+- `true`: the arms above work as written.
+- Not `true` (the default is `false`): empty goes to **Interactive menu (no
+  args)**, the walk, exactly as `/cad-config` did before the menu. A sentence, or
+  a pick of a group, is not taken: say in one line that the menu is off, give
+  `/cad-config workflow.config_menu=true` as the command that turns it on, read
+  no menu file and write nothing.
+
+A flag, `--walk` and `<key>=<value>` never read the switch.
 
 ## Interactive menu (no args)
 
-Goal: let the user adjust every knob the walk carries, presented as
-selectable lists, the twelve `roles.<role>.model` and `.effort` keys included. The older `model.overrides` and `model.effort` families stay
-edit-the-file-only: they are the narrower fallbacks UNDER the roles keys,
-reachable by direct set (`/cad-config model.effort.cad-executor=medium`) for a
-config that already carries them. Two more sets stay out:
+Reached with `--walk`, or with no arguments while `workflow.config_menu` is off. Goal: let the user adjust every knob the walk carries, presented as
+selectable lists, the twelve `roles.<role>.model` and `.effort` keys included. Two sets stay out:
 `review.providers.*`, which needs live detection, so the menu routes it to
 **Review provider setup** rather than free-typing model ids; and
 `review.decision_review`'s two keys, which belong to an on-demand command
@@ -46,7 +67,7 @@ walk is the flat way.
 
 ### The walk
 
-1. Read the current config. Show a one-screen summary (each knob = current value).
+1. Read the current config. Show a one-screen summary (each knob = current value). Reached with no arguments, end it with this line: `A menu of six settings groups is off. /cad-config workflow.config_menu=true turns it on.`
 2. Read the walk's rows with
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys --walk`
    (sections in walk order).
@@ -98,9 +119,19 @@ walk is the flat way.
    where every pick matched the value already in force (step 2's no-op rule).
    Only a value that DIFFERS from what is in force is a diff, and only diffs are
    applied.
-4. After the last page, show the changed keys as a diff and write once via the
-   **Validation seam** (`config.mjs set`) - one atomic, validated write. The user
-   may pick `Skip rest` on any page to stop and write what changed so far.
+4. After the last page, show the changed keys as a diff. A value typed through
+   `Other` can carry `$(...)`, which runs before Node starts, and the preview
+   comes before the yes, so write each changed value as JSON to its own file in
+   a directory this run made
+   (`D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "$D"`) and pass the
+   preview and `set` each key as `<key>="$(cat <path>)"` (`references/conventions.md`,
+   Caller-derived text). Run `config.mjs preview <key>="$(cat <path>)"…` once for
+   the whole batch, show what it answers and ask for a yes in a turn of its own,
+   then write via the
+   **Validation seam** (`config.mjs set`) - one atomic, validated write per file.
+   The preview's `files` says which file gets what; a batch for both layers is
+   two `set` calls. The user may pick `Skip rest` on any page to stop and
+   preview and write what changed so far.
 5. `review.providers` is not in the page walk - offer it as a final step
    (`Configure review providers now?`) that enters **Review provider setup**.
 6. Then run **Worktree base ref** below - a HOST setting, offered only when
@@ -119,6 +150,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset <key>…        #
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get   [key …]       # EFFECTIVE values (repo > global > defaults)
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys                # dump schema (types/enums/defaults/purpose)
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys --walk         # the walk's rows only: question + value explanations
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" preview <key=value>…  # read-only: the file, before and after, what changes
 ```
 
 `get` is how every workflow reads config - the only read that sees the global
@@ -132,8 +164,8 @@ migration**, which reads both files for a key it is about to remove from them.
 Each prints one JSON line (`{ok, …}`); `--file <path>` overrides the default
 `.planning/config.json`, and `--global` targets the user-global layer at
 `~/.claude/cadence/config.json` (`CADENCE_GLOBAL_CONFIG` relocates it), which
-`set` auto-creates. Collect the menu's diffs and apply them with a single `set`
-call so the write is one atomic, validated operation.
+`set` auto-creates. Collect the menu's diffs and apply them with one `set` call
+per file, so each write is one atomic, validated operation.
 
 **Config layering.** At read time `bin/route.mjs` deep-merges global under repo
 (precedence **repo > global > built-in defaults**); nested objects merge, arrays
@@ -348,7 +380,7 @@ site - this section). This section points at them and restates none.
    `<key>="$(cat <path>)"` (`references/conventions.md`, Caller-derived text):
 
    ```
-   D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && echo "$D"
+   D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "$D"
    ```
 
    ```
@@ -451,22 +483,30 @@ holds it, `(in force)` when it is inherited, and an inherited option's
 
 ### 3. The model question, per role
 
-Text: what the role does in the phase loop, then what a stronger or weaker model
-buys there. Options, in this order, up to the cap of four:
+Ask the role's question, word for word:
+
+- `cad-planner`: "Which model writes your plans? Everything built later follows them, so a stronger model costs more here and saves rework later."
+- `cad-assumptions-analyzer`: "Which model lists what a phase assumes, before any plan exists? It runs only when you choose to have the code read, at most once a phase, and a stronger one catches a wrong premise early."
+- `cad-verifier`: "Which model checks whether a phase met its goal, not just whether its tasks ran? It runs only when the deeper check is on, and a stronger one misses less."
+- `cad-reviewer`: "Which model runs the Claude reviewer? If you use it, it runs on every review, so a cheaper model saves the most and a stronger one catches more."
+- `cad-executor`: "Which model writes the code, one run per plan? It is the largest cost in a phase, so a cheaper model saves the most and a stronger one makes fewer mistakes."
+- `cad-plan-checker`: "Which model checks each plan before any code is written? It runs only when plan checking is on, and the work is short, so a cheaper model often does."
+
+Options, in this order, up to the cap of four:
 
 1. **The value in force**, labelled `(current)` or `(in force)`. When no layer
-   sets it, that value is `null` and its description is "no model parameter -
-   the dispatch runs at your session's model".
-2. `opus` - the strongest and the most expensive per dispatch.
-3. `sonnet` - the middle of the three; most work lands here.
-4. `haiku` - the cheapest and the weakest.
+   sets it, that value is `null` and its description is "use your session's
+   model".
+2. `opus` - "strongest, costs the most".
+3. `sonnet` - "in the middle; most work fits here".
+4. `haiku` - "cheapest, least capable".
 
 Never list the value in force twice: whichever of those it already is, the
 remaining options fill the slots. `fable` is a fifth name the host accepts and
 is deliberately NOT offered outright - name it in the last option's
 `description` as reachable via `Other`, with the reason: choosing it is an
-assertion about your own organisation (it needs 30-day data retention, and its
-classifiers refuse cyber-adjacent review work), not a rung on a ladder.
+assertion about your own organisation (it needs 30-day data retention, and it
+refuses some security review work), not a rung on a ladder.
 
 `Other` is free-typed and goes into config exactly as typed - the key is a
 string, not an enum, so nothing rejects a name this host has never heard of.
@@ -476,49 +516,42 @@ dispatch. A model the host does not accept still resolves `ok:true` and
 dispatches with NO model parameter, naming the string in the resolve's
 `warnings[]`.
 
-What each role does, for the question text:
-
-- **`cad-planner`** - turns a phase's context into the plan files every executor
-  then runs from. Once or twice per phase, and a weak plan is paid for again by
-  every dispatch that reads it.
-- **`cad-assumptions-analyzer`** - reads a phase's context before any plan
-  exists and names what the work is assuming. Once per phase, and the cheapest
-  place there is to catch a wrong premise.
-- **`cad-verifier`** - the goal-backward pass after a phase, asking whether the
-  goal is actually met rather than whether the tasks ran. It runs only when the
-  deep pass is on.
-- **`cad-reviewer`** - the local reviewer behind every review trigger. The
-  most-dispatched role after the executor, so its model moves a cycle's total
-  cost more per step than any other.
-- **`cad-executor`** - writes the code, one dispatch per plan. The single
-  largest spend in a phase.
-- **`cad-plan-checker`** - checks a plan against its context before any code is
-  written, and only when `workflow.plan_check` is on. Short, structured work.
-
 ### 4. The effort question, per role
 
-Text: what the rung buys for this role. The rung is where the role STARTS;
-`model.escalate_on_failure` re-dispatches a failed attempt one rung higher,
-holding at the top.
+Ask the role's question, word for word:
+
+- `cad-planner`: "How hard should the planner work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+- `cad-assumptions-analyzer`: "How hard should the assumptions analyzer work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+- `cad-verifier`: "How hard should the verifier work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+- `cad-reviewer`: "How hard should the Claude reviewer work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+- `cad-executor`: "How hard should the executor work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+- `cad-plan-checker`: "How hard should the plan checker work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+
+The rung is where the role STARTS; `model.escalate_on_failure` re-dispatches a
+failed attempt one rung higher, holding at the top.
 
 Six values - `low`, `medium`, `high`, `xhigh`, `max` and `null` - do not fit the
 four-option cap, so this takes exactly the rule the walk already states for
 `review.triggers.<t>.gate`: show the rung in force plus the three the user is
 most likely to want, and name every omitted rung in the last option's
 `description` with the words "reachable via `Other`". A rung silently absent
-reads as a rung that does not exist.
+reads as a rung that does not exist. The descriptions are: `low` "light
+thinking, fastest", `medium` "moderate thinking", `high` "deep thinking",
+`xhigh` "very deep thinking, slower", `max` "the deepest thinking, slowest and
+costliest", and `null` "use the default for this role".
 
 `null` is a real answer and means "this key does not pin the rung, so the
 schema default decides" - which is how a repo layer un-pins a global one.
 
 ### 5. The floor question
 
-One question, and the only one that is not per role. Text: when a phase's plans
-declare a file that touches one of your answered risk surfaces, exactly two
-things happen - the plan review becomes blocking, and the deep-verify pass runs.
-No role's model moves and no role's rung moves; what you just set is what
-dispatches. A plan Cadence could not read raises it too, on purpose, because a
-scope nobody read has proved nothing.
+One question, and the only one that is not per role. Ask it word for word:
+
+"Which risky areas should not make a phase's plan review blocking or turn on the deeper check? The review of the actual changes still runs."
+
+A plan Cadence could not read raises the bar too, on purpose, because a scope
+nobody read has proved nothing. No role's model or rung moves; what you just set
+is what dispatches.
 
 Carry the eight category definitions from
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md` as the
@@ -527,14 +560,16 @@ where a user meets the category names.
 
 Options:
 
-1. **Keep it for every surface** `(recommended)` - writes nothing, because a
-   config with no waiver key is already in that state.
-2. **Name surfaces to waive** - writes
-   `review.triggers.risk_surface.waive_routing_floor` with the picked
-   categories. A surface named there stops making the plan review blocking and
-   stops turning the deep pass on, for that surface only. It does NOT turn off
-   the `risk_surface` review itself, which still fires on the actual diff and
-   which this key cannot reach.
+1. **Leave it as it is** `(recommended)` - "Changes nothing. Areas already
+   skipped in your config stay skipped, and with none skipped every risky area
+   keeps the blocking plan review and the deeper check." Writes nothing, and
+   leaves any waiver already on disk in place.
+2. **Choose areas to skip** - "The areas you pick no longer make the plan review
+   blocking or turn on the deeper check. The review of the actual changes still
+   runs." Writes `review.triggers.risk_surface.waive_routing_floor` with the
+   picked categories, for those categories only. It does NOT turn off the
+   `risk_surface` review itself, which still fires on the actual diff and which
+   this key cannot reach.
 
 Two of the six roles are unaffected by this answer whatever it is: `cad-planner`
 and `cad-assumptions-analyzer` are dispatched before a plan exists, so there is

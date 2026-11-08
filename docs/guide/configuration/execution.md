@@ -14,6 +14,8 @@ Enabling parallelization doesn't force a parallel run. Plans must be independent
 
 The host's `worktree.baseRef` setting must resolve to `head` for this path. It belongs in Claude Code's settings, outside Cadence's schema. `/cadence:cad-config` offers to configure it when worktrees are enabled and asks which settings file to update. Disabling worktrees leaves parallel execution unavailable.
 
+Files your `.gitignore` excludes, such as installed dependencies, aren't in a worktree. They reach one only through Claude Code's own `worktree.symlinkDirectories` setting or a `.worktreeinclude` file, and Cadence never writes either. A suite that needs those files fails in a worktree until you set one up. This holds for the parallel path and for `workflow.execute_workflows` alike.
+
 ## Reported limits
 
 `workflow.max_plan_bytes` reports the size of a plan's declared files; exceeding it doesn't itself refuse planning or execution. The six `workflow.max_dispatch_tokens.*` settings report a dispatch's final recorded context-window figure after it returns. They aren't token budgets enforced by the host, and they aren't cumulative token spend.
@@ -131,6 +133,42 @@ Override the local test command. `null` means no override; the executor and veri
 **Default:** `null` · **Type:** string or null · **Scope:** user-global only.
 
 Override the executor's pre-commit lint command. With no override, command detection reads the project manifests. There is no companion typecheck setting.
+
+### `workflow.use_workflows`
+
+**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
+
+Run reviews as workflows, with one agent per reviewer and one per finding, rather than one main session opening the file. Workflows burn usage fast, so this is off by default. It counts only when both the repository's `.planning/config.json` and your user-global configuration set it to `true`; either alone leaves the old path, so a value committed to a repository can't turn it on for whoever clones it. Each run takes exactly one path.
+
+### `workflow.multi_workflow`
+
+**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
+
+Allow more than one workflow at a time. Several at once multiply the usage burn of each, so with this off a second workflow waits for the first to finish. It counts only when both the repository and user-global configuration set it to `true`.
+
+### `workflow.execute_workflows`
+
+**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
+
+Run `/cadence:cad-execute` on a workflow. A phase's plans run in waves, with one launch per wave and one executor per plan, while the merges, the checks and every question stay in your main session. The executors are workflow agents that edit files and commit, so unlike the review workflows this one writes code. It needs `planning.workflow_plans` on. It counts only when both the repository's `.planning/config.json` and your user-global configuration set it to `true`; either alone leaves `/cadence:cad-execute` on the path it always took, so a value committed to a repository can't start a run that writes code for whoever clones it. It has no question in the `/cadence:cad-config` walk and sits under Advanced.
+
+### `workflow.config_menu`
+
+**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
+
+Turn on the new `/cadence:cad-config` menu. With it on, no arguments opens six groups of settings, and you can pick a setting by number or say what you want to change in a sentence. Each change is previewed and written only after you say yes. With it off, no arguments opens the full walk as it did before the menu, and a sentence is answered with the command that turns this on. `--walk`, `key=value` and the guided flags work either way.
+
+### `planning.code_map`
+
+**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
+
+Turn on the code map. With it on, `/cadence:cad-plan` and `/cadence:cad-context` each make one local scan of the repository, with no model, and add a short block to the agent's dispatch that points it at the map, so it can see what the code is, what touches what and which tests pin it without reading the whole repository again. `/cadence:cad-map` builds and refreshes the map. A `true` committed in a repository can only add that scan: no agent starts until you type `/cadence:cad-map` and answer yes. `/cadence:cad-map` waits its turn behind a running workflow, but it doesn't need `workflow.use_workflows`. With it off, those dispatches carry nothing about a map, and `/cadence:cad-map` tells you the command that turns it on and stops.
+
+### `planning.workflow_plans`
+
+**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
+
+Turn on plans a workflow can run. With it on, the planner writes each plan with what it builds on (`depends_on`) and, for each task, where to start reading (`Reads`), which decisions bind it (`Decisions`) and which tests pin it (`Pins`), and it states in its return how many plans could run side by side. `/cadence:cad-plan` checks each plan's brief, and `/cadence:cad-execute` gives each executor that brief in place of `PROJECT.md`, `CONTEXT.md` and the plan file. It works with `planning.code_map` off and gives thinner briefs then. With it off, every path is as it was.
 
 ### `parallelization.enabled`
 

@@ -23,13 +23,21 @@ for looking redundant.
 <step name="resolve_phase">
 Parse `$ARGUMENTS` for a phase number. If missing, run
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor get` and
-use its phase; if there is no cursor either (`no-cursor`), ask:
-"Which phase? (number from ROADMAP.md)"
+use its phase.
 
-Read `.planning/ROADMAP.md` and extract the phase's name and goal. If
-ROADMAP.md does not exist, stop: "No roadmap found. Run /cad-new-project first
+Read `.planning/ROADMAP.md`. If ROADMAP.md does not exist, stop: "No roadmap found. Run /cad-new-project first
 for a blank page, or /cad-adopt if this repo already has code and history."
-If the phase number is not in the roadmap, stop: "Phase {N} is not in the
+
+If there is no cursor either (`no-cursor`), ask (ask-user seam, structured):
+
+- header: "Phase"
+- question: "Which phase do you want to gather context for?"
+- options:
+  - "Phase {N}: {phase name}" - one option for each phase in the roadmap, up to four, starting with the first one not finished. When more qualify, name every phase left out in the last option's description and say its number can be typed under Other
+
+Anything else the person types is taken as a phase number.
+
+Extract the phase's name and goal from the roadmap. If the phase number is not in the roadmap, stop: "Phase {N} is not in the
 roadmap. Run /cad-phase add to put it there, then re-run this command."
 
 Phase directory: `.planning/phases/{N}/` (match the existing directory
@@ -40,10 +48,10 @@ naming if phase directories already exist; create it at write time).
 If `{phase_dir}/CONTEXT.md` already exists, ask (ask-user seam, structured):
 
 - header: "Context"
-- question: "Phase {N} already has CONTEXT.md. Regather it?"
-- options: "Regather (overwrite)" / "Leave it (stop)"
+- question: "Phase {N} already has a context file. Do you want to gather it again?"
+- options: "Gather again - the new answers replace the file" / "Leave it - stop here and keep the file as it is"
 
-On "Leave it", stop with a one-line report. On "Regather", read the existing
+On "Leave it", stop with a one-line report. On "Gather again", read the existing
 file so confirmed decisions can carry forward instead of being re-asked.
 </step>
 
@@ -86,13 +94,14 @@ key this workflow uses, the batched form seven other sites already ship:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
-  memory.backend planning.commit_docs testing.scope testing.required_jobs
+  memory.backend planning.commit_docs testing.scope testing.required_jobs planning.code_map
 ```
 
 `planning.commit_docs` is not needed until the `commit` step at the very end.
 Read it HERE and carry the value forward. `testing.scope` and
 `testing.required_jobs` ride the same call for `acceptance_criteria`, which
-carries them forward too.
+carries them forward too. `planning.code_map` rides it for `analyze` only, and the
+skip arm never reads it.
 
 When `memory.backend` is `builtin` (the schema default), run recall for the
 phase goal:
@@ -113,10 +122,10 @@ Then ask (ask-user seam, structured) - a SPEND question, not a second size
 question:
 
 - header: "Analyzer"
-- question: "Buy the codebase analyzer pass for this phase?"
+- question: "Do you want the code read before I ask you about this phase?"
 - options:
-  1. "Dispatch it - read the code first"
-  2. "Skip it - go straight to the gray areas"
+  1. "Read the code first - a separate pass reads the relevant code, then I ask only what the code can't answer. It costs extra time and tokens."
+  2. "Skip it - I ask you directly, using the phase goal and what earlier phases settled. It costs less, and I may ask things the code already answers."
 
 Order the two by your recommendation, recommended first, the way every other
 ask in this workflow presents its options. Annotate the question with evidence
@@ -134,7 +143,7 @@ session has already read, and prior deviations have already settled how they
 behave. That is a judgment on evidence, and it is the whole gate. Compute no
 score, hold no threshold, and run no seam to rank the phase.
 
-On "Dispatch it", continue into `analyze` below, unchanged.
+On "Read the code first", continue into `analyze` below, unchanged.
 
 On "Skip it", do NOT enter `analyze` at all - no resolve, no dispatch, no
 bracket, and so no analyzer cost in this phase's run record. Say plainly that
@@ -162,7 +171,23 @@ prompt names no planning path at all, and the analyzer's contract
 entry. Prior phases' decisions reach it as the `<prior_decisions>` summary in
 the payload, distilled from the (at most 3) files load_priors read.
 
-This keeps raw file contents out of the main context. Prompt payload:
+This keeps raw file contents out of the main context.
+
+When `planning.code_map`, read in `spend_gate`, is `true`, the payload carries a code map block, and one local scan with no model feeds it. Before the payload is assembled, make the scan once:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codemap scan
+```
+
+On a good answer, add the block below to the payload, after `<recalled_memory>` and before its last line. On `ok:false`, or output that won't parse, print nothing about it, leave the block out and dispatch the analyzer anyway. With the key not `true`, the payload carries none of it.
+
+```text
+<code_map>
+A code map is available. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/code-map.md once and follow it.
+</code_map>
+```
+
+Prompt payload:
 
 ```
 Analyze the codebase for Phase {N}: {phase_name}.
@@ -238,10 +263,10 @@ Confident and Likely assumptions:
 
 Then ask (ask-user seam, structured):
 - header: "Decisions"
-- question: "These all look right?"
-- options: "Yes, lock them" / "Correct some"
+- question: "Do these decisions look right to you?"
+- options: "Yes, keep them all - they are recorded as this phase's decisions" / "Change some - you pick which ones to change"
 
-On "Correct some": multiSelect over the assumptions (label = statement,
+On "Change some": multiSelect over the assumptions (label = statement,
 description = "If wrong: {consequence}"), then one focused question per
 selected item with 2-3 concrete alternatives, batched ceil(N/4) per
 AskUserQuestion call, up to four questions per call; only a question whose
@@ -270,7 +295,13 @@ this judgment.
 of a REQUIREMENTS.md row this phase serves - a corrected count or a term
 that no longer matches ("19 posts" when the decision settles 18 posts + 1
 page) - offer via the ask-user seam to correct that one row in place so the
-audit source of truth matches reality. Only on the user's yes, edit exactly
+audit source of truth matches reality:
+
+- header: "Requirement"
+- question: "A decision you just confirmed disagrees with how requirement {ID} is worded. Do you want that one row updated to match?"
+- options: "Update the row - only that row changes" / "Leave it - the requirements file stays as it is"
+
+Only on "Update the row", edit exactly
 that row; never rewrite requirements wholesale and never touch a row this
 phase does not serve.
 </step>
@@ -293,10 +324,10 @@ phase goal plus the locked decisions. Rules:
 
 Present the draft list and ask (ask-user seam, structured):
 - header: "Acceptance"
-- question: "Do these criteria pin the phase down?"
-- options: "Lock them" / "Edit"
+- question: "Do these criteria describe what finished looks like for this phase?"
+- options: "Keep them - the phase is checked against these criteria at the end" / "Change them - tell me what to change, and I show the list again once"
 
-On "Edit", take the user's changes in prose and re-present once. These
+On "Change them", take the user's changes in prose and re-present once. These
 criteria are what /cad-verify will check - do not lock anything untestable.
 
 **Tool-availability tag.** For each criterion, judge whether proving it
@@ -313,7 +344,14 @@ When `testing.scope` is set, a criterion whose tool is absent here is not
 tagged `human-verify`. It gets a CI check instead: a job from
 `testing.required_jobs` that proves it, recorded as a `(ci: <required job>)`
 suffix beside where the tag would sit. Where no automated check seems possible,
-ask the user once (ask-user seam) what to do about that criterion. Never
+ask the user once (ask-user seam) what to do about that criterion. The answer
+is in the person's own words, because the workflow fixes no set of answers:
+
+- header: "No check"
+- question: "Criterion {AC id} has no automated check that could prove it: {criterion}. What do you want to do about it?"
+- options: none, the person answers in their own words
+
+Never
 rewrite a criterion and never make one optional yourself: only the user's
 explicit decision does. A `human-verify` criterion already written stays as it
 is. With `testing.scope` unset, the paragraph above is the whole rule.
@@ -328,9 +366,9 @@ seam, structured):
 - question: "Can one plan deliver all of these criteria, or is this phase
   too big?"
 - options:
-  1. "Right-sized - one plan"
-  2. "Big - multiple plans, same phase" (let /cad-plan break it down)
-  3. "Too big - defer a slice"
+  1. "Right-sized - one plan can deliver every criterion"
+  2. "Big - planning splits the work into several plans inside this phase"
+  3. "Too big - you choose which criteria stay, and the rest move to a later phase"
 
 On option 3, capture the split in this same exchange: which criteria and
 scope stay, which defer. Move the deferred slice (with its criteria) under

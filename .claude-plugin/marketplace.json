@@ -3,12 +3,12 @@
   "owner": {
     "name": "John Crenshaw"
   },
-  "description": "A plan/execute/verify loop for a single developer in Claude Code, with adversarial review at every gate: plans and diffs get refuted by a fresh Claude subagent or a panel of outside models (OpenAI, Gemini, DeepSeek), not just approved. State lives in files, not the conversation, so you clear aggressively and keep both your context and your token bill lean.",
+  "description": "A Claude Code plugin that brings engineering practices to software you'll keep running after the session ends. It writes a plan before code, commits once per task, holds tests to a stopping rule, and checks the result against your goal. Its records live in your repository, so a new session picks up where the last one stopped.",
   "plugins": [
     {
       "name": "cadence",
       "source": "./",
-      "description": "A plan/execute/verify loop for a single developer in Claude Code, with adversarial review at every gate: plans and diffs get refuted by a fresh Claude subagent or a panel of outside models (OpenAI, Gemini, DeepSeek), not just approved. State lives in files, not the conversation, so you clear aggressively and keep both your context and your token bill lean."
+      "description": "A Claude Code plugin that brings engineering practices to software you'll keep running after the session ends. It writes a plan before code, commits once per task, holds tests to a stopping rule, and checks the result against your goal. Its records live in your repository, so a new session picks up where the last one stopped."
     }
   ]
 }

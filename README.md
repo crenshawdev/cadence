@@ -6,7 +6,7 @@
 
 **Appearance is cheap. Verification is the work.**
 
-Cadence is a Claude Code plugin for a single developer who expects to maintain the software after the session ends.
+Cadence is a Claude Code plugin that brings engineering practices to software you'll keep running after the session ends.
 
 Getting an agent to write code is usually the easy part. Keeping it working toward the thing you actually asked for takes more attention. Decisions get lost between sessions. A small change grows an abstraction nobody needed. The tests pass, but you still have to work out what they established.
 
@@ -68,6 +68,7 @@ Commands below use the short names. In Claude Code, use the `/cadence:` prefix, 
 |---|---|
 | `/cad-context <phase>` | Settle the decisions and acceptance criteria. |
 | `/cad-plan <phase>` | Turn them into a plan with a bounded testing scope when a policy is active. |
+| `/cad-map` | Build or refresh the code map the planner reads. It runs only with `planning.code_map` on, after a typed yes. |
 | `/cad-execute <phase>` | Build the plan and run its checks. |
 | `/cad-verify <phase>` | Check whether the phase delivered what it promised. |
 | `/cad-progress` | Read the project state and find the next step. |
@@ -90,7 +91,7 @@ The record stays with the project, so you can end a session without making the n
 | [How it works](https://crenshawdev.github.io/cadence/how-it-works/roles.html) · [Controls and limits](https://crenshawdev.github.io/cadence/how-it-works/controls.html) | What the roles do and how the controls work. |
 | [Cost](https://crenshawdev.github.io/cadence/how-it-works/cost.html) | Measured runs and where the spend goes. |
 
-Cadence adds no telemetry. Its records stay in your repository and go wherever you push them. It runs inside Claude Code, so your session is still subject to the host's data handling. Optional external reviewers receive project material only when enabled.
+Cadence adds no telemetry. Its records stay in your repository and go wherever you push them. It also reads the host's run file for a workflow under the session directory, read-only, to price each agent and take the result: for a review workflow when `workflow.use_workflows` is on in both config layers, and for `/cad-map` after its typed yes. It runs inside Claude Code, so your session is still subject to the host's data handling. Optional external reviewers receive project material only when enabled.
 
 ## Help and attribution
 

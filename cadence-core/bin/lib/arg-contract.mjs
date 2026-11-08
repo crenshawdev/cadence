@@ -319,6 +319,14 @@ export const CONTRACTS = {
       '--plan': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
       '--plan-time': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
+    // --out-dir is an existing directory: with it the brief is written there, without it the brief is composed and checked only;
+    // --main-root is the main tree's root, an existing directory, which makes the head's plan, PROJECT.md and CONTEXT.md paths absolute
+    brief: {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--plan': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--out-dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--main-root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
@@ -403,6 +411,75 @@ export const CONTRACTS = {
       // --task names the task slug when a task fires, so the record lands in .planning/tasks/<slug>/, not in a
       // phase directory a task doesn't have (/cad-task has no phase). Optional: a phase fire passes nothing.
       '--task': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    // The adjudicated gate's REVIEW-<trigger>-<discriminator>.md: Markdown, six headings per survivor. --base and
+    // --head ride the file's header; fireIdentity requires both, as it does for the record and the queue member.
+    'review-file': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--trigger': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--discriminator': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      // a file, never inline: reviewer text carries arbitrary quoting
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--task': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // the correction face: marks survivor <n> re-ruled, the payload then being {ruling, found} and not the survivors
+      '--mark': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
+    // A finished review-panel run to the record's payload and the review file's input. --run-file is the host's
+    // `<session>/workflows/<run id>.json`, read whole because the completion notice cuts a long result short. --out-dir is
+    // this run's scratch directory and must exist; the payload, the survivors and the kept answers land in it.
+    // --answers-file is the main session's answers (voice, index, then a ruling and/or fix_commit, fix_file or overridden); each
+    // call keeps what earlier ones were given in the out-dir, so a later answer replaces only its own finding's.
+    'workflow-run': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--run-file': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--out-dir': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--answers-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --payload-ref is the fire's payload reference (step 2's), the read set every bracket carries: never empty.
+      // The three --notice-* flags are the completion notice's run totals, billed as one bracket only when the run
+      // file gives no per-agent rows. Whole numbers as the notice prints them, ungrouped.
+      '--payload-ref': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--notice-tokens': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--notice-turns': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--notice-duration-ms': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      // --plans is an execute wave's plan numbers, comma-separated (1,2,3). With it the run is a wave however its file reads, and
+      // every listed plan the file has no row for is closed as a checkpoint under its own key. Without it a wave is told by its file.
+      '--plans': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    // take/release share one row's shape: --fire is `<trigger>-<discriminator>`, and release frees only a match
+    'workflow-claim take': {
+      '--fire': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'workflow-claim release': {
+      '--fire': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      // the id the winning take printed; release matches it, never the label. --stale is for a holder that has no id
+      '--id': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--stale': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
+    // takes no flag beyond --dir: the root is its parent, so there is no second path to name
+    'codemap scan': {},
+    // --out-dir is an existing directory: with it, status also writes the launch file and one item file per module to read
+    'codemap status': {
+      '--out-dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    // at least one is owed, which the handler enforces: a row can't state that, and a bare flag is no list
+    'codemap slice': {
+      '--files': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--symbols': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--terms': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    // A finished code map run to the map's entries. --run-file is the host's `<session>/workflows/<run id>.json`, read whole.
+    // --launch-file is the file `codemap status --out-dir` wrote, which the write compares each module's built_from with. The
+    // three --notice-* flags are `workflow-run`'s, billed as one bracket only when the run file gives no per-agent rows. The
+    // phase is always 0 and the read set is the index, so neither is a flag.
+    'codemap write': {
+      '--run-file': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--launch-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--notice-tokens': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--notice-turns': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--notice-duration-ms': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
     // the queue member a deferred gate leaves beside its REVIEW file: findings on disk, nothing ruled yet
     'deferred record': {
@@ -581,6 +658,18 @@ export const CONTRACTS = {
     keys: {
       '--walk': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
+    // reads no flag: the repo is the cwd and the global layer is CADENCE_GLOBAL_CONFIG
+    'workflow-layers': {},
+    // read-only: takes the key=value tokens `set` takes and no flag, since each key's own target decides the file
+    preview: {},
+    // the sentence match's read of every setting's text and value in force; no flag, the repo is the cwd
+    catalog: {},
+    // the menu's read of where each setting's value comes from; the repo is the cwd, a group name or a dotted key narrows it
+    layers: {
+      '--group': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--advanced': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+      '--key': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
   },
   'git-branch.mjs': {
     '*': {
@@ -691,6 +780,10 @@ export const CONTRACTS = {
       // key, the role name for every non-executor dispatch, which can't tell a phase-scoped role from a plan key
       // naming no file.
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
+      // the config preview resolves twice over a scratch copy: --no-record keeps both trace appends out of the real
+      // run record, and --planning-root keeps the phase, plans and floor on the real tree while --file names the copy
+      '--no-record': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+      '--planning-root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // the prefixed name for the two reviews that resolve no routing: they dispatch the base cad-reviewer
     'agent-type': {

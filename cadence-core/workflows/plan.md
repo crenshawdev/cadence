@@ -21,8 +21,16 @@ Parse `$ARGUMENTS`:
 - `[phase]` - phase number. If omitted, run
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and
   take `current`; if the current phase is already planned, its `phases[]`
-  entries show which phases still need plans - ask (ask-user seam). An
-  `ok:true` carrying `cycle: "none"` with an empty `phases[]` is a derived
+  entries show which phases still need plans - ask (ask-user seam):
+
+  - header: "Phase"
+  - question: "Which phase do you want to plan?"
+  - options:
+    - "Phase {N}: {phase name}" - one option for each phase the status read shows without a plan, up to four. When more qualify, name every phase left out in the last option's description and say its number can be typed under Other
+
+  Anything else the person types is taken as a phase number.
+
+  Instead of that ask, an `ok:true` carrying `cycle: "none"` with an empty `phases[]` is a derived
   closed milestone, not a planning target: stop with "The milestone is
   closed - no active cycle. /cad-phase add opens the next one." There is no
   phase to plan until a roadmap entry exists.
@@ -41,7 +49,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.max_plan_bytes \
   planning.commit_docs \
   git.protected_branches git.on_protected \
-  git.base_branch memory.backend testing.scope
+  git.base_branch memory.backend testing.scope planning.code_map planning.workflow_plans
 ```
 
 `testing.scope` set means the project accepted a testing policy. Then run, once:
@@ -92,8 +100,13 @@ that consumes a prior call's output is serialized.
    (seam-spawn-agent.md handoff read discipline). Absent is fine - plan from
    the roadmap goal alone.
 3. If PLAN*.md already exists in the phase dir (and not --gaps): ask
-   (ask-user seam) - replan from scratch (overwrite) or abort. Never
-   overwrite silently. The `--gaps` exemption is not a licence to overwrite: a
+   (ask-user seam). Never overwrite silently.
+
+   - header: "Plans exist"
+   - question: "Phase {N} already has plan files. Do you want to plan it again from scratch?"
+   - options: "Plan again - the new plans replace the existing plan files" / "Stop - leave the existing plans as they are"
+
+   On "Stop", abort. The `--gaps` exemption is not a licence to overwrite: a
    gaps plan writes the next free numbered file (plan-gaps.md step 3) and
    overwrites nothing, so there is nothing to ask about.
 </step>
@@ -219,6 +232,28 @@ A testing policy is active for this project. Read ${CLAUDE_PLUGIN_ROOT}/cadence-
 </testing_policy>
 ```
 
+When `planning.code_map` read in `parse` is `true`, the prompt carries a code map block, and one local scan with no model feeds it. Before assembling the prompt, make the scan once:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codemap scan
+```
+
+On a good answer, print one line with its `stale` and `unbuilt` counts and `/cad-map`: `Code map: {stale} stale, {unbuilt} unbuilt. /cad-map builds or refreshes it.` A module with no entry reads as unbuilt, so a map nobody built still prints a line that prompts the first `/cad-map`. Then place the block below where `<testing_policy>` goes, and after it when both are present. On `ok:false`, or output that won't parse, print nothing about it, leave the block out and go on planning. This step starts nothing else: a refresh is `/cad-map`'s and the user's to type, and launching one here would end the turn mid-plan. Gaps and revision modes reuse this prompt and so carry the block, with no second scan. With the key not `true` the prompt carries none of it.
+
+```text
+<code_map>
+A code map is available. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/code-map.md once and follow it.
+</code_map>
+```
+
+When `planning.workflow_plans` read in `parse` is `true`, the prompt carries a plan-graph block, placed after `<testing_policy>` and `<code_map>` when those are present. Gaps and revision modes reuse this prompt and so carry the block. With the key not `true` the prompt carries none of it.
+
+```text
+<plan_graph>
+Plans here can be run by a workflow. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/plan-graph.md once and follow it.
+</plan_graph>
+```
+
 Revision mode: dispatch a FRESH cad-planner (never resume the prior run - the
 plan on disk carries the grounding). Append the checker's issues verbatim in a
 `<checker_issues>` block and instruct: fix each issue with minimal edits to the
@@ -254,6 +289,14 @@ disk, and do not continue while it refuses.
 With `testing.scope` set, read `references/test-policy.md` once and follow it
 as spawn_planner's `<testing_policy>` block says: the testing scope in each
 task's `Verify:`, and the CI task first when `gate_found` is `false`.
+
+The scan and the printed line in spawn_planner's `planning.code_map` stretch
+apply here too, under the same prohibition on a second spelling: with that key
+`true`, make that scan once and print that line before planning, and on
+`ok:false`, or output that won't parse, print nothing about it and go on
+planning. An inline plan has no prompt, so it carries no block.
+
+With `planning.workflow_plans` `true`, read `references/plan-graph.md` once, for its task fields section only: an inline plan never splits, so `depends_on` and the width don't apply, and it carries no block.
 </step>
 
 <step name="handle_return">
@@ -280,17 +323,23 @@ State the measurement first, in one line - the requirement count and the
 ceiling, or the planner's own reason - then ask (ask-user seam) with these
 three options, the first marked `(recommended)`:
 
-1. **Split into plans inside this phase (recommended).** Re-dispatch the
+- header: "Too big"
+- question: "This phase is bigger than one plan should carry. How do you want to handle it?"
+- options:
+  1. "Split into plans (recommended) - the work is divided into several plans inside this phase. Plans that touch the same files run in order. The phase keeps one goal, one verification and one landing."
+  2. "Split into phases - use this when the phase holds more than one deliverable. Planning stops here. You add the new phases, then plan each one. Phases that don't depend on each other can run side by side, and each is checked and landed on its own."
+  3. "Plan it all anyway - the planner writes plans for the full scope. The result may be over the size limit, and Cadence says so instead of letting it pass quietly."
+
+What each option does:
+
+1. Re-dispatch the
    planner ONCE, instructed to write `PLAN-1.md`, `PLAN-2.md`, ... each within
    the task ceiling. Plans that share a declared path are SEQUENTIAL: mark each
-   one so, and `/cad-execute` runs them in order. The phase keeps one goal, one
-   CONTEXT, one UAT, and one landing.
-2. **Split into phases via `/cad-phase add`.** For when the phase carries more
-   than one deliverable rather than one deliverable too large. Stops here; you
+   one so, and `/cad-execute` runs them in order.
+2. Stops here; you
    run `/cad-phase add`, then `/cad-plan` per phase. Independent phases can run
-   concurrently (see `parallelization.max_concurrent_agents`) and each verifies
-   and lands on its own.
-3. **Plan the full scope anyway.** Re-dispatch ONCE with that instruction. The
+   concurrently (see `parallelization.max_concurrent_agents`).
+3. Re-dispatch ONCE with that instruction. The
    result is a plan over its ceiling, and `check_size` below will say so rather
    than let it pass silently.
 
@@ -336,6 +385,25 @@ rather than a cheap dispatch.
 Not a hard halt. The user may have chosen option 3 at `too_big` and asked for
 the full scope, and a check that refused what the user just authorized would be
 arguing with them. One re-dispatch, or the user's word, then continue.
+</step>
+
+<step name="check_brief">
+With `planning.workflow_plans` `true`, check each plan's brief, after `check_size` and before `check_census`. With the key not `true`, make no call and go on.
+
+Once per plan file the phase has, because `--plan` names one plan file:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase {N} --plan <k>
+```
+
+In a `--gaps` run, skip a plan whose `reports/plan-<k>.md` opens `PLAN COMPLETE`: `/cad-execute` never dispatches it. If its brief would have been refused, say so in one line and re-dispatch nothing for it.
+
+With no `--out-dir` it writes nothing. An `ok:true` answer may carry `reads_missing`, the `Reads` entries the index lacks, or `reads_unchecked`: relay either in one line per plan and re-dispatch nothing for it. On `ok:false`, say what the answer names out loud, and re-dispatch ONCE:
+
+- A bad id goes to a fresh revision-mode planner, bracketed the way `check_gate`'s revision is, with the refusal in its `<checker_issues>`.
+- A brief over its ceiling gets `check_size`'s instruction: split this plan's tasks across more plans, sequential where they share files.
+
+Not a hard halt. After the one re-dispatch, or the user's word, continue: `/cad-execute` runs a plan whose brief is refused from the full documents.
 </step>
 
 <step name="check_census">
@@ -467,7 +535,13 @@ Handle the return:
     consult site - this step) and follow it: the fresh revision-mode planner
     spawn, the narrowed checker re-dispatch, both of their brackets, and the
     no-BLOCKER-left / still-a-BLOCKER ask that ends the arm.
-- Empty or unmarked return -> report it, ask whether to proceed unchecked.
+- Empty or unmarked return -> report it, then ask (ask-user seam):
+
+  - header: "No check"
+  - question: "The plan checker came back with nothing usable, so these plans have not been checked. Do you want to go on without the check?"
+  - options: "Go on unchecked - the plans go ahead as written" / "Stop - the plans stay as written and nothing more runs"
+
+  On "Stop", abort.
 </step>
 
 <step name="review">
@@ -506,7 +580,10 @@ Review line then reports the gate as off rather than as a pass:
   a numbered list the user triages, NONE is the default, and only what the user
   names is acted on - RE-READ
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
-  before presenting, since this workflow does not preload it.
+  before presenting, since this workflow does not preload it. On the workflow
+  path (`references/review-workflow.md`) that wait is the launch ending the
+  turn and the notice resuming this step, with nothing else dispatched in
+  between, and the triage and the applying continue from the notice.
 
 Do not re-enter the checker loop afterward - this trigger is the second
 opinion, not another iteration.
@@ -544,6 +621,11 @@ opinion, not another iteration.
    (references/git-guard.md rail 1), then commit the plan file(s), STATE.md, and
    `.planning/REQUIREMENTS.md` when seed-reqs reported any `seeded` ids -
    `docs: plan phase {N} - {name}` - staging exactly those files.
+
+3. A review fire that held a `blocker` or `high` survivor records now: its
+   adjudication record, receipts and `issue-filing unfixed` waited for this
+   commit (`references/review-triggers.md` step 5), which is the `fix_commit`
+   of a fix, or the plan file as `fix_file` when nothing was committed.
 </step>
 
 <step name="count_committed">

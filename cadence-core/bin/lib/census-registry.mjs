@@ -112,7 +112,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'bulk-output-register',
     holder: 'tests/bulk-output.test.mjs',
-    counts: "the register's row count and its two transport splits - 18, 4 "
+    counts: "the register's row count and its two transport splits - 20, 5 "
       + 'redirect and 3 file',
     asserted_by: 'the test named `the register pins its row count`',
     subjects: ['cadence-core/bin/lib/bulk-output.mjs'],
@@ -120,8 +120,8 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'rung-agent-files',
     holder: 'tests/rung-agent.test.mjs',
-    counts: 'the 30 rung file stems across the six roles, each serving exactly one rung',
-    asserted_by: 'the test named `RUNG_FILES names 30 files across the six '
+    counts: 'the 35 rung file stems across the seven roles, each serving exactly one rung',
+    asserted_by: 'the test named `RUNG_FILES names 35 files across the seven '
       + 'roles, and is frozen`',
     subjects: ['cadence-core/bin/lib/rung-agent.mjs'],
   }),
@@ -167,7 +167,7 @@ export const CENSUSES = Object.freeze([
     id: 'seam-call-counts',
     holder: 'tests/seam-calls.test.mjs',
     counts: 'the happy-path seam invocations each measured workflow instructs - '
-      + '14 for `workflows/plan.md` and 6 for `workflows/context.md`',
+      + '17 for `workflows/plan.md` and 7 for `workflows/context.md`',
     asserted_by: 'the generated test named `<file> instructs exactly <N> seam '
       + 'invocations`, one per row of that file\'s `CENSUS` array',
     // only these two workflows carry a row and the count is per file, so the rest would refuse plans for nothing

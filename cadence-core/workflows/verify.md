@@ -26,6 +26,10 @@ Parse `$ARGUMENTS`: optional phase number, `--sweep`, `--deep`.
 - Phase number given -> that phase.
 - Neither -> `planning.mjs cursor get` for the current phase. No cursor and
   no argument: ask which phase to verify (ask-user seam).
+
+  - header: "Phase"
+  - question: "Which phase do you want to verify?"
+  - options: none, you type the phase number
 </step>
 
 <step name="build_or_resume">
@@ -352,13 +356,26 @@ For each item with `status: fail` and no recorded cause:
    list is ALWAYS triaged before any of it becomes a proposed fix: the
    survivors are a numbered list the user triages, NONE is the default, and
    only what the user names goes on to step 2, so an unpicked finding never
-   reaches step 3's "Apply now". RE-READ
+   reaches step 3's "Apply now". The record waits until every `blocker` or
+   `high` survivor is settled. One the two-option ask sends to fix goes on to
+   step 2 like a named one, and step 2's Re-plan leaves no fix in this fire, so
+   it goes to that ask like Leave open. With no reviewer set or tier on a route line,
+   it takes `claude-subagent` alone, `verify` as the record's trigger token and
+   `verify-<short HEAD sha>` as its discriminator on review-triggers.md step 5's
+   grammar. It takes the workflow path when step 4's both-layer answer and the
+   tool say so (`references/review-workflow.md`), and today's path otherwise.
+   RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
    before presenting, since this workflow does not preload it.
-2. **Propose the fix**, then ask the user (ask-user seam):
-   1. Apply the fix now
-   2. Re-plan it through /cad-plan (phase-sized gap)
-   3. Leave it open
+2. **Propose the fix**, then ask the user (ask-user seam). The three options
+   are the three arms below, named by their labels:
+
+   - header: "Fix"
+   - question: "This item failed: {item name}. The fix would be: {the proposed fix}. What do you want to do about it?"
+   - options:
+     1. "Apply now - make the fix here and commit it, then the item goes back to pending so you can test it again"
+     2. "Re-plan - the item stays failed and you take the gap to /cad-plan yourself, which suits a gap the size of a phase"
+     3. "Leave open - the item stays failed and verification moves on"
 3. **Apply now** -> make the change, then `git add` exactly the files it
    touched, and only THEN ask the seam whether it touched a risk surface
    BEFORE the commit lands. Staging is a STEP here, not a description:
@@ -387,8 +404,14 @@ For each item with `status: fail` and no recorded cause:
    than landing the fix on it. Then commit as an atomic conventional commit
    per references/git-guard.md (protected-branch guard, specific files) and
    set the item back to pending for retest:
-   `uat record --item <k> --result pending --fix "{hash}, retest"` and offer
-   to re-walk it immediately (first_pass keeps the original fail).
+   `uat record --item <k> --result pending --fix "{hash}, retest"` and ask
+   whether to re-walk it immediately (first_pass keeps the original fail):
+
+   - header: "Retest"
+   - question: "The fix is committed. Do you want to test {item name} again now?"
+   - options:
+     1. "Test it now - you walk this item again straight away"
+     2. "Not now - the item stays pending until you run /cad-verify again"
 4. **Re-plan** -> `--fix "routed to /cad-plan"`, leave it failed, and tell
    the user to take the gap to `/cad-plan <N>`. Do not auto-run it.
 5. **Leave open** -> record the decision, move on.

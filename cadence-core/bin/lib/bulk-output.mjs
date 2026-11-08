@@ -44,6 +44,22 @@ export const BULK_SHAPES = Object.freeze([
     why: 'measured 8,617 B on this repository, 2026-08-17 - UNDER the threshold, and watched anyway because it is the second-largest seam response in the tree and its size is a property of the corpus rather than of the call',
   }),
   Object.freeze({
+    shape: 'config catalog',
+    token: /\bcatalog\b/g,
+    seam: 'config.mjs',
+    bounded: Object.freeze([]),
+    forms: Object.freeze([]),
+    why: 'measured 60,763 B on a template repository, 2026-11-08 - every setting\'s label, text and value in force, which the sentence match reads from a file',
+  }),
+  Object.freeze({
+    shape: 'codemap slice',
+    token: /\bcodemap\s+slice\b/g,
+    seam: 'planning.mjs',
+    bounded: Object.freeze([]),
+    forms: Object.freeze([]),
+    why: 'bounded at 10,000 B by the seam itself (D-20), with rows measured at p50 333 B and max 22,998 B before the bound - watched so a site that prescribes it is a decision on the register',
+  }),
+  Object.freeze({
     shape: 'git diff',
     token: /\bgit diff\b/g,
     seam: null,
@@ -108,6 +124,21 @@ export const BULK_OUTPUT = Object.freeze([
     shape: 'recall', call: 'recall "<terms>"',
     bytes: 8617, measured: '2026-08-17', transport: 'none',
     reason: 'the reference that documents the envelope rather than a step that spends it - the call is written to show what one JSON line holds, and it is under the threshold either way',
+  }),
+
+  // --- codemap slice: the planner's reference ---------------------------------
+  Object.freeze({
+    surface: 'cadence-core/references/code-map.md',
+    shape: 'codemap slice', call: 'codemap slice --files a.mjs,b.mjs --symbols parseThing --terms billing,retry',
+    bytes: 10000, measured: '2026-11-06', transport: 'none',
+    reason: 'the seam bounds its whole answer at or under 10,000 B and reports truncated (D-20), so the answer is never the bulk; measured with 10 callers per symbol, an oversized row sheds callers first',
+  }),
+
+  // --- config catalog: the sentence match ------------------------------------
+  Object.freeze({
+    surface: 'cadence-core/workflows/config-menu.md',
+    shape: 'config catalog', call: 'catalog',
+    bytes: 60763, measured: '2026-11-08', transport: 'redirect',
   }),
 
   // --- git diff: the four that already write to a file -----------------------

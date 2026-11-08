@@ -49,6 +49,27 @@ function groundCitations(top, headId, entries) {
   return { checked: true, missing, reason: '' };
 }
 
+/**
+ * The first `fix_file` in `entries` that git tracks, or ''. A tracked file's fix has a commit to name, and without
+ * this refusal any high could settle with no commit. `ls-files --error-unmatch` exits nonzero for an untracked or
+ * ignored path, and `--literal-pathspecs` keeps a path like `:(glob)*` from being read as a pattern.
+ *
+ * @param {string} top the repository top
+ * @param {any[]} entries
+ * @returns {string}
+ */
+function trackedFixFile(top, entries) {
+  for (const e of entries) {
+    if (e.fix_file === undefined) continue;
+    try {
+      execFileSync('git', ['--literal-pathspecs', '-C', top, 'ls-files', '--error-unmatch', '--', e.fix_file],
+        { stdio: ['ignore', 'ignore', 'ignore'] });
+      return e.fix_file;
+    } catch { /* untracked or ignored: the case fix_file exists for */ }
+  }
+  return '';
+}
+
 function cmdAdjudication(dir, opts) {
   const id = fireIdentity('adjudication', dir, opts);
   if (!id) return;
@@ -83,6 +104,13 @@ function cmdAdjudication(dir, opts) {
       detail: range.error,
       hint: 'name a --base and --head this repository can resolve, then re-run this record',
     });
+  }
+
+  const tracked = trackedFixFile(range.top, built.entries);
+  if (tracked) {
+    return fail('fix-file-tracked',
+      `fix_file ${JSON.stringify(tracked)} is a file git tracks, so its fix has a commit to name`,
+      'name that commit in fix_commit instead - fix_file is only for a fix to a file git does not track');
   }
 
   const pdir = fireHome(dir, n, 'record', task);

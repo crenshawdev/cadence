@@ -26,7 +26,7 @@ That separation matters when files disagree. The answer is to examine the underl
 
 ## Run evidence
 
-`.planning/trace.jsonl` records dispatch and workflow events, including the information used for cost and review-outcome reporting. `.planning/reads.jsonl` records file paths read by tools, not file contents. These are local records, not telemetry sent to Cadence's author.
+`.planning/trace.jsonl` records dispatch and workflow events, including the information used for cost and review-outcome reporting. `.planning/reads.jsonl` records file paths read by tools, not file contents. With `workflow.use_workflows` on, each agent a review starts through a workflow appears in the run record as one bracket with its own tokens, turns and duration. If the host's run file can't be read, the run appears as one bracket with the totals from its completion notice. These are local records, not telemetry sent to Cadence's author.
 
 `/cadence:cad-report` reads the run record. `/cadence:cad-suggest` uses it to propose changes that the evidence supports. A missing or incomplete record limits what either can establish.
 

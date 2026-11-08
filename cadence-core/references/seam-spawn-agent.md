@@ -15,7 +15,7 @@ How a workflow dispatches work to a fresh-context subagent.
   is one rung among the others rather than the lowest. Self-verify fails in both
   directions: a rung with no file, and a rung file no role maps.
 - A turn bound, but no timeout and no cancel. Every `agents/*.md` carries
-  `maxTurns: 200` in its frontmatter, one uniform value across all 30 rung
+  `maxTurns: 200` in its frontmatter, one uniform value across all 35 rung
   files, so that is the bound a dispatch runs under - and it is the only one
   this seam has: no wall-clock kill, and no way to cancel a dispatch already
   running. Plan size is still the real
@@ -258,7 +258,8 @@ mixed phase is not raised by its risky sibling; a key naming no plan file takes
 the fail-closed arm rather than widening back to the union. `cad-planner` and
 `cad-assumptions-analyzer` are exempt and always have been - dispatched before a
 plan exists, they read none, so the floor computes nothing for them and says
-so.
+so. `cad-mapper` is exempt too: a reader works from no plan, and the cursor's
+phase would give it a floor from another phase's file list.
 
 - Pass `--attempt 2` (3, ...) when re-dispatching the SAME role after its prior
   run failed: with `model.escalate_on_failure: true` (an opt-in - the default
@@ -294,25 +295,13 @@ so.
   `roles.<role>.effort` with no value takes its own schema default, which is
   `high` for the planner, the analyzer, the verifier and the executor, `medium`
   for the reviewer and `low` for the plan checker.
-- **The two older families are the narrower fallbacks UNDER them.**
-  `model.overrides.<role>` answers the model when `roles.<role>.model` names
-  none, and `model.effort.<role>` answers the rung when `roles.<role>.effort`
-  names none. Silence falls back per KEY rather than per role, so a global layer
-  naming only the model composes with a repo layer naming only the rung.
-  Setting a roles key and its older sibling for one role adds a `warnings[]`
-  entry naming which key won; the roles key wins. A rung the role has no file
-  for is refused by the write face, naming the set that role does have, and at
-  resolve time the next source down answers with the loser named in
-  `warnings[]`.
 - **An unaccepted model omits the parameter.** The model names the host takes
   are `opus`, `sonnet`, `haiku` and `fable`, and `roles.<role>.model` is a free
   string, so anything else can be written into it. A string the host does not
   accept resolves `ok:true`, dispatches with NO model parameter - the session's
   model runs - and names the rejected string in `warnings[]`. A typo must never
-  silently redirect the spend, and it never falls through to
-  `model.overrides.<role>` either: a roles key that is SET owns the answer for
-  that role whether or not its value is accepted, and falling through would hand
-  the role back to an older key on the typo alone. `fable` is accepted but
+  silently redirect the spend: a roles key that is SET owns the answer for that
+  role whether or not its value is accepted. `fable` is accepted but
   deliberately never offered by the interview: it requires 30-day data
   retention, so a zero-data-retention org gets a hard `400` on every request;
   its safety classifiers refuse cyber-adjacent content, and Cadence reviews its
@@ -320,18 +309,10 @@ so.
   `review.request_timeout_ms` inside the host's Bash ceiling. Choosing it is the
   user's assertion about their own org.
 - **`model_source` says which key decided.** It is always present and carries
-  the dotted key that chose the model - `roles.<role>.model` or
-  `model.overrides.<role>` - or the string `session` when no key did, a set key
-  whose value the host rejected included. It rides the `routing.resolve` trace
-  event too. `pinned` stays FALSE when the roles block chose the model: it means
-  `model.overrides` chose it, which is what the announcement rule below is keyed
-  on, so read `model_source` and not `pinned` to learn what decided.
-- **Tell the user when a pin fires.** A dispatch is approved through a UI that
-  generally shows the agent name and not the model, so a pinned dispatch looks
-  identical to a routed one at the moment of approval. When `pinned` is true,
-  say so on its own line before spawning - "dispatching cad-planner on fable
-  (pinned, routing would have picked opus)". Burying it in a preamble does not
-  count; the user cannot verify what the dialog does not show.
+  `roles.<role>.model` when that key chose the model, or the string `session`
+  when no key did, a set key whose value the host rejected included. It rides
+  the `routing.resolve` trace event too. `pinned` stays in the envelope and on
+  the event, always false.
 
 **Concurrent dispatch.** Independent dispatches over disjoint payloads (the
 per-plan executors of a parallel phase, per-doc verifiers, the two reviewers of
@@ -347,6 +328,18 @@ of a parallel phase can resolve DIFFERENT bundles off one (role, attempt) - a
 risky plan gets the blocking plan review and the deep pass, its clean sibling
 does not. Each resolves its own, carrying its `--plan <k>`; every other role
 keeps the rule.
+
+**Workflow dispatch.** A fire may hand its agents to a script: the `Workflow`
+tool, started by a named entry (`cadence:review-panel`) or a `scriptPath`, with
+`args`. The launch result prints `Transcript dir` and `Run ID`. The host leaves
+the run at `<session>/workflows/<Run ID>.json` with `status`, `result` and
+`workflowProgress[]`, one row per agent carrying `label`, `agentId`, `agentType`,
+`model`, `state`, `tokens`, `toolCalls` and `durationMs`. The completion notice
+holds run totals only and cuts a long result short. That file is undocumented,
+the same standing exposure this seam states for the rendered figures, so a host
+release can change it unannounced; a read that finds it gone or wrong falls back
+to the notice's totals and never a made-up figure. A workflow agent has no
+`CLAUDE_PLUGIN_ROOT`, so every path it is told to run is spelled absolute.
 
 **Prompt shape (cache discipline).** Order every dispatch prompt stable-first:
 context that repeats across dispatches of the same role (phase/goal, shared

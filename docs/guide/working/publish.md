@@ -22,18 +22,18 @@ The release tag is not cut at this step. In the landing flow, it is cut on the p
 
 Landing first reports the branch, commits ahead, unpushed work and working-tree changes. When enabled, the issue report shows which referenced issues remain open; that report doesn't modify them.
 
-If there are uncommitted changes, Cadence asks whether to commit them first, leave them out or stop. It doesn't silently bundle them into the land.
+If there are uncommitted changes, Cadence asks you to choose Commit them first, Leave them out or Stop. It doesn't silently bundle them into the land.
 
 The default publishing choices have no preselected answer:
 
 | Choice | Action |
 |---|---|
-| Direct push | Publish the current branch to its remote. |
-| Open MR / PR | Publish the branch as needed and open the forge's review request. |
-| Tag | Create an annotated tag, then ask separately whether to push it. |
-| Leave local | Do no further publishing. |
+| Push the branch | Publish the current branch to its remote. |
+| Open a pull or merge request | Publish the branch as needed and open the forge's review request. |
+| Tag a release | Create an annotated tag, then ask separately whether to push it. |
+| Leave it local | Do no further publishing. |
 
-Available choices depend on the remote and forge setup. Under an accepted testing policy, direct push onto the base branch isn't offered: that would land the work before its required jobs could pass. Use a separate branch and PR.
+Available choices depend on the remote and forge setup. Under an accepted testing policy, pushing onto the base branch isn't offered: that would land the work before its required jobs could pass. Use a separate branch and PR.
 
 ## What can stop landing
 

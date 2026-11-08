@@ -13,6 +13,7 @@ with progress and task alongside.
 | `/cad-adopt` | Initialize `.planning/` from a repo that already exists - PROJECT.md, REQUIREMENTS.md and a remaining-work ROADMAP.md derived from the code and the git history. |
 | `/cad-context [N]` | Gather a phase's context before planning - assumptions, locked decisions, falsifiable acceptance criteria. Optional. |
 | `/cad-plan [N]` | Create an executable PLAN.md (planner subagent, optional check gate, fires the plan review). |
+| `/cad-map` | Build or refresh the code map the planner reads. Runs only with `planning.code_map` on, and starts nothing until a typed yes. |
 | `/cad-execute [N]` | Execute a phase's plans - one executor per plan, atomic commit per task, slim SUMMARY. |
 | `/cad-verify [N]` | Conversational UAT for a completed phase (persistent checklist; `--sweep` cross-phase, `--deep` goal-backward). |
 | `/cad-progress` | Where the project stands and what is next - derived from files and git; finds incomplete or paused work and offers to resume it (`--stats`). |
@@ -46,7 +47,7 @@ are the on-demand and standalone gates.
 | Command | What it does |
 |---|---|
 | `/cad-capture [todo\|seed\|note] <text> [--cadence]` | Park a phase-linked todo, a backlog seed, or a note without derailing. `--cadence` sends it to Cadence's own queue instead, for friction with Cadence noticed on another project. |
-| `/cad-config [--review \| --surfaces \| --testing \| --roles [--global] \| key=value]` | Configure the config; interactive cross-model review-provider setup + model detection. `--surfaces` re-opens the one-time risk-surface question with the current answer beside what the structure evidences today. `--testing` accepts or reopens the project testing policy from one recommendation, then asks separately whether verification may publish. `--roles` asks the thirteen questions that say what each role costs - a model and a start rung per role, then the risk floor - writing repo diffs, or the user-global layer with `--global`. |
+| `/cad-config [--walk \| --review \| --surfaces \| --testing \| --roles [--global] \| key=value \| a sentence]` | Configure the config; with the opt-in menu on (`/cad-config workflow.config_menu=true`, off by default) no argument opens on six groups with their counts and a sentence (`make reviews cheaper`) shows each matching setting's current value, new value and file and writes after a yes, while with it off no argument opens the walk; `--walk` walks every knob, and `--review` runs cross-model review-provider setup + model detection. `--surfaces` re-opens the one-time risk-surface question with the current answer beside what the structure evidences today. `--testing` accepts or reopens the project testing policy from one recommendation, then asks separately whether verification may publish. `--roles` asks the thirteen questions that say what each role costs - a model and a start rung per role, then the risk floor - writing repo diffs, or the user-global layer with `--global`. |
 | `/cad-help [command]` | This reference (a command name shows just that entry). |
 | `/cad-pause [note]` | Pause cleanly - WIP commit + cursor set to paused with a resume pointer. Resume via `/cad-progress`. |
 | `/cad-spike <question>` | Time-boxed risk-first experiment with falsifiable criteria and a verdict. Throwaway code, one SPIKE.md. |

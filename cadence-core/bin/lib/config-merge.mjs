@@ -5,7 +5,7 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve as resolvePath } from 'node:path';
-import { stripGlobalOnly } from './global-only-keys.mjs';
+import { dottedKeyPaths, dottedKeyWarning, stripGlobalOnly, withoutDottedKeys } from './global-only-keys.mjs';
 import { isPlainObject } from './text-util.mjs';
 export { isPlainObject };
 
@@ -116,6 +116,18 @@ export function mergeLayers(repoFile, opts = {}) {
     tornLayers.push(repoFile);
     repoValue = null;
   }
+  // a dotted key is never a setting, in either layer: dropped before anything is published or merged, so get,
+  // layers and every merged reader see the same layer, and named so validate-minded users find it
+  /** @type {string[]} */
+  const dottedWarnings = [];
+  /** @param {any} layer @param {string} file */
+  const noDots = (layer, file) => {
+    const paths = dottedKeyPaths(layer);
+    for (const p of paths) dottedWarnings.push(dottedKeyWarning(p, file));
+    return paths.length ? withoutDottedKeys(layer) : layer;
+  };
+  globalValue = noDots(globalValue, GLOBAL_CONFIG);
+  repoValue = noDots(repoValue, repoFile);
   if (globalValue) layers.push('global');
   if (repoValue) layers.push('repo');
   // both paths are one file, so the label follows what the caller addressed, not the filesystem
@@ -124,7 +136,7 @@ export function mergeLayers(repoFile, opts = {}) {
   const scoped = opts && opts.asGlobal
     ? { layer: repoValue, warnings: [] }
     : stripGlobalOnly(repoValue, repoFile);
-  const scopeWarnings = [...scoped.warnings];
+  const scopeWarnings = [...dottedWarnings, ...scoped.warnings];
   // the global object the merge consumes has no testing section; layers.global is untouched
   let globalForMerge = globalValue;
   if (global && globalValue && Object.hasOwn(globalValue, 'testing')) {
