@@ -22,7 +22,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-claim take -
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-overlap --phase <N>
 ```
 
-Take the first wave of `waves` that still holds a plan, and in it keep only the plans in the dispatch set `locate` defined that are not already done in this run. The width is what is left. A plan stopped by an earlier wave holds the next wave, so no wave is launched until it is answered.
+Pick the wave in `choose_path`'s order. In every wave of `waves`, keep only the plans in the dispatch set `locate` defined that are not already done in this run, then drop any wave left empty. Take the first wave that remains, and the width is what it holds. When none remain there is nothing to launch: release the claim with the line below and go to the after-the-last-wave step in "Then". A plan stopped by an earlier wave holds the next wave, so no wave is launched until it is answered.
 
 **Each plan's dispatch.** Record the pre-plan HEAD with `git rev-parse HEAD` once, for the whole wave. Make the run's scratch directory the first time it is needed, with the `mktemp` line `execute_sequential` states, and print it. For each plan in the wave:
 
