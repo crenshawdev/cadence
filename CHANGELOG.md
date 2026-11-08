@@ -7,6 +7,122 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-08
+
+Reviews now tell you what breaks and what to do about it, `/cad-config` gets a
+menu, and Cadence can map your code, write plans a script can run, and run
+`/cad-execute` as a workflow. Everything new is off until you turn it on. The
+three workflow switches count only when both your user-global config and the
+repository's config set them, because a workflow burns through usage much
+faster than one session does. The major version is for one break: routing no
+longer reads the twelve per-role `model.*` keys, so move any you set to
+`roles.<role>.*` when you update.
+
+### Added
+
+- **Findings you can act on.** Every finding that survives a review is written
+  to the phase's review file under six headings: What breaks, Why I should
+  care, What triggers it, What proves it, What is still uncertain, and Your
+  recommendation. Triage shows What breaks, Why I should care, What is still
+  uncertain and Your recommendation, and prints the file's path for the other
+  two. A finding the reviewer couldn't prove is labelled suspected, and What
+  proves it names the check that would settle it.
+- **The review panel as a workflow.** With `workflow.use_workflows` on, an
+  adjudicated review runs one agent per reviewer, then one agent per finding
+  that tries to refute it against the code, and only what survives comes back
+  to you. Advisory, deferred and blocking reviews, the risk-surface review
+  included, still run in one session.
+- **More than one workflow at a time.** `workflow.multi_workflow` lets a second
+  workflow run while the first is still going. Off, the second one waits.
+- **Your own integration branch name.** `git.integration_branch_name` names the
+  branch a milestone's work collects on, such as `seldon/hardin`, in place of
+  `cadence/<version>`, and landing cleans up that branch by name. It's a
+  repository setting only.
+- **A menu for `/cad-config`.** With `workflow.config_menu` on, `/cad-config`
+  with no arguments opens on six groups: How work runs, Models and effort, Who
+  reviews, When reviews run, Testing, and Git and landing. Each setting shows
+  its value, where that value comes from, and whether it does anything with
+  your other settings as they are. Every change is previewed with the key and
+  the file it writes, and nothing is written until you say yes. You can also
+  type what you're after, such as "make reviews cheaper", and the menu finds
+  the settings it means. Off, the default, `/cad-config` opens the full walk as
+  before.
+- **A code map.** With `planning.code_map` on, `/cad-map` builds a map of your
+  code: every tracked file in a module, its symbols, what touches what and
+  which tests pin it. Nothing starts until you type yes, and a refresh reads
+  only the modules that are new or changed. `/cad-plan` and `/cad-context` hand
+  the planner and the analyzer a slice of it. The readers are a new role,
+  `cad-mapper`, with its own `roles.cad-mapper.model` and
+  `roles.cad-mapper.effort`.
+- **Plans a workflow can run.** With `planning.workflow_plans` on, the planner
+  writes which plans depend on which (`depends_on`), and each task names what
+  to read, which decisions bind it and which tests pin it. `/cad-plan` checks
+  each plan's brief, and `/cad-execute` hands the executor that brief in place
+  of PROJECT.md, CONTEXT.md and the whole plan file. It works without the code
+  map, with thinner briefs.
+- **`/cad-execute` as a workflow.** With `workflow.execute_workflows` on, a
+  phase runs one workflow launch per wave and one executor per plan. A plan
+  gets its own worktree only when its wave holds more than one. Between waves
+  the main session merges the plans in order, checks them and runs triage. It
+  also needs `planning.workflow_plans`, `parallelization.enabled` and
+  `parallelization.use_worktrees`.
+
+  The three workflow switches have to be set in both layers:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set workflow.execute_workflows=true
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set --global workflow.execute_workflows=true
+  ```
+
+### Changed
+
+- **Plain words.** Every setting question, with its options and hints, and every
+  fixed question in `/cad-new-project`, `/cad-adopt`, `/cad-context`,
+  `/cad-plan`, `/cad-execute`, `/cad-verify` and `/cad-land`, plus the triage
+  question and the protected-branch stop, is rewritten so you can answer it
+  without knowing how Cadence works inside. The keys didn't change. Every
+  setting has a plain label too, and each setting's questions and answers now
+  live in `cadence-core/config.schema.json`, where the walk and the menu both
+  read them.
+- **`/cad-suggest` proposes `roles.<role>.effort`**, the key routing reads.
+- **The README, the guide and the plugin listing** open with one new sentence
+  about who Cadence is for, and "single developer" is gone.
+- **The comments in the shipped JavaScript and CI files** were rewritten and
+  shortened. This is ordinary maintenance.
+
+### Removed
+
+- **The twelve per-role `model.*` keys.** `model.overrides.<role>` and
+  `model.effort.<role>` for the planner, the assumptions analyzer, the
+  verifier, the reviewer, the executor and the plan checker are retired.
+  Routing reads only `roles.<role>.model` and `roles.<role>.effort` now, which
+  `/cad-config --roles` sets. A config that still holds one warns on every
+  read, and `set` of one is refused. Set the `roles` key, then drop the old one
+  from both layers, for example:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset model.overrides.cad-executor model.effort.cad-executor
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset --global model.overrides.cad-executor model.effort.cad-executor
+  ```
+
+### Fixed
+
+- Phases with more than nine plans list them in numeric order, so `PLAN-10.md`
+  comes after `PLAN-9.md`.
+- Triage records a finding as fixed when its fix has no commit, through
+  `fix_file`.
+
+### Security
+
+- **A cloned repository can no longer pick the command your agents run.**
+  Through 3.11.1, a repository's `.planning/config.json` could set
+  `workflow.test_command`, which only your user-global config is meant to set,
+  by writing it as one literal key, `"workflow.test_command"`, in place of
+  nesting it. A key spelled with a dot is now never a setting in either layer,
+  and every read names it in a warning. If you've opened a repository you
+  don't control with Cadence, check its `.planning/config.json` for a dotted
+  key.
+
 ## [3.11.1] - 2026-11-04
 
 ### Changed
@@ -3263,6 +3379,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[4.0.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.0.0
 [3.11.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.11.1
 [3.11.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.11.0
 [3.9.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.9.4

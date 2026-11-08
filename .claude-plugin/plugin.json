@@ -2,7 +2,7 @@
   "name": "cadence",
   "displayName": "Cadence",
   "description": "A Claude Code plugin that brings engineering practices to software you'll keep running after the session ends. It writes a plan before code, commits once per task, holds tests to a stopping rule, and checks the result against your goal. Its records live in your repository, so a new session picks up where the last one stopped.",
-  "version": "3.11.1",
+  "version": "4.0.0",
   "author": {
     "name": "John Crenshaw"
   },
