@@ -2,7 +2,7 @@
 
 Bug reports and documentation corrections are welcome. Tell me what you ran, what you expected, what happened, and enough of the relevant state to reproduce it. Include the Claude Code and Node versions when they matter. Remove credentials and private project material before sharing logs.
 
-For a feature, open an issue before writing the implementation. Cadence is intentionally a single-developer tool, and a useful idea doesn't automatically belong in its scope. Discussing that first saves both of us work.
+For a feature, open an issue before writing the implementation. A useful idea doesn't automatically belong in Cadence's scope, and discussing that first saves both of us work.
 
 The repository's [contribution guide](https://github.com/crenshawdev/cadence/blob/main/CONTRIBUTING.md) has the code checks, separate test-repository workflow and contribution policy. [GitHub issues](https://github.com/crenshawdev/cadence/issues) are the place for reproducible bugs; **#cadence** on the [jcrenshaw.dev Discord](https://jcrenshaw.dev/discord) is for discussion.
 
