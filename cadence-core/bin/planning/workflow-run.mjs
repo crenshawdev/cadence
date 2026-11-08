@@ -4,6 +4,7 @@
 // written by their own seams, so --round, --task and the receipts stay where review-record.md states them
 // the run's brackets go FIRST, whatever the file says: an agent that spent tokens on a killed or refused run is still billed
 // the same call twice writes no second set, because a resumed session may retry it: a bracket whose key is already there is skipped
+// --plans names an execute wave's plans, so the wave is told by the flag and not by what its file still holds: each plan is closed once
 'use strict';
 
 import { lstatSync, readFileSync } from 'node:fs';
@@ -15,7 +16,7 @@ import { emit } from '../lib/seam-io.mjs';
 import { appendEvent, renderTrace, TERMINAL } from '../lib/trace.mjs';
 import {
   ANSWERS_FILE, MAX_ANSWERS_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
-  EXECUTOR_ROLE, agentBrackets, agentRows, isWaveRun, mapRun, mergeAnswers, noticeBracket, parseAnswers, parseRun, parseWave, waveBrackets,
+  EXECUTOR_ROLE, agentBrackets, agentRows, isWaveRun, mapRun, mergeAnswers, noticeBracket, parseAnswers, parsePlanList, parseRun, parseWave, waveBrackets,
 } from '../lib/workflow-run.mjs';
 
 /** A provider's teed envelope is one JSON line, so this is generous. */
@@ -100,17 +101,19 @@ export function writeBrackets(dir, phase, runId, list) {
 /**
  * Write a wave's closes. The dispatches are already on the record, so only the close goes in. A close is skipped when the record holds
  * a terminal on that worker key from the same agent, which is how a run bills once while a later dispatch of the same plan still bills.
+ * With `runId`, the wave's plan list was given and every close carries the run id, so a plan the record already holds a close for from
+ * this run is skipped whichever agent or notice billed it: a retry in either order bills the wave once.
  * @param {string} dir the planning directory
- * @param {string} phase @param {{plan: string, terminal: Record<string, any>}[]} closes
+ * @param {string} phase @param {{plan: string, terminal: Record<string, any>}[]} closes @param {string} [runId]
  * @returns {{written: number, already: number, failed: {plan: string, reason: string}[]}}
  */
-export function writeWaveCloses(dir, phase, closes) {
-  const seen = new Set(renderTrace(dir, phase).events
-    .filter((e) => e.family === 'lifecycle' && TERMINAL.includes(e.event) && typeof e.agent_id === 'string')
-    .map((e) => `${e.plan}\0${e.agent_id}`));
+export function writeWaveCloses(dir, phase, closes, runId) {
+  const terminals = renderTrace(dir, phase).events.filter((e) => e.family === 'lifecycle' && TERMINAL.includes(e.event));
+  const seen = new Set(terminals.filter((e) => typeof e.agent_id === 'string').map((e) => `${e.plan}\0${e.agent_id}`));
+  const ranFor = new Set(runId === undefined ? [] : terminals.filter((e) => e.run_id === runId).map((e) => String(e.plan)));
   const out = { written: 0, already: 0, failed: /** @type {{plan: string, reason: string}[]} */ ([]) };
   for (const c of closes) {
-    if (seen.has(`${c.plan}\0${c.terminal.agent_id}`)) { out.already += 1; continue; }
+    if (seen.has(`${c.plan}\0${c.terminal.agent_id}`) || ranFor.has(c.plan)) { out.already += 1; continue; }
     const r = appendEvent(dir, c.terminal);
     if (r.written) out.written += 1; else out.failed.push({ plan: c.plan, reason: r.reason || 'not-written' });
   }
@@ -166,6 +169,13 @@ function cmdWorkflowRun(dir, opts) {
   const noticed = noticeTotals(opts, 'workflow-run');
   if (!noticed.ok) return fail('bad-args', noticed.detail, 'copy the notice\'s figure as a plain number - nothing was written');
   const totals = noticed.totals;
+  // the wave's plan list, when the caller has it: the run file alone cannot say which plans a wave held
+  let planned = null;
+  if ('plans' in opts) {
+    const listed = parsePlanList(opts.plans);
+    if (!listed.ok) return fail('bad-args', listed.detail, 'pass the wave\'s plan numbers as --plans 1,2,3 and re-run - nothing was written');
+    planned = listed.plans;
+  }
   const outDir = resolve(opts['out-dir']);
   let outStat = null;
   try { outStat = lstatSync(outDir); } catch { /* refused below */ }
@@ -183,14 +193,14 @@ function cmdWorkflowRun(dir, opts) {
   const at = { phase: phase.raw, runId, payloadRef: opts['payload-ref'].trim() };
   const rows = agentRows(file);
   const fromFile = rows.length > 0;
-  const wave = isWaveRun(file);
+  const wave = planned !== null || isWaveRun(file);
   const why = runRead.text === null ? `the run file ${runRead.why}` : (file === null ? 'the run file is not JSON' : 'the run file holds no agent rows');
   /** @type {{written: number, already: number, failed: {plan: string, reason: string}[]}} */
   let billed;
-  if (wave && fromFile) {
+  if (wave && (fromFile || planned)) {
     // an executor's close goes under its plan number, and an unlabelled row bills as an agent of this run
-    const split = waveBrackets(file, at);
-    const closes = writeWaveCloses(dir, phase.raw, split.closes);
+    const split = waveBrackets(file, { ...at, ...(planned ? { planned, why, totals } : {}) });
+    const closes = writeWaveCloses(dir, phase.raw, split.closes, planned ? runId : undefined);
     const loose = writeBrackets(dir, phase.raw, runId, split.loose);
     billed = { written: closes.written + loose.written, already: closes.already + loose.already, failed: [...closes.failed, ...loose.failed] };
   } else {
@@ -202,7 +212,8 @@ function cmdWorkflowRun(dir, opts) {
 
   if (runRead.text === null) {
     return refuse(runRead.tooLarge ? 'run-too-large' : 'run-unreadable', `the run file ${runRead.why}`,
-      'no payload was written - the notice\'s totals were billed as one bracket; read the run file named on the launch result if it is still there');
+      planned ? 'no outcome was handed back - each plan of the wave was closed as a checkpoint from the notice, so read each plan\'s report'
+        : 'no payload was written - the notice\'s totals were billed as one bracket; read the run file named on the launch result if it is still there');
   }
   if (wave) {
     // a wave has no payload, review input or answers file: those are the review's, so its plans' outcomes are the whole answer

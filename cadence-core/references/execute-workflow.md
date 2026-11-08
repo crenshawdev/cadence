@@ -71,12 +71,12 @@ Print one line, and run the rest of the phase on today's sequential path.
 The notice holds run totals and cuts a long result short, so the seam reads the run file whole: `workflows/<Run ID>.json` under the session directory `Transcript dir` names.
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --phase <N> --run-file <the run file> --out-dir <the scratch directory> --payload-ref <the scratch directory> [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --phase <N> --run-file <the run file> --out-dir <the scratch directory> --payload-ref <the scratch directory> --plans <the wave's plan numbers, comma-separated, as 1,2,3> [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
 ```
 
 Release the claim right after this call returns, whether it answered or refused, with the `workflow-claim release` line from section 1 and the same `id`.
 
-The call bills every executor of the wave, each under its plan number and with its own figures, so no `trace close` is written for them. One exception: when `brackets.source` is `notice-totals`, the run file gave no agent rows and no executor was billed. Close each plan's opened dispatch yourself with one `trace close --plan <k> --role cad-executor --detail-file <path>` call, where the file names the missing agent rows, which makes the close a `checkpoint`.
+The call bills every executor of the wave, each under its plan number and with its own figures, and no `trace close` is written for any plan. `--plans` is how it knows the wave when the run file cannot say: a plan the file has no row for, a file with no rows, one that is unreadable and one holding the script's message all still close every listed plan, as a `checkpoint` under its own plan number that says why, with the notice's totals on the first of them. Spend is billed as `cad-executor`. It writes no `<run id>-notice` bracket for a wave, and the same call twice, or the notice's totals after the rows or the rows after the notice's totals, bills the wave once.
 
 Its answer holds each plan's outcome in `plans`, a `digest` or null, and `restarted`. Relay each plan's outcome with its position line. For each entry of `restarted`, name that plan's agent as restarted by the host. A refusal has billed what it could: treat every plan of the wave as a dead slot (section 3) and read each from its report.
 

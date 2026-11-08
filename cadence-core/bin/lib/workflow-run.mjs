@@ -26,6 +26,7 @@
 
 import { buildEntries, HALTING_SEVERITIES, RAISED_SEVERITIES, RULINGS } from './adjudication-record.mjs';
 import { HEADINGS } from './review-file.mjs';
+import { requirePlanKey } from './plan-key.mjs';
 import { roleOfAgent } from './rung-agent.mjs';
 import { isPlainObject } from './text-util.mjs';
 
@@ -565,6 +566,8 @@ export function parseWave(text) {
   const c = parseCompleted(text);
   if (!c.ok) return c;
   const r = c.run.result;
+  // the script's args guard answers in prose and starts no agent, which is not a review's bad result
+  if (typeof r === 'string') return refuse('run-bad-wave', `execute-wave started no executor and answered: ${r.slice(0, 300)}`);
   if (!isPlainObject(r) || !Array.isArray(r.plans)) return refuse('run-bad-wave', 'the result is not execute-wave\'s: it has no plans array');
   const seen = new Set();
   for (let i = 0; i < r.plans.length; i += 1) {
@@ -601,10 +604,30 @@ function closeOf(row, digest) {
 }
 
 /**
+ * The plan numbers a `--plans` value lists, or what is wrong with it. Each is a worker key as `risk-check` reads one, once.
+ * @param {unknown} raw
+ * @returns {{ok: true, plans: string[]} | {ok: false, detail: string}}
+ */
+export function parsePlanList(raw) {
+  if (typeof raw !== 'string') return { ok: false, detail: 'workflow-run --plans needs the wave\'s plan numbers after it, comma-separated' };
+  const plans = raw.split(',');
+  for (const p of plans) {
+    if (!requirePlanKey(p).ok) return { ok: false, detail: `workflow-run --plans holds ${JSON.stringify(p)}, which is not a plan number (write 1,2,3 with no spaces)` };
+  }
+  if (new Set(plans).size !== plans.length) return { ok: false, detail: 'workflow-run --plans names a plan twice' };
+  return { ok: true, plans };
+}
+
+/**
  * A wave's brackets. Each `plan <k>` row is a close under worker key `<k>` as the executor, written alone because the plan's dispatch
  * is already on the record from its own resolve. The close carries its row's agent id, which is what tells one run's close from
  * another's, so a later dispatch of the same plan bills again. A row without a plan label bills as an ordinary agent row.
- * @param {any} run @param {{phase: string, runId: string, payloadRef: string}} at
+ * With `at.planned`, the wave's plan list, the run file is not the only witness to the wave: every listed plan no row closed is closed
+ * as a checkpoint under its own key, saying why, and every close carries the run id so a retry in either order bills the wave once. When
+ * the file gave no agent rows at all, the first of those closes carries the notice's totals, since no `<run id>-notice` key may exist
+ * for a wave: it is a worker no plan owns, and `risk-check status` would count it as a plan.
+ * @param {any} run @param {{phase: string, runId: string, payloadRef: string, planned?: string[], why?: string,
+ *   totals?: {tokens?: number, turns?: number, duration_ms?: number}}} at
  * @returns {{closes: {plan: string, terminal: Record<string, any>}[], loose: {plan: string, dispatch: any, terminal: any}[]}}
  */
 export function waveBrackets(run, at) {
@@ -613,15 +636,35 @@ export function waveBrackets(run, at) {
   const closes = [];
   /** @type {{plan: string, dispatch: any, terminal: any}[]} */
   const loose = [];
-  agentRows(run).forEach((row, i) => {
+  const tag = at.planned ? { run_id: at.runId } : {};
+  const rows = agentRows(run);
+  const rowed = new Set();
+  rows.forEach((row, i) => {
     const plan = planOfRow(row);
     if (plan === null) { loose.push(agentBracket(row, i, at)); return; }
+    rowed.add(plan);
     const { terminal, detail, replay } = closeOf(row, digests.get(plan));
     // a row with no agent id still needs one to be told apart from another run's close on this plan
     const figures = { ...rowFigures(row), ...(isText(row.agentId) ? {} : { agent_id: `${at.runId}-agent${i + 1}` }) };
     closes.push({
       plan,
-      terminal: { phase: at.phase, family: 'lifecycle', plan, role: EXECUTOR_ROLE, event: terminal, ...figures, ...(detail ? { detail } : {}), ...(replay ? { replay: true } : {}) },
+      terminal: { phase: at.phase, family: 'lifecycle', plan, role: EXECUTOR_ROLE, event: terminal, ...figures, ...(detail ? { detail } : {}), ...(replay ? { replay: true } : {}), ...tag },
+    });
+  });
+  (at.planned || []).filter((plan) => !rowed.has(plan)).forEach((plan, n) => {
+    const carries = rows.length === 0 && n === 0;
+    const reason = rows.length === 0 ? at.why : `the run file holds no agent row labelled "plan ${plan}"`;
+    /** @type {Record<string, any>} */
+    const figures = {};
+    if (carries) for (const [key, v] of Object.entries(at.totals || {})) if (figure(v) !== undefined) figures[key] = v;
+    closes.push({
+      plan,
+      terminal: {
+        phase: at.phase, family: 'lifecycle', plan, role: EXECUTOR_ROLE, event: 'checkpoint', ...figures,
+        agent_id: carries ? `${at.runId}-notice` : `${at.runId}-plan-${plan}`,
+        detail: carries ? `the wave's totals from the completion notice, because ${reason}` : `no agent row bills this plan, because ${reason}`,
+        ...tag,
+      },
     });
   });
   return { closes, loose };
