@@ -535,7 +535,13 @@ Handle the return:
     consult site - this step) and follow it: the fresh revision-mode planner
     spawn, the narrowed checker re-dispatch, both of their brackets, and the
     no-BLOCKER-left / still-a-BLOCKER ask that ends the arm.
-- Empty or unmarked return -> report it, ask whether to proceed unchecked.
+- Empty or unmarked return -> report it, then ask (ask-user seam):
+
+  - header: "No check"
+  - question: "The plan checker came back with nothing usable, so these plans have not been checked. Do you want to go on without the check?"
+  - options: "Go on unchecked - the plans go ahead as written" / "Stop - the plans stay as written and nothing more runs"
+
+  On "Stop", abort.
 </step>
 
 <step name="review">
