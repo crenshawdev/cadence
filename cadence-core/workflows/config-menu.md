@@ -145,7 +145,7 @@ Reached when `/cad-config` got text that is not a flag or a list of `key=value`,
 screen is not a number. The sentence names what the person wants, such as `make reviews cheaper`. Nothing is
 written until a yes.
 
-**Matching.** `catalog` answers every setting's `key`, `question`, `purpose`, `explain` and value in force, which is
+**Matching.** `catalog` answers every setting's `key`, `label`, `question`, `purpose`, `explain` and value in force, which is
 too big for the transcript, so it goes to a file in a directory this run makes. Run it, and copy the printed
 directory and token as literals into the read-back:
 
@@ -156,14 +156,14 @@ D="$(mktemp -d "${TMPDIR:-/tmp}/cad-config-XXXXXX")" && case "$D" in (*[!A-Za-z0
 ```
 
 Write the words the sentence turns on, and near ones, as a JSON array to `<D>/terms.json` with the Write tool. Read
-back only the settings whose `key`, `question`, `purpose` or `explain` holds one of them, so a setting's own name
+back only the settings whose `key`, `label`, `question`, `purpose` or `explain` holds one of them, so a setting's own name
 finds it:
 
 ```
-node -e 'const f=require("fs");const d=process.argv[1];let tok;try{tok=f.readFileSync(d+"/run-token","utf8")}catch(e){console.error("scratch-stale: no run token in "+d);process.exit(1)}if(tok!==process.argv[2]){console.error("scratch-stale: "+d+" belongs to another run");process.exit(1)}let c,t;try{c=JSON.parse(f.readFileSync(d+"/catalog.json","utf8"));t=JSON.parse(f.readFileSync(d+"/terms.json","utf8"))}catch(e){console.error("scratch-unreadable: "+e.message);process.exit(1)}if(!Array.isArray(c.settings)||!Array.isArray(t)){console.error("scratch-shape: catalog.json has no settings array or terms.json is not an array in "+d);process.exit(1)}const w=t.map((x)=>String(x).toLowerCase()).filter((x)=>x);for(const s of c.settings){const x=[s.key,s.question,s.purpose].concat((s.explain||[]).map((e)=>e.value+" "+(e.text||""))).join(" ").toLowerCase();if(w.some((v)=>x.includes(v)))console.log([s.key,JSON.stringify(s.value),s.question||s.purpose,(s.explain||[]).map((e)=>e.value).join("|")].join("\t"))}' "<the echoed scratch directory>" "<the echoed run token>"
+node -e 'const f=require("fs");const d=process.argv[1];let tok;try{tok=f.readFileSync(d+"/run-token","utf8")}catch(e){console.error("scratch-stale: no run token in "+d);process.exit(1)}if(tok!==process.argv[2]){console.error("scratch-stale: "+d+" belongs to another run");process.exit(1)}let c,t;try{c=JSON.parse(f.readFileSync(d+"/catalog.json","utf8"));t=JSON.parse(f.readFileSync(d+"/terms.json","utf8"))}catch(e){console.error("scratch-unreadable: "+e.message);process.exit(1)}if(!Array.isArray(c.settings)||!Array.isArray(t)){console.error("scratch-shape: catalog.json has no settings array or terms.json is not an array in "+d);process.exit(1)}const w=t.map((x)=>String(x).toLowerCase()).filter((x)=>x);for(const s of c.settings){const x=[s.key,s.label,s.question,s.purpose].concat((s.explain||[]).map((e)=>e.value+" "+(e.text||""))).join(" ").toLowerCase();if(w.some((v)=>x.includes(v)))console.log([s.key,s.label||"",JSON.stringify(s.value),s.question||s.purpose,(s.explain||[]).map((e)=>e.value).join("|")].join("\t"))}' "<the echoed scratch directory>" "<the echoed run token>"
 ```
 
-Each line is a key, its value in force, its text and its values. A refusal on stderr (`scratch-stale`,
+Each line is a key, its label, its value in force, its text and its values. A refusal on stderr (`scratch-stale`,
 `scratch-unreadable`, `scratch-shape`) means no match was read: say so and stop. From the lines, pick the settings
 the sentence asks to change and the value each should take, by what `question`, `purpose` and `explain` say. Nothing
 matched: say so, name the groups from the opening screen, and write nothing.
