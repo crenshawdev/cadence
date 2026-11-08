@@ -14,6 +14,8 @@ Enabling parallelization doesn't force a parallel run. Plans must be independent
 
 The host's `worktree.baseRef` setting must resolve to `head` for this path. It belongs in Claude Code's settings, outside Cadence's schema. `/cadence:cad-config` offers to configure it when worktrees are enabled and asks which settings file to update. Disabling worktrees leaves parallel execution unavailable.
 
+Files your `.gitignore` excludes, such as installed dependencies, aren't in a worktree. They reach one only through Claude Code's own `worktree.symlinkDirectories` setting or a `.worktreeinclude` file, and Cadence never writes either. A suite that needs those files fails in a worktree until you set one up. This holds for the parallel path and for `workflow.execute_workflows` alike.
+
 ## Reported limits
 
 `workflow.max_plan_bytes` reports the size of a plan's declared files; exceeding it doesn't itself refuse planning or execution. The six `workflow.max_dispatch_tokens.*` settings report a dispatch's final recorded context-window figure after it returns. They aren't token budgets enforced by the host, and they aren't cumulative token spend.
