@@ -123,9 +123,21 @@ line):
         states that an always-present option consumes one of the four slots a
         question has, and three providers plus NONE is exactly four, so this
         question never splits however many resolved.
+
+        - header: "Forge"
+        - question: "Which forge hosts this project's repository?"
+        - options:
+          - "{provider}" - uses the {binary} command, one option for each installed forge
+          - "None of these" - none of the installed forges is the one this project uses, so setup stops here
      b. **Which repository**, as `owner/name`. Pre-fill it from `defaults.repo`
         when the envelope offers one, so the user CONFIRMS rather than retypes;
         ask it outright when it does not.
+
+        - header: "Repository"
+        - question: "Which repository is this project on {provider}? Write it as owner/name."
+        - options:
+          - "{owner}/{name}" - the repository this project's remote already points to, shown only when setup found one, otherwise you type it
+
      c. **Which Forgejo instance** - asked ONLY when the chosen provider is
         `forgejo` and the envelope's `host` is null. Open-ended per the ask-user
         seam, because the value is typed rather than picked from a set, and with
@@ -138,6 +150,10 @@ line):
         `host:port` - `forge.example.com:3001` - and that it is the port the
         BROWSER reaches, never the SSH port. `github` and `gitlab`
         are never asked this; their hosts are fixed.
+
+        - header: "Instance"
+        - question: "What address do you use in a browser to reach your Forgejo instance? Add a port only if it isn't the default one, written as host:port. This is the address you browse to, not the one git uses over SSH."
+        - options: none, you type the address
 
      **On "None of these" the step REFUSES and stops** - it does not fall
      through. Say it in the same shape the `refuse` action uses, two lines: a
@@ -179,7 +195,9 @@ line):
      confirm, so no option carries `(recommended)`, and put all four facts in
      the question itself:
 
-       "Create <owner>/<name> on <provider> now? It will be created PRIVATE."
+       - header: "Create repo"
+       - question: "Create <owner>/<name> on <provider> now? It will be created as a private repository."
+       - options: "Create it - the repository is made on <provider> and set as this project's origin" / "Not now - setup carries on and nothing is created"
 
      Those four - the provider, the owner, the repository name and the
      visibility - are the confirmation, and nothing else in this run states them
@@ -189,7 +207,7 @@ line):
      `internal`, and three different defaults are not a choice worth putting to
      a user.
 
-     Only on a yes, and never ahead of one:
+     Only on "Create it", and never ahead of one:
 
      ```
      node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" create \
@@ -298,14 +316,13 @@ idea, and asking about the user's skill level (never do this - Claude builds).
 seam):
 
 - header: "Ready?"
-- question: "I think I understand what you're after. Ready to create
-  PROJECT.md?"
+- question: "I think I understand what you're after. Do you want me to write the project description now?"
 - options:
-  - "Create PROJECT.md" - move forward
-  - "Keep exploring" - share more / ask me more
+  - "Write it" - I write the project description from what you've told me
+  - "Keep talking" - you tell me more, or I ask you more
 
-On "Keep exploring", ask what they want to add or probe the remaining gaps.
-Loop until "Create PROJECT.md".
+On "Keep talking", ask what they want to add or probe the remaining gaps.
+Loop until "Write it".
 </step>
 
 <step name="write_project">
@@ -388,9 +405,11 @@ scope boundaries.
 
 **Scope each category** (ask-user seam, multiSelect):
 
-- header: "[Category]" (max 12 chars)
-- question: "Which [category] features are in v1?"
-- options: the category's features, plus "None for v1"
+- header: "{category}" (max 12 chars)
+- question: "Which {category} features do you want in the first version?"
+- options:
+  - "{feature}" - one option for each feature in the category, and you can pick several
+  - "None of them" - no feature from this category is in the first version
 
 Batch the category questions ceil(N/4) per AskUserQuestion call (up to 4
 categories at once), not one blocking turn per category; only a question whose
@@ -402,8 +421,8 @@ v2; unselected differentiators go to Out of Scope.
 **Catch gaps** (ask-user seam):
 
 - header: "Additions"
-- question: "Anything missed? Features specific to your vision?"
-- options: "No, that covers it" / "Yes, let me add some"
+- question: "Is anything missing? Are there features specific to your vision that aren't listed?"
+- options: "No, that covers it - nothing to add" / "Yes, add some - you tell me what is missing"
 
 **Cross-check the Core Value:** if no v1 requirement delivers the Core
 Value, say so and resolve it with the user before writing anything.
@@ -421,9 +440,13 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/REQUIREMENTS.md` and write
 category with REQ-IDs, v2 deferred, Out of Scope with reasons, Traceability
 table left as bare headers (seeded per phase by `/cad-plan`, never here).
 
-**Present the full v1 list** (every requirement, not counts) and confirm:
-"Does this capture what you're building?" If adjustments are needed, return
-to scoping.
+**Present the full v1 list** (every requirement, not counts) and confirm (ask-user seam):
+
+- header: "Requirements"
+- question: "Does this list capture what you're building?"
+- options: "Yes, it does - go on to the roadmap" / "Not yet - you tell me what to change, and we go back to choosing features"
+
+On "Not yet", return to scoping.
 
 Commit: `docs: define requirements` with `.planning/REQUIREMENTS.md`.
 </step>
@@ -489,13 +512,13 @@ criteria. Name every `over` phase and its numbers in that same presentation.
 - header: "Roadmap"
 - question: "Does this roadmap structure work for you?"
 - options:
-  - "Approve" - write state and finish
-  - "Adjust phases" - tell me what to change
-  - "Review full file" - show raw ROADMAP.md
+  - "Approve" - save the roadmap and finish setup
+  - "Change phases" - you tell me what to change, and I update the roadmap
+  - "Show the whole file" - I print the roadmap file as written, then ask again
 
-On "Adjust phases": take the feedback, revise ROADMAP.md and the
-traceability mapping inline, re-present, loop until approved. On "Review
-full file": show the file, then re-ask.
+On "Change phases": take the feedback, revise ROADMAP.md and the
+traceability mapping inline, re-present, loop until approved. On "Show the
+whole file": show the file, then re-ask.
 </step>
 
 <step name="state">
