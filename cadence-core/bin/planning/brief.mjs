@@ -37,7 +37,7 @@ function loadMap(dir) {
 
 /**
  * @param {string} dir the planning directory
- * @param {any} opts `--out-dir` names an existing directory where the brief file is written
+ * @param {any} opts `--out-dir` names an existing directory where the brief file is written; `--main-root` names the main tree's root, so the head's paths are absolute there
  */
 function cmdBrief(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
@@ -55,16 +55,19 @@ function cmdBrief(dir, opts) {
     return fail('bad-args', 'brief needs --plan <k>',
       'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
   }
-  /** @type {string|null} */
-  let outDir = null;
-  if (opts['out-dir'] !== undefined) {
-    outDir = resolve(String(opts['out-dir']));
+  /** @type {Record<string, string|null>} */
+  const dirs = { 'out-dir': null, 'main-root': null };
+  for (const flag of Object.keys(dirs)) {
+    if (opts[flag] === undefined) continue;
+    const abs = resolve(String(opts[flag]));
     let st = null;
-    try { st = lstatSync(outDir); } catch { /* refused below */ }
+    try { st = lstatSync(abs); } catch { /* refused below */ }
     if (!st || !st.isDirectory()) {
-      return fail('bad-args', `--out-dir ${outDir} is not a directory`, 'make the scratch directory first and pass it - nothing was written');
+      return fail('bad-args', `--${flag} ${abs} is not a directory`, 'make the directory first and pass it - nothing was written');
     }
+    dirs[flag] = abs;
   }
+  const outDir = dirs['out-dir'];
 
   const pdir = join(dir, 'phases', parsedPhase.raw);
   const planFile = planFileFor(listPlanFiles(pdir).plans, String(parsedPlan.value));
@@ -75,6 +78,7 @@ function cmdBrief(dir, opts) {
   const brief = composeBrief({
     planFile,
     planRel: `.planning/phases/${parsedPhase.raw}/${planFile}`,
+    mainRoot: dirs['main-root'],
     planText,
     projectText: read(join(dir, 'PROJECT.md')),
     contextText: read(join(pdir, 'CONTEXT.md')),

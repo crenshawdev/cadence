@@ -132,12 +132,13 @@ function namedField(tasks, field) {
  * @param {string} p.planFile the plan's file name, as the phase directory holds it
  * @param {string} p.planRel the plan's path from the repository root, in the caller's phase spelling
  * @param {string} p.planText
+ * @param {string|null} [p.mainRoot] the main tree's root: the head names the plan, PROJECT.md and CONTEXT.md by absolute paths under it, for an executor in a worktree that lacks an ignored `.planning/`
  * @param {string|null} p.projectText PROJECT.md, or null when the project has none
  * @param {string|null} p.contextText the phase's own CONTEXT.md, or null when it has none
  * @param {() => BriefMap|null} [p.loadMap] the stored map, read only when the plan has something to ask it; null is no map
  * @returns {{ok: true, text: string, bytes: number, readsMissing: string[], readsUnchecked: boolean} | {ok: false, detail: string, hint: string}}
  */
-export function composeBrief({ planFile, planRel, planText, projectText, contextText, loadMap = () => null }) {
+export function composeBrief({ planFile, planRel, planText, projectText, contextText, mainRoot = null, loadMap = () => null }) {
   const { fm, rest } = splitFrontmatter(normalize(planText));
   const lines = rest.split('\n');
   if (sectionText(lines, '## Tasks') === null) {
@@ -147,6 +148,7 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
   const decisions = contextDecisions(contextText);
   const phaseDir = planRel.slice(0, planRel.lastIndexOf('/'));
   const contextRel = `${phaseDir}/CONTEXT.md`;
+  const at = (/** @type {string} */ rel) => (mainRoot === null ? rel : `${mainRoot.replace(/\/+$/, '')}/${rel}`);
   const taskLines = sectionSpanLines(lines, '## Tasks');
   const named = namedField(taskLines, 'Decisions');
   const bad = named.filter((n) => !DECISION_ID.test(n.entry) || !decisions.has(n.entry));
@@ -168,10 +170,10 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
 
   /** @type {string[]} */
   const out = [h1, ''];
-  out.push(`This brief stands in for \`${planRel}\`, \`.planning/PROJECT.md\` and \`${contextRel}\`. Any of these the project has are still there to open when the brief doesn't settle something.`);
-  out.push(`Where your contract speaks of the plan file your dispatch names, \`${planRel}\` is the one meant: derive \`<plandir>\` and \`k\` from it. Where it says to read that file, reading this brief covers it: the plan's goal, truths, context and tasks are all below.`);
+  out.push(`This brief stands in for \`${at(planRel)}\`, \`${at('.planning/PROJECT.md')}\` and \`${at(contextRel)}\`. Any of these the project has are still there to open when the brief doesn't settle something.`);
+  out.push(`Where your contract speaks of the plan file your dispatch names, \`${at(planRel)}\` is the one meant: derive \`<plandir>\` and \`k\` from it. Where it says to read that file, reading this brief covers it: the plan's goal, truths, context and tasks are all below.`);
   if (named.length === 0 && decisions.size > 0) {
-    out.push(`No decision was carried: no task names one. \`${contextRel}\` holds this phase's decisions, so read it for any that bind the work.`);
+    out.push(`No decision was carried: no task names one. \`${at(contextRel)}\` holds this phase's decisions, so read it for any that bind the work.`);
   }
   if (readsUnchecked) out.push(UNCHECKED);
   out.push('');

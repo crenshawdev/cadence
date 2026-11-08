@@ -319,11 +319,13 @@ export const CONTRACTS = {
       '--plan': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
       '--plan-time': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // --out-dir is an existing directory: with it the brief is written there, without it the brief is composed and checked only
+    // --out-dir is an existing directory: with it the brief is written there, without it the brief is composed and checked only;
+    // --main-root is the main tree's root, an existing directory, which makes the head's plan, PROJECT.md and CONTEXT.md paths absolute
     brief: {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--plan': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
       '--out-dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--main-root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
