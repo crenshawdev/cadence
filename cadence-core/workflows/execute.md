@@ -176,6 +176,32 @@ path and is never a reason to pause or stop.
 </step>
 
 <step name="choose_path">
+**The workflow path comes first.** Take it only when ALL of these hold:
+- `workflow.execute_workflows` is on in BOTH config layers, read with
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" workflow-layers`, whose
+  `keys["workflow.execute_workflows"].on` is the answer, and never with
+  `config.mjs get`, which answers on a committed repo value alone. An answer
+  that cannot be read is off.
+- `planning.workflow_plans` is true, as `locate` read it
+- the `Workflow` tool is in this session's tool list
+- the `plan-overlap` answer below is `ok:true` with no `undeclared` and no
+  `frontmatter_issues` entry
+- `parallelization.enabled` and `parallelization.use_worktrees` are both true
+
+The step makes that one `plan-overlap` call and reads it for both paths. On the
+workflow path an `overlaps` entry and a second wave do not route to sequential,
+because `waves` already order them, and `parallelization.min_plans_for_parallel`
+is not read. Take `waves` from the answer, drop every plan outside the dispatch
+set, and drop any wave left empty. When every wave left holds one plan, today's
+path runs and one line says why: a launch per plan would buy nothing. When any
+wave holds more than one plan, the `worktree-base.mjs resolve` check below
+applies as written, declining its fix or its `ok:false` means today's path, and
+on accept this path goes on, not the parallel one. With every condition met, go
+to `execute_workflow` and run nothing else in this step. When a condition is
+missing, today's path below runs exactly as written, and when either layer
+sets the switch (`repo` or `global` reads `"set"` in that answer) one line names
+the missing condition. With neither layer setting it, print nothing.
+
 Sequential (default) unless ALL of these hold:
 - `parallelization.enabled` is true
 - plan count >= `parallelization.min_plans_for_parallel`
