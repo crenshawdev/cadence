@@ -483,22 +483,30 @@ holds it, `(in force)` when it is inherited, and an inherited option's
 
 ### 3. The model question, per role
 
-Text: what the role does in the phase loop, then what a stronger or weaker model
-buys there. Options, in this order, up to the cap of four:
+Ask the role's question, word for word:
+
+- `cad-planner`: "Which model writes your plans? Everything built later follows them, so a stronger model costs more here and saves rework later."
+- `cad-assumptions-analyzer`: "Which model lists what a phase assumes, before any plan exists? It runs once a phase, so a stronger model costs little and catches a wrong premise early."
+- `cad-verifier`: "Which model checks whether a phase met its goal, not just whether its tasks ran? It runs only when the deeper check is on, and a stronger one misses less."
+- `cad-reviewer`: "Which model runs the Claude reviewer? It runs on every review, so a cheaper model saves the most here and a stronger one catches more."
+- `cad-executor`: "Which model writes the code, one run per plan? It is the largest cost in a phase, so a cheaper model saves the most and a stronger one makes fewer mistakes."
+- `cad-plan-checker`: "Which model checks each plan before any code is written? It runs only when plan checking is on, and the work is short, so a cheaper model often does."
+
+Options, in this order, up to the cap of four:
 
 1. **The value in force**, labelled `(current)` or `(in force)`. When no layer
-   sets it, that value is `null` and its description is "no model parameter -
-   the dispatch runs at your session's model".
-2. `opus` - the strongest and the most expensive per dispatch.
-3. `sonnet` - the middle of the three; most work lands here.
-4. `haiku` - the cheapest and the weakest.
+   sets it, that value is `null` and its description is "use your session's
+   model".
+2. `opus` - "strongest, costs the most".
+3. `sonnet` - "in the middle; most work fits here".
+4. `haiku` - "cheapest, least capable".
 
 Never list the value in force twice: whichever of those it already is, the
 remaining options fill the slots. `fable` is a fifth name the host accepts and
 is deliberately NOT offered outright - name it in the last option's
 `description` as reachable via `Other`, with the reason: choosing it is an
-assertion about your own organisation (it needs 30-day data retention, and its
-classifiers refuse cyber-adjacent review work), not a rung on a ladder.
+assertion about your own organisation (it needs 30-day data retention, and it
+refuses some security review work), not a rung on a ladder.
 
 `Other` is free-typed and goes into config exactly as typed - the key is a
 string, not an enum, so nothing rejects a name this host has never heard of.
@@ -508,49 +516,42 @@ dispatch. A model the host does not accept still resolves `ok:true` and
 dispatches with NO model parameter, naming the string in the resolve's
 `warnings[]`.
 
-What each role does, for the question text:
-
-- **`cad-planner`** - turns a phase's context into the plan files every executor
-  then runs from. Once or twice per phase, and a weak plan is paid for again by
-  every dispatch that reads it.
-- **`cad-assumptions-analyzer`** - reads a phase's context before any plan
-  exists and names what the work is assuming. Once per phase, and the cheapest
-  place there is to catch a wrong premise.
-- **`cad-verifier`** - the goal-backward pass after a phase, asking whether the
-  goal is actually met rather than whether the tasks ran. It runs only when the
-  deep pass is on.
-- **`cad-reviewer`** - the local reviewer behind every review trigger. The
-  most-dispatched role after the executor, so its model moves a cycle's total
-  cost more per step than any other.
-- **`cad-executor`** - writes the code, one dispatch per plan. The single
-  largest spend in a phase.
-- **`cad-plan-checker`** - checks a plan against its context before any code is
-  written, and only when `workflow.plan_check` is on. Short, structured work.
-
 ### 4. The effort question, per role
 
-Text: what the rung buys for this role. The rung is where the role STARTS;
-`model.escalate_on_failure` re-dispatches a failed attempt one rung higher,
-holding at the top.
+Ask the role's question, word for word:
+
+- `cad-planner`: "How hard should the planner work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+- `cad-assumptions-analyzer`: "How hard should the assumptions analyzer work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+- `cad-verifier`: "How hard should the verifier work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+- `cad-reviewer`: "How hard should the Claude reviewer work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+- `cad-executor`: "How hard should the executor work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+- `cad-plan-checker`: "How hard should the plan checker work when it starts? If the setting Retry a failure at higher effort is on, a failed try retries one step harder."
+
+The rung is where the role STARTS; `model.escalate_on_failure` re-dispatches a
+failed attempt one rung higher, holding at the top.
 
 Six values - `low`, `medium`, `high`, `xhigh`, `max` and `null` - do not fit the
 four-option cap, so this takes exactly the rule the walk already states for
 `review.triggers.<t>.gate`: show the rung in force plus the three the user is
 most likely to want, and name every omitted rung in the last option's
 `description` with the words "reachable via `Other`". A rung silently absent
-reads as a rung that does not exist.
+reads as a rung that does not exist. The descriptions are: `low` "light
+thinking, fastest", `medium` "moderate thinking", `high` "deep thinking",
+`xhigh` "very deep thinking, slower", `max` "the deepest thinking, slowest and
+costliest", and `null` "use the default for this role".
 
 `null` is a real answer and means "this key does not pin the rung, so the
 schema default decides" - which is how a repo layer un-pins a global one.
 
 ### 5. The floor question
 
-One question, and the only one that is not per role. Text: when a phase's plans
-declare a file that touches one of your answered risk surfaces, exactly two
-things happen - the plan review becomes blocking, and the deep-verify pass runs.
-No role's model moves and no role's rung moves; what you just set is what
-dispatches. A plan Cadence could not read raises it too, on purpose, because a
-scope nobody read has proved nothing.
+One question, and the only one that is not per role. Ask it word for word:
+
+"Which risky areas should not make a phase's plan review blocking or turn on the deeper check? The review of the actual changes still runs."
+
+A plan Cadence could not read raises the bar too, on purpose, because a scope
+nobody read has proved nothing. No role's model or rung moves; what you just set
+is what dispatches.
 
 Carry the eight category definitions from
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md` as the
@@ -559,14 +560,15 @@ where a user meets the category names.
 
 Options:
 
-1. **Keep it for every surface** `(recommended)` - writes nothing, because a
-   config with no waiver key is already in that state.
-2. **Name surfaces to waive** - writes
-   `review.triggers.risk_surface.waive_routing_floor` with the picked
-   categories. A surface named there stops making the plan review blocking and
-   stops turning the deep pass on, for that surface only. It does NOT turn off
-   the `risk_surface` review itself, which still fires on the actual diff and
-   which this key cannot reach.
+1. **Keep it for every area** `(recommended)` - "Every risky area keeps the
+   blocking plan review and the deeper check." Writes nothing, because a config
+   with no waiver key is already in that state.
+2. **Choose areas to skip** - "The areas you pick no longer make the plan review
+   blocking or turn on the deeper check. The review of the actual changes still
+   runs." Writes `review.triggers.risk_surface.waive_routing_floor` with the
+   picked categories, for those categories only. It does NOT turn off the
+   `risk_surface` review itself, which still fires on the actual diff and which
+   this key cannot reach.
 
 Two of the six roles are unaffected by this answer whatever it is: `cad-planner`
 and `cad-assumptions-analyzer` are dispatched before a plan exists, so there is
