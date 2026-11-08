@@ -43,10 +43,10 @@ Opened by a number from the opening screen, with that group's `name`:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" layers --group "<name>"
 ```
 
-It answers `rows` (the group's shown settings in order, each with `key`, `value`, `winner`, `default`, `global`,
-`repo` and `applies`) and `advanced` (the keys the group keeps under Advanced).
+It answers `rows` (the group's shown settings in order, each with `key`, `label`, `value`, `winner`, `default`,
+`global`, `repo` and `applies`) and `advanced` (the keys the group keeps under Advanced).
 
-**The list.** A numbered list of the rows by dotted key, each with its value and who set it: `this repo`, `your
+**The list.** A numbered list of the rows by `label`, as the read returned it and never one of your own, each with its value and who set it: `this repo`, `your
 global config` or `the default` from `winner`. A row with no `winner` is on only when both files set it, so say
 which one is missing. A cell in state `ignored` says the value is ignored there, and `unreadable` names its file. A row with `dropped` says
 each name there is not in force, because your global `review.reviewers` has to name it too. A row whose `applies` is
@@ -131,8 +131,8 @@ leaves the repo value as it is and the setting off.
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set --global <key>="$(cat <D>/value.json)"
 ```
 
-**Advanced.** Opening the entry reads `layers --group "<name>" --advanced` and lists those keys with their
-`purpose`. A pick takes the same pick and write path, with `purpose` in place of the question it does not have.
+**Advanced.** Opening the entry reads `layers --group "<name>" --advanced`, which answers each row's `key`, `label`, `value`,
+`winner` and `purpose`. It lists the rows by `label` with their `purpose`. A pick takes the same pick and write path, with `purpose` in place of the question it does not have.
 `review.providers.*` goes to **Review provider setup**, never typed.
 
 **Leaving.** When they say `done`, or otherwise that they're finished, run **Worktree base ref** when
