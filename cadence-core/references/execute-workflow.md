@@ -103,3 +103,16 @@ It ran in the normal tree, so nothing merges and its report is already at `<plan
 ### Then
 
 A wave is done only when each of its plans is, and a stopped plan, an open question or a conflict holds the next wave. Launch the next from section 1 when every plan of this one is done. After the last wave, fire `phase_diff` once, as step 6 of `execute-parallel.md` states. When its gate is `off` and a wave ran wider than 1, print one line saying the interaction of the merged plans went unreviewed. Then `goal_check` and on, as today.
+
+## 3. Where a wave stops
+
+**A merge conflict.** At the first one, stop with the conflicted merge left in place. Name the plan and the conflicting paths (`git diff --name-only --diff-filter=U`) and ask through the ask-user seam. Start no further merge, risk check, cursor write, review, SUMMARY or next wave. Never run `git merge --abort` yourself, since it hides the conflict. Headless, the run ends there and the file state is the proof.
+
+**A checkpoint.** The plans that settled merge in plan order as section 2 states, and the next wave waits. Route the checkpoint as `handle_checkpoint` does, with the position line. The stopped plan's branch waits for the answer and then merges, its report moving in with that merge as section 2 states. Its continuation then runs in the normal tree on today's sequential dispatch under worker key `<k>`, the way the parallel path's fix dispatch runs, never back into a worktree. Its risk range runs from the pre-merge HEAD recorded at its merge to HEAD once the continuation settles. On this path that replaces the closing sentence of `execute-parallel.md`. A wave of one has no branch to merge, so its continuation follows the answer at once.
+
+**A null slot, a turn cap or a digest that does not parse**, and a `PLAN PARTIAL`:
+
+- In a wave of one plan the executor ran in the normal tree and made no branch. Do what `execute_sequential`'s turn-cap arm does: read `<plandir>/reports/plan-<k>.md`, check it against `git log {pre-plan HEAD}..HEAD`, report what landed, and ask whether to re-dispatch the remainder or stop. A re-dispatch runs under worker key `<k>`.
+- In a wave wider than 1, read the plan's report in the scratch directory and check whether its branch exists. No branch means nothing landed and nothing merges, so its report moves in as it stands, unless it reads `PLAN COMPLETE`, which is named and left in the scratch directory. The next wave still waits for the answer. A branch is handled like a checkpoint: it waits for the answer, which is today's turn-cap question, whether to re-dispatch the remainder or stop. Then it merges, and a remainder runs in the normal tree.
+
+**A restart.** A plan whose agent the host restarted is named in that plan's relay, from `restarted` in `workflow-run`'s answer. Its outcome is judged as any other: the restarted executor continued from its own commits after the pre-plan HEAD.
