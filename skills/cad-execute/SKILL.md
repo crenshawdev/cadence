@@ -12,6 +12,7 @@ allowed-tools:
   - Task
   - Workflow
   - Workflow(cadence:review-panel)
+  - Workflow(cadence:execute-wave)
 ---
 
 <objective>
