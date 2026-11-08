@@ -68,8 +68,9 @@ set up ahead of its gate, so end that line with "You can still set it now." and 
   as an array. A `hint` is shown as text.
 - A `null` on a list key is not written, because `set` refuses it.
 - `review.triggers.risk_surface.surfaces` opens **Risk surfaces** instead of being typed.
-- A value equal to the one in force writes nothing. Four keys can have a value in force that differs from what the
-  target file stores: `git.auto_close`, `workflow.use_workflows`, `workflow.multi_workflow` and `review.reviewers`.
+- A value equal to the one in force writes nothing. Five keys can have a value in force that differs from what the
+  target file stores: `git.auto_close`, `workflow.use_workflows`, `workflow.multi_workflow`, `workflow.execute_workflows`
+  and `review.reviewers`.
   On those, a pick writes nothing only when it equals what the target file stores, or when that file stores
   nothing and the pick equals the value in force. So picking false over a repo true is written, and the menu can
   undo its own write. Picking true where the repo already stores true writes nothing to the repo, and **The second
@@ -120,8 +121,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set [--global] <key>="$
 
 Echo the seam's `changed`. Take **The second file** when the preview named one, then show the list again.
 
-**The second file.** `git.auto_close`, `workflow.use_workflows` and `workflow.multi_workflow` stay off until both files
-set them, so a repo value alone leaves the setting off. When the preview names a `second_file`, say in a turn of its own
+**The second file.** `git.auto_close`, `workflow.use_workflows`, `workflow.multi_workflow` and `workflow.execute_workflows`
+stay off until both files set them, so a repo value alone leaves the setting off. When the preview names a `second_file`, say in a turn of its own
 that the setting is still off, that `<second_file.file>` has to set it too, and that a value there counts for any repo
 that also sets this key, then ask for a yes. Only after that yes, write the global file with the same value file. A no
 leaves the repo value as it is and the setting off.

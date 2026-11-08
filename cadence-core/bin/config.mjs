@@ -300,6 +300,7 @@ function layersRead(group, advanced, key, catalog) {
   const both = {
     [WORKFLOW_KEYS.use]: wl.keys[WORKFLOW_KEYS.use],
     [WORKFLOW_KEYS.multi]: wl.keys[WORKFLOW_KEYS.multi],
+    [WORKFLOW_KEYS.execute]: wl.keys[WORKFLOW_KEYS.execute],
     'git.auto_close': { on: ac.authorized },
   };
   const read = layerRows({ keys: SCHEMA, merged: { config, layers, tornLayers }, files: { repo: repoFile, global: GLOBAL_CONFIG }, both });

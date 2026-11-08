@@ -8,7 +8,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { dependentsOf } from './setting-conditions.mjs';
 
 /** Keys where a revoke reads off then off in force, so the file's stored value is shown beside it. */
-export const STORED_KEYS = Object.freeze(['git.auto_close', 'workflow.use_workflows', 'workflow.multi_workflow', 'review.reviewers']);
+export const STORED_KEYS = Object.freeze(['git.auto_close', 'workflow.use_workflows', 'workflow.multi_workflow', 'workflow.execute_workflows', 'review.reviewers']);
 
 // route's reason and warnings are prose about the decision, never part of it, so a wording change isn't a change
 const DECISION_SKIP = new Set(['ok', 'reason', 'warnings']);
