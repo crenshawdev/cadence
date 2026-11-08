@@ -313,7 +313,7 @@ function cmdWrite(dir, opts) {
     return fail('bad-args', 'codemap write needs --run-file <value>', 'pass the host\'s run file and re-run - nothing was billed or written');
   }
   const noticed = noticeTotals(opts, 'codemap write');
-  if (!noticed.ok) return fail('bad-args', noticed.detail, 'copy the notice\'s figure as a plain number - nothing was written');
+  if (noticed.ok === false) return fail('bad-args', noticed.detail, 'copy the notice\'s figure as a plain number - nothing was written');
   const runPath = opts['run-file'];
   const root = dirname(resolve(dir));
   const runRead = readCapped(runPath, MAX_RUN_BYTES);
@@ -411,7 +411,7 @@ function cmdWrite(dir, opts) {
       if (given && (typeof row.item !== 'string' || row.item !== given.item)) { no('item differs from the launch file\'s or is missing, so the reader may have opened the wrong file'); continue; }
       if (pinned && !sameHashes(from, pinned)) { no('built_from differs from the launch file\'s, so a hash or a path was changed on the way'); continue; }
       const verdict = judgeEntry(row.entry, { root, module: new Set(m.paths), tracked, nested: nestedPaths, symbols });
-      if (!verdict.ok) { no(verdict.why); continue; }
+      if (verdict.ok === false) { no(verdict.why); continue; }
       atomicWrite(join(map, entryFile(m.name)), JSON.stringify({ built_from: from, ...verdict.entry }));
       written.push(name);
     } catch (e) {
@@ -433,7 +433,7 @@ const listOf = (v) => (typeof v === 'string' ? v.split(',').map((x) => x.trim())
  * The stored map as `slice` reads it: the index with its checks, the current facts, each module's state and entry, and the
  * marks. A failure comes back as `error` instead of a refusal, so a seam that can do without a map reads it as no map.
  * @param {string} dir the planning directory
- * @returns {{error: {reason: string, message: string, hint: string}} | {error?: undefined, index: any, states: Map<string, string>, entries: Map<string, any>, entryPath: (name: string) => string, current: Set<string>, marks: {edges_shed?: true, symbols_shed?: true}}}
+ * @returns {{error: {reason: string, message: string, hint: string}} | {index: any, states: Map<string, string>, entries: Map<string, any>, entryPath: (name: string) => string, current: Set<string>, marks: {edges_shed?: true, symbols_shed?: true}}}
  */
 function readStoredMap(dir) {
   const root = dirname(resolve(dir));
@@ -475,6 +475,7 @@ function readStoredMap(dir) {
     if (entry && (state === 'built' || state === 'stale')) entries.set(m.name, entry);
   }
   const base = `${basename(resolve(dir))}/${MAP_DIR}`;
+  /** @type {{edges_shed?: true, symbols_shed?: true}} */
   const marks = { ...(index.edges_shed === true ? { edges_shed: true } : {}), ...(index.symbols_shed === true ? { symbols_shed: true } : {}) };
   return { index, states, entries, entryPath: (name) => `${base}/${entryFile(name)}`, current: new Set(current.map((r) => r.path)), marks };
 }
@@ -490,7 +491,7 @@ function cmdSlice(dir, opts) {
       'name what to read, such as `--files a.mjs,b.mjs`; the whole map is never printed');
   }
   const stored = readStoredMap(dir);
-  if (stored.error) return fail(stored.error.reason, stored.error.message, stored.error.hint);
+  if ('error' in stored) return fail(stored.error.reason, stored.error.message, stored.error.hint);
   const { index, states, entries, entryPath, current, marks } = stored;
   return ok(slice({ rows: index.rows, modules: index.modules, states, entries, select, entryPath, current, marks }));
 }

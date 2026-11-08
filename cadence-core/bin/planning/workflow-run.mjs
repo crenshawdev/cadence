@@ -167,13 +167,13 @@ function cmdWorkflowRun(dir, opts) {
     }
   }
   const noticed = noticeTotals(opts, 'workflow-run');
-  if (!noticed.ok) return fail('bad-args', noticed.detail, 'copy the notice\'s figure as a plain number - nothing was written');
+  if (noticed.ok === false) return fail('bad-args', noticed.detail, 'copy the notice\'s figure as a plain number - nothing was written');
   const totals = noticed.totals;
   // the wave's plan list, when the caller has it: the run file alone cannot say which plans a wave held
   let planned = null;
   if ('plans' in opts) {
     const listed = parsePlanList(opts.plans);
-    if (!listed.ok) return fail('bad-args', listed.detail, 'pass the wave\'s plan numbers as --plans 1,2,3 and re-run - nothing was written');
+    if (listed.ok === false) return fail('bad-args', listed.detail, 'pass the wave\'s plan numbers as --plans 1,2,3 and re-run - nothing was written');
     planned = listed.plans;
   }
   const outDir = resolve(opts['out-dir']);

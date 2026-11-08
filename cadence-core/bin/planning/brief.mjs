@@ -21,7 +21,7 @@ import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 function loadMap(dir) {
   try {
     const m = readStoredMap(dir);
-    if (m.error) return null;
+    if ('error' in m) return null;
     const { index, states, entries, entryPath, current, marks } = m;
     return {
       rows: index.rows,
@@ -84,7 +84,7 @@ function cmdBrief(dir, opts) {
     contextText: read(join(pdir, 'CONTEXT.md')),
     loadMap: () => loadMap(dir),
   });
-  if (!brief.ok) return fail('bad-plan', brief.detail, brief.hint);
+  if (brief.ok === false) return fail('bad-plan', brief.detail, brief.hint);
 
   /** @type {string|null} */
   let path = null;

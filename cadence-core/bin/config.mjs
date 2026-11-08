@@ -74,6 +74,7 @@ function validate(file) {
   }
   // a dotted key is not a setting anywhere else, so it is reported here and never walked as one
   const leaves = flatten(withoutDottedKeys(cfg), '', {});
+  /** @type {{key: string, error: string, value?: any}[]} */
   const errors = dottedKeyPaths(cfg).map((key) => ({ key, error: 'unknown key: a key spelled with a dot is not a setting - nest it' }));
   for (const [path, v] of Object.entries(leaves)) {
     // hasOwn, not SCHEMA[path]: a `__proto__` leaf found Object.prototype and read as "unknown schema type undefined"
