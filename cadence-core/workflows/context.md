@@ -33,7 +33,7 @@ If there is no cursor either (`no-cursor`), ask (ask-user seam, structured):
 - header: "Phase"
 - question: "Which phase do you want to gather context for?"
 - options:
-  - "Phase {N}: {phase name}" - one option for each phase in the roadmap, up to four, starting with the first one not finished
+  - "Phase {N}: {phase name}" - one option for each phase in the roadmap, up to four, starting with the first one not finished. When more qualify, name every phase left out in the last option's description and say its number can be typed under Other
 
 Anything else the person types is taken as a phase number.
 

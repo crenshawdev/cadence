@@ -26,7 +26,9 @@ Parse `$ARGUMENTS`:
   - header: "Phase"
   - question: "Which phase do you want to plan?"
   - options:
-    - "Phase {N}: {phase name}" - one option for each phase the status read shows without a plan, up to four
+    - "Phase {N}: {phase name}" - one option for each phase the status read shows without a plan, up to four. When more qualify, name every phase left out in the last option's description and say its number can be typed under Other
+
+  Anything else the person types is taken as a phase number.
 
   Instead of that ask, an `ok:true` carrying `cycle: "none"` with an empty `phases[]` is a derived
   closed milestone, not a planning target: stop with "The milestone is
@@ -325,7 +327,7 @@ three options, the first marked `(recommended)`:
 - question: "This phase is bigger than one plan should carry. How do you want to handle it?"
 - options:
   1. "Split into plans (recommended) - the work is divided into several plans inside this phase. Plans that touch the same files run in order. The phase keeps one goal, one verification and one landing."
-  2. "Split into phases - use this when the phase holds more than one deliverable. Planning stops here. You add the new phases, then plan each one. Separate phases can run side by side, and each is checked and landed on its own."
+  2. "Split into phases - use this when the phase holds more than one deliverable. Planning stops here. You add the new phases, then plan each one. Phases that don't depend on each other can run side by side, and each is checked and landed on its own."
   3. "Plan it all anyway - the planner writes plans for the full scope. The result may be over the size limit, and Cadence says so instead of letting it pass quietly."
 
 What each option does:
