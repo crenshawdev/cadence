@@ -1,0 +1,83 @@
+name: announce
+
+# Posts a release's notes to #cadence-releases. release.yml calls this once the release is out.
+# Run it by hand with a tag to post a release that missed it, or to retry a post that failed,
+# since rerunning release.yml would trip over the release it already created.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      DISCORD_RELEASES_WEBHOOK:
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to post, such as v4.0.0
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post the release notes to Discord
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
+        run: |
+          set -euo pipefail
+          if [ -z "$WEBHOOK" ]; then
+            echo "::warning::DISCORD_RELEASES_WEBHOOK isn't set, so ${TAG} wasn't posted"
+            exit 0
+          fi
+          gh release view "$TAG" --json body,url,isPrerelease > release.json
+          if [ "$(jq -r .isPrerelease release.json)" = true ]; then
+            echo "${TAG} is a pre-release, and pre-releases don't post"
+            exit 0
+          fi
+          node - <<'EOF'
+          const fs = require('node:fs');
+          const { body, url } = JSON.parse(fs.readFileSync('release.json', 'utf8'));
+          // the CHANGELOG is wrapped at 80 columns and Discord shows every newline, so join each paragraph and bullet back into one line
+          const lines = [];
+          let open = false;
+          let fenced = false;
+          for (const raw of body.split('\n')) {
+            const line = raw.trimEnd();
+            if (/^\s*```/.test(line)) { fenced = !fenced; lines.push(line); open = false; continue; }
+            if (fenced) { lines.push(line); continue; }
+            if (line === '' || line.startsWith('#')) { lines.push(line); open = false; continue; }
+            if (open && !/^\s*(?:[-*]|\d+\.) /.test(line)) { lines[lines.length - 1] += ` ${line.trim()}`; continue; }
+            lines.push(line);
+            open = true;
+          }
+          const head = `## Cadence ${process.env.TAG}\n\n`;
+          const foot = `\n\nFull release notes: <${url}>`;
+          const notes = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+          // Discord refuses a message over 2000 characters, so a long release keeps whole lines up to the limit and points at the rest
+          let content = head + notes + foot;
+          if (content.length > 2000) {
+            const more = '\n\n...';
+            const kept = [];
+            let size = head.length + more.length + foot.length;
+            for (const line of notes.split('\n')) {
+              if (size + line.length + 1 > 2000) break;
+              kept.push(line);
+              size += line.length + 1;
+            }
+            while (kept.length && (kept[kept.length - 1] === '' || kept[kept.length - 1].startsWith('#'))) kept.pop();
+            const cut = kept.length ? kept.join('\n') : notes.slice(0, 2000 - head.length - more.length - foot.length);
+            content = head + cut + more + foot;
+          }
+          fs.writeFileSync('payload.json', JSON.stringify({ content, allowed_mentions: { parse: [] } }));
+          console.log(`posting ${content.length} characters`);
+          EOF
+          curl -fsS --retry 3 -H 'Content-Type: application/json' --data-binary @payload.json "$WEBHOOK"

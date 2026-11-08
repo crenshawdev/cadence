@@ -117,3 +117,11 @@ jobs:
             *)                       FLAGS="--latest" ;;
           esac
           gh release create "$TAG" --title "$TAG" --notes-file RELEASE_NOTES.md --verify-tag $FLAGS
+
+  announce:
+    needs: publish
+    uses: ./.github/workflows/announce.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets:
+      DISCORD_RELEASES_WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
