@@ -105,7 +105,7 @@ If you pick <value>:
              Writes <key>=<value> to <file>.
              <field>: <before> becomes <after>        (one line per entry of `changes`)
              <key> starts applying.   <key> stops applying: <why>.
-             <second_file.file> also has to set it: it stays off until both files are set.
+             The setting stays off until <second_file.file> turns it on too. A value there applies in every repo that also turns it on.
 ```
 
 Leave out a line with nothing to say. When nothing in force changes, say "Nothing changes right now." and, on a key
@@ -122,9 +122,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set [--global] <key>="$
 Echo the seam's `changed`. Take **The second file** when the preview named one, then show the list again.
 
 **The second file.** `git.auto_close`, `workflow.use_workflows`, `workflow.multi_workflow` and `workflow.execute_workflows`
-stay off until both files set them, so a repo value alone leaves the setting off. When the preview names a `second_file`, say in a turn of its own
-that the setting is still off, that `<second_file.file>` has to set it too, and that a value there counts for any repo
-that also sets this key, then ask for a yes. Only after that yes, write the global file with the same value file. A no
+stay off until both files set them, so a repo value alone leaves the setting off. When the preview names a `second_file`, show this in a turn of its own,
+with `second_file.file` in place of {file}, and ask for a yes:
+
+"This setting is still off. It only turns on when your global config file, {file}, turns it on too. A value there applies
+in every repo that also turns it on. Do you want to write it there too?"
+
+Only after that yes, write the global file with the same value file. A no
 leaves the repo value as it is and the setting off.
 
 ```
