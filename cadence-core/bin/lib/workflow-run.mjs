@@ -481,29 +481,124 @@ function bracket(b) {
 }
 
 /**
- * One bracket per agent row. The worker key carries the run id, so a second run in one phase can't fold into the first.
+ * The bracket for one agent row. The worker key carries the run id, so a second run in one phase can't fold into the first.
  * An agent that did not finish is a checkpoint naming its state, and still bills what it spent.
+ * @param {any} row @param {number} i @param {{phase: string, runId: string, payloadRef: string}} at
+ */
+function agentBracket(row, i, at) {
+  const id = isText(row.agentId) ? row.agentId : `agent${i + 1}`;
+  const role = roleOfRow(row);
+  const label = typeof row.label === 'string' ? row.label : '';
+  const state = typeof row.state === 'string' ? row.state : 'unknown';
+  const figures = rowFigures(row);
+  return bracket({
+    phase: at.phase, plan: `${at.runId}-${id}`, role, read: at.payloadRef, figures,
+    ...(role === 'cad-reviewer' && label.startsWith('reviewer ') ? { reviewer: label.slice('reviewer '.length) } : {}),
+    terminal: state === 'done' ? 'return' : 'checkpoint',
+    ...(state === 'done' ? {} : { detail: `the workflow agent was in state "${state}", not done` }),
+  });
+}
+
+/**
+ * One bracket per agent row.
  * @param {any} run @param {{phase: string, runId: string, payloadRef: string}} at
  */
 export function agentBrackets(run, at) {
-  return agentRows(run).map((row, i) => {
-    const id = isText(row.agentId) ? row.agentId : `agent${i + 1}`;
-    const role = roleOfRow(row);
-    const label = typeof row.label === 'string' ? row.label : '';
-    const state = typeof row.state === 'string' ? row.state : 'unknown';
-    /** @type {Record<string, any>} */
-    const figures = {};
-    for (const [key, v] of [['tokens', row.tokens], ['turns', row.toolCalls], ['duration_ms', row.durationMs]]) {
-      if (figure(v) !== undefined) figures[key] = v;
-    }
-    if (isText(row.agentId)) figures.agent_id = row.agentId;
-    return bracket({
-      phase: at.phase, plan: `${at.runId}-${id}`, role, read: at.payloadRef, figures,
-      ...(role === 'cad-reviewer' && label.startsWith('reviewer ') ? { reviewer: label.slice('reviewer '.length) } : {}),
-      terminal: state === 'done' ? 'return' : 'checkpoint',
-      ...(state === 'done' ? {} : { detail: `the workflow agent was in state "${state}", not done` }),
+  return agentRows(run).map((row, i) => agentBracket(row, i, at));
+}
+
+/** A row's own figures, a key left off where the host gave none and its agent id when it gave one. @param {any} row */
+function rowFigures(row) {
+  /** @type {Record<string, any>} */
+  const figures = {};
+  for (const [key, v] of [['tokens', row.tokens], ['turns', row.toolCalls], ['duration_ms', row.durationMs]]) {
+    if (figure(v) !== undefined) figures[key] = v;
+  }
+  if (isText(row.agentId)) figures.agent_id = row.agentId;
+  return figures;
+}
+
+/** The executor role a wave's rows are billed under, and the commits line that marks a replay. */
+export const EXECUTOR_ROLE = 'cad-executor';
+const REPLAY_COMMITS = 'none (already applied)';
+const PLAN_LABEL = /^plan (\S+)$/;
+
+/** The plan number a wave's agent row is labelled with, or null. @param {any} row @returns {string|null} */
+export function planOfRow(row) {
+  const m = PLAN_LABEL.exec(typeof row.label === 'string' ? row.label : '');
+  return m ? m[1] : null;
+}
+
+/**
+ * Whether a run file is a wave's: every agent row is labelled `plan <k>`, or the result carries a plan list and no voices.
+ * The rows come first so a wave that was killed before it returned still bills under its plans.
+ * @param {any} run
+ */
+export function isWaveRun(run) {
+  const rows = agentRows(run);
+  if (rows.length > 0 && rows.every((r) => planOfRow(r) !== null)) return true;
+  return isPlainObject(run) && isPlainObject(run.result) && 'plans' in run.result && !('voices' in run.result);
+}
+
+/**
+ * Each plan's digest as the wave's result holds it, keyed by the plan number's text: the digest object, or null for a dead slot.
+ * @param {any} run @returns {Map<string, any>}
+ */
+function digestsOf(run) {
+  /** @type {Map<string, any>} */
+  const found = new Map();
+  const plans = isPlainObject(run) && isPlainObject(run.result) && Array.isArray(run.result.plans) ? run.result.plans : [];
+  for (const e of plans) {
+    if (!isPlainObject(e) || !(isText(e.plan) || Number.isSafeInteger(e.plan)) || found.has(String(e.plan))) continue;
+    found.set(String(e.plan), isPlainObject(e.digest) ? e.digest : null);
+  }
+  return found;
+}
+
+/**
+ * How one executor's row closes. A row that is not done, or whose slot is missing or null, is a checkpoint naming that; a digest
+ * carrying a checkpoint is one naming its type; `none (already applied)` is a replay; anything else is a return.
+ * @param {any} row @param {any} digest the plan's digest, null for a dead slot, undefined for no entry
+ * @returns {{terminal: 'return'|'checkpoint', detail?: string, replay?: true}}
+ */
+function closeOf(row, digest) {
+  const state = typeof row.state === 'string' ? row.state : 'unknown';
+  if (state !== 'done') return { terminal: 'checkpoint', detail: `the workflow agent was in state "${state}", not done` };
+  if (digest === undefined) return { terminal: 'checkpoint', detail: 'the run\'s result holds no entry for this plan' };
+  if (digest === null) return { terminal: 'checkpoint', detail: 'the plan\'s slot in the run\'s result is null: its executor died or returned nothing' };
+  const status = typeof digest.status === 'string' ? digest.status : '';
+  if (isText(digest.checkpoint) || /\bCHECKPOINT\b/i.test(status)) {
+    return { terminal: 'checkpoint', detail: `the plan returned a checkpoint: ${(isText(digest.checkpoint) ? digest.checkpoint : status).trim().slice(0, 200)}` };
+  }
+  if (typeof digest.commits === 'string' && digest.commits.trim() === REPLAY_COMMITS) return { terminal: 'return', replay: true };
+  return { terminal: 'return' };
+}
+
+/**
+ * A wave's brackets. Each `plan <k>` row is a close under worker key `<k>` as the executor, written alone because the plan's dispatch
+ * is already on the record from its own resolve. The close carries its row's agent id, which is what tells one run's close from
+ * another's, so a later dispatch of the same plan bills again. A row without a plan label bills as an ordinary agent row.
+ * @param {any} run @param {{phase: string, runId: string, payloadRef: string}} at
+ * @returns {{closes: {plan: string, terminal: Record<string, any>}[], loose: {plan: string, dispatch: any, terminal: any}[]}}
+ */
+export function waveBrackets(run, at) {
+  const digests = digestsOf(run);
+  /** @type {{plan: string, terminal: Record<string, any>}[]} */
+  const closes = [];
+  /** @type {{plan: string, dispatch: any, terminal: any}[]} */
+  const loose = [];
+  agentRows(run).forEach((row, i) => {
+    const plan = planOfRow(row);
+    if (plan === null) { loose.push(agentBracket(row, i, at)); return; }
+    const { terminal, detail, replay } = closeOf(row, digests.get(plan));
+    // a row with no agent id still needs one to be told apart from another run's close on this plan
+    const figures = { ...rowFigures(row), ...(isText(row.agentId) ? {} : { agent_id: `${at.runId}-agent${i + 1}` }) };
+    closes.push({
+      plan,
+      terminal: { phase: at.phase, family: 'lifecycle', plan, role: EXECUTOR_ROLE, event: terminal, ...figures, ...(detail ? { detail } : {}), ...(replay ? { replay: true } : {}) },
     });
   });
+  return { closes, loose };
 }
 
 /**

@@ -15,7 +15,7 @@ import { emit } from '../lib/seam-io.mjs';
 import { appendEvent, renderTrace, TERMINAL } from '../lib/trace.mjs';
 import {
   ANSWERS_FILE, MAX_ANSWERS_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
-  agentBrackets, agentRows, mapRun, mergeAnswers, noticeBracket, parseAnswers, parseRun,
+  EXECUTOR_ROLE, agentBrackets, agentRows, isWaveRun, mapRun, mergeAnswers, noticeBracket, parseAnswers, parseRun, waveBrackets,
 } from '../lib/workflow-run.mjs';
 
 /** A provider's teed envelope is one JSON line, so this is generous. */
@@ -98,6 +98,26 @@ export function writeBrackets(dir, phase, runId, list) {
 }
 
 /**
+ * Write a wave's closes. The dispatches are already on the record, so only the close goes in. A close is skipped when the record holds
+ * a terminal on that worker key from the same agent, which is how a run bills once while a later dispatch of the same plan still bills.
+ * @param {string} dir the planning directory
+ * @param {string} phase @param {{plan: string, terminal: Record<string, any>}[]} closes
+ * @returns {{written: number, already: number, failed: {plan: string, reason: string}[]}}
+ */
+export function writeWaveCloses(dir, phase, closes) {
+  const seen = new Set(renderTrace(dir, phase).events
+    .filter((e) => e.family === 'lifecycle' && TERMINAL.includes(e.event) && typeof e.agent_id === 'string')
+    .map((e) => `${e.plan}\0${e.agent_id}`));
+  const out = { written: 0, already: 0, failed: /** @type {{plan: string, reason: string}[]} */ ([]) };
+  for (const c of closes) {
+    if (seen.has(`${c.plan}\0${c.terminal.agent_id}`)) { out.already += 1; continue; }
+    const r = appendEvent(dir, c.terminal);
+    if (r.written) out.written += 1; else out.failed.push({ plan: c.plan, reason: r.reason || 'not-written' });
+  }
+  return out;
+}
+
+/**
  * Each provider voice's envelope as parsed from the file the wrapper teed it to, null where it can't be read as JSON.
  * @param {any} run a run `parseRun` accepted
  * @returns {Map<string, any>}
@@ -163,11 +183,20 @@ function cmdWorkflowRun(dir, opts) {
   const at = { phase: phase.raw, runId, payloadRef: opts['payload-ref'].trim() };
   const rows = agentRows(file);
   const fromFile = rows.length > 0;
+  const wave = isWaveRun(file);
   const why = runRead.text === null ? `the run file ${runRead.why}` : (file === null ? 'the run file is not JSON' : 'the run file holds no agent rows');
-  const brackets = {
-    source: fromFile ? 'run-file' : 'notice-totals',
-    ...writeBrackets(dir, phase.raw, runId, fromFile ? agentBrackets(file, at) : [noticeBracket({ ...at, why, totals })]),
-  };
+  /** @type {{written: number, already: number, failed: {plan: string, reason: string}[]}} */
+  let billed;
+  if (wave && fromFile) {
+    // an executor's close goes under its plan number, and an unlabelled row bills as an agent of this run
+    const split = waveBrackets(file, at);
+    const closes = writeWaveCloses(dir, phase.raw, split.closes);
+    const loose = writeBrackets(dir, phase.raw, runId, split.loose);
+    billed = { written: closes.written + loose.written, already: closes.already + loose.already, failed: [...closes.failed, ...loose.failed] };
+  } else {
+    billed = writeBrackets(dir, phase.raw, runId, fromFile ? agentBrackets(file, at) : [noticeBracket({ ...at, why, totals, ...(wave ? { role: EXECUTOR_ROLE } : {}) })]);
+  }
+  const brackets = { source: fromFile ? 'run-file' : 'notice-totals', ...billed };
   /** Every answer from here on says what was billed. @param {string} reason @param {string} [detail] @param {string} [hint] */
   const refuse = (reason, detail, hint) => emit({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}), brackets });
 
