@@ -326,7 +326,7 @@ answer that is neither option re-asks, and the record waits.
 
 - **Proved and named**: no second question, since naming it is the answer, and
   the answer is to fix. One whose fix is not then made, such as `/cad-verify`'s
-  leave-it-open or Re-plan, goes to the two-option ask.
+  Leave open or Re-plan, goes to the two-option ask.
 - **Settling**: a fix names its commit in `fix_commit`. An override writes
   `overridden: true` and carries the user's words on the `override` receipt
   above. A fix that leaves no commit, because the file is one git does not
