@@ -49,7 +49,7 @@ export const BULK_SHAPES = Object.freeze([
     seam: 'config.mjs',
     bounded: Object.freeze([]),
     forms: Object.freeze([]),
-    why: 'measured 54,116 B on a template repository, 2026-11-05 - every setting\'s text and value in force, which the sentence match reads from a file',
+    why: 'measured 60,763 B on a template repository, 2026-11-08 - every setting\'s label, text and value in force, which the sentence match reads from a file',
   }),
   Object.freeze({
     shape: 'codemap slice',
@@ -138,7 +138,7 @@ export const BULK_OUTPUT = Object.freeze([
   Object.freeze({
     surface: 'cadence-core/workflows/config-menu.md',
     shape: 'config catalog', call: 'catalog',
-    bytes: 54116, measured: '2026-11-05', transport: 'redirect',
+    bytes: 60763, measured: '2026-11-08', transport: 'redirect',
   }),
 
   // --- git diff: the four that already write to a file -----------------------

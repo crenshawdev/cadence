@@ -103,7 +103,8 @@ export function layerRows({ keys, merged, files, both }) {
     const rc = cellFor('repo', key, spec, flat.repo, torn.repo, files.repo);
     const gc = cellFor('global', key, spec, flat.global, torn.global, files.global);
     const row = /** @type {Record<string, any>} */ ({
-      key, group: spec.section, shown: typeof spec.question === 'string', position: spec.position,
+      key, ...(typeof spec.label === 'string' ? { label: spec.label } : {}),
+      group: spec.section, shown: typeof spec.question === 'string', position: spec.position,
       default: dflt, global: gc, repo: rc,
     });
     if (Object.hasOwn(both, key)) {

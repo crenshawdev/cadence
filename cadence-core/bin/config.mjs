@@ -290,7 +290,7 @@ function walkRead() {
 
 // The menu's read: where each setting's value comes from. The repo is the cwd, as workflow-layers has it.
 // Bare gives the opening screen's counts. --group adds that group's shown rows and the names of its Advanced keys,
-// --group with --advanced the Advanced rows with `purpose`, --key one row with the key's full text.
+// --group with --advanced the Advanced rows as key, label, value, winner and purpose, --key one row with the key's full text.
 function layersRead(group, advanced, key, catalog) {
   const cwd = process.cwd();
   const repoFile = join(cwd, '.planning', 'config.json');
@@ -309,8 +309,8 @@ function layersRead(group, advanced, key, catalog) {
   const plain = ({ group: _g, shown: _s, position: _p, ...r }) => r;
   if (catalog) {
     out({ ...head, settings: read.rows.map((r) => {
-      const { question, purpose, explain } = SCHEMA[r.key];
-      return { key: r.key, question: question ?? null, purpose: purpose ?? null, explain: explain ?? null, value: r.value };
+      const { label, question, purpose, explain } = SCHEMA[r.key];
+      return { key: r.key, ...(label !== undefined ? { label } : {}), question: question ?? null, purpose: purpose ?? null, explain: explain ?? null, value: r.value };
     }) });
     return;
   }
@@ -330,7 +330,9 @@ function layersRead(group, advanced, key, catalog) {
     'ask for one of the group names the detail lists, spelled as it is there');
   const inGroup = read.rows.filter((r) => r.group === group);
   if (advanced) {
-    out({ ...head, group: found, rows: inGroup.filter((r) => !r.shown).map((r) => ({ ...plain(r), purpose: SCHEMA[r.key].purpose })) });
+    // a pick of the five fields the Advanced list prints, so a field layerRows gains later stays off this read (10,000 B)
+    const pick = (r) => ({ key: r.key, ...(r.label !== undefined ? { label: r.label } : {}), value: r.value, winner: r.winner, purpose: SCHEMA[r.key].purpose });
+    out({ ...head, group: found, rows: inGroup.filter((r) => !r.shown).map(pick) });
     return;
   }
   out({ ...head, group: found, rows: inGroup.filter((r) => r.shown).map(plain), advanced: inGroup.filter((r) => !r.shown).map((r) => r.key) });
