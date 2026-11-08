@@ -21,8 +21,14 @@ Parse `$ARGUMENTS`:
 - `[phase]` - phase number. If omitted, run
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and
   take `current`; if the current phase is already planned, its `phases[]`
-  entries show which phases still need plans - ask (ask-user seam). An
-  `ok:true` carrying `cycle: "none"` with an empty `phases[]` is a derived
+  entries show which phases still need plans - ask (ask-user seam):
+
+  - header: "Phase"
+  - question: "Which phase do you want to plan?"
+  - options:
+    - "Phase {N}: {phase name}" - one option for each phase the status read shows without a plan, up to four
+
+  Instead of that ask, an `ok:true` carrying `cycle: "none"` with an empty `phases[]` is a derived
   closed milestone, not a planning target: stop with "The milestone is
   closed - no active cycle. /cad-phase add opens the next one." There is no
   phase to plan until a roadmap entry exists.
@@ -92,8 +98,13 @@ that consumes a prior call's output is serialized.
    (seam-spawn-agent.md handoff read discipline). Absent is fine - plan from
    the roadmap goal alone.
 3. If PLAN*.md already exists in the phase dir (and not --gaps): ask
-   (ask-user seam) - replan from scratch (overwrite) or abort. Never
-   overwrite silently. The `--gaps` exemption is not a licence to overwrite: a
+   (ask-user seam). Never overwrite silently.
+
+   - header: "Plans exist"
+   - question: "Phase {N} already has plan files. Do you want to plan it again from scratch?"
+   - options: "Plan again - the new plans replace the existing plan files" / "Stop - leave the existing plans as they are"
+
+   On "Stop", abort. The `--gaps` exemption is not a licence to overwrite: a
    gaps plan writes the next free numbered file (plan-gaps.md step 3) and
    overwrites nothing, so there is nothing to ask about.
 </step>
@@ -310,17 +321,23 @@ State the measurement first, in one line - the requirement count and the
 ceiling, or the planner's own reason - then ask (ask-user seam) with these
 three options, the first marked `(recommended)`:
 
-1. **Split into plans inside this phase (recommended).** Re-dispatch the
+- header: "Too big"
+- question: "This phase is bigger than one plan should carry. How do you want to handle it?"
+- options:
+  1. "Split into plans (recommended) - the work is divided into several plans inside this phase. Plans that touch the same files run in order. The phase keeps one goal, one verification and one landing."
+  2. "Split into phases - use this when the phase holds more than one deliverable. Planning stops here. You add the new phases, then plan each one. Separate phases can run side by side, and each is checked and landed on its own."
+  3. "Plan it all anyway - the planner writes plans for the full scope. The result may be over the size limit, and Cadence says so instead of letting it pass quietly."
+
+What each option does:
+
+1. Re-dispatch the
    planner ONCE, instructed to write `PLAN-1.md`, `PLAN-2.md`, ... each within
    the task ceiling. Plans that share a declared path are SEQUENTIAL: mark each
-   one so, and `/cad-execute` runs them in order. The phase keeps one goal, one
-   CONTEXT, one UAT, and one landing.
-2. **Split into phases via `/cad-phase add`.** For when the phase carries more
-   than one deliverable rather than one deliverable too large. Stops here; you
+   one so, and `/cad-execute` runs them in order.
+2. Stops here; you
    run `/cad-phase add`, then `/cad-plan` per phase. Independent phases can run
-   concurrently (see `parallelization.max_concurrent_agents`) and each verifies
-   and lands on its own.
-3. **Plan the full scope anyway.** Re-dispatch ONCE with that instruction. The
+   concurrently (see `parallelization.max_concurrent_agents`).
+3. Re-dispatch ONCE with that instruction. The
    result is a plan over its ceiling, and `check_size` below will say so rather
    than let it pass silently.
 
