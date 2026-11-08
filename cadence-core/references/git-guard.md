@@ -9,10 +9,16 @@ Read `git.protected_branches` and `git.on_protected` from config
 (defaults: `["main", "master"]`, `ask`). If `git branch --show-current` is in
 the protected list:
 
-- `ask` (default) -> ask the user (ask-user seam), no preselected default:
-  1. Create and switch to a work branch (suggest a name from the task/phase slug)
-  2. Proceed on this branch anyway
-  3. Abort
+- `ask` (default) -> ask the user (ask-user seam), no preselected default.
+  Fill in the branch it names, and suggest a name for the first option from the
+  task/phase slug:
+
+  - header: "Branch"
+  - question: "You're on {branch}, a protected branch. Cadence won't commit there unless you say so. What do you want to do?"
+  - options:
+    - "Make a new branch - create a work branch named {suggested name} and switch to it"
+    - "Commit here anyway - the commits go on {branch}"
+    - "Stop - nothing is committed"
 - `refuse` -> stop with a one-line explanation.
 - `allow` -> proceed silently.
 
