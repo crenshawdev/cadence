@@ -1,5 +1,5 @@
 // @ts-check
-// workflow-layers.mjs - the one read of the two workflow switches: may this run take the workflow path.
+// workflow-layers.mjs - the one read of the three workflow switches: may this run take the workflow path.
 // A switch counts only when the repo config and the user-global config both set it to an explicit `true`.
 // A committed repo value arrives with a clone, so alone it must never turn on the costlier path.
 // Raw `JSON.parse` per layer, not mergeLayers: the merge skips a torn layer where this answer has to fail.
@@ -11,8 +11,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GLOBAL_CONFIG, isPlainObject, layerIdentity } from './config-merge.mjs';
 
-/** The two keys, by name so no caller spells them. */
-export const WORKFLOW_KEYS = Object.freeze({ use: 'workflow.use_workflows', multi: 'workflow.multi_workflow' });
+/** The three keys, by name so no caller spells them. */
+export const WORKFLOW_KEYS = Object.freeze({ use: 'workflow.use_workflows', multi: 'workflow.multi_workflow', execute: 'workflow.execute_workflows' });
 
 /** @typedef {'set' | 'unset' | 'unreadable'} LayerState */
 

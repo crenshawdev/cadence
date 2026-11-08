@@ -144,6 +144,12 @@ Run reviews as workflows, with one agent per reviewer and one per finding, rathe
 
 Allow more than one workflow at a time. Several at once multiply the usage burn of each, so with this off a second workflow waits for the first to finish. It counts only when both the repository and user-global configuration set it to `true`.
 
+### `workflow.execute_workflows`
+
+**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
+
+Run `/cadence:cad-execute` on a workflow. A phase's plans run in waves, with one launch per wave and one executor per plan, while the merges, the checks and every question stay in your main session. The executors are workflow agents that edit files and commit, so unlike the review workflows this one writes code. It needs `planning.workflow_plans` on. It counts only when both the repository's `.planning/config.json` and your user-global configuration set it to `true`; either alone leaves `/cadence:cad-execute` on the path it always took, so a value committed to a repository can't start a run that writes code for whoever clones it. It has no question in the `/cadence:cad-config` walk and sits under Advanced.
+
 ### `workflow.config_menu`
 
 **Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
