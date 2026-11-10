@@ -84,7 +84,7 @@ function uncommittedUnder(cwd, relPath) {
   }
 }
 
- // existsSync reads a dangling symlink as free and the apply dies mid-flight on renameSync; lstatSync sees the link
+// existsSync reads a dangling symlink as free and the apply dies mid-flight on renameSync; lstatSync sees the link
 function occupied(p) { return existsSync(p) || !!lstatSync(p, { throwIfNoEntry: false }); }
 
 function cmdRenumber(dir, sub, opts) {
@@ -199,7 +199,8 @@ function cmdRenumber(dir, sub, opts) {
   }
 
   const stateFile = join(dir, 'STATE.md');
-  const cursor = parseCursor(read(stateFile) || '');
+  const stateText = read(stateFile);
+  const cursor = parseCursor(stateText || '');
   let newCursor = null;
   let warn;
   if (cursor) {
@@ -238,8 +239,9 @@ function cmdRenumber(dir, sub, opts) {
 
   // prose refs the shift leaves alone are for the model to repair; REQUIREMENTS refs come from the pass above
   const inTextRefs = [];
+  const readEarlier = { 'ROADMAP.md': roadmapText, 'REQUIREMENTS.md': reqText, 'STATE.md': stateText };
   for (const f of ['ROADMAP.md', 'REQUIREMENTS.md', 'STATE.md', 'PROJECT.md']) {
-    const t = read(join(dir, f));
+    const t = f in readEarlier ? readEarlier[f] : read(join(dir, f));
     if (t === null) continue;
     const refs = f === 'REQUIREMENTS.md' && reqRefs ? reqRefs : findProsePhaseRefs(t, shiftFrom);
     for (const ref of refs) inTextRefs.push({ file: f, ...ref });

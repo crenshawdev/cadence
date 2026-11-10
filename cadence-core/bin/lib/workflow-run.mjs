@@ -507,6 +507,14 @@ export function agentBrackets(run, at) {
   return agentRows(run).map((row, i) => agentBracket(row, i, at));
 }
 
+/** A totals object as figures, a key left off where the figure is not one the host could have reported. @param {any} totals */
+function totalsFigures(totals) {
+  /** @type {Record<string, any>} */
+  const figures = {};
+  for (const [key, v] of Object.entries(totals)) if (figure(v) !== undefined) figures[key] = v;
+  return figures;
+}
+
 /** A row's own figures, a key left off where the host gave none and its agent id when it gave one. @param {any} row */
 function rowFigures(row) {
   /** @type {Record<string, any>} */
@@ -653,9 +661,7 @@ export function waveBrackets(run, at) {
   (at.planned || []).filter((plan) => !rowed.has(plan)).forEach((plan, n) => {
     const carries = rows.length === 0 && n === 0;
     const reason = rows.length === 0 ? at.why : `the run file holds no agent row labelled "plan ${plan}"`;
-    /** @type {Record<string, any>} */
-    const figures = {};
-    if (carries) for (const [key, v] of Object.entries(at.totals || {})) if (figure(v) !== undefined) figures[key] = v;
+    const figures = carries ? totalsFigures(at.totals || {}) : {};
     closes.push({
       plan,
       terminal: {
@@ -676,11 +682,8 @@ export function waveBrackets(run, at) {
  *   totals: {tokens?: number, turns?: number, duration_ms?: number}}} at
  */
 export function noticeBracket(at) {
-  /** @type {Record<string, any>} */
-  const figures = {};
-  for (const [key, v] of Object.entries(at.totals)) if (figure(v) !== undefined) figures[key] = v;
   return bracket({
-    phase: at.phase, plan: `${at.runId}-notice`, role: at.role || WORKFLOW_ROLE, read: at.payloadRef, figures,
+    phase: at.phase, plan: `${at.runId}-notice`, role: at.role || WORKFLOW_ROLE, read: at.payloadRef, figures: totalsFigures(at.totals),
     terminal: 'return',
     detail: `the run's totals from the completion notice, because ${at.why}`,
   });
