@@ -26,7 +26,7 @@ import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import {
   parseQuery, probeArgv, bareArgv, lineArgv, comparandArgv, classifyResult, excludedFrom,
 } from './lib/why-query.mjs';
-import { renderChain } from './lib/why-render.mjs';
+import { capChain, renderChain } from './lib/why-render.mjs';
 import {
   buildCommitIndex, buildTaskIndex, buildRecoveredIndex, mergeCommitIndexes,
   resolveCommit, readPhaseRecords, readAdjudications, rangeMembers,
@@ -171,11 +171,9 @@ function joinChain(dir, path, index, raws) {
     const join = joinFor(index, e.sha);
     if (join.state !== 'resolved') return { ...e, join };
 
+    const phaseDir = index.dirs.find((/** @type {any} */ d) => d.label === join.label);
     const key = `${join.label}\x1f${join.plan}`;
-    if (!memo.has(key)) {
-      const phaseDir = index.dirs.find((/** @type {any} */ d) => d.label === join.label);
-      memo.set(key, readPhaseRecords(phaseDir, join.plan, dir));
-    }
+    if (!memo.has(key)) memo.set(key, readPhaseRecords(phaseDir, join.plan, dir));
     const records = memo.get(key);
     for (const w of records.warnings) warnings.add(w);
 
@@ -183,9 +181,7 @@ function joinChain(dir, path, index, raws) {
       planText: records.plan, contextText: records.context, taskCell: join.task,
     });
     join.deviation = { bullets: parseDeviations(records.summary) };
-    join.review = reviewFor(
-      index.dirs.find((/** @type {any} */ d) => d.label === join.label), e.sha,
-    );
+    join.review = reviewFor(phaseDir, e.sha);
     join.declared = {
       planFile: records.planFile,
       tasks: records.plan ? declaringTasks(records.plan, path) : [],
@@ -301,8 +297,9 @@ try {
         const raws = parseEntries(chain.stdout);
         // bare arm only, since -L carries its own simplification, and only after the chain succeeded
         const excluded = line === undefined ? simplificationReport(dir, path, raws) : null;
-        const joined = joinChain(dir, path, index, raws);
-        const rendered = renderChain(joined.entries, { top, excluded, path });
+        // join only the commits the render will show; `total` still counts the whole chain
+        const joined = joinChain(dir, path, index, capChain(raws, top));
+        const rendered = renderChain(joined.entries, { top, total: raws.length, excluded, path });
         emit({
           ok: true, path, line, result: 'chain',
           text: rendered.text, shown: rendered.shown, total: rendered.total, entries: rendered.entries,
