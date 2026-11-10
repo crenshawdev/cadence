@@ -965,11 +965,11 @@ export function classifyAcceptanceCriteria(text) {
     if (/^## Acceptance criteria\s*$/.test(lines[i])) { heading = i; break; }
   }
   if (heading === -1) {
-    // no exact heading: look for a line meant to be it (capital C, trailing colon, `###`), or coverage goes silent
+    // no exact heading: look for a line meant to be it (capital C, trailing colon, `###`, up to three spaces of indent), or coverage goes silent
     const nearFenced = fenceScanner();
     for (let i = 0; i < lines.length; i++) {
       if (nearFenced(lines[i])) continue;
-      if (/^#{1,6}\s*acceptance\s+criteri/i.test(lines[i])) {
+      if (/^ {0,3}#{1,6}\s*acceptance\s+criteri/i.test(lines[i])) {
         // 'unknown', never 'none': the section is never walked, so a typo mustn't earn the "declared nothing" exemption
         return { criteria: null, declaresIds: 'unknown',
           issues: [{ line: i + 1, code: 'criteria-heading-near-miss', text: issueText(lines[i]) }] };
