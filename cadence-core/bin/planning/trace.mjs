@@ -9,7 +9,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import {
   ARGV, DISPATCH_WINDOW_DEFAULTS, RECORD_TOKEN, argRefusal, fail, intFlag, listPlanFiles, ok,
-  phaseSpellingCollision, read, readReadsRecords, routeLadder,
+  phaseGuard, read, readReadsRecords, routeLadder,
 } from './core.mjs';
 import { deriveCounts, recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS, evaluateFlag } from '../lib/arg-contract.mjs';
@@ -377,19 +377,13 @@ function cmdTrace(dir, sub, opts) {
   }
   // close is append minus two fields a site used to restate, so one body validates every flag
   if (sub === 'append' || sub === 'close') {
-    const parsedPhase = requirePhaseArg(opts.phase);
-    if (!parsedPhase.ok) {
-      return fail('bad-args', `trace ${sub} needs --phase <N>`,
-        `pass --phase <N> for the phase this event belongs to, then re-run the ${sub} - nothing was`
-        + ' appended, so exactly one event lands');
-    }
     // collision check right after the parse: append and close reach a phases/ path, so a clash recounts another phase
     // suggest, render and window only filter trace.jsonl and resolve no directory
-    const collision = phaseSpellingCollision(dir, parsedPhase);
-    if (collision) {
-      return fail('bad-args', `trace ${sub} ${collision}`,
-        `re-run the ${sub} with one of the two spellings the detail names - nothing was appended`);
-    }
+    const parsedPhase = phaseGuard(`trace ${sub}`, dir, opts.phase, `trace ${sub} needs --phase <N>`,
+      `pass --phase <N> for the phase this event belongs to, then re-run the ${sub} - nothing was`
+      + ' appended, so exactly one event lands',
+      `re-run the ${sub} with one of the two spellings the detail names - nothing was appended`);
+    if (!parsedPhase) return;
     // --detail-file is the safe transport for a derived detail (a verdict, a checkpoint's reason); see text-flag-file
     // resolved before the close inference reads the detail, or every converted checkpoint would bill as a clean return
     const resolvedDetail = resolveTextFlag(opts, 'detail', `trace ${sub}`);

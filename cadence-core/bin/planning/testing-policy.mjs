@@ -18,11 +18,10 @@ import { isForgeSlug } from '../lib/forge-decision.mjs';
 import { onPath } from '../lib/on-path.mjs';
 import { atomicWrite, parseUat, renderUat } from '../lib/planning-files.mjs';
 import { localGitEnv, publishAuthorized } from '../lib/publish-authorization.mjs';
-import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { schemaPath } from '../lib/test-seam.mjs';
 import { sleep } from '../lib/text-util.mjs';
-import { fail, intFlag, ok, phaseSpellingCollision, read } from './core.mjs';
+import { fail, intFlag, ok, phaseGuard, read } from './core.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // the same file and the same CADENCE_CONFIG_SCHEMA override as config.mjs, resolved by the one schemaPath
@@ -310,16 +309,10 @@ function cmdCiStatus(dir, root, opts) {
   /** @type {{raw: string}|null} */
   let phase = null;
   if (opts.phase !== undefined) {
-    const parsed = requirePhaseArg(opts.phase);
-    if (!parsed.ok) {
-      return fail('bad-args', 'ci-status --phase needs a phase number',
-        'pass --phase <N> naming the phase whose UAT.md should record the commit, or drop it');
-    }
-    const collision = phaseSpellingCollision(dir, parsed);
-    if (collision) {
-      return fail('bad-args', `ci-status ${collision}`,
-        're-run with one of the two spellings the detail names - nothing was read');
-    }
+    const parsed = phaseGuard('ci-status', dir, opts.phase, 'ci-status --phase needs a phase number',
+      'pass --phase <N> naming the phase whose UAT.md should record the commit, or drop it',
+      're-run with one of the two spellings the detail names - nothing was read');
+    if (!parsed) return;
     phase = parsed;
   }
 

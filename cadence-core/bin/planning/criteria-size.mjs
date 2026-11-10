@@ -4,11 +4,11 @@
 'use strict';
 
 import { join } from 'node:path';
-import { fail, phaseSpellingCollision, ok, read } from './core.mjs';
+import { fail, phaseGuard, ok, read } from './core.mjs';
 import {
   classifyAcceptanceCriteria, parseRoadmapPhases, phaseCriteria,
 } from '../lib/planning-files.mjs';
-import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
+import { requireInt } from '../lib/require-int.mjs';
 
 // context.md says 3-7 acceptance criteria, new-project.md and adopt.md 2-5 per roadmap phase; nothing counted either
 // two grammars in one call: CONTEXT via classifyAcceptanceCriteria, ROADMAP's per-phase list via phaseCriteria
@@ -46,18 +46,12 @@ function cmdCriteriaSize(dir, opts) {
   // `--phase` scopes to one phase in the caller's spelling; absent walks every roadmap phase
   let targets;
   if (opts.phase !== undefined) {
-    const parsedPhase = requirePhaseArg(opts.phase);
-    if (!parsedPhase.ok) {
-      return fail('bad-args', 'criteria-size --phase needs a phase number',
-        'send a plain phase number - 3, or 3.1 for an inserted phase - or drop --phase to check'
-        + ' every phase the roadmap declares in one call');
-    }
     // the tree-aware collision check runs before any phase-directory read (#42, #45); `phases/1.10/` stays addressable
-    const collision = phaseSpellingCollision(dir, parsedPhase);
-    if (collision) {
-      return fail('bad-args', `criteria-size ${collision}`,
-        're-run with one of the two spellings the detail names - nothing was read');
-    }
+    const parsedPhase = phaseGuard('criteria-size', dir, opts.phase, 'criteria-size --phase needs a phase number',
+      'send a plain phase number - 3, or 3.1 for an inserted phase - or drop --phase to check'
+      + ' every phase the roadmap declares in one call',
+      're-run with one of the two spellings the detail names - nothing was read');
+    if (!parsedPhase) return;
     targets = [{ n: parsedPhase.value, raw: parsedPhase.raw }];
   } else {
     targets = parseRoadmapPhases(roadmapText).map((p) => ({ n: p.n, raw: String(p.n) }));
