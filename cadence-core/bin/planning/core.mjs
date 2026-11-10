@@ -244,14 +244,15 @@ function readPlanReports(pdir, plans) {
 // J is the count of conforming plans, and the name comes from planName and is left off when the heading gives none
 // null when the dir is missing, has no plan or every plan is complete; `cursor set` and `status` share it
 // @param {string} pdir the phase directory
+// @param {ReturnType<typeof readPlanReports>} [reports] the phase's plan reports when the caller already read them: one per conforming plan, so `status` reads each once
 // @returns {{k: number, j: number, name?: string}|null}
-function planPosition(pdir) {
-  const { plans } = listPlanFiles(pdir);
-  const next = readPlanReports(pdir, plans).filter((r) => !r.complete)
+function planPosition(pdir, reports) {
+  const all = reports ?? readPlanReports(pdir, listPlanFiles(pdir).plans);
+  const next = all.filter((r) => !r.complete)
     .sort((a, b) => a.k - b.k)[0];
   if (!next) return null;
   const name = planName(read(join(pdir, next.plan)) ?? '');
-  return { k: next.k, j: plans.length, ...(name ? { name } : {}) };
+  return { k: next.k, j: all.length, ...(name ? { name } : {}) };
 }
 
 /**
