@@ -37,7 +37,7 @@
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { emit } from './lib/seam-io.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 // runs an ordered step list and records which steps completed
 import { runTransition } from './lib/file-transition.mjs';
@@ -46,7 +46,7 @@ import {
 } from './lib/release-decision.mjs';
 // no `readText` here, on purpose: its ''-on-failure would read an unreadable manifest or CHANGELOG as an empty one
 // no flag rule here, the declared rows own it; `requireFlag` raises, `evaluateFlag` returns (for --date)
-import { CONTRACTS, evaluateFlag, requireFlag } from './lib/arg-contract.mjs';
+import { CONTRACTS, evaluateFlag, rowReader } from './lib/arg-contract.mjs';
 
 /**
  * The release-tag URL a CHANGELOG link points at, from the manifest's `homepage` or `repository`:
@@ -305,7 +305,7 @@ const cmd = argv[0];
 /** This script's declared rows; a subcommand's row wins over the `'*'` row for flags every arm allows. */
 const ROWS = CONTRACTS['release-bump.mjs'];
 /** One flag read through its declared row in the raising form, for flags that refuse as `missing-flag-value`. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 try {
   if (cmd === 'bump') {
@@ -331,8 +331,5 @@ try {
       detail: 'subcommand: bump [--dir <path>] [--version <v>] [--date <YYYY-MM-DD>]' });
   }
 } catch (e) {
-  // the raised refusal has no `message`, so without this arm a valueless --dir emits detail "[object Object]"
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
-    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  emitCaught(e);
 }

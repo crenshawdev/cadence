@@ -137,6 +137,17 @@ export function requireFlag(argv, flag, spec) {
 }
 
 /**
+ * Binds a script's row table to `requireFlag` and hands back the lookup every dispatch reads its flags through:
+ * the subcommand's own row first, then the `'*'` row. Pure, so it never emits; the refusal is the catch arm's.
+ * @param {string[]} argv
+ * @param {Record<string, Record<string, any>>} table one script's `CONTRACTS` row
+ * @returns {(sub: string, name: string) => any}
+ */
+export function rowReader(argv, table) {
+  return (sub, name) => requireFlag(argv, name, table[sub][name] || table['*'][name]);
+}
+
+/**
  * Resolves a script's leading positional words to the subcommand key its table is filed under.
  * The bare form (no words, or a first flag) is `''`, or `weight.mjs --root <path>` reports `unknown-subcommand`.
  * A second word counts only if the table declares the pair: `cursor set` is one key, `recall some query` is `recall`.

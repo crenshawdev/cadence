@@ -15,8 +15,8 @@ import { withPlanningFileLock } from './lib/capture-file.mjs';
 import {
   appendDeclinedRow, appendFiledRow, atomicWrite, parseDeclinedRows, parseFiledRows,
 } from './lib/planning-files.mjs';
-import { emit } from './lib/seam-io.mjs';
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { onPath } from './lib/on-path.mjs';
 import { teaLoginNameForHost } from './lib/issue-decision.mjs';
@@ -642,7 +642,7 @@ const cmd = argv[0];
 const ROWS = CONTRACTS['issue-filing.mjs'];
 
 /** Each flag read through its declared row, as forge.mjs does: a refusal raises and the catch below publishes it. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 try {
   if (cmd === 'unfixed' || cmd === 'file') {
@@ -656,10 +656,5 @@ try {
         + 'file --payload <file> [--dir <path>]' });
   }
 } catch (e) {
-  if (e && e.seam) {
-    emit({ ok: false, reason: e.seam, detail: e.detail,
-      hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  } else {
-    emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
-  }
+  emitCaught(e, redactUrl);
 }

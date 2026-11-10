@@ -21,8 +21,8 @@
 
 import { join as joinPath } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { emit } from './lib/seam-io.mjs';
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import {
   parseQuery, probeArgv, bareArgv, lineArgv, comparandArgv, classifyResult, excludedFrom,
 } from './lib/why-query.mjs';
@@ -238,7 +238,8 @@ const GIT_FAILED_HINT = 'this query needs a readable git repository: run it insi
 const argv = process.argv.slice(2);
 const ROWS = CONTRACTS['why.mjs'];
 /** One flag read through its declared row: the `''` row if it declares the flag, else the script-global `'*'` row. */
-const arg = (name) => requireFlag(argv, name, ROWS[''][name] || ROWS['*'][name]);
+const row = rowReader(argv, ROWS);
+const arg = (name) => row('', name);
 
 try {
   const dir = arg('--dir') || process.cwd();
@@ -310,8 +311,5 @@ try {
     }
   }
 } catch (e) {
-  const err = /** @type {any} */ (e);
-  if (err && err.seam) emit({ ok: false, reason: err.seam, detail: err.detail,
-    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  else emit({ ok: false, reason: 'internal', detail: String(err && err.message ? err.message : err) });
+  emitCaught(e, String);
 }

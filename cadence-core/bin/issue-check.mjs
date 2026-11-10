@@ -11,9 +11,9 @@
 import { join } from 'node:path';
 import { boundedRun as run } from './lib/bounded-run.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { emit } from './lib/seam-io.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
 // --timeout-ms is `fallback` on purpose: a flag that could refuse could fail a land
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 import { refuseBase } from './lib/base-ref.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
@@ -163,7 +163,7 @@ const cmd = argv[0];
 /** Declared rows. A subcommand's row wins over `'*'`, which holds the flags every arm takes. */
 const ROWS = CONTRACTS['issue-check.mjs'];
 /** One flag read through its declared row; the row owns the rule. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 try {
   if (cmd === 'check') {
@@ -176,8 +176,5 @@ try {
     emit({ ok: false, reason: 'usage', detail: 'subcommand: check [--dir <path>] [--base <name>] [--timeout-ms <n>]' });
   }
 } catch (e) {
-  // a `refuse` row's error has no message, so a valueless --dir would emit "[object Object]"
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
-    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
+  emitCaught(e, redactUrl);
 }

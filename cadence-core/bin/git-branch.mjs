@@ -12,7 +12,7 @@
 
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { emit } from './lib/seam-io.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
 import { integrationBranchName, configuredNameProblem, milestoneVersion, decideBranch } from './lib/branch-decision.mjs';
 // shared with the audit so the two can't drift apart
 import { readTags } from './lib/git-tags.mjs';
@@ -21,7 +21,7 @@ import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 import { readText } from './lib/seam-input.mjs';
 // no flag rule here: arg-contract declares them. `--dir` refuses though this seam mutates nothing, since an advisory
 // reader answering about the wrong tree is the same quiet wrong answer (`tags --dir ''` did exactly that)
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 // degrades to "", which reads as not-on-a-base
 import { readCurrentBranch } from './lib/git-head.mjs';
 
@@ -65,7 +65,7 @@ const cmd = argv[0];
 /** This script's declared rows; a subcommand's row wins over the `'*'` row for flags every arm allows. */
 const ROWS = CONTRACTS['git-branch.mjs'];
 /** One flag of `sub` read through its declared row, never a second statement of what a flag may be. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 try {
   // `--dir` refuses on both axes, so empty, valueless and flag-shaped spellings raise the refusal below; absent is cwd
@@ -79,9 +79,5 @@ try {
       detail: 'subcommands: decide [--dir <path>] [--branch <name>] | tags [--dir <path>]' });
   }
 } catch (e) {
-  // the raised refusal has no `message`, so without this arm a valueless --dir would emit detail "[object Object]"
-  // one JSON line on stdout like every verdict: no workflow parses stderr
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
-    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  emitCaught(e);
 }

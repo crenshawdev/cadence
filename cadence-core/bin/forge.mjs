@@ -11,8 +11,8 @@
 import { join } from 'node:path';
 import { boundedRun as run } from './lib/bounded-run.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { emit } from './lib/seam-io.mjs';
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
+import { CONTRACTS, requireFlag, rowReader } from './lib/arg-contract.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { onPath } from './lib/on-path.mjs';
 import { classifyOrigin, loginNamesHost } from './lib/issue-decision.mjs';
@@ -253,7 +253,7 @@ const cmd = argv[0];
 const ROWS = CONTRACTS['forge.mjs'];
 
 /** One flag read, resolved against the declared row; this seam states no flag rule of its own. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 /**
  * The same read as a value door only: a bad value refuses by name, and an absent flag reads as `undefined`.
@@ -278,11 +278,5 @@ try {
         + '--repo <owner/name> --confirmed [--dir <path>]' });
   }
 } catch (e) {
-  // `requireFlag` puts the refusing flag on `.seam` and `.detail`; anything else is ours, so `redactUrl` the message
-  if (e && e.seam) {
-    emit({ ok: false, reason: e.seam, detail: e.detail,
-      hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  } else {
-    emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
-  }
+  emitCaught(e, redactUrl);
 }

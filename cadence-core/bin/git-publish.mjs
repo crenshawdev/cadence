@@ -19,7 +19,7 @@ import { authorizationDetail, decidePublish, decideReap, decideVerificationPubli
 import { localGitEnv, publishAuthorized } from './lib/publish-authorization.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 // requireFlag raises the refusal the catch at the foot renders; --dir refuses when empty so it can't default to the cwd
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 // a failed read degrades to '', which decidePublish sees as no branch and refuses
 import { readCurrentBranch } from './lib/git-head.mjs';
 import { redactUrl, redactAndCap } from './lib/redact-url.mjs';
@@ -224,7 +224,7 @@ const cmd = argv[0];
 /** This script's declared rows. A subcommand's own row wins over the `'*'` row, where flags every arm takes live. */
 const ROWS = CONTRACTS['git-publish.mjs'];
 /** One flag of `sub`, read through its declared row. The row owns the rule; this just adapts our argv. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 try {
   // --dir refuses when empty, valueless or flag-shaped; --remote and --branch fall back (origin, and reap's no-branch)
