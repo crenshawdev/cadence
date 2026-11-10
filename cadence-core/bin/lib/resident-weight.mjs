@@ -10,7 +10,7 @@
 import { readFileSync, readdirSync, existsSync, realpathSync, statSync } from 'node:fs';
 import { basename, join, relative, sep } from 'node:path';
 import { FRONTMATTER_RE, parseSkillsField } from './frontmatter.mjs';
-import { dirents } from './surface-weight.mjs';
+import { dirents, walk } from './surface-weight.mjs';
 
 /** The three branches a reachable citation may name. */
 const BRANCHES = ['references', 'templates', 'workflows'];
@@ -23,20 +23,6 @@ const CITE_RE = /(?:\$\{CLAUDE_PLUGIN_ROOT\}\/)?(?:cadence-core\/)?\b(references
 
 /** `user-invocable: false` in a leading frontmatter block. */
 const NOT_INVOCABLE_RE = /^user-invocable:[ \t]*false[ \t]*$/m;
-
-/**
- * Yield every descendant file path under `dir`. Descent is decided on the dirent, so a symlinked directory met during
- * the walk is yielded as a path, not descended.
- * @param {string} dir
- * @returns {Generator<string>}
- */
-function* walk(dir) {
-  for (const d of dirents(dir)) {
-    const f = join(dir, d.name);
-    if (d.isDirectory()) yield* walk(f);
-    else yield f;
-  }
-}
 
 /**
  * The dedupe key for one path: its real path, or the joined path when that throws (a dangling link is still distinct

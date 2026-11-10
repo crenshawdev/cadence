@@ -39,7 +39,7 @@ export function dirents(dir) {
  * @param {string} dir
  * @returns {Generator<string>}
  */
-function* walk(dir) {
+export function* walk(dir) {
   for (const d of dirents(dir)) {
     const f = join(dir, d.name);
     if (d.isDirectory()) yield* walk(f);

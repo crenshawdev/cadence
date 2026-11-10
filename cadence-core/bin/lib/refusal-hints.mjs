@@ -7,9 +7,10 @@
 // pure; an absent or unreadable bin reports nothing; no CONTRACTS row since lib/*.mjs are never invoked from prose
 'use strict';
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { readText } from './include-consumers.mjs';
 import { regexHere, skim } from './skim.mjs';
+import { dirents } from './surface-weight.mjs';
 
 /** The problem codes this rule files. */
 export const CODES = Object.freeze({
@@ -265,32 +266,17 @@ function topLevelColon(t) {
  * Walk `cadence-core/bin` for the `.mjs` sources this rule reads.
  * `*.test.mjs` is off the walk - a test may write any shape it likes - and an
  * unreadable directory yields nothing rather than throwing.
+ * Its own loop over `dirents` and not surface-weight's `walk`: that one yields a symlink as a path, and this rule reads real files only.
  * @param {string} dir
  * @returns {Generator<string>}
  */
 function* sourceFiles(dir) {
-  let list;
-  try {
-    list = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const d of list) {
+  for (const d of dirents(dir)) {
     const f = join(dir, d.name);
     if (d.isDirectory()) { yield* sourceFiles(f); continue; }
     if (!d.isFile()) continue;
     if (!f.endsWith('.mjs') || f.endsWith('.test.mjs')) continue;
     yield f;
-  }
-}
-
-/** Read one file, or `null` when it is absent, is not a file, or cannot be read. */
-function readText(file) {
-  try {
-    if (!statSync(file).isFile()) return null;
-    return readFileSync(file, 'utf8');
-  } catch {
-    return null;
   }
 }
 

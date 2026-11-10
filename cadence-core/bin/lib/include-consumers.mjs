@@ -37,7 +37,7 @@ const INCLUDE_LINE_RE = /^@\$\{CLAUDE_PLUGIN_ROOT\}\//;
  * @param {string} file
  * @returns {string|null}
  */
-function readText(file) {
+export function readText(file) {
   try {
     if (!statSync(file).isFile()) return null;
     return readFileSync(file, 'utf8');
