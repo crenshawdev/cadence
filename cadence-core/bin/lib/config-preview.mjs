@@ -6,14 +6,13 @@
 
 import { isDeepStrictEqual } from 'node:util';
 import { dependentsOf } from './setting-conditions.mjs';
+import { isPlainObject } from './text-util.mjs';
 
 /** Besides a both-layer key, the one key where a revoke reads off then off in force, so the file's stored value is shown beside it. */
 const STORED_KEY = 'review.reviewers';
 
 // route's reason and warnings are prose about the decision, never part of it, so a wording change isn't a change
 const DECISION_SKIP = new Set(['ok', 'reason', 'warnings']);
-
-const isObj = (/** @type {any} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /**
  * The layer a key is written to: the user-global file for `src: global`, the repository file for everything else,
@@ -65,11 +64,11 @@ export function diffDecision(before, after) {
     if (DECISION_SKIP.has(field)) continue;
     const b = before[field];
     const a = after[field];
-    if (isObj(b) || isObj(a)) {
-      const subs = new Set([...Object.keys(isObj(b) ? b : {}), ...Object.keys(isObj(a) ? a : {})]);
+    if (isPlainObject(b) || isPlainObject(a)) {
+      const subs = new Set([...Object.keys(isPlainObject(b) ? b : {}), ...Object.keys(isPlainObject(a) ? a : {})]);
       for (const sub of subs) {
-        const bv = isObj(b) ? b[sub] : undefined;
-        const av = isObj(a) ? a[sub] : undefined;
+        const bv = isPlainObject(b) ? b[sub] : undefined;
+        const av = isPlainObject(a) ? a[sub] : undefined;
         if (!isDeepStrictEqual(bv, av)) changes.push({ field: `${field}.${sub}`, before: bv ?? null, after: av ?? null });
       }
     } else if (!isDeepStrictEqual(b, a)) changes.push({ field, before: b ?? null, after: a ?? null });

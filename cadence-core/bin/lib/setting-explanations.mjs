@@ -8,11 +8,7 @@
 // Text and hints aren't checked. Pure: no fs, no emit, no process, and no CONTRACTS row since it's a lib.
 'use strict';
 import { checkValue } from './config-value.mjs';
-
-/** @param {any} v */
-const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-/** @param {any} v */
-const show = (v) => JSON.stringify(v === undefined ? null : v);
+import { isPlainObject, show } from './text-util.mjs';
 
 /**
  * @param {any} schemaKeys the parsed config.schema.json `keys` map, trusted for nothing
@@ -21,16 +17,16 @@ const show = (v) => JSON.stringify(v === undefined ? null : v);
 export function settingExplanationIssues(schemaKeys) {
   /** @type {Array<{code: string, detail: string}>} */
   const issues = [];
-  if (!isObj(schemaKeys)) return issues;
+  if (!isPlainObject(schemaKeys)) return issues;
 
   for (const [key, spec] of Object.entries(schemaKeys)) {
-    if (!isObj(spec)) continue;
-    const entries = Array.isArray(spec.explain) ? spec.explain.filter(isObj) : [];
+    if (!isPlainObject(spec)) continue;
+    const entries = Array.isArray(spec.explain) ? spec.explain.filter(isPlainObject) : [];
     const isList = spec.type === 'array_enum' || spec.type === 'array_string';
 
     for (const { value } of entries) {
       if (isList && value === null && spec.default === null) continue;
-      const error = checkValue(spec, isList ? [value] : value);
+      const error = checkValue(/** @type {any} */ (spec), isList ? [value] : value);
       if (error !== null) {
         issues.push({ code: 'explained-value-refused',
           detail: `${key}: the explained value ${show(value)} is refused by the key (${error})` });

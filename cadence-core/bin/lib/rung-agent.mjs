@@ -6,6 +6,8 @@
 // Pure lib: no fs, no emit, no process, no Date, no randomness. It returns names and problem codes.
 'use strict';
 
+import { isPlainObject } from './text-util.mjs';
+
 /**
  * The rung ladder, weakest first: the whole vocabulary of rung names and the order `rungFiles` returns a role's files
  * in. It sits beside RUNG_FILES because the two are one statement (the ladder names rungs, the map says which file
@@ -88,10 +90,10 @@ export function rungOrderIssues(files, order) {
   const ladder = Array.isArray(order) ? order : RUNG_ORDER;
   /** @type {{code: string, role: string, detail: string}[]} */
   const out = [];
-  const read = map !== null && typeof map === 'object' && !Array.isArray(map) ? map : {};
+  const read = isPlainObject(map) ? map : {};
   for (const role of Object.keys(read)) {
     const rungs = read[role];
-    const got = rungs !== null && typeof rungs === 'object' && !Array.isArray(rungs)
+    const got = isPlainObject(rungs)
       ? Object.keys(rungs) : [];
     if (got.length === ladder.length && ladder.every((r, i) => got[i] === r)) continue;
     out.push({ code: 'rung-order-drift', role,
@@ -196,7 +198,7 @@ export function rungOfAgent(agent) {
  * @returns {{code: string, role: string, stems: string[], detail: string}[]}
  */
 export function rungPrefixIssues(bodies) {
-  const read = bodies !== null && typeof bodies === 'object' && !Array.isArray(bodies)
+  const read = isPlainObject(bodies)
     ? bodies : {};
   const bodyOf = (stem) => (Object.prototype.hasOwnProperty.call(read, stem)
     && typeof read[stem] === 'string' ? read[stem] : null);
@@ -318,7 +320,7 @@ function effortKeyRole(key) {
 export function effortEnumIssues(schema, rungOrder) {
   /** @type {{code: string, detail: string}[]} */
   const out = [];
-  const keys = schema !== null && typeof schema === 'object' && !Array.isArray(schema)
+  const keys = isPlainObject(schema)
     ? schema : {};
   const order = Array.isArray(rungOrder) ? rungOrder.filter((r) => typeof r === 'string') : [];
 

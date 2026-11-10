@@ -3,14 +3,11 @@
 // pure and total: a section that can't be found gets reported, never invented
 
 import { parseRoadmapPhases, parseRequirements, phaseDetailSpans, sectionSpan } from './planning-files.mjs';
+import { escapeRe } from './text-util.mjs';
 
 /** Decimal-safe: `2.1` must not match `291`.
  * @param {number} n */
 const escN = (n) => String(n).replace(/\./g, '\\.');
-
-/** A stray `.` in an id must not become a wildcard.
- * @param {string} id */
-const escId = (id) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Remove the completed phases' `- [x]` lines from `## Phases` and their
@@ -93,7 +90,7 @@ export function archiveRequirements(text, completed, label) {
     let body = lines.slice(activeAt + 1, activeEnd);
     for (const { id } of shipped) {
       // the tracker suffix is `(#<digits>)` and nothing else, so prose bullets still can't match
-      const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*(?: \\((#\\d+)\\))?:\\s*(.*)$`);
+      const bulletRe = new RegExp(`^- \\*\\*${escapeRe(id)}\\*\\*(?: \\((#\\d+)\\))?:\\s*(.*)$`);
       const kept = [];
       for (let i = 0; i < body.length; i++) {
         const m = body[i].match(bulletRe);

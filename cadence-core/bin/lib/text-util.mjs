@@ -7,6 +7,11 @@ export function escapeRe(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** @param {unknown} v @returns {string} `v` as JSON, an undefined written as null */
+export function show(v) {
+  return JSON.stringify(v === undefined ? null : v);
+}
+
 /**
  * A non-null, non-array object. It's a predicate so a guard on an `unknown` narrows under checkJs.
  * @param {unknown} v

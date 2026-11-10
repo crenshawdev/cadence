@@ -8,10 +8,9 @@
 'use strict';
 import { isDeepStrictEqual } from 'node:util';
 import { checkValue } from './config-value.mjs';
+import { isPlainObject } from './text-util.mjs';
 
 const OPERATORS = ['not', 'is', 'includes'];
-/** @param {any} v */
-const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 /** @param {any} v */
 const show = (v) => (typeof v === 'string' ? v : JSON.stringify(v === undefined ? null : v));
 
@@ -26,7 +25,7 @@ export function appliesAnswer(list, values) {
   const why = [];
   if (!Array.isArray(list)) return { applies: true, why };
   for (const c of list) {
-    if (!isObj(c) || typeof c.key !== 'string' || !Object.hasOwn(values, c.key)) continue;
+    if (!isPlainObject(c) || typeof c.key !== 'string' || !Object.hasOwn(values, c.key)) continue;
     const ops = OPERATORS.filter((op) => Object.hasOwn(c, op));
     if (ops.length !== 1) continue;
     const have = values[c.key];
@@ -50,8 +49,8 @@ export function appliesAnswer(list, values) {
  */
 export function dependentsOf(schemaKeys, key) {
   return Object.entries(schemaKeys)
-    .filter(([, spec]) => isObj(spec) && Array.isArray(spec.applies_when)
-      && spec.applies_when.some((/** @type {any} */ c) => isObj(c) && c.key === key))
+    .filter(([, spec]) => isPlainObject(spec) && Array.isArray(spec.applies_when)
+      && spec.applies_when.some((/** @type {any} */ c) => isPlainObject(c) && c.key === key))
     .map(([k]) => k);
 }
 
@@ -67,30 +66,31 @@ export function dependentsOf(schemaKeys, key) {
 export function settingConditionIssues(schemaKeys) {
   /** @type {Array<{code: string, detail: string}>} */
   const issues = [];
-  if (!isObj(schemaKeys)) return issues;
+  if (!isPlainObject(schemaKeys)) return issues;
   for (const [key, spec] of Object.entries(schemaKeys)) {
-    if (!isObj(spec) || spec.applies_when === undefined) continue;
+    if (!isPlainObject(spec) || spec.applies_when === undefined) continue;
     if (!Array.isArray(spec.applies_when)) {
       issues.push({ code: 'applies-when-malformed', detail: `${key}: applies_when is not a list` });
       continue;
     }
     for (const c of spec.applies_when) {
-      const ops = isObj(c) ? OPERATORS.filter((op) => Object.hasOwn(c, op)) : [];
-      if (!isObj(c) || typeof c.key !== 'string' || ops.length !== 1) {
+      const ops = isPlainObject(c) ? OPERATORS.filter((op) => Object.hasOwn(c, op)) : [];
+      if (!isPlainObject(c) || typeof c.key !== 'string' || ops.length !== 1) {
         issues.push({ code: 'applies-when-malformed',
           detail: `${key}: ${show(c)} is not a key with exactly one of ${OPERATORS.join(', ')}` });
         continue;
       }
       const target = Object.hasOwn(schemaKeys, c.key) ? schemaKeys[c.key] : null;
-      if (!isObj(target)) {
+      if (!isPlainObject(target)) {
         issues.push({ code: 'applies-when-unknown-key', detail: `${key}: the condition names ${c.key}, which the schema doesn't hold` });
         continue;
       }
-      const isList = target.type === 'array_enum' || target.type === 'array_string';
+      const targetSpec = /** @type {any} */ (target);
+      const isList = targetSpec.type === 'array_enum' || targetSpec.type === 'array_string';
       const op = ops[0];
       const error = op === 'includes'
-        ? (isList ? checkValue(target, [c.includes]) : `${c.key} is not a list`)
-        : checkValue(target, c[op]);
+        ? (isList ? checkValue(targetSpec, [c.includes]) : `${c.key} is not a list`)
+        : checkValue(targetSpec, c[op]);
       if (error !== null) {
         issues.push({ code: 'applies-when-value-refused',
           detail: `${key}: the ${op} value ${show(c[op])} is refused by ${c.key} (${error})` });

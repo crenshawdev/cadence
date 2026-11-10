@@ -21,8 +21,7 @@ export const GLOBAL_ONLY_KEYS = Object.freeze([
 /** The `src` value config.schema.json marks a global-only key with. */
 export const GLOBAL_SRC = 'global';
 
-/** @param {any} v */
-const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+import { isPlainObject } from './text-util.mjs';
 
 /** Nothing at that path - distinct from a path holding `null`, which IS set. */
 const ABSENT = Symbol('absent');
@@ -35,7 +34,7 @@ const ABSENT = Symbol('absent');
 function readPath(node, parts) {
   let cur = node;
   for (const p of parts) {
-    if (!isObj(cur) || !Object.hasOwn(cur, p)) return ABSENT;
+    if (!isPlainObject(cur) || !Object.hasOwn(cur, p)) return ABSENT;
     cur = cur[p];
   }
   return cur;
@@ -52,9 +51,9 @@ function readPath(node, parts) {
 function blockingAncestor(node, parts) {
   let cur = node;
   for (let i = 0; i < parts.length - 1; i += 1) {
-    if (!isObj(cur) || !Object.hasOwn(cur, parts[i])) return null;
+    if (!isPlainObject(cur) || !Object.hasOwn(cur, parts[i])) return null;
     cur = cur[parts[i]];
-    if (!isObj(cur)) return parts.slice(0, i + 1);
+    if (!isPlainObject(cur)) return parts.slice(0, i + 1);
   }
   return null;
 }
@@ -66,7 +65,7 @@ function blockingAncestor(node, parts) {
  */
 function withoutPath(node, parts) {
   const [head, ...rest] = parts;
-  if (!isObj(node) || !Object.hasOwn(node, head)) return node;
+  if (!isPlainObject(node) || !Object.hasOwn(node, head)) return node;
   const copy = { ...node };
   if (!rest.length) {
     delete copy[head];
@@ -88,7 +87,7 @@ function withoutPath(node, parts) {
  * @returns {string[]}
  */
 export function dottedKeyPaths(node, prefix = '') {
-  if (!isObj(node)) return [];
+  if (!isPlainObject(node)) return [];
   /** @type {string[]} */
   const out = [];
   for (const [k, v] of Object.entries(node)) {
@@ -107,7 +106,7 @@ export function dottedKeyPaths(node, prefix = '') {
  * @returns {any}
  */
 export function withoutDottedKeys(node) {
-  if (!isObj(node) || !dottedKeyPaths(node).length) return node;
+  if (!isPlainObject(node) || !dottedKeyPaths(node).length) return node;
   /** @type {Record<string, any>} */
   const copy = {};
   for (const [k, v] of Object.entries(node)) {
@@ -139,7 +138,7 @@ export const dottedKeyWarning = (path, file) => `config key "${path}" in ${file}
 export function stripGlobalOnly(layer, file) {
   /** @type {string[]} */
   const warnings = [];
-  if (!isObj(layer)) return { layer, warnings };
+  if (!isPlainObject(layer)) return { layer, warnings };
   // first: a literal "workflow.test_command" key never matches the nested walk below, and the merge would read it
   for (const path of dottedKeyPaths(layer)) warnings.push(dottedKeyWarning(path, file));
   let out = withoutDottedKeys(layer);
@@ -184,19 +183,19 @@ export function stripGlobalOnly(layer, file) {
 export function globalOnlyMarkerIssues(schemaKeys) {
   /** @type {{code: string, detail: string}[]} */
   const out = [];
-  const keys = isObj(schemaKeys) ? schemaKeys : {};
+  const keys = isPlainObject(schemaKeys) ? schemaKeys : {};
   const enforced = new Set(GLOBAL_ONLY_KEYS);
   for (const key of GLOBAL_ONLY_KEYS) {
     const spec = Object.hasOwn(keys, key) ? keys[key] : undefined;
-    if (isObj(spec) && spec.src === GLOBAL_SRC) continue;
+    if (isPlainObject(spec) && spec.src === GLOBAL_SRC) continue;
     out.push({ code: 'missing-global-only-marker',
       detail: `${key}: lib/global-only-keys.mjs strips it out of the repo layer, but `
-        + (isObj(spec)
+        + (isPlainObject(spec)
           ? `config.schema.json carries no "src": "${GLOBAL_SRC}" on it`
           : 'config.schema.json does not hold the key at all') });
   }
   for (const [key, spec] of Object.entries(keys)) {
-    if (!isObj(spec) || spec.src !== GLOBAL_SRC || enforced.has(key)) continue;
+    if (!isPlainObject(spec) || spec.src !== GLOBAL_SRC || enforced.has(key)) continue;
     out.push({ code: 'undeclared-global-only-key',
       detail: `${key}: config.schema.json marks it "src": "${GLOBAL_SRC}", but `
         + 'lib/global-only-keys.mjs does not strip it, so a repo layer still sets it' });
