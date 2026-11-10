@@ -116,32 +116,44 @@ function skipLiteral(s, i) {
 }
 
 /**
+ * The one walk the three source parsers below share: from `from`, skip string, template and regex literals, track bracket
+ * depth, and hand `atTop` each character met at depth 0 that doesn't open a bracket. `atTop` returns true to stop the walk.
+ * @param {string} s @param {number} from @param {(c: string, i: number) => boolean} atTop
+ * @returns {number} the index it stopped at, or -1 when the text ran out first
+ */
+function walkDepth(s, from, atTop) {
+  let depth = 0;
+  let i = from;
+  while (i < s.length) {
+    const lit = skipLiteral(s, i);
+    if (lit >= 0) { i = lit; continue; }
+    const c = s[i];
+    if (c === '(' || c === '[' || c === '{') depth += 1;
+    else if (depth === 0 && atTop(c, i)) return i;
+    else if (c === ')' || c === ']' || c === '}') depth -= 1;
+    i += 1;
+  }
+  return -1;
+}
+
+/**
  * The balanced argument span of a call whose `(` sits at `openIdx`.
  * @param {string} s @param {number} openIdx
  * @returns {{end: number, args: string[]}|null} `null` when the `(` never closes
  */
 function balancedArgs(s, openIdx) {
-  let i = openIdx + 1;
-  let depth = 0;
-  let start = i;
+  let start = openIdx + 1;
   /** @type {string[]} */
   const args = [];
-  while (i < s.length) {
-    const lit = skipLiteral(s, i);
-    if (lit >= 0) { i = lit; continue; }
-    const c = s[i];
-    if (c === '(' || c === '[' || c === '{') { depth += 1; i += 1; continue; }
-    if (c === ')' && depth === 0) {
-      args.push(s.slice(start, i));
-      const trimmed = args.map((a) => a.trim());
-      // f() splits to one empty argument; any other empty slot is a real elision, so the argument count stays honest
-      return { end: i, args: trimmed.length === 1 && trimmed[0] === '' ? [] : trimmed };
-    }
-    if (c === ')' || c === ']' || c === '}') { depth -= 1; i += 1; continue; }
-    if (c === ',' && depth === 0) { args.push(s.slice(start, i)); start = i + 1; i += 1; continue; }
-    i += 1;
-  }
-  return null;
+  const end = walkDepth(s, start, (c, i) => {
+    if (c === ',') { args.push(s.slice(start, i)); start = i + 1; }
+    return c === ')';
+  });
+  if (end < 0) return null;
+  args.push(s.slice(start, end));
+  const trimmed = args.map((a) => a.trim());
+  // f() splits to one empty argument; any other empty slot is a real elision, so the argument count stays honest
+  return { end, args: trimmed.length === 1 && trimmed[0] === '' ? [] : trimmed };
 }
 
 /**
@@ -220,9 +232,7 @@ function objectProps(text) {
   const inner = text.slice(1, text.length - 1);
   /** @type {{key: string, value: string}[]} */
   const props = [];
-  let depth = 0;
   let start = 0;
-  let i = 0;
   const push = (chunk) => {
     const t = chunk.trim();
     if (!t) return;
@@ -233,33 +243,17 @@ function objectProps(text) {
     }
     props.push({ key: t.slice(0, colon).trim(), value: t.slice(colon + 1).trim() });
   };
-  while (i < inner.length) {
-    const lit = skipLiteral(inner, i);
-    if (lit >= 0) { i = lit; continue; }
-    const c = inner[i];
-    if (c === '(' || c === '[' || c === '{') { depth += 1; i += 1; continue; }
-    if (c === ')' || c === ']' || c === '}') { depth -= 1; i += 1; continue; }
-    if (c === ',' && depth === 0) { push(inner.slice(start, i)); start = i + 1; i += 1; continue; }
-    i += 1;
-  }
+  walkDepth(inner, 0, (c, i) => {
+    if (c === ',') { push(inner.slice(start, i)); start = i + 1; }
+    return false;
+  });
   push(inner.slice(start));
   return props;
 }
 
 /** The index of a property's own `:`, skipping literals and nesting. */
 function topLevelColon(t) {
-  let depth = 0;
-  let i = 0;
-  while (i < t.length) {
-    const lit = skipLiteral(t, i);
-    if (lit >= 0) { i = lit; continue; }
-    const c = t[i];
-    if (c === '(' || c === '[' || c === '{') { depth += 1; i += 1; continue; }
-    if (c === ')' || c === ']' || c === '}') { depth -= 1; i += 1; continue; }
-    if (c === ':' && depth === 0) return i;
-    i += 1;
-  }
-  return -1;
+  return walkDepth(t, 0, (c) => c === ':');
 }
 
 /**
