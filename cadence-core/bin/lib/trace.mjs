@@ -56,6 +56,19 @@ function moreComplete(into, from, k) {
 }
 
 /**
+ * Fold what one line reports into a row or fact that may already hold some of it. The cache figures take the larger
+ * read; the two strings fill only an empty slot, since `moreComplete` compares with `>`, meaningless for an enum,
+ * and a rung doesn't grow.
+ * The fact map, a repeat close and the post-pass all fold through here, so the rule can't drift between them.
+ * @param {Record<string, any>} into
+ * @param {Record<string, any>} from the figure keys and `effort` / `rung` the line carried, each only when present
+ */
+function foldFigures(into, from) {
+  for (const k of CACHE_KEYS) if (moreComplete(into, from, k)) into[k] = from[k];
+  for (const k of ['effort', 'rung']) if (!(k in into) && k in from) into[k] = from[k];
+}
+
+/**
  * Written by the coordinator at the start of a step. A lifecycle name, not a fifth family: `counts` is a fixed
  * four-key literal.
  * No `--role` or `--tokens` (a nameless worker row, and no return to read), so its cost is derived from the
@@ -140,6 +153,28 @@ function readLines(planningRoot) {
 }
 
 /**
+ * The newest `lifecycle` event called `name` that `want` accepts, and its line index, or null. Walks backwards, a line
+ * that isn't a JSON object is skipped.
+ * @param {string[]} lines
+ * @param {string} name
+ * @param {(e: any) => boolean} [want]
+ * @returns {{e: any, at: number}|null}
+ */
+function newestLifecycle(lines, name, want) {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (e.family !== 'lifecycle' || e.event !== name) continue;
+    if (want && !want(e)) continue;
+    return { e, at: i };
+  }
+  return null;
+}
+
+/**
  * The per-phase correlation id, derived and never stored.
  * `ownSha` lets the anchor event derive its own id, or the first `phase_start` gets the bare form and the rest
  * the sha form.
@@ -153,18 +188,9 @@ export function correlationId(planningRoot, phase, ownSha) {
   if (typeof ownSha === 'string' && ownSha) return `${p}-${ownSha}`;
   const lines = readLines(planningRoot);
   if (lines === null) return p;
-  // from the end: the newest anchor wins, so a re-run of a phase gets a new id
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
-    if (e.family !== 'lifecycle' || e.event !== ANCHOR) continue;
-    if (key(e.phase) !== p) continue;
-    return typeof e.sha === 'string' && e.sha ? `${p}-${e.sha}` : p;
-  }
-  return p;
+  // the newest anchor wins, so a re-run of a phase gets a new id
+  const found = newestLifecycle(lines, ANCHOR, (e) => key(e.phase) === p);
+  return found && typeof found.e.sha === 'string' && found.e.sha ? `${p}-${found.e.sha}` : p;
 }
 
 /**
@@ -199,23 +225,11 @@ function renderEvent(planningRoot, event) {
  */
 function rotationMarker(text) {
   const lines = text.split('\n');
-  let at = -1;
-  let anchorCorr = '';
-  /** @type {any} */
-  let anchorPhase;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
-    if (e.family !== 'lifecycle' || e.event !== ANCHOR) continue;
-    at = i;
-    // the id the run was already writing, read off the anchor; re-deriving would answer about the post-cut file
-    anchorCorr = typeof e.corr === 'string' && e.corr ? e.corr : key(e.phase);
-    anchorPhase = e.phase;
-    break;
-  }
+  const found = newestLifecycle(lines, ANCHOR);
+  const at = found ? found.at : -1;
+  // the id the run was already writing, read off the anchor; re-deriving would answer about the post-cut file
+  const anchorCorr = !found ? '' : typeof found.e.corr === 'string' && found.e.corr ? found.e.corr : key(found.e.phase);
+  const anchorPhase = found ? found.e.phase : undefined;
   // same key order as `renderEvent`; `phase` is undefined with no anchor and drops out of the JSON
   const marker = `${JSON.stringify({
     corr: anchorCorr,
@@ -283,18 +297,9 @@ function freshRecord(text, reserve) {
  * @returns {number|null}
  */
 function sealedAt(text) {
-  const prior = text.split('\n');
-  for (let i = prior.length - 1; i >= 0; i--) {
-    const line = prior[i].trim();
-    if (!line) continue;
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
-    if (e.family !== 'lifecycle' || e.event !== ROTATION) continue;
-    return typeof e.carried_bytes === 'number' && Number.isFinite(e.carried_bytes) && e.carried_bytes >= 0
-      ? e.carried_bytes : null;
-  }
-  return null;
+  const found = newestLifecycle(text.split('\n'), ROTATION);
+  const at = found && found.e.carried_bytes;
+  return typeof at === 'number' && Number.isFinite(at) && at >= 0 ? at : null;
 }
 
 /**
@@ -641,6 +646,12 @@ export function renderTrace(planningRoot, phase) {
     // renamed host rung is the signal.
     const effort = typeof e.effort === 'string' && e.effort ? e.effort : null;
     const rung = typeof e.rung === 'string' && e.rung ? e.rung : null;
+    // what this line reports in the shape `foldFigures` takes: only the keys that passed, so omit-when-absent is a spread
+    const figures = {
+      ...cache,
+      ...(effort !== null ? { effort } : {}),
+      ...(rung !== null ? { rung } : {}),
+    };
 
     // the cache-only fact, folded after the loop: the host fires `SubagentStop` when the worker stops, the
     // orchestrator writes the `--agent-id` close later, so the fact usually arrives first.
@@ -651,18 +662,8 @@ export function renderTrace(planningRoot, phase) {
         && (CACHE_KEYS.some((k) => k in cache) || effort !== null || rung !== null)) {
         const pair = `${key(e.corr)}\0${e.agent_id}`;
         const prior = cacheFacts.get(pair);
-        if (!prior) {
-          cacheFacts.set(pair, {
-            ...cache,
-            ...(effort !== null ? { effort } : {}),
-            ...(rung !== null ? { rung } : {}),
-          });
-        } else {
-          for (const k of CACHE_KEYS) if (moreComplete(prior, cache, k)) prior[k] = cache[k];
-          // fill-only-empty for the two strings, not the larger-wins the figures use
-          if (!('effort' in prior) && effort !== null) prior.effort = effort;
-          if (!('rung' in prior) && rung !== null) prior.rung = rung;
-        }
+        if (prior) foldFigures(prior, figures);
+        else cacheFacts.set(pair, figures);
       }
       continue;
     }
@@ -740,12 +741,9 @@ export function renderTrace(planningRoot, phase) {
           // omitted likewise, from the terminal alone (`--duration-ms` is only on the close). Not derived: `ms`
           // measures the step
           ...(duration !== null ? { duration_ms: duration } : {}),
-          // cache figures: omitted likewise, from the terminal alone, and they ride this row and go nowhere else
-          ...cache,
-          // what it ran at and was dispatched under, from the terminal alone, omitted independently so older
-          // records render unchanged
-          ...(effort !== null ? { effort } : {}),
-          ...(rung !== null ? { rung } : {}),
+          // cache figures, then what it ran at and was dispatched under: omitted likewise and independently, from the
+          // terminal alone, so older records render unchanged. They ride this row and go nowhere else
+          ...figures,
           // the worker's host id, from the terminal alone; the hook reads it to spot an already-closed bracket
           ...(e.agent_id ? { agent_id: e.agent_id } : {}),
         };
@@ -768,13 +766,9 @@ export function renderTrace(planningRoot, phase) {
         if (b.tokens === null && tokens !== null) b.tokens = tokens;
         if (!('turns' in b) && turns !== null) b.turns = turns;
         if (!('duration_ms' in b) && duration !== null) b.duration_ms = duration;
-        // larger read wins for the cache figures alone (see `moreComplete`): the hook is their only writer, so
-        // two values are two reads of one growing transcript
-        for (const k of CACHE_KEYS) if (moreComplete(b, cache, k)) b[k] = cache[k];
-        // back to fill-only-empty for the strings: `moreComplete` compares with `>`, meaningless for an enum,
-        // and a rung doesn't grow
-        if (!('effort' in b) && effort !== null) b.effort = effort;
-        if (!('rung' in b) && rung !== null) b.rung = rung;
+        // the cache figures take the larger read: the hook is their only writer, so two values are two reads of
+        // one growing transcript. The strings fill only empty
+        foldFigures(b, figures);
         // identity folds fill-only-empty too: the hook's close usually opens the row, so an id on the
         // hand-written close would otherwise be dropped
         if (!('agent_id' in b) && e.agent_id) b.agent_id = e.agent_id;
@@ -817,16 +811,10 @@ export function renderTrace(planningRoot, phase) {
   // tokens, and `roles` stays byte-identical with or without facts.
   // Two brackets sharing an `agent_id` under one `corr` get only the first, or one worker's traffic bills
   // twice.
-  // Each field folds by the rule it uses on a repeat close, so the two can't drift: cache figures take the
-  // larger read, the strings fill only empty.
+  // Folded by `foldFigures`, the rule a repeat close uses too.
   for (const [pair, fact] of cacheFacts) {
-    for (const b of out.brackets) {
-      if (!b.agent_id || `${key(b.corr)}\0${b.agent_id}` !== pair) continue;
-      for (const k of CACHE_KEYS) if (moreComplete(b, fact, k)) b[k] = fact[k];
-      if (!('effort' in b) && 'effort' in fact) b.effort = fact.effort;
-      if (!('rung' in b) && 'rung' in fact) b.rung = fact.rung;
-      break;
-    }
+    const b = out.brackets.find((r) => r.agent_id && `${key(r.corr)}\0${r.agent_id}` === pair);
+    if (b) foldFigures(b, fact);
   }
 
   // the step-window fold: the first bracket under that `corr` and `agent_id` with a null `tokens` gets the
