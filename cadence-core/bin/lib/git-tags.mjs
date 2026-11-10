@@ -9,6 +9,9 @@ import { resolve } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { within } from './contained.mjs';
 
+// the same 32 MiB bound as RISK_DIFF_MAX_BUFFER; lib/ never imports from planning/, so it states its own
+const TAGS_MAX_BUFFER = 32 * 1024 * 1024;
+
 /**
  * The path with symlinks resolved, or the absolute path when it can't be.
  * git prints a physical path, so a symlinked checkout would read as another project and drop every tag.
@@ -26,7 +29,7 @@ function physical(p) {
  */
 export function readTags(dir, projectRoot) {
   const git = (...args) => execFileSync('git', ['-C', dir, ...args],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: TAGS_MAX_BUFFER });
   try {
     const top = git('rev-parse', '--show-toplevel').trim();
     if (!top || !within(physical(top), physical(projectRoot))) return [];
