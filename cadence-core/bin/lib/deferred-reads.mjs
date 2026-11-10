@@ -24,7 +24,7 @@ export const CODES = Object.freeze({
  * The register: one row per skill and reference a command consults but no
  * longer `@`-includes. reference is root-relative from cadence-core/.
  * anchors holds the region label (see regionLabels) of every arm that needs its own Read
- * sentence, and read_paragraphs is derived from it so the two can't disagree.
+ * sentence. Each row writes out read_paragraphs beside it; nothing derives one from the other.
  * file is optional: the surface the anchors resolve against, default skills/<skill>/SKILL.md.
  * @type {ReadonlyArray<{skill: string, reference: string,
  *   anchors: readonly string[], read_paragraphs: number, file?: string}>}
