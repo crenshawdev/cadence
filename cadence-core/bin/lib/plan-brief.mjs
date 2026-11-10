@@ -141,7 +141,8 @@ function namedField(tasks, field) {
  * @returns {{ok: true, text: string, bytes: number, readsMissing: string[], readsUnchecked: boolean} | {ok: false, detail: string, hint: string}}
  */
 export function composeBrief({ planFile, planRel, planText, projectText, contextText, mainRoot = null, loadMap = () => null }) {
-  const { fm, rest } = splitFrontmatter(normalize(planText));
+  const planNorm = normalize(planText);
+  const { fm, rest } = splitFrontmatter(planNorm);
   const lines = rest.split('\n');
   if (sectionText(lines, '## Tasks') === null) {
     return { ok: false, detail: `${planFile} has no ## Tasks section, so there is nothing to brief`,
@@ -165,7 +166,7 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
 
   // a Reads entry is only ever compared with the index: nothing a plan names is opened
   const reads = [...new Set(namedField(taskLines, 'Reads').map((n) => n.entry))];
-  const filesAsked = readFrontmatterList(normalize(planText), 'files').items.filter((f) => typeof f === 'string' && f);
+  const filesAsked = readFrontmatterList(planNorm, 'files').items.filter((f) => typeof f === 'string' && f);
   const map = reads.length || filesAsked.length ? loadMap() : null;
   const readsUnchecked = reads.length > 0 && map === null;
   const readsMissing = map === null ? [] : reads.filter((e) => readMissing(map, e));

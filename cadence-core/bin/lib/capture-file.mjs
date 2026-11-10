@@ -44,6 +44,9 @@ function renderBullet(kind, text, phase) {
   return `- [ ] ${phase !== undefined ? `(phase ${phase}) ` : ''}${flat}`;
 }
 
+/** The newlines that put a new section one blank line after `text`'s last line. */
+const gapBefore = (text) => (text === '' || text.endsWith('\n\n') ? '' : (text.endsWith('\n') ? '\n' : '\n\n'));
+
 /**
  * Insert `bullet` at the end of `heading`'s section body, or append the whole section when the heading is absent. The
  * heading goes in with the bullet so the bullet stays inside the walk, unlike an EOF append under whatever is last.
@@ -54,7 +57,7 @@ function insertBullet(text, heading, bullet) {
   const lines = text.split('\n');
   const { start, end } = sectionSpan(lines, heading);
   if (start < 0) {
-    const sep = text === '' || text.endsWith('\n\n') ? '' : (text.endsWith('\n') ? '\n' : '\n\n');
+    const sep = gapBefore(text);
     return `${text}${sep}${heading}\n\n${bullet}\n`;
   }
   // back up over the blank lines before the next section so the bullet joins the list, not the gap after it
@@ -78,7 +81,7 @@ export function replaceSection(text, heading, body) {
   const lines = text.split('\n');
   const { start, end } = sectionSpan(lines, heading);
   if (start < 0) {
-    const sep = text === '' || text.endsWith('\n\n') ? '' : (text.endsWith('\n') ? '\n' : '\n\n');
+    const sep = gapBefore(text);
     return `${text}${sep}${heading}\n\n${body}`;
   }
   const tail = lines.slice(end);
@@ -184,19 +187,19 @@ export function withPlanningFileLock(file, fn, reason = 'capture-locked') {
 }
 
 /**
- * Append one bullet to `file` under its kind's heading. `phase` is the caller's own spelling (`requirePhaseArg().raw`),
- * so `1.10` keeps its trailing zero. An existing `- None.` placeholder stays, the walk reads past it.
- * @param {string} file @param {string} kind @param {string} text @param {string} [phase]
- * @returns {{ok: true, bullet: string, heading: string, created: boolean}
- *   | {ok: false, reason: string, detail: string}}
- */
-/**
  * How many times an overwritten bullet is re-appended before the write is called lost.
  * Breaking a stale lock can't be made ownership-safe with stat, unlink and rename, so two writers can share a section.
  * The writer verifies after release and re-appends if its bullet is gone: a concurrent write can't silently lose one.
  */
 const APPEND_ATTEMPTS = 4;
 
+/**
+ * Append one bullet to `file` under its kind's heading. `phase` is the caller's own spelling (`requirePhaseArg().raw`),
+ * so `1.10` keeps its trailing zero. An existing `- None.` placeholder stays, the walk reads past it.
+ * @param {string} file @param {string} kind @param {string} text @param {string} [phase]
+ * @returns {{ok: true, bullet: string, heading: string, created: boolean}
+ *   | {ok: false, reason: string, detail: string}}
+ */
 export function appendCapture(file, kind, text, phase) {
   const heading = CAPTURE_HEADINGS[kind];
   if (!heading) return { ok: false, reason: 'bad-kind', detail: `unknown capture kind: ${kind}` };

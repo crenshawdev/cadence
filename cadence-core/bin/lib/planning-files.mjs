@@ -522,13 +522,24 @@ export function parseSummarySnippets(text) {
   for (const heading of ['Deviations', 'Open items']) {
     const body = sectionBody(text, heading);
     if (!body) continue;
-    for (const line of body.split('\n')) {
-      const m = line.match(/^-\s+(.*)$/);
-      if (!m) continue;
-      const raw = m[1].trim();
-      if (!raw || raw.startsWith('None') || raw.startsWith('<')) continue;
-      out.push(raw.replace(/^\[deviation\]\s*/, ''));
-    }
+    for (const raw of bulletSnippets(body)) out.push(raw.replace(/^\[deviation\]\s*/, ''));
+  }
+  return out;
+}
+
+/**
+ * The bullets of one section body as trimmed snippets: a `^-\s+` line, template placeholders (`None...`, `<...>`) and
+ * empty bullets skipped. The one loop both snippet readers share.
+ * @param {string} body @returns {string[]}
+ */
+function bulletSnippets(body) {
+  const out = [];
+  for (const line of body.split('\n')) {
+    const m = line.match(/^-\s+(.*)$/);
+    if (!m) continue;
+    const raw = m[1].trim();
+    if (!raw || raw.startsWith('None') || raw.startsWith('<')) continue;
+    out.push(raw);
   }
   return out;
 }
@@ -544,17 +555,8 @@ export function parseSummarySnippets(text) {
  * @param {string} text one RECORD.md's bytes @returns {string[]}
  */
 export function parseTaskRecordSnippets(text) {
-  const out = [];
   const body = sectionBody(text, 'What shipped');
-  if (!body) return out;
-  for (const line of body.split('\n')) {
-    const m = line.match(/^-\s+(.*)$/);
-    if (!m) continue;
-    const raw = m[1].trim();
-    if (!raw || raw.startsWith('None') || raw.startsWith('<')) continue;
-    out.push(raw);
-  }
-  return out;
+  return body ? bulletSnippets(body) : [];
 }
 
 /**
@@ -728,6 +730,9 @@ export function parseArchiveRows(text) {
   return out;
 }
 
+/** One line, whitespace runs around a newline collapsed to a space, null and undefined as ''. */
+const flat = (v) => String(v ?? '').replace(/\s*\n+\s*/g, ' ').trim();
+
 /**
  * Land `rows` under `label`'s section in ARCHIVE.md `text` and return the new text. They go after that section's last
  * row, so a resumed close extends its heading instead of minting a second one, or into a new section at the end.
@@ -740,7 +745,6 @@ export function parseArchiveRows(text) {
  * @returns {string}
  */
 export function appendArchiveRows(text, label, rows) {
-  const flat = (v) => String(v ?? '').replace(/\s*\n+\s*/g, ' ').trim();
   const emitted = (rows || [])
     .filter((r) => r && flat(r.text))
     .map((r) => `- \`${flat(r.origin)}\`: ${flat(r.text)}`);
@@ -910,7 +914,6 @@ export function appendDeclinedRow(text, row) {
 /** The shared body of both appenders.
  * @param {string} text @param {any} row @param {string} preamble */
 function appendRow(text, row, preamble) {
-  const flat = (v) => String(v ?? '').replace(/\s*\n+\s*/g, ' ').trim();
   const r = row && typeof row === 'object' ? row : /** @type {any} */ ({});
   const line = `- ${flat(r.date)} ${flat(r.provider)} ${flat(r.slug)} `
     + `${flat(r.fingerprint)}${r.unconfirmed === true ? ' unconfirmed' : ''}: ${flat(r.title)}`;
