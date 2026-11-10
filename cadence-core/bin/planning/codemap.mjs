@@ -55,21 +55,13 @@ const MAX_ENTRY = 64 * 1024 * 1024;
  * @returns {{index: any, tooLarge: boolean}}
  */
 function storedIndex(map) {
+  const r = readCapped(join(map, INDEX_FILE), MAX_INDEX);
+  if (r.text === null) return { index: null, tooLarge: r.tooLarge === true };
   try {
-    const file = join(map, INDEX_FILE);
-    const st = lstatSync(file);
-    if (st.isFile() && st.size > MAX_INDEX) return { index: null, tooLarge: true };
-    if (!st.isFile()) return { index: null, tooLarge: false };
-    return { index: JSON.parse(readFileSync(file, 'utf8')), tooLarge: false };
+    return { index: JSON.parse(r.text), tooLarge: false };
   } catch {
     return { index: null, tooLarge: false };
   }
-}
-
-/** @param {string} map @returns {{modules: any, tooLarge: boolean}} the stored module list, or null */
-function storedModules(map) {
-  const { index, tooLarge } = storedIndex(map);
-  return { modules: index?.modules ?? null, tooLarge };
 }
 
 /**
@@ -77,42 +69,46 @@ function storedModules(map) {
  * @param {string} map @param {string} entry
  */
 function readEntry(map, entry) {
+  const r = readCapped(join(map, entry), MAX_ENTRY);
+  if (r.text === null) return null;
   try {
-    const file = join(map, entry);
-    const st = lstatSync(file);
-    if (!st.isFile() || st.size > MAX_ENTRY) return null;
-    return JSON.parse(readFileSync(file, 'utf8'));
+    return JSON.parse(r.text);
   } catch {
     return null;
   }
 }
 
 /**
+ * Every module's entry, each file read once, so a caller that judges and then launches doesn't parse them twice.
+ * @param {string} map @param {{name: string}[]} modules
+ * @returns {Map<string, any>}
+ */
+function readEntries(map, modules) {
+  return new Map(modules.map((m) => [m.name, readEntry(map, entryFile(m.name))]));
+}
+
+/**
  * Each module's state and the figures a launch would be priced on. A reader opens only the regular text files at or
  * under the cap in a stale or unbuilt module, so `reader_bytes` counts those and a one-module refresh stays small.
- * @param {string} map @param {{name: string, paths: string[]}[]} modules @param {any[]} rows
+ * @param {Map<string, any>} entries from `readEntries` @param {{name: string, paths: string[]}[]} modules @param {any[]} rows
  */
-function stateOf(map, modules, rows) {
+function stateOf(entries, modules, rows) {
   const byPath = new Map(rows.map((r) => [r.path, r]));
   /** @type {Record<string, string[]>} */
   const names = { built: [], stale: [], unbuilt: [], no_reader: [] };
   let readerBytes = 0;
   for (const m of modules) {
-    const state = moduleState(m, readEntry(map, entryFile(m.name)), byPath);
+    const state = moduleState(m, entries.get(m.name), byPath);
     names[state].push(m.name);
     if (state === 'stale' || state === 'unbuilt') {
       for (const p of m.paths) if (byPath.get(p)?.kind === 'text') readerBytes += byPath.get(p).bytes || 0;
     }
   }
-  const listed = (key) => ({
-    [key]: names[key].length, [`${key}_modules`]: names[key].slice(0, LIST_CAP),
-    ...(names[key].length > LIST_CAP ? { [`${key}_more`]: names[key].length - LIST_CAP } : {}),
-  });
   return {
     modules: modules.length, bytes: rows.reduce((n, r) => n + (r.bytes || 0), 0),
     built: names.built.length, no_reader: names.no_reader.length,
     readers: names.stale.length + names.unbuilt.length, reader_bytes: readerBytes,
-    ...listed('stale'), ...listed('unbuilt'),
+    ...capped('stale', names.stale), ...capped('unbuilt', names.unbuilt),
   };
 }
 
@@ -194,12 +190,13 @@ function cmdStatus(dir, opts) {
   }
   // the stored list placed against the files as they are now, so a file added or removed since the scan counts and nothing is written
   const { modules } = partition(rows, stored);
-  const state = stateOf(map, modules, rows);
+  const entries = readEntries(map, modules);
+  const state = stateOf(entries, modules, rows);
   if (outDir === null) return ok({ action: 'status', ...state });
   const byPath = new Map(rows.map((r) => [r.path, r]));
   const toRead = [];
   for (const m of modules) {
-    const entry = readEntry(map, entryFile(m.name));
+    const entry = entries.get(m.name);
     const s = moduleState(m, entry, byPath);
     if (s === 'stale' || s === 'unbuilt') toRead.push({ ...m, entry: s === 'stale' ? entry : null });
   }
@@ -231,7 +228,7 @@ function cmdScan(dir) {
     return fail('unsafe-dir', `${join(dir, MAP_DIR)} or ${dir} exists and is not a real directory`,
       'remove it or replace it with a directory; nothing was written, because a write through a link would leave the repository');
   }
-  const { modules, oversized } = partition(rows, storedModules(map).modules);
+  const { modules, oversized } = partition(rows, storedIndex(map).index?.modules ?? null);
   const byPath = new Map(rows.map((r) => [r.path, r]));
   const listed = modules.map((m) => ({ name: m.name, entry: entryFile(m.name), no_reader: startsNoReader(m, byPath), paths: m.paths }));
   // never an index over the limit: the edges go first, then the symbols, and a row left with neither says so in the marks
@@ -270,7 +267,7 @@ function cmdScan(dir) {
   return ok({
     action: 'scan', files: rows.length, text: count('text'), binary: count('binary'), over_cap: count('over_cap'),
     symlinks: count('symlink'), gitlinks: count('gitlink'), missing: count('missing'),
-    ...stateOf(map, modules, rows), oversized, ...marks,
+    ...stateOf(readEntries(map, modules), modules, rows), oversized, ...marks,
   });
 }
 
@@ -445,12 +442,11 @@ function readStoredMap(dir) {
     return { error: { reason: 'index-too-large', message: `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so slice won't read it`,
       hint: 'run `planning.mjs codemap scan` to rebuild the map' } };
   }
-  const isObject = (/** @type {any} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   // the index comes from a file a clone can supply: every row has a path, and its symbols are objects
   const wellFormed = index && Array.isArray(index.rows) && Array.isArray(index.modules)
     && index.modules.every((/** @type {any} */ m) => m && typeof m.name === 'string' && Array.isArray(m.paths))
-    && index.rows.every((/** @type {any} */ r) => isObject(r) && typeof r.path === 'string'
-      && (r.symbols === undefined || (Array.isArray(r.symbols) && r.symbols.every(isObject))));
+    && index.rows.every((/** @type {any} */ r) => isPlainObject(r) && typeof r.path === 'string'
+      && (r.symbols === undefined || (Array.isArray(r.symbols) && r.symbols.every(isPlainObject))));
   if (!wellFormed) {
     return { error: { reason: 'no-index', message: `there is no code map at ${map}`, hint: 'run `planning.mjs codemap scan` first to build the map' } };
   }

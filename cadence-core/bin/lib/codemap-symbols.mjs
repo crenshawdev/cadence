@@ -131,8 +131,8 @@ export function symbolsFor(path, text) {
   const ext = extname(path).toLowerCase();
   let found;
   if (JS_EXT.has(ext)) {
-    // skim's whitespace walks are quadratic on a long run, so a run of 257 or more shrinks to one space; no other
-    // character is cut, so a comment delimiter or a closing quote survives and skim's state stays right
+    // a run of 257 or more shrinks to one space so padding can't push a declaration past LINE_CAP and out of the map
+    // no other character is cut, so a comment delimiter or a closing quote survives and skim's state stays right
     const code = skim(text.replace(/[^\S\n]{257,}/g, ' '));
     found = [...byLines(code, JS_LINES), ...exportLists(code)];
     // one name found twice (`export function f` is a function and a declaration) keeps its first reading
