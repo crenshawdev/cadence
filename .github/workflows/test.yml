@@ -48,11 +48,11 @@ jobs:
       - run: node tests/test.mjs ${{ matrix.group }}
 
   coverage:
-    # whole suite in one run with coverage, written as LCOV for SonarQube; the scan runs here so no artifact hops jobs
+    # whole suite in one run with coverage, written as LCOV and uploaded as an artifact for the sonar job, which scans after this one
     # node --test runs the files directly (test.mjs passes no runner flags), so the env line does test.mjs's job
     # Node 26 because --test-coverage-include-all needs 26.7; the two guards catch empty scope and unloaded files
-    # fetch-depth: 0 for why-record.test.mjs and the scan's blame
-    # persist-credentials: false keeps the job token out of .git/config, where the scan action could read it
+    # fetch-depth: 0 for why-record.test.mjs
+    # persist-credentials: false keeps the job token out of .git/config, which nothing in this job needs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,6 +93,23 @@ jobs:
         run: |
           ! grep -qx 'LH:0' lcov.info
 
+      - name: Upload the LCOV report for the scan
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lcov
+          path: lcov.info
+          if-no-files-found: error
+          retention-days: 1
+
+  sonar:
+    # The scan runs after coverage, not inside it: coverage is a required check, so the scan's 40 to 82 s held every merge.
+    # This job is not in testing.required_jobs. lcov.info comes from coverage as an artifact, where sonar-project.properties reads it.
+    # fetch-depth: 0 for the scan's blame
+    # persist-credentials: false keeps the job token out of .git/config, where the scan action could read it
+    name: sonar
+    needs: coverage
+    runs-on: ubuntu-latest
+    steps:
       # Forks and Dependabot runs don't get the secret, so they skip the scan.
       - name: Check for SonarQube token
         id: sonar
@@ -102,6 +119,20 @@ jobs:
           if [ -n "$SONAR_TOKEN" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Check out the repository
+        if: steps.sonar.outputs.enabled == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download the LCOV report
+        if: steps.sonar.outputs.enabled == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: lcov
+          path: .
 
       - name: Cache SonarQube packages
         if: steps.sonar.outputs.enabled == 'true'
