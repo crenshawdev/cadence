@@ -126,9 +126,11 @@ function workflowTexts(root) {
 
 /** Whether git tracks a file matching `glob`, asked of git so no glob parser is written here. */
 function tracksMatch(root, glob) {
+  // the exit status answers, stdout is dropped: a listing past the 1 MiB read buffer threw and read as "no match"
   try {
-    return execFileSync('git', ['-C', root, 'ls-files', '--', `:(glob)${glob}`],
-      { encoding: 'utf8', env: localGitEnv(), stdio: ['ignore', 'pipe', 'ignore'] }).trim() !== '';
+    execFileSync('git', ['-C', root, 'ls-files', '--error-unmatch', '--', `:(glob)${glob}`],
+      { env: localGitEnv(), stdio: 'ignore' });
+    return true;
   } catch { return false; }
 }
 
