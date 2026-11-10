@@ -42,7 +42,7 @@ import { decisionsFor, declaringTasks, parseDeviations } from './lib/why-record.
 function runGit(dir, args) {
   try {
     const stdout = execFileSync('git', ['-C', dir, ...args],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
     return { status: 0, stdout, stderr: '' };
   } catch (e) {
     const err = /** @type {any} */ (e);
