@@ -14,7 +14,7 @@
 // --file defaults to .planning/config.json, --global is the user-global layer.
 
 import { readFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -343,7 +343,7 @@ function layersRead(group, advanced, key, catalog) {
 // The preview: what a `set` of these pairs would do, with nothing written. Both sides come from one scratch copy of the
 // two layers, so the only difference between them is the change. GLOBAL_CONFIG is fixed at module load, so every read
 // of the copy is a child process pointed at it, and the real files, the plans and trace.jsonl are never touched.
-function previewRead(tokens) {
+async function previewRead(tokens) {
   const INVALID_HINT = 'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts';
   if (!tokens.length) fail('usage', 'preview needs key=value pairs after it: preview <key=value>...');
   const checked = checkPairs(tokens, false);
@@ -391,30 +391,40 @@ function previewRead(tokens) {
     if (repoText !== null) writeFileSync(scratchRepo, repoText);
     if (!shared && globalText !== null) { mkdirSync(dirname(scratchGlobal), { recursive: true }); writeFileSync(scratchGlobal, globalText); }
     const env = { ...process.env, CADENCE_GLOBAL_CONFIG: scratchGlobal };
-    const run = (script, args, where) => {
-      const r = spawnSync(process.execPath, [join(HERE, script), ...args], { cwd: where, env, encoding: 'utf8' });
-      let body;
-      try { body = JSON.parse(r.stdout); } catch { fail('internal', `${script} ${args[0]} answered nothing readable: ${r.stderr || r.stdout}`); }
-      return body;
-    };
+    // a child that answers nothing readable is held as `bad` and refused when its turn comes, so the first refusal is still the first in order
+    const start = (script, args, where) => new Promise((resolve) => {
+      const child = spawn(process.execPath, [join(HERE, script), ...args], { cwd: where, env });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8').on('data', (d) => { stdout += d; });
+      child.stderr.setEncoding('utf8').on('data', (d) => { stderr += d; });
+      const bad = () => ({ bad: `${script} ${args[0]} answered nothing readable: ${stderr || stdout}` });
+      child.on('error', (e) => { stderr += e.message; resolve(bad()); });
+      child.on('close', () => { try { resolve({ body: JSON.parse(stdout) }); } catch { resolve(bad()); } });
+    });
+    const take = (answer) => (answer.bad === undefined ? answer.body : fail('internal', answer.bad));
+    const run = async (script, args, where) => take(await start(script, args, where));
     const keys = pairs.map((p) => p.key);
     const candidates = candidateKeys(SCHEMA, keys);
     const roles = rolesFor(keys);
-    const readSide = () => {
+    // every read of a side starts at once and is read back in key order, layer rows first and then the route decisions
+    const readSide = async () => {
+      const answers = await Promise.all([
+        ...candidates.map((key) => start('config.mjs', ['layers', '--key', key], scratch)),
+        ...roles.map((role) => start('route.mjs', ['resolve', '--role', role, '--file', scratchRepo,
+          '--planning-root', join(cwd, '.planning'), '--no-record'], cwd)),
+      ]);
       const rows = {};
-      for (const key of candidates) {
-        const r = run('config.mjs', ['layers', '--key', key], scratch);
+      candidates.forEach((key, i) => {
+        const r = take(answers[i]);
         if (r.ok !== true) { out(r); throw DONE; }
         rows[key] = r.row;
-      }
+      });
       const decisions = {};
-      for (const role of roles) {
-        decisions[role] = run('route.mjs', ['resolve', '--role', role, '--file', scratchRepo,
-          '--planning-root', join(cwd, '.planning'), '--no-record'], cwd);
-      }
+      roles.forEach((role, i) => { decisions[role] = take(answers[candidates.length + i]); });
       return { rows, decisions };
     };
-    const before = readSide();
+    const before = await readSide();
     // a refusal from the scratch set names the scratch files, which are gone by the time it's read: say the real ones
     const realPaths = (answer) => {
       const esc = (p) => JSON.stringify(p).slice(1, -1);
@@ -422,14 +432,14 @@ function previewRead(tokens) {
       if (!shared && GLOBAL_CONFIG) text = text.split(esc(scratchGlobal)).join(esc(GLOBAL_CONFIG));
       return JSON.parse(text.split(esc(scratchRepo)).join(esc(repoFile)));
     };
-    const apply = (args) => { const r = run('config.mjs', ['set', ...args], scratch); if (r.ok !== true) { out(realPaths(r)); throw DONE; } };
+    const apply = async (args) => { const r = await run('config.mjs', ['set', ...args], scratch); if (r.ok !== true) { out(realPaths(r)); throw DONE; } };
     const tokensFor = (layer) => tokens.filter((t) => pairs.some((p) => t.startsWith(`${p.key}=`) && layerOf(p.key) === layer));
-    if (shared) apply(['--file', scratchRepo, ...tokens]);
+    if (shared) await apply(['--file', scratchRepo, ...tokens]);
     else {
-      if (tokensFor('repo').length) apply(['--file', scratchRepo, ...tokensFor('repo')]);
-      if (tokensFor('global').length) apply(['--global', ...tokensFor('global')]);
+      if (tokensFor('repo').length) await apply(['--file', scratchRepo, ...tokensFor('repo')]);
+      if (tokensFor('global').length) await apply(['--global', ...tokensFor('global')]);
     }
-    const after = readSide();
+    const after = await readSide();
     const files = [];
     for (const layer of ['repo', 'global']) {
       const mine = pairs.filter((p) => (shared ? 'repo' : layerOf(p.key)) === layer);
@@ -497,7 +507,7 @@ try {
     else out({ ok: true, keys: SCHEMA });
   }
   // the repo's cwd, like every other default here; `get` would answer on a repo-only value, so deciders read this
-  else if (cmd === 'preview') previewRead(rest);
+  else if (cmd === 'preview') await previewRead(rest);
   else if (cmd === 'workflow-layers') {
     const r = workflowLayers(process.cwd());
     const unreadable = [];
