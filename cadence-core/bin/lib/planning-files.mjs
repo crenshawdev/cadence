@@ -487,7 +487,8 @@ export function insertReqRows(text, rows) {
  * @returns {string|null}
  */
 function sectionBody(text, heading) {
-  const lines = text.split('\n');
+  // parse only: none of the callers writes the text back, the condition `normalize` sets, so CRLF reads as its LF twin
+  const lines = normalize(text).split('\n');
   const { start, end } = sectionSpan(lines, `## ${heading}`);
   return start < 0 ? null : lines.slice(start + 1, end).join('\n');
 }
