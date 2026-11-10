@@ -7,8 +7,8 @@
 import { isDeepStrictEqual } from 'node:util';
 import { dependentsOf } from './setting-conditions.mjs';
 
-/** Keys where a revoke reads off then off in force, so the file's stored value is shown beside it. */
-export const STORED_KEYS = Object.freeze(['git.auto_close', 'workflow.use_workflows', 'workflow.multi_workflow', 'workflow.execute_workflows', 'review.reviewers']);
+/** Besides a both-layer key, the one key where a revoke reads off then off in force, so the file's stored value is shown beside it. */
+const STORED_KEY = 'review.reviewers';
 
 // route's reason and warnings are prose about the decision, never part of it, so a wording change isn't a change
 const DECISION_SKIP = new Set(['ok', 'reason', 'warnings']);
@@ -115,7 +115,7 @@ export function buildPreview({ files, otherFile, before, after, candidates }) {
       const b = before.rows[key];
       const a = after.rows[key];
       const row = { key, value, before: b.value, after: a.value };
-      if (STORED_KEYS.includes(key)) Object.assign(row, { stored: { before: b[layer], after: a[layer] } });
+      if (b.both === true || key === STORED_KEY) Object.assign(row, { stored: { before: b[layer], after: a[layer] } });
       if (b.both === true && value === true) {
         const other = layer === 'repo' ? 'global' : 'repo';
         const cell = b[other];

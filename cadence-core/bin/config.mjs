@@ -18,15 +18,15 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { GLOBAL_CONFIG, layerIdentity, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
+import { GLOBAL_CONFIG, layerIdentity, mergeLayers, isPlainObject, sharesGlobal } from './lib/config-merge.mjs';
 import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { checkValue, checkGrammar } from './lib/config-value.mjs';
-import { workflowLayers, WORKFLOW_KEYS } from './lib/workflow-layers.mjs';
-import { autoCloseLayers } from './lib/repo-auto-close.mjs';
+import { workflowLayers } from './lib/workflow-layers.mjs';
+import { AUTO_CLOSE_KEY, autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { flatten, layerRows } from './lib/config-layers.mjs';
 import { dependentsOf } from './lib/setting-conditions.mjs';
 import { dottedKeyPaths, withoutDottedKeys } from './lib/global-only-keys.mjs';
@@ -298,12 +298,7 @@ function layersRead(group, advanced, key, catalog) {
   const { config, layers, warnings, scopeWarnings, tornLayers } = mergeLayers(repoFile);
   const wl = workflowLayers(cwd);
   const ac = autoCloseLayers(cwd);
-  const both = {
-    [WORKFLOW_KEYS.use]: wl.keys[WORKFLOW_KEYS.use],
-    [WORKFLOW_KEYS.multi]: wl.keys[WORKFLOW_KEYS.multi],
-    [WORKFLOW_KEYS.execute]: wl.keys[WORKFLOW_KEYS.execute],
-    'git.auto_close': { on: ac.authorized },
-  };
+  const both = { ...wl.keys, [AUTO_CLOSE_KEY]: { on: ac.authorized } };
   const read = layerRows({ keys: SCHEMA, merged: { config, layers, tornLayers }, files: { repo: repoFile, global: GLOBAL_CONFIG }, both });
   const allWarnings = [...(warnings || []), ...(scopeWarnings || []), ...read.warnings];
   const head = { ok: true, unreadable: read.unreadable, ...(allWarnings.length ? { warnings: allWarnings } : {}) };
@@ -381,7 +376,7 @@ async function previewRead(tokens) {
   if (!GLOBAL_CONFIG && pairs.some((p) => layerOf(p.key) === 'global')) {
     fail('read', 'no user-global config path: the home directory could not be found', 'set CADENCE_GLOBAL_CONFIG to the file and re-run');
   }
-  const shared = layerIdentity(GLOBAL_CONFIG) !== null && layerIdentity(GLOBAL_CONFIG) === layerIdentity(repoFile);
+  const shared = sharesGlobal(repoFile);
 
   const scratch = mkdtempSync(join(tmpdir(), 'cad-preview-'));
   try {

@@ -73,6 +73,63 @@ export function layerIdentity(p) {
   try { return resolvePath(p); } catch { return null; }
 }
 
+/** @typedef {'set' | 'unset' | 'unreadable'} LayerState */
+
+// one layer's read for bothLayers: an empty path is a layer that isn't there
+/** @param {string} file */
+const readOne = (file) => (file ? readLayer(file) : { value: null, warning: null, present: false });
+
+/**
+ * One layer's answer for a dotted key path: `unset` for an absent file, `unreadable` for one that won't read or parse
+ * or isn't a JSON object, `set` only for an explicit `true`.
+ * @param {{value: any, warning: string|null, present: boolean}} layer
+ * @param {string[]} path
+ * @returns {LayerState}
+ */
+function layerState(layer, path) {
+  if (layer.warning !== null) return 'unreadable';
+  if (!layer.present) return 'unset';
+  let node = layer.value;
+  if (!isPlainObject(node)) return 'unreadable';
+  for (const part of path) {
+    if (!isPlainObject(node) || !Object.hasOwn(node, part)) return 'unset';
+    node = node[part];
+  }
+  return node === true ? 'set' : 'unset';
+}
+
+/**
+ * The both-layer opt-in read: does the repo config at `dir` and the user-global config each set every key in `keys`
+ * to an explicit `true`? Each layer is read once, raw and never merged, since the merge skips a torn layer where
+ * this answer has to withhold. Total: never throws, whatever `dir` is. `on` is true only when `repo` and `global`
+ * are both `set` and are different files; `shared` means they're one file, and then `global` reads `unset`.
+ * @param {string} dir repo/planning root
+ * @param {string[]} keys dotted key paths
+ * @returns {{shared: boolean, repoFile: string, globalFile: string, keys: Record<string, {on: boolean, repo: LayerState, global: LayerState}>}}
+ */
+export function bothLayers(dir, keys) {
+  let repoFile = '';
+  try { repoFile = join(dir, '.planning', 'config.json'); } catch { /* non-string dir */ }
+  const shared = sharesGlobal(repoFile);
+  const repoLayer = readOne(repoFile);
+  const globalLayer = shared ? null : readOne(GLOBAL_CONFIG);
+  /** @type {Record<string, {on: boolean, repo: LayerState, global: LayerState}>} */
+  const answers = {};
+  for (const key of keys) {
+    const path = key.split('.');
+    const repo = layerState(repoLayer, path);
+    const global = globalLayer === null ? 'unset' : layerState(globalLayer, path);
+    answers[key] = { on: repo === 'set' && global === 'set', repo, global };
+  }
+  return { shared, repoFile, globalFile: GLOBAL_CONFIG, keys: answers };
+}
+
+/**
+ * Is this path the user-global file wearing another name? The one "shared layer" question, asked of a repo layer.
+ * @param {string} file
+ */
+export const sharesGlobal = (file) => layerIdentity(file) !== null && layerIdentity(file) === layerIdentity(GLOBAL_CONFIG);
+
 // a policy was accepted when testing.scope is one of these; one predicate so the merge and readTestingPolicy agree
 // hand-maintained, not read off the schema, since git-guard's PreToolUse hook runs this
 export const ACCEPTED_TEST_SCOPES = Object.freeze(['focused', 'integrated', 'thorough']);

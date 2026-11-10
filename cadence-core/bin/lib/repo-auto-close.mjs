@@ -2,32 +2,17 @@
 // repo-auto-close.mjs - the one read of `git.auto_close`: may this machine publish or merge here unattended.
 // Authorized only when the repo config and the user-global config both set it to an explicit `true`.
 // The repo config arrives with a clone, so it alone must never switch on an unattended push.
-// Raw `JSON.parse` per half, not `mergeLayers`: the merge skips a torn layer where this must withhold.
+// The read is bothLayers': raw per half, not `mergeLayers`, since the merge skips a torn layer where this must withhold.
 // Anything that throws or isn't an explicit `true` is no opt-in: an answer that unlocks a push fails closed.
 // If CADENCE_GLOBAL_CONFIG names the repo's own config, that's one layer, not two; `shared` says so.
 'use strict';
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { GLOBAL_CONFIG, isPlainObject, layerIdentity } from './config-merge.mjs';
+import { bothLayers } from './config-merge.mjs';
 
-/** @typedef {'set' | 'unset' | 'unreadable'} LayerOptIn */
+/** @typedef {import('./config-merge.mjs').LayerState} LayerOptIn */
 
-/**
- * One layer's answer. `unset` for a missing file (and the `''` path GLOBAL_CONFIG holds where homedir() throws),
- * `unreadable` for a file that exists but won't read, parse or isn't a JSON object, `set` only for an explicit
- * `git.auto_close === true`.
- * @param {string} file
- * @returns {LayerOptIn}
- */
-function layerOptIn(file) {
-  if (!file) return 'unset';
-  let parsed;
-  try { parsed = JSON.parse(readFileSync(file, 'utf8')); }
-  catch (e) { return /** @type {any} */ (e)?.code === 'ENOENT' ? 'unset' : 'unreadable'; }
-  if (!isPlainObject(parsed)) return 'unreadable';
-  return parsed?.git?.auto_close === true ? 'set' : 'unset';
-}
+/** The one key this read answers, by name so no caller spells it. */
+export const AUTO_CLOSE_KEY = 'git.auto_close';
 
 /**
  * Did both layers opt in to the unattended close of the repository at `dir`?
@@ -37,11 +22,7 @@ function layerOptIn(file) {
  * @returns {{authorized: boolean, repo: LayerOptIn, global: LayerOptIn, shared: boolean, repoFile: string, globalFile: string}}
  */
 export function autoCloseLayers(dir) {
-  let repoFile = '';
-  try { repoFile = join(dir, '.planning', 'config.json'); } catch { /* non-string dir */ }
-  const repo = layerOptIn(repoFile);
-  const rid = layerIdentity(repoFile);
-  const shared = rid !== null && rid === layerIdentity(GLOBAL_CONFIG);
-  const global = shared ? 'unset' : layerOptIn(GLOBAL_CONFIG);
-  return { authorized: repo === 'set' && global === 'set', repo, global, shared, repoFile, globalFile: GLOBAL_CONFIG };
+  const { shared, repoFile, globalFile, keys } = bothLayers(dir, [AUTO_CLOSE_KEY]);
+  const { on, repo, global } = keys[AUTO_CLOSE_KEY];
+  return { authorized: on, repo, global, shared, repoFile, globalFile };
 }
