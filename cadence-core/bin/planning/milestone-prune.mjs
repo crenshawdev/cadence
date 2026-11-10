@@ -4,7 +4,7 @@
 
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { join, resolve as resolvePath, sep } from 'node:path';
-import { fail, ok, read } from './core.mjs';
+import { fail, notRealDirDetail, ok, read } from './core.mjs';
 import { withPlanningFileLock } from '../lib/capture-file.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import { archiveRequirements, completedPhases, pruneRoadmap } from '../lib/milestone-prune.mjs';
@@ -63,9 +63,7 @@ function cmdMilestonePrune(dir, opts) {
     const rootStat = lstatSync(archiveRoot, { throwIfNoEntry: false });
     if (rootStat && !rootStat.isDirectory()) {
       return fail('archive-root-unusable',
-        `${archiveRoot} exists and is not a real directory`
-        + `${rootStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-        + ' - move or remove it, then re-run',
+        notRealDirDetail(archiveRoot, rootStat, 'renameSync'),
         'clear that path first - nothing was pruned and no phase directory moved, so the tree is'
         + ' exactly as it was');
     }

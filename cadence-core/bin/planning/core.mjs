@@ -28,6 +28,21 @@ const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
   emit({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}) });
 
+/**
+ * The detail for a carry or prune path that exists and is not a real directory, the symlink note included.
+ * It builds the text only: each refusal keeps its own literal reason and hint at its own `fail`.
+ * `call` names the fs call that would follow the link, so the note says what would have gone wrong.
+ * @param {string} label the path as the refusal names it
+ * @param {import('node:fs').Stats} stat the path's `lstatSync`
+ * @param {string} call
+ * @returns {string}
+ */
+function notRealDirDetail(label, stat, call) {
+  return `${label} exists and is not a real directory`
+    + `${stat.isSymbolicLink() ? ` (it is a symlink, which ${call} would follow out of the planning root)` : ''}`
+    + ' - move or remove it, then re-run';
+}
+
 /** Read a file or return null - absence is data here, never a crash. */
 function read(file) {
   try { return readFileSync(file, 'utf8'); } catch { return null; }
@@ -839,6 +854,7 @@ export {
   intFlag,
   listPlanFiles,
   memoryBackend,
+  notRealDirDetail,
   ok,
   phaseSpellingCollision,
   phaseSpellingRefusal,

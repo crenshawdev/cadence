@@ -4,7 +4,7 @@
 
 import { existsSync, lstatSync, mkdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, ok, phaseSpellingCollision, readQueue } from './core.mjs';
+import { fail, notRealDirDetail, ok, phaseSpellingCollision, readQueue } from './core.mjs';
 import { queueName } from '../lib/deferred-queue.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
@@ -32,9 +32,7 @@ function cmdDeferredCarry(dir, opts) {
   const rootStat = lstatSync(carryRoot, { throwIfNoEntry: false });
   if (rootStat && !rootStat.isDirectory()) {
     return fail('carry-dest-unusable',
-      'deferred/ exists and is not a real directory'
-      + `${rootStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-      + ' - move or remove it, then re-run',
+      notRealDirDetail('deferred/', rootStat, 'renameSync'),
       'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
       + ' are still in the phase directory the prune deletes');
   }
@@ -44,9 +42,7 @@ function cmdDeferredCarry(dir, opts) {
   const destStat = lstatSync(dest, { throwIfNoEntry: false });
   if (destStat && !destStat.isDirectory()) {
     return fail('carry-dest-unusable',
-      `deferred/${n} exists and is not a real directory`
-      + `${destStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-      + ' - move or remove it, then re-run',
+      notRealDirDetail(`deferred/${n}`, destStat, 'renameSync'),
       'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
       + ' are still in the phase directory the prune deletes');
   }
