@@ -329,15 +329,14 @@ function directoryLimitIssues(root) {
 
 // --- checks ------------------------------------------------------------------
 
-function run(root) {
-  const problems = [];
+// the schema and the vocabulary read off it, shared by every prose check
+function readVocabulary(root) {
   // plugin.json marks a real install; a fixture lacks it and stays lenient, a full tree missing an input fails (#44)
   const isFullTree = existsSync(join(root, '.claude-plugin', 'plugin.json'));
   const schema = JSON.parse(
     readFileSync(join(root, 'cadence-core', 'config.schema.json'), 'utf8')).keys;
   const schemaKeys = Object.keys(schema);
   const FAMILIES = new Set(schemaKeys.map((k) => k.split('.')[0]));
-  const NON_KEY_SEGMENT = new Set(['md', 'json', 'mjs', 'test', 'schema']);
   const TRIGGERS = [...new Set(schemaKeys
     .filter((k) => k.startsWith('review.triggers.')).map((k) => k.split('.')[2]))];
   const PROVIDERS = [...new Set(schemaKeys
@@ -349,8 +348,11 @@ function run(root) {
   const BARE_KEYS = schemaKeys.filter((k) => !k.includes('.'));
 
   const seenTokens = new Set();
+  return { isFullTree, schema, schemaKeys, FAMILIES, TRIGGERS, PROVIDERS, ROLES, BARE_KEYS, seenTokens };
+}
 
   // 0. a full tree missing a core surface dir is a real break (#44), a fixture that omits one is not
+function checkCoreDirs(root, isFullTree, problems) {
   if (isFullTree) {
     for (const d of ['cadence-core/workflows', 'cadence-core/references',
       'cadence-core/templates', 'skills', 'agents', 'workflows']) {
@@ -359,6 +361,12 @@ function run(root) {
       }
     }
   }
+}
+
+// checks 1 to 3 over one text, bound to the schema's vocabulary and the run's problems
+function makeLintProse(root, problems, v) {
+  const { schemaKeys, FAMILIES, TRIGGERS, PROVIDERS, ROLES, seenTokens } = v;
+  const NON_KEY_SEGMENT = new Set(['md', 'json', 'mjs', 'test', 'schema']);
 
   // checks 1 to 3 over one text; feedSeen says whether its tokens count as a reader for 1b, tag prefixes each detail
   const lintProse = (text, rel, feedSeen, tag) => {
@@ -419,7 +427,12 @@ function run(root) {
       }
     }
   };
+  return lintProse;
+}
 
+// every prose file: checks 1 to 3, the bare-word readers for 1b, then 10, 11, 19, 20, 21 and 23
+function walkProse(root, problems, v, lintProse) {
+  const { BARE_KEYS, seenTokens } = v;
   for (const { file, unreadable } of mdFiles(root)) {
     const rel = relative(root, file);
     // report the unreadable directory itself, with its own errno, before any read is tried on it
@@ -479,7 +492,9 @@ function run(root) {
     // 23. capture writers (lib/capture-writers.mjs): a CAPTURE.md write needs a row saying why it can't accumulate
     problems.push(...captureWriterIssues(rel, text));
   }
+}
 
+function checkInternalsPaths(root, isFullTree, problems) {
   // 3b. every backticked repo path in INTERNALS.md must exist; globs and non-path spans are skipped
   const internals = join(root, 'INTERNALS.md');
   if (existsSync(internals)) {
@@ -499,7 +514,9 @@ function run(root) {
   } else if (isFullTree) {
     problems.push({ kind: 'missing-input', file: 'INTERNALS.md', detail: 'always-expected input absent' });
   }
+}
 
+function checkSchemaProse(schema, schemaKeys, problems, lintProse) {
   // 1 to 3 over the schema's walk text (question, explain text, hint, interacts); forward scan only, so it never feeds 1b
   for (const key of schemaKeys) {
     const spec = schema[key];
@@ -509,14 +526,18 @@ function run(root) {
       if (typeof t === 'string') lintProse(t, 'cadence-core/config.schema.json', false, `${key}: `);
     }
   }
+}
 
+function checkInertKeys(schemaKeys, seenTokens, problems) {
   // 1b. every schema key needs a prose reader, exactly or through a prefix of two segments or more
   for (const key of schemaKeys) {
     const covered = [...seenTokens].some((t) =>
       key === t || (t.split('.').length >= 2 && key.startsWith(t + '.')));
     if (!covered) problems.push({ kind: 'inert-config-key', file: 'cadence-core/config.schema.json', detail: key });
   }
+}
 
+function checkBudgets(root, isFullTree, problems) {
   // 4. every measured prose surface needs a budget entry, weighed by the lib weight.mjs reports with. A
   // ceiling, not an equality: exactness turned CI red on every prose cut until its row was re-pinned, so
   // it taxed shrinking as much as growth. A surface under its entry just got smaller.
@@ -545,17 +566,140 @@ function run(root) {
   } else if (isFullTree) {
     problems.push({ kind: 'missing-input', file: 'cadence-core/bin/weight-budgets.json', detail: 'always-expected input absent' });
   }
+}
 
-  // 5. an agent's prose may only reference tools it declares in `tools:`. A preloaded
-  // contract is that agent's own prose, so it's scanned too, or moving one out of the
-  // body (#74) would empty this lint's input. Only backticked mentions count.
-  //
-  // 6. every name in `skills:` must resolve to skills/<name>/SKILL.md and not set
-  // disable-model-invocation: true. The host skips either one silently and the agent
-  // runs with no contract, which reads like it ignored its instructions (#74).
+// 6. every name in `skills:` must resolve to skills/<name>/SKILL.md and not set
+// disable-model-invocation: true. The host skips either one silently and the agent
+// runs with no contract, which reads like it ignored its instructions (#74).
+// Returns the preloaded contracts' bodies, which check 5 reads with the agent's own.
+function checkPreloadedSkills(root, rel, fm, dataRuleSeen, problems) {
+  // 6. resolve each preloaded contract; an unreadable SKILL.md isn't reported, the mdFiles walk already named it
+  const preloaded = [];
+  for (const skill of (fm ? parseSkillsField(fm[1]) : [])) {
+    const skillFile = join(root, 'skills', skill, 'SKILL.md');
+    if (!existsSync(skillFile)) {
+      problems.push({ kind: 'missing-agent-skill', file: rel,
+        detail: `${skill} -> skills/${skill}/SKILL.md absent` });
+      continue;
+    }
+    let skillText;
+    try {
+      skillText = readFileSync(skillFile, 'utf8');
+    } catch {
+      continue;
+    }
+    const skillFm = skillText.match(FRONTMATTER_RE);
+    if (skillFm && /^disable-model-invocation:[ \t]*true[ \t]*$/m.test(skillFm[1])) {
+      problems.push({ kind: 'unpreloadable-agent-skill', file: rel,
+        detail: `${skill} sets disable-model-invocation: true` });
+      continue;
+    }
+    preloaded.push(skillFm ? skillText.slice(skillFm[0].length) : skillText);
+    checkDataRule(skill, skillText, dataRuleSeen, problems);
+  }
+  return preloaded;
+}
+
+// 27. the data-not-instructions sentence, once per contract.
+function checkDataRule(skill, skillText, seen, problems) {
+  if (seen.has(skill)) return;
+  seen.add(skill);
+  for (const kind of dataRuleIssues(skillText)) {
+    problems.push({ kind, file: `skills/${skill}/SKILL.md`,
+      detail: 'the preloaded contract lacks the data-not-instructions sentence (lib/data-rule.mjs)' });
+  }
+}
+
+// 7. an agent that preloads a contract carries no behaviour of its own. Scans the body only, since the
+// contracts use this vocabulary on purpose. Keyed on `skills:`, not size: a 200-byte instruction fits any
+// budget, and this keeps a one-off agent with inline prose legal. Two arms: a contract section tag is
+// named first as the clearer message, then a tagless body is held to the canonical template, which
+// catches plain-prose behaviour and a same-size replacement of the pointer paragraph.
+function checkAgentBehaviour(rel, fm, body, problems) {
+  if (fm && /^skills:/m.test(fm[1])) {
+    const tags = [];
+    for (const m of body.matchAll(
+      /<(role|stance|process|returns|guardrails|success_criteria|dimensions)>/g)) {
+      if (!tags.includes(m[1])) tags.push(m[1]);
+    }
+    if (tags.length) {
+      problems.push({ kind: 'agent-carries-behaviour', file: rel,
+        detail: `body carries contract section ${tags.map((t) => `<${t}>`).join(', ')} - the contract belongs in the preloaded skill` });
+    } else {
+      const issue = rungBodyIssue(body, parseSkillsField(fm[1]));
+      if (issue) {
+        problems.push({ kind: 'agent-carries-behaviour', file: rel,
+          detail: `${issue.detail} - the contract belongs in the preloaded skill` });
+      }
+    }
+  }
+}
+
+// 7b. a rung file carries the effort the rung map filed it under, checked on every agent file
+// since the map may name any of them. Nothing else reads a rung file's effort (check 8 reads the
+// filename), so the link deciding how deep a dispatch thinks would go unchecked.
+function checkRungEffort(e, rel, fm, problems) {
+  if (fm) {
+    const effortLine = fm[1].match(/^effort:[ \t]*(\S+)[ \t]*$/m);
+    const mismatch = rungEffortIssue(e.slice(0, -3),
+      effortLine ? effortLine[1] : undefined);
+    if (mismatch) {
+      problems.push({ kind: 'rung-effort-mismatch', file: rel, detail: mismatch.detail });
+    }
+  }
+}
+
+// 7c. the verifier's narrow Write grant, both directions, on every cad-verifier rung. Frontmatter can't
+// scope a tool to a path, so this is the only backstop against the one deliberate exception widening:
+// Write granted, Edit and MultiEdit denied. Keyed on name: and filename both, since the host dispatches
+// by name: and the map resolves by filename, so checking one lets a rename slip past.
+function checkVerifierGrant(e, rel, fm, declared, problems) {
+  if (fm) {
+    const nameLine = fm[1].match(/^name:[ \t]*(\S+)[ \t]*$/m);
+    // YAML allows a quoted scalar; strip one matched pair or a quoted name matches neither arm and name: goes dead
+    const agentName = nameLine ? nameLine[1].replace(/^(['"])([\s\S]*)\1$/, '$2') : '';
+    const isVerifier = (id) => id === 'cad-verifier' || id.startsWith('cad-verifier-');
+    if (isVerifier(agentName) || isVerifier(e.slice(0, -3))) {
+      const denied = toolNames(fm[1], 'disallowedTools');
+      if (!declared.has('Write')) {
+        problems.push({ kind: 'verifier-write-grant', file: rel,
+          detail: 'Write not in tools: - the verifier cannot write its findings file' });
+      }
+      for (const tool of ['Edit', 'MultiEdit']) {
+        if (!denied.has(tool)) {
+          problems.push({ kind: 'verifier-write-grant', file: rel,
+            detail: `${tool} not in disallowedTools:` });
+        }
+        if (declared.has(tool)) {
+          problems.push({ kind: 'verifier-write-grant', file: rel,
+            detail: `${tool} in tools: - the grant is Write only` });
+        }
+      }
+    }
+  }
+}
+
+// 5. an agent's prose may only reference tools it declares in `tools:`. A preloaded
+// contract is that agent's own prose, so it's scanned too, or moving one out of the
+// body (#74) would empty this lint's input. Only backticked mentions count.
+function checkDeclaredTools(rel, body, preloaded, declared, problems) {
   const toolAlt = KNOWN_TOOLS.join('|');
   const backtickRe = new RegExp('`(' + toolAlt + ')`', 'g');
   const theToolRe = new RegExp('\\bthe (' + toolAlt + ') tool\\b', 'g');
+  const referenced = new Set();
+  for (const prose of [body, ...preloaded]) {
+    for (const m of prose.matchAll(backtickRe)) referenced.add(m[1]);
+    for (const m of prose.matchAll(theToolRe)) referenced.add(m[1]);
+  }
+  for (const tool of referenced) {
+    if (!declared.has(tool)) {
+      problems.push({ kind: 'undeclared-tool', file: rel, detail: `${tool} not in tools:` });
+    }
+  }
+}
+
+// the agent files: each is read once, then every per-agent check runs over it
+function walkAgents(root, problems) {
   // its own guard (#49.1); mdFiles already reported an unreadable entry, so this skips it without a second problem
   const agentsDir = join(root, 'agents');
   // hoisted: check 8's disk -> map direction needs the same listing, and two reads could disagree
@@ -592,128 +736,34 @@ function run(root) {
       const rel = relative(root, file);
       const fm = text.match(FRONTMATTER_RE);
       const declared = fm ? toolNames(fm[1], 'tools') : new Set();
-      // 6. resolve each preloaded contract; an unreadable SKILL.md isn't reported, the mdFiles walk already named it
-      const preloaded = [];
-      for (const skill of (fm ? parseSkillsField(fm[1]) : [])) {
-        const skillFile = join(root, 'skills', skill, 'SKILL.md');
-        if (!existsSync(skillFile)) {
-          problems.push({ kind: 'missing-agent-skill', file: rel,
-            detail: `${skill} -> skills/${skill}/SKILL.md absent` });
-          continue;
-        }
-        let skillText;
-        try {
-          skillText = readFileSync(skillFile, 'utf8');
-        } catch {
-          continue;
-        }
-        const skillFm = skillText.match(FRONTMATTER_RE);
-        if (skillFm && /^disable-model-invocation:[ \t]*true[ \t]*$/m.test(skillFm[1])) {
-          problems.push({ kind: 'unpreloadable-agent-skill', file: rel,
-            detail: `${skill} sets disable-model-invocation: true` });
-          continue;
-        }
-        preloaded.push(skillFm ? skillText.slice(skillFm[0].length) : skillText);
-        // 27. the data-not-instructions sentence, once per contract.
-        if (!dataRuleSeen.has(skill)) {
-          dataRuleSeen.add(skill);
-          for (const kind of dataRuleIssues(skillText)) {
-            problems.push({ kind, file: `skills/${skill}/SKILL.md`,
-              detail: 'the preloaded contract lacks the data-not-instructions sentence (lib/data-rule.mjs)' });
-          }
-        }
-      }
+      const preloaded = checkPreloadedSkills(root, rel, fm, dataRuleSeen, problems);
 
       const body = fm ? text.slice(fm[0].length) : text;
       // raw, frontmatter off: 7d compares rung bodies byte for byte, and a normalized copy would forgive a re-wrap
       agentBodies[e.slice(0, -3)] = body;
 
-      // 7. an agent that preloads a contract carries no behaviour of its own. Scans the body only, since the
-      // contracts use this vocabulary on purpose. Keyed on `skills:`, not size: a 200-byte instruction fits any
-      // budget, and this keeps a one-off agent with inline prose legal. Two arms: a contract section tag is
-      // named first as the clearer message, then a tagless body is held to the canonical template, which
-      // catches plain-prose behaviour and a same-size replacement of the pointer paragraph.
-      if (fm && /^skills:/m.test(fm[1])) {
-        const tags = [];
-        for (const m of body.matchAll(
-          /<(role|stance|process|returns|guardrails|success_criteria|dimensions)>/g)) {
-          if (!tags.includes(m[1])) tags.push(m[1]);
-        }
-        if (tags.length) {
-          problems.push({ kind: 'agent-carries-behaviour', file: rel,
-            detail: `body carries contract section ${tags.map((t) => `<${t}>`).join(', ')} - the contract belongs in the preloaded skill` });
-        } else {
-          const issue = rungBodyIssue(body, parseSkillsField(fm[1]));
-          if (issue) {
-            problems.push({ kind: 'agent-carries-behaviour', file: rel,
-              detail: `${issue.detail} - the contract belongs in the preloaded skill` });
-          }
-        }
-      }
-
-      // 7b. a rung file carries the effort the rung map filed it under, checked on every agent file
-      // since the map may name any of them. Nothing else reads a rung file's effort (check 8 reads the
-      // filename), so the link deciding how deep a dispatch thinks would go unchecked.
-      if (fm) {
-        const effortLine = fm[1].match(/^effort:[ \t]*(\S+)[ \t]*$/m);
-        const mismatch = rungEffortIssue(e.slice(0, -3),
-          effortLine ? effortLine[1] : undefined);
-        if (mismatch) {
-          problems.push({ kind: 'rung-effort-mismatch', file: rel, detail: mismatch.detail });
-        }
-      }
-
-      // 7c. the verifier's narrow Write grant, both directions, on every cad-verifier rung. Frontmatter can't
-      // scope a tool to a path, so this is the only backstop against the one deliberate exception widening:
-      // Write granted, Edit and MultiEdit denied. Keyed on name: and filename both, since the host dispatches
-      // by name: and the map resolves by filename, so checking one lets a rename slip past.
-      if (fm) {
-        const nameLine = fm[1].match(/^name:[ \t]*(\S+)[ \t]*$/m);
-        // YAML allows a quoted scalar; strip one matched pair or a quoted name matches neither arm and name: goes dead
-        const agentName = nameLine ? nameLine[1].replace(/^(['"])([\s\S]*)\1$/, '$2') : '';
-        const isVerifier = (id) => id === 'cad-verifier' || id.startsWith('cad-verifier-');
-        if (isVerifier(agentName) || isVerifier(e.slice(0, -3))) {
-          const denied = toolNames(fm[1], 'disallowedTools');
-          if (!declared.has('Write')) {
-            problems.push({ kind: 'verifier-write-grant', file: rel,
-              detail: 'Write not in tools: - the verifier cannot write its findings file' });
-          }
-          for (const tool of ['Edit', 'MultiEdit']) {
-            if (!denied.has(tool)) {
-              problems.push({ kind: 'verifier-write-grant', file: rel,
-                detail: `${tool} not in disallowedTools:` });
-            }
-            if (declared.has(tool)) {
-              problems.push({ kind: 'verifier-write-grant', file: rel,
-                detail: `${tool} in tools: - the grant is Write only` });
-            }
-          }
-        }
-      }
-
-      const referenced = new Set();
-      for (const prose of [body, ...preloaded]) {
-        for (const m of prose.matchAll(backtickRe)) referenced.add(m[1]);
-        for (const m of prose.matchAll(theToolRe)) referenced.add(m[1]);
-      }
-      for (const tool of referenced) {
-        if (!declared.has(tool)) {
-          problems.push({ kind: 'undeclared-tool', file: rel, detail: `${tool} not in tools:` });
-        }
-      }
+      checkAgentBehaviour(rel, fm, body, problems);
+      checkRungEffort(e, rel, fm, problems);
+      checkVerifierGrant(e, rel, fm, declared, problems);
+      checkDeclaredTools(rel, body, preloaded, declared, problems);
     }
   }
+  return { agentFiles, agentBodies };
+}
 
-  // 7d. one role's rung files carry one body, byte for byte (rule in lib/rung-agent.mjs); cross-file, so after the walk
+// 7d. one role's rung files carry one body, byte for byte (rule in lib/rung-agent.mjs); cross-file, so after the walk
+function checkRungBodies(agentBodies, problems) {
   for (const issue of rungPrefixIssues(agentBodies)) {
     problems.push({ kind: issue.code, file: `agents/${issue.stems[0]}.md`,
       detail: issue.detail });
   }
+}
 
-  // 8. the rung ladder both ways, RUNG_FILES against the agents/ listing. It iterates the map, so it can't live in that
-  // walk. Map -> disk: every file the map names must exist, and route.mjs never checks the agent it returns exists, so
-  // a missing rung would fail at dispatch instead of in CI. Gated on isFullTree: RUNG_FILES lives in code, so a fixture
-  // can't supply its own and a minimal one would report thirty absent files for a ladder it never claimed.
+// 8. the rung ladder both ways, RUNG_FILES against the agents/ listing. It iterates the map, so it can't live in that
+// walk. Map -> disk: every file the map names must exist, and route.mjs never checks the agent it returns exists, so
+// a missing rung would fail at dispatch instead of in CI. Gated on isFullTree: RUNG_FILES lives in code, so a fixture
+// can't supply its own and a minimal one would report thirty absent files for a ladder it never claimed.
+function checkRungLadder(root, isFullTree, agentFiles, problems) {
   if (isFullTree) {
     for (const role of Object.keys(RUNG_FILES)) {
       for (const [rung, stem] of Object.entries(RUNG_FILES[role])) {
@@ -744,8 +794,10 @@ function run(root) {
       break;
     }
   }
+}
 
-  // each of these reads the schema and files its issues against it, in this order; the comment says what it checks
+// each of these reads the schema and files its issues against it, in this order; the comment says what it checks
+function checkSchemaRules(schema, problems) {
   for (const issues of [
     // 8b. the shipped roles.<role>.effort enums against RUNG_FILES, filed against the schema a maintainer edits
     effortEnumIssues(schema, RUNG_ORDER),
@@ -762,10 +814,12 @@ function run(root) {
       problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
     }
   }
+}
 
-  // 9. the reach table against config.schema.json both ways, plus the narrow-reach-must-be-stated rule. Root-relative,
-  // so a fixture can supply its own doc, and a full tree missing it is a missing-input. Read and parse are guarded: a
-  // malformed table is problems on the table, not an unwind to internal that drops the rest (#49.1).
+// 9. the reach table against config.schema.json both ways, plus the narrow-reach-must-be-stated rule. Root-relative,
+// so a fixture can supply its own doc, and a full tree missing it is a missing-input. Read and parse are guarded: a
+// malformed table is problems on the table, not an unwind to internal that drops the rest (#49.1).
+function checkReach(root, isFullTree, schema, problems) {
   const reachPath = join(root, REACH_DOC);
   if (existsSync(reachPath)) {
     let reachText = null;
@@ -793,9 +847,11 @@ function run(root) {
     problems.push({ kind: 'missing-input', file: REACH_DOC,
       detail: 'always-expected input absent' });
   }
+}
 
-  // 17. the global-only key set against the schema's src marker, both ways, each filed against the file a maintainer
-  // opens to fix it: an unmarked enforced key is a schema edit, a marked key nothing enforces is a lib edit.
+// 17. the global-only key set against the schema's src marker, both ways, each filed against the file a maintainer
+// opens to fix it: an unmarked enforced key is a schema edit, a marked key nothing enforces is a lib edit.
+function checkGlobalOnly(schema, problems) {
   const GLOBAL_ONLY_FILE = {
     'missing-global-only-marker': join('cadence-core', 'config.schema.json'),
     'undeclared-global-only-key': join('cadence-core', 'bin', 'lib', 'global-only-keys.mjs'),
@@ -803,10 +859,12 @@ function run(root) {
   for (const { code, detail } of globalOnlyMarkerIssues(schema)) {
     problems.push({ kind: code, file: GLOBAL_ONLY_FILE[code], detail });
   }
+}
 
-  // 12. mergeLayers callsites bind the warnings[] or say in the file header why the envelope
-  // is the surfacing (lib/merge-warnings.mjs). An unreadable file is one problem naming it,
-  // never an unwind (#49.1), and no second reporter exists here to defer to.
+// 12. mergeLayers callsites bind the warnings[] or say in the file header why the envelope
+// is the surfacing (lib/merge-warnings.mjs). An unreadable file is one problem naming it,
+// never an unwind (#49.1), and no second reporter exists here to defer to.
+function checkMergeWarnings(root, problems) {
   for (const { file, unreadable } of binFiles(root)) {
     const rel = relative(root, file);
     if (unreadable) {
@@ -825,16 +883,20 @@ function run(root) {
       problems.push({ kind: code, file: rel, detail });
     }
   }
+}
 
+function checkReadRouters(root, problems) {
   // 13. every de-preloaded reference is still Read by name at the step that needs it (lib/deferred-reads.mjs)
   for (const issue of deferredReadIssues(root, deferredRows(problems))) problems.push(issue);
 
   // 24. a cold-split reference stays reachable from its router, which grew no unregistered branch
   for (const issue of referenceRouterIssues(root)) problems.push(issue);
+}
 
-  // 14. every shipped seam is contracted. Check 2 skips a script with no CONTRACTS row, since
-  // prose names third-party scripts too, so deleting a row silently opts that script out of
-  // the flag lint. Top-level only: lib/*.mjs are never invoked from prose.
+// 14. every shipped seam is contracted. Check 2 skips a script with no CONTRACTS row, since
+// prose names third-party scripts too, so deleting a row silently opts that script out of
+// the flag lint. Top-level only: lib/*.mjs are never invoked from prose.
+function checkContractedScripts(root, problems) {
   const binDir = join(root, 'cadence-core', 'bin');
   let binList = null;
   try {
@@ -854,11 +916,13 @@ function run(root) {
         file: relative(root, join(binDir, d.name)), detail: d.name });
     }
   }
+}
 
-  // 15. no literal U+0000 under cadence-core/bin. A NUL makes GNU grep -rn print nothing for the
-  // file without -a and rg skip it, so it drops out of every search, and git grep doesn't catch it.
-  // Extension-blind, since grep doesn't care that a file is a test, and scoped to bin because the
-  // phase records elsewhere carry the same bytes and nobody may rewrite them.
+// 15. no literal U+0000 under cadence-core/bin. A NUL makes GNU grep -rn print nothing for the
+// file without -a and rg skip it, so it drops out of every search, and git grep doesn't catch it.
+// Extension-blind, since grep doesn't care that a file is a test, and scoped to bin because the
+// phase records elsewhere carry the same bytes and nobody may rewrite them.
+function checkNulBytes(root, problems) {
   for (const { file, unreadable } of binFiles(root, { every: true })) {
     const rel = relative(root, file);
     if (unreadable) {
@@ -880,7 +944,9 @@ function run(root) {
     problems.push({ kind: 'nul-byte-in-source', file: rel,
       detail: `literal U+0000 at byte offset ${at} (${count} in file) - type \\0 instead` });
   }
+}
 
+function checkRegisters(root, problems) {
   // 16. an @-included references/templates surface must be named in the command's eager prose (include-consumers)
   for (const issue of includeConsumerIssues(root)) problems.push(issue);
 
@@ -892,8 +958,10 @@ function run(root) {
 
   // 26. no shipped file but an image or font over 256 KiB, and at most 512 files plus folders, every root included
   for (const issue of directoryLimitIssues(root)) problems.push(issue);
+}
 
-  // 27. workflows/*.js at plugin root: checks 1 to 3 on the text, then the script's own rules (workflowScriptIssues)
+// 27. workflows/*.js at plugin root: checks 1 to 3 on the text, then the script's own rules (workflowScriptIssues)
+function checkWorkflowScripts(root, problems, lintProse) {
   const wfDir = join(root, 'workflows');
   if (existsSync(wfDir)) {
     let names = [];
@@ -908,10 +976,32 @@ function run(root) {
       problems.push(...workflowScriptIssues(text, rel));
     }
   }
-
-  return problems;
 }
 
+function run(root) {
+  const problems = [];
+  const v = readVocabulary(root);
+  checkCoreDirs(root, v.isFullTree, problems);
+  const lintProse = makeLintProse(root, problems, v);
+  walkProse(root, problems, v, lintProse);
+  checkInternalsPaths(root, v.isFullTree, problems);
+  checkSchemaProse(v.schema, v.schemaKeys, problems, lintProse);
+  checkInertKeys(v.schemaKeys, v.seenTokens, problems);
+  checkBudgets(root, v.isFullTree, problems);
+  const { agentFiles, agentBodies } = walkAgents(root, problems);
+  checkRungBodies(agentBodies, problems);
+  checkRungLadder(root, v.isFullTree, agentFiles, problems);
+  checkSchemaRules(v.schema, problems);
+  checkReach(root, v.isFullTree, v.schema, problems);
+  checkGlobalOnly(v.schema, problems);
+  checkMergeWarnings(root, problems);
+  checkReadRouters(root, problems);
+  checkContractedScripts(root, problems);
+  checkNulBytes(root, problems);
+  checkRegisters(root, problems);
+  checkWorkflowScripts(root, problems, lintProse);
+  return problems;
+}
 // --- entry ---------------------------------------------------------------------
 
 // a const: helper-census.test.mjs pins that literal throw body to lib/seam-input.mjs, so a copy would redden it
