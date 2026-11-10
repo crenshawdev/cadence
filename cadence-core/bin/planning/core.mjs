@@ -6,10 +6,12 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
-import { dirname, join, relative, resolve as resolvePath } from 'node:path';
+import { basename, dirname, join, relative, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS } from '../lib/arg-contract.mjs';
+import { readFacts } from '../lib/codemap-facts.mjs';
+import { entryFile, moduleState, partition } from '../lib/codemap-partition.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE, byPlanNumber, planNumber } from '../lib/phase-plans.mjs';
@@ -19,6 +21,8 @@ import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { manifestPath } from '../lib/test-seam.mjs';
+import { isPlainObject } from '../lib/text-util.mjs';
+import { appendEvent, renderTrace, TERMINAL } from '../lib/trace.mjs';
 
 // raw argument list: arg-contract flags need the spelling, and parseArgs collapses bare, empty and flag-shaped into one
 const ARGV = process.argv.slice(2);
@@ -829,13 +833,167 @@ function argRefusal(key, flag) {
   return `${global ? '' : `${key} `}${flag} ${flagSentence(flag, spec)}`;
 }
 
+const MAP_DIR = 'codemap';
+const INDEX_FILE = 'index.json';
+
+// the index holds a row per tracked path and its symbols, so a big repository writes a big one. Measured on a file of
+// `{},` repeated: 64 MiB parsed in 4.1 s at 2,049 MiB RSS, 128 MiB in 17.4 s at 4,044 MiB, and 256 MiB dumped core, an
+// abort no catch sees. A scan never writes a larger one: it sheds the edges, then the symbols, and refuses if that is
+// not enough. A larger file is a leftover or a clone's, a fresh cut for scan, and status and slice refuse it by name. An
+// entry file is one module's, so it keeps the smaller limit
+const MAX_INDEX = 128 * 1024 * 1024;
+const MAX_ENTRY = 64 * 1024 * 1024;
+
+/**
+ * The stored index, or null. The map is derived, so an absent, oversized, torn or non-regular index means a fresh cut;
+ * `tooLarge` says which of those it was, for status to name.
+ * @param {string} map
+ * @returns {{index: any, tooLarge: boolean}}
+ */
+function storedIndex(map) {
+  const r = readCapped(join(map, INDEX_FILE), MAX_INDEX);
+  if (r.text === null) return { index: null, tooLarge: r.tooLarge === true };
+  try {
+    return { index: JSON.parse(r.text), tooLarge: false };
+  } catch {
+    return { index: null, tooLarge: false };
+  }
+}
+
+/**
+ * One module's entry file, or null when it's absent, not a regular file, too big or won't parse: all of them read as unbuilt.
+ * @param {string} map @param {string} entry
+ */
+function readEntry(map, entry) {
+  const r = readCapped(join(map, entry), MAX_ENTRY);
+  if (r.text === null) return null;
+  try {
+    return JSON.parse(r.text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A regular file's text under a size cap, or why it can't be had (`tooLarge` apart from the rest).
+ * @param {string} file @param {number} cap
+ * @returns {{text: string|null, why: string, tooLarge?: boolean}}
+ */
+function readCapped(file, cap) {
+  const cannot = (/** @type {any} */ e) => ({ text: null, why: `cannot be read (${(e && e.code) || 'error'})` });
+  let st;
+  try { st = lstatSync(file); } catch (e) { return cannot(e); }
+  if (!st.isFile()) return { text: null, why: 'is not a regular file' };
+  if (st.size > cap) return { text: null, why: `is ${st.size} bytes, over the ${cap} byte cap`, tooLarge: true };
+  try { return { text: readFileSync(file, 'utf8'), why: '' }; } catch (e) { return cannot(e); }
+}
+
+/**
+ * Write the run's brackets. A worker whose dispatch is on the record gets only its terminal, so a retry after a half-written
+ * pair closes it, and one with both is skipped. When the run's `<run id>-notice` bracket is already there, an earlier call
+ * billed the run's totals and billing it per agent as well would count it twice, so none are written. The same holds the other
+ * way: with any `<run id>-` agent bracket on the record, the notice bracket is not written on top of them.
+ * @param {string} dir the planning directory
+ * @param {string} phase @param {string} runId @param {{plan: string, dispatch: any, terminal: any}[]} list
+ * @returns {{written: number, already: number, failed: {plan: string, reason: string}[]}}
+ */
+function writeBrackets(dir, phase, runId, list) {
+  const events = renderTrace(dir, phase).events.filter((e) => e.family === 'lifecycle');
+  const dispatched = new Set(events.filter((e) => e.event === 'dispatch').map((e) => String(e.plan)));
+  const closed = new Set(events.filter((e) => TERMINAL.includes(e.event)).map((e) => String(e.plan)));
+  const out = { written: 0, already: 0, failed: /** @type {{plan: string, reason: string}[]} */ ([]) };
+  const billedAsTotals = dispatched.has(`${runId}-notice`);
+  // the run file gone on a retry leaves only the notice's totals, and agents billed earlier already hold that spend
+  const billedPerAgent = [...dispatched].some((p) => p.startsWith(`${runId}-`) && p !== `${runId}-notice`);
+  for (const b of list) {
+    if (closed.has(b.plan) || (billedAsTotals && b.plan !== `${runId}-notice`) || (billedPerAgent && b.plan === `${runId}-notice`)) { out.already += 1; continue; }
+    for (const event of dispatched.has(b.plan) ? [b.terminal] : [b.dispatch, b.terminal]) {
+      const r = appendEvent(dir, event);
+      if (!r.written) { out.failed.push({ plan: b.plan, reason: r.reason || 'not-written' }); break; }
+      if (event === b.terminal) out.written += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * The completion notice's run totals from the three `--notice-*` flags, or what is wrong with one. `codemap write` takes the same three.
+ * @param {any} opts @param {string} seam the command's name, for the message
+ * @returns {{ok: true, totals: {tokens?: number, turns?: number, duration_ms?: number}} | {ok: false, detail: string}}
+ */
+function noticeTotals(opts, seam) {
+  /** @type {{tokens?: number, turns?: number, duration_ms?: number}} */
+  const totals = {};
+  for (const [flag, key] of [['notice-tokens', 'tokens'], ['notice-turns', 'turns'], ['notice-duration-ms', 'duration_ms']]) {
+    if (!(flag in opts)) continue;
+    const n = requireInt(opts[flag]);
+    if (!n.ok || n.value < 0) return { ok: false, detail: `${seam} --${flag} needs a non-negative whole number` };
+    totals[key] = n.value;
+  }
+  return { ok: true, totals };
+}
+
+/**
+ * The stored map as `slice` reads it: the index with its checks, the current facts, each module's state and entry, and the
+ * marks. A failure comes back as `error` instead of a refusal, so a seam that can do without a map reads it as no map.
+ * @param {string} dir the planning directory
+ * @returns {{error: {reason: string, message: string, hint: string}} | {index: any, states: Map<string, string>, entries: Map<string, any>, entryPath: (name: string) => string, current: Set<string>, marks: {edges_shed?: true, symbols_shed?: true}}}
+ */
+function readStoredMap(dir) {
+  const root = dirname(resolvePath(dir));
+  const map = join(dir, MAP_DIR);
+  let real = false;
+  try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
+  const { index, tooLarge } = real ? storedIndex(map) : { index: null, tooLarge: false };
+  if (tooLarge) {
+    return { error: { reason: 'index-too-large', message: `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so slice won't read it`,
+      hint: 'run `planning.mjs codemap scan` to rebuild the map' } };
+  }
+  // the index comes from a file a clone can supply: every row has a path, and its symbols are objects
+  const wellFormed = index && Array.isArray(index.rows) && Array.isArray(index.modules)
+    && index.modules.every((/** @type {any} */ m) => m && typeof m.name === 'string' && Array.isArray(m.paths))
+    && index.rows.every((/** @type {any} */ r) => isPlainObject(r) && typeof r.path === 'string'
+      && (r.symbols === undefined || (Array.isArray(r.symbols) && r.symbols.every(isPlainObject))));
+  if (!wellFormed) {
+    return { error: { reason: 'no-index', message: `there is no code map at ${map}`, hint: 'run `planning.mjs codemap scan` first to build the map' } };
+  }
+  let current;
+  try {
+    current = readFacts(root);
+  } catch {
+    return { error: { reason: 'no-git', message: `${root} is not inside a git repository, so there is nothing to compare`,
+      hint: 'run from the project\'s repository, or pass --dir naming its .planning directory' } };
+  }
+  // staleness is the way status takes it: the stored list placed against the files as they are now, each entry's built_from against current hashes
+  const { modules } = partition(current, index.modules);
+  const byPath = new Map(current.map((r) => [r.path, r]));
+  /** @type {Map<string, string>} */
+  const states = new Map();
+  /** @type {Map<string, any>} */
+  const entries = new Map();
+  for (const m of modules) {
+    const entry = readEntry(map, entryFile(m.name));
+    const state = moduleState(m, entry, byPath);
+    states.set(m.name, state);
+    if (entry && (state === 'built' || state === 'stale')) entries.set(m.name, entry);
+  }
+  const base = `${basename(resolvePath(dir))}/${MAP_DIR}`;
+  /** @type {{edges_shed?: true, symbols_shed?: true}} */
+  const marks = { ...(index.edges_shed === true ? { edges_shed: true } : {}), ...(index.symbols_shed === true ? { symbols_shed: true } : {}) };
+  return { index, states, entries, entryPath: (name) => `${base}/${entryFile(name)}`, current: new Set(current.map((r) => r.path)), marks };
+}
+
 // one export list, so every body above stays byte-identical to what planning.mjs shipped
 export {
   ARGV,
   DISPATCH_WINDOW_DEFAULTS,
   FLAG_SENTENCES,
   HERE,
+  INDEX_FILE,
   MANIFEST_PATH,
+  MAP_DIR,
+  MAX_ENTRY,
+  MAX_INDEX,
   PHASE_DIR_NAME,
   QUEUE_HOMES,
   RECORD_TOKEN,
@@ -853,6 +1011,7 @@ export {
   intFlag,
   listPlanFiles,
   memoryBackend,
+  noticeTotals,
   notRealDirDetail,
   ok,
   phaseSpellingCollision,
@@ -860,14 +1019,19 @@ export {
   planKey,
   pluginVersion,
   read,
+  readCapped,
+  readEntry,
   readJsonPayload,
   readPlanReports,
   planPosition,
   readQueue,
   readReadsRecords,
+  readStoredMap,
   resolveIndex,
   resolveRange,
   resolveRef,
   riskRef,
   routeLadder,
+  storedIndex,
+  writeBrackets,
 };

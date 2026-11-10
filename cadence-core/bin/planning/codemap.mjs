@@ -7,7 +7,7 @@
 import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { emit } from '../lib/seam-io.mjs';
-import { fail, ok } from './core.mjs';
+import { INDEX_FILE, MAP_DIR, MAX_ENTRY, MAX_INDEX, fail, noticeTotals, ok, readCapped, readEntry, readStoredMap, storedIndex, writeBrackets } from './core.mjs';
 import { judgeEntry } from '../lib/codemap-entry.mjs';
 import { addEdges, stripEdges } from '../lib/codemap-edges.mjs';
 import { readFacts, readNested } from '../lib/codemap-facts.mjs';
@@ -17,10 +17,6 @@ import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '.
 import { atomicWrite } from '../lib/planning-files.mjs';
 import { LIST_CAP, MAX_RUN_BYTES, agentBrackets, agentRows, noticeBracket, parseCompleted } from '../lib/workflow-run.mjs';
 import { isPlainObject } from '../lib/text-util.mjs';
-import { noticeTotals, readCapped, writeBrackets } from './workflow-run.mjs';
-
-const MAP_DIR = 'codemap';
-const INDEX_FILE = 'index.json';
 
 /**
  * The map's directory path, or null when it can't be trusted. A clone can track `.planning` or `.planning/codemap` as a
@@ -38,44 +34,6 @@ function mapDir(dir) {
   if (real(dir) === false) return null;
   const map = join(dir, MAP_DIR);
   return real(map) === false ? null : map;
-}
-
-// the index holds a row per tracked path and its symbols, so a big repository writes a big one. Measured on a file of
-// `{},` repeated: 64 MiB parsed in 4.1 s at 2,049 MiB RSS, 128 MiB in 17.4 s at 4,044 MiB, and 256 MiB dumped core, an
-// abort no catch sees. A scan never writes a larger one: it sheds the edges, then the symbols, and refuses if that is
-// not enough. A larger file is a leftover or a clone's, a fresh cut for scan, and status and slice refuse it by name. An
-// entry file is one module's, so it keeps the smaller limit
-const MAX_INDEX = 128 * 1024 * 1024;
-const MAX_ENTRY = 64 * 1024 * 1024;
-
-/**
- * The stored index, or null. The map is derived, so an absent, oversized, torn or non-regular index means a fresh cut;
- * `tooLarge` says which of those it was, for status to name.
- * @param {string} map
- * @returns {{index: any, tooLarge: boolean}}
- */
-function storedIndex(map) {
-  const r = readCapped(join(map, INDEX_FILE), MAX_INDEX);
-  if (r.text === null) return { index: null, tooLarge: r.tooLarge === true };
-  try {
-    return { index: JSON.parse(r.text), tooLarge: false };
-  } catch {
-    return { index: null, tooLarge: false };
-  }
-}
-
-/**
- * One module's entry file, or null when it's absent, not a regular file, too big or won't parse: all of them read as unbuilt.
- * @param {string} map @param {string} entry
- */
-function readEntry(map, entry) {
-  const r = readCapped(join(map, entry), MAX_ENTRY);
-  if (r.text === null) return null;
-  try {
-    return JSON.parse(r.text);
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -439,56 +397,6 @@ function cmdWrite(dir, opts) {
 const listOf = (v) => (typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : []);
 
 /**
- * The stored map as `slice` reads it: the index with its checks, the current facts, each module's state and entry, and the
- * marks. A failure comes back as `error` instead of a refusal, so a seam that can do without a map reads it as no map.
- * @param {string} dir the planning directory
- * @returns {{error: {reason: string, message: string, hint: string}} | {index: any, states: Map<string, string>, entries: Map<string, any>, entryPath: (name: string) => string, current: Set<string>, marks: {edges_shed?: true, symbols_shed?: true}}}
- */
-function readStoredMap(dir) {
-  const root = dirname(resolve(dir));
-  const map = join(dir, MAP_DIR);
-  let real = false;
-  try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
-  const { index, tooLarge } = real ? storedIndex(map) : { index: null, tooLarge: false };
-  if (tooLarge) {
-    return { error: { reason: 'index-too-large', message: `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so slice won't read it`,
-      hint: 'run `planning.mjs codemap scan` to rebuild the map' } };
-  }
-  // the index comes from a file a clone can supply: every row has a path, and its symbols are objects
-  const wellFormed = index && Array.isArray(index.rows) && Array.isArray(index.modules)
-    && index.modules.every((/** @type {any} */ m) => m && typeof m.name === 'string' && Array.isArray(m.paths))
-    && index.rows.every((/** @type {any} */ r) => isPlainObject(r) && typeof r.path === 'string'
-      && (r.symbols === undefined || (Array.isArray(r.symbols) && r.symbols.every(isPlainObject))));
-  if (!wellFormed) {
-    return { error: { reason: 'no-index', message: `there is no code map at ${map}`, hint: 'run `planning.mjs codemap scan` first to build the map' } };
-  }
-  let current;
-  try {
-    current = readFacts(root);
-  } catch {
-    return { error: { reason: 'no-git', message: `${root} is not inside a git repository, so there is nothing to compare`,
-      hint: 'run from the project\'s repository, or pass --dir naming its .planning directory' } };
-  }
-  // staleness is the way status takes it: the stored list placed against the files as they are now, each entry's built_from against current hashes
-  const { modules } = partition(current, index.modules);
-  const byPath = new Map(current.map((r) => [r.path, r]));
-  /** @type {Map<string, string>} */
-  const states = new Map();
-  /** @type {Map<string, any>} */
-  const entries = new Map();
-  for (const m of modules) {
-    const entry = readEntry(map, entryFile(m.name));
-    const state = moduleState(m, entry, byPath);
-    states.set(m.name, state);
-    if (entry && (state === 'built' || state === 'stale')) entries.set(m.name, entry);
-  }
-  const base = `${basename(resolve(dir))}/${MAP_DIR}`;
-  /** @type {{edges_shed?: true, symbols_shed?: true}} */
-  const marks = { ...(index.edges_shed === true ? { edges_shed: true } : {}), ...(index.symbols_shed === true ? { symbols_shed: true } : {}) };
-  return { index, states, entries, entryPath: (name) => `${base}/${entryFile(name)}`, current: new Set(current.map((r) => r.path)), marks };
-}
-
-/**
  * The rows asked for, and no way to ask for all of them: a call naming none of the selectors is refused.
  * @param {string} dir the planning directory @param {any} opts
  */
@@ -517,4 +425,4 @@ function cmdCodemap(dir, sub, opts) {
   return fail('usage', 'codemap <scan|status|slice|write>');
 }
 
-export { cmdCodemap, readStoredMap };
+export { cmdCodemap };

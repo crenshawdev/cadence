@@ -5,8 +5,7 @@
 
 import { lstatSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { fail, intFlag, listPlanFiles, ok, phaseSpellingCollision, read } from './core.mjs';
-import { readStoredMap } from './codemap.mjs';
+import { fail, intFlag, listPlanFiles, ok, phaseSpellingCollision, read, readStoredMap } from './core.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
 import { composeBrief } from '../lib/plan-brief.mjs';
 import { planFileFor, planNumber } from '../lib/phase-plans.mjs';
