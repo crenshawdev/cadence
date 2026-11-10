@@ -9,9 +9,9 @@
 import { isPlainObject } from './text-util.mjs';
 
 /**
- * The rung ladder, weakest first: the whole vocabulary of rung names and the order `rungFiles` returns a role's files
- * in. It sits beside RUNG_FILES because the two are one statement (the ladder names rungs, the map says which file
- * carries each), and `rungOrderIssues` holds them together.
+ * The rung ladder, weakest first: the whole vocabulary of rung names and the order a role's files are listed in.
+ * It sits beside RUNG_FILES because the two are one statement (the ladder names rungs, the map says which file
+ * carries each), and the rung-agent tests hold them together.
  * @type {readonly string[]}
  */
 export const RUNG_ORDER = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -77,34 +77,6 @@ export const RUNG_FILES = Object.freeze({
 });
 
 /**
- * Whether the map and the ladder still say the same thing: every role's rung keys are exactly RUNG_ORDER, in order.
- * Nothing else compares them. A role missing `xhigh` resolves `rungFile` to null and route.mjs fails open, and
- * reordered keys hand `rungFiles` and `rungPrefixIssues` a tie-break order that isn't the ladder's; both are silent.
- * Takes the map so a caller can hold a drifted one against the ladder.
- * @param {any} [files] the rung map to check, stem values unread
- * @param {any} [order] the ladder to check it against, weakest first
- * @returns {{code: string, role: string, detail: string}[]}
- */
-export function rungOrderIssues(files, order) {
-  const map = files !== undefined && files !== null ? files : RUNG_FILES;
-  const ladder = Array.isArray(order) ? order : RUNG_ORDER;
-  /** @type {{code: string, role: string, detail: string}[]} */
-  const out = [];
-  const read = isPlainObject(map) ? map : {};
-  for (const role of Object.keys(read)) {
-    const rungs = read[role];
-    const got = isPlainObject(rungs)
-      ? Object.keys(rungs) : [];
-    if (got.length === ladder.length && ladder.every((r, i) => got[i] === r)) continue;
-    out.push({ code: 'rung-order-drift', role,
-      detail: `${role} files rungs ${JSON.stringify(got)}, but the rung ladder is ${
-        JSON.stringify([...ladder])} - the map and RUNG_ORDER are one statement `
-        + 'and nothing else holds them together' });
-  }
-  return out;
-}
-
-/**
  * The agent-file stem for one rung of one role, or null when the pair isn't in the map. Null and not a guessed
  * `<role>-<rung>`: a guess names a file that doesn't exist and reads as a real answer.
  * @param {string} role
@@ -115,17 +87,6 @@ export function rungFile(role, rung) {
   const map = typeof role === 'string' ? RUNG_FILES[role] : undefined;
   if (!map || typeof rung !== 'string') return null;
   return Object.prototype.hasOwnProperty.call(map, rung) ? map[rung] : null;
-}
-
-/**
- * Every agent-file stem one role's map names, in rung order. An unknown role yields an empty array, never a throw.
- * Nothing in the plugin calls it; the tests do.
- * @param {string} role
- * @returns {string[]}
- */
-export function rungFiles(role) {
-  const map = typeof role === 'string' ? RUNG_FILES[role] : undefined;
-  return map ? Object.values(map) : [];
 }
 
 // Reverse lookups for a recorded `agent_type`; a suffix regex would be a second statement of the map.
