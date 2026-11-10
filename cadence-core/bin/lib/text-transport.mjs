@@ -31,6 +31,14 @@ export const TEXT_FLAGS = Object.freeze([
 ]);
 
 /**
+ * One register row. The named fields are the keys, written in the order the register has always carried them, and
+ * the row comes back frozen. `reason` is a key only when one is given.
+ * @param {{surface: string, flag: string, value: string, derived: boolean, reason?: string}} f
+ */
+const row = ({ surface, flag, value, derived, reason }) => Object.freeze(
+  reason === undefined ? { surface, flag, value, derived } : { surface, flag, value, derived, reason });
+
+/**
  * The register: one row per examined site. surface is a root-relative POSIX path, flag the flag as
  * written (-m for the git tag site), value the text the site passes between its quotes verbatim,
  * derived the classification, and reason the justification every non-derived row needs.
@@ -42,200 +50,128 @@ export const TEXT_FLAGS = Object.freeze([
 export const TEXT_TRANSPORT = Object.freeze([
   // --- lifecycle close details: what the dispatch said when it failed --------
   // each is a line the failed subagent produced, quoted into the orchestrator's next shell command
-  Object.freeze({
-    surface: 'cadence-core/workflows/verify-deep.md',
-    flag: '--detail', value: '<what failed>', derived: true,
+  row({ surface: 'cadence-core/workflows/verify-deep.md', flag: '--detail', value: '<what failed>', derived: true }),
+  row({ surface: 'cadence-core/workflows/context.md', flag: '--detail', value: '<what failed>', derived: true }),
+  row({ surface: 'cadence-core/workflows/decision-review.md', flag: '--detail', value: '<what failed>', derived: true }),
+  row({ surface: 'cadence-core/workflows/minimalism-review.md', flag: '--detail', value: '<what failed>', derived: true }),
+  row({ surface: 'cadence-core/references/review-triggers.md', flag: '--detail', value: '<what failed>', derived: true }),
+  // one row, two occurrences (handle_return and the checker's close): the same prescription written twice
+  row({ surface: 'cadence-core/workflows/plan.md', flag: '--detail', value: '<empty or unmarked return>', derived: true }),
+  row({
+    surface: 'cadence-core/references/plan-revision.md', flag: '--detail', value: '<empty or unmarked revision return>', derived: true,
   }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/context.md',
-    flag: '--detail', value: '<what failed>', derived: true,
+  row({
+    surface: 'cadence-core/references/plan-revision.md', flag: '--detail', value: '<empty or unmarked narrowed return>', derived: true,
   }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/decision-review.md',
-    flag: '--detail', value: '<what failed>', derived: true,
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/minimalism-review.md',
-    flag: '--detail', value: '<what failed>', derived: true,
-  }),
-  Object.freeze({
-    surface: 'cadence-core/references/review-triggers.md',
-    flag: '--detail', value: '<what failed>', derived: true,
-  }),
-  Object.freeze({
-    // one row, two occurrences (handle_return and the checker's close): the same prescription written twice
-    surface: 'cadence-core/workflows/plan.md',
-    flag: '--detail', value: '<empty or unmarked return>', derived: true,
-  }),
-  Object.freeze({
-    surface: 'cadence-core/references/plan-revision.md',
-    flag: '--detail', value: '<empty or unmarked revision return>', derived: true,
-  }),
-  Object.freeze({
-    surface: 'cadence-core/references/plan-revision.md',
-    flag: '--detail', value: '<empty or unmarked narrowed return>', derived: true,
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/execute.md',
-    flag: '--detail', value: '<one line>', derived: true,
-  }),
-  Object.freeze({
-    // a trigger name and a count joined to a voice list the model composes from which reviewers ran
-    // cold-split out of review-triggers.md, and the row moved with its prescription
-    surface: 'cadence-core/references/review-record.md',
-    flag: '--detail',
-    value: '<trigger>: <n> survivors; voices <the reviewers that actually ran>',
-    derived: true,
+  row({ surface: 'cadence-core/workflows/execute.md', flag: '--detail', value: '<one line>', derived: true }),
+  // a trigger name and a count joined to a voice list the model composes from which reviewers ran
+  // cold-split out of review-triggers.md, and the row moved with its prescription
+  row({
+    surface: 'cadence-core/references/review-record.md', flag: '--detail', value: '<trigger>: <n> survivors; voices <the reviewers that actually ran>', derived: true,
   }),
 
   // --- dispatch read-sets: what this site causes the worker to read ----------
-  Object.freeze({
-    // `/cad-decision-review` resolves its target from `$ARGUMENTS`.
-    surface: 'cadence-core/workflows/decision-review.md',
-    flag: '--read', value: '<the decision doc path>', derived: true,
+  // `/cad-decision-review` resolves its target from `$ARGUMENTS`.
+  row({ surface: 'cadence-core/workflows/decision-review.md', flag: '--read', value: '<the decision doc path>', derived: true }),
+  // Same: `/cad-minimalism-review`'s target is the user's argument, resolved.
+  row({
+    surface: 'cadence-core/workflows/minimalism-review.md', flag: '--read', value: '<the resolved target reference>', derived: true,
   }),
-  Object.freeze({
-    // Same: `/cad-minimalism-review`'s target is the user's argument, resolved.
-    surface: 'cadence-core/workflows/minimalism-review.md',
-    flag: '--read', value: '<the resolved target reference>', derived: true,
-  }),
-  Object.freeze({
-    surface: 'cadence-core/references/review-triggers.md',
-    flag: '--read', value: '<the payload reference>', derived: false,
+  row({
+    surface: 'cadence-core/references/review-triggers.md', flag: '--read', value: '<the payload reference>', derived: false,
     reason: 'step 2 assembles this reference itself - the plan/diff file paths for shape (c), the <base_ref>..<head_ref> pair for shapes (a) and (b), the named scope for an in-context artifact - so it is composed from paths and git refs this workflow derives, never from agent output or repository prose (D-08 scopes the two user-supplied --read sites in, this one out)',
   }),
 
   // --- uat record: the free-text half of a failing item ----------------------
-  Object.freeze({
-    surface: 'cadence-core/workflows/verify.md',
-    flag: '--evidence',
-    value: '<the command and the output that settles it>', derived: true,
+  row({
+    surface: 'cadence-core/workflows/verify.md', flag: '--evidence', value: '<the command and the output that settles it>', derived: true,
   }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/verify.md',
-    flag: '--reported', value: '<verbatim reply>', derived: true,
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/verify.md',
-    flag: '--reason', value: '<why>', derived: true,
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/verify.md',
-    flag: '--cause', value: '<root cause>', derived: true,
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/verify.md',
-    flag: '--fix', value: '{hash}, retest', derived: false,
+  row({ surface: 'cadence-core/workflows/verify.md', flag: '--reported', value: '<verbatim reply>', derived: true }),
+  row({ surface: 'cadence-core/workflows/verify.md', flag: '--reason', value: '<why>', derived: true }),
+  row({ surface: 'cadence-core/workflows/verify.md', flag: '--cause', value: '<root cause>', derived: true }),
+  row({
+    surface: 'cadence-core/workflows/verify.md', flag: '--fix', value: '{hash}, retest', derived: false,
     reason: 'the workflow authors this string; its one interpolation is the hash of the commit it just made, which is hex from git and carries no shell metacharacter',
   }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/verify.md',
-    flag: '--fix', value: 'routed to /cad-plan', derived: false,
+  row({
+    surface: 'cadence-core/workflows/verify.md', flag: '--fix', value: 'routed to /cad-plan', derived: false,
     reason: 'a literal the workflow authors, with nothing interpolated into it at all',
   }),
 
   // --- outcome details the workflow authors ---------------------------------
-  Object.freeze({
-    surface: 'cadence-core/workflows/verify.md',
-    flag: '--detail', value: '<complete or partial>', derived: false,
+  row({
+    surface: 'cadence-core/workflows/verify.md', flag: '--detail', value: '<complete or partial>', derived: false,
     reason: "the seam's own `uat status` result word, one of two literals this workflow reads back off an ok:true envelope",
   }),
-  Object.freeze({
-    surface: 'cadence-core/references/triage-gate.md',
-    flag: '--detail', value: '<trigger>', derived: false,
+  row({
+    surface: 'cadence-core/references/triage-gate.md', flag: '--detail', value: '<trigger>', derived: false,
     reason: 'a trigger name, drawn from the closed set config.schema.json declares under review.triggers.<t> - the same class of value D-01 puts out of scope at an enum-validated flag',
   }),
 
   // --- cursor pointers ------------------------------------------------------
-  Object.freeze({
-    // The one-line "where I was", from `$ARGUMENTS` or the user's own answer.
-    surface: 'skills/cad-pause/SKILL.md',
-    flag: '--next', value: '<resume pointer>', derived: true,
+  // The one-line "where I was", from `$ARGUMENTS` or the user's own answer.
+  row({ surface: 'skills/cad-pause/SKILL.md', flag: '--next', value: '<resume pointer>', derived: true }),
+  // the route table's first row resumes at the cursor's next action, which is the user's pause note copied forward
+  row({ surface: 'cadence-core/workflows/progress.md', flag: '--next', value: '<routed action from below>', derived: true }),
+  row({
+    surface: 'cadence-core/workflows/progress.md', flag: '--next', value: '/cad-phase add', derived: false,
+    reason: 'a literal slash command this workflow authors (D-02: the literal --next sites stay inline)',
   }),
-  Object.freeze({
-    // the route table's first row resumes at the cursor's next action, which is the user's pause note copied forward
-    surface: 'cadence-core/workflows/progress.md',
-    flag: '--next', value: '<routed action from below>', derived: true,
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/progress.md',
-    flag: '--next', value: '/cad-phase add', derived: false,
-    reason: 'a literal slash command this workflow authors (D-02: the seven literal --next sites stay inline)',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/adopt.md',
-    flag: '--next', value: '/cad-context 1', derived: false,
+  row({
+    surface: 'cadence-core/workflows/adopt.md', flag: '--next', value: '/cad-context 1', derived: false,
     reason: 'a literal slash command this workflow authors (D-02)',
   }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/new-project.md',
-    flag: '--next', value: '/cad-context 1', derived: false,
+  row({
+    surface: 'cadence-core/workflows/new-project.md', flag: '--next', value: '/cad-context 1', derived: false,
     reason: 'a literal slash command this workflow authors (D-02)',
   }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/milestone.md',
-    flag: '--next', value: '/cad-phase add', derived: false,
+  row({
+    surface: 'cadence-core/workflows/milestone.md', flag: '--next', value: '/cad-phase add', derived: false,
     reason: 'a literal slash command this workflow authors (D-02)',
   }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/plan.md',
-    flag: '--next', value: '/cad-execute {N}', derived: false,
+  row({
+    surface: 'cadence-core/workflows/plan.md', flag: '--next', value: '/cad-execute {N}', derived: false,
     reason: 'a literal slash command this workflow authors, interpolating only the phase number (D-02)',
   }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/context.md',
-    flag: '--next', value: '/cad-plan {N}', derived: false,
+  row({
+    surface: 'cadence-core/workflows/context.md', flag: '--next', value: '/cad-plan {N}', derived: false,
     reason: 'a literal slash command this workflow authors, interpolating only the phase number (D-02)',
   }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/execute.md',
-    flag: '--next', value: '/cad-verify <N>', derived: false,
+  row({
+    surface: 'cadence-core/workflows/execute.md', flag: '--next', value: '/cad-verify <N>', derived: false,
     reason: 'a literal slash command this workflow authors, interpolating only the phase number (D-02)',
   }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/execute.md',
-    flag: '--next', value: '/cad-execute <N>', derived: false,
+  row({
+    surface: 'cadence-core/workflows/execute.md', flag: '--next', value: '/cad-execute <N>', derived: false,
     reason: 'a literal slash command this workflow authors, interpolating only the phase number (D-02)',
   }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/undo.md',
-    flag: '--next', value: '<the redo step>', derived: false,
-    reason: 'the slash command that re-runs the phase from the status this same call sets - /cad-plan <N> after a full revert, /cad-execute <N> after a partial one - so it is the same workflow-authored routing pointer as the seven literal sites, written as a placeholder because the status picks which one',
+  row({
+    surface: 'cadence-core/workflows/undo.md', flag: '--next', value: '<the redo step>', derived: false,
+    reason: 'the slash command that re-runs the phase from the status this same call sets - /cad-plan <N> after a full revert, /cad-execute <N> after a partial one - so it is the same workflow-authored routing pointer as the literal sites, written as a placeholder because the status picks which one',
   }),
-  Object.freeze({
-    // the scan can't delimit this one, the value opens on one line and closes on the next, so this row settles it
-    surface: 'cadence-core/workflows/verify.md',
-    flag: '--next',
-    value: "<next phase's /cad-context, or /cad-milestone if this was the last - the audit gate precedes any ship>",
-    derived: false,
+  // the scan can't delimit this one, the value opens on one line and closes on the next, so this row settles it
+  row({
+    surface: 'cadence-core/workflows/verify.md', flag: '--next', value: "<next phase's /cad-context, or /cad-milestone if this was the last - the audit gate precedes any ship>", derived: false,
     reason: 'a literal slash command this workflow authors, chosen by whether a next phase exists (D-02)',
   }),
 
   // --- the two sites that name `--text` in order to FORBID it ---------------
   // both already prescribe --text-file and name the inline form only to say
   // why it isn't used; registered so the enumeration stays complete
-  Object.freeze({
-    surface: 'cadence-core/workflows/execute.md',
-    flag: '--text', value: '<item>', derived: false,
+  row({
+    surface: 'cadence-core/workflows/execute.md', flag: '--text', value: '<item>', derived: false,
     reason: 'the site already prescribes --text-file and names the inline form only to state what it would do to a `$(...)` in a captured item',
   }),
-  Object.freeze({
-    surface: 'skills/cad-capture/SKILL.md',
-    flag: '--text', value: '<text>', derived: false,
+  row({
+    surface: 'skills/cad-capture/SKILL.md', flag: '--text', value: '<text>', derived: false,
     reason: 'the site already prescribes --text-file and names the inline form only to state what it would do to a `$(...)` in a captured sentence',
   }),
 
   // --- the milestone label, one value at two sites --------------------------
-  Object.freeze({
-    // unquoted at the site, so the scan can't delimit it; this row settles it, as the value the check exists for
-    surface: 'cadence-core/workflows/milestone.md',
-    flag: '--label', value: '<label>', derived: true,
-  }),
-  Object.freeze({
-    // a milestone name read out of PROJECT.md, quoted into a shell word
-    surface: 'skills/cad-land/SKILL.md',
-    flag: '-m', value: '<milestone label>', derived: true,
-  }),
+  // unquoted at the site, so the scan can't delimit it; this row settles it, as the value the check exists for
+  row({ surface: 'cadence-core/workflows/milestone.md', flag: '--label', value: '<label>', derived: true }),
+  // a milestone name read out of PROJECT.md, quoted into a shell word
+  row({ surface: 'skills/cad-land/SKILL.md', flag: '-m', value: '<milestone label>', derived: true }),
 ]);
 
 /** A watched flag, followed by neither another flag character nor a letter. */
