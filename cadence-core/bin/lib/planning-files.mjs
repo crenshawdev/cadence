@@ -311,11 +311,14 @@ export function phaseCriteria(text, phase) {
 /**
  * The `### Task <n>: <name>` headings in one plan's bytes, in file order.
  * Anchored to the heading level the plan template writes, so a `## Tasks` heading or a `#### ` sub-bullet isn't a task.
+ * A line inside a fenced block is no heading.
  * @param {string} text @returns {string[]} the task titles
  */
 export function planTaskTitles(text) {
-  return [...normalizeCrlf(String(text || '')).matchAll(/^### Task\s+[\d.]+\s*:?\s*(.*)$/gm)]
-    .map((m) => m[1].trim());
+  // a fenced line is blanked, not dropped, so a fenced `### Task` example is no task and the rest reads as before
+  const fenced = fenceScanner();
+  const open = normalizeCrlf(String(text || '')).split('\n').map((l) => (fenced(l) ? '' : l)).join('\n');
+  return [...open.matchAll(/^### Task\s+[\d.]+\s*:?\s*(.*)$/gm)].map((m) => m[1].trim());
 }
 
 /**

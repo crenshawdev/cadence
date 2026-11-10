@@ -10,6 +10,7 @@
 import {
   normalize, parseContextDecisions, planTaskTitles, sectionBound, sectionSpan,
 } from './planning-files.mjs';
+import { fenceScanner } from './text-util.mjs';
 import { RULINGS } from './adjudication-record.mjs';
 import { covers } from './lease-grammar.mjs';
 
@@ -137,7 +138,8 @@ export function planTaskBodies(text) {
   const lines = src.split('\n');
   const titles = planTaskTitles(src);
   const starts = [];
-  for (let i = 0; i < lines.length; i++) if (lines[i].startsWith('### Task')) starts.push(i);
+  const fenced = fenceScanner();
+  for (let i = 0; i < lines.length; i++) if (!fenced(lines[i]) && lines[i].startsWith('### Task')) starts.push(i);
   if (!starts.length || starts.length !== titles.length) return [];
 
   return starts.map((start, k) => {
