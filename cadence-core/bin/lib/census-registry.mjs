@@ -146,10 +146,10 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'phase-spelling-callsites',
     holder: 'tests/phase-spelling.test.mjs',
-    counts: 'the phase-argument callsites under `cadence-core/bin/planning/` and those '
-      + 'of them that resolve a `phases/<N>/` path, each with its disposition',
-    asserted_by: 'the test named `census: every phase-argument callsite under planning/ '
-      + 'carries a disposition`',
+    counts: 'the phase-guard calls and the direct phase-argument parses under '
+      + '`cadence-core/bin/planning/`, each with its disposition',
+    asserted_by: 'the test named `census: every phase-guard call and direct phase-argument '
+      + 'parse under planning/ carries a disposition`',
     // narrow on purpose: this walks the directory alone, and planning.mjs for symmetry would refuse plans for nothing
     subjects: ['cadence-core/bin/planning/'],
   }),

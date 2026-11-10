@@ -108,6 +108,31 @@ function phaseSpellingCollision(dir, parsed) {
     + ` already exists on this tree - two different phases - send --phase "${canonical}" for that`
     + ` one, or rename phases/${parsed.raw}/ to a spelling that does not normalize onto ${canonical}`;
 }
+/**
+ * The one `--phase` check every path-resolving face runs first: parse it, then refuse a spelling that collides on this tree.
+ * It emits its own refusal and answers null, like fireIdentity, so the caller's arm is `if (!parsed) return;`.
+ * Each face keeps its own wording, passed in; the reason stays a literal here because the reason census reads it.
+ * @param {string} face the subcommand's spelling, which opens the collision detail
+ * @param {string} dir the planning directory (`--dir`)
+ * @param {unknown} phase `opts.phase`, as the caller sent it
+ * @param {string} needs the refusal detail for a missing or malformed phase
+ * @param {string} needsHint the hint that goes with it
+ * @param {string} collisionHint the hint for a spelling that collides
+ * @returns {{ok: true, raw: string, value: number} | null}
+ */
+function phaseGuard(face, dir, phase, needs, needsHint, collisionHint) {
+  const parsed = requirePhaseArg(phase);
+  if (!parsed.ok) {
+    fail('bad-args', needs, needsHint);
+    return null;
+  }
+  const collision = phaseSpellingCollision(dir, parsed);
+  if (collision) {
+    fail('bad-args', `${face} ${collision}`, collisionHint);
+    return null;
+  }
+  return parsed;
+}
 // `cadence-core/bin`, not this directory: its consumers swallow read failures, so a wrong level answers ok:true
 // resolve and not join, so it stays the same normalized absolute path planning.mjs computed
 const HERE = resolvePath(dirname(fileURLToPath(import.meta.url)), '..');
@@ -453,19 +478,11 @@ const RECORD_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
  *   `task` is only there when the fire named one.
  */
 function fireIdentity(face, dir, opts) {
-  const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) {
-    fail('bad-args', `${face} needs --phase <N>`,
-      `pass --phase <N> for the phase this fire belongs to, then re-run the ${face}`);
-    return null;
-  }
   // before the token rails and fireHome, whose `no-phase-dir` names the right directory but neither fix
-  const collision = phaseSpellingCollision(dir, parsedPhase);
-  if (collision) {
-    fail('bad-args', `${face} ${collision}`,
-      `re-run the ${face} with one of those two spellings - nothing was written`);
-    return null;
-  }
+  const parsedPhase = phaseGuard(face, dir, opts.phase, `${face} needs --phase <N>`,
+    `pass --phase <N> for the phase this fire belongs to, then re-run the ${face}`,
+    `re-run the ${face} with one of those two spellings - nothing was written`);
+  if (!parsedPhase) return null;
   // the caller's own spelling, as uatFile addresses a phase: only ever a path or a label, never arithmetic
   const n = parsedPhase.raw;
 
@@ -1022,6 +1039,7 @@ export {
   noticeTotals,
   notRealDirDetail,
   ok,
+  phaseGuard,
   phaseSpellingCollision,
   phaseSpellingRefusal,
   planKey,
