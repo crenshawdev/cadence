@@ -480,13 +480,16 @@ export function insertReqRows(text, rows) {
 // recall corpus snippets for BM25. A missing section is data, not a throw; template placeholders are skipped
 
 /**
- * One `## Heading` section's body, cut at the next `## `, or null when the heading is absent.
+ * One `## Heading` section's body, cut at the next `## ` outside a fence, or null when the heading is absent outside
+ * one. Both ends come from `sectionSpan`: a `## build output` line in a fenced block neither ends the section nor
+ * counts as its heading. A present empty section is "", never null, which parseContextDecisions's fallback rests on.
  * @param {string} text @param {string} heading
+ * @returns {string|null}
  */
 function sectionBody(text, heading) {
-  const parts = text.split(new RegExp(`^## ${heading}\\s*$`, 'm'));
-  if (parts.length < 2) return null;
-  return parts[1].split(/^## /m)[0];
+  const lines = text.split('\n');
+  const { start, end } = sectionSpan(lines, `## ${heading}`);
+  return start < 0 ? null : lines.slice(start + 1, end).join('\n');
 }
 
 /**
