@@ -79,26 +79,39 @@ function readEntry(map, entry) {
 }
 
 /**
- * Every module's entry, each file read once, so a caller that judges and then launches doesn't parse them twice.
- * @param {string} map @param {{name: string}[]} modules
- * @returns {Map<string, any>}
+ * Every module's state, each entry file read once and dropped as soon as it is classified, so the entries under the cap
+ * never add up to the abort MAX_ENTRY exists to prevent. Only a stale entry is kept, and only when `keepStale` says the
+ * launch will carry it.
+ * @param {string} map @param {{name: string, paths: string[]}[]} modules @param {Map<string, any>} byPath the current facts
+ * @param {boolean} keepStale
+ * @returns {{states: Map<string, string>, stale: Map<string, any>}}
  */
-function readEntries(map, modules) {
-  return new Map(modules.map((m) => [m.name, readEntry(map, entryFile(m.name))]));
+function readStates(map, modules, byPath, keepStale) {
+  /** @type {Map<string, string>} */
+  const states = new Map();
+  /** @type {Map<string, any>} */
+  const stale = new Map();
+  for (const m of modules) {
+    const entry = readEntry(map, entryFile(m.name));
+    const state = moduleState(m, entry, byPath);
+    states.set(m.name, state);
+    if (keepStale && state === 'stale') stale.set(m.name, entry);
+  }
+  return { states, stale };
 }
 
 /**
  * Each module's state and the figures a launch would be priced on. A reader opens only the regular text files at or
  * under the cap in a stale or unbuilt module, so `reader_bytes` counts those and a one-module refresh stays small.
- * @param {Map<string, any>} entries from `readEntries` @param {{name: string, paths: string[]}[]} modules @param {any[]} rows
+ * @param {Map<string, string>} states from `readStates` @param {{name: string, paths: string[]}[]} modules @param {any[]} rows
+ * @param {Map<string, any>} byPath
  */
-function stateOf(entries, modules, rows) {
-  const byPath = new Map(rows.map((r) => [r.path, r]));
+function stateOf(states, modules, rows, byPath) {
   /** @type {Record<string, string[]>} */
   const names = { built: [], stale: [], unbuilt: [], no_reader: [] };
   let readerBytes = 0;
   for (const m of modules) {
-    const state = moduleState(m, entries.get(m.name), byPath);
+    const state = /** @type {string} */ (states.get(m.name));
     names[state].push(m.name);
     if (state === 'stale' || state === 'unbuilt') {
       for (const p of m.paths) if (byPath.get(p)?.kind === 'text') readerBytes += byPath.get(p).bytes || 0;
@@ -190,15 +203,14 @@ function cmdStatus(dir, opts) {
   }
   // the stored list placed against the files as they are now, so a file added or removed since the scan counts and nothing is written
   const { modules } = partition(rows, stored);
-  const entries = readEntries(map, modules);
-  const state = stateOf(entries, modules, rows);
-  if (outDir === null) return ok({ action: 'status', ...state });
   const byPath = new Map(rows.map((r) => [r.path, r]));
+  const { states, stale } = readStates(map, modules, byPath, outDir !== null);
+  const state = stateOf(states, modules, rows, byPath);
+  if (outDir === null) return ok({ action: 'status', ...state });
   const toRead = [];
   for (const m of modules) {
-    const entry = entries.get(m.name);
-    const s = moduleState(m, entry, byPath);
-    if (s === 'stale' || s === 'unbuilt') toRead.push({ ...m, entry: s === 'stale' ? entry : null });
+    const s = states.get(m.name);
+    if (s === 'stale' || s === 'unbuilt') toRead.push({ ...m, entry: s === 'stale' ? stale.get(m.name) : null });
   }
   const launch = writeLaunch({ root, outDir, modules: toRead, rows, indexRows: Array.isArray(index?.rows) ? index.rows : [] });
   return ok({ action: 'status', ...state, launch });
@@ -267,7 +279,7 @@ function cmdScan(dir) {
   return ok({
     action: 'scan', files: rows.length, text: count('text'), binary: count('binary'), over_cap: count('over_cap'),
     symlinks: count('symlink'), gitlinks: count('gitlink'), missing: count('missing'),
-    ...stateOf(readEntries(map, modules), modules, rows), oversized, ...marks,
+    ...stateOf(readStates(map, modules, byPath, false).states, modules, rows, byPath), oversized, ...marks,
   });
 }
 
