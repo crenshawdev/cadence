@@ -107,6 +107,35 @@ const CONTENT_SIGNALS = Object.freeze({
   ],
 });
 
+/** @type {Map<string, (line: string) => boolean>} */
+const prefilters = new Map();
+
+/**
+ * Whether any content pattern of `categories` can match a line, as one combined regex per flag set (Node 22 has no
+ * inline flag groups). A line it refuses moves no answer, so the scans drop those lines before the ordered walk.
+ * The patterns carry no flag but `i`, which is what the split relies on.
+ * @param {string[]} categories
+ */
+function contentPrefilter(categories) {
+  const key = categories.join('\n');
+  let hit = prefilters.get(key);
+  if (!hit) {
+    /** @type {string[]} */
+    const folded = [];
+    /** @type {string[]} */
+    const exact = [];
+    for (const category of categories) {
+      for (const { re } of CONTENT_SIGNALS[category] || []) (re.flags === 'i' ? folded : exact).push(re.source);
+    }
+    const regexes = [];
+    if (folded.length) regexes.push(new RegExp(folded.join('|'), 'i'));
+    if (exact.length) regexes.push(new RegExp(exact.join('|')));
+    hit = (line) => regexes.some((re) => re.test(line));
+    prefilters.set(key, hit);
+  }
+  return hit;
+}
+
 /** A path's comparable tokens: every segment, plus the base name minus one final extension. */
 function segmentsOf(/** @type {string} */ path) {
   const parts = low(path).split('/').filter(Boolean);
@@ -279,12 +308,13 @@ export function scanDiff(body, categories) {
 
   const { paths, changed, unreadable } = parseDiff(body);
   const sets = pathSets(paths);
+  const lines = changed.filter(contentPrefilter(wanted));
 
   /** @type {Array<{category: string, signal: string}>} */
   const matches = [];
   for (const category of wanted) {
     // `changed line`, since this face read a range
-    const signal = signalIn(category, sets, changed, 'changed line');
+    const signal = signalIn(category, sets, lines, 'changed line');
     if (signal) matches.push({ category, signal });
   }
 
@@ -406,6 +436,7 @@ function isIncidentalLine(/** @type {string} */ line) {
  */
 export function scanDeclared(files, categories) {
   const wanted = strs(categories);
+  const couldMatch = contentPrefilter(wanted);
   const list = Array.isArray(files) ? files : [];
   /** @type {string[]} */
   const paths = [];
@@ -430,6 +461,8 @@ export function scanDeclared(files, categories) {
     const dropped = [];
     for (const raw of body.split('\n')) {
       const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+      // a line no wanted pattern can match is neither kept nor dropped to any effect, so skip the line-kind tests
+      if (!couldMatch(line)) continue;
       // the third exemption, per line: a line that names a construct without doing it isn't evidence of touching it
       if (isIncidentalLine(line)) { dropped.push(line); continue; }
       kept.push(line);
