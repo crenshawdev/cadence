@@ -8,26 +8,7 @@
 //   promoteUnreleased       - move staged content into that dated section
 // No I/O. Bad or missing input never throws, and an absent version yields null.
 
-import { escapeRe } from './text-util.mjs';
-
-/**
- * Fence-state scanner: an opening fence is three or more backticks or tildes with up to three leading spaces, a closing
- * one is the same character at least as long with no info string, and the delimiter line itself is never a heading.
- * Mirrors the private scanner in lib/planning-files.mjs, which isn't imported because it does fs and this does no I/O.
- * @returns {(line: string) => boolean}
- */
-function fenceScanner() {
-  /** @type {{char: string, len: number}|null} */
-  let fence = null;
-  return (/** @type {string} */ line) => {
-    const f = line.match(/^ {0,3}(`{3,}|~{3,})\s*(.*)$/);
-    if (!f) return fence !== null;
-    const char = f[1][0], len = f[1].length;
-    if (fence === null) fence = { char, len };
-    else if (char === fence.char && len >= fence.len && !f[2].trim()) fence = null;
-    return true;
-  };
-}
+import { escapeRe, fenceScanner } from './text-util.mjs';
 
 /**
  * Per-line fence state for a whole document, fed in order. `true` means the line is a delimiter or inside a fence,

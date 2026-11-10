@@ -7,6 +7,7 @@
 import { writeFileSync, renameSync, lstatSync } from 'node:fs';
 import { isRefusedSpelling } from './lease-grammar.mjs';
 import { parseCursor } from './state-cursor.mjs';
+import { fenceScanner } from './text-util.mjs';
 
 // the only Status values the cursor may carry
 export const CURSOR_STATUSES = [
@@ -923,26 +924,6 @@ const CRITERION_SUB = /^\s+[-*+]\s+(?:\[[ xX]\]\s+)?AC\d+\b/;
 const CRITERION_ID_DECLARED = /^\s*(?:(?:[-*+]|#{1,6}|\d+[.)])\s*)?(?:\[[ xX]\]\s*)?(?:[*_`]+\s*)?AC\d+\b/i;
 
 /**
- * A stateful line filter: `true` while the line is a fence marker or inside a fenced code block, `false` for
- * content. One scanner per walk, fed every line in order.
- * Follows CommonMark closely enough: up to three spaces of indent, three or more backticks or tildes, and a
- * closer of the same character, at least as long, with no info string. Shared by sectionBound and the criteria
- * walk, which had the same bug in two places.
- */
-function fenceScanner() {
-  /** @type {{char: string, len: number}|null} */
-  let fence = null;
-  return (/** @type {string} */ line) => {
-    const f = line.match(/^ {0,3}(`{3,}|~{3,})\s*(.*)$/);
-    if (!f) return fence !== null;
-    const char = f[1][0], len = f[1].length;
-    if (fence === null) fence = { char, len };
-    else if (char === fence.char && len >= fence.len && !f[2].trim()) fence = null;
-    return true;
-  };
-}
-
-/**
  * Classify the `## Acceptance criteria` section of a context file: the criteria it declares as `{id, text}`, plus
  * lines that look like they declare one but fall outside the canonical head. Pure and total.
  * No exact heading is `{criteria: null, issues: []}`. A near-miss heading (`## Acceptance Criteria`, `###`) reports
@@ -1089,8 +1070,8 @@ function countStatuses(items) {
  * A bare `/^## /` test cut the section short on a `## build output` line inside a code block, destroying the
  * closing fence and everything after it, and the odd fence count made the regenerated `## Summary` render as
  * code. That broke UAT.md's promise that a hand-added section survives a rewrite verbatim.
- * Exported for the debt harvest's CAPTURE.md section writer, which rewrites one `## ` section wholesale and needs
- * this exact rule. A second fence scanner there would drift and bring the same truncation back.
+ * Exported for `lib/why-record.mjs`, which bounds a task body with it so a fenced `## ` can't end the body early.
+ * The debt harvest's CAPTURE.md writer uses `replaceSection`, which is built on `sectionSpan`.
  * @param {string[]} lines
  * @returns {number}
  */
