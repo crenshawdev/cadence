@@ -7,7 +7,7 @@
 // A command is a `skills/` directory without `user-invocable: false`, so contracts are out.
 'use strict';
 
-import { readFileSync, readdirSync, existsSync, realpathSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync, statSync } from 'node:fs';
 import { basename, join, relative, sep } from 'node:path';
 import { FRONTMATTER_RE, parseSkillsField } from './frontmatter.mjs';
 import { dirents, walk } from './surface-weight.mjs';

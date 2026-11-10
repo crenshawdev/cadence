@@ -8,8 +8,7 @@
 // an internal error exits 0, so a broken guard can't block work
 'use strict';
 
-import { existsSync, statSync } from 'node:fs';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitInvocations, planningRoot } from './lib/git-segments.mjs';
 
@@ -23,10 +22,6 @@ function decide(decision, reason) {
     : { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: reason };
   process.stdout.write(JSON.stringify({ hookSpecificOutput }) + '\n');
 }
-
-// git-segments.mjs reads what a command is, and both rails use that one function so they always agree
-// a segment counts only when its command word is git; what it can't see is in references/git-publish.md rail 3
-
 
 // the protected-branch decision for a git commit, or null; it returns so main can order the rails
 /**

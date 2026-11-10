@@ -160,7 +160,7 @@ function providerFindings(voice, env) {
   const used = new Set();
   const from = [];
   const orphan = [];
-  env.findings.forEach((f, i) => {
+  env.findings.forEach((f) => {
     const j = isPlainObject(f) ? retyped.findIndex((x, k) => !used.has(k) && isPlainObject(x) && canon(x) === canon(f)) : -1;
     if (j >= 0) used.add(j);
     from.push(j);

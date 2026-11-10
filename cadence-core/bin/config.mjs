@@ -46,6 +46,8 @@ const fail = (reason, detail, hint) => {
   out({ ok: false, reason, detail, ...(hint ? { hint } : {}) });
   throw DONE;
 };
+// the refusal hint for every pair a set, preview or check turns away
+const INVALID_HINT = 'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts';
 
 // JSON where it parses (true, 12, null, "s", [...]), else a bare string, so mode=interactive is "interactive".
 function parseToken(raw) {
@@ -174,8 +176,7 @@ function set(file, tokens, create) {
     || (Boolean(GLOBAL_CONFIG) && fileId !== null && fileId === layerIdentity(GLOBAL_CONFIG));
   // ahead of every read and write, so a multi-pair set with one marked key leaves the file untouched
   const { pairs, errors } = checkPairs(tokens, targetsGlobal);
-  if (errors.length) fail('invalid', errors,
-    'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts');
+  if (errors.length) fail('invalid', errors, INVALID_HINT);
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
   catch (e) {
@@ -236,7 +237,7 @@ function unset(file, keys) {
 // asGlobal is the --global arm: it hands GLOBAL_CONFIG in as the file, which makes one file both layers, and
 // only the caller knows the read was aimed at the global layer. It moves the `source` label, nothing else.
 function get(file, keys, asGlobal) {
-  const { config, source, warnings, layers, scopeWarnings } = mergeLayers(file, { asGlobal });
+  const { config, source, warnings, scopeWarnings } = mergeLayers(file, { asGlobal });
   // A key the schema dropped resolves at its default and looks configured, so name it. Otherwise an upgraded
   // repo quietly routes on a value nothing reads. scopeWarnings rides in the same way: get is the read face,
   // so folding it in once is the whole wiring. It stays off mergeLayers's own warnings, which git-publish reads
@@ -339,7 +340,6 @@ function layersRead(group, advanced, key, catalog) {
 // two layers, so the only difference between them is the change. GLOBAL_CONFIG is fixed at module load, so every read
 // of the copy is a child process pointed at it, and the real files, the plans and trace.jsonl are never touched.
 async function previewRead(tokens) {
-  const INVALID_HINT = 'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts';
   if (!tokens.length) fail('usage', 'preview needs key=value pairs after it: preview <key=value>...');
   const checked = checkPairs(tokens, false);
   const pairs = checked.pairs;
@@ -489,8 +489,7 @@ try {
     // Same failure shape as set, with the same per-pair entry, so a caller reads detail once and the inspect
     // face reports the scope refusal the write face gives.
     const { errors } = checkPairs(asGlobal ? rest.filter((_, j) => j !== gi) : rest, asGlobal);
-    if (errors.length) out({ ok: false, reason: 'invalid', detail: errors,
-      hint: 'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts' });
+    if (errors.length) out({ ok: false, reason: 'invalid', detail: errors, hint: INVALID_HINT });
     else out({ ok: true });
   }
   else if (cmd === 'set') { const { file, tokens, global } = optFile(rest); set(file, tokens, global); }

@@ -18,8 +18,7 @@ import { retiredKeysIn } from './lib/retired-keys.mjs';
 import { isModelId } from './lib/model-id.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
-import { cursorPhase, declaredFilesIn, declaredPhaseFiles, declaredPlanFiles,
-  phaseDirsIn } from './lib/phase-plans.mjs';
+import { cursorPhase, declaredPhaseFiles, declaredPlanFiles } from './lib/phase-plans.mjs';
 import { scanDeclared } from './lib/risk-diff.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
@@ -283,13 +282,13 @@ function waivedSurfaces(cfg, warnings) {
  * An unread scope raises (fail closed, as lib/phase-plans.mjs states), and `reason` tells it from a surface hit.
  * `planKey` names one plan, so a risky sibling can't raise a clean one; no key means the phase's union, and a key
  * naming no plan file fails closed, not to the union.
- * @param {{role: string, planningRoot: string, phase: any, planKey: any, cfg: any,
+ * @param {{role: string, planningRoot: string, phase: any, planKey: any,
  *   surfaces: string[], waived: string[], reason: string[], warnings: string[]}} ctx
  * @returns {{raised: boolean, surface: string|null, signal: string|null,
  *   file: string|null, bytes: number}}
  */
 function riskFloor(ctx) {
-  const { role, planningRoot, phase, planKey, cfg, surfaces, waived, reason, warnings } = ctx;
+  const { role, planningRoot, phase, planKey, surfaces, waived, reason, warnings } = ctx;
   /**
    * Nothing was computed, so no `risk floor: ` prefix: "nothing raised it" and "nothing looked" must not share one
    * spelling.
@@ -519,7 +518,7 @@ function resolve(opts) {
   // The risk floor for this dispatch: it moves no level or rung, only the plan gate and the deep-verify switch below.
   const floor = riskFloor({
     role: opts.role, planningRoot, phase: tracePhase, planKey: opts.plan,
-    cfg, surfaces, waived: waivedSurfaces(cfg, warnings), reason, warnings,
+    surfaces, waived: waivedSurfaces(cfg, warnings), reason, warnings,
   });
 
   // The agent file carries the effort (route.mjs reports it, can't set it), and the unsuffixed file is one rung among
@@ -765,12 +764,12 @@ function resolve(opts) {
     // A list with any unrecognised entry fails safe: all categories stand and the question reads as unanswered, not the
     // valid subset. `["auth", "secret"]` is a typo for `secrets`, not a decision to stop reviewing secret handling, and
     // the subset would hush the one-time question for good.
-    if (kept.length && !bad.length) {
-      // Nothing to set: decided.answered already covers this arm.
-    } else if (bad.length) {
+    // A recognised entry and no unrecognised one falls through both arms: nothing to set, decided.answered already
+    // covers it.
+    if (bad.length) {
       warnings.push('review.triggers.risk_surface.surfaces carries an unrecognised entry; '
         + `all ${tableCategories.length} stand, and the surface question reads as unanswered`);
-    } else if (Array.isArray(wroteSurfaces)) {
+    } else if (!kept.length && Array.isArray(wroteSurfaces)) {
       warnings.push('review.triggers.risk_surface.surfaces resolves to no category; '
         + `all ${tableCategories.length} stand, and the surface question reads as unanswered`);
     }
