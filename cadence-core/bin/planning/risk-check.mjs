@@ -17,7 +17,7 @@ import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { scanDiff } from '../lib/risk-diff.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { CATEGORIES, answeredSurfaces } from '../lib/surface-scan.mjs';
+import { CATEGORIES, answeredSurfaces, parseSurfaceList } from '../lib/surface-scan.mjs';
 import { appendEvent, renderTrace } from '../lib/trace.mjs';
 
 /**
@@ -110,15 +110,13 @@ function cmdRiskCheckRun(dir, opts) {
 
   let categories = [...CATEGORIES];
   if ('surfaces' in opts) {
-    const raw = typeof opts.surfaces === 'string' ? opts.surfaces : '';
-    const tokens = raw.split(',').map((t) => t.trim()).filter(Boolean);
+    const { tokens, unknown } = parseSurfaceList(opts.surfaces);
     if (!tokens.length) {
       return fail('bad-args', 'risk-check run --surfaces needs a comma-separated list after it: --surfaces <a,b,c>',
         "list this run's scope as one comma-separated value, or drop --surfaces to use the set the"
         + ' project already answered');
     }
     // a token outside the eight is refused with nothing appended: a mistyped scope must not narrow a blocking gate
-    const unknown = tokens.filter((t) => !CATEGORIES.includes(t));
     if (unknown.length) {
       return fail('bad-args',
         `risk-check run --surfaces names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`,

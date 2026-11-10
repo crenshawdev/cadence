@@ -17,6 +17,18 @@ export const CATEGORIES = Object.freeze(['auth', 'migrations', 'billing',
   'concurrency', 'destructive', 'secrets', 'api_contract', 'untrusted_input']);
 
 /**
+ * A comma-separated surface list off a flag, as `risk-check run --surfaces` and `detect-surfaces --answered` read it.
+ * Split, trimmed, empties dropped, and the tokens outside CATEGORIES set apart. A non-string value reads as empty.
+ * It refuses nothing: each command words its own `bad-args` refusal off what comes back.
+ * @param {unknown} value
+ * @returns {{tokens: string[], unknown: string[]}}
+ */
+export function parseSurfaceList(value) {
+  const tokens = (typeof value === 'string' ? value : '').split(',').map((t) => t.trim()).filter(Boolean);
+  return { tokens, unknown: tokens.filter((t) => !CATEGORIES.includes(t)) };
+}
+
+/**
  * Whether a config layer answered the one-time surface question, and the set
  * that stands either way. One statement, because `route.mjs` reports it and
  * `risk-check run` refuses on it, and two copies could disagree.
