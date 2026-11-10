@@ -10,7 +10,7 @@ import { appendFileSync, closeSync, lstatSync, openSync, readSync, statSync } fr
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 // reverse lookups from an agent_type stem to its role sit beside RUNG_FILES
-import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
+import { roleOfAgent } from './rung-agent.mjs';
 import { ROTATION_EVENT, rotateJsonl } from './jsonl-rotation.mjs';
 
 export const READS_FILE = 'reads.jsonl';
@@ -478,9 +478,6 @@ export function summarizeReads(records) {
 
 /** Host-owned agent types with no dispatch event in trace.jsonl: their reads are a floor, not a gap to close. */
 export const HOST_AGENT_TYPES = ['fork', 'general-purpose'];
-
-// re-exported so tests/read-trace.test.mjs keeps importing them from here; the other importers go to rung-agent.mjs
-export { roleOfAgent, rungOfAgent };
 
 /**
  * Join reads.jsonl records to the trace.jsonl dispatch brackets at read time, by role and timestamp containment.
