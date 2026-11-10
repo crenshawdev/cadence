@@ -70,31 +70,29 @@ export function cursorPhase(planningRoot) {
 function readOnePlan(file, acc, seen) {
   acc.found += 1;
   let text;
+  const cannotRead = (/** @type {string} */ cause) => acc.warnings.push(
+    `${W}cannot read ${file} (${cause}); no risk surface was computed from it`);
   // bounded before opened, like route.mjs's declared bodies: a symlink to a device or FIFO stats as size 0, passes any
   // byte bound and is read to an EOF that never comes, hanging a resolve that has to fail closed. lstat doesn't follow,
   // and a non-regular entry takes the unreadable-plan arm, which raises the floor
   try {
     const st = lstatSync(file);
     if (!st.isFile()) {
-      acc.warnings.push(`${W}cannot read ${file} (not a regular file); `
-        + 'no risk surface was computed from it');
+      cannotRead('not a regular file');
       return;
     }
     if (st.size > MAX_PLAN_BYTES) {
-      acc.warnings.push(`${W}cannot read ${file} (over ${MAX_PLAN_BYTES} bytes); `
-        + 'no risk surface was computed from it');
+      cannotRead(`over ${MAX_PLAN_BYTES} bytes`);
       return;
     }
   } catch (e) {
-    acc.warnings.push(`${W}cannot read ${file} (${e.code || e.message}); `
-      + 'no risk surface was computed from it');
+    cannotRead(e.code || e.message);
     return;
   }
   try {
     text = readFileSync(file, 'utf8');
   } catch (e) {
-    acc.warnings.push(`${W}cannot read ${file} (${e.code || e.message}); `
-      + 'no risk surface was computed from it');
+    cannotRead(e.code || e.message);
     return;
   }
   const { items, issues } = readFrontmatterList(text, 'files');
