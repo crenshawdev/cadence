@@ -194,27 +194,6 @@ export function issueBody(finding) {
   ].join('\n');
 }
 
-/**
- * One decline-lookup response -> the fingerprint tokens it carries, plus whether the read is complete.
- * Separate from `normalizeList` in issue-decision.mjs, which reads `state` where this reads `title`.
- * A response that fills its page is incomplete: Forgejo clamps `tea issues list` at 50 rows whatever `--limit` asks,
- * and a truncated decline set read as whole puts declined findings back in front of the user.
- * A non-object row or a non-string `title` fails the whole read: the CLI's shape moved.
- * `detail` is a fixed phrase, never a slice of the response: a CLI's bytes aren't ours to put on an envelope.
- *
- * @param {unknown} text the CLI's stdout
- * @param {number} limit the page size the argv asked for
- * @returns {{complete: boolean, fingerprints: string[], detail: string|null}}
- */
-export function normalizeDeclines(text, limit) {
-  const page = readJsonPage(text, limit, (row) => {
-    if (typeof row.title !== 'string') return { detail: 'a row carried no readable title' };
-    const token = fingerprintInTitle(row.title);
-    return token === null ? null : { record: token };
-  });
-  return { complete: page.complete, fingerprints: page.records, detail: page.detail };
-}
-
 /** An issue number however its CLI spells it, or null when the field carries no readable one.
  *
  * `tea issues list` prints `index` as a string and gh prints `number` as a number, so both shapes answer.
@@ -228,7 +207,7 @@ function issueNumber(raw) {
 
 /**
  * One title-scoped lookup response -> the (fingerprint, issue number) pairs it carries, and whether it's complete.
- * Beside normalizeDeclines because this one exists for the number: a fire that finds a fingerprint already filed
+ * It exists for the number: a fire that finds a fingerprint already filed
  * has to report which issue holds it, and no create face prints one.
  * A response that fills its page is incomplete: read as whole, it says "not filed" about a filed issue.
  * A non-object row, a non-string `title`, or a token without a readable number fails the whole read.
