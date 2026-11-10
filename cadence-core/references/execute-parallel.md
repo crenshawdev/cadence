@@ -103,9 +103,14 @@ on this path is a real defect to report, not the fork-point default.
    what the user names.
 
    With `review.triggers.diff.when` at `phase_end`, one review of
-   `PHASE_START..HEAD` fires here: `phase_diff` when its gate is not `off`, else
+   `PHASE_BASE..HEAD` fires here, PHASE_BASE being the phase's oldest `phase_start`
+   anchor as `execute_sequential` states it: `phase_diff` when its gate is not `off`, else
    `diff` with the same refs, never both. It carries its own trigger's gate arms,
    and a `diff` fire here persists to `.planning/phases/<N>/REVIEW-diff-phase.md`.
+   Its adjudicated survivors are fixed in the main tree by the continuation
+   `cad-executor` under worker key `phase`, never a plan's, and that fix's range
+   gets its own `risk-check run`, any `risk_surface` fire (discriminator
+   `plan-phase`) and `risk-check status --plan phase`, before `goal_check`.
 
 The lifecycle bracket `execute.md` states applies here too, per worker: one
 `dispatch` event before a batch member gets its plan and one `return`,

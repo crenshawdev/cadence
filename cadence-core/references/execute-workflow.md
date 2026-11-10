@@ -102,7 +102,7 @@ It ran in the normal tree, so nothing merges and its report is already at `<plan
 
 ### Then
 
-A wave is done only when each of its plans is, and a stopped plan, an open question or a conflict holds the next wave. Launch the next from section 1 when every plan of this one is done. After the last wave, fire `phase_diff` once, as step 6 of `execute-parallel.md` states. When its gate is `off` and a wave ran wider than 1, print one line saying the interaction of the merged plans went unreviewed. Under `review.triggers.diff.when` `phase_end`, step 6 of `execute-parallel.md` states the rule, and its review is the only phase-end `diff` review on this path whatever the width of the last wave; the line above is not printed, because with `phase_diff` `off` step 6 fires `diff` over `PHASE_START..HEAD` and the merged plans are reviewed. Then `goal_check` and on, as today.
+A wave is done only when each of its plans is, and a stopped plan, an open question or a conflict holds the next wave. Launch the next from section 1 when every plan of this one is done. After the last wave, fire `phase_diff` once, as step 6 of `execute-parallel.md` states. When its gate is `off` and a wave ran wider than 1, print one line saying the interaction of the merged plans went unreviewed. Under `review.triggers.diff.when` `phase_end`, step 6 of `execute-parallel.md` states the rule, and its review is the only phase-end `diff` review on this path whatever the width of the last wave; the line above is not printed, because with `phase_diff` `off` step 6 fires `diff` over `PHASE_BASE..HEAD` and the merged plans are reviewed. Then `goal_check` and on, as today.
 
 ## 3. Where a wave stops
 

@@ -530,12 +530,18 @@ arms below are what a user who sets `review.triggers.diff.gate` gets.
 With `review.triggers.diff.when` at `phase_end`, as `locate` read it, this fire
 is not made per plan. It is made once instead, after the last plan of the
 dispatch set is reported done and before `goal_check`, with the refs
-`{base_ref: PHASE_START, head_ref: HEAD}`. Every arm below applies to that one
-fire unchanged, read three ways: advisory findings land at
+`{base_ref: PHASE_BASE, head_ref: HEAD}`. PHASE_BASE is the phase's OLDEST
+`phase_start` anchor, so plans an earlier run finished sit inside the range:
+the `sha` on the first line of
+`grep '"event":"phase_start"' .planning/trace.jsonl` that carries `"phase":"<N>"`,
+and PHASE_START when there is none or `git rev-parse --verify` refuses it. Every arm below applies to that
+one fire unchanged, read three ways: advisory findings land at
 `.planning/phases/<N>/REVIEW-diff-phase.md`, there being no next dispatch to
 overlap; adjudicated survivors are fixed by the continuation `cad-executor`
-under the LAST dispatched plan's worker key; and that fix's range gets its own
-`risk-check run` and `risk-check status` under that key.
+under worker key `phase`, never a plan's, so its `risk-check run`, `risk-check
+status` and receipts (`--plan phase`) and any `risk_surface` fire it calls for
+(discriminator `plan-phase`, a re-arm counted on its own) never touch a plan's;
+and that fix's range gets its own `risk-check run` and `risk-check status`.
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
 than waiting: the artifact is two immutable refs, so the reviewer reads nothing
