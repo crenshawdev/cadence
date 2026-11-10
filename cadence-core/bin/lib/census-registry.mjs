@@ -38,10 +38,10 @@ export const CENSUSES = Object.freeze([
     id: 'self-verify-merge-layers',
     holder: 'tests/self-verify.test.mjs',
     // no paren after mergeLayers here, or the merge-warnings rule reads this row as a callsite
-    counts: 'eighteen `mergeLayers` callsites over fourteen files, each in one '
-      + 'of the two warning-surfacing arms',
-    asserted_by: 'the test named `check 12: the live tree is SEVENTEEN callsites '
-      + 'over THIRTEEN files, each in an arm`',
+    counts: 'the `mergeLayers` callsites and the files they span, each in one '
+      + 'of the warning-surfacing arms',
+    asserted_by: 'the test named `check 12: the live tree is TWENTY callsites '
+      + 'over FOURTEEN files, each in an arm`',
     // lib/config-merge.mjs isn't a subject: that test skips it, so editing it can't move the count
     subjects: [
       'cadence-core/bin/config.mjs',
@@ -70,7 +70,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'trace-refusal-sentences',
     holder: 'tests/trace.test.mjs',
-    counts: "each of the four refusing trace flags' sentences appearing exactly "
+    counts: "each of the refusing trace flags' sentences appearing exactly "
       + 'once across the whole planning seam',
     asserted_by: 'the test named `the four refusing trace flags carry ONE '
       + 'sentence each, in one map`',
@@ -96,15 +96,15 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'text-transport-register',
     holder: 'tests/text-transport.test.mjs',
-    counts: "the register's own row count and its derived-row count - 36 and 20",
+    counts: "the register's own row count and its derived-row count",
     asserted_by: 'the test named `the register pins its row count`',
     subjects: ['cadence-core/bin/lib/text-transport.mjs'],
   }),
   entry({
     id: 'capture-writers-register',
     holder: 'tests/capture-writers.test.mjs',
-    counts: "the register's 4 rows, none of them durable - a durable row is a "
-      + 'reported problem on the live tree, so the second figure is the '
+    counts: "the register's row count, and that none of its rows is durable - a "
+      + 'durable row is a reported problem on the live tree, so that is the '
       + "classification's own floor rather than a tally",
     asserted_by: 'the test named `the register pins its row count`',
     subjects: ['cadence-core/bin/lib/capture-writers.mjs'],
@@ -112,15 +112,14 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'bulk-output-register',
     holder: 'tests/bulk-output.test.mjs',
-    counts: "the register's row count and its two transport splits - 20, 5 "
-      + 'redirect and 3 file',
+    counts: "the register's row count and its transport splits, redirect and file",
     asserted_by: 'the test named `the register pins its row count`',
     subjects: ['cadence-core/bin/lib/bulk-output.mjs'],
   }),
   entry({
     id: 'rung-agent-files',
     holder: 'tests/rung-agent.test.mjs',
-    counts: 'the 35 rung file stems across the seven roles, each serving exactly one rung',
+    counts: 'the rung file stems across the roles, each serving exactly one rung',
     asserted_by: 'the test named `RUNG_FILES names 35 files across the seven '
       + 'roles, and is frozen`',
     subjects: ['cadence-core/bin/lib/rung-agent.mjs'],
@@ -128,7 +127,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'deferred-reads-register',
     holder: 'tests/deferred-reads.test.mjs',
-    counts: "the register's 9 rows, pinned alongside a byte-identical slice of "
+    counts: "the register's rows, pinned alongside a byte-identical slice of "
       + "the export's own source",
     asserted_by: 'the test named `register: the surviving cut rows are '
       + 'byte-identical, and the register is exactly the rows the cuts made`',
@@ -137,7 +136,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'planning-detail-sites',
     holder: 'tests/planning-lease-check.test.mjs',
-    counts: 'the 14 error-detail sites across the whole planning seam and the 6 '
+    counts: 'the error-detail sites across the whole planning seam and those '
       + 'of them wrapped in `redactUrl`',
     asserted_by: "the test named `source: planning.mjs's no-staged-set detail "
       + 'goes through redactUrl`',
@@ -147,7 +146,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'phase-spelling-callsites',
     holder: 'tests/phase-spelling.test.mjs',
-    counts: 'the 21 phase-argument callsites under `cadence-core/bin/planning/` and the 12 '
+    counts: 'the phase-argument callsites under `cadence-core/bin/planning/` and those '
       + 'of them that resolve a `phases/<N>/` path, each with its disposition',
     asserted_by: 'the test named `census: every phase-argument callsite under planning/ '
       + 'carries a disposition`',
@@ -157,8 +156,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'reference-router-branches',
     holder: 'tests/reference-routers.test.mjs',
-    counts: "the register's row count and the number of ROUTERS those rows "
-      + 'span - 7 over 2',
+    counts: "the register's row count and the number of ROUTERS those rows span",
     asserted_by: 'the test named `the register pins its row count and its router count`',
     // the module, not the references directory: both numbers are read off ROUTERS, so a reference split moves no count
     subjects: ['cadence-core/bin/lib/reference-routers.mjs'],
@@ -166,8 +164,8 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'seam-call-counts',
     holder: 'tests/seam-calls.test.mjs',
-    counts: 'the happy-path seam invocations each measured workflow instructs - '
-      + '17 for `workflows/plan.md` and 7 for `workflows/context.md`',
+    counts: 'the happy-path seam invocations each measured workflow instructs, '
+      + 'for `workflows/plan.md` and for `workflows/context.md`',
     asserted_by: 'the generated test named `<file> instructs exactly <N> seam '
       + 'invocations`, one per row of that file\'s `CENSUS` array',
     // only these two workflows carry a row and the count is per file, so the rest would refuse plans for nothing
