@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import {
   PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, planPosition, read, readPlanReports, readQueue,
 } from './core.mjs';
-import { classifyPhaseList, parseCursor, parseRequirements } from '../lib/planning-files.mjs';
+import { classifyPhaseList, parseRequirements } from '../lib/planning-files.mjs';
+import { parseCursor } from '../lib/state-cursor.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 /**

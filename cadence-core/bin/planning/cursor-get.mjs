@@ -7,7 +7,7 @@
 
 import { join } from 'node:path';
 import { fail, ok, read } from './core.mjs';
-import { parseCursor } from '../lib/planning-files.mjs';
+import { parseCursor } from '../lib/state-cursor.mjs';
 
 function cmdCursorGet(dir) {
   const text = read(join(dir, 'STATE.md'));

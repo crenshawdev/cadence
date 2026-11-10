@@ -9,9 +9,10 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 import { fail, intFlag, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
-  atomicWrite, cutPhaseDetail, findProsePhaseRefs, nextNamesPhase, parseCursor,
+  atomicWrite, cutPhaseDetail, findProsePhaseRefs, nextNamesPhase,
   parseRoadmapPhases, renderCursor, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
+import { parseCursor } from '../lib/state-cursor.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 // structured edits are automated, lowercase prose refs are reported for the model; --dry-run touches nothing

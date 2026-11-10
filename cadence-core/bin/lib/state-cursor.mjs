@@ -1,8 +1,7 @@
 // @ts-check
 // the grammar of STATE.md's cursor, read side: four required lines plus an optional `Plan:` line
 // split from planning-files so the 3.9.0-removed module could load it without `node:fs`; moving it back gains nothing
-// planning-files re-exports `parseCursor`: five planning modules import it through there
-// tests/state-cursor.test.mjs pins that the re-export is this function, not a copy; the writer stays put
+// callers take `parseCursor` from here; the writer stays in planning-files
 // imports nothing and touches no Node global
 'use strict';
 

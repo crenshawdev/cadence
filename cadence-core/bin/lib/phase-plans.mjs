@@ -9,7 +9,8 @@
 import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { insideRoot } from './contained.mjs';
-import { parseCursor, readFrontmatterList } from './planning-files.mjs';
+import { readFrontmatterList } from './planning-files.mjs';
+import { parseCursor } from './state-cursor.mjs';
 
 // byte bound for reading a plan, same as route.mjs's MAX_BODY_BYTES so a plan and a file it declares refuse together
 const MAX_PLAN_BYTES = 512 * 1024;

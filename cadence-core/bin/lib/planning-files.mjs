@@ -1,12 +1,11 @@
 // @ts-check
 // planning-files.mjs - every .planning grammar lives here (cursor, ROADMAP phases, REQUIREMENTS
-// traceability, UAT items), except the cursor parser, which sits in state-cursor.mjs and is re-exported
+// traceability, UAT items), except the cursor parser, which lives in state-cursor.mjs
 // a format change is one function here plus its tests, workflow prose never describes file mechanics
 'use strict';
 
 import { writeFileSync, renameSync, lstatSync } from 'node:fs';
 import { isRefusedSpelling } from './lease-grammar.mjs';
-import { parseCursor } from './state-cursor.mjs';
 import { fenceScanner } from './text-util.mjs';
 
 // the only Status values the cursor may carry
@@ -16,9 +15,6 @@ export const CURSOR_STATUSES = [
 ];
 
 // STATE.md: the cursor
-
-// re-exported so callers keep importing it from here
-export { parseCursor };
 
 /**
  * Render the canonical cursor under `# State`. The optional `Plan:` line sits right after `Phase:`,
