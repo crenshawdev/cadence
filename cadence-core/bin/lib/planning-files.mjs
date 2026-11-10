@@ -1158,9 +1158,16 @@ export function parseUat(text) {
   const items = [];
   /** @type {string[]} Hand-added `### ` sections, preserved verbatim. */
   const extras = [];
-  const parts = text.split(/^### /m).slice(1);
-  for (const part of parts) {
-    const lines = part.split('\n');
+  // one scanner fed every line in order: a `### ` line inside a fence is content, never a chunk start
+  const fenced = fenceScanner();
+  /** @type {string[][]} */
+  const parts = [];
+  for (const line of text.split('\n')) {
+    const inFence = fenced(line);
+    if (!inFence && line.startsWith('### ')) parts.push([line.slice(4)]);
+    else if (parts.length) parts[parts.length - 1].push(line);
+  }
+  for (const lines of parts) {
     // both loops stop at the same fence-aware bound, a `## ` inside a code block is content
     const bound = sectionBound(lines);
     const body = bound === -1 ? lines : lines.slice(0, bound);
