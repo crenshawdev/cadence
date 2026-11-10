@@ -118,8 +118,8 @@ export function rungFile(role, rung) {
 }
 
 /**
- * Every agent-file stem one role's map names, in rung order. An unknown role yields an empty array, since self-verify
- * calls this on a table it hasn't validated yet.
+ * Every agent-file stem one role's map names, in rung order. An unknown role yields an empty array, never a throw.
+ * Nothing in the plugin calls it; the tests do.
  * @param {string} role
  * @returns {string[]}
  */
@@ -289,10 +289,10 @@ export const ROLES_EFFORT_SUFFIX = '.effort';
 /**
  * The key one role's start rung is written under.
  * @param {string} role
- * @returns {string[]}
+ * @returns {string}
  */
-function effortKeyNames(role) {
-  return [`${ROLES_PREFIX}${role}${ROLES_EFFORT_SUFFIX}`];
+function effortKey(role) {
+  return `${ROLES_PREFIX}${role}${ROLES_EFFORT_SUFFIX}`;
 }
 
 /**
@@ -325,47 +325,46 @@ export function effortEnumIssues(schema, rungOrder) {
   const order = Array.isArray(rungOrder) ? rungOrder.filter((r) => typeof r === 'string') : [];
 
   for (const role of Object.keys(RUNG_FILES)) {
-    for (const key of effortKeyNames(role)) {
-      const spec = keys[key];
-      if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
-        out.push({ code: 'missing-effort-key',
-          detail: `${key} is absent, but lib/rung-agent.mjs files ${
-            Object.keys(RUNG_FILES[role]).length} rungs for ${role}` });
-        continue;
-      }
-      // Type first: `checkValue` enforces `values` only for "enum", so a key drifted to "string" accepts any rung.
-      if (spec.type !== 'enum') {
-        out.push({ code: 'effort-enum-drift',
-          detail: `${key} has type ${JSON.stringify(spec.type)}, must be "enum" - `
-            + 'a non-enum type disables the write-face refusal' });
-        continue;
-      }
-      // Declared order then null, so a reordered enum reads as drift; the order is what the refusal message shows.
-      const want = [...Object.keys(RUNG_FILES[role]), null];
-      const got = Array.isArray(spec.values) ? spec.values : null;
-      if (!got || got.length !== want.length || want.some((v, i) => got[i] !== v)) {
-        out.push({ code: 'effort-enum-drift',
-          detail: `${key} holds ${JSON.stringify(got)}, but lib/rung-agent.mjs files ${
-            role} at ${JSON.stringify(want)}` });
-        continue;
-      }
-      // The default answers when no layer names a rung, so it must name a rung this role has a file for.
-      const def = spec.default;
-      if (typeof def !== 'string'
-        || !Object.prototype.hasOwnProperty.call(RUNG_FILES[role], def)) {
-        out.push({ code: 'effort-default-invalid',
-          detail: `${key} defaults to ${def === undefined ? '(absent)' : JSON.stringify(def)}, `
-            + `which is not one of ${role}'s rungs (${Object.keys(RUNG_FILES[role]).join(', ')}) `
-            + '- this default IS the rung route.mjs resolves when no layer sets one' });
-      }
+    const key = effortKey(role);
+    const spec = keys[key];
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+      out.push({ code: 'missing-effort-key',
+        detail: `${key} is absent, but lib/rung-agent.mjs files ${
+          Object.keys(RUNG_FILES[role]).length} rungs for ${role}` });
+      continue;
+    }
+    // Type first: `checkValue` enforces `values` only for "enum", so a key drifted to "string" accepts any rung.
+    if (spec.type !== 'enum') {
+      out.push({ code: 'effort-enum-drift',
+        detail: `${key} has type ${JSON.stringify(spec.type)}, must be "enum" - `
+          + 'a non-enum type disables the write-face refusal' });
+      continue;
+    }
+    // Declared order then null, so a reordered enum reads as drift; the order is what the refusal message shows.
+    const want = [...Object.keys(RUNG_FILES[role]), null];
+    const got = Array.isArray(spec.values) ? spec.values : null;
+    if (!got || got.length !== want.length || want.some((v, i) => got[i] !== v)) {
+      out.push({ code: 'effort-enum-drift',
+        detail: `${key} holds ${JSON.stringify(got)}, but lib/rung-agent.mjs files ${
+          role} at ${JSON.stringify(want)}` });
+      continue;
+    }
+    // The default answers when no layer names a rung, so it must name a rung this role has a file for.
+    const def = spec.default;
+    if (typeof def !== 'string'
+      || !Object.prototype.hasOwnProperty.call(RUNG_FILES[role], def)) {
+      out.push({ code: 'effort-default-invalid',
+        detail: `${key} defaults to ${def === undefined ? '(absent)' : JSON.stringify(def)}, `
+          + `which is not one of ${role}'s rungs (${Object.keys(RUNG_FILES[role]).join(', ')}) `
+          + '- this default IS the rung route.mjs resolves when no layer sets one' });
+    }
 
-      if (!order.length) continue;
-      const strays = want.filter((v) => v !== null && !order.includes(v));
-      if (strays.length) {
-        out.push({ code: 'effort-enum-drift',
-          detail: `${key} offers ${JSON.stringify(strays)}, which the rung ladder `
-            + `(${order.join(', ')}) does not carry` });
-      }
+    if (!order.length) continue;
+    const strays = want.filter((v) => v !== null && !order.includes(v));
+    if (strays.length) {
+      out.push({ code: 'effort-enum-drift',
+        detail: `${key} offers ${JSON.stringify(strays)}, which the rung ladder `
+          + `(${order.join(', ')}) does not carry` });
     }
   }
 
@@ -391,15 +390,10 @@ export function effortEnumIssues(schema, rungOrder) {
  * @returns {null|{role: string, rung: string, detail: string}} null when they agree
  */
 export function rungEffortIssue(stem, effort) {
-  for (const role of Object.keys(RUNG_FILES)) {
-    const map = RUNG_FILES[role];
-    for (const rung of Object.keys(map)) {
-      if (map[rung] !== stem) continue;
-      if (effort === rung) return null;
-      const found = effort === undefined ? 'carries no effort' : `carries effort: ${effort}`;
-      return { role, rung,
-        detail: `lib/rung-agent.mjs files this as ${role}'s ${rung} rung, but it ${found}` };
-    }
-  }
-  return null;
+  const rung = RUNG_OF_STEM.get(stem);
+  if (rung === undefined || effort === rung) return null;
+  const role = ROLE_OF_STEM.get(stem);
+  const found = effort === undefined ? 'carries no effort' : `carries effort: ${effort}`;
+  return { role, rung,
+    detail: `lib/rung-agent.mjs files this as ${role}'s ${rung} rung, but it ${found}` };
 }
