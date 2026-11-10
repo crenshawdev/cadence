@@ -329,11 +329,9 @@ export function planTaskTitles(text) {
  */
 export function planName(text) {
   if (typeof text !== 'string') return null;
-  let body = normalizeCrlf(text);
-  if (body.startsWith('---\n')) {
-    const end = body.indexOf('\n---', 3);
-    if (end !== -1) body = body.slice(end + 4);
-  }
+  const lines = normalizeCrlf(text).split('\n');
+  const bounds = frontmatterBounds(lines);
+  const body = (bounds && bounds.close !== -1 ? lines.slice(bounds.close + 1) : lines).join('\n');
   const h1 = /^# (.*)$/m.exec(body);
   if (!h1) return null;
   const parts = [...h1[1].matchAll(/\s[-\u2014]\s+Plan(?!\w)/g)];
@@ -1430,6 +1428,23 @@ const ITEM_LINE = /^\s*-\s+(.*)$/;
 const MALFORMED_KEY_LINE = /^[A-Za-z_][A-Za-z0-9_.-]*:/;
 
 /**
+ * Where a text's leading frontmatter block opens and closes, as indices into `lines`: leading blank lines are
+ * tolerated, both fences are bare `---` lines, and any other first non-blank line means no block (null).
+ * `close` is -1 when the block never closes. The one locator, so no reader can disagree about where a plan's
+ * frontmatter is.
+ * @param {string[]} lines
+ * @returns {{open: number, close: number}|null}
+ */
+export function frontmatterBounds(lines) {
+  let open = 0;
+  while (open < lines.length && BLANK_LINE.test(lines[open])) open++;
+  if (open >= lines.length || !FENCE_LINE.test(lines[open])) return null;
+  let close = open + 1;
+  while (close < lines.length && !FENCE_LINE.test(lines[close])) close++;
+  return { open, close: close < lines.length ? close : -1 };
+}
+
+/**
  * Classify every line of a plan's leading frontmatter block in one pass: each key's value list and the stray lines.
  * One pass, not one scan per key, so the structural diagnostics don't depend on which key the caller asked for.
  * A key with an empty remainder opens a block that runs to another key line, the closing fence or the end of the
@@ -1441,15 +1456,11 @@ const MALFORMED_KEY_LINE = /^[A-Za-z_][A-Za-z0-9_.-]*:/;
 export function parseFrontmatter(text) {
   const norm = normalize(text);
   const lines = norm.split('\n');
-  let i = 0;
-  while (i < lines.length && BLANK_LINE.test(lines[i])) i++;
-  if (i >= lines.length || !FENCE_LINE.test(lines[i])) {
-    return { keys: new Map(), issues: [] };
-  }
+  const bounds = frontmatterBounds(lines);
+  if (!bounds) return { keys: new Map(), issues: [] };
+  const { open: i, close: j } = bounds;
   const fenceStartLine = i + 1;
-  let j = i + 1;
-  while (j < lines.length && !FENCE_LINE.test(lines[j])) j++;
-  if (j >= lines.length) {
+  if (j === -1) {
     return {
       keys: new Map(),
       issues: [{ line: fenceStartLine, code: 'unterminated-frontmatter', text: issueText(lines[i]) }],
@@ -1582,12 +1593,9 @@ export function parsePlanRequirements(text) {
 function filesListRegion(text) {
   const empty = { line: 1, text: '', lines: [] };
   const lines = normalize(text).split('\n');
-  let i = 0;
-  while (i < lines.length && BLANK_LINE.test(lines[i])) i++;
-  if (i >= lines.length || !FENCE_LINE.test(lines[i])) return empty;
-  let j = i + 1;
-  while (j < lines.length && !FENCE_LINE.test(lines[j])) j++;
-  if (j >= lines.length) return empty;
+  const bounds = frontmatterBounds(lines);
+  if (!bounds || bounds.close === -1) return empty;
+  const { open: i, close: j } = bounds;
   for (let k = i + 1; k < j; k++) {
     const km = lines[k].match(KEY_LINE);
     if (!km || km[1] !== 'files') continue; // first occurrence wins, as the parse does
