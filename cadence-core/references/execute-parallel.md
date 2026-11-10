@@ -71,7 +71,7 @@ on this path is a real defect to report, not the fork-point default.
    The
    `diff` trigger then runs for every plan (artifact: shape (a), the refs `{base_ref: that
    plan's pre-merge HEAD from step 3, head_ref: that plan's post-merge HEAD from
-   step 3}`). The ranges are static and independent, so a fire on today's path
+   step 3}`). With `review.triggers.diff.when` at `phase_end`, as `workflows/execute.md`'s `locate` read it, none of these per-plan `diff` fires is made, and step 6 holds the one review that stands in. Otherwise the ranges are static and independent, so a fire on today's path
    goes CONCURRENTLY in one message (seam-spawn-agent.md concurrent dispatch). A
    fire that takes the workflow path (references/review-workflow.md) goes
    concurrently the same way only when `config.mjs workflow-layers` prints
@@ -101,6 +101,11 @@ on this path is a real defect to report, not the fork-point default.
    RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
    before presenting, since `/cad-execute` does not preload it, and act only on
    what the user names.
+
+   With `review.triggers.diff.when` at `phase_end`, one review of
+   `PHASE_START..HEAD` fires here: `phase_diff` when its gate is not `off`, else
+   `diff` with the same refs, never both. It carries its own trigger's gate arms,
+   and a `diff` fire here persists to `.planning/phases/<N>/REVIEW-diff-phase.md`.
 
 The lifecycle bracket `execute.md` states applies here too, per worker: one
 `dispatch` event before a batch member gets its plan and one `return`,
