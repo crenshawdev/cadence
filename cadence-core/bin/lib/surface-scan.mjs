@@ -70,7 +70,7 @@ const DIR_SIGNALS = Object.freeze({
 
 /** File BASE names that evidence a category, lowercased. */
 const FILE_SIGNALS = Object.freeze({
-  secrets: ['.env', '.env.local', '.env.production'],
+  secrets: ['.env', '.env.local', '.env.production', 'id_rsa', 'id_ed25519'],
   api_contract: ['openapi.yaml', 'openapi.yml', 'openapi.json',
     'swagger.yaml', 'swagger.json', 'schema.graphql'],
 });
@@ -78,6 +78,7 @@ const FILE_SIGNALS = Object.freeze({
 /** File EXTENSIONS (with the dot, lowercased) that evidence a category. */
 const EXT_SIGNALS = Object.freeze({
   migrations: ['.sql'],
+  secrets: ['.pem', '.key', '.p12', '.pfx'],
   api_contract: ['.proto', '.graphql', '.gql'],
 });
 
