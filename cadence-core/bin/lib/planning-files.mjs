@@ -1146,6 +1146,7 @@ const UAT_HEAD = /^(\d+)\.\s+(\S(?:.*\S)?|[^\S\n\r\u2028\u2029](?=[\n\r\u2028\u2
  * @param {string} text
  */
 export function parseUat(text) {
+  text = normalizeCrlf(text);
   const fmMatch = text.match(/^---\n([\s\S]*?)\n---/);
   /** @type {Record<string, string>} */
   const fm = {};
