@@ -120,7 +120,9 @@ function cmdUat(dir, sub, opts) {
     // a valueless --item parses as true and Number(true) is 1, so an unset $K recorded against item 1 for good
     const parsedItem = intFlag(opts.item, null, 'uat record needs --item <k>',
       "pass --item <k> using the item's number from this phase's UAT.md, then re-run; a"
-      + ' `--item "$K"` with the variable unset arrives here as a flag with no value');
+      + ' `--item "$K"` with the variable unset'
+      + ' arrives here as a flag'
+      + ' with no value');
     if (!parsedItem.ok) return;
     const k = parsedItem.value;
     const item = uat.items.find((i) => Number(i.k) === k);
