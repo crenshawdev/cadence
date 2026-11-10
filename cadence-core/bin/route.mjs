@@ -443,30 +443,27 @@ function floorFor(ctx) {
   return { raised: true, surface: null, signal: null, file: null, bytes };
 }
 
-function resolve(opts) {
-  // Trace phase is `--phase` when it parses, else the cursor; with neither nothing is recorded, since an event keyed to
-  // no phase joins nothing.
-  // `--planning-root` moves where the phase, the plans and the risk floor are read from, apart from `--file`, which
-  // still says which config is read. A scratch config copy would otherwise move the floor's tree with it.
-  const planningRoot = opts.planningRoot || dirname(opts.file);
+// Trace phase is `--phase` when it parses, else the cursor; with neither nothing is recorded, since an event keyed to
+// no phase joins nothing.
+// No argument diagnostics here: `--phase` once fell silently through to the cursor, so a typo answered ok:true about
+// a phase nobody named.
+// The floor is why `parseArgs` refuses it now: a typo would compute the floor off the cursor's phase.
+function tracePhaseFor(opts, planningRoot) {
   let tracePhase = null;
   try {
     // Only set when it parsed clean: `parseArgs` already refused a malformed spelling.
     tracePhase = opts.phase !== undefined ? opts.phase : cursorPhase(planningRoot);
   } catch { /* tracing must never change the answer */ }
+  return tracePhase;
+}
 
-  // No argument diagnostics here: `--phase` once fell silently through to the cursor, so a typo answered ok:true about
-  // a phase nobody named.
-  // The floor is why `parseArgs` refuses it now: a typo would compute the floor off the cursor's phase.
-
-  // The dispatch half of the worker's lifecycle bracket, written before any resolution because the caller dispatches on
-  // every arm, degraded ones included.
-  // Gated on ok:true it would leave those unpaired. The close half stays with the caller, which alone sees the return
-  // and its tokens. Best effort: `appendEvent` never throws and a failed bracket changes no envelope byte.
-  // The one unbracketed arm is a schema that fails to parse, where the close shows as unpaired in `trace render`; that
-  // is signal on an arm so rare.
-  // `--no-record` skips both appends whatever `--phase` or `--bracket-read` say: a preview resolves twice and writes nothing.
-  const record = !opts.noRecord;
+// The dispatch half of the worker's lifecycle bracket, written before any resolution because the caller dispatches on
+// every arm, degraded ones included.
+// Gated on ok:true it would leave those unpaired. The close half stays with the caller, which alone sees the return
+// and its tokens. Best effort: `appendEvent` never throws and a failed bracket changes no envelope byte.
+// The one unbracketed arm is a schema that fails to parse, where the close shows as unpaired in `trace render`; that
+// is signal on an arm so rare.
+function recordDispatchBracket(opts, planningRoot, tracePhase, record) {
   if (record && opts.bracketRead && tracePhase !== null) {
     try {
       const read = opts.bracketRead.split(',').map((s) => s.trim()).filter(Boolean);
@@ -480,64 +477,44 @@ function resolve(opts) {
       });
     } catch { /* tracing must never change the answer */ }
   }
+}
 
-  // Read before the role check so a mistyped role still reports a retired key that is redirecting every other dispatch.
-  const cfg = readConfig(opts.file);
-
-  // Routable roles are the ones lib/rung-agent.mjs files rungs for; a second list could say ok:true about an impossible
-  // dispatch.
-  const roles = Object.keys(RUNG_FILES);
-  if (!roles.includes(opts.role)) {
+function refuseUnknownRole(opts, roles, cfg) {
     const degraded = [...cfg._warnings];
     out({ ok: false, reason: 'unknown-role', role: opts.role,
       detail: `known roles: ${roles.join(', ')}`,
       hint: 'pass --role as one of the roles the detail lists, spelled exactly, and re-run',
       ...(degraded.length ? { warnings: degraded } : {}) });
-    return;
-  }
+}
 
-  // Which layers were read, nothing more; the only place a resolve says whether the global file was found.
-  const reason = [`config layers: ${cfg._source}`];
-
-  // An array like config.mjs get, since several can be true at once; built before the floor so its diagnostics ride on
-  // it.
-  const warnings = [...cfg._warnings];
-
-  // Decided here, not at its warning block below, because the floor is scoped by it and runs before the rung and model
-  // resolve.
-  // Only the decision is hoisted; moving the warnings would reorder `warnings[]` for callers that read it positionally.
-  // Unanswered gets all eight, the safe direction.
+// Decided here, not at its warning block below, because the floor is scoped by it and runs before the rung and model
+// resolve.
+// Only the decision is hoisted; moving the warnings would reorder `warnings[]` for callers that read it positionally.
+// Unanswered gets all eight, the safe direction.
+function decideSurfaces(cfg) {
   const tableCategories = riskCategories();
   const wroteSurfaces = cfg.triggerSurfaces.risk_surface;
   const decided = answeredSurfaces(wroteSurfaces, tableCategories);
-  const surfaces = decided.surfaces;
-  const surfacesAnswered = decided.answered;
+  return { tableCategories, wroteSurfaces, decided };
+}
 
-  // The risk floor for this dispatch: it moves no level or rung, only the plan gate and the deep-verify switch below.
-  const floor = riskFloor({
-    role: opts.role, planningRoot, phase: tracePhase, planKey: opts.plan,
-    surfaces, waived: waivedSurfaces(cfg, warnings), reason, warnings,
-  });
+// The agent file carries the effort (route.mjs reports it, can't set it), and the unsuffixed file is one rung among
+// others, so the file comes from the map in lib/rung-agent.mjs.
+// Fail-open: a rung the map lacks is self-verify's problem, and this dispatches the unsuffixed file and says so.
+function agentFor(role, rung, reason) {
+  const stem = rungFile(role, rung);
+  if (stem) return stem;
+  reason.push(`rung "${rung}" maps to no agent file; dispatching ${role}`);
+  return role;
+}
 
-  // The agent file carries the effort (route.mjs reports it, can't set it), and the unsuffixed file is one rung among
-  // others, so the file comes from the map in lib/rung-agent.mjs.
-  // Fail-open: a rung the map lacks is self-verify's problem, and this dispatches the unsuffixed file and says so.
-  const agentFor = (rung) => {
-    const stem = rungFile(opts.role, rung);
-    if (stem) return stem;
-    reason.push(`rung "${rung}" maps to no agent file; dispatching ${opts.role}`);
-    return opts.role;
-  };
-
-  // This role's roles-block entry, read once for the rung here and the model below.
-  const roleEntry = roleEntryIn(cfg.roles, opts.role);
-
-  // The start rung comes from the first of two sources naming a rung this role has a file for: `roles.<role>.effort`,
-  // then that key's schema default.
-  // A source naming a rung this role lacks loses its turn with a warning; only a hand-edited config gets there, and
-  // holding the dispatch would drop the caller to the base agent.
-  // Never hand an unfiled rung to `agentFor`: it fails open to the unsuffixed file while `effort` still reports the
-  // rung asked for.
+// The start rung comes from the first of two sources naming a rung this role has a file for: `roles.<role>.effort`,
+// then that key's schema default.
+// A source naming a rung this role lacks loses its turn with a warning; only a hand-edited config gets there, and
+// holding the dispatch would drop the caller to the base agent.
+// Never hand an unfiled rung to `agentFor`: it fails open to the unsuffixed file while `effort` still reports the
+// rung asked for.
+function startRung(opts, roleEntry, reason, warnings) {
   const rolesEffortKey = `roles.${opts.role}.effort`;
   const rolesEffort = roleEntry.effort;
   const rolesEffortSet = rolesEffort !== null && rolesEffort !== undefined;
@@ -570,16 +547,17 @@ function resolve(opts) {
       hint: `config.schema.json's ${rolesEffortKey} default names no rung this role has `
         + `(${hasRungs.join(', ')}) - restore the shipped schema, a hand-edited default being `
         + 'the usual cause, then re-run',
-      ...(warnings.length ? { warnings } : {}) }); return;
+      ...(warnings.length ? { warnings } : {}) }); return null;
   }
+  return effort;
+}
 
-  let agent = agentFor(effort);
+// Escalation is one rung up from where this dispatch started: a retry never thinks less than the failed attempt and
+// never skips. At the top rung it holds and says so, since reporting an escalation that moved nothing is the
+// resolved-then-dropped shape.
+// The ladder is `RUNG_ORDER`, never data, and a rung this role has no file for is stepped over, not dispatched.
+function escalateRung(opts, cfg, effort, agent, reason) {
   let escalated = false;
-
-  // Escalation is one rung up from where this dispatch started: a retry never thinks less than the failed attempt and
-  // never skips. At the top rung it holds and says so, since reporting an escalation that moved nothing is the
-  // resolved-then-dropped shape.
-  // The ladder is `RUNG_ORDER`, never data, and a rung this role has no file for is stepped over, not dispatched.
   if ((opts.attempt || 1) > 1) {
     if (cfg.escalate_on_failure) {
       const at = RUNG_ORDER.indexOf(effort);
@@ -589,7 +567,7 @@ function resolve(opts) {
       }
       if (target) {
         escalated = true;
-        agent = agentFor(target);
+        agent = agentFor(opts.role, target, reason);
         reason.push(`rung ${effort}->${target} (${agent})`);
         effort = target;
       } else {
@@ -600,14 +578,17 @@ function resolve(opts) {
       reason.push(`rung held at ${effort} (model.escalate_on_failure: false)`);
     }
   }
+  return { effort, agent, escalated };
+}
 
-  // A gate a layer set beats the schema default, and the disagreement is spoken. Default-wins would make a key the user
-  // set stop doing anything.
-  // The walk is over the triggers the schema defines a gate for, from `gateTriggers`, shared with self-verify's
-  // agreement check.
-  // A gate has to be one of the key's own values before it can win: a typo (`"blockign"`) once silently replaced the
-  // blocking `risk_surface` gate. `gateWon` records whether a valid configured gate answered, and the floor tests that,
-  // not key presence.
+// A gate a layer set beats the schema default, and the disagreement is spoken. Default-wins would make a key the user
+// set stop doing anything.
+// The walk is over the triggers the schema defines a gate for, from `gateTriggers`, shared with self-verify's
+// agreement check.
+// A gate has to be one of the key's own values before it can win: a typo (`"blockign"`) once silently replaced the
+// blocking `risk_surface` gate. `gateWon` records whether a valid configured gate answered, and the floor tests that,
+// not key presence.
+function resolveGates(cfg, reason, warnings) {
   const review = {};
   /** @type {Record<string, boolean>} */
   const gateWon = {};
@@ -635,10 +616,13 @@ function resolve(opts) {
       if (configured === undefined) reason.push(`${key}: schema default ${JSON.stringify(dflt)}`);
     }
   }
+  return { review, gateWon };
+}
 
-  // The floor's two effects, and only two. `verify` has no config key: it's `on` when the floor raised and `off`
-  // otherwise.
-  // `workflow.verifier` stays the off switch workflows/verify.md reads, and `--deep` the manual on switch.
+// The floor's two effects, and only two. `verify` has no config key: it's `on` when the floor raised and `off`
+// otherwise.
+// `workflow.verifier` stays the off switch workflows/verify.md reads, and `--deep` the manual on switch.
+function applyFloor(floor, cfg, review, gateWon, reason) {
   let verify = floor.raised ? 'on' : 'off';
   if (floor.raised) {
     const planKey = 'review.triggers.plan.gate';
@@ -662,13 +646,16 @@ function resolve(opts) {
         + `at or above "${FLOOR_GATE}"`);
     }
   }
+  return verify;
+}
 
-  // The other half of a fire: the gate map says whether a trigger fires, this says who it fires to. Resolved here
-  // because a blocking risk_surface review once went to a same-model subagent despite `openai` being set.
-  // `claude-subagent` is always available. Any other name needs a model id at this trigger's tier and a place in the
-  // user-global `review.reviewers`: a repo layer arrives with a clone and would spend their key.
-  // An empty set falls back to `claude-subagent`, or a blocking trigger stops gating.
-  // Tier and effort get own maps: `reviewer_efforts`, never `efforts`, since `effort` is the agent rung.
+// The other half of a fire: the gate map says whether a trigger fires, this says who it fires to. Resolved here
+// because a blocking risk_surface review once went to a same-model subagent despite `openai` being set.
+// `claude-subagent` is always available. Any other name needs a model id at this trigger's tier and a place in the
+// user-global `review.reviewers`: a repo layer arrives with a clone and would spend their key.
+// An empty set falls back to `claude-subagent`, or a blocking trigger stops gating.
+// Tier and effort get own maps: `reviewer_efforts`, never `efforts`, since `effort` is the agent rung.
+function resolveReviewers(cfg, review, warnings) {
   const wantedReviewers = cfg.reviewers ?? DEFAULTS.reviewers;
   const reviewers = {};
   /** @type {Record<string, any>} */
@@ -745,11 +732,14 @@ function resolve(opts) {
     }
     reviewers[trigger] = kept.length ? kept : ['claude-subagent'];
   }
+  return { reviewers, reviewerTiers, reviewerEfforts };
+}
 
-  // The third half of a fire: a category outside the resolved set doesn't fire `risk_surface`. Resolved here so a
-  // cost-control key doesn't depend on a model remembering to read config.
-  // Absence means all eight, never none, and `surfaces_answered` says which, so the one-time ask can tell them apart.
-  // The predicate lives in lib/surface-scan.mjs because `planning.mjs risk-check run` refuses on the same answer.
+// The third half of a fire: a category outside the resolved set doesn't fire `risk_surface`. Resolved here so a
+// cost-control key doesn't depend on a model remembering to read config.
+// Absence means all eight, never none, and `surfaces_answered` says which, so the one-time ask can tell them apart.
+// The predicate lives in lib/surface-scan.mjs because `planning.mjs risk-check run` refuses on the same answer.
+function warnSurfaces(wroteSurfaces, decided, tableCategories, warnings) {
   if (wroteSurfaces !== undefined) {
     const { kept, bad } = decided;
     if (!Array.isArray(wroteSurfaces)) {
@@ -772,15 +762,15 @@ function resolve(opts) {
         + `all ${tableCategories.length} stand, and the surface question reads as unanswered`);
     }
   }
+}
 
-  // Model comes from `roles.<role>.model`. Unset is `model: null`, the session's model. It never touches effort, which is
-  // fixed per agent file.
-  // A string the host won't accept is dropped with a warning: ok:false would lose the rung with the model, and a
-  // pass-through fails the host's validation on every dispatch.
-  // `pinned` is always false now and stays in the envelope and on the event, because seam JSON is additive only.
+// Model comes from `roles.<role>.model`. Unset is `model: null`, the session's model. It never touches effort, which is
+// fixed per agent file.
+// A string the host won't accept is dropped with a warning: ok:false would lose the rung with the model, and a
+// pass-through fails the host's validation on every dispatch.
+function resolveModel(opts, roleEntry, reason, warnings) {
   /** @type {string|null} */
   let model = null;
-  const pinned = false;
   let modelSource = 'session';
   const rolesModel = roleEntry.model;
   const rolesModelKey = `roles.${opts.role}.model`;
@@ -798,11 +788,15 @@ function resolve(opts) {
   } else {
     reason.push('no model key set; no model parameter, the session\'s model runs');
   }
+  return { model, modelSource };
+}
 
-  // The routing family of the run record, one line per resolve. It carries the decision, not the diagnostic text:
-  // `warning_count` is a count because the envelope has the strings.
-  // Best effort: `appendEvent` never throws and this sits in its own try, so a trace that can't be written leaves the
-  // envelope byte-identical.
+// The routing family of the run record, one line per resolve. It carries the decision, not the diagnostic text:
+// `warning_count` is a count because the envelope has the strings.
+// Best effort: `appendEvent` never throws and this sits in its own try, so a trace that can't be written leaves the
+// envelope byte-identical.
+function recordResolve(opts, planningRoot, tracePhase, record, p, warnings) {
+  const { agent, model, modelSource, effort, escalated, pinned } = p;
   try {
     if (record && tracePhase !== null) {
       appendEvent(planningRoot, {
@@ -823,15 +817,78 @@ function resolve(opts) {
       });
     }
   } catch { /* tracing must never change the answer */ }
+}
 
-  // `review` is the whole trigger -> gate map, `reviewers` the trigger -> reviewer-set map, `surfaces` and
-  // `surfaces_answered` the risk_surface scope, `verify` the deep-verify switch the floor turns on.
-  // `model_source` is always present, so `model: null` unset reads differently from `model: null` rejected.
-  // `agent_type` is plugin.json's name, `:`, then the final `agent`: a bare stem could be a user's own `cad-reviewer`.
-  // `agent` stays the bare stem because it's the trace name.
+// `review` is the whole trigger -> gate map, `reviewers` the trigger -> reviewer-set map, `surfaces` and
+// `surfaces_answered` the risk_surface scope, `verify` the deep-verify switch the floor turns on.
+// `model_source` is always present, so `model: null` unset reads differently from `model: null` rejected.
+// `agent_type` is plugin.json's name, `:`, then the final `agent`: a bare stem could be a user's own `cad-reviewer`.
+// `agent` stays the bare stem because it's the trace name.
+function emitEnvelope(opts, cfg, p, reason, warnings) {
+  const { agent, model, modelSource, effort, review, reviewers, reviewerTiers, reviewerEfforts, surfaces, surfacesAnswered, verify, escalated, pinned } = p;
   const prefixed = prefixedAgentType(agent);
   if (prefixed.reason) reason.push(prefixed.reason);
   out({ ok: true, role: opts.role, agent, agent_type: prefixed.agentType, model, model_source: modelSource, effort, review, reviewers, reviewers_global: cfg.reviewersGlobal, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
+}
+
+function resolve(opts) {
+  // `--planning-root` moves where the phase, the plans and the risk floor are read from, apart from `--file`, which
+  // still says which config is read. A scratch config copy would otherwise move the floor's tree with it.
+  const planningRoot = opts.planningRoot || dirname(opts.file);
+  const tracePhase = tracePhaseFor(opts, planningRoot);
+
+  // `--no-record` skips both appends whatever `--phase` or `--bracket-read` say: a preview resolves twice and writes nothing.
+  const record = !opts.noRecord;
+  recordDispatchBracket(opts, planningRoot, tracePhase, record);
+
+  // Read before the role check so a mistyped role still reports a retired key that is redirecting every other dispatch.
+  const cfg = readConfig(opts.file);
+
+  // Routable roles are the ones lib/rung-agent.mjs files rungs for; a second list could say ok:true about an impossible
+  // dispatch.
+  const roles = Object.keys(RUNG_FILES);
+  if (!roles.includes(opts.role)) {
+    refuseUnknownRole(opts, roles, cfg);
+    return;
+  }
+
+  // Which layers were read, nothing more; the only place a resolve says whether the global file was found.
+  const reason = [`config layers: ${cfg._source}`];
+
+  // An array like config.mjs get, since several can be true at once; built before the floor so its diagnostics ride on
+  // it.
+  const warnings = [...cfg._warnings];
+
+  const { tableCategories, wroteSurfaces, decided } = decideSurfaces(cfg);
+  const surfaces = decided.surfaces;
+  const surfacesAnswered = decided.answered;
+
+  // The risk floor for this dispatch: it moves no level or rung, only the plan gate and the deep-verify switch below.
+  const floor = riskFloor({
+    role: opts.role, planningRoot, phase: tracePhase, planKey: opts.plan,
+    surfaces, waived: waivedSurfaces(cfg, warnings), reason, warnings,
+  });
+
+  // This role's roles-block entry, read once for the rung here and the model below.
+  const roleEntry = roleEntryIn(cfg.roles, opts.role);
+
+  // these steps run in the order warnings[] is read by position, so none moves
+  const start = startRung(opts, roleEntry, reason, warnings);
+  if (start === null) return;
+  const { effort, agent, escalated } = escalateRung(opts, cfg, start, agentFor(opts.role, start, reason), reason);
+
+  const { review, gateWon } = resolveGates(cfg, reason, warnings);
+  const verify = applyFloor(floor, cfg, review, gateWon, reason);
+  const { reviewers, reviewerTiers, reviewerEfforts } = resolveReviewers(cfg, review, warnings);
+  warnSurfaces(wroteSurfaces, decided, tableCategories, warnings);
+
+  const { model, modelSource } = resolveModel(opts, roleEntry, reason, warnings);
+  // `pinned` is always false now and stays in the envelope and on the event, because seam JSON is additive only.
+  const pinned = false;
+
+  const picked = { agent, model, modelSource, effort, review, reviewers, reviewerTiers, reviewerEfforts, surfaces, surfacesAnswered, verify, escalated, pinned };
+  recordResolve(opts, planningRoot, tracePhase, record, picked, warnings);
+  emitEnvelope(opts, cfg, picked, reason, warnings);
 }
 
 // --- arg parsing -------------------------------------------------------------
