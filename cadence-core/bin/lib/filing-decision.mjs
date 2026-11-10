@@ -7,6 +7,7 @@
 
 import { createHash } from 'node:crypto';
 import { buildEntries, fixFileIssue } from './adjudication-record.mjs';
+import { readJsonPage } from './issue-decision.mjs';
 import { redactUrl, redactCredentials } from './redact-url.mjs';
 
 /**
@@ -206,24 +207,12 @@ export function issueBody(finding) {
  * @returns {{complete: boolean, fingerprints: string[], detail: string|null}}
  */
 export function normalizeDeclines(text, limit) {
-  const bad = (detail) => ({ complete: false, fingerprints: [], detail });
-  if (typeof text !== 'string') return bad('response was not text');
-  let parsed;
-  try { parsed = JSON.parse(text); } catch { return bad('response was not JSON'); }
-  if (!Array.isArray(parsed)) return bad('response was not a JSON array');
-  /** @type {string[]} */
-  const fingerprints = [];
-  for (const row of parsed) {
-    if (!row || typeof row !== 'object') return bad('a row was not an object');
-    const title = /** @type {Record<string, unknown>} */ (row).title;
-    if (typeof title !== 'string') return bad('a row carried no readable title');
-    const token = fingerprintInTitle(title);
-    if (token !== null) fingerprints.push(token);
-  }
-  if (parsed.length >= limit) {
-    return bad(`the response filled the ${limit}-row page and may be truncated`);
-  }
-  return { complete: true, fingerprints, detail: null };
+  const page = readJsonPage(text, limit, (row) => {
+    if (typeof row.title !== 'string') return { detail: 'a row carried no readable title' };
+    const token = fingerprintInTitle(row.title);
+    return token === null ? null : { record: token };
+  });
+  return { complete: page.complete, fingerprints: page.records, detail: page.detail };
 }
 
 /** An issue number however its CLI spells it, or null when the field carries no readable one.
@@ -252,28 +241,14 @@ function issueNumber(raw) {
  *   records: Array<{fingerprint: string, number: number}>, detail: string|null}}
  */
 export function normalizeLookup(text, limit, numberKey) {
-  /** @param {string} detail */
-  const bad = (detail) => ({ complete: false, records: [], detail });
-  if (typeof text !== 'string') return bad('response was not text');
-  let parsed;
-  try { parsed = JSON.parse(text); } catch { return bad('response was not JSON'); }
-  if (!Array.isArray(parsed)) return bad('response was not a JSON array');
-  /** @type {Array<{fingerprint: string, number: number}>} */
-  const records = [];
-  for (const row of parsed) {
-    if (!row || typeof row !== 'object') return bad('a row was not an object');
-    const title = /** @type {Record<string, unknown>} */ (row).title;
-    if (typeof title !== 'string') return bad('a row carried no readable title');
-    const token = fingerprintInTitle(title);
-    if (token === null) continue;
-    const number = issueNumber(/** @type {Record<string, unknown>} */ (row)[numberKey]);
-    if (number === null) return bad(`a row carrying a Cadence token had no readable ${numberKey}`);
-    records.push({ fingerprint: token, number });
-  }
-  if (parsed.length >= limit) {
-    return bad(`the response filled the ${limit}-row page and may be truncated`);
-  }
-  return { complete: true, records, detail: null };
+  return readJsonPage(text, limit, (row) => {
+    if (typeof row.title !== 'string') return { detail: 'a row carried no readable title' };
+    const fingerprint = fingerprintInTitle(row.title);
+    if (fingerprint === null) return null;
+    const number = issueNumber(row[numberKey]);
+    if (number === null) return { detail: `a row carrying a Cadence token had no readable ${numberKey}` };
+    return { record: { fingerprint, number } };
+  });
 }
 
 /**

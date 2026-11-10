@@ -31,9 +31,41 @@ function normalizeNumber(raw) {
 }
 
 /**
- * One CLI response -> the `{number, state}` records plus whether the read is complete. An incomplete answer carries no
- * records, so a partial page can't be mistaken for the whole tracker.
+ * One CLI's JSON page -> the records `readRow` takes from its rows, plus whether the read is complete. Three readers
+ * shared this skeleton (not text, not JSON, not an array, a row not an object, a full page), so it is written once.
+ * An incomplete answer carries no records, so a partial page can't be mistaken for the whole list.
  * `detail` is a fixed phrase, never a slice of the response: a forge CLI's bytes aren't ours to put in an envelope.
+ * Each reader keeps its own row rules, including what an issue number is: `readRow` answers `{record}` to keep the
+ * row, `null` to pass it by, or `{detail}` to refuse the whole read.
+ *
+ * @template T
+ * @param {unknown} text the CLI's stdout
+ * @param {number} limit the page size the argv asked for
+ * @param {(row: Record<string, unknown>) => {record: T} | {detail: string} | null} readRow
+ * @returns {{complete: boolean, records: T[], detail: string|null}}
+ */
+export function readJsonPage(text, limit, readRow) {
+  /** @param {string} detail @returns {{complete: boolean, records: T[], detail: string|null}} */
+  const bad = (detail) => ({ complete: false, records: [], detail });
+  if (typeof text !== 'string') return bad('response was not text');
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { return bad('response was not JSON'); }
+  if (!Array.isArray(parsed)) return bad('response was not a JSON array');
+  /** @type {T[]} */
+  const records = [];
+  for (const row of parsed) {
+    if (!row || typeof row !== 'object') return bad('a row was not an object');
+    const read = readRow(row);
+    if (read === null) continue;
+    if ('detail' in read) return bad(read.detail);
+    records.push(read.record);
+  }
+  if (parsed.length >= limit) return bad(`the response filled the ${limit}-row page and may be truncated`);
+  return { complete: true, records, detail: null };
+}
+
+/**
+ * One CLI response -> the `{number, state}` records plus whether the read is complete.
  *
  * @param {unknown} text the CLI's stdout
  * @param {number} limit the page size the argv asked for
@@ -41,25 +73,13 @@ function normalizeNumber(raw) {
  * @returns {{complete:boolean, records:Array<{number:number,state:'open'|'closed'}>, detail:string|null}}
  */
 function normalizeList(text, limit, numberKey) {
-  const bad = (detail) => ({ complete: false, records: [], detail });
-  if (typeof text !== 'string') return bad('response was not text');
-  let parsed;
-  try { parsed = JSON.parse(text); }
-  catch { return bad('response was not JSON'); }
-  if (!Array.isArray(parsed)) return bad('response was not a JSON array');
-  /** @type {Array<{number:number,state:'open'|'closed'}>} */
-  const records = [];
-  for (const row of parsed) {
-    if (!row || typeof row !== 'object') return bad('a row was not an object');
-    const rawState = /** @type {Record<string, unknown>} */ (row).state;
-    const number = normalizeNumber(/** @type {Record<string, unknown>} */ (row)[numberKey]);
-    const state = typeof rawState === 'string' ? normalizeState(rawState) : null;
+  return readJsonPage(text, limit, (row) => {
+    const number = normalizeNumber(row[numberKey]);
+    const state = typeof row.state === 'string' ? normalizeState(row.state) : null;
     // a renamed or missing field fails the whole read: dropping the row is how a rename turns into a not-found verdict
-    if (number === null || state === null) return bad(`a row carried no readable ${numberKey}/state`);
-    records.push({ number, state });
-  }
-  if (records.length >= limit) return bad(`the response filled the ${limit}-row page and may be truncated`);
-  return { complete: true, records, detail: null };
+    if (number === null || state === null) return { detail: `a row carried no readable ${numberKey}/state` };
+    return { record: { number, state } };
+  });
 }
 
 /**
