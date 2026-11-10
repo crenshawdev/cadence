@@ -2,7 +2,7 @@
 // the mechanical half of a milestone close, as pure text transforms
 // pure and total: a section that can't be found gets reported, never invented
 
-import { parseRoadmapPhases, parseRequirements, sectionSpan } from './planning-files.mjs';
+import { parseRoadmapPhases, parseRequirements, phaseDetailSpans, sectionSpan } from './planning-files.mjs';
 
 /** Decimal-safe: `2.1` must not match `291`.
  * @param {number} n */
@@ -31,23 +31,16 @@ export function pruneRoadmap(text, completed) {
 
   for (const n of completed) {
     const lineRe = new RegExp(`^- \\[x\\] \\*\\*Phase ${escN(n)}: `);
-    const headRe = new RegExp(`^### Phase ${escN(n)}: `);
-    let sectionFound = false;
-    for (let i = 0; i < lines.length; i++) {
-      if (!keep[i]) continue;
-      if (lineRe.test(lines[i])) { keep[i] = false; removedLines++; continue; }
-      if (headRe.test(lines[i])) {
-        sectionFound = true;
-        removedSections++;
-        keep[i] = false;
-        let j = i + 1;
-        while (j < lines.length && !/^###? /.test(lines[j])) {
-          keep[j] = false;
-          j++;
-        }
-      }
+    // sections first: a checked line inside a removed section goes with it and isn't counted as a list line
+    const spans = phaseDetailSpans(lines, n);
+    for (const { start, end } of spans) {
+      removedSections++;
+      for (let j = start; j < end; j++) keep[j] = false;
     }
-    if (!sectionFound) missingSections.push(n);
+    if (!spans.length) missingSections.push(n);
+    for (let i = 0; i < lines.length; i++) {
+      if (keep[i] && lineRe.test(lines[i])) { keep[i] = false; removedLines++; }
+    }
   }
   return {
     text: lines.filter((_, i) => keep[i]).join('\n'),

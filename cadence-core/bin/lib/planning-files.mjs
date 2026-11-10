@@ -144,7 +144,7 @@ export function parseRequirements(text) {
 // single-line edits, these return the whole text so callers stay pure
 
 // phase numbers can be decimal, and an unescaped dot would match any character
-/** @param {number} n */
+/** @param {string|number} n */
 const escN = (n) => String(n).replace(/\./g, '\\.');
 
 /**
@@ -216,6 +216,31 @@ export function isRequirementId(id) {
 }
 
 /**
+ * Every `### Phase <N>:` detail section in `lines` as `{start, end}`: the heading's own line and the next unfenced
+ * line opening with one to three `#` and a space (or `lines.length`). Empty when there is none. The one locator for
+ * a detail section, so the criteria count, the cut and the milestone prune can't disagree about where it ends.
+ * The scanner is fed every line from the top and never restarted, so the fence state is the whole document's: a
+ * fenced `# comment` or `### ` line neither ends a section nor starts one. The heading is the escaped number with
+ * the colon right after it, then nothing or a space-led name, so a longer number can't match a shorter n.
+ * Lines are read, never changed, so a caller that writes them back keeps every byte, `\r` included.
+ * @param {string[]} lines @param {string|number} n
+ * @returns {Array<{start: number, end: number}>}
+ */
+export function phaseDetailSpans(lines, n) {
+  const head = new RegExp(`^### Phase ${escN(n)}:(?: .*)?\\r?$`);
+  const fenced = fenceScanner();
+  const spans = [];
+  let open = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (fenced(lines[i])) continue;
+    if (open >= 0 && /^#{1,3} /.test(lines[i])) { spans.push({ start: open, end: i }); open = -1; }
+    if (open < 0 && head.test(lines[i])) open = i;
+  }
+  if (open >= 0) spans.push({ start: open, end: lines.length });
+  return spans;
+}
+
+/**
  * One phase's `### Phase <N>:` detail block verbatim, or null when the roadmap has none.
  * Shared by phaseRequirements and phaseCriteria so they can't disagree about where a block ends,
  * or a criteria count would swallow the next phase's list.
@@ -225,15 +250,9 @@ export function isRequirementId(id) {
  * @returns {string|null}
  */
 function phaseDetailBlock(body, phase) {
-  const head = new RegExp(`^### Phase ${String(phase).replace('.', '\\.')}:`, 'm');
-  const at = body.search(head);
-  if (at < 0) return null;
-  const rest = body.slice(at);
-  // start after our own heading line, slicing by one char would re-find it and return a one-character block
-  const afterHeading = rest.indexOf('\n') + 1;
-  const tail = afterHeading > 0 ? rest.slice(afterHeading) : '';
-  const nextHeading = tail.search(/^#{1,3} /m);
-  return nextHeading < 0 ? rest : rest.slice(0, afterHeading + nextHeading);
+  const lines = body.split('\n');
+  const [span] = phaseDetailSpans(lines, phase);
+  return span ? lines.slice(span.start, span.end).join('\n') : null;
 }
 
 /**
@@ -271,8 +290,7 @@ const CRITERIA_ITEM_G = /^\d+[.)]\s+\S/gm;
  * How many success criteria a phase's ROADMAP detail block declares: the numbered items under either heading
  * spelling, up to the next `^#{1,3} ` heading. No heading gives `{found: false, count: 0}`, as phaseRequirements
  * does, so a phase nobody wrote criteria for is never compared against a floor.
- * Fenced lines are dropped first, or a fenced example's items get counted. The block boundary is still fence-blind,
- * so a fenced `### Phase N:` heading can end a block early.
+ * Fenced lines are dropped first, or a fenced example's items get counted.
  *
  * @param {string} text the ROADMAP.md bytes
  * @param {string|number} phase the caller's own spelling
@@ -1793,24 +1811,21 @@ export function findProsePhaseRefs(text, from) {
 }
 
 /**
- * Cut a phase's `### Phase N: ...` detail section out of ROADMAP text, from its heading to the next ### or ##
- * heading. Returns the text unchanged when it's absent. A name-less heading (exactly `### Phase N:`) matches too,
- * so a bare heading and its body aren't left behind.
+ * Cut a phase's `### Phase N: ...` detail section out of ROADMAP text, from its heading to the next unfenced heading
+ * of one to three `#`. Returns the text unchanged when it's absent. A name-less heading (exactly `### Phase N:`)
+ * matches too, so a bare heading and its body aren't left behind.
  * That tolerance stays in this function: unifying every `Phase N:` matcher would change what counts as a phase for
- * status, audit, phase-done and the cursor's `total`. The colon stays right after the escaped number, so a longer
- * number can't match a shorter n.
+ * status, audit, phase-done and the cursor's `total`. The locator is `phaseDetailSpans`, working on lines without
+ * changing a byte, so a CRLF checkout round-trips.
  * @param {string} text @param {number} n
  */
 export function cutPhaseDetail(text, n) {
-  const re = new RegExp(`^### Phase ${escN(n)}:(?: .*)?$`, 'm');
-  const start = text.search(re);
-  if (start === -1) return text;
-  const headingEnd = text.indexOf('\n', start);
-  if (headingEnd === -1) return text.slice(0, start);
-  const rest = text.slice(headingEnd + 1);
-  const endRel = rest.search(/^#{2,3} /m);
-  const end = endRel === -1 ? text.length : headingEnd + 1 + endRel;
-  return text.slice(0, start) + text.slice(end);
+  const lines = text.split('\n');
+  const [span] = phaseDetailSpans(lines, n);
+  if (!span) return text;
+  // a section running to the end leaves the line before it terminated, as slicing the text at the heading did
+  if (span.end === lines.length) return span.start > 0 ? `${lines.slice(0, span.start).join('\n')}\n` : '';
+  return [...lines.slice(0, span.start), ...lines.slice(span.end)].join('\n');
 }
 
 // atomic write: write a sibling temp file and rename over the target, so a crash never leaves a torn file
