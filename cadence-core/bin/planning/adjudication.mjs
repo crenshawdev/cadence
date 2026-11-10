@@ -4,13 +4,11 @@
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { lstatSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { fail, fireHome, fireIdentity, ok, readJsonPayload, resolveRange } from './core.mjs';
+import { fail, fireHome, fireIdentity, firePayload, fireRange, fireTargetTaken, ok } from './core.mjs';
 import { buildEntries, recordName } from '../lib/adjudication-record.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
-import { emit } from '../lib/seam-io.mjs';
 
 // a gate used to summarize itself and the finding bodies went nowhere, so a refutation couldn't be checked against code
 // one entry per finding per raising voice in the reviewer's own words: `git checkout <head_id>` then open file:line
@@ -75,16 +73,11 @@ function cmdAdjudication(dir, opts) {
   if (!id) return;
   const { n, trigger, discriminator, round, base, head, task } = id;
 
-  // an absent --payload is refused, not fed to stdin: evaluateRow checks values and not presence, and readJsonPayload
-  // with no argument would sit reading a stdin no gate site opens
-  if (opts.payload === undefined) {
-    return fail('bad-args',
-      'adjudication needs --payload <file> - the composed payload is a FILE, never '
-      + 'inline JSON and never stdin',
-      'write the composed rulings to a file and pass --payload <path> - reviewer text carries'
-      + ' arbitrary quoting, which is why it never rides the command line');
-  }
-  const payload = readJsonPayload(opts.payload);
+  const payload = firePayload(opts,
+    'adjudication needs --payload <file> - the composed payload is a FILE, never '
+    + 'inline JSON and never stdin',
+    'write the composed rulings to a file and pass --payload <path> - reviewer text carries'
+    + ' arbitrary quoting, which is why it never rides the command line');
   if (!payload.ok) return;
   const built = buildEntries(payload.value);
   if (!built.ok) {
@@ -93,18 +86,8 @@ function cmdAdjudication(dir, opts) {
       + ' so the fire is still unrecorded');
   }
 
-  const range = resolveRange(base, head);
-  if (!range.ok) {
-    return emit({
-      ok: false,
-      reason: 'unresolved-range',
-      phase: n,
-      base,
-      head,
-      detail: range.error,
-      hint: 'name a --base and --head this repository can resolve, then re-run this record',
-    });
-  }
+  const range = fireRange(n, base, head);
+  if (!range) return;
 
   const tracked = trackedFixFile(range.top, built.entries);
   if (tracked) {
@@ -121,17 +104,8 @@ function cmdAdjudication(dir, opts) {
   const file = join(pdir, name);
   // derived from the home that was chosen, never a literal phases/<N>/: a carried fire is adjudicated in deferred/<N>/
   const rel = relative(dir, file);
-  // refused, never overwritten: forgetting --round on a re-arm would silently lose the first round's rulings. lstat,
-  // since a symlink at the target is already something there
-  let existing = null;
-  try { existing = lstatSync(file); } catch { /* the ordinary case */ }
-  if (existing) {
-    return fail('record-exists',
-      `${rel} already exists and holds round ${round}'s rulings - this seam never `
-      + 'overwrites a record',
-      'a re-arm is a SECOND fire of the same trigger on the same plan: pass --round '
-      + `${round + 1} so it lands beside round ${round} instead of replacing it`);
-  }
+  // refused, never overwritten: forgetting --round on a re-arm would silently lose the first round's rulings
+  if (fireTargetTaken(dir, file, round, 'record')) return;
 
   // after every refusal above, so a refused call does no git work
   const cites = groundCitations(range.top, range.head, built.entries);

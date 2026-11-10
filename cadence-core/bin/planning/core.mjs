@@ -6,7 +6,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
-import { dirname, join, resolve as resolvePath } from 'node:path';
+import { dirname, join, relative, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS } from '../lib/arg-contract.mjs';
@@ -528,15 +528,6 @@ function fireIdentity(face, dir, opts) {
 }
 
 /**
- * The directory a fire's artifact is written into, or null once the refusal is out.
- * It sits beside the sibling REVIEW file, never in `<plandir>/reports/`, where lease-check exempts only one path.
- * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/`, then `deferred/<N>/`.
- * @param {string} dir @param {string} n the phase as the caller spelled it
- * @param {string} what the artifact, for the refusal's wording
- * @param {string} [task] the task slug, when this fire is a task's
- * @returns {string|null}
- */
-/**
  * Is `<dir>/<name>` a real directory, present and not a symlink?
  * lstat follows a symlinked parent in passing, so the parent gets the same test as the leaf.
  * @param {string} dir @param {string} name @returns {boolean}
@@ -547,6 +538,15 @@ function realDir(dir, name) {
   return stat.isDirectory();
 }
 
+/**
+ * The directory a fire's artifact is written into, or null once the refusal is out.
+ * It sits beside the sibling REVIEW file, never in `<plandir>/reports/`, where lease-check exempts only one path.
+ * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/`, then `deferred/<N>/`.
+ * @param {string} dir @param {string} n the phase as the caller spelled it
+ * @param {string} what the artifact, for the refusal's wording
+ * @param {string} [task] the task slug, when this fire is a task's
+ * @returns {string|null}
+ */
 function fireHome(dir, n, what, task) {
   if (task) {
     const tdir = join(dir, 'tasks', task);
@@ -579,6 +579,69 @@ function fireHome(dir, n, what, task) {
     + `already carried this phase's queue out, run \`deferred carry --phase ${n}\`, which is what `
     + 'creates the second home');
   return null;
+}
+
+/**
+ * A fire's `--payload`, read once. An absent flag is refused here, never fed to stdin: evaluateRow checks values and
+ * not presence, and readJsonPayload with no argument would sit reading a stdin no gate site opens.
+ * Emits its own refusal and answers `{ok: false}`, like readJsonPayload, so the caller's arm is `if (!p.ok) return;`.
+ * @param {any} opts @param {string} detail @param {string} hint what the fire's own refusal says
+ * @returns {{ok: true, value: any} | {ok: false}}
+ */
+function firePayload(opts, detail, hint) {
+  if (opts.payload === undefined) {
+    fail('bad-args', detail, hint);
+    return { ok: false };
+  }
+  return readJsonPayload(opts.payload);
+}
+
+/**
+ * The range a fire reviewed, resolved, or null once the refusal is out. An unresolvable range refuses, since a head
+ * that can't be checked out can't be triaged.
+ * @param {string} n @param {string} base @param {string} head
+ * @returns {ReturnType<typeof resolveRange> | null}
+ */
+function fireRange(n, base, head) {
+  const range = resolveRange(base, head);
+  if (range.ok) return range;
+  emit({
+    ok: false,
+    reason: 'unresolved-range',
+    phase: n,
+    base,
+    head,
+    detail: range.error,
+    hint: 'name a --base and --head this repository can resolve, then re-run this record',
+  });
+  return null;
+}
+
+/** What each fire's artifact holds and is called in its refusal: [held, noun]. */
+const FIRE_TARGETS = {
+  record: ['rulings', 'a record'],
+  queue: ['deferred findings', 'a queue member'],
+  review: ['survivors', 'a review file'],
+};
+
+/**
+ * Refuses, and answers true, when the fire's target already exists: forgetting --round on a re-arm would silently
+ * lose the first round. lstat, since a symlink at the target is already something there.
+ * @param {string} dir the planning directory @param {string} file @param {number} round
+ * @param {'record'|'queue'|'review'} kind
+ * @returns {boolean}
+ */
+function fireTargetTaken(dir, file, round, kind) {
+  let existing = null;
+  try { existing = lstatSync(file); } catch { /* the ordinary case */ }
+  if (!existing) return false;
+  const [held, noun] = FIRE_TARGETS[kind];
+  const detail = `${relative(dir, file)} already exists and holds round ${round}'s ${held} - this seam never overwrites ${noun}`;
+  const hint = 'a re-arm is a SECOND fire of the same trigger on the same plan: pass --round '
+    + `${round + 1} so it lands beside round ${round} instead of replacing it`;
+  if (kind === 'review') fail('review-exists', detail, hint);
+  else fail('record-exists', detail, hint);
+  return true;
 }
 
 /** The two directories under `.planning/` a queue member may live in. */
@@ -756,6 +819,9 @@ export {
   fail,
   fireHome,
   fireIdentity,
+  firePayload,
+  fireRange,
+  fireTargetTaken,
   flagSentence,
   listPlanFiles,
   memoryBackend,
