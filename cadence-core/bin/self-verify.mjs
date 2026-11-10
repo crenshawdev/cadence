@@ -81,6 +81,49 @@ const KNOWN_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Grep',
 // --- helpers -----------------------------------------------------------------
 
 /**
+ * The guarded recursive walk both file lists share: `keep` picks the files, and a directory whose listing threw
+ * comes back as an `unreadable` marker. Not surface-weight's `dirents`, which swallows that directory.
+ * @param {string} dir
+ * @param {(f: string, d: import('node:fs').Dirent) => boolean} keep
+ * @returns {Generator<{ file: string, unreadable?: string }>}
+ */
+function* walkEntries(dir, keep) {
+  let list;
+  try {
+    list = readdirSync(dir, { withFileTypes: true });
+  } catch (e) {
+    // this directory alone is the unreadable surface, with its own errno, and its siblings still get linted
+    yield { file: dir, unreadable: e.code || e.message };
+    return;
+  }
+  for (const d of list) {
+    const f = join(dir, d.name);
+    if (d.isDirectory()) {
+      yield* walkEntries(f, keep);
+      continue;
+    }
+    if (keep(f, d)) yield { file: f };
+  }
+}
+
+/**
+ * The names a frontmatter `<key>:` line lists, comma separated; none when the line is absent.
+ * @param {string} fmText @param {string} key
+ * @returns {Set<string>}
+ */
+function toolNames(fmText, key) {
+  const names = new Set();
+  const line = fmText.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'));
+  if (line) {
+    for (const t of line[1].split(',')) {
+      const name = t.trim();
+      if (name) names.add(name);
+    }
+  }
+  return names;
+}
+
+/**
  * Yield every `.md` surface this linter reads as `{ file }`, plus a `{ file, unreadable }` marker for each
  * directory whose listing threw. Walks entry by entry: one recursive read in a single try returns nothing
  * for the whole subtree when one descendant throws, and the old fallback blamed the branch root with the
@@ -99,36 +142,18 @@ function* mdFiles(root) {
     // docs/ holds the published pages; left off the walk, a claim stops being enforced the moment it moves there
     join(root, 'docs'),
   ];
-  /** @param {string} dir @returns {Generator<{ file: string, unreadable?: string }>} */
-  function* walk(dir) {
-    let list;
+  // optimistic on a throw: a dangling symlink or a cycle still reaches the reporter instead of vanishing
+  const keep = (/** @type {string} */ f) => {
+    if (!f.endsWith('.md')) return false;
     try {
-      list = readdirSync(dir, { withFileTypes: true });
-    } catch (e) {
-      // this directory alone is the unreadable surface, with its own errno, and its siblings still get linted
-      yield { file: dir, unreadable: e.code || e.message };
-      return;
+      return statSync(f).isFile();
+    } catch {
+      return true;
     }
-    for (const d of list) {
-      const f = join(dir, d.name);
-      if (d.isDirectory()) {
-        yield* walk(f);
-        continue;
-      }
-      if (!f.endsWith('.md')) continue;
-      // optimistic on a throw: a dangling symlink or a cycle still reaches the reporter instead of vanishing
-      let isFile;
-      try {
-        isFile = statSync(f).isFile();
-      } catch {
-        isFile = true;
-      }
-      if (isFile) yield { file: f };
-    }
-  }
+  };
   for (const d of dirs) {
     if (!existsSync(d)) continue;
-    yield* walk(d);
+    yield* walkEntries(d, keep);
   }
   // README, INTERNALS and METHOD are live too; the historical docs stay out because they name cut keys
   for (const doc of ['README.md', 'INTERNALS.md', 'METHOD.md']) {
@@ -197,32 +222,11 @@ function* binFiles(root, opts = {}) {
   const every = opts.every === true;
   const binDir = join(root, 'cadence-core', 'bin');
   const skip = join(binDir, 'lib', 'config-merge.mjs');
-  /** @param {string} dir @returns {Generator<{ file: string, unreadable?: string }>} */
-  function* walk(dir) {
-    let list;
-    try {
-      list = readdirSync(dir, { withFileTypes: true });
-    } catch (e) {
-      yield { file: dir, unreadable: e.code || e.message };
-      return;
-    }
-    for (const d of list) {
-      const f = join(dir, d.name);
-      if (d.isDirectory()) {
-        yield* walk(f);
-        continue;
-      }
-      if (every) {
-        if (!d.isFile()) continue;
-        yield { file: f };
-        continue;
-      }
-      if (!f.endsWith('.mjs') || f.endsWith('.test.mjs') || f === skip) continue;
-      yield { file: f };
-    }
-  }
+  const keep = every
+    ? (/** @type {string} */ _f, /** @type {import('node:fs').Dirent} */ d) => d.isFile()
+    : (/** @type {string} */ f) => f.endsWith('.mjs') && !f.endsWith('.test.mjs') && f !== skip;
   if (!existsSync(binDir)) return;
-  yield* walk(binDir);
+  yield* walkEntries(binDir, keep);
 }
 
 /**
@@ -587,16 +591,7 @@ function run(root) {
       }
       const rel = relative(root, file);
       const fm = text.match(FRONTMATTER_RE);
-      const declared = new Set();
-      if (fm) {
-        const toolsLine = fm[1].match(/^tools:\s*(.+)$/m);
-        if (toolsLine) {
-          for (const t of toolsLine[1].split(',')) {
-            const name = t.trim();
-            if (name) declared.add(name);
-          }
-        }
-      }
+      const declared = fm ? toolNames(fm[1], 'tools') : new Set();
       // 6. resolve each preloaded contract; an unreadable SKILL.md isn't reported, the mdFiles walk already named it
       const preloaded = [];
       for (const skill of (fm ? parseSkillsField(fm[1]) : [])) {
@@ -678,14 +673,7 @@ function run(root) {
         const agentName = nameLine ? nameLine[1].replace(/^(['"])([\s\S]*)\1$/, '$2') : '';
         const isVerifier = (id) => id === 'cad-verifier' || id.startsWith('cad-verifier-');
         if (isVerifier(agentName) || isVerifier(e.slice(0, -3))) {
-          const denied = new Set();
-          const denyLine = fm[1].match(/^disallowedTools:\s*(.+)$/m);
-          if (denyLine) {
-            for (const t of denyLine[1].split(',')) {
-              const name = t.trim();
-              if (name) denied.add(name);
-            }
-          }
+          const denied = toolNames(fm[1], 'disallowedTools');
           if (!declared.has('Write')) {
             problems.push({ kind: 'verifier-write-grant', file: rel,
               detail: 'Write not in tools: - the verifier cannot write its findings file' });
@@ -757,29 +745,22 @@ function run(root) {
     }
   }
 
-  // 8b. the shipped roles.<role>.effort enums against RUNG_FILES, filed against the schema a maintainer edits
-  for (const { code, detail } of effortEnumIssues(schema, RUNG_ORDER)) {
-    problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
-  }
-
-  // 18. each review.triggers.<t> gate, tier and effort default is a member of its own values and named in its purpose
-  for (const { code, detail } of gateAgreementIssues(schema)) {
-    problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
-  }
-
-  // 28. each key's explain entries against the key: a value it refuses, or a walk key's value left unexplained
-  for (const { code, detail } of settingExplanationIssues(schema)) {
-    problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
-  }
-
-  // 29. each key's applies_when against the keys it names: a key the schema doesn't hold, a value that key refuses
-  for (const { code, detail } of settingConditionIssues(schema)) {
-    problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
-  }
-
-  // 30. what a person reads in the schema: a walked key's label, option text, and a dotted key, backtick or internal term in a question or label
-  for (const { code, detail } of plainWordsIssues(schema)) {
-    problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
+  // each of these reads the schema and files its issues against it, in this order; the comment says what it checks
+  for (const issues of [
+    // 8b. the shipped roles.<role>.effort enums against RUNG_FILES, filed against the schema a maintainer edits
+    effortEnumIssues(schema, RUNG_ORDER),
+    // 18. each review.triggers.<t> gate, tier and effort default is a member of its own values and named in its purpose
+    gateAgreementIssues(schema),
+    // 28. each key's explain entries against the key: a value it refuses, or a walk key's value left unexplained
+    settingExplanationIssues(schema),
+    // 29. each key's applies_when against the keys it names: a key the schema doesn't hold, a value that key refuses
+    settingConditionIssues(schema),
+    // 30. what a person reads in the schema: a walked key's label, option text, and a dotted key, backtick or internal term in a question or label
+    plainWordsIssues(schema),
+  ]) {
+    for (const { code, detail } of issues) {
+      problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
+    }
   }
 
   // 9. the reach table against config.schema.json both ways, plus the narrow-reach-must-be-stated rule. Root-relative,
