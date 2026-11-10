@@ -87,6 +87,17 @@ const GATE_HINTS = Object.freeze({
 const gateHint = (arm, reason) => (GATE_HINTS[arm] || {})[reason]
   || 'the reason names the gate that stopped this - put the repository into a state that gate accepts, then re-run';
 
+/**
+ * The refusal for a torn config layer: the protected list ran as the default, so what it guards must not run.
+ * `where` is the branch (and remote) the caller names; `idle` says what stays undone, in the hint's closing clause.
+ * @param {{branch: any, remote?: any}} where @param {string} detail @param {any} warnings @param {string} idle
+ */
+function refuseTorn(where, detail, warnings, idle) {
+  emit({ ok: false, reason: 'config-parse-failed', ...where, detail,
+    hint: `repair the config layer the detail names so the protected-branch list can be read, then re-run - ${idle} while that list is unprovable`,
+    warnings });
+}
+
 function publish(dir, remote) {
   const currentBranch = readCurrentBranch(dir);
   const configuredRemotes = readRemotes(dir);
@@ -96,10 +107,7 @@ function publish(dir, remote) {
   // checked before decidePublish: a torn layer makes gate 1 report a parse failure as a missing opt-in
   const tornPublish = tornLayerRefusal({ warnings, tornLayers });
   if (tornPublish) {
-    emit({ ok: false, reason: 'config-parse-failed', branch: currentBranch,
-      remote, detail: tornPublish,
-      hint: 'repair the config layer the detail names so the protected-branch list can be read, then re-run - nothing is pushed while that list is unprovable',
-      warnings });
+    refuseTorn({ branch: currentBranch, remote }, tornPublish, warnings, 'nothing is pushed');
     return;
   }
 
@@ -152,9 +160,7 @@ function verifyPublish(dir, remote) {
   // a torn layer means the protected list ran as the default, so refuse before the push
   const torn = tornLayerRefusal({ warnings, tornLayers });
   if (torn) {
-    emit({ ok: false, reason: 'config-parse-failed', branch: currentBranch, remote, detail: torn,
-      hint: 'repair the config layer the detail names so the protected-branch list can be read, then re-run - nothing is pushed while that list is unprovable',
-      warnings });
+    refuseTorn({ branch: currentBranch, remote }, torn, warnings, 'nothing is pushed');
     return;
   }
   pushDecided(dir, decision, warnings);
@@ -182,10 +188,7 @@ function reap(dir, branch) {
   // sited at the mutation so other refusals keep their reason and an already-absent skip stays ok:true
   const tornReap = tornLayerRefusal({ warnings, tornLayers });
   if (tornReap) {
-    emit({ ok: false, reason: 'config-parse-failed', branch: decision.branch,
-      detail: tornReap,
-      hint: 'repair the config layer the detail names so the protected-branch list can be read, then re-run - no branch is deleted while that list is unprovable',
-      warnings });
+    refuseTorn({ branch: decision.branch }, tornReap, warnings, 'no branch is deleted');
     return;
   }
 

@@ -128,6 +128,11 @@ function bump(dir, versionArg, dateArg) {
   const rawVersion = typeof versionArg === 'string' ? versionArg.trim() : '';
   if (!target && rawVersion) target = rawVersion;
 
+  // the nothing-written tail every refusal carries; `state` is the changelog's, `not-examined` when it never got that far
+  const untouched = (from, to, state = 'not-examined') => ({
+    target, manifest: { from, to, bumped: false }, siblings: [], changelog: { changed: false, state },
+  });
+
   // auto-detect gate: no plugin manifest means skip and write nothing
   const read = readManifest(pluginPath);
   if (read.state === 'absent') {
@@ -136,8 +141,7 @@ function bump(dir, versionArg, dateArg) {
     return;
   }
   if (read.state === 'unreadable') {
-    emit({ ok: false, action: 'refuse', reason: 'unreadable-manifest', target,
-      manifest: { from: null, to: target, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
+    emit({ ok: false, action: 'refuse', reason: 'unreadable-manifest', ...untouched(null, target),
       detail: '.claude-plugin/plugin.json is present but not parseable JSON: refusing to bump a manifest this seam cannot read, wrote nothing',
       hint: 'repair that file\'s JSON and re-run the bump - the tree is exactly as it was' });
     return;
@@ -147,16 +151,14 @@ function bump(dir, versionArg, dateArg) {
   // any refusal verdict: one envelope, ok:false, exit 1, nothing written (never a `## [null]` CHANGELOG heading)
   const primary = decideManifestBump(manifest.version, target);
   if (primary.action === 'refuse') {
-    emit({ ok: false, action: 'refuse', reason: primary.code, target,
-      manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
+    emit({ ok: false, action: 'refuse', reason: primary.code, ...untouched(primary.from, primary.to),
       detail: primary.reason, hint: versionHint(primary.code) });
     return;
   }
 
   // the one primary verdict re-classified: a `skip` here let the close ship over a manifest nobody bumped
   if (primary.code === 'no-version-field') {
-    emit({ ok: false, action: 'refuse', reason: 'no-version-field', target,
-      manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
+    emit({ ok: false, action: 'refuse', reason: 'no-version-field', ...untouched(primary.from, primary.to),
       detail: `the primary manifest ${PRIMARY_MANIFEST} carries no \`version\` field, so this release would ship unbumped: repair the manifest or close without a version bump. Wrote nothing.`,
       hint: `add a "version" field to ${PRIMARY_MANIFEST} naming the version this release ships from, then re-run the bump` });
     return;
@@ -178,9 +180,7 @@ function bump(dir, versionArg, dateArg) {
     const siblingRead = readManifest(siblingPath);
     if (siblingRead.state === 'unreadable') {
       // an unreadable sibling refuses the run before anything is written, so no half-landed primary
-      emit({ ok: false, action: 'refuse', reason: 'unreadable-sibling-manifest', target,
-        manifest: { from: primary.from, to: primary.to, bumped: false },
-        siblings: [], changelog: { changed: false, state: 'not-examined' },
+      emit({ ok: false, action: 'refuse', reason: 'unreadable-sibling-manifest', ...untouched(primary.from, primary.to),
         detail: `${rel} is present but not parseable JSON: refusing to ship a release whose sibling manifest this seam cannot read, wrote nothing. Repair ${rel} and re-run the bump.`,
         hint: `repair that sibling's JSON and re-run - the primary manifest was deliberately left at its old version, so the tree is consistent` });
       return;
@@ -212,9 +212,7 @@ function bump(dir, versionArg, dateArg) {
     // validated only when it's in this run's write set, so a run that never touches the changelog isn't refused over it
     const clRead = readChangelog(clPath);
     if (clRead.state === 'unreadable') {
-      emit({ ok: false, action: 'refuse', reason: 'unreadable-changelog', target,
-        manifest: { from: primary.from, to: primary.to, bumped: false },
-        siblings: [], changelog: { changed: false, state: 'unreadable' },
+      emit({ ok: false, action: 'refuse', reason: 'unreadable-changelog', ...untouched(primary.from, primary.to, 'unreadable'),
         detail: `${CHANGELOG_FILE} is present but cannot be read: refusing to scaffold a fresh changelog over a release history this seam cannot see, wrote nothing. Repair ${CHANGELOG_FILE} and re-run the bump.`,
         hint: `make ${CHANGELOG_FILE} readable and re-run - moving it aside would lose the release history this seam refuses to write over` });
       return;

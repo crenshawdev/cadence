@@ -127,10 +127,11 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
       hint: 'put the confirmation to the user - naming the provider, the owner, the repository name and that it will be PRIVATE - and pass --confirmed only once they have said yes' });
     return;
   }
+  // both provider refusals below list the table's own keys
+  const providerHint = `pass --provider as one of ${Object.keys(CREATE_TABLE).join(', ')}`;
   // presence is worded here, not at the argument door, so a caller who named neither flag hears what create needs
   for (const [flag, what, hint] of [
-    ['--provider', 'no forge was named to create it on',
-      `pass --provider as one of ${Object.keys(CREATE_TABLE).join(', ')}`],
+    ['--provider', 'no forge was named to create it on', providerHint],
     ['--repo', 'no repository was named to create',
       'pass --repo as owner/name - the same selector the setup step persists as git.forge_repo'],
   ]) {
@@ -139,13 +140,13 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
       return;
     }
   }
-  // a provider outside the table has no argv and no binary; the hint lists the table's own keys
+  // a provider outside the table has no argv and no binary
   const row = Object.prototype.hasOwnProperty.call(CREATE_TABLE, provider)
     ? CREATE_TABLE[provider] : null;
   if (!row) {
     emit({ ok: false, reason: `no forge provider is spelled "${provider}": there is no way to create a repository through it`,
       detail: null,
-      hint: `pass --provider as one of ${Object.keys(CREATE_TABLE).join(', ')}` });
+      hint: providerHint });
     return;
   }
   // one slug grammar here and at setup, so no segment can read as a flag once it's in the argv
