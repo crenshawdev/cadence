@@ -306,13 +306,8 @@ function listRecordNames(dir, repoDir) {
  */
 export function rangeMembers(repoDir, base, head) {
   if (!COMMIT_ID.test(String(base || '')) || !COMMIT_ID.test(String(head || ''))) return null;
-  try {
-    const out = execFileSync('git', ['-C', repoDir, 'rev-list', `${base}..${head}`],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    return new Set(out.split('\n').map((l) => l.trim()).filter(Boolean));
-  } catch {
-    return null;
-  }
+  const r = git(repoDir, ['rev-list', `${base}..${head}`]);
+  return r.ok ? new Set(r.stdout.split('\n').map((l) => l.trim()).filter(Boolean)) : null;
 }
 
 // git-history tier: a delete-mode close leaves no directory, so those closes live only in git history
