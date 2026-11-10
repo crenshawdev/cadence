@@ -20,14 +20,13 @@ import { atomicWrite, parseUat, renderUat } from '../lib/planning-files.mjs';
 import { localGitEnv, publishAuthorized } from '../lib/publish-authorization.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { testSeamOpen } from '../lib/test-seam.mjs';
+import { schemaPath } from '../lib/test-seam.mjs';
 import { sleep } from '../lib/text-util.mjs';
 import { fail, intFlag, ok, phaseSpellingCollision, read } from './core.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// the same shape as config.mjs's SCHEMA_PATH: the same file, the same CADENCE_CONFIG_SCHEMA override, the same gate
-const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
-  || join(HERE, '..', '..', 'config.schema.json');
+// the same file and the same CADENCE_CONFIG_SCHEMA override as config.mjs, resolved by the one schemaPath
+const SCHEMA_PATH = schemaPath(join(HERE, '..', '..', 'config.schema.json'));
 
 /** Where the committed policy lives, relative to the project root. */
 export const POLICY_FILE = '.github/cadence/coverage-policy.json';

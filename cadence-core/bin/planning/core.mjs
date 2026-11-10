@@ -18,7 +18,7 @@ import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { testSeamOpen } from '../lib/test-seam.mjs';
+import { manifestPath } from '../lib/test-seam.mjs';
 
 // raw argument list: arg-contract flags need the spelling, and parseArgs collapses bare, empty and flag-shaped into one
 const ARGV = process.argv.slice(2);
@@ -97,8 +97,7 @@ const HERE = resolvePath(dirname(fileURLToPath(import.meta.url)), '..');
 
 // the one path read outside --dir, resolved from the script and not the cwd, so it names the plugin that's running
 // CADENCE_PLUGIN_MANIFEST overrides it only under the test seam, silently: this resolves before a warning can go out
-const MANIFEST_PATH = (testSeamOpen() && process.env.CADENCE_PLUGIN_MANIFEST)
-  || join(HERE, '..', '..', '.claude-plugin', 'plugin.json');
+const MANIFEST_PATH = manifestPath(join(HERE, '..', '..', '.claude-plugin', 'plugin.json'));
 
 /**
  * The running plugin's version, or null when the manifest is unreadable, malformed or has none.

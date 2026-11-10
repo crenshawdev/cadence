@@ -22,7 +22,7 @@ import { GLOBAL_CONFIG, layerIdentity, mergeLayers, isPlainObject, sharesGlobal 
 import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
-import { testSeamOpen } from './lib/test-seam.mjs';
+import { schemaPath } from './lib/test-seam.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { checkValue, checkGrammar } from './lib/config-value.mjs';
 import { workflowLayers } from './lib/workflow-layers.mjs';
@@ -36,8 +36,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // loaded inside the dispatch try below, so a missing or broken schema answers {ok:false} instead of crashing at import
 let SCHEMA;
 // the override only counts under the `CADENCE_TEST_SEAM` sentinel: the schema decides which keys are known and global
-const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
-  || join(HERE, '..', 'config.schema.json');
+const SCHEMA_PATH = schemaPath(join(HERE, '..', 'config.schema.json'));
 
 // fail throws DONE so the dispatch unwinds without process.exit().
 const out = emit;

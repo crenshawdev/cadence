@@ -21,22 +21,20 @@ import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { cursorPhase, declaredPhaseFiles, declaredPlanFiles } from './lib/phase-plans.mjs';
 import { scanDeclared } from './lib/risk-diff.mjs';
 import { appendEvent } from './lib/trace.mjs';
-import { testSeamOpen } from './lib/test-seam.mjs';
+import { manifestPath, schemaPath } from './lib/test-seam.mjs';
 import { answeredSurfaces } from './lib/surface-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Loaded lazily inside the dispatch try, so a bad shipped file degrades to ok:false instead of crashing at import. An
 // unreadable schema is fatal: every default lives there and nowhere else.
 // CADENCE_CONFIG_SCHEMA moves the path only when the `CADENCE_TEST_SEAM` sentinel holds, and is ignored silently
-// otherwise (no dispatch exists yet to carry a warning). Ungated, it could turn a blocking gate off. Same shape as
-// SCHEMA_PATH in config.mjs, so the two never disagree on when it can move.
+// otherwise (no dispatch exists yet to carry a warning). Ungated, it could turn a blocking gate off. lib/test-seam.mjs
+// owns the rule, so every reader of the schema agrees on when it can move.
 let SCHEMA;
-const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
-  || join(HERE, '..', 'config.schema.json');
+const SCHEMA_PATH = schemaPath(join(HERE, '..', 'config.schema.json'));
 
 // Agent prefix is plugin.json's `name` (not `provider.plugin`), read relative to the script so `cadence-dev` works.
-const MANIFEST_PATH = (testSeamOpen() && process.env.CADENCE_PLUGIN_MANIFEST)
-  || join(HERE, '..', '..', '.claude-plugin', 'plugin.json');
+const MANIFEST_PATH = manifestPath(join(HERE, '..', '..', '.claude-plugin', 'plugin.json'));
 
 /**
  * The one answer to "prefix or failure" for `resolve` and `agent-type`, so the two can't disagree. Never throws: with
