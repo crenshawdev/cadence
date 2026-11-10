@@ -6,19 +6,26 @@
 
 import { execFileSync } from 'node:child_process';
 
+/** @type {string[]|null|undefined} git's list, asked once per process; null when git couldn't answer, so a later call asks again */
+let names;
+const FALLBACK_NAMES = ['GIT_DIR', 'GIT_COMMON_DIR'];
+/** @returns {string[]|null} */
+function askNames() {
+  try {
+    return execFileSync('git', ['rev-parse', '--local-env-vars'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').filter(Boolean);
+  } catch { return null; }
+}
+
 /**
  * `env` minus the variables that would aim git at some other repository. Never throws.
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {NodeJS.ProcessEnv}
  */
 export function localGitEnv(env = process.env) {
-  let names = ['GIT_DIR', 'GIT_COMMON_DIR'];
-  try {
-    names = execFileSync('git', ['rev-parse', '--local-env-vars'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').filter(Boolean);
-  } catch { /* fall back to the two measured names */ }
+  names ??= askNames();
   const clean = { ...env };
-  for (const n of names) delete clean[n];
+  for (const n of names ?? FALLBACK_NAMES) delete clean[n];
   return clean;
 }
 
