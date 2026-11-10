@@ -133,29 +133,44 @@ function readPayload(file) {
  * @returns {{ok: true, fingerprints: Set<string>}
  *   | {ok: false, reason: string, detail: string, hint: string}} */
 function readDeclines(dir) {
-  const file = join(dir, '.planning', 'DECLINED.md');
-  let text;
-  try { text = readFileSync(file, 'utf8'); } catch (e) {
-    // ENOENT alone isn't absence: a dangling symlink reads it too, and every decline behind that link would resurface
-    const absent = /** @type {any} */ (e)?.code === 'ENOENT' && !entryExists(file);
-    if (absent) return { ok: true, fingerprints: new Set() };
-    return { ok: false, reason: 'declines-unreadable',
-      detail: `${file}: ${redactUrl(e && e.message ? e.message : String(e))}`,
+  const got = readLedger(join(dir, '.planning', 'DECLINED.md'), {
+    unreadable: { reason: 'declines-unreadable',
       hint: 'this fire cannot tell which findings were already declined, so it refuses rather '
         + 'than re-asking about them: make that file readable - a wrong mode and a dangling '
         + 'symlink are the two common answers - then re-run this step; nothing has been filed '
-        + 'and no finding is lost' };
-  }
-  // a conflicted record is untrustworthy, not partial: the grammar skips non-row lines, so a row a merge damaged would
-  // silently leave the set and the gate would re-ask; conflict markers are the one unambiguous damage, so they refuse
-  if (/^(<{7}|={7}|>{7})(\s|$)/m.test(text)) {
-    return { ok: false, reason: 'declines-conflicted',
-      detail: `${file} holds git conflict markers, so its rows cannot be trusted`,
+        + 'and no finding is lost' },
+    conflicted: { reason: 'declines-conflicted',
       hint: 'resolve the conflict in that file - every `- ` row from BOTH sides is wanted, '
         + 'the record is append-only and a row on either side is a question somebody already '
-        + 'answered - then re-run this step; nothing has been filed and no finding is lost' };
+        + 'answered - then re-run this step; nothing has been filed and no finding is lost' },
+  });
+  if (got.ok === false) return got;
+  return { ok: true, fingerprints: new Set(got.text === null ? [] : parseDeclinedRows(got.text).map((r) => r.fingerprint)) };
+}
+
+/** One ledger file's text, or a refusal: `text` is null for an absent file, so each reader owns what an empty ledger is.
+ *
+ * ENOENT alone isn't absence: a dangling symlink reads it too, and every row behind that link would resurface.
+ * A conflicted record is untrustworthy, not partial: the grammar skips non-row lines, so a row a merge damaged would
+ * silently leave the set; conflict markers are the one unambiguous damage, so they refuse.
+ * @param {string} file
+ * @param {{unreadable: {reason: string, hint: string}, conflicted: {reason: string, hint: string}}} refusals
+ * @returns {{ok: true, text: string|null} | {ok: false, reason: string, detail: string, hint: string}} */
+function readLedger(file, refusals) {
+  let text;
+  try { text = readFileSync(file, 'utf8'); } catch (e) {
+    const absent = /** @type {any} */ (e)?.code === 'ENOENT' && !entryExists(file);
+    if (absent) return { ok: true, text: null };
+    return { ok: false, reason: refusals.unreadable.reason,
+      detail: `${file}: ${redactUrl(e && e.message ? e.message : String(e))}`,
+      hint: refusals.unreadable.hint };
   }
-  return { ok: true, fingerprints: new Set(parseDeclinedRows(text).map((r) => r.fingerprint)) };
+  if (/^(<{7}|={7}|>{7})(\s|$)/m.test(text)) {
+    return { ok: false, reason: refusals.conflicted.reason,
+      detail: `${file} holds git conflict markers, so its rows cannot be trusted`,
+      hint: refusals.conflicted.hint };
+  }
+  return { ok: true, text };
 }
 
 /** The FILED.md ledger, keyed by fingerprint, or a refusal.
@@ -169,28 +184,21 @@ function readDeclines(dir) {
  * @returns {{ok: true, rows: Map<string, {date: string, unconfirmed: boolean}>}
  *   | {ok: false, reason: string, detail: string, hint: string}} */
 function readFiled(dir) {
-  const file = join(dir, '.planning', 'FILED.md');
-  let text;
-  try { text = readFileSync(file, 'utf8'); } catch (e) {
-    const absent = /** @type {any} */ (e)?.code === 'ENOENT' && !entryExists(file);
-    if (absent) return { ok: true, rows: new Map() };
-    return { ok: false, reason: 'filed-unreadable',
-      detail: `${file}: ${redactUrl(e && e.message ? e.message : String(e))}`,
+  const got = readLedger(join(dir, '.planning', 'FILED.md'), {
+    unreadable: { reason: 'filed-unreadable',
       hint: 'this fire cannot tell which findings it already filed, so it refuses rather than '
         + 'risking a second issue for one of them: make that file readable - a wrong mode and '
         + 'a dangling symlink are the two common answers - then re-run this step; nothing has '
-        + 'been filed and no finding is lost' };
-  }
-  if (/^(<{7}|={7}|>{7})(\s|$)/m.test(text)) {
-    return { ok: false, reason: 'filed-conflicted',
-      detail: `${file} holds git conflict markers, so its rows cannot be trusted`,
+        + 'been filed and no finding is lost' },
+    conflicted: { reason: 'filed-conflicted',
       hint: 'resolve the conflict in that file - every `- ` row from BOTH sides is wanted, the '
         + 'record is append-only and a row on either side points at an issue that exists - '
-        + 'then re-run this step; nothing has been filed and no finding is lost' };
-  }
+        + 'then re-run this step; nothing has been filed and no finding is lost' },
+  });
+  if (got.ok === false) return got;
   /** @type {Map<string, {date: string, unconfirmed: boolean}>} */
   const rows = new Map();
-  for (const r of parseFiledRows(text)) {
+  for (const r of parseFiledRows(got.text ?? '')) {
     if (rows.has(r.fingerprint) && r.unconfirmed !== true) continue;
     rows.set(r.fingerprint, { date: r.date, unconfirmed: r.unconfirmed === true });
   }
@@ -206,6 +214,15 @@ function entryExists(file) {
 }
 
 /**
+ * A refusal an inner step returned, emitted as this face's one envelope: its reason, detail and hint as they came,
+ * then the warnings the forge resolution collected so far.
+ * @param {{reason: string, detail: string, hint: string}} x @param {string[]} warnings
+ */
+function forwardRefusal(x, warnings) {
+  emit({ ok: false, reason: x.reason, detail: x.detail, hint: x.hint, warnings });
+}
+
+/**
  * `unfixed --payload <file>` - the findings this fire should put to the user.
  * The selection is filing-decision's, off the payload alone; this face adds the entries already declined.
  * @param {string} dir @param {string} payloadFile
@@ -213,8 +230,7 @@ function entryExists(file) {
 function cmdUnfixed(dir, payloadFile) {
   const payload = readPayload(payloadFile);
   if (payload.ok === false) {
-    emit({ ok: false, reason: payload.reason, detail: payload.detail,
-      hint: payload.hint, warnings: [] });
+    forwardRefusal(payload, []);
     return;
   }
 
@@ -234,15 +250,13 @@ function cmdUnfixed(dir, payloadFile) {
   // the decline set is a local file, read before the forge is resolved: an all-declined fire costs nothing to find out
   const declines = readDeclines(dir);
   if (declines.ok === false) {
-    emit({ ok: false, reason: declines.reason, detail: declines.detail,
-      hint: declines.hint, warnings: [] });
+    forwardRefusal(declines, []);
     return;
   }
 
   const forge = resolveForge(dir);
   if (forge.ok === false) {
-    emit({ ok: false, reason: forge.reason, detail: forge.detail,
-      hint: forge.hint, warnings: forge.warnings });
+    forwardRefusal(forge, forge.warnings);
     return;
   }
 
@@ -446,8 +460,7 @@ function lookupFiled(dir, forge, fingerprints) {
 function cmdFile(dir, payloadFile) {
   const payload = readPayload(payloadFile);
   if (payload.ok === false) {
-    emit({ ok: false, reason: payload.reason, detail: payload.detail,
-      hint: payload.hint, warnings: [] });
+    forwardRefusal(payload, []);
     return;
   }
 
@@ -478,8 +491,7 @@ function cmdFile(dir, payloadFile) {
   if (hasAccept) {
     const filedRows = readFiled(dir);
     if (filedRows.ok === false) {
-      emit({ ok: false, reason: filedRows.reason, detail: filedRows.detail,
-        hint: filedRows.hint, warnings: [] });
+      forwardRefusal(filedRows, []);
       return;
     }
     ledger = filedRows.rows;
@@ -487,8 +499,7 @@ function cmdFile(dir, payloadFile) {
 
   const forge = resolveForge(dir);
   if (forge.ok === false) {
-    emit({ ok: false, reason: forge.reason, detail: forge.detail,
-      hint: forge.hint, warnings: forge.warnings });
+    forwardRefusal(forge, forge.warnings);
     return;
   }
 
