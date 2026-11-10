@@ -8,8 +8,8 @@
 'use strict';
 
 import { lstatSync, readFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
-import { fail, noticeTotals, ok, readCapped, writeBrackets } from './core.mjs';
+import { basename, join } from 'node:path';
+import { dirFlag, fail, noticeTotals, ok, readCapped, writeBrackets } from './core.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
@@ -117,12 +117,11 @@ function cmdWorkflowRun(dir, opts) {
     if (listed.ok === false) return fail('bad-args', listed.detail, 'pass the wave\'s plan numbers as --plans 1,2,3 and re-run - nothing was written');
     planned = listed.plans;
   }
-  const outDir = resolve(opts['out-dir']);
-  let outStat = null;
-  try { outStat = lstatSync(outDir); } catch { /* refused below */ }
-  if (!outStat || !outStat.isDirectory()) {
-    return fail('bad-args', `--out-dir ${outDir} is not a directory`, 'make this run\'s scratch directory first and pass it - nothing was written');
+  const outArg = dirFlag('out-dir', opts['out-dir']);
+  if (outArg.detail !== null) {
+    return fail('bad-args', outArg.detail, 'make this run\'s scratch directory first and pass it - nothing was written');
   }
+  const outDir = outArg.abs;
 
   const runRead = readCapped(opts['run-file'], MAX_RUN_BYTES);
   /** @type {any} */

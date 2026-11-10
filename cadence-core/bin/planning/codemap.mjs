@@ -7,7 +7,7 @@
 import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { emit } from '../lib/seam-io.mjs';
-import { INDEX_FILE, MAP_DIR, MAX_ENTRY, MAX_INDEX, fail, noticeTotals, ok, readCapped, readEntry, readStoredMap, storedIndex, writeBrackets } from './core.mjs';
+import { INDEX_FILE, MAP_DIR, MAX_ENTRY, MAX_INDEX, dirFlag, fail, noticeTotals, ok, readCapped, readEntry, readStoredMap, storedIndex, writeBrackets } from './core.mjs';
 import { judgeEntry } from '../lib/codemap-entry.mjs';
 import { addEdges, stripEdges } from '../lib/codemap-edges.mjs';
 import { readFacts, readNested } from '../lib/codemap-facts.mjs';
@@ -134,12 +134,11 @@ function cmdStatus(dir, opts) {
   /** @type {string|null} */
   let outDir = null;
   if (opts['out-dir'] !== undefined) {
-    outDir = resolve(String(opts['out-dir']));
-    let st = null;
-    try { st = lstatSync(outDir); } catch { /* refused below */ }
-    if (!st || !st.isDirectory()) {
-      return fail('bad-args', `--out-dir ${outDir} is not a directory`, 'make the scratch directory first and pass it - nothing was written');
+    const dirArg = dirFlag('out-dir', opts['out-dir']);
+    if (dirArg.detail !== null) {
+      return fail('bad-args', dirArg.detail, 'make the scratch directory first and pass it - nothing was written');
     }
+    outDir = dirArg.abs;
   }
   let real = false;
   try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }

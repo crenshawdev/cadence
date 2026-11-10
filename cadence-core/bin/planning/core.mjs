@@ -47,6 +47,19 @@ function notRealDirDetail(label, stat, call) {
     + ' - move or remove it, then re-run';
 }
 
+/**
+ * A directory flag resolved, and the refusal detail when it names nothing or something that is not a directory (else null).
+ * It builds the text only: each command keeps its own literal reason and its own hint at its own `fail`.
+ * @param {string} flag the flag's name, without the dashes @param {unknown} value what it was given
+ * @returns {{abs: string, detail: string|null}}
+ */
+function dirFlag(flag, value) {
+  const abs = resolvePath(String(value));
+  let st = null;
+  try { st = lstatSync(abs); } catch { /* refused by the caller */ }
+  return { abs, detail: st && st.isDirectory() ? null : `--${flag} ${abs} is not a directory` };
+}
+
 /** Read a file or return null - absence is data here, never a crash. */
 function read(file) {
   try { return readFileSync(file, 'utf8'); } catch { return null; }
@@ -1001,6 +1014,7 @@ export {
   argRefusal,
   decimalRefusal,
   derivePhases,
+  dirFlag,
   fail,
   fireHome,
   fireIdentity,

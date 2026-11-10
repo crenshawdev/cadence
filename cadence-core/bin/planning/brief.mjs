@@ -3,9 +3,8 @@
 // reads no config: the caller gates it on planning.workflow_plans, so a bare run composes and checks without writing
 'use strict';
 
-import { lstatSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { fail, intFlag, listPlanFiles, ok, phaseSpellingCollision, read, readStoredMap } from './core.mjs';
+import { join } from 'node:path';
+import { dirFlag, fail, intFlag, listPlanFiles, ok, phaseSpellingCollision, read, readStoredMap } from './core.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
 import { composeBrief } from '../lib/plan-brief.mjs';
 import { planFileFor, planNumber } from '../lib/phase-plans.mjs';
@@ -56,13 +55,11 @@ function cmdBrief(dir, opts) {
   const dirs = { 'out-dir': null, 'main-root': null };
   for (const flag of Object.keys(dirs)) {
     if (opts[flag] === undefined) continue;
-    const abs = resolve(String(opts[flag]));
-    let st = null;
-    try { st = lstatSync(abs); } catch { /* refused below */ }
-    if (!st || !st.isDirectory()) {
-      return fail('bad-args', `--${flag} ${abs} is not a directory`, 'make the directory first and pass it - nothing was written');
+    const dirArg = dirFlag(flag, opts[flag]);
+    if (dirArg.detail !== null) {
+      return fail('bad-args', dirArg.detail, 'make the directory first and pass it - nothing was written');
     }
-    dirs[flag] = abs;
+    dirs[flag] = dirArg.abs;
   }
   const outDir = dirs['out-dir'];
 
