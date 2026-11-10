@@ -4,12 +4,11 @@
 'use strict';
 
 import { join } from 'node:path';
-import { dirFlag, fail, intFlag, listPlanFiles, ok, phaseSpellingCollision, read, readStoredMap } from './core.mjs';
+import { dirFlag, fail, intFlag, listPlanFiles, ok, phaseGuard, read, readStoredMap } from './core.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
 import { composeBrief } from '../lib/plan-brief.mjs';
 import { planFileFor, planNumber } from '../lib/phase-plans.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
-import { requirePhaseArg } from '../lib/require-int.mjs';
 
 /**
  * The stored map for the plan's check and its rows, or null: any failure the shared read hands back, from no map to no git,
@@ -38,16 +37,10 @@ function loadMap(dir) {
  * @param {any} opts `--out-dir` names an existing directory where the brief file is written; `--main-root` names the main tree's root, so the head's paths are absolute there
  */
 function cmdBrief(dir, opts) {
-  const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) {
-    return fail('bad-args', 'brief needs --phase <N>',
-      'pass --phase <N> for the phase the plan belongs to, then re-run');
-  }
-  const collision = phaseSpellingCollision(dir, parsedPhase);
-  if (collision) {
-    return fail('bad-args', `brief ${collision}`,
-      're-run with one of the two spellings the detail names - nothing was read');
-  }
+  const parsedPhase = phaseGuard('brief', dir, opts.phase, 'brief needs --phase <N>',
+    'pass --phase <N> for the phase the plan belongs to, then re-run',
+    're-run with one of the two spellings the detail names - nothing was read');
+  if (!parsedPhase) return;
   const parsedPlan = intFlag(opts.plan, null, 'brief needs --plan <k>',
     'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
   if (!parsedPlan.ok) return;

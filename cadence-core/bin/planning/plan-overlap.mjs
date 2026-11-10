@@ -3,11 +3,10 @@
 'use strict';
 
 import { join } from 'node:path';
-import { fail, phaseSpellingCollision, listPlanFiles, ok, read } from './core.mjs';
+import { fail, phaseGuard, listPlanFiles, ok, read } from './core.mjs';
 import { intersects } from '../lib/lease-grammar.mjs';
 import { byPlanNumber, planNumber } from '../lib/phase-plans.mjs';
 import { issueText, normalize, parsePlanFiles, readFrontmatterList } from '../lib/planning-files.mjs';
-import { requirePhaseArg } from '../lib/require-int.mjs';
 
 // pairwise intersection of a phase's declared file lists; choose_path needs empty overlaps to run plans concurrently
 // overlaps found is still ok:true, a successful check with a negative answer: branch on overlaps.length
@@ -40,17 +39,11 @@ function wavesOf(plans, waitsFor) {
 }
 
 function cmdPlanOverlap(dir, opts) {
-  const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) {
-    return fail('bad-args', 'plan-overlap needs --phase <N>',
-      "pass --phase <N> naming the phase whose plans should be compared, then re-run");
-  }
   // the tree-aware collision check runs before any phase-directory read (#42, #45); `phases/1.10/` stays addressable
-  const collision = phaseSpellingCollision(dir, parsedPhase);
-  if (collision) {
-    return fail('bad-args', `plan-overlap ${collision}`,
-      're-run with one of the two spellings the detail names - nothing was read');
-  }
+  const parsedPhase = phaseGuard('plan-overlap', dir, opts.phase, 'plan-overlap needs --phase <N>',
+    "pass --phase <N> naming the phase whose plans should be compared, then re-run",
+    're-run with one of the two spellings the detail names - nothing was read');
+  if (!parsedPhase) return;
   const n = parsedPhase.value;
   // the directory is the caller's spelling; only the echoed `phase` below is the number
   const pdir = join(dir, 'phases', parsedPhase.raw);

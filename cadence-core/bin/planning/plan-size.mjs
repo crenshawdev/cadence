@@ -4,9 +4,8 @@
 
 import { lstatSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
-import { fail, intFlag, phaseSpellingCollision, listPlanFiles, ok, read } from './core.mjs';
+import { fail, intFlag, phaseGuard, listPlanFiles, ok, read } from './core.mjs';
 import { phaseRequirements, planTaskTitles, readFrontmatterList } from '../lib/planning-files.mjs';
-import { requirePhaseArg } from '../lib/require-int.mjs';
 
 /**
  * The bytes one plan's `files:` frontmatter declares, and how many declared paths added none.
@@ -49,17 +48,11 @@ function declaredBytes(repoRoot, text) {
 // one subcommand for two questions: an oversized phase is why a plan overruns its task ceiling
 // `--max-reqs`, `--max-tasks` and `--max-bytes` are the caller's resolved values; this seam reads no config
 function cmdPlanSize(dir, opts) {
-  const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) {
-    return fail('bad-args', 'plan-size needs --phase <N>',
-      'pass --phase <N> naming the phase whose plans should be sized, then re-run');
-  }
   // the tree-aware collision check runs before any phase-directory read (#42, #45); `phases/1.10/` stays addressable
-  const collision = phaseSpellingCollision(dir, parsedPhase);
-  if (collision) {
-    return fail('bad-args', `plan-size ${collision}`,
-      're-run with one of the two spellings the detail names - nothing was read');
-  }
+  const parsedPhase = phaseGuard('plan-size', dir, opts.phase, 'plan-size needs --phase <N>',
+    'pass --phase <N> naming the phase whose plans should be sized, then re-run',
+    're-run with one of the two spellings the detail names - nothing was read');
+  if (!parsedPhase) return;
   const n = parsedPhase.value;
 
   // resolved to plain numbers at the boundary, never the intFlag envelope: a `{ok:false}` arm fails the typecheck

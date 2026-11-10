@@ -5,21 +5,14 @@
 'use strict';
 
 import { join } from 'node:path';
-import { fail, phaseSpellingCollision, listPlanFiles, ok, read, readPlanReports } from './core.mjs';
+import { fail, phaseGuard, listPlanFiles, ok, read, readPlanReports } from './core.mjs';
 import { planName } from '../lib/planning-files.mjs';
-import { requirePhaseArg } from '../lib/require-int.mjs';
 
 function cmdReplayCheck(dir, opts) {
-  const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) {
-    return fail('bad-args', 'replay-check needs --phase <N>',
-      'pass --phase <N> naming the phase whose executor reports should be read, then re-run');
-  }
-  const collision = phaseSpellingCollision(dir, parsedPhase);
-  if (collision) {
-    return fail('bad-args', `replay-check ${collision}`,
-      're-run with one of the two spellings the detail names - nothing was read');
-  }
+  const parsedPhase = phaseGuard('replay-check', dir, opts.phase, 'replay-check needs --phase <N>',
+    'pass --phase <N> naming the phase whose executor reports should be read, then re-run',
+    're-run with one of the two spellings the detail names - nothing was read');
+  if (!parsedPhase) return;
   const pdir = join(dir, 'phases', parsedPhase.raw);
   const { plans, nonconforming, missing } = listPlanFiles(pdir);
   if (missing) {

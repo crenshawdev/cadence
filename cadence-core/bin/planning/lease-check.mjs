@@ -7,14 +7,13 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, relative, resolve as resolvePath, sep } from 'node:path';
-import { RISK_DIFF_MAX_BUFFER, fail, intFlag, phaseSpellingCollision, ok, read } from './core.mjs';
+import { RISK_DIFF_MAX_BUFFER, fail, intFlag, phaseGuard, ok, read } from './core.mjs';
 import { CENSUSES, censusesAtRisk } from '../lib/census-registry.mjs';
 import { quotePath } from '../lib/codemap-facts.mjs';
 import { covers } from '../lib/lease-grammar.mjs';
 import { parsePlanFiles } from '../lib/planning-files.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { isReportName } from '../lib/report-rotation.mjs';
-import { requirePhaseArg } from '../lib/require-int.mjs';
 import { appendEvent } from '../lib/trace.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
@@ -111,17 +110,11 @@ function censusesApply(root) {
 }
 
 function cmdLeaseCheck(dir, opts) {
-  const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) {
-    return fail('bad-args', 'lease-check needs --phase <N>',
-      'pass --phase <N> for the phase the plan being committed belongs to, then re-run');
-  }
   // the tree-aware collision check runs before any phase-directory read; `phases/1.10/` stays addressable
-  const collision = phaseSpellingCollision(dir, parsedPhase);
-  if (collision) {
-    return fail('bad-args', `lease-check ${collision}`,
-      're-run with one of the two spellings the detail names - nothing was read');
-  }
+  const parsedPhase = phaseGuard('lease-check', dir, opts.phase, 'lease-check needs --phase <N>',
+    'pass --phase <N> for the phase the plan being committed belongs to, then re-run',
+    're-run with one of the two spellings the detail names - nothing was read');
+  if (!parsedPhase) return;
   const parsedPlan = intFlag(opts.plan, null, 'lease-check needs --plan <k>',
     'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
   if (!parsedPlan.ok) return;
