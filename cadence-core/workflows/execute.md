@@ -113,11 +113,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch \
-  testing.scope planning.workflow_plans
+  testing.scope planning.workflow_plans review.triggers.diff.when
 ```
 
 `testing.scope` set means a testing policy is active. It gates the one line
-`execute_sequential` adds to the dispatch.
+`execute_sequential` adds to the dispatch. `review.triggers.diff.when` answering
+`phase_end` means one diff review at phase end; any other answer, `null` included,
+means `per_plan`. It is not a gate, so the paragraph below still holds.
 
 The `diff` and `phase_diff` gates are NOT read here: fire(trigger) takes every
 gate from the routing bundle (`route.mjs resolve`). A `config.mjs get` of a gate
