@@ -212,16 +212,6 @@ const SUGGEST_KEY_DEFAULTS = Object.freeze({
 });
 
 /**
- * The gate ladder from the `review.triggers.plan.gate` row, weakest first.
- * `routeLadder` owns the read and why the env override isn't honoured; this decides what a suggestion says to set.
- * An unreadable schema means no ladder, so the gate arm omits `proposed`, and nothing is substituted from memory.
- * @returns {string[]|undefined}
- */
-function gateLadder() {
-  return routeLadder('gates');
-}
-
-/**
  * The task count of the plan a `cad-executor` checkpoint names, or null (unknown, never under-ceiling).
  * Unknown is the common case: a worker key like `1-cut` names no file, and an archived or deleted cycle has no dirs.
  * `phase` goes through `requirePhaseArg` as a traversal guard: it comes off a record line and becomes a path part.
@@ -279,7 +269,9 @@ function suggestResolution(dir, render, config) {
   set('review.reviewers', config?.review?.reviewers ?? SUGGEST_KEY_DEFAULTS['review.reviewers']);
   set('workflow.max_plan_tasks',
     config?.workflow?.max_plan_tasks ?? SUGGEST_KEY_DEFAULTS['workflow.max_plan_tasks']);
-  const gates = gateLadder();
+  // the gate ladder, weakest first: `routeLadder` owns the read and why the env override isn't honoured
+  // an unreadable schema means no ladder, so the gate arm omits `proposed`, and nothing is substituted from memory
+  const gates = routeLadder('gates');
   // the rung rule compares its target against the rung a config layer set
   return { values, ...(gates ? { gates } : {}), rungs: [...RUNG_ORDER], checkpointTasks };
 }
@@ -578,15 +570,15 @@ function cmdTrace(dir, sub, opts) {
 
     // the settled figures are typed in by hand, so the record is recounted here and a disagreeing figure refused
     // an absent record skips the check (an old fire, an advisory arm), or those fires would be unrecordable here too
-    const recount = recountReceipt(dir, parsedPhase.raw, {
-      trigger, plan: flags['--plan'], sha: flags['--sha'], round, settled,
+    // one lookup and one parse of the fire's record, shared by both checks and made only if one of them needs it
+    const loadRecord = fireRecordLoader(dir, parsedPhase.raw, {
+      trigger, plan: flags['--plan'], sha: flags['--sha'], round,
     });
+    const recount = recountReceipt(loadRecord, { round, settled });
     if (!recount.ok) return fail(recount.reason, recount.detail, recount.hint);
 
     // second check over the same record: a receipt settling a range a person cleared past a blocking halt must say why
-    const override = overrideAccounted(dir, parsedPhase.raw, {
-      trigger, plan: flags['--plan'], sha: flags['--sha'], round, settled, reason: detail,
-    });
+    const override = overrideAccounted(loadRecord, { settled, reason: detail });
     if (!override.ok) return fail(override.reason, override.detail, override.hint);
 
     // nothing below is coupled to an event name, so return, checkpoint and escalation store tokens identically
@@ -837,28 +829,49 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
 }
 
 /**
+ * The fire's record file, looked up and parsed on the first call and remembered for the second.
+ * `null` is an absent record. An unreadable one comes back with `record: undefined` and the file's name, so each check
+ * words its own refusal; the parse error isn't quoted back, since the redaction census counts echoes.
+ * @param {string} dir @param {string|number} phaseRaw
+ * @param {{trigger: string|undefined, plan: any, sha: any, round: number}} fire
+ * @returns {() => {rel: string, record: any, readable: boolean}|null}
+ */
+function fireRecordLoader(dir, phaseRaw, fire) {
+  /** @type {{rel: string, record: any, readable: boolean}|null|undefined} */
+  let loaded;
+  return () => {
+    if (loaded !== undefined) return loaded;
+    const file = recordForFire(dir, phaseRaw, fire.trigger, fire.plan, fire.sha, fire.round);
+    if (!file) return (loaded = null);
+    const rel = relative(dir, file);
+    try {
+      return (loaded = { rel, record: JSON.parse(readFileSync(file, 'utf8')), readable: true });
+    } catch {
+      return (loaded = { rel, record: undefined, readable: false });
+    }
+  };
+}
+
+/**
  * Do this receipt's settled figures agree with the rulings in its fire's own record?
  * The `adjudication` seam derives the three figures and they're copied by hand, so a mistyped one enters here.
  * Only when all three are present: a partial set can't be checked against a recount that answers all three.
  * An absent record omits the check (a fire predating the format, or an advisory arm that wrote none).
  * A fire `deferred carry` moved to `deferred/<N>/` is absent by design, so its counts stay self-asserted.
- * @param {string} dir @param {string|number} phaseRaw
- * @param {{trigger: string|undefined, plan: any, sha: any, round: number,
- *   settled: Record<string, number>}} fire
+ * @param {ReturnType<typeof fireRecordLoader>} loadRecord
+ * @param {{round: number, settled: Record<string, number>}} fire
  * @returns {{ok: boolean, reason: string, detail: string, hint: string}}
  */
-function recountReceipt(dir, phaseRaw, fire) {
+function recountReceipt(loadRecord, fire) {
   const keys = ['survivors', 'downgraded', 'refuted'];
   const pass = { ok: true, reason: '', detail: '', hint: '' };
   if (!keys.every((k) => k in fire.settled)) return pass;
-  const file = recordForFire(dir, phaseRaw, fire.trigger, fire.plan, fire.sha, fire.round);
-  if (!file) return pass;
-  const rel = relative(dir, file);
+  const loaded = loadRecord();
+  if (!loaded) return pass;
+  const { rel, record } = loaded;
 
-  let record;
-  try { record = JSON.parse(readFileSync(file, 'utf8')); } catch {
+  if (!loaded.readable) {
     // refused, not skipped: the seam wrote one atomic JSON object, so unparseable means truncated or edited
-    // the parse error isn't quoted back: the detail names the file, and the redaction census counts echoes
     return { ok: false, reason: 'bad-record',
       detail: `${rel} exists but is not readable as JSON, so this receipt's counts cannot be `
         + 'checked against its rulings and nothing was appended',
@@ -885,22 +898,20 @@ function recountReceipt(dir, phaseRaw, fire) {
  * It runs on any settled figure, unlike the recount, or dropping one figure would discharge the marker.
  * Absent omits the check, but unreadable is refused: nobody wrote the first, somebody changed the second.
  * A receipt carrying a reason (`--detail-file`) is answered before the file is opened.
- * @param {string} dir @param {string|number} phaseRaw
- * @param {{trigger: string|undefined, plan: any, sha: any, round: number,
- *   settled: Record<string, number>, reason: any}} fire
+ * @param {ReturnType<typeof fireRecordLoader>} loadRecord
+ * @param {{settled: Record<string, number>, reason: any}} fire
  * @returns {{ok: boolean, reason: string, detail: string, hint: string}}
  */
-function overrideAccounted(dir, phaseRaw, fire) {
+function overrideAccounted(loadRecord, fire) {
   const pass = { ok: true, reason: '', detail: '', hint: '' };
   if (!['survivors', 'downgraded', 'refuted'].some((k) => k in fire.settled)) return pass;
   if (typeof fire.reason === 'string' && fire.reason.trim() !== '') return pass;
-  const file = recordForFire(dir, phaseRaw, fire.trigger, fire.plan, fire.sha, fire.round);
-  if (!file) return pass;
-  const rel = relative(dir, file);
+  const loaded = loadRecord();
+  if (!loaded) return pass;
+  const { rel, record } = loaded;
 
-  let record;
-  try { record = JSON.parse(readFileSync(file, 'utf8')); } catch {
-    // refused, never passed, as above; the caught message isn't quoted back, since the redaction census counts echoes
+  if (!loaded.readable) {
+    // refused, never passed, as above
     return { ok: false, reason: 'bad-record',
       detail: `${rel} exists but is not readable as JSON, so the rulings this receipt settles `
         + 'cannot be read - a record that was truncated or edited may hold a halting finding '
@@ -920,5 +931,5 @@ function overrideAccounted(dir, phaseRaw, fire) {
       + 'let stand; or fix the findings and re-write the record so no cleared halt is left in it' };
 }
 
-// only cmdTrace is dispatched; cmdTraceIgnore is exported too since it's a handler the census counts
+// only cmdTrace is dispatched; cmdTraceIgnore is exported beside it, though nothing imports it and no census names it
 export { cmdTrace, cmdTraceIgnore };
