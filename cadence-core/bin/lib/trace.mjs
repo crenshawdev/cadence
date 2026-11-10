@@ -118,7 +118,7 @@ export function rotationClaimPath(planningRoot) {
  * `1` and `"1"` are the same worker, and a role-named one keys like a plan number.
  * @param {any} v
  */
-function key(v) {
+export function key(v) {
   return v === undefined || v === null ? '' : String(v);
 }
 
@@ -425,7 +425,7 @@ export function appendEvent(planningRoot, event) {
  * @param {any} v
  * @returns {number|null}
  */
-function millis(v) {
+export function millis(v) {
   if (typeof v !== 'string' || !v) return null;
   const t = Date.parse(v);
   return Number.isFinite(t) ? t : null;

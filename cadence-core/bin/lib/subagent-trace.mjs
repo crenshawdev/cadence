@@ -8,7 +8,7 @@
 'use strict';
 
 import { roleOfAgent, rungOfAgent } from './rung-agent.mjs';
-import { WORKER_CACHE } from './trace.mjs';
+import { WORKER_CACHE, key, millis } from './trace.mjs';
 import { terminalOf, cacheOf, effortOf, transcriptEntries, STOP_STATE } from './subagent-transcript.mjs';
 
 /**
@@ -36,7 +36,7 @@ function agentIdOf(payload) {
 function closedBracket(render, id, corr) {
   const rows = render && Array.isArray(render.brackets) ? render.brackets : [];
   const scoped = corr === null || corr === undefined
-    ? rows : rows.filter((row) => row && corrKey(row.corr) === corrKey(corr));
+    ? rows : rows.filter((row) => row && key(row.corr) === key(corr));
   return scoped.find((row) => row && row.agent_id === id) || null;
 }
 
@@ -69,26 +69,6 @@ function cacheFact(id, role, cache, ts, source, ran) {
 }
 
 /**
- * A `corr` as a comparison key, so `1` and `"1"` name one run. Same coercion as `key` in `lib/trace.mjs`,
- * restated rather than exported.
- * @param {any} v
- */
-function corrKey(v) {
-  return v === undefined || v === null ? '' : String(v);
-}
-
-/**
- * An instant as a number, or null when unparseable, so it contributes nothing instead of being coerced to 0.
- * @param {any} v
- * @returns {number|null}
- */
-function instant(v) {
-  if (typeof v !== 'string' || !v) return null;
-  const t = Date.parse(v);
-  return Number.isFinite(t) ? t : null;
-}
-
-/**
  * The clock a bracket carrying this payload's `agent_id` offers: its `end` where that parses, else its `ts`.
  * `end` goes first because this stop is arriving after the close.
  * These rows are evidence about the run, never candidates to adopt.
@@ -102,7 +82,7 @@ function bracketClocks(render, id) {
   const out = [];
   for (const row of rows) {
     if (!row || typeof row !== 'object' || row.agent_id !== id) continue;
-    out.push({ corr: row.corr, ts: instant(row.end) !== null ? row.end : row.ts });
+    out.push({ corr: row.corr, ts: millis(row.end) !== null ? row.end : row.ts });
   }
   return out;
 }
@@ -123,12 +103,12 @@ function currentRun(rows, clocks) {
   let newest = null;
   let corr = null;
   for (const row of [...rows, ...clocks]) {
-    const t = instant(row.ts);
+    const t = millis(row.ts);
     if (t === null) continue;
     if (newest === null || t > newest) { newest = t; corr = row.corr; }
   }
   if (newest === null) return { corr: null, rows };
-  return { corr, rows: rows.filter((row) => corrKey(row.corr) === corrKey(corr)) };
+  return { corr, rows: rows.filter((row) => key(row.corr) === key(corr)) };
 }
 
 /**
