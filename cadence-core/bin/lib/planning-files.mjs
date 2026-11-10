@@ -1295,6 +1295,10 @@ export function issueText(line) {
   return t.length > 120 ? `${t.slice(0, 120)}...` : t;
 }
 
+/** A task line's declared-file item, normalized: backticks dropped, one trailing parenthetical cut, trimmed. */
+export const normalizeTaskItem = (/** @type {string} */ raw) =>
+  raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
+
 /**
  * Scan a frontmatter value left to right tracking quote state: a quote opens a span when none is open and closes it
  * on the matching quote. An unquoted `#` ends the value there, with no `# ` vs `#x` rule, quoting decides: both
@@ -1656,8 +1660,6 @@ const WRAP_PAIRS = /** @type {const} */ ([
  */
 export function parsePlanFiles(text) {
   const files = new Set();
-  /** The task-line arm's normalization: backticks and one trailing parenthetical. */
-  const normalizeTaskItem = (raw) => raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
   /**
    * Markdown decoration around a declared path, every shape under one code: a matched wrap (`WRAP_PAIRS`), the link
    * form (`[src/a.rs](src/a.rs)`), and a matched interior backtick pair (`` src/`a`.rs ``), two or more inside.
