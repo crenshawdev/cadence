@@ -11,16 +11,18 @@ import { execFileSync } from 'node:child_process';
  * `ok: false` means "this call didn't come back clean", not "the remote did nothing": a nonzero exit, a kill on the
  * timeout and a transport failure are one value, and on a write the last two can follow a remote that committed.
  * `timedOut` is the one thing a caller can tell apart, because the child got SIGKILL.
+ * `maxBuffer` is Node's 1 MiB unless the caller sets it: past the buffer the child is killed and the call reads as failed.
  *
  * @param {string} bin @param {string[]} args
- * @param {{cwd?: string, timeout: number}} opts
+ * @param {{cwd?: string, timeout: number, maxBuffer?: number}} opts
  * @returns {{ok: boolean, stdout: string, timedOut: boolean}}
  */
-export function boundedRun(bin, args, { cwd, timeout }) {
+export function boundedRun(bin, args, { cwd, timeout, maxBuffer }) {
   try {
     const stdout = execFileSync(bin, args, {
       cwd, timeout, killSignal: 'SIGKILL', encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      ...(maxBuffer === undefined ? {} : { maxBuffer }),
     });
     return { ok: true, stdout, timedOut: false };
   } catch (e) {

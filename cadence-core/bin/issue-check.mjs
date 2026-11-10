@@ -25,6 +25,9 @@ import {
 /** Bounds each subprocess and the whole resolve loop alike, so a hung forge CLI can't hold up a land. */
 const DEFAULT_TIMEOUT_MS = 10000;
 
+/** Room for the `base..HEAD` log: a long branch is over Node's 1 MiB default (this repo's v1.0.0..HEAD is 1,050,919 bytes). */
+const LOG_MAX_BUFFER = 32 * 1024 * 1024;
+
 /** Most per-issue lookups one land makes, for numbers the open-only forgejo list missed; past it, `unresolved`. */
 const MAX_RESOLVES = 5;
 
@@ -89,7 +92,7 @@ function check(dir, baseArg, timeout) {
   decision = decideIssueCheck({ enabled, forge, loginName });
   if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
-  const gitRead = (args) => run('git', ['-C', dir, ...args], { cwd: dir, timeout });
+  const gitRead = (args) => run('git', ['-C', dir, ...args], { cwd: dir, timeout, maxBuffer: LOG_MAX_BUFFER });
   const base = baseArg !== undefined ? baseArg : (git.base_branch || resolveProtectedBranches(git)[0]);
   // a committed git.base_branch shaped like a flag would be an option to `git log`, so skip, never fail the land
   const refused = refuseBase(dir, base, timeout);
