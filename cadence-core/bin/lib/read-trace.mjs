@@ -27,6 +27,9 @@ export const RECORDED_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead'];
 /** The longest error text a record may carry. A cause, never a payload. */
 export const MAX_ERROR_TEXT = 200;
 
+// how much of the first line `redactCause` ever sees: it's quadratic on a long [\w.-] run, so this is a cost bound
+const ERROR_WINDOW = 4096;
+
 /** Past a dozen a Bash call is a sweep (a glob, a `for f in *`); cap it so the file stays cheap to append to. */
 export const MAX_FILES_PER_CALL = 12;
 
@@ -158,15 +161,7 @@ export function filesOf(cmd, opts) {
 
 
 /**
- * Shape a PostToolUse hook payload into one record, or null when the call isn't a read.
- * @param {any} input the parsed hook JSON
- * @param {string} [now] ISO timestamp, injectable for tests
- * @param {{root?: string, cwd?: string, isFile?: (p: string) => boolean, pluginRoot?: string}} [opts]
-  *   root and isFile feed filesOf, pluginRoot marks plugin files; omit them and nothing is added or reclassified.
- */
-/**
  * Whether a `tool_response` reports failure, or null when it doesn't say.
- *   root and isFile feed filesOf, pluginRoot marks plugin files; omit them and nothing is added or reclassified.
  * @param {any} resp
  * @returns {boolean|null}
  */
@@ -195,7 +190,7 @@ export function errorTextOf(resp) {
     }
   }
   if (typeof raw !== 'string') return null;
-  const line = redactCause(raw.split('\n', 1)[0].trim());
+  const line = redactCause(raw.split('\n', 1)[0].trim().slice(0, ERROR_WINDOW));
   if (!line) return null;
   return line.length > MAX_ERROR_TEXT ? line.slice(0, MAX_ERROR_TEXT) : line;
 }
@@ -244,6 +239,13 @@ function classifyTarget(target, input, opts) {
   return 'outside';
 }
 
+/**
+ * Shape a PostToolUse hook payload into one record, or null when the call isn't a read.
+ * @param {any} input the parsed hook JSON
+ * @param {string} [now] ISO timestamp, injectable for tests
+ * @param {{root?: string, cwd?: string, isFile?: (p: string) => boolean, pluginRoot?: string}} [opts]
+ *   root and isFile feed filesOf, pluginRoot marks plugin files; omit them and nothing is added or reclassified.
+ */
 export function recordFromHook(input, now, opts) {
   if (!input || typeof input !== 'object') return null;
   const tool = input.tool_name;
@@ -686,7 +688,7 @@ export function summarizeReads(records) {
 /** Host-owned agent types with no dispatch event in trace.jsonl: their reads are a floor, not a gap to close. */
 export const HOST_AGENT_TYPES = ['fork', 'general-purpose'];
 
-// re-exported so lib/subagent-trace.mjs and the tests keep importing them from here
+// re-exported so tests/read-trace.test.mjs keeps importing them from here; the other importers go to rung-agent.mjs
 export { roleOfAgent, rungOfAgent };
 
 /**
