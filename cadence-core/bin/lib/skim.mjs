@@ -116,7 +116,7 @@ export function skim(source) {
   }
 
   // trailing whitespace left by a stripped end-of-line comment
-  return out.split('\n').map((l) => l.replace(/\s+$/, '')).join('\n');
+  return out.split('\n').map((l) => l.trimEnd()).join('\n');
 }
 
 /**
