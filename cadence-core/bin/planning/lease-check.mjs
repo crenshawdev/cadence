@@ -7,7 +7,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, relative, resolve as resolvePath, sep } from 'node:path';
-import { fail, phaseSpellingCollision, ok, read } from './core.mjs';
+import { RISK_DIFF_MAX_BUFFER, fail, phaseSpellingCollision, ok, read } from './core.mjs';
 import { CENSUSES, censusesAtRisk } from '../lib/census-registry.mjs';
 import { covers } from '../lib/lease-grammar.mjs';
 import { parsePlanFiles } from '../lib/planning-files.mjs';
@@ -221,7 +221,7 @@ function cmdLeaseCheck(dir, opts) {
     // no `encoding` on this call, on purpose: paths are bytes, and decoding them here would undo -z
     stagedOut = execFileSync('git',
       ['-C', top, 'diff', '--cached', '--name-status', '-z', '-M'],
-      { stdio: ['ignore', 'pipe', 'pipe'] });
+      { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: RISK_DIFF_MAX_BUFFER });
   } catch (e) {
     return fail('no-staged-set',
       `could not read the staged set: ${redactUrl(e && e.message ? e.message : String(e))}`,
