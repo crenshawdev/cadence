@@ -2,14 +2,13 @@
 // planning/seed-reqs.mjs - `seed-reqs`: the Traceability rows a phase's plans declare, inserted as /cad-plan writes
 'use strict';
 
-import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, ok, phaseSpellingRefusal, read } from './core.mjs';
 import {
   atomicWrite, insertReqRows, parseActiveIds, readFrontmatterList,
 } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
-import { PLAN_FILE, byPlanNumber } from '../lib/phase-plans.mjs';
+import { planFilesIn } from '../lib/phase-plans.mjs';
 
 // bounded by ## Active, called by /cad-plan where the plan is written: the Traceability table had no write path before
 function cmdSeedReqs(dir, opts) {
@@ -40,9 +39,8 @@ function cmdSeedReqs(dir, opts) {
   }
 
   const pdir = join(dir, 'phases', pname);
-  let planFiles = [];
-  try { planFiles = readdirSync(pdir).filter((f) => PLAN_FILE.test(f)).sort(byPlanNumber); }
-  catch {
+  const planFiles = planFilesIn(pdir);
+  if (planFiles === null) {
     return fail('no-phase-dir', `${pdir} not found`,
       'run /cad-plan <N> first - the ids seeded here come from the `requirements:` lines of the'
       + ' PLAN files in that directory');

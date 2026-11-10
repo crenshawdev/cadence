@@ -14,7 +14,7 @@ import { readFacts } from '../lib/codemap-facts.mjs';
 import { entryFile, moduleState, partition } from '../lib/codemap-partition.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
-import { PLAN_FILE, byPlanNumber, planNumber } from '../lib/phase-plans.mjs';
+import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
 import { parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
@@ -132,10 +132,8 @@ function pluginVersion() {
 function derivePhases(dir, roadmapPhases) {
   return roadmapPhases.map((p) => {
     const pdir = join(dir, 'phases', String(p.n));
-    let plans = [];
-    try {
-      plans = readdirSync(pdir).filter((f) => PLAN_FILE.test(f)).sort(byPlanNumber);
-    } catch { /* no dir -> unplanned */ }
+    // no dir -> unplanned
+    const plans = planFilesIn(pdir) ?? [];
     const summary = existsSync(join(pdir, 'SUMMARY.md'));
     const uatText = read(join(pdir, 'UAT.md'));
     const uat = uatText ? parseUat(uatText) : null;
@@ -214,13 +212,8 @@ function listPlanFiles(pdir) {
   let entries;
   try { entries = readdirSync(pdir); }
   catch { return { plans: [], nonconforming: [], missing: true }; }
-  const plans = [];
-  const nonconforming = [];
-  for (const f of entries) {
-    if (PLAN_FILE.test(f)) plans.push(f);
-    else if (f.startsWith('PLAN') && f.endsWith('.md')) nonconforming.push(f);
-  }
-  return { plans: plans.sort(byPlanNumber), nonconforming: nonconforming.sort() };
+  const nonconforming = entries.filter((f) => !PLAN_FILE.test(f) && f.startsWith('PLAN') && f.endsWith('.md'));
+  return { plans: planFilesOf(entries), nonconforming: nonconforming.sort() };
 }
 
 // one definition of "this plan's report says it is complete", since replay-check and status both decide from it

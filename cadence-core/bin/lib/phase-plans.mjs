@@ -113,11 +113,14 @@ function readOnePlan(file, acc, seen) {
   }
 }
 
+/** The conforming plan files among a directory's entries, in plan-number order. */
+export const planFilesOf = (/** @type {string[]} */ entries) => entries.filter((e) => PLAN_FILE.test(e)).sort(byPlanNumber);
+
 /** The conforming plan files in one directory, in plan-number order, or null when it couldn't be read (the ordinary pre-plan state).
  * A directory that reads but holds no plan is `[]`: nothing was there, as opposed to nothing could be looked at. */
-function planFilesIn(dir) {
+export function planFilesIn(dir) {
   try {
-    return readdirSync(dir, { encoding: 'utf8' }).filter((e) => PLAN_FILE.test(e)).sort(byPlanNumber);
+    return planFilesOf(readdirSync(dir, { encoding: 'utf8' }));
   } catch {
     return null;
   }
