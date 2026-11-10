@@ -1579,15 +1579,6 @@ export function readFrontmatterList(text, key) {
 }
 
 /**
- * The requirement ids a plan commits to deliver, plus the grammar issues from the pass that read them.
- * @param {string} text @returns {{ids: string[], issues: Issue[]}}
- */
-export function parsePlanRequirements(text) {
-  const { items, issues } = readFrontmatterList(text, 'requirements');
-  return { ids: items, issues };
-}
-
-/**
  * Where the frontmatter `files:` list is written, for a diagnostic that has to name a line: the key line itself
  * (`line`/`text`), plus `lines`, the list's own declaring lines (the key line alone for the inline form, the item
  * lines for a block).

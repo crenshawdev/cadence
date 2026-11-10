@@ -9,8 +9,7 @@ import { derivePhases, fail, listPlanFiles, ok, read } from './core.mjs';
 import { activeVersion, tagCarrying, titleVersion } from '../lib/branch-decision.mjs';
 import { readTags } from '../lib/git-tags.mjs';
 import {
-  classifyActiveSection, isRequirementId, parsePlanRequirements, parseRequirements,
-  parseRoadmapPhases,
+  classifyActiveSection, isRequirementId, parseRequirements, parseRoadmapPhases, readFrontmatterList,
 } from '../lib/planning-files.mjs';
 import { normalizeTargetVersion } from '../lib/release-decision.mjs';
 
@@ -43,7 +42,7 @@ function cmdAudit(dir) {
     for (const f of nonconforming) nonconformingPlans.push(`phases/${n}/${f}`);
     for (const f of files) {
       const rel = `phases/${n}/${f}`;
-      const { ids, issues } = parsePlanRequirements(read(join(pdir, f)) || '');
+      const { items: ids, issues } = readFrontmatterList(read(join(pdir, f)) || '', 'requirements');
       planIds.set(rel, ids);
       for (const id of ids) if (!planByReq.has(id)) planByReq.set(id, rel);
       if (issues.length) frontmatterIssues.push({ file: rel, issues });

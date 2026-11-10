@@ -6,7 +6,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, ok, phaseSpellingRefusal, read } from './core.mjs';
 import {
-  atomicWrite, insertReqRows, parseActiveIds, parsePlanRequirements,
+  atomicWrite, insertReqRows, parseActiveIds, readFrontmatterList,
 } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { PLAN_FILE, byPlanNumber } from '../lib/phase-plans.mjs';
@@ -55,7 +55,7 @@ function cmdSeedReqs(dir, opts) {
   const seenIds = new Set();
   const frontmatterIssues = [];
   for (const f of planFiles) {
-    const { ids: fileIds, issues } = parsePlanRequirements(read(join(pdir, f)) || '');
+    const { items: fileIds, issues } = readFrontmatterList(read(join(pdir, f)) || '', 'requirements');
     for (const id of fileIds) if (!seenIds.has(id)) { seenIds.add(id); ids.push(id); }
     if (issues.length) frontmatterIssues.push({ file: `phases/${pname}/${f}`, issues });
   }
