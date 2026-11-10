@@ -54,7 +54,7 @@ export const recordName = (trigger, discriminator, round) =>
   `ADJUDICATION-${trigger}-${discriminator}${round > 1 ? `-r${round}` : ''}.json`;
 
 /** `FINDING_SCHEMA`'s own bound on a cited path. */
-const MAX_FILE_CHARS = 1024;
+export const MAX_FILE_CHARS = 1024;
 /** `FINDING_SCHEMA`'s own bound on claim and failure_scenario. */
 const MAX_TEXT_CHARS = 2000;
 
@@ -81,7 +81,8 @@ const FIX_COMMIT = /^[0-9a-fA-F]{7,40}$/;
  */
 const OVERRIDE_MARKER = true;
 
-const isText = (v) => typeof v === 'string' && v.trim() !== '';
+/** A string with something in it besides whitespace. */
+export const isText = (v) => typeof v === 'string' && v.trim() !== '';
 
 /**
  * `fix_file` is the third way a survived blocker or high settles: a fix to a file git doesn't track has no commit to

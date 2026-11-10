@@ -24,7 +24,7 @@
 // `buildEntries` stays the one judge of what is storable. Pure: no fs, no git, no env
 'use strict';
 
-import { buildEntries, HALTING_SEVERITIES, RAISED_SEVERITIES, RULINGS } from './adjudication-record.mjs';
+import { buildEntries, HALTING_SEVERITIES, isText, RAISED_SEVERITIES, RULINGS } from './adjudication-record.mjs';
 import { HEADINGS } from './review-file.mjs';
 import { requirePlanKey } from './plan-key.mjs';
 import { roleOfAgent } from './rung-agent.mjs';
@@ -49,7 +49,6 @@ const SETTLEMENT_KEYS = ['fix_commit', 'fix_file', 'overridden'];
 const RULING_KEYS = ['ruling', 'severity', 'counter_evidence', ...SIX];
 const EVIDENCE_KEYS = ['file', 'line', 'note'];
 
-const isText = (v) => typeof v === 'string' && v.trim() !== '';
 /** A refusal with its one named reason. @param {string} reason @param {string} detail */
 const refuse = (reason, detail) => ({ ok: false, reason, detail });
 
