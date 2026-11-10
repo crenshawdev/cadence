@@ -2,12 +2,8 @@
 // the mechanical half of a milestone close, as pure text transforms
 // pure and total: a section that can't be found gets reported, never invented
 
-import { parseRoadmapPhases, parseRequirements, phaseDetailSpans, sectionSpan } from './planning-files.mjs';
+import { escN, parseRoadmapPhases, parseRequirements, phaseDetailSpans, sectionSpan } from './planning-files.mjs';
 import { escapeRe } from './text-util.mjs';
-
-/** Decimal-safe: `2.1` must not match `291`.
- * @param {number} n */
-const escN = (n) => String(n).replace(/\./g, '\\.');
 
 /**
  * Remove the completed phases' `- [x]` lines from `## Phases` and their

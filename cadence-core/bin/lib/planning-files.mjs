@@ -144,8 +144,8 @@ export function parseRequirements(text) {
 // single-line edits, these return the whole text so callers stay pure
 
 // phase numbers can be decimal, and an unescaped dot would match any character
-/** @param {string|number} n */
-const escN = (n) => String(n).replace(/\./g, '\\.');
+/** Decimal-safe: `2.1` must not match `291`. @param {string|number} n */
+export const escN = (n) => String(n).replace(/\./g, '\\.');
 
 /**
  * Flip a phase's `## Phases` checkbox. Returns {text, line} (1-indexed), or null when there's no such phase line.

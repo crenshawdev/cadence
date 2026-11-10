@@ -6,7 +6,7 @@
 // pure so a fixture can test it, since the live tree has no annotation or archive heading and would pass vacuously
 'use strict';
 
-import { CAPTURE_WALK_SECTIONS, sectionSpan, normalize } from './planning-files.mjs';
+import { CAPTURE_WALK_SECTIONS, issueText, sectionSpan, normalize } from './planning-files.mjs';
 
 /**
  * The heading that is not part of this file's walk. Retiring a settled item into a section of the same document isn't a
@@ -38,12 +38,6 @@ const BULLET = /^-\s+(.*)$/;
 
 /** A checkbox in any state, stripped before the text is read. */
 const CHECKBOX = /^\[[ xX]\]\s*/;
-
-/** Trim and truncate an offending line to 120 chars, as `issueText` does. */
-function short(line) {
-  const t = line.trim();
-  return t.length > 120 ? `${t.slice(0, 120)}...` : t;
-}
 
 /**
  * The bullet's text with its checkbox stripped, or `null` when the line isn't a bullet: only a column-0 `- ` counts
@@ -101,10 +95,10 @@ export function captureHealth(text) {
       if (body === null) continue;
       if (body !== PLACEHOLDER) {
         count += 1;
-        items.push({ section, line: i + 1, text: short(body) });
+        items.push({ section, line: i + 1, text: issueText(body) });
       }
       if (ANNOTATIONS.some((re) => re.test(body))) {
-        annotations.push({ section, line: i + 1, text: short(body) });
+        annotations.push({ section, line: i + 1, text: issueText(body) });
       }
     }
     sections.push({ section, substantive: count });
