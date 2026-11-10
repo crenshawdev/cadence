@@ -8,8 +8,7 @@ import { join } from 'node:path';
 import { PHASE_DIR_NAME, fail, intFlag, memoryBackend, ok, read } from './core.mjs';
 import { buildIndex, search } from '../lib/bm25.mjs';
 import {
-  parseArchiveRows, parseCaptureSnippets, parseContextDecisions, parseFiledRows,
-  parseSummarySnippets, parseTaskRecordSnippets, parseUat,
+  parseArchiveRows, parseCaptureSnippets, parseFiledRows, parseTaskRecordSnippets, phaseRecallSnippets,
 } from '../lib/planning-files.mjs';
 import { taskRecordsIn } from '../lib/task-record.mjs';
 
@@ -50,18 +49,8 @@ function cmdRecall(dir, query, opts) {
       const pdir = join(phasesDir, n);
       // phase is the number the name parses to and source carries the name, since 1.1 and 1.10 share a number
       const phase = Number(n);
-      const summary = read(join(pdir, 'SUMMARY.md'));
-      if (summary) for (const text of parseSummarySnippets(summary)) {
-        corpus.push({ text, source: `phases/${n}/SUMMARY.md`, phase });
-      }
-      const uatText = read(join(pdir, 'UAT.md'));
-      if (uatText) for (const it of parseUat(uatText).items) {
-        const text = `${it.name || ''} ${it.expected || ''}`.trim();
-        if (text) corpus.push({ text, source: `phases/${n}/UAT.md`, phase });
-      }
-      const context = read(join(pdir, 'CONTEXT.md'));
-      if (context) for (const text of parseContextDecisions(context)) {
-        corpus.push({ text, source: `phases/${n}/CONTEXT.md`, phase });
+      for (const { file, text } of phaseRecallSnippets((f) => read(join(pdir, f)))) {
+        corpus.push({ text, source: `phases/${n}/${file}`, phase });
       }
     }
   }

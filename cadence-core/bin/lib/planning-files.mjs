@@ -1196,6 +1196,30 @@ export function parseUat(text) {
 }
 
 /**
+ * What a phase folder gives to recall, in fixed order: each SUMMARY snippet, each UAT item's name and expected, each CONTEXT
+ * decision, every one with the file it came from. Recall and the milestone close's archive rows both read it, so they cannot
+ * disagree. `readFile` answers null for a file to skip, and is asked for the three in that order.
+ * @param {(file: string) => string|null} readFile the phase folder's file by name
+ * @returns {{file: string, text: string}[]}
+ */
+export function phaseRecallSnippets(readFile) {
+  /** @type {{file: string, text: string}[]} */
+  const out = [];
+  const summary = readFile('SUMMARY.md');
+  if (summary) for (const text of parseSummarySnippets(summary)) out.push({ file: 'SUMMARY.md', text });
+  const uatText = readFile('UAT.md');
+  if (uatText) {
+    for (const it of parseUat(uatText).items) {
+      const text = `${it.name || ''} ${it.expected || ''}`.trim();
+      if (text) out.push({ file: 'UAT.md', text });
+    }
+  }
+  const context = readFile('CONTEXT.md');
+  if (context) for (const text of parseContextDecisions(context)) out.push({ file: 'CONTEXT.md', text });
+  return out;
+}
+
+/**
  * Render a UAT file from frontmatter and items, recomputing the Summary from the items (reworked = first_pass is
  * fail). Round-trips with parseUat.
  * `extras` are the hand-added `### ` sections parseUat preserved, emitted verbatim between the item blocks and
