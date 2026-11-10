@@ -7,9 +7,9 @@
 // A decline stays local: as a forge issue it published every refusal on a tracker meant for real work.
 'use strict';
 
-import { execFileSync } from 'node:child_process';
 import { lstatSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { boundedRun as run } from './lib/bounded-run.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { withPlanningFileLock } from './lib/capture-file.mjs';
 import {
@@ -37,26 +37,6 @@ const VISIBILITY_TIMEOUT_MS = 30000;
 
 /** A create writes, so longer than a lookup, but still bounded: an unbounded child in a gate step hangs the run. */
 const CREATE_TIMEOUT_MS = 60000;
-
-/**
- * Run a child and say only whether it worked and what it printed on stdout.
- * stderr is ignored at the spawn, as in forge.mjs and issue-check.mjs: a forge CLI's stderr isn't ours to read.
- * `ok: false` means "this call didn't come back clean", not "the remote did nothing": a nonzero exit, a SIGKILL on the
- * timeout and a transport failure are one value, and on a write the last two can follow a remote that committed.
- * @param {string} bin @param {string[]} args
- * @param {{cwd: string, timeout: number}} opts
- */
-function run(bin, args, { cwd, timeout }) {
-  try {
-    return {
-      ok: true,
-      stdout: execFileSync(bin, args, {
-        cwd, timeout, killSignal: 'SIGKILL', encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }),
-    };
-  } catch { return { ok: false, stdout: '' }; }
-}
 
 /**
  * The persisted forge record, the row that drives it, the binary and the login it needs, or the one refusal that says

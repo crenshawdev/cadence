@@ -12,6 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { boundedRun } from '../lib/bounded-run.mjs';
 import { readTestingPolicy } from '../lib/config-merge.mjs';
 import { isForgeSlug } from '../lib/forge-decision.mjs';
 import { onPath } from '../lib/on-path.mjs';
@@ -266,14 +267,11 @@ const GH_TIMEOUT_MS = 30000;
  * @returns {Array<{name: string, status: string, conclusion: string|null}>|null}
  */
 function readCheckRuns(slug, sha) {
-  let out;
+  const r = boundedRun('gh', ['api', '--paginate', '--jq', '.check_runs[] | {name, status, conclusion}',
+    `repos/${slug}/commits/${sha}/check-runs?per_page=100`], { timeout: GH_TIMEOUT_MS });
+  if (!r.ok) return null;
   try {
-    out = execFileSync('gh', ['api', '--paginate', '--jq', '.check_runs[] | {name, status, conclusion}',
-      `repos/${slug}/commits/${sha}/check-runs?per_page=100`],
-    { encoding: 'utf8', timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'ignore'] });
-  } catch { return null; }
-  try {
-    return out.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+    return r.stdout.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
   } catch { return null; }
 }
 

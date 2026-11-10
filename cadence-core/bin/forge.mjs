@@ -8,8 +8,8 @@
 //     Makes a PRIVATE repo. --remote-url is required where create wires no remote (forgejo, github), refused on gitlab.
 'use strict';
 
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import { boundedRun as run } from './lib/bounded-run.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
@@ -31,32 +31,12 @@ const CREATE_TIMEOUT_MS = 60000;
 const LOGIN_TIMEOUT_MS = 10000;
 
 /**
- * Run a command, bounded, and never throw. SIGKILL because a child that ignores SIGTERM outlives its own timeout.
- * Stderr is dropped at the spawn, since the default passes a failing CLI's stderr to the terminal and leaks it.
- *
- * @param {string} bin @param {string[]} args
- * @param {{cwd: string, timeout: number}} opts
- * @returns {{ok: boolean, stdout: string}}
- */
-function run(bin, args, { cwd, timeout }) {
-  try {
-    return {
-      ok: true,
-      stdout: execFileSync(bin, args, {
-        cwd, timeout, killSignal: 'SIGKILL', encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }),
-    };
-  } catch { return { ok: false, stdout: '' }; }
-}
-
-/**
  * The origin URL as `git` reports it, or ''. No origin, not a repo and no git all mean the same: no default to offer.
  * @param {string} dir @returns {string}
  */
 function readOrigin(dir) {
-  return run('git', ['-C', dir, 'remote', 'get-url', 'origin'],
-    { cwd: dir, timeout: GIT_TIMEOUT_MS }).stdout.trim();
+  const r = run('git', ['-C', dir, 'remote', 'get-url', 'origin'], { cwd: dir, timeout: GIT_TIMEOUT_MS });
+  return r.ok ? r.stdout.trim() : '';
 }
 
 /**

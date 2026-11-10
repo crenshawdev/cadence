@@ -8,8 +8,8 @@
 // No git or forge stderr reaches the envelope: redactUrl only covers URLs, so a bare token would leak.
 'use strict';
 
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import { boundedRun as run } from './lib/bounded-run.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
 // --timeout-ms is `fallback` on purpose: a flag that could refuse could fail a land
@@ -27,31 +27,6 @@ const DEFAULT_TIMEOUT_MS = 10000;
 
 /** Most per-issue lookups one land makes, for numbers the open-only forgejo list missed; past it, `unresolved`. */
 const MAX_RESOLVES = 5;
-
-/**
- * Run a command, bounded, and never throw. SIGKILL because a child that ignores SIGTERM outlives its own timeout.
- * Stderr is discarded, since the default passes a failing CLI's stderr to the terminal and leaks it.
- * A failure is a boolean and a signal, never the third party's text.
- * @param {string} bin @param {string[]} args
- * @param {{cwd:string, timeout:number}} opts
- * @returns {{ok:boolean, stdout:string, timedOut:boolean}}
- */
-function run(bin, args, { cwd, timeout }) {
-  try {
-    const stdout = execFileSync(bin, args, {
-      cwd, timeout, killSignal: 'SIGKILL', encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return { ok: true, stdout, timedOut: false };
-  } catch (e) {
-    const err = /** @type {{stdout?:string, signal?:string}} */ (e || {});
-    return {
-      ok: false,
-      stdout: typeof err.stdout === 'string' ? err.stdout : '',
-      timedOut: err.signal === 'SIGKILL',
-    };
-  }
-}
 
 /**
  * The logins in a `tea login list --output json` reading, or null when it isn't a list at all.
