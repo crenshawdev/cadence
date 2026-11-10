@@ -461,16 +461,13 @@ function fireIdentity(face, dir, opts) {
   // the re-arm round: without it a blocking re-arm's artifact replaces round one's, the record an auditor reads
   let round = 1;
   if ('round' in opts) {
-    const parsedRound = requireInt(opts.round);
-    if (!parsedRound.ok || parsedRound.value < 1) {
-      fail('bad-args',
-        `${face} --round needs the re-arm round after it, a whole number of at `
-        + 'least 1: --round 2',
-        'send --round 2 for the first re-arm of this trigger, or leave the flag off for a first'
-        + " fire - without it a re-arm would overwrite round one's record, which is the one an"
-        + ' auditor reads');
-      return null;
-    }
+    const parsedRound = intFlag(opts.round, 1,
+      `${face} --round needs the re-arm round after it, a whole number of at `
+      + 'least 1: --round 2',
+      'send --round 2 for the first re-arm of this trigger, or leave the flag off for a first'
+      + " fire - without it a re-arm would overwrite round one's record, which is the one an"
+      + ' auditor reads');
+    if (!parsedRound.ok) return null;
     round = parsedRound.value;
   }
 
@@ -579,6 +576,22 @@ function fireHome(dir, n, what, task) {
     + `already carried this phase's queue out, run \`deferred carry --phase ${n}\`, which is what `
     + 'creates the second home');
   return null;
+}
+
+/**
+ * A whole-number flag, or its refusal: `requireInt`, then a floor, then a `bad-args` refusal the caller words.
+ * Emits its own refusal and answers `{ok: false}`, like firePayload, so the caller's arm is `if (!n.ok) return;`.
+ * @param {unknown} raw @param {number|null} min the lowest accepted value, null for no floor
+ * @param {string} detail @param {string} hint
+ * @returns {{ok: true, value: number} | {ok: false}}
+ */
+function intFlag(raw, min, detail, hint) {
+  const parsed = requireInt(raw);
+  if (!parsed.ok || (min !== null && parsed.value < min)) {
+    fail('bad-args', detail, hint);
+    return { ok: false };
+  }
+  return parsed;
 }
 
 /**
@@ -823,6 +836,7 @@ export {
   fireRange,
   fireTargetTaken,
   flagSentence,
+  intFlag,
   listPlanFiles,
   memoryBackend,
   ok,

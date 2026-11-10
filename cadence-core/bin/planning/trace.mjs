@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import {
-  ARGV, DISPATCH_WINDOW_DEFAULTS, RECORD_TOKEN, argRefusal, fail, listPlanFiles, ok,
+  ARGV, DISPATCH_WINDOW_DEFAULTS, RECORD_TOKEN, argRefusal, fail, intFlag, listPlanFiles, ok,
   phaseSpellingCollision, read, readReadsRecords, routeLadder,
 } from './core.mjs';
 import { deriveCounts, recordName } from '../lib/adjudication-record.mjs';
@@ -21,7 +21,7 @@ import {
   READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
   ROTATED_READS_FILE, inDispatchReads, joinReads,
 } from '../lib/read-trace.mjs';
-import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
+import { requirePhaseArg } from '../lib/require-int.mjs';
 import { RUNG_ORDER } from '../lib/rung-agent.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
@@ -438,13 +438,11 @@ function cmdTrace(dir, sub, opts) {
       const raw = typeof opts.tokens === 'string' && /^\d{1,3}(?:,\d{3})+$/.test(opts.tokens.trim())
         ? opts.tokens.trim().replace(/,/g, '')
         : opts.tokens;
-      const parsed = requireInt(raw);
-      if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --tokens needs a non-negative integer`,
-          "copy the token figure off the worker's return as a whole number - grouped as this plugin"
-          + ' prints it (146,405) or plain; nothing was appended, so a corrected re-run writes'
-          + ' exactly one event');
-      }
+      const parsed = intFlag(raw, 0, `trace ${sub} --tokens needs a non-negative integer`,
+        "copy the token figure off the worker's return as a whole number - grouped as this plugin"
+        + ' prints it (146,405) or plain; nothing was appended, so a corrected re-run writes'
+        + ' exactly one event');
+      if (!parsed.ok) return;
       tokens = parsed.value;
     }
 
@@ -453,12 +451,10 @@ function cmdTrace(dir, sub, opts) {
     // validated like --raised, with no comma-grouping exception since a call count is never printed grouped
     let turns;
     if ('turns' in opts) {
-      const parsed = requireInt(opts.turns);
-      if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --turns needs a non-negative integer`,
-          "copy the tool-call count off the worker's return as a plain whole number, ungrouped;"
-          + ' nothing was appended, so a corrected re-run writes exactly one event');
-      }
+      const parsed = intFlag(opts.turns, 0, `trace ${sub} --turns needs a non-negative integer`,
+        "copy the tool-call count off the worker's return as a plain whole number, ungrouped;"
+        + ' nothing was appended, so a corrected re-run writes exactly one event');
+      if (!parsed.ok) return;
       turns = parsed.value;
     }
 
@@ -482,12 +478,10 @@ function cmdTrace(dir, sub, opts) {
     // validated like --tokens, with no comma-grouping exception since a finding count is never printed grouped
     let raised;
     if ('raised' in opts) {
-      const parsed = requireInt(opts.raised);
-      if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --raised needs a non-negative integer`,
-          'send the number of findings the reviewers raised before adjudication as a plain whole'
-          + ' number, ungrouped; nothing was appended');
-      }
+      const parsed = intFlag(opts.raised, 0, `trace ${sub} --raised needs a non-negative integer`,
+        'send the number of findings the reviewers raised before adjudication as a plain whole'
+        + ' number, ungrouped; nothing was appended');
+      if (!parsed.ok) return;
       raised = parsed.value;
     }
 
@@ -497,12 +491,10 @@ function cmdTrace(dir, sub, opts) {
     const settled = {};
     for (const flag of ['survivors', 'downgraded', 'refuted']) {
       if (!(flag in opts)) continue;
-      const parsed = requireInt(opts[flag]);
-      if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --${flag} needs a non-negative integer`,
-          `send --${flag} as a plain whole number, ungrouped - the settled figures come off the`
-          + " adjudication seam's own return rather than being typed; nothing was appended");
-      }
+      const parsed = intFlag(opts[flag], 0, `trace ${sub} --${flag} needs a non-negative integer`,
+        `send --${flag} as a plain whole number, ungrouped - the settled figures come off the`
+        + " adjudication seam's own return rather than being typed; nothing was appended");
+      if (!parsed.ok) return;
       settled[flag] = parsed.value;
     }
 
@@ -510,13 +502,11 @@ function cmdTrace(dir, sub, opts) {
     // absent means round 1 on both sides, so the write and receipt sides resolve one filename by one rule
     let round = 1;
     if ('round' in opts) {
-      const parsed = requireInt(opts.round);
-      if (!parsed.ok || parsed.value < 1) {
-        return fail('bad-args',
-          `trace ${sub} --round needs the re-arm round after it, a whole number of at least 1`,
-          'send --round as the re-arm round this event belongs to - 2 for the first re-arm - or'
-          + ' leave it off for an ordinary round-1 fire; nothing was appended');
-      }
+      const parsed = intFlag(opts.round, 1,
+        `trace ${sub} --round needs the re-arm round after it, a whole number of at least 1`,
+        'send --round as the re-arm round this event belongs to - 2 for the first re-arm - or'
+        + ' leave it off for an ordinary round-1 fire; nothing was appended');
+      if (!parsed.ok) return;
       round = parsed.value;
     }
 

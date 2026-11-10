@@ -18,11 +18,11 @@ import { isForgeSlug } from '../lib/forge-decision.mjs';
 import { onPath } from '../lib/on-path.mjs';
 import { atomicWrite, parseUat, renderUat } from '../lib/planning-files.mjs';
 import { localGitEnv, publishAuthorized } from '../lib/publish-authorization.mjs';
-import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
+import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { testSeamOpen } from '../lib/test-seam.mjs';
 import { sleep } from '../lib/text-util.mjs';
-import { fail, ok, phaseSpellingCollision, read } from './core.mjs';
+import { fail, intFlag, ok, phaseSpellingCollision, read } from './core.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // the same shape as config.mjs's SCHEMA_PATH: the same file, the same CADENCE_CONFIG_SCHEMA override, the same gate
@@ -303,11 +303,9 @@ function cmdCiStatus(dir, root, opts) {
   }
   let wait = 0;
   if (opts.wait !== undefined) {
-    const w = requireInt(opts.wait);
-    if (!w.ok || w.value < 0) {
-      return fail('bad-args', '--wait must be a whole number of seconds, 0 or more',
-        `pass --wait <seconds>, at most ${MAX_WAIT_S} (larger values are held to that), or drop it to read once`);
-    }
+    const w = intFlag(opts.wait, 0, '--wait must be a whole number of seconds, 0 or more',
+      `pass --wait <seconds>, at most ${MAX_WAIT_S} (larger values are held to that), or drop it to read once`);
+    if (!w.ok) return;
     wait = Math.min(w.value, MAX_WAIT_S);
   }
   /** @type {{raw: string}|null} */

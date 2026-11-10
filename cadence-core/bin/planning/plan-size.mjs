@@ -4,9 +4,9 @@
 
 import { lstatSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
-import { fail, phaseSpellingCollision, listPlanFiles, ok, read } from './core.mjs';
+import { fail, intFlag, phaseSpellingCollision, listPlanFiles, ok, read } from './core.mjs';
 import { phaseRequirements, planTaskTitles, readFrontmatterList } from '../lib/planning-files.mjs';
-import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
+import { requirePhaseArg } from '../lib/require-int.mjs';
 
 /**
  * The bytes one plan's `files:` frontmatter declares, and how many declared paths added none.
@@ -62,35 +62,29 @@ function cmdPlanSize(dir, opts) {
   }
   const n = parsedPhase.value;
 
-  // resolved to plain numbers at the boundary, never the requireInt envelope: a `{ok:false}` arm fails the typecheck
+  // resolved to plain numbers at the boundary, never the intFlag envelope: a `{ok:false}` arm fails the typecheck
   let maxTasks = null;
   if (opts['max-tasks'] !== undefined) {
-    const parsed = requireInt(opts['max-tasks']);
-    if (!parsed.ok) {
-      return fail('bad-args', '--max-tasks must be an integer',
-        'send --max-tasks as a plain integer, or drop it to size without a task ceiling - this seam'
-        + ' reads no config, so the value is the one the caller already resolved');
-    }
+    const parsed = intFlag(opts['max-tasks'], null, '--max-tasks must be an integer',
+      'send --max-tasks as a plain integer, or drop it to size without a task ceiling - this seam'
+      + ' reads no config, so the value is the one the caller already resolved');
+    if (!parsed.ok) return;
     maxTasks = parsed.value;
   }
   let maxBytes = null;
   if (opts['max-bytes'] !== undefined) {
-    const parsed = requireInt(opts['max-bytes']);
-    if (!parsed.ok) {
-      return fail('bad-args', '--max-bytes must be an integer',
-        'send --max-bytes as a plain integer number of bytes, or drop it to size without a byte'
-        + ' ceiling - this seam reads no config, so the value is the one the caller already'
-        + ' resolved');
-    }
+    const parsed = intFlag(opts['max-bytes'], null, '--max-bytes must be an integer',
+      'send --max-bytes as a plain integer number of bytes, or drop it to size without a byte'
+      + ' ceiling - this seam reads no config, so the value is the one the caller already'
+      + ' resolved');
+    if (!parsed.ok) return;
     maxBytes = parsed.value;
   }
   let maxReqs = null;
   if (opts['max-reqs'] !== undefined) {
-    const parsed = requireInt(opts['max-reqs']);
-    if (!parsed.ok) {
-      return fail('bad-args', '--max-reqs must be an integer',
-        'send --max-reqs as a plain integer, or drop it to size without a requirement ceiling');
-    }
+    const parsed = intFlag(opts['max-reqs'], null, '--max-reqs must be an integer',
+      'send --max-reqs as a plain integer, or drop it to size without a requirement ceiling');
+    if (!parsed.ok) return;
     maxReqs = parsed.value;
   }
 

@@ -5,13 +5,13 @@
 
 import { lstatSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { fail, listPlanFiles, ok, phaseSpellingCollision, read } from './core.mjs';
+import { fail, intFlag, listPlanFiles, ok, phaseSpellingCollision, read } from './core.mjs';
 import { readStoredMap } from './codemap.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
 import { composeBrief } from '../lib/plan-brief.mjs';
 import { planFileFor, planNumber } from '../lib/phase-plans.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
-import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
+import { requirePhaseArg } from '../lib/require-int.mjs';
 
 /**
  * The stored map for the plan's check and its rows, or null: any failure the shared read hands back, from no map to no git,
@@ -50,11 +50,9 @@ function cmdBrief(dir, opts) {
     return fail('bad-args', `brief ${collision}`,
       're-run with one of the two spellings the detail names - nothing was read');
   }
-  const parsedPlan = requireInt(opts.plan);
-  if (!parsedPlan.ok) {
-    return fail('bad-args', 'brief needs --plan <k>',
-      'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
-  }
+  const parsedPlan = intFlag(opts.plan, null, 'brief needs --plan <k>',
+    'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
+  if (!parsedPlan.ok) return;
   /** @type {Record<string, string|null>} */
   const dirs = { 'out-dir': null, 'main-root': null };
   for (const flag of Object.keys(dirs)) {

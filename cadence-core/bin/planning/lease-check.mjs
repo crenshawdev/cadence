@@ -7,13 +7,13 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, relative, resolve as resolvePath, sep } from 'node:path';
-import { RISK_DIFF_MAX_BUFFER, fail, phaseSpellingCollision, ok, read } from './core.mjs';
+import { RISK_DIFF_MAX_BUFFER, fail, intFlag, phaseSpellingCollision, ok, read } from './core.mjs';
 import { CENSUSES, censusesAtRisk } from '../lib/census-registry.mjs';
 import { covers } from '../lib/lease-grammar.mjs';
 import { parsePlanFiles } from '../lib/planning-files.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { isReportName } from '../lib/report-rotation.mjs';
-import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
+import { requirePhaseArg } from '../lib/require-int.mjs';
 import { appendEvent } from '../lib/trace.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
@@ -137,11 +137,9 @@ function cmdLeaseCheck(dir, opts) {
     return fail('bad-args', `lease-check ${collision}`,
       're-run with one of the two spellings the detail names - nothing was read');
   }
-  const parsedPlan = requireInt(opts.plan);
-  if (!parsedPlan.ok) {
-    return fail('bad-args', 'lease-check needs --plan <k>',
-      'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
-  }
+  const parsedPlan = intFlag(opts.plan, null, 'lease-check needs --plan <k>',
+    'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
+  if (!parsedPlan.ok) return;
   const n = parsedPhase.value;
   const k = parsedPlan.value;
   // the root is the planning dir's parent on both arms, so plan-time spawns no git; the census table is Cadence's own

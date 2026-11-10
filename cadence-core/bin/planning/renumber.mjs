@@ -6,13 +6,12 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
-import { fail, ok, read } from './core.mjs';
+import { fail, intFlag, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   atomicWrite, cutPhaseDetail, findProsePhaseRefs, nextNamesPhase, parseCursor,
   parseRoadmapPhases, renderCursor, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
-import { requireInt } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 // structured edits are automated, lowercase prose refs are reported for the model; --dry-run touches nothing
@@ -112,13 +111,11 @@ function cmdRenumber(dir, sub, opts) {
   const rawAt = sub === 'insert' ? opts.at : opts.n;
   // a valueless flag is boolean true and Number(true) is 1, so `renumber remove --n` cut the first phase
   // the decimal answer stays its own diagnostic: 2.1 neither displaces integers nor is displaced by them
-  const parsedAt = requireInt(rawAt);
   // absent only: a present `--at`/`--n` was already judged by its declared row at the dispatch door
-  if (!parsedAt.ok) {
-    return fail('bad-args', `renumber ${sub} needs --${flag} <N>`,
-      `pass --${flag} <N> as a whole phase number, then re-run - nothing was moved; a valueless`
-      + ' flag arrives here as `true` and would otherwise have meant phase 1');
-  }
+  const parsedAt = intFlag(rawAt, null, `renumber ${sub} needs --${flag} <N>`,
+    `pass --${flag} <N> as a whole phase number, then re-run - nothing was moved; a valueless`
+    + ' flag arrives here as `true` and would otherwise have meant phase 1');
+  if (!parsedAt.ok) return;
   const at = parsedAt.value;
   if (sub === 'insert' && (at < 1 || at > total + 1)) {
     return fail('out-of-range', `--at must be 1..${total + 1}`,

@@ -5,13 +5,12 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { PHASE_DIR_NAME, fail, memoryBackend, ok, read } from './core.mjs';
+import { PHASE_DIR_NAME, fail, intFlag, memoryBackend, ok, read } from './core.mjs';
 import { buildIndex, search } from '../lib/bm25.mjs';
 import {
   parseArchiveRows, parseCaptureSnippets, parseContextDecisions, parseFiledRows,
   parseSummarySnippets, parseTaskRecordSnippets, parseUat,
 } from '../lib/planning-files.mjs';
-import { requireInt } from '../lib/require-int.mjs';
 import { taskRecordsIn } from '../lib/task-record.mjs';
 
 // deterministic (sorted traversal, total result order, no timestamps)
@@ -25,11 +24,9 @@ function cmdRecall(dir, query, opts) {
   // --top bounds the returned set (default 5), since an unbounded one got spooled by the host; total shows truncation
   let top = 5;
   if (opts.top !== undefined) {
-    const parsed = requireInt(opts.top);
-    if (!parsed.ok || parsed.value < 1) {
-      return fail('bad-args', '--top must be a positive integer',
-        'send --top as a whole number of 1 or more, or drop it to take the default 5 results');
-    }
+    const parsed = intFlag(opts.top, 1, '--top must be a positive integer',
+      'send --top as a whole number of 1 or more, or drop it to take the default 5 results');
+    if (!parsed.ok) return;
     top = parsed.value;
   }
 
