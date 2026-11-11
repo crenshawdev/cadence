@@ -7,6 +7,65 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-11-11
+
+Most of this release is repair and cleanup. It fixes how Cadence reads planning
+files that hold fenced code blocks or Windows line endings, fixes several reads
+that failed in very large repositories, and adds one setting that moves the
+commit review to the end of the phase. Another 59 commits remove duplicated
+code and split long functions without changing what Cadence does. Nothing needs
+changing when you update.
+
+### Added
+
+- **The commit review can run once per phase.** `review.triggers.diff.when`
+  takes `per_plan` or `phase_end`. The default is `per_plan`, the review after
+  each plan's commits, as before. With `phase_end`, `/cad-execute` skips those
+  and runs one review after the last plan, over every commit of the phase, and
+  no other setting has to be turned off for it:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set review.triggers.diff.when=phase_end
+  ```
+
+### Changed
+
+- **Several commands do less work for the same result.** `/cad-why` joins only
+  the commits it is going to show, a code map refresh batches its git reads,
+  the config preview reads its layers side by side, and the risk scan checks a
+  line cheaply before it runs its patterns. One thing reads differently:
+  `/cad-why`'s join warnings now cover the commits shown, and no longer the
+  file's whole history.
+
+### Fixed
+
+- **Markdown inside a fenced code block is no longer read as structure.** A
+  fenced `## ` line cut a section short, a fenced `### 1.` became an extra UAT
+  item, a fenced `### Task 1:` counted as a task, a fenced heading cut off a
+  phase's criteria, and a fenced `## [x.y.z]` stopped the changelog scaffold.
+- **Files with Windows line endings read correctly.** A `UAT.md` or an agent
+  file saved with CRLF now reads its frontmatter, and the section readers no
+  longer come back empty on a CRLF file.
+- **Git output over 1 MiB is read in full.** In a very large repository,
+  `test-policy check` could report that a glob matched no tracked file when it
+  did, the lease check refused a commit whose staged list passed 1 MiB, a long
+  tag list read as no tags, `/cad-why` failed on a path with thousands of
+  commits, and the issue report was skipped on a long branch.
+- **A plan brief keeps the plan's lease.** A blank line before the plan's
+  frontmatter made the brief drop the lease while the lease check still
+  enforced it.
+- **An indented `## Acceptance criteria` heading is caught.** One to three
+  spaces before the `#` is still a heading, so the plan is flagged and its
+  criteria are no longer skipped.
+- **Key files count as a sign of secrets.** A project holding `id_rsa`,
+  `id_ed25519` or a `.pem`, `.key`, `.p12` or `.pfx` file now reports the
+  secrets surface, so the surfaces interview doesn't suggest dropping it.
+- **Two redaction steps stay fast on a very long line.** The hook that records
+  a failed tool call and the URL redactor each took seconds on one line of a
+  few hundred thousand characters.
+- **The retired `risk.override.*` messages name the right setting.** They point
+  at `review.triggers.risk_surface.waive_routing_floor`.
+
 ## [4.0.0] - 2026-11-08
 
 Reviews now tell you what breaks and what to do about it, `/cad-config` gets a
@@ -3379,6 +3438,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[4.1.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.1.0
 [4.0.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.0.0
 [3.11.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.11.1
 [3.11.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.11.0
