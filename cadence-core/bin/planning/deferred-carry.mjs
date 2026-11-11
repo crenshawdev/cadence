@@ -4,25 +4,18 @@
 
 import { existsSync, lstatSync, mkdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, ok, phaseSpellingCollision, readQueue } from './core.mjs';
+import { fail, notRealDirDetail, ok, phaseGuard, readQueue } from './core.mjs';
 import { queueName } from '../lib/deferred-queue.mjs';
-import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 // a seam, not prose: a half-run step would leave what stops the land in a directory milestone-prune is about to remove
 function cmdDeferredCarry(dir, opts) {
-  const parsed = requirePhaseArg(opts.phase);
-  if (!parsed.ok) {
-    return fail('bad-args', 'deferred carry needs --phase <N>',
-      'pass --phase <N> for the phase whose queue is being carried out, then re-run - this runs'
-      + ' BEFORE milestone-prune, which deletes the directory the members sit in');
-  }
   // collision check before anything moves, so a spelling that means different phases in envelope and on disk is refused
-  const collision = phaseSpellingCollision(dir, parsed);
-  if (collision) {
-    return fail('bad-args', `deferred carry ${collision}`,
-      're-run the carry with one of the two spellings the detail names - nothing was moved');
-  }
+  const parsed = phaseGuard('deferred carry', dir, opts.phase, 'deferred carry needs --phase <N>',
+    'pass --phase <N> for the phase whose queue is being carried out, then re-run - this runs'
+    + ' BEFORE milestone-prune, which deletes the directory the members sit in',
+    're-run the carry with one of the two spellings the detail names - nothing was moved');
+  if (!parsed) return;
   const n = parsed.raw;
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
 
@@ -32,9 +25,7 @@ function cmdDeferredCarry(dir, opts) {
   const rootStat = lstatSync(carryRoot, { throwIfNoEntry: false });
   if (rootStat && !rootStat.isDirectory()) {
     return fail('carry-dest-unusable',
-      'deferred/ exists and is not a real directory'
-      + `${rootStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-      + ' - move or remove it, then re-run',
+      notRealDirDetail('deferred/', rootStat, 'renameSync'),
       'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
       + ' are still in the phase directory the prune deletes');
   }
@@ -44,9 +35,7 @@ function cmdDeferredCarry(dir, opts) {
   const destStat = lstatSync(dest, { throwIfNoEntry: false });
   if (destStat && !destStat.isDirectory()) {
     return fail('carry-dest-unusable',
-      `deferred/${n} exists and is not a real directory`
-      + `${destStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-      + ' - move or remove it, then re-run',
+      notRealDirDetail(`deferred/${n}`, destStat, 'renameSync'),
       'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
       + ' are still in the phase directory the prune deletes');
   }

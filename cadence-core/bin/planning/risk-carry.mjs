@@ -4,8 +4,7 @@
 
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, ok, phaseSpellingCollision } from './core.mjs';
-import { requirePhaseArg } from '../lib/require-int.mjs';
+import { fail, notRealDirDetail, ok, phaseGuard } from './core.mjs';
 
 // risk_surface reviews and adjudications are copied out of `phases/<N>/` before the prune removes it
 // a seam, not a prose step: /cad-milestone chains /cad-land after the prune unattended
@@ -45,18 +44,12 @@ const UNSEARCHABLE_DEST_HINT = 'make risk-carry/ and everything under it readabl
   + ' rulings are still in the phase directory the prune deletes';
 
 function cmdRiskCarry(dir, opts) {
-  const parsed = requirePhaseArg(opts.phase);
-  if (!parsed.ok) {
-    return fail('bad-args', 'risk-carry needs --phase <N>',
-      'pass --phase <N> for the phase whose risk_surface rulings are being carried out, then'
-      + ' re-run - this runs BEFORE milestone-prune, which deletes the directory they sit in');
-  }
   // the tree-aware collision check goes right after the parse, before the destination rail, like `deferred carry`
-  const collision = phaseSpellingCollision(dir, parsed);
-  if (collision) {
-    return fail('bad-args', `risk-carry ${collision}`,
-      're-run the carry with one of the two spellings the detail names - nothing was copied');
-  }
+  const parsed = phaseGuard('risk-carry', dir, opts.phase, 'risk-carry needs --phase <N>',
+    'pass --phase <N> for the phase whose risk_surface rulings are being carried out, then'
+    + ' re-run - this runs BEFORE milestone-prune, which deletes the directory they sit in',
+    're-run the carry with one of the two spellings the detail names - nothing was copied');
+  if (!parsed) return;
   const n = parsed.raw;
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
 
@@ -72,9 +65,7 @@ function cmdRiskCarry(dir, opts) {
     }
     if (stat && !stat.isDirectory()) {
       return fail('carry-dest-unusable',
-        `${label} exists and is not a real directory`
-        + `${stat.isSymbolicLink() ? ' (it is a symlink, which copyFileSync would follow out of the planning root)' : ''}`
-        + ' - move or remove it, then re-run',
+        notRealDirDetail(label, stat, 'copyFileSync'),
         'clear that path and re-run BEFORE milestone-prune - nothing has been copied yet, and the'
         + ' rulings are still in the phase directory the prune deletes');
     }
@@ -92,9 +83,7 @@ function cmdRiskCarry(dir, opts) {
     }
     if (stat && !stat.isDirectory()) {
       return fail('carry-src-unusable',
-        `${label} exists and is not a real directory`
-        + `${stat.isSymbolicLink() ? ' (it is a symlink, which readdirSync would follow out of the planning root)' : ''}`
-        + ' - move or remove it, then re-run',
+        notRealDirDetail(label, stat, 'readdirSync'),
         'clear that path and re-run BEFORE milestone-prune - nothing was copied, and this carry'
         + ' reads rulings from the phase directory itself or from nowhere');
     }

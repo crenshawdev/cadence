@@ -1,19 +1,19 @@
 // @ts-check
 // planning/lease-check.mjs - `lease-check`: the file lease a plan declares, enforced at the commit step
-// repoRel, splitNul, quoteRawPath and parseStagedNameStatus live here because this handler is their only caller
+// repoRel, splitNul and parseStagedNameStatus live here because this handler is their only caller
 // prose-agreement.test.mjs reads this file's bytes for the `undeclared-files` reason at its emitting site
 'use strict';
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, relative, resolve as resolvePath, sep } from 'node:path';
-import { fail, phaseSpellingCollision, ok, read } from './core.mjs';
+import { RISK_DIFF_MAX_BUFFER, fail, intFlag, phaseGuard, ok, read } from './core.mjs';
 import { CENSUSES, censusesAtRisk } from '../lib/census-registry.mjs';
+import { quotePath } from '../lib/codemap-facts.mjs';
 import { covers } from '../lib/lease-grammar.mjs';
 import { parsePlanFiles } from '../lib/planning-files.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { isReportName } from '../lib/report-rotation.mjs';
-import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { appendEvent } from '../lib/trace.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
@@ -47,26 +47,10 @@ function splitNul(buf) {
 }
 
 /**
- * A path no JSON string can carry, in git's `core.quotePath` spelling: `src/caf<0xE9>.js` is `"src/caf\351.js"`.
- *
- * @param {Buffer} raw
- * @returns {string}
- */
-function quoteRawPath(raw) {
-  let s = '';
-  for (const b of raw) {
-    if (b === 0x22 || b === 0x5c) s += `\\${String.fromCharCode(b)}`;
-    else if (b >= 0x20 && b < 0x7f) s += String.fromCharCode(b);
-    else s += `\\${b.toString(8).padStart(3, '0')}`;
-  }
-  return `"${s}"`;
-}
-
-/**
  * Parse a `git diff --cached --name-status -z -M` stream into staged entries.
  * Records are NUL-separated fields, not lines: `R` (rename) and `C` (copy) take two paths, every other status one.
  * Takes a buffer split on 0x00, since decoding first folds invalid UTF-8 onto U+FFFD and merges two paths into one.
- * Paths that don't round-trip come back under `unrepresentable`, in quoteRawPath spelling, for the caller to refuse.
+ * Paths that don't round-trip come back under `unrepresentable`, in git's `core.quotePath` spelling, as lib/codemap-facts.mjs writes it, for the caller to refuse.
  * Returns null on a truncated or unparseable stream, which the caller turns into `no-staged-set`.
  *
  * @param {Buffer} out
@@ -87,7 +71,7 @@ function parseStagedNameStatus(out) {
   const decodePath = (/** @type {Buffer} */ raw) => {
     const s = raw.toString('utf8');
     if (!Buffer.from(s, 'utf8').equals(raw)) {
-      unrepresentable.push(quoteRawPath(raw));
+      unrepresentable.push(quotePath(raw));
       return null;
     }
     return s;
@@ -126,22 +110,14 @@ function censusesApply(root) {
 }
 
 function cmdLeaseCheck(dir, opts) {
-  const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) {
-    return fail('bad-args', 'lease-check needs --phase <N>',
-      'pass --phase <N> for the phase the plan being committed belongs to, then re-run');
-  }
   // the tree-aware collision check runs before any phase-directory read; `phases/1.10/` stays addressable
-  const collision = phaseSpellingCollision(dir, parsedPhase);
-  if (collision) {
-    return fail('bad-args', `lease-check ${collision}`,
-      're-run with one of the two spellings the detail names - nothing was read');
-  }
-  const parsedPlan = requireInt(opts.plan);
-  if (!parsedPlan.ok) {
-    return fail('bad-args', 'lease-check needs --plan <k>',
-      'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
-  }
+  const parsedPhase = phaseGuard('lease-check', dir, opts.phase, 'lease-check needs --phase <N>',
+    'pass --phase <N> for the phase the plan being committed belongs to, then re-run',
+    're-run with one of the two spellings the detail names - nothing was read');
+  if (!parsedPhase) return;
+  const parsedPlan = intFlag(opts.plan, null, 'lease-check needs --plan <k>',
+    'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
+  if (!parsedPlan.ok) return;
   const n = parsedPhase.value;
   const k = parsedPlan.value;
   // the root is the planning dir's parent on both arms, so plan-time spawns no git; the census table is Cadence's own
@@ -221,7 +197,7 @@ function cmdLeaseCheck(dir, opts) {
     // no `encoding` on this call, on purpose: paths are bytes, and decoding them here would undo -z
     stagedOut = execFileSync('git',
       ['-C', top, 'diff', '--cached', '--name-status', '-z', '-M'],
-      { stdio: ['ignore', 'pipe', 'pipe'] });
+      { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: RISK_DIFF_MAX_BUFFER });
   } catch (e) {
     return fail('no-staged-set',
       `could not read the staged set: ${redactUrl(e && e.message ? e.message : String(e))}`,

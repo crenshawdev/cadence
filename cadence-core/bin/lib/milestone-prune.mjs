@@ -2,15 +2,8 @@
 // the mechanical half of a milestone close, as pure text transforms
 // pure and total: a section that can't be found gets reported, never invented
 
-import { parseRoadmapPhases, parseRequirements, sectionSpan } from './planning-files.mjs';
-
-/** Decimal-safe: `2.1` must not match `291`.
- * @param {number} n */
-const escN = (n) => String(n).replace(/\./g, '\\.');
-
-/** A stray `.` in an id must not become a wildcard.
- * @param {string} id */
-const escId = (id) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+import { escN, parseRoadmapPhases, parseRequirements, phaseDetailSpans, sectionSpan } from './planning-files.mjs';
+import { escapeRe } from './text-util.mjs';
 
 /**
  * Remove the completed phases' `- [x]` lines from `## Phases` and their
@@ -31,23 +24,16 @@ export function pruneRoadmap(text, completed) {
 
   for (const n of completed) {
     const lineRe = new RegExp(`^- \\[x\\] \\*\\*Phase ${escN(n)}: `);
-    const headRe = new RegExp(`^### Phase ${escN(n)}: `);
-    let sectionFound = false;
-    for (let i = 0; i < lines.length; i++) {
-      if (!keep[i]) continue;
-      if (lineRe.test(lines[i])) { keep[i] = false; removedLines++; continue; }
-      if (headRe.test(lines[i])) {
-        sectionFound = true;
-        removedSections++;
-        keep[i] = false;
-        let j = i + 1;
-        while (j < lines.length && !/^###? /.test(lines[j])) {
-          keep[j] = false;
-          j++;
-        }
-      }
+    // sections first: a checked line inside a removed section goes with it and isn't counted as a list line
+    const spans = phaseDetailSpans(lines, n);
+    for (const { start, end } of spans) {
+      removedSections++;
+      for (let j = start; j < end; j++) keep[j] = false;
     }
-    if (!sectionFound) missingSections.push(n);
+    if (!spans.length) missingSections.push(n);
+    for (let i = 0; i < lines.length; i++) {
+      if (keep[i] && lineRe.test(lines[i])) { keep[i] = false; removedLines++; }
+    }
   }
   return {
     text: lines.filter((_, i) => keep[i]).join('\n'),
@@ -100,7 +86,7 @@ export function archiveRequirements(text, completed, label) {
     let body = lines.slice(activeAt + 1, activeEnd);
     for (const { id } of shipped) {
       // the tracker suffix is `(#<digits>)` and nothing else, so prose bullets still can't match
-      const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*(?: \\((#\\d+)\\))?:\\s*(.*)$`);
+      const bulletRe = new RegExp(`^- \\*\\*${escapeRe(id)}\\*\\*(?: \\((#\\d+)\\))?:\\s*(.*)$`);
       const kept = [];
       for (let i = 0; i < body.length; i++) {
         const m = body[i].match(bulletRe);

@@ -4,7 +4,7 @@
 // the plan's sections go in word for word, because a paraphrase is a second statement of what "done" means
 'use strict';
 
-import { normalize, readFrontmatterList, sectionSpan } from './planning-files.mjs';
+import { frontmatterBounds, normalize, readFrontmatterList, sectionSpan } from './planning-files.mjs';
 import { LIMIT } from './codemap-slice.mjs';
 
 // the plan sections an executor builds from, in the order the plan template writes them; `## Notes` stays out
@@ -27,8 +27,10 @@ function sectionSpanLines(/** @type {string[]} */ lines, /** @type {string} */ h
 
 /** The plan's frontmatter lines and the rest after them; no frontmatter leaves the whole text as the rest. */
 function splitFrontmatter(/** @type {string} */ text) {
-  const m = /^---\n([\s\S]*?)\n---[ \t]*(?:\n|$)/.exec(text);
-  return m ? { fm: m[1].split('\n'), rest: text.slice(m[0].length) } : { fm: [], rest: text };
+  const lines = text.split('\n');
+  const bounds = frontmatterBounds(lines);
+  if (!bounds || bounds.close === -1) return { fm: [], rest: text };
+  return { fm: lines.slice(bounds.open + 1, bounds.close), rest: lines.slice(bounds.close + 1).join('\n') };
 }
 
 /** The `files:` key line and the lines under it as the plan writes them, or null when the plan has no such key. */
@@ -139,7 +141,8 @@ function namedField(tasks, field) {
  * @returns {{ok: true, text: string, bytes: number, readsMissing: string[], readsUnchecked: boolean} | {ok: false, detail: string, hint: string}}
  */
 export function composeBrief({ planFile, planRel, planText, projectText, contextText, mainRoot = null, loadMap = () => null }) {
-  const { fm, rest } = splitFrontmatter(normalize(planText));
+  const planNorm = normalize(planText);
+  const { fm, rest } = splitFrontmatter(planNorm);
   const lines = rest.split('\n');
   if (sectionText(lines, '## Tasks') === null) {
     return { ok: false, detail: `${planFile} has no ## Tasks section, so there is nothing to brief`,
@@ -163,7 +166,7 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
 
   // a Reads entry is only ever compared with the index: nothing a plan names is opened
   const reads = [...new Set(namedField(taskLines, 'Reads').map((n) => n.entry))];
-  const filesAsked = readFrontmatterList(normalize(planText), 'files').items.filter((f) => typeof f === 'string' && f);
+  const filesAsked = readFrontmatterList(planNorm, 'files').items.filter((f) => typeof f === 'string' && f);
   const map = reads.length || filesAsked.length ? loadMap() : null;
   const readsUnchecked = reads.length > 0 && map === null;
   const readsMissing = map === null ? [] : reads.filter((e) => readMissing(map, e));

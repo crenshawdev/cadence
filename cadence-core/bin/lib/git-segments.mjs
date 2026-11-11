@@ -4,8 +4,9 @@
 // predicting the shell has an unbounded escape surface, and every patch added grammar
 // so a segment counts only when its command word is git, and everything else is silent by construction
 // also holds the .planning/ scope walk that git-guard, read-trace and subagent-trace share
-// the walk is a generator yielding [dir, name] and taking back a boolean; planningRoot drives it with existsSync
 'use strict';
+
+import { posix, win32 } from 'node:path';
 
 /** The git global options that take a separate argument. A fixed list, not a grammar: without it
  * `git -C /srv/repo push` reads `/srv/repo` as the verb. The `=`-glued spellings need no entry. */
@@ -71,75 +72,33 @@ export function gitInvocations(text) {
 }
 
 /**
- * The parent of an absolute directory, as node's `path.dirname` answers it. A
- * `/`-leading path steps the way `path.posix.dirname` does; anything else (a
- * drive path, a UNC path) steps the way `path.win32.dirname` does, with both
- * separators. A root answers itself, which is what ends the walk.
+ * The parent of an absolute directory. A `/`-leading path steps with `path.posix.dirname`; anything else (a drive
+ * path, a UNC path) with `path.win32.dirname`, which knows both separators. A root answers itself, which is what ends
+ * the walk.
  *
  * @param {string} dir
  * @returns {string}
  */
 export function parentDir(dir) {
-  const posix = dir.startsWith('/');
-  const isSep = posix ? (c) => c === '/' : (c) => c === '/' || c === '\\';
-  let root = 0; // how much of the front is root, which a step never cuts into
-  if (posix) {
-    root = 1;
-  } else if (/^[A-Za-z]:/.test(dir)) {
-    root = isSep(dir[2]) ? 3 : 2;
-  } else if (isSep(dir[0])) {
-    // UNC: `\\server\share\` is the root, and a bare `\\server\share` is too.
-    const unc = /^[\\/]{2}[^\\/]+[\\/]+[^\\/]+/.exec(dir);
-    if (unc && unc[0].length === dir.length) return dir;
-    root = unc ? unc[0].length + 1 : 1;
-  }
-
-  // Skip the trailing separators and the last name, then cut at the separator
-  // before it. Only that one separator goes: `/a//b` answers `/a/`, as node does.
-  let end = -1;
-  let named = false;
-  for (let i = dir.length - 1; i >= root; i--) {
-    if (!isSep(dir[i])) named = true;
-    else if (named) { end = i; break; }
-  }
-  if (end === -1) return root ? dir.slice(0, root) : '.';
-  if (posix && end === 1) return '//'; // posix.dirname's own quirk for `//a`
-  return dir.slice(0, end);
+  return (dir.startsWith('/') ? posix : win32).dirname(dir);
 }
 
 /**
- * The walk itself. From `start` upward: a directory holding `.planning` is the
- * project root; a directory holding `.git` first is a repo that is not Cadence's;
- * reaching the filesystem root is nothing. Yields each `[dir, name]` it needs
- * probed and expects the answer back through `next(boolean)`.
- *
- * @param {string} start
- * @returns {Generator<[string, string], string | null, boolean>}
- */
-function* planningWalk(start) {
-  let dir = start;
-  for (;;) {
-    if (yield [dir, '.planning']) return dir;
-    if (yield [dir, '.git']) return null; // repo root, not Cadence
-    const parent = parentDir(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-}
-
-/**
- * The Cadence project root above `start`, or null. Sync driver for the hooks.
+ * The Cadence project root above `start`, or null. From `start` upward: a directory holding `.planning` is the
+ * project root; a directory holding `.git` first is a repo that is not Cadence's; reaching the filesystem root is
+ * nothing.
  *
  * @param {string} start
  * @param {(dir: string, name: string) => boolean} has does `dir/name` exist
  * @returns {string | null}
  */
 export function planningRoot(start, has) {
-  const walk = planningWalk(start);
-  let step = walk.next();
-  while (!step.done) {
-    const [dir, name] = step.value;
-    step = walk.next(has(dir, name));
+  let dir = start;
+  for (;;) {
+    if (has(dir, '.planning')) return dir;
+    if (has(dir, '.git')) return null; // repo root, not Cadence
+    const parent = parentDir(dir);
+    if (parent === dir) return null;
+    dir = parent;
   }
-  return step.value;
 }

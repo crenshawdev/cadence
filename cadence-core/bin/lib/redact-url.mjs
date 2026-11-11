@@ -13,11 +13,15 @@ const MARK = REDACTION_MARK;
 // 1. scheme-anchored `<scheme>://<userinfo>@`, which covers a password-less `https://<token>@host`
 // Every lookbehind pins the start to the start of a run: no verdict changes, and it kills quadratic backtracking
 // (a 480k-character input took 84s without it). The scheme rules keep `[0-9+.-]*` inside the capture so `$1` writes the
-// prefix back; pinning on letters alone was just as slow.
+// prefix back; pinning on letters alone was just as slow. Rules 2 and 2b pin the same way, to the start of a
+// `/`-, `@`- or whitespace-delimited run.
 const SCHEME_USERINFO = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@]+)@/g;
 
 // 2. scheme-less `<user>:<secret>@<host>` and scp `user:token@host:path`; the colon separates it from `git@host:o/r`
-const BARE_USERINFO = /(?<![^\s/:@])([^\s/:@]+:[^\s/@]+)@/g;
+// It starts at the first non-colon character of a run, after any leading colons, and not after every colon in it: a later
+// start can only match where the first one does, and restarting at each colon of `:a:a:a...` made it quadratic.
+// The lookahead goes first so the lookbehind's walk back over a colon prefix only runs at a real candidate start.
+const BARE_USERINFO = /(?=[^\s/:@])(?<=(?:^|[\s/@]):*)([^\s/:@]+:[^\s/@]+)@/g;
 
 // 1b + 2b. The same two spans with the `@` cut off, anchored to end of input. Rules 1 and 2 need the `@`, so a userinfo
 // whose `@` fell outside the sanitize window matched nothing and the secret survived (#215).
@@ -25,7 +29,7 @@ const BARE_USERINFO = /(?<![^\s/:@])([^\s/:@]+:[^\s/@]+)@/g;
 // a forge PAT cut before its `@` is byte-for-byte a plain host. 2b keeps the colon, the only discriminator it has.
 // Both exclude quotes so a JSON tail like `"secret":"hunter2"}}` isn't eaten as userinfo.
 const SCHEME_USERINFO_CUT = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@"']+)$/;
-const BARE_USERINFO_CUT = /(?<![^\s/:@"'])[^\s/:@"']+:[^\s/@"']+$/;
+const BARE_USERINFO_CUT = /(?=[^\s/:@"'])(?<=(?:^|[\s/@"']):*)[^\s/:@"']+:[^\s/@"']+$/;
 
 /**
  * `s` with the userinfo of every URL-shaped and scp-shaped remote replaced by `<redacted>`, the rest byte-identical.
@@ -37,7 +41,8 @@ const BARE_USERINFO_CUT = /(?<![^\s/:@"'])[^\s/:@"']+:[^\s/@"']+$/;
  */
 export function redactUrl(s) {
   const text = String(s);
-  // split on whitespace: no rule matches across it, so per-segment equals whole-string and cost stays linear
+  // split on whitespace: no rule matches across it, so per-segment equals whole-string, and the pinned starts keep each
+  // segment's cost linear
   const parts = text.split(/(\s+)/);
   // the cut rules are `$`-anchored, so only the last segment can carry one
   const last = parts.length - 1;

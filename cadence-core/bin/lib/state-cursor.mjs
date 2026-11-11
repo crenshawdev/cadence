@@ -1,7 +1,7 @@
 // @ts-check
 // the grammar of STATE.md's cursor, read side: four required lines plus an optional `Plan:` line
 // split from planning-files so the 3.9.0-removed module could load it without `node:fs`; moving it back gains nothing
-// planning-files re-exports `parseCursor`, so the seam and its tests import it from there; the writer stays put
+// callers take `parseCursor` from here; the writer stays in planning-files
 // imports nothing and touches no Node global
 'use strict';
 
@@ -20,17 +20,16 @@
  *   updated:string,plan?:{k:number,j:number,name?:string}}|null}
  */
 export function parseCursor(text) {
-  const m = (re) => { const r = text.match(re); return r ? r : null; };
-  const phase = m(/^Phase:\s*(\d+(?:\.\d+)?)\s+of\s+(\d+)\s+\((.+)\)\s*$/m);
+  const phase = text.match(/^Phase:\s*(\d+(?:\.\d+)?)\s+of\s+(\d+)\s+\((.+)\)\s*$/m);
   const status = rest(text, /^Status:([^\r\n]*)/m);
   const next = rest(text, /^Next:([^\r\n]*)/m);
-  const updated = m(/^Updated:\s*(\d{4}-\d{2}-\d{2})\s*$/m);
+  const updated = text.match(/^Updated:\s*(\d{4}-\d{2}-\d{2})\s*$/m);
   if (!phase || !status || !next || !updated) return null;
   const cursor = {
     phase: Number(phase[1]), total: Number(phase[2]), name: phase[3],
     status, next, updated: updated[1],
   };
-  const plan = m(/^Plan:[ \t]*(\d+)[ \t]+of[ \t]+(\d+)(?:[ \t]+\((.+)\))?[ \t]*$/m);
+  const plan = text.match(/^Plan:[ \t]*(\d+)[ \t]+of[ \t]+(\d+)(?:[ \t]+\((.+)\))?[ \t]*$/m);
   if (!plan) return cursor;
   const name = plan[3] === undefined ? '' : plan[3].trim();
   return { ...cursor, plan: { k: Number(plan[1]), j: Number(plan[2]), ...(name ? { name } : {}) } };

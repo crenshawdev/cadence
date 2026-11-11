@@ -21,12 +21,12 @@
 
 import { join as joinPath } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { emit } from './lib/seam-io.mjs';
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import {
   parseQuery, probeArgv, bareArgv, lineArgv, comparandArgv, classifyResult, excludedFrom,
 } from './lib/why-query.mjs';
-import { renderChain } from './lib/why-render.mjs';
+import { capChain, renderChain } from './lib/why-render.mjs';
 import {
   buildCommitIndex, buildTaskIndex, buildRecoveredIndex, mergeCommitIndexes,
   resolveCommit, readPhaseRecords, readAdjudications, rangeMembers,
@@ -42,7 +42,7 @@ import { decisionsFor, declaringTasks, parseDeviations } from './lib/why-record.
 function runGit(dir, args) {
   try {
     const stdout = execFileSync('git', ['-C', dir, ...args],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
     return { status: 0, stdout, stderr: '' };
   } catch (e) {
     const err = /** @type {any} */ (e);
@@ -171,11 +171,9 @@ function joinChain(dir, path, index, raws) {
     const join = joinFor(index, e.sha);
     if (join.state !== 'resolved') return { ...e, join };
 
+    const phaseDir = index.dirs.find((/** @type {any} */ d) => d.label === join.label);
     const key = `${join.label}\x1f${join.plan}`;
-    if (!memo.has(key)) {
-      const phaseDir = index.dirs.find((/** @type {any} */ d) => d.label === join.label);
-      memo.set(key, readPhaseRecords(phaseDir, join.plan, dir));
-    }
+    if (!memo.has(key)) memo.set(key, readPhaseRecords(phaseDir, join.plan, dir));
     const records = memo.get(key);
     for (const w of records.warnings) warnings.add(w);
 
@@ -183,9 +181,7 @@ function joinChain(dir, path, index, raws) {
       planText: records.plan, contextText: records.context, taskCell: join.task,
     });
     join.deviation = { bullets: parseDeviations(records.summary) };
-    join.review = reviewFor(
-      index.dirs.find((/** @type {any} */ d) => d.label === join.label), e.sha,
-    );
+    join.review = reviewFor(phaseDir, e.sha);
     join.declared = {
       planFile: records.planFile,
       tasks: records.plan ? declaringTasks(records.plan, path) : [],
@@ -242,7 +238,8 @@ const GIT_FAILED_HINT = 'this query needs a readable git repository: run it insi
 const argv = process.argv.slice(2);
 const ROWS = CONTRACTS['why.mjs'];
 /** One flag read through its declared row: the `''` row if it declares the flag, else the script-global `'*'` row. */
-const arg = (name) => requireFlag(argv, name, ROWS[''][name] || ROWS['*'][name]);
+const row = rowReader(argv, ROWS);
+const arg = (name) => row('', name);
 
 try {
   const dir = arg('--dir') || process.cwd();
@@ -301,8 +298,9 @@ try {
         const raws = parseEntries(chain.stdout);
         // bare arm only, since -L carries its own simplification, and only after the chain succeeded
         const excluded = line === undefined ? simplificationReport(dir, path, raws) : null;
-        const joined = joinChain(dir, path, index, raws);
-        const rendered = renderChain(joined.entries, { top, excluded, path });
+        // join only the commits the render will show; `total` still counts the whole chain
+        const joined = joinChain(dir, path, index, capChain(raws, top));
+        const rendered = renderChain(joined.entries, { top, total: raws.length, excluded, path });
         emit({
           ok: true, path, line, result: 'chain',
           text: rendered.text, shown: rendered.shown, total: rendered.total, entries: rendered.entries,
@@ -313,8 +311,5 @@ try {
     }
   }
 } catch (e) {
-  const err = /** @type {any} */ (e);
-  if (err && err.seam) emit({ ok: false, reason: err.seam, detail: err.detail,
-    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  else emit({ ok: false, reason: 'internal', detail: String(err && err.message ? err.message : err) });
+  emitCaught(e, String);
 }

@@ -12,21 +12,20 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { boundedRun } from '../lib/bounded-run.mjs';
 import { readTestingPolicy } from '../lib/config-merge.mjs';
 import { isForgeSlug } from '../lib/forge-decision.mjs';
 import { onPath } from '../lib/on-path.mjs';
 import { atomicWrite, parseUat, renderUat } from '../lib/planning-files.mjs';
 import { localGitEnv, publishAuthorized } from '../lib/publish-authorization.mjs';
-import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { testSeamOpen } from '../lib/test-seam.mjs';
+import { schemaPath } from '../lib/test-seam.mjs';
 import { sleep } from '../lib/text-util.mjs';
-import { fail, ok, phaseSpellingCollision, read } from './core.mjs';
+import { fail, intFlag, ok, phaseGuard, read } from './core.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// the same shape as config.mjs's SCHEMA_PATH: the same file, the same CADENCE_CONFIG_SCHEMA override, the same gate
-const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
-  || join(HERE, '..', '..', 'config.schema.json');
+// the same file and the same CADENCE_CONFIG_SCHEMA override as config.mjs, resolved by the one schemaPath
+const SCHEMA_PATH = schemaPath(join(HERE, '..', '..', 'config.schema.json'));
 
 /** Where the committed policy lives, relative to the project root. */
 export const POLICY_FILE = '.github/cadence/coverage-policy.json';
@@ -126,9 +125,11 @@ function workflowTexts(root) {
 
 /** Whether git tracks a file matching `glob`, asked of git so no glob parser is written here. */
 function tracksMatch(root, glob) {
+  // the exit status answers, stdout is dropped: a listing past the 1 MiB read buffer threw and read as "no match"
   try {
-    return execFileSync('git', ['-C', root, 'ls-files', '--', `:(glob)${glob}`],
-      { encoding: 'utf8', env: localGitEnv(), stdio: ['ignore', 'pipe', 'ignore'] }).trim() !== '';
+    execFileSync('git', ['-C', root, 'ls-files', '--error-unmatch', '--', `:(glob)${glob}`],
+      { env: localGitEnv(), stdio: 'ignore' });
+    return true;
   } catch { return false; }
 }
 
@@ -264,14 +265,11 @@ const GH_TIMEOUT_MS = 30000;
  * @returns {Array<{name: string, status: string, conclusion: string|null}>|null}
  */
 function readCheckRuns(slug, sha) {
-  let out;
+  const r = boundedRun('gh', ['api', '--paginate', '--jq', '.check_runs[] | {name, status, conclusion}',
+    `repos/${slug}/commits/${sha}/check-runs?per_page=100`], { timeout: GH_TIMEOUT_MS });
+  if (!r.ok) return null;
   try {
-    out = execFileSync('gh', ['api', '--paginate', '--jq', '.check_runs[] | {name, status, conclusion}',
-      `repos/${slug}/commits/${sha}/check-runs?per_page=100`],
-    { encoding: 'utf8', timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'ignore'] });
-  } catch { return null; }
-  try {
-    return out.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+    return r.stdout.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
   } catch { return null; }
 }
 
@@ -303,26 +301,18 @@ function cmdCiStatus(dir, root, opts) {
   }
   let wait = 0;
   if (opts.wait !== undefined) {
-    const w = requireInt(opts.wait);
-    if (!w.ok || w.value < 0) {
-      return fail('bad-args', '--wait must be a whole number of seconds, 0 or more',
-        `pass --wait <seconds>, at most ${MAX_WAIT_S} (larger values are held to that), or drop it to read once`);
-    }
+    const w = intFlag(opts.wait, 0, '--wait must be a whole number of seconds, 0 or more',
+      `pass --wait <seconds>, at most ${MAX_WAIT_S} (larger values are held to that), or drop it to read once`);
+    if (!w.ok) return;
     wait = Math.min(w.value, MAX_WAIT_S);
   }
   /** @type {{raw: string}|null} */
   let phase = null;
   if (opts.phase !== undefined) {
-    const parsed = requirePhaseArg(opts.phase);
-    if (!parsed.ok) {
-      return fail('bad-args', 'ci-status --phase needs a phase number',
-        'pass --phase <N> naming the phase whose UAT.md should record the commit, or drop it');
-    }
-    const collision = phaseSpellingCollision(dir, parsed);
-    if (collision) {
-      return fail('bad-args', `ci-status ${collision}`,
-        're-run with one of the two spellings the detail names - nothing was read');
-    }
+    const parsed = phaseGuard('ci-status', dir, opts.phase, 'ci-status --phase needs a phase number',
+      'pass --phase <N> naming the phase whose UAT.md should record the commit, or drop it',
+      're-run with one of the two spellings the detail names - nothing was read');
+    if (!parsed) return;
     phase = parsed;
   }
 

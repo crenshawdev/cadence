@@ -4,10 +4,9 @@
 'use strict';
 
 import { join } from 'node:path';
-import { fail, phaseSpellingCollision, listPlanFiles, memoryBackend, ok, read, readJsonPayload } from './core.mjs';
+import { fail, phaseGuard, listPlanFiles, memoryBackend, ok, read, readJsonPayload } from './core.mjs';
 import { citedMentions } from '../lib/cite-cited.mjs';
 import { SURFACED_KINDS, surfacedRows } from '../lib/cite-surfaced.mjs';
-import { requirePhaseArg } from '../lib/require-int.mjs';
 import { appendEvent } from '../lib/trace.mjs';
 
 // it reports and never gates: a threshold needs a legitimate-zero rate to set against, which this produces
@@ -22,17 +21,11 @@ import { appendEvent } from '../lib/trace.mjs';
 const CITE_POINTS = ['planned', 'committed'];
 
 function cmdCiteCount(dir, opts) {
-  const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) {
-    return fail('bad-args', 'cite-count needs --phase <N>',
-      'pass --phase <N> naming the phase whose plans should be counted, then re-run');
-  }
   // the collision check goes first and refuses only if the normalized spelling names a directory that exists here
-  const collision = phaseSpellingCollision(dir, parsedPhase);
-  if (collision) {
-    return fail('bad-args', `cite-count ${collision}`,
-      're-run with one of the two spellings the detail names - nothing was read');
-  }
+  const parsedPhase = phaseGuard('cite-count', dir, opts.phase, 'cite-count needs --phase <N>',
+    'pass --phase <N> naming the phase whose plans should be counted, then re-run',
+    're-run with one of the two spellings the detail names - nothing was read');
+  if (!parsedPhase) return;
   const n = parsedPhase.value;
 
   if (opts.point !== undefined) {

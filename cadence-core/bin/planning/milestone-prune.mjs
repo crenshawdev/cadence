@@ -4,13 +4,12 @@
 
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { join, resolve as resolvePath, sep } from 'node:path';
-import { fail, ok, read } from './core.mjs';
+import { fail, notRealDirDetail, ok, read } from './core.mjs';
 import { withPlanningFileLock } from '../lib/capture-file.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import { archiveRequirements, completedPhases, pruneRoadmap } from '../lib/milestone-prune.mjs';
 import {
-  appendArchiveRows, atomicWrite, parseArchiveRows, parseContextDecisions,
-  parseSummarySnippets, parseUat,
+  appendArchiveRows, atomicWrite, parseArchiveRows, phaseRecallSnippets,
 } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
@@ -63,9 +62,7 @@ function cmdMilestonePrune(dir, opts) {
     const rootStat = lstatSync(archiveRoot, { throwIfNoEntry: false });
     if (rootStat && !rootStat.isDirectory()) {
       return fail('archive-root-unusable',
-        `${archiveRoot} exists and is not a real directory`
-        + `${rootStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-        + ' - move or remove it, then re-run',
+        notRealDirDetail(archiveRoot, rootStat, 'renameSync'),
         'clear that path first - nothing was pruned and no phase directory moved, so the tree is'
         + ' exactly as it was');
     }
@@ -92,7 +89,7 @@ function cmdMilestonePrune(dir, opts) {
   }
 
   // recall residue is written before the loop: the phase directories leave the live tree there
-  // the rows come from the same three parsers cmdRecall runs, in fixed order, never a model-authored summary
+  // the rows come from the helper cmdRecall reads, in fixed order, never a model-authored summary
   // writing ahead costs idempotence: a phase whose removal fails is read twice, so filter by this label's heading
   // one containment test keyed on the label, outside appendArchiveRows, a pure appender that can't judge a phase
   const archiveFile = join(dir, 'ARCHIVE.md');
@@ -109,22 +106,9 @@ function cmdMilestonePrune(dir, opts) {
     .map((r) => r.origin));
   for (const n of [...completed].sort((a, b) => a - b)) {
     const pdir = join(dir, 'phases', String(n));
-    const summaryOrigin = `phases/${n}/SUMMARY.md`;
-    const summary = alreadyArchived.has(summaryOrigin) ? null : read(join(pdir, 'SUMMARY.md'));
-    if (summary) for (const text of parseSummarySnippets(summary)) {
-      residue.push({ origin: summaryOrigin, text });
-    }
-    const uatOrigin = `phases/${n}/UAT.md`;
-    const uatText = alreadyArchived.has(uatOrigin) ? null : read(join(pdir, 'UAT.md'));
-    if (uatText) for (const it of parseUat(uatText).items) {
-      const text = `${it.name || ''} ${it.expected || ''}`.trim();
-      if (text) residue.push({ origin: uatOrigin, text });
-    }
-    const contextOrigin = `phases/${n}/CONTEXT.md`;
-    const context = alreadyArchived.has(contextOrigin) ? null : read(join(pdir, 'CONTEXT.md'));
-    if (context) for (const text of parseContextDecisions(context)) {
-      residue.push({ origin: contextOrigin, text });
-    }
+    const originOf = (/** @type {string} */ file) => `phases/${n}/${file}`;
+    const rows = phaseRecallSnippets((f) => (alreadyArchived.has(originOf(f)) ? null : read(join(pdir, f))));
+    for (const { file, text } of rows) residue.push({ origin: originOf(file), text });
   }
   // no readable artifacts under the completed phases means no ARCHIVE.md at all, like the two document writes below
   if (residue.length) atomicWrite(archiveFile, appendArchiveRows(archiveText, label, residue));

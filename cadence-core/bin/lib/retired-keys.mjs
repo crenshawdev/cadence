@@ -42,6 +42,21 @@ const retiredModelKey = (key, replacement) => Object.freeze({
 });
 
 /**
+ * The row all eight `risk.override.<surface>` bools share. Only the surface differs, and the detail names it as the
+ * value to add to the waiver list. `replacement` stays null: the old keys were per-surface bools and the new one is an
+ * `array_enum`, so `use "<key>" instead` would read as a drop-in and `set ...=true` on it is refused. The pointer rides `detail`.
+ * @param {string} surface
+ * @returns {RetiredKey}
+ */
+const retiredRiskOverride = (surface) => Object.freeze({
+  replacement: null,
+  since: 'v2.7.0',
+  detail: 'removed with the dispatch-time risk floor - the plan-time floor replaced it, so to waive it '
+    + `for \`${surface}\`, add \`${surface}\` to the list at review.triggers.risk_surface.waive_routing_floor; `
+    + 'the commit-time risk_surface review still judges the actual diff',
+});
+
+/**
  * Every retired config key, keyed by the exact dotted token a user writes at the CLI: `checkPairs` looks a key
  * up by that token, so the spelling here is the matched string. `since` names the milestone that retired it.
  * @type {Readonly<Record<string, RetiredKey>>}
@@ -90,62 +105,14 @@ export const RETIRED_KEYS = Object.freeze({
       + 'dispatch runs until it returns; size plans with workflow.max_plan_tasks '
       + 'instead, which is the real lever on what one dispatch costs',
   }),
-  'risk.override.auth': Object.freeze({
-    replacement: null,
-    since: 'v2.7.0',
-    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
-      + 'raised by a path token, so there is no floor for a waiver to lower; '
-      + 'the commit-time risk_surface review still judges the actual diff',
-  }),
-  'risk.override.migrations': Object.freeze({
-    replacement: null,
-    since: 'v2.7.0',
-    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
-      + 'raised by a path token, so there is no floor for a waiver to lower; '
-      + 'the commit-time risk_surface review still judges the actual diff',
-  }),
-  'risk.override.billing': Object.freeze({
-    replacement: null,
-    since: 'v2.7.0',
-    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
-      + 'raised by a path token, so there is no floor for a waiver to lower; '
-      + 'the commit-time risk_surface review still judges the actual diff',
-  }),
-  'risk.override.concurrency': Object.freeze({
-    replacement: null,
-    since: 'v2.7.0',
-    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
-      + 'raised by a path token, so there is no floor for a waiver to lower; '
-      + 'the commit-time risk_surface review still judges the actual diff',
-  }),
-  'risk.override.destructive': Object.freeze({
-    replacement: null,
-    since: 'v2.7.0',
-    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
-      + 'raised by a path token, so there is no floor for a waiver to lower; '
-      + 'the commit-time risk_surface review still judges the actual diff',
-  }),
-  'risk.override.secrets': Object.freeze({
-    replacement: null,
-    since: 'v2.7.0',
-    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
-      + 'raised by a path token, so there is no floor for a waiver to lower; '
-      + 'the commit-time risk_surface review still judges the actual diff',
-  }),
-  'risk.override.api_contract': Object.freeze({
-    replacement: null,
-    since: 'v2.7.0',
-    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
-      + 'raised by a path token, so there is no floor for a waiver to lower; '
-      + 'the commit-time risk_surface review still judges the actual diff',
-  }),
-  'risk.override.untrusted_input': Object.freeze({
-    replacement: null,
-    since: 'v2.7.0',
-    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
-      + 'raised by a path token, so there is no floor for a waiver to lower; '
-      + 'the commit-time risk_surface review still judges the actual diff',
-  }),
+  'risk.override.auth': retiredRiskOverride('auth'),
+  'risk.override.migrations': retiredRiskOverride('migrations'),
+  'risk.override.billing': retiredRiskOverride('billing'),
+  'risk.override.concurrency': retiredRiskOverride('concurrency'),
+  'risk.override.destructive': retiredRiskOverride('destructive'),
+  'risk.override.secrets': retiredRiskOverride('secrets'),
+  'risk.override.api_contract': retiredRiskOverride('api_contract'),
+  'risk.override.untrusted_input': retiredRiskOverride('untrusted_input'),
   'review.triggers.pre_ship.gate': Object.freeze({
     replacement: null,
     since: 'v3.2.0',

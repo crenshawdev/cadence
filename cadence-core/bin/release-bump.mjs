@@ -37,7 +37,7 @@
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { emit } from './lib/seam-io.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 // runs an ordered step list and records which steps completed
 import { runTransition } from './lib/file-transition.mjs';
@@ -46,7 +46,7 @@ import {
 } from './lib/release-decision.mjs';
 // no `readText` here, on purpose: its ''-on-failure would read an unreadable manifest or CHANGELOG as an empty one
 // no flag rule here, the declared rows own it; `requireFlag` raises, `evaluateFlag` returns (for --date)
-import { CONTRACTS, evaluateFlag, requireFlag } from './lib/arg-contract.mjs';
+import { CONTRACTS, evaluateFlag, rowReader } from './lib/arg-contract.mjs';
 
 /**
  * The release-tag URL a CHANGELOG link points at, from the manifest's `homepage` or `repository`:
@@ -116,60 +116,72 @@ const VERSION_HINTS = Object.freeze({
 const versionHint = (code) => VERSION_HINTS[code]
   || 'the reason names what this seam decided about the target version - give --version a value it accepts, then re-run';
 
-function bump(dir, versionArg, dateArg) {
-  const date = dateArg || new Date().toISOString().slice(0, 10);
-  const pluginPath = join(dir, PRIMARY_MANIFEST);
-
-  // the target is the explicit --version and nothing else; normalized before the manifest read so a refusal can name it
-  let target = normalizeTargetVersion(versionArg);
-  // keep the raw argument when normalization empties it: `--version v` refused as `no-target-version`, which is false,
-  // a version was given. The raw value reaches `unparseable-version`, which quotes it.
-  // normalizeTargetVersion stays as it is because the audit's `version_drift` uses it too
+/**
+ * The target is the explicit --version and nothing else; normalized before the manifest read so a refusal can name it.
+ * Keeps the raw argument when normalization empties it: `--version v` refused as `no-target-version`, which is false,
+ * a version was given. The raw value reaches `unparseable-version`, which quotes it.
+ * normalizeTargetVersion stays as it is because the audit's `version_drift` uses it too.
+ * @param {any} versionArg
+ */
+function targetOf(versionArg) {
+  const target = normalizeTargetVersion(versionArg);
   const rawVersion = typeof versionArg === 'string' ? versionArg.trim() : '';
-  if (!target && rawVersion) target = rawVersion;
+  return !target && rawVersion ? rawVersion : target;
+}
 
+/**
+ * The nothing-written tail every refusal carries; `state` is the changelog's, `not-examined` when it never got that far.
+ * @param {any} target @param {any} from @param {any} to @param {string} [state]
+ */
+function untouched(target, from, to, state = 'not-examined') {
+  return { target, manifest: { from, to, bumped: false }, siblings: [], changelog: { changed: false, state } };
+}
+
+/**
+ * The primary manifest and its verdict, or `null` after emitting the skip or refusal that ends the run: no plugin
+ * manifest, an unreadable one, a refusal verdict, or no `version` field.
+ * @param {string} dir @param {any} target
+ */
+function readPrimary(dir, target) {
   // auto-detect gate: no plugin manifest means skip and write nothing
-  const read = readManifest(pluginPath);
+  const read = readManifest(join(dir, PRIMARY_MANIFEST));
   if (read.state === 'absent') {
     emit({ ok: true, action: 'skip', reason: 'no-plugin-manifest',
       detail: 'no .claude-plugin/plugin.json: non-plugin project, nothing to bump' });
-    return;
+    return null;
   }
   if (read.state === 'unreadable') {
-    emit({ ok: false, action: 'refuse', reason: 'unreadable-manifest', target,
-      manifest: { from: null, to: target, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
+    emit({ ok: false, action: 'refuse', reason: 'unreadable-manifest', ...untouched(target, null, target),
       detail: '.claude-plugin/plugin.json is present but not parseable JSON: refusing to bump a manifest this seam cannot read, wrote nothing',
       hint: 'repair that file\'s JSON and re-run the bump - the tree is exactly as it was' });
-    return;
+    return null;
   }
   const manifest = read.manifest;
 
   // any refusal verdict: one envelope, ok:false, exit 1, nothing written (never a `## [null]` CHANGELOG heading)
   const primary = decideManifestBump(manifest.version, target);
   if (primary.action === 'refuse') {
-    emit({ ok: false, action: 'refuse', reason: primary.code, target,
-      manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
+    emit({ ok: false, action: 'refuse', reason: primary.code, ...untouched(target, primary.from, primary.to),
       detail: primary.reason, hint: versionHint(primary.code) });
-    return;
+    return null;
   }
 
   // the one primary verdict re-classified: a `skip` here let the close ship over a manifest nobody bumped
   if (primary.code === 'no-version-field') {
-    emit({ ok: false, action: 'refuse', reason: 'no-version-field', target,
-      manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
+    emit({ ok: false, action: 'refuse', reason: 'no-version-field', ...untouched(target, primary.from, primary.to),
       detail: `the primary manifest ${PRIMARY_MANIFEST} carries no \`version\` field, so this release would ship unbumped: repair the manifest or close without a version bump. Wrote nothing.`,
       hint: `add a "version" field to ${PRIMARY_MANIFEST} naming the version this release ships from, then re-run the bump` });
-    return;
+    return null;
   }
+  return { manifest, primary };
+}
 
-  // --- read and decide (nothing below this line touches disk) ---------------
-  // the whole write set is read and planned before the first write lands, or an unwritable CHANGELOG.md emitted
-  // "internal" while plugin.json already had the new version: a half-bumped tree with no `manifest` in the envelope
-
-  // primary manifest: a real bump mutates the in-memory manifest here, and the bytes reach disk in the write half below
-  if (primary.action === 'bump') manifest.version = target;
-
-  // sibling manifests: write `version` only where it exists; marketplace.json has none, so it skips and stays untouched
+/**
+ * Sibling manifests: write `version` only where it exists; marketplace.json has none, so it skips and stays untouched.
+ * Answers the envelope rows and the writes they planned, or `null` after emitting the refusal for an unreadable one.
+ * @param {string} dir @param {any} target @param {any} primary
+ */
+function planSiblings(dir, target, primary) {
   const siblings = [];
   /** @type {Array<{ rel: string, path: string, manifest: Record<string, any> }>} */
   const siblingWrites = [];
@@ -178,12 +190,10 @@ function bump(dir, versionArg, dateArg) {
     const siblingRead = readManifest(siblingPath);
     if (siblingRead.state === 'unreadable') {
       // an unreadable sibling refuses the run before anything is written, so no half-landed primary
-      emit({ ok: false, action: 'refuse', reason: 'unreadable-sibling-manifest', target,
-        manifest: { from: primary.from, to: primary.to, bumped: false },
-        siblings: [], changelog: { changed: false, state: 'not-examined' },
+      emit({ ok: false, action: 'refuse', reason: 'unreadable-sibling-manifest', ...untouched(target, primary.from, primary.to),
         detail: `${rel} is present but not parseable JSON: refusing to ship a release whose sibling manifest this seam cannot read, wrote nothing. Repair ${rel} and re-run the bump.`,
         hint: `repair that sibling's JSON and re-run - the primary manifest was deliberately left at its old version, so the tree is consistent` });
-      return;
+      return null;
     }
     if (siblingRead.state !== 'ok') continue;
     const sibling = siblingRead.manifest;
@@ -197,27 +207,32 @@ function bump(dir, versionArg, dateArg) {
       ? { file: rel, action: 'refuse', bumped: false, reason: d.code }
       : { file: rel, action: d.action, bumped: d.bumped });
   }
+  return { siblings, siblingWrites };
+}
 
-  // changelog: scaffold the dated heading, then promote whatever is staged under `## [Unreleased]`
-  // composed and written once, since two writes would expose an intermediate state on disk
-  // gated on the primary verdict being `bump` or `noop`: dating a heading for a manifest nobody bumped claims a release
-  // that never happened, and a new verdict action has to be added to this whitelist to reach the changelog
-  // `changelog.state` is set on every path that emits a `changelog`, or a project with none read like a clean one
-  // its vocabulary is readChangelog's plus `not-examined` for refusals that returned early
+/**
+ * Changelog: scaffold the dated heading, then promote whatever is staged under `## [Unreleased]`
+ * composed once, since two writes would expose an intermediate state on disk.
+ * Gated on the primary verdict being `bump` or `noop`: dating a heading for a manifest nobody bumped claims a release
+ * that never happened, and a new verdict action has to be added to this whitelist to reach the changelog.
+ * `changelog.state` is set on every path that emits a `changelog`, or a project with none read like a clean one;
+ * its vocabulary is readChangelog's plus `not-examined` for refusals that returned early.
+ * Answers the envelope row and the composed bytes (`null` when nothing changed), or `null` after emitting the refusal
+ * for an unreadable CHANGELOG.
+ * @param {string} dir @param {Record<string, any>} manifest @param {any} target @param {string} date @param {any} primary
+ */
+function planChangelog(dir, manifest, target, date, primary) {
   let changelog = { changed: false, state: 'not-examined' };
   /** @type {string|null} the composed bytes to write, null when nothing changed */
   let changelogText = null;
-  const clPath = join(dir, CHANGELOG_FILE);
   if (target && (primary.action === 'bump' || primary.action === 'noop')) {
     // validated only when it's in this run's write set, so a run that never touches the changelog isn't refused over it
-    const clRead = readChangelog(clPath);
+    const clRead = readChangelog(join(dir, CHANGELOG_FILE));
     if (clRead.state === 'unreadable') {
-      emit({ ok: false, action: 'refuse', reason: 'unreadable-changelog', target,
-        manifest: { from: primary.from, to: primary.to, bumped: false },
-        siblings: [], changelog: { changed: false, state: 'unreadable' },
+      emit({ ok: false, action: 'refuse', reason: 'unreadable-changelog', ...untouched(target, primary.from, primary.to, 'unreadable'),
         detail: `${CHANGELOG_FILE} is present but cannot be read: refusing to scaffold a fresh changelog over a release history this seam cannot see, wrote nothing. Repair ${CHANGELOG_FILE} and re-run the bump.`,
         hint: `make ${CHANGELOG_FILE} readable and re-run - moving it aside would lose the release history this seam refuses to write over` });
-      return;
+      return null;
     }
     // absent means no changelog step, changed:false, ok:true, and says so with state:"absent"
     changelog = { changed: false, state: clRead.state };
@@ -231,13 +246,24 @@ function bump(dir, versionArg, dateArg) {
       changelog = { changed, promoted: promo.changed, section_empty: promo.sectionEmpty, state: 'ok' };
     }
   }
+  return { changelog, changelogText };
+}
 
-  // --- write ----------------------------------------------------------------
-  // one transition, stop-at-first-failure: a half-applied release tree makes every later step's plan wrong
-  // each step is keyed by its repo-relative path, so a failure can report which files landed
+/**
+ * The write half, and the envelope for what landed.
+ * One transition, stop-at-first-failure: a half-applied release tree makes every later step's plan wrong.
+ * Each step is keyed by its repo-relative path, so a failure can report which files landed.
+ * @param {string} dir @param {any} target @param {Record<string, any>} manifest @param {any} primary
+ * @param {{siblings: any[], siblingWrites: Array<{rel: string, path: string, manifest: Record<string, any>}>}} siblingPlan
+ * @param {{changelog: any, changelogText: string|null}} changelogPlan
+ */
+function writeBump(dir, target, manifest, primary, siblingPlan, changelogPlan) {
+  const { siblings, siblingWrites } = siblingPlan;
+  const { changelog, changelogText } = changelogPlan;
   /** @type {Array<[string, () => void]>} */
   const steps = [];
   if (primary.action === 'bump') {
+    const pluginPath = join(dir, PRIMARY_MANIFEST);
     steps.push([PRIMARY_MANIFEST,
       () => atomicWrite(pluginPath, JSON.stringify(manifest, null, 2) + '\n')]);
   }
@@ -246,6 +272,7 @@ function bump(dir, versionArg, dateArg) {
   }
   if (changelogText !== null) {
     const text = changelogText;
+    const clPath = join(dir, CHANGELOG_FILE);
     steps.push([CHANGELOG_FILE, () => atomicWrite(clPath, text)]);
   }
 
@@ -270,6 +297,29 @@ function bump(dir, versionArg, dateArg) {
   emit({ ok: true, action, target, reason: primary.code, detail: primary.reason,
     manifest: { from: primary.from, to: primary.to, bumped: primary.bumped },
     siblings, changelog });
+}
+
+function bump(dir, versionArg, dateArg) {
+  const date = dateArg || new Date().toISOString().slice(0, 10);
+  const target = targetOf(versionArg);
+
+  const head = readPrimary(dir, target);
+  if (head === null) return;
+  const { manifest, primary } = head;
+
+  // --- read and decide (nothing below this line touches disk) ---------------
+  // the whole write set is read and planned before the first write lands, or an unwritable CHANGELOG.md emitted
+  // "internal" while plugin.json already had the new version: a half-bumped tree with no `manifest` in the envelope
+
+  // primary manifest: a real bump mutates the in-memory manifest here, and the bytes reach disk in the write half below
+  if (primary.action === 'bump') manifest.version = target;
+
+  const siblingPlan = planSiblings(dir, target, primary);
+  if (siblingPlan === null) return;
+  const changelogPlan = planChangelog(dir, manifest, target, date, primary);
+  if (changelogPlan === null) return;
+
+  writeBump(dir, target, manifest, primary, siblingPlan, changelogPlan);
 }
 
 /** The `--date` grammar: anchored, month and day ranges spelled out. Not a calendar check, so `2026-02-31` matches. */
@@ -305,7 +355,7 @@ const cmd = argv[0];
 /** This script's declared rows; a subcommand's row wins over the `'*'` row for flags every arm allows. */
 const ROWS = CONTRACTS['release-bump.mjs'];
 /** One flag read through its declared row in the raising form, for flags that refuse as `missing-flag-value`. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 try {
   if (cmd === 'bump') {
@@ -331,8 +381,5 @@ try {
       detail: 'subcommand: bump [--dir <path>] [--version <v>] [--date <YYYY-MM-DD>]' });
   }
 } catch (e) {
-  // the raised refusal has no `message`, so without this arm a valueless --dir emits detail "[object Object]"
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
-    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  emitCaught(e);
 }

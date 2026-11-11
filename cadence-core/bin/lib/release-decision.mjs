@@ -8,26 +8,7 @@
 //   promoteUnreleased       - move staged content into that dated section
 // No I/O. Bad or missing input never throws, and an absent version yields null.
 
-import { escapeRe } from './text-util.mjs';
-
-/**
- * Fence-state scanner: an opening fence is three or more backticks or tildes with up to three leading spaces, a closing
- * one is the same character at least as long with no info string, and the delimiter line itself is never a heading.
- * Mirrors the private scanner in lib/planning-files.mjs, which isn't imported because it does fs and this does no I/O.
- * @returns {(line: string) => boolean}
- */
-function fenceScanner() {
-  /** @type {{char: string, len: number}|null} */
-  let fence = null;
-  return (/** @type {string} */ line) => {
-    const f = line.match(/^ {0,3}(`{3,}|~{3,})\s*(.*)$/);
-    if (!f) return fence !== null;
-    const char = f[1][0], len = f[1].length;
-    if (fence === null) fence = { char, len };
-    else if (char === fence.char && len >= fence.len && !f[2].trim()) fence = null;
-    return true;
-  };
-}
+import { escapeRe, fenceScanner } from './text-util.mjs';
 
 /**
  * Per-line fence state for a whole document, fed in order. `true` means the line is a delimiter or inside a fence,
@@ -218,20 +199,20 @@ export function prependChangelogEntry(changelogText, { version, date, url } = /*
   if (!version) {
     return { text, changed: false, reason: 'no-version: nothing to scaffold' };
   }
-  const headingRe = new RegExp(`^## \\[${escapeRe(version)}\\]`, 'm');
-  if (headingRe.test(text)) {
+  // a `## ` inside a fenced code block isn't a heading; one mask, computed before any splice, serves this test and the anchor search
+  const lines = text.split('\n');
+  const fenced = fenceMask(lines);
+  const headingRe = new RegExp(`^## \\[${escapeRe(version)}\\]`);
+  if (lines.some((l, i) => !fenced[i] && headingRe.test(l))) {
     return { text, changed: false, reason: 'already-present: entry heading exists, idempotent no-op' };
   }
 
   const heading = `## [${version}] - ${date}\n\n`;
   // no link reference without a URL: an empty `[version]: ` line is a malformed markdown reference, worse than none
   const linkRef = url ? `[${version}]: ${url}\n` : '';
-  const lines = text.split('\n');
 
   // anchor before the first released heading, below a leading `## [Unreleased]` (Keep a Changelog pins it at the top)
   // fall back to just after Unreleased, then the first `## `, else append
-  // a `## ` inside a fenced code block isn't a heading; the mask is computed once, before any splice
-  const fenced = fenceMask(lines);
   const isReleased = (l) => /^## \[/.test(l) && !/^## \[unreleased\]/i.test(l);
   let headingAt = lines.findIndex((l, i) => !fenced[i] && isReleased(l));
   if (headingAt < 0) {

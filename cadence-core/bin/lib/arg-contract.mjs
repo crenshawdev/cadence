@@ -10,19 +10,6 @@ import { flagValue, missingFlagValue } from './seam-input.mjs';
 import { requireInt, requireCursorNumber, requirePhaseArg } from './require-int.mjs';
 import { requirePlanKey } from './plan-key.mjs';
 
-// Three words, all positions already shipped; making every typed flag refuse would reverse two of them.
-//   refuse    ok:false naming the flag, which lib/seam-input.mjs's `flagValue` does by hand.
-//   warn      the value is kept raw and the caller records a warning. No row declares it today, but the arm stays
-//             so the next such flag is a decision.
-//   fallback  the flag reads as absent so the caller's own `|| default` answers. A dropped bare flag is fallback too.
-export const DISPOSITIONS = Object.freeze(['refuse', 'warn', 'fallback']);
-
-// Each type is an existing classifier, never a re-derived predicate: `int` is requireInt, `cursor` requireCursorNumber,
-// `phase` requirePhaseArg, `plan-key` requirePlanKey. `string` is the non-blank rule planning.mjs hand-writes at its
-// two `--root` guards. `boolean` is for flags whose bare form is the value (`--dry-run`, `--global`); without it a door
-// would call the only spelling the flag has malformed.
-export const TYPES = Object.freeze(['string', 'boolean', 'int', 'cursor', 'phase', 'plan-key']);
-
 /**
  * Flattens a classifier's `{ok:true, <key>} | {ok:false}` union into the one flat shape this module speaks.
  * Not a JSDoc discriminated union: with `strict: false` in tsconfig.ci.json that pattern hit a TS2339.
@@ -52,6 +39,8 @@ const CLASSIFIERS = {
 
 /**
  * Applies one disposition. `raw` is the caller's own spelling, kept by `warn` and dropped by the other two.
+ * The three words (refuse, warn, fallback) are the ones every shipped position already used; making every typed flag
+ * refuse would reverse two of them.
  * `fallback` reads as absent without consulting the token: the old permissive reader took the next flag as a value
  * (`decide --branch --dir <p>` answered `--dir` as the branch name). helper-census.test.mjs pins this arm's body here.
  * @param {string} disposition @param {string} flag @param {string|undefined} raw
@@ -134,6 +123,17 @@ export function requireFlag(argv, flag, spec) {
   const r = evaluateFlag(argv, flag, spec);
   if (!r.ok) throw missingFlagValue(r.detail);
   return r.value;
+}
+
+/**
+ * Binds a script's row table to `requireFlag` and hands back the lookup every dispatch reads its flags through:
+ * the subcommand's own row first, then the `'*'` row. Pure, so it never emits; the refusal is the catch arm's.
+ * @param {string[]} argv
+ * @param {Record<string, Record<string, any>>} table one script's `CONTRACTS` row
+ * @returns {(sub: string, name: string) => any}
+ */
+export function rowReader(argv, table) {
+  return (sub, name) => requireFlag(argv, name, table[sub][name] || table['*'][name]);
 }
 
 /**

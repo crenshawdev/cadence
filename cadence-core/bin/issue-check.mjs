@@ -8,12 +8,12 @@
 // No git or forge stderr reaches the envelope: redactUrl only covers URLs, so a bare token would leak.
 'use strict';
 
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import { boundedRun as run } from './lib/bounded-run.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { emit } from './lib/seam-io.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
 // --timeout-ms is `fallback` on purpose: a flag that could refuse could fail a land
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 import { refuseBase } from './lib/base-ref.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
@@ -25,33 +25,11 @@ import {
 /** Bounds each subprocess and the whole resolve loop alike, so a hung forge CLI can't hold up a land. */
 const DEFAULT_TIMEOUT_MS = 10000;
 
+/** Room for the `base..HEAD` log: a long branch is over Node's 1 MiB default (this repo's v1.0.0..HEAD is 1,050,919 bytes). */
+const LOG_MAX_BUFFER = 32 * 1024 * 1024;
+
 /** Most per-issue lookups one land makes, for numbers the open-only forgejo list missed; past it, `unresolved`. */
 const MAX_RESOLVES = 5;
-
-/**
- * Run a command, bounded, and never throw. SIGKILL because a child that ignores SIGTERM outlives its own timeout.
- * Stderr is discarded, since the default passes a failing CLI's stderr to the terminal and leaks it.
- * A failure is a boolean and a signal, never the third party's text.
- * @param {string} bin @param {string[]} args
- * @param {{cwd:string, timeout:number}} opts
- * @returns {{ok:boolean, stdout:string, timedOut:boolean}}
- */
-function run(bin, args, { cwd, timeout }) {
-  try {
-    const stdout = execFileSync(bin, args, {
-      cwd, timeout, killSignal: 'SIGKILL', encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return { ok: true, stdout, timedOut: false };
-  } catch (e) {
-    const err = /** @type {{stdout?:string, signal?:string}} */ (e || {});
-    return {
-      ok: false,
-      stdout: typeof err.stdout === 'string' ? err.stdout : '',
-      timedOut: err.signal === 'SIGKILL',
-    };
-  }
-}
 
 /**
  * The logins in a `tea login list --output json` reading, or null when it isn't a list at all.
@@ -114,7 +92,7 @@ function check(dir, baseArg, timeout) {
   decision = decideIssueCheck({ enabled, forge, loginName });
   if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
-  const gitRead = (args) => run('git', ['-C', dir, ...args], { cwd: dir, timeout });
+  const gitRead = (args) => run('git', ['-C', dir, ...args], { cwd: dir, timeout, maxBuffer: LOG_MAX_BUFFER });
   const base = baseArg !== undefined ? baseArg : (git.base_branch || resolveProtectedBranches(git)[0]);
   // a committed git.base_branch shaped like a flag would be an option to `git log`, so skip, never fail the land
   const refused = refuseBase(dir, base, timeout);
@@ -185,7 +163,7 @@ const cmd = argv[0];
 /** Declared rows. A subcommand's row wins over `'*'`, which holds the flags every arm takes. */
 const ROWS = CONTRACTS['issue-check.mjs'];
 /** One flag read through its declared row; the row owns the rule. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 try {
   if (cmd === 'check') {
@@ -198,8 +176,5 @@ try {
     emit({ ok: false, reason: 'usage', detail: 'subcommand: check [--dir <path>] [--base <name>] [--timeout-ms <n>]' });
   }
 } catch (e) {
-  // a `refuse` row's error has no message, so a valueless --dir would emit "[object Object]"
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
-    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
+  emitCaught(e, redactUrl);
 }

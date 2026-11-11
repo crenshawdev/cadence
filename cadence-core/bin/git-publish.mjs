@@ -19,7 +19,7 @@ import { authorizationDetail, decidePublish, decideReap, decideVerificationPubli
 import { localGitEnv, publishAuthorized } from './lib/publish-authorization.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 // requireFlag raises the refusal the catch at the foot renders; --dir refuses when empty so it can't default to the cwd
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 // a failed read degrades to '', which decidePublish sees as no branch and refuses
 import { readCurrentBranch } from './lib/git-head.mjs';
 import { redactUrl, redactAndCap } from './lib/redact-url.mjs';
@@ -87,6 +87,17 @@ const GATE_HINTS = Object.freeze({
 const gateHint = (arm, reason) => (GATE_HINTS[arm] || {})[reason]
   || 'the reason names the gate that stopped this - put the repository into a state that gate accepts, then re-run';
 
+/**
+ * The refusal for a torn config layer: the protected list ran as the default, so what it guards must not run.
+ * `where` is the branch (and remote) the caller names; `idle` says what stays undone, in the hint's closing clause.
+ * @param {{branch: any, remote?: any}} where @param {string} detail @param {any} warnings @param {string} idle
+ */
+function refuseTorn(where, detail, warnings, idle) {
+  emit({ ok: false, reason: 'config-parse-failed', ...where, detail,
+    hint: `repair the config layer the detail names so the protected-branch list can be read, then re-run - ${idle} while that list is unprovable`,
+    warnings });
+}
+
 function publish(dir, remote) {
   const currentBranch = readCurrentBranch(dir);
   const configuredRemotes = readRemotes(dir);
@@ -96,10 +107,7 @@ function publish(dir, remote) {
   // checked before decidePublish: a torn layer makes gate 1 report a parse failure as a missing opt-in
   const tornPublish = tornLayerRefusal({ warnings, tornLayers });
   if (tornPublish) {
-    emit({ ok: false, reason: 'config-parse-failed', branch: currentBranch,
-      remote, detail: tornPublish,
-      hint: 'repair the config layer the detail names so the protected-branch list can be read, then re-run - nothing is pushed while that list is unprovable',
-      warnings });
+    refuseTorn({ branch: currentBranch, remote }, tornPublish, warnings, 'nothing is pushed');
     return;
   }
 
@@ -152,9 +160,7 @@ function verifyPublish(dir, remote) {
   // a torn layer means the protected list ran as the default, so refuse before the push
   const torn = tornLayerRefusal({ warnings, tornLayers });
   if (torn) {
-    emit({ ok: false, reason: 'config-parse-failed', branch: currentBranch, remote, detail: torn,
-      hint: 'repair the config layer the detail names so the protected-branch list can be read, then re-run - nothing is pushed while that list is unprovable',
-      warnings });
+    refuseTorn({ branch: currentBranch, remote }, torn, warnings, 'nothing is pushed');
     return;
   }
   pushDecided(dir, decision, warnings);
@@ -182,10 +188,7 @@ function reap(dir, branch) {
   // sited at the mutation so other refusals keep their reason and an already-absent skip stays ok:true
   const tornReap = tornLayerRefusal({ warnings, tornLayers });
   if (tornReap) {
-    emit({ ok: false, reason: 'config-parse-failed', branch: decision.branch,
-      detail: tornReap,
-      hint: 'repair the config layer the detail names so the protected-branch list can be read, then re-run - no branch is deleted while that list is unprovable',
-      warnings });
+    refuseTorn({ branch: decision.branch }, tornReap, warnings, 'no branch is deleted');
     return;
   }
 
@@ -224,7 +227,7 @@ const cmd = argv[0];
 /** This script's declared rows. A subcommand's own row wins over the `'*'` row, where flags every arm takes live. */
 const ROWS = CONTRACTS['git-publish.mjs'];
 /** One flag of `sub`, read through its declared row. The row owns the rule; this just adapts our argv. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 try {
   // --dir refuses when empty, valueless or flag-shaped; --remote and --branch fall back (origin, and reap's no-branch)

@@ -9,6 +9,8 @@
 // Voice isn't checked here, the diff review judges that. Pure: no fs, no emit, no process, and no CONTRACTS row since it's a lib.
 'use strict';
 
+import { escapeRe, isPlainObject, show } from './text-util.mjs';
+
 /**
  * Words that mean something only inside Cadence. General software words and ordinary English stay off the list, so a
  * person's question can still say "branch" or "review". Plan 4's asks test matches the main-loop asks against this same list.
@@ -18,9 +20,6 @@ export const INTERNAL_TERMS = Object.freeze([
   'cross-model', 'goal-backward', 'deep pass', 'deep-verify', 're-arm', 'coordinator', 'orchestrator', 'reap',
 ]);
 
-/** @param {string} s */
-const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 /**
  * One term as a pattern: a space or hyphen inside it matches either, and the endings are plural and verb ones. A term
  * ending in `e` also takes `-ing` and `-ion` on its stem (triaging, adjudication). The closing `\b` is what keeps
@@ -28,7 +27,7 @@ const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * @param {string} term
  */
 function termSource(term) {
-  const words = term.split(/[-\s]/).map(escape).join('[-\\s]+');
+  const words = term.split(/[-\s]/).map(escapeRe).join('[-\\s]+');
   const endings = ['s', 'es', 'd', 'ed', 'ing'];
   if (!term.endsWith('e')) return `${words}(?:${endings.join('|')})?`;
   const stem = words.slice(0, -1);
@@ -62,11 +61,7 @@ function dottedKeyIn(line) {
 }
 
 /** @param {any} v */
-const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-/** @param {any} v */
 const filled = (v) => typeof v === 'string' && v.trim() !== '';
-/** @param {any} v */
-const show = (v) => JSON.stringify(v === undefined ? null : v);
 
 /**
  * @param {any} schemaKeys the parsed config.schema.json `keys` map, trusted for nothing
@@ -75,12 +70,12 @@ const show = (v) => JSON.stringify(v === undefined ? null : v);
 export function plainWordsIssues(schemaKeys) {
   /** @type {Array<{code: string, detail: string}>} */
   const issues = [];
-  if (!isObj(schemaKeys)) return issues;
+  if (!isPlainObject(schemaKeys)) return issues;
   /** @type {Map<string, string>} */
   const labelOwner = new Map();
 
   for (const [key, spec] of Object.entries(schemaKeys)) {
-    if (!isObj(spec)) continue;
+    if (!isPlainObject(spec)) continue;
     const walked = filled(spec.question);
 
     if (walked && !filled(spec.label)) {
@@ -95,7 +90,7 @@ export function plainWordsIssues(schemaKeys) {
 
     if (walked && Array.isArray(spec.explain)) {
       for (const e of spec.explain) {
-        if (isObj(e) && !filled(e.text)) {
+        if (isPlainObject(e) && !filled(e.text)) {
           issues.push({ code: 'option-text-missing', detail: `${key}: the option ${show(e.value)} has no text` });
         }
       }

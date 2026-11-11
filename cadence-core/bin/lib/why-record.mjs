@@ -8,8 +8,9 @@
 'use strict';
 
 import {
-  normalize, parseContextDecisions, planTaskTitles, sectionBound, sectionSpan,
+  normalize, normalizeTaskItem, parseContextDecisions, planTaskTitles, sectionBound, sectionSpan,
 } from './planning-files.mjs';
+import { fenceScanner } from './text-util.mjs';
 import { RULINGS } from './adjudication-record.mjs';
 import { covers } from './lease-grammar.mjs';
 
@@ -137,7 +138,8 @@ export function planTaskBodies(text) {
   const lines = src.split('\n');
   const titles = planTaskTitles(src);
   const starts = [];
-  for (let i = 0; i < lines.length; i++) if (lines[i].startsWith('### Task')) starts.push(i);
+  const fenced = fenceScanner();
+  for (let i = 0; i < lines.length; i++) if (!fenced(lines[i]) && lines[i].startsWith('### Task')) starts.push(i);
   if (!starts.length || starts.length !== titles.length) return [];
 
   return starts.map((start, k) => {
@@ -344,10 +346,6 @@ const FILES_LINE = /^\s*-\s*\*\*Files:\*\*\s*(.*)$/;
 const CONTINUATION = /^\s+\S/;
 /** An indented bullet opening a NEW bold field, which ends the continuation. */
 const NEXT_FIELD = /^\s*-\s*\*\*/;
-
-/** parsePlanFiles's task-line normalization: backticks and one trailing parenthetical. */
-const normalizeTaskItem = (/** @type {string} */ raw) =>
-  raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
 
 /**
  * The paths each task's `- **Files:**` line declares, continuation lines included, attributed to that task.

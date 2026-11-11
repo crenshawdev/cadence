@@ -6,8 +6,7 @@
 // Pure: no fs, no emit, no process, no Date, no randomness. Every issue is `{code, detail}` and names the key.
 'use strict';
 
-/** @param {any} v */
-const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+import { isPlainObject } from './text-util.mjs';
 
 /**
  * A table cell as the grammar reads it: backticks stripped, whitespace runs collapsed, trimmed. Both sides of
@@ -116,8 +115,8 @@ export function parseReachTable(text) {
 export function reachIssues(schema, rows) {
   /** @type {{code: string, detail: string}[]} */
   const out = [];
-  const keys = isObj(schema) ? Object.keys(schema) : [];
-  const list = Array.isArray(rows) ? rows.filter((r) => isObj(r) && typeof r.key === 'string') : [];
+  const keys = isPlainObject(schema) ? Object.keys(schema) : [];
+  const list = Array.isArray(rows) ? rows.filter((r) => isPlainObject(r) && typeof r.key === 'string') : [];
   const byKey = new Map(list.map((r) => [r.key, r]));
 
   for (const key of keys) {
@@ -132,7 +131,7 @@ export function reachIssues(schema, rows) {
     }
     const reach = normalize(row.reach);
     if (isUniversal(reach)) continue;
-    const purpose = normalize(isObj(schema[row.key]) ? schema[row.key].purpose : '');
+    const purpose = normalize(isPlainObject(schema[row.key]) ? schema[row.key].purpose : '');
     if (!purpose.includes(reach)) {
       out.push({ code: 'unstated-reach',
         detail: `${row.key}: reach "${reach}" is absent from the key's purpose` });

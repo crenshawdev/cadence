@@ -9,7 +9,8 @@
 import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { insideRoot } from './contained.mjs';
-import { parseCursor, readFrontmatterList } from './planning-files.mjs';
+import { readFrontmatterList } from './planning-files.mjs';
+import { parseCursor } from './state-cursor.mjs';
 
 // byte bound for reading a plan, same as route.mjs's MAX_BODY_BYTES so a plan and a file it declares refuse together
 const MAX_PLAN_BYTES = 512 * 1024;
@@ -70,31 +71,29 @@ export function cursorPhase(planningRoot) {
 function readOnePlan(file, acc, seen) {
   acc.found += 1;
   let text;
+  const cannotRead = (/** @type {string} */ cause) => acc.warnings.push(
+    `${W}cannot read ${file} (${cause}); no risk surface was computed from it`);
   // bounded before opened, like route.mjs's declared bodies: a symlink to a device or FIFO stats as size 0, passes any
   // byte bound and is read to an EOF that never comes, hanging a resolve that has to fail closed. lstat doesn't follow,
   // and a non-regular entry takes the unreadable-plan arm, which raises the floor
   try {
     const st = lstatSync(file);
     if (!st.isFile()) {
-      acc.warnings.push(`${W}cannot read ${file} (not a regular file); `
-        + 'no risk surface was computed from it');
+      cannotRead('not a regular file');
       return;
     }
     if (st.size > MAX_PLAN_BYTES) {
-      acc.warnings.push(`${W}cannot read ${file} (over ${MAX_PLAN_BYTES} bytes); `
-        + 'no risk surface was computed from it');
+      cannotRead(`over ${MAX_PLAN_BYTES} bytes`);
       return;
     }
   } catch (e) {
-    acc.warnings.push(`${W}cannot read ${file} (${e.code || e.message}); `
-      + 'no risk surface was computed from it');
+    cannotRead(e.code || e.message);
     return;
   }
   try {
     text = readFileSync(file, 'utf8');
   } catch (e) {
-    acc.warnings.push(`${W}cannot read ${file} (${e.code || e.message}); `
-      + 'no risk surface was computed from it');
+    cannotRead(e.code || e.message);
     return;
   }
   const { items, issues } = readFrontmatterList(text, 'files');
@@ -115,11 +114,14 @@ function readOnePlan(file, acc, seen) {
   }
 }
 
+/** The conforming plan files among a directory's entries, in plan-number order. */
+export const planFilesOf = (/** @type {string[]} */ entries) => entries.filter((e) => PLAN_FILE.test(e)).sort(byPlanNumber);
+
 /** The conforming plan files in one directory, in plan-number order, or null when it couldn't be read (the ordinary pre-plan state).
  * A directory that reads but holds no plan is `[]`: nothing was there, as opposed to nothing could be looked at. */
-function planFilesIn(dir) {
+export function planFilesIn(dir) {
   try {
-    return readdirSync(dir, { encoding: 'utf8' }).filter((e) => PLAN_FILE.test(e)).sort(byPlanNumber);
+    return planFilesOf(readdirSync(dir, { encoding: 'utf8' }));
   } catch {
     return null;
   }

@@ -198,12 +198,18 @@ export function slice({ rows, modules, states, entries, select, entryPath, curre
     out.forEach((row, i) => { if (row.symbols?.length && (best < 0 || rowBytes[i] > rowBytes[best])) best = i; });
     if (best < 0) break;
     mark();
-    const row = { ...out[best], symbols: [...out[best].symbols] };
-    while (row.symbols.length && !fits()) {
-      row.symbols.pop();
-      put(best, row);
+    // sized once: the row with an empty list, then each symbol's bytes added in order, so the longest prefix that fits is one pass
+    const cur = out[best];
+    const room = limit - (size() - rowBytes[best]);
+    let bytes = bytesOf({ ...cur, symbols: [] });
+    let keep = 0;
+    for (let i = 0; i < cur.symbols.length - 1; i++) {
+      bytes += bytesOf([cur.symbols[i]]) - 2 + (i ? 1 : 0);
+      if (bytes > room) break;
+      keep = i + 1;
     }
-    if (!row.symbols.length) { const { symbols: _s, ...bare } = row; put(best, bare); }
+    if (keep) put(best, { ...cur, symbols: cur.symbols.slice(0, keep) });
+    else { const { symbols: _s, ...bare } = cur; put(best, bare); }
   }
   // the rows are as bare as they get: an entry that doesn't fit in what's left is left out whole, never cut
   if (!fits()) {

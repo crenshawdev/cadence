@@ -169,19 +169,31 @@ export function parseAdjudication(input) {
 }
 
 /**
- * All suggestions the render supports, `suggest` before `info`, then by subject so the order is stable for
- * tests.
- * @param {RenderLike} render
- * @param {Resolution} [resolution] values read off disk for the keys these rules name; absent, `current` is unset
- * @param {InDispatchReads} [reads] per-role in-dispatch file figures, passed in to keep the rules pure; R7 needs them
- * @returns {Suggestion[]}
+ * The correlation id an event joins on, as a comparable string.
+ * @param {any} e
  */
-export function suggestFromRender(render, resolution, reads) {
-  /** @type {Suggestion[]} */
-  const out = [];
-  const events = Array.isArray(render.events) ? render.events : [];
+function corrOf(e) {
+  return typeof e.corr === 'string' || typeof e.corr === 'number' ? String(e.corr) : '';
+}
 
-  // --- gather ---
+/**
+ * The authorization an override receipt descends from, as a string, guarded like `corrOf` so an object can't
+ * become the group key `[object Object]`.
+ * Empty means unlabelled, which R9 reads as unknown, not a shared answer. Trimmed so a padded copy of an id
+ * isn't a second decision.
+ * @param {any} e
+ */
+function authOf(e) {
+  return typeof e.authorization_id === 'string' || typeof e.authorization_id === 'number'
+    ? String(e.authorization_id).trim()
+    : '';
+}
+
+/**
+ * Gather: one pass over the events into the five tallies the rules read, in file order.
+ * @param {any[]} events
+ */
+function gather(events) {
   // one row per fire, in file order: a re-arm veto acts on a fire, and lifetime totals once muted a trigger
   // four cycles after it stopped being empty
   /** @type {{corr: string, trigger: string, survivors: number, raised: number|null,
@@ -189,21 +201,6 @@ export function suggestFromRender(render, resolution, reads) {
   const fires = [];
   /** @type {Set<string>} */
   const rearmed = new Set();
-  /**
-   * The correlation id an event joins on, as a comparable string.
-   * @param {any} e
-   */
-  const corrOf = (e) => (typeof e.corr === 'string' || typeof e.corr === 'number' ? String(e.corr) : '');
-  /**
-   * The authorization an override receipt descends from, as a string, guarded like `corrOf` so an object can't
-   * become the group key `[object Object]`.
-   * Empty means unlabelled, which R9 reads as unknown, not a shared answer. Trimmed so a padded copy of an id
-   * isn't a second decision.
-   * @param {any} e
-   */
-  const authOf = (e) => (typeof e.authorization_id === 'string' || typeof e.authorization_id === 'number'
-    ? String(e.authorization_id).trim()
-    : '');
   /**
    * Per role: the resolve counts R3 reads, and the rung its escalated resolves landed on, off the `effort` they
    * carry.
@@ -274,12 +271,22 @@ export function suggestFromRender(render, resolution, reads) {
       overrides.set(trigger, row);
     }
   }
+  return { fires, rearmed, rungs, checkpoints, overrides };
+}
 
-  // R1: an adjudicated trigger that keeps coming back empty, read a fire at a time. A fire counts when it adjudicated
-  // zero survivors and no re-arm came back to it: a gate that forced a fix round paid for itself on that fire.
-  // Two outcomes on the same floor, because "nothing survived" means opposite things. Nothing raised is a gate finding
-  // nothing; nine raised and nine killed is a reviewer that can't tell a finding from an opinion, so don't turn it off.
-  // The raised total sums the empty fires only, and an unknown count adds 0, so older traces land on the gate arm.
+/**
+ * R1: an adjudicated trigger that keeps coming back empty, read a fire at a time. A fire counts when it adjudicated
+ * zero survivors and no re-arm came back to it: a gate that forced a fix round paid for itself on that fire.
+ * Two outcomes on the same floor, because "nothing survived" means opposite things. Nothing raised is a gate finding
+ * nothing; nine raised and nine killed is a reviewer that can't tell a finding from an opinion, so don't turn it off.
+ * The raised total sums the empty fires only, and an unknown count adds 0, so older traces land on the gate arm.
+ * @param {{trigger: string, survivors: number, raised: number|null, vetoed: boolean}[]} fires
+ * @param {Resolution|undefined} resolution
+ * @returns {Suggestion[]}
+ */
+function gateSuggestions(fires, resolution) {
+  /** @type {Suggestion[]} */
+  const out = [];
   /** @type {Map<string, {total: number, empty: number, raised: number}>} */
   const triggers = new Map();
   for (const f of fires) {
@@ -317,18 +324,32 @@ export function suggestFromRender(render, resolution, reads) {
         });
     }
   }
+  return out;
+}
 
-  // R2: a gate that caught real work. Receipt only.
-  for (const trigger of [...rearmed].sort()) {
-    out.push({
-      kind: 'info',
-      subject: trigger,
-      evidence: 'a fire FAILed and re-armed on its own fix - the gate caught real work; keep it',
-      action: null,
-    });
-  }
+/**
+ * R2: a gate that caught real work. Receipt only.
+ * @param {Set<string>} rearmed
+ * @returns {Suggestion[]}
+ */
+function rearmInfos(rearmed) {
+  return [...rearmed].sort().map((trigger) => ({
+    kind: 'info',
+    subject: trigger,
+    evidence: 'a fire FAILed and re-armed on its own fix - the gate caught real work; keep it',
+    action: null,
+  }));
+}
 
-  // R3: escalation pressure per role, both directions.
+/**
+ * R3: escalation pressure per role, both directions.
+ * @param {Map<string, {resolves: number, escalated: number, rung?: string}>} rungs
+ * @param {Resolution|undefined} resolution
+ * @returns {Suggestion[]}
+ */
+function escalationSuggestions(rungs, resolution) {
+  /** @type {Suggestion[]} */
+  const out = [];
   for (const [role, row] of [...rungs.entries()].sort()) {
     if (row.escalated >= MIN_ESCALATIONS_FOR_RUNG_SUGGESTION) {
       // the target is a rung the record shows, never a guessed step; `raiseTarget` makes it a real change
@@ -351,14 +372,22 @@ export function suggestFromRender(render, resolution, reads) {
       });
     }
   }
+  return out;
+}
 
-  // R4: executor checkpoint pressure. A checkpoint is a fresh-context continuation at full dispatch price, and
-  // repeats say plans are outrunning one context.
-  // Suppressed, not returned with a caveat, when every counted checkpoint maps to a readable plan under the
-  // resolved ceiling: telling someone to lower a ceiling their plans never reached is a sentence they can only
-  // ignore.
-  // It compares against the ceiling this prints as `current`, never a hardcoded 8. An unknown count is never
-  // under it, and neither is one equal to it.
+/**
+ * R4: executor checkpoint pressure. A checkpoint is a fresh-context continuation at full dispatch price, and
+ * repeats say plans are outrunning one context.
+ * Suppressed, not returned with a caveat, when every counted checkpoint maps to a readable plan under the
+ * resolved ceiling: telling someone to lower a ceiling their plans never reached is a sentence they can only
+ * ignore.
+ * It compares against the ceiling this prints as `current`, never a hardcoded 8. An unknown count is never
+ * under it, and neither is one equal to it.
+ * @param {Map<string, number>} checkpoints
+ * @param {Resolution|undefined} resolution
+ * @returns {Suggestion[]}
+ */
+function checkpointSuggestions(checkpoints, resolution) {
   const execCp = checkpoints.get('cad-executor') || 0;
   const ceiling = resolved(resolution, 'workflow.max_plan_tasks');
   const counted = resolution && Array.isArray(resolution.checkpointTasks)
@@ -368,7 +397,7 @@ export function suggestFromRender(render, resolution, reads) {
     && counted.length === execCp && execCp > 0
     && counted.every((n) => typeof n === 'number' && Number.isFinite(n) && n < ceiling);
   if (execCp >= MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION && !bounded) {
-    out.push({
+    return [{
       kind: 'suggest',
       subject: 'cad-executor',
       evidence: `${execCp} checkpoint return(s) - plans may exceed one context`,
@@ -376,10 +405,17 @@ export function suggestFromRender(render, resolution, reads) {
       direction: 'lower',
       // no `proposed`: nothing in the record names a plan's task count, so any target would be invented
       ...keyState(resolution, 'workflow.max_plan_tasks'),
-    });
+    }];
   }
+  return [];
+}
 
-  // R5: spend receipt; the `SPEND_EXCLUDES` caveat rides the evidence string, which `suggest.md` relays unchanged
+/**
+ * R5: spend receipt; the `SPEND_EXCLUDES` caveat rides the evidence string, which `suggest.md` relays unchanged
+ * @param {RenderLike} render
+ * @returns {Suggestion[]}
+ */
+function spendInfos(render) {
   const roles = render.roles && typeof render.roles === 'object' ? render.roles : {};
   let top = null;
   let total = 0;
@@ -389,18 +425,25 @@ export function suggestFromRender(render, resolution, reads) {
     if (t > 0 && (!top || t > top.tokens)) top = { role, tokens: t };
   }
   if (top && total > 0) {
-    out.push({
+    return [{
       kind: 'info',
       subject: top.role,
       evidence: `largest recorded spend: ${top.tokens.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} recorded tokens (${Math.round((top.tokens / total) * 100)}%); excludes ${SPEND_EXCLUDES.join(', ')}`,
       action: null,
-    });
+    }];
   }
+  return [];
+}
 
-  // R6: the coordinator's own share of the run, R5's counterpart: time no worker was billed for. Receipt only,
-  // `action` null because no schema key governs coordinator spend.
-  // Scoped by `corr`, so no window spans the clock between two runs sharing a phase number. Silent without a
-  // `coordinator` block, or every older trace would gain a line saying nothing.
+/**
+ * R6: the coordinator's own share of the run, R5's counterpart: time no worker was billed for. Receipt only,
+ * `action` null because no schema key governs coordinator spend.
+ * Scoped by `corr`, so no window spans the clock between two runs sharing a phase number. Silent without a
+ * `coordinator` block, or every older trace would gain a line saying nothing.
+ * @param {RenderLike} render
+ * @returns {Suggestion[]}
+ */
+function coordinatorInfos(render) {
   const coord = render.coordinator;
   const residue = coord && typeof coord.residue_ms === 'number' && Number.isFinite(coord.residue_ms)
     ? coord.residue_ms
@@ -409,30 +452,39 @@ export function suggestFromRender(render, resolution, reads) {
     // the figures are the render's own, so this and `/cad-report` can't disagree; the share skips a zero wall
     const steps = Array.isArray(coord.steps) ? coord.steps : [];
     /** @type {{step: any, residue_ms: number}|null} */
-    let top = null;
+    let topStep = null;
     for (const s of steps) {
       if (!s || typeof s !== 'object') continue;
       const ms = typeof s.residue_ms === 'number' && Number.isFinite(s.residue_ms) ? s.residue_ms : 0;
-      if (!top || ms > top.residue_ms) top = { step: s.step, residue_ms: ms };
+      if (!topStep || ms > topStep.residue_ms) topStep = { step: s.step, residue_ms: ms };
     }
     const wall = typeof coord.wall_ms === 'number' && Number.isFinite(coord.wall_ms) ? coord.wall_ms : 0;
     const share = wall > 0 ? ` (${Math.round((residue / wall) * 100)}% of wall time)` : '';
-    const named = top && typeof top.step === 'string' && top.step
-      ? `, most of it at \`${top.step}\` (${minutes(top.residue_ms)})`
+    const named = topStep && typeof topStep.step === 'string' && topStep.step
+      ? `, most of it at \`${topStep.step}\` (${minutes(topStep.residue_ms)})`
       : '';
-    out.push({
+    return [{
       kind: 'info',
       subject: 'coordinator',
       evidence: `coordinator time between worker brackets: ${minutes(residue)}${share}${named}`,
       action: null,
-    });
+    }];
   }
+  return [];
+}
 
-  // R7: in-dispatch re-reading, per role, off `.planning/reads.jsonl`, which nothing had ever acted on.
-  // `action` is null: no schema key governs it. `workflow.max_plan_tasks` is closest, but lowering it turns the
-  // same opens into more dispatches, a better ratio with a bigger bill.
-  // The remedy is discipline (anchors on a plan's `files:` entries, targeted reads), so the entry says it in
-  // words, as R6 does. Silent without a floor for the role; a null ratio is never rendered as 0.
+/**
+ * R7: in-dispatch re-reading, per role, off `.planning/reads.jsonl`, which nothing had ever acted on.
+ * `action` is null: no schema key governs it. `workflow.max_plan_tasks` is closest, but lowering it turns the
+ * same opens into more dispatches, a better ratio with a bigger bill.
+ * The remedy is discipline (anchors on a plan's `files:` entries, targeted reads), so the entry says it in
+ * words, as R6 does. Silent without a floor for the role; a null ratio is never rendered as 0.
+ * @param {InDispatchReads|undefined} reads
+ * @returns {Suggestion[]}
+ */
+function inDispatchInfos(reads) {
+  /** @type {Suggestion[]} */
+  const out = [];
   const inDispatch = reads && Array.isArray(reads.roles) ? reads.roles : [];
   for (const row of inDispatch) {
     if (!row || typeof row !== 'object') continue;
@@ -474,13 +526,20 @@ export function suggestFromRender(render, resolution, reads) {
       action: null,
     });
   }
+  return out;
+}
 
-  // R8: the worker wall clock, in the figure the host reported for the worker itself. R6's counterpart from the other
-  // end. Receipt only, `action` null.
-  // The clocks are named apart in the evidence: a bracket's `ms` includes the orchestrator's time between the writes,
-  // `duration_ms` is the worker's own run. One unnamed figure would price a worker with the step's clock.
-  // Dispatches whose close carried no wall clock are counted beside the sum, not folded in as zeros.
-  // Silent when no bracket in scope carries a `duration_ms`; R6 isn't re-based on it because most brackets carry none.
+/**
+ * R8: the worker wall clock, in the figure the host reported for the worker itself. R6's counterpart from the other
+ * end. Receipt only, `action` null.
+ * The clocks are named apart in the evidence: a bracket's `ms` includes the orchestrator's time between the writes,
+ * `duration_ms` is the worker's own run. One unnamed figure would price a worker with the step's clock.
+ * Dispatches whose close carried no wall clock are counted beside the sum, not folded in as zeros.
+ * Silent when no bracket in scope carries a `duration_ms`; R6 isn't re-based on it because most brackets carry none.
+ * @param {RenderLike} render
+ * @returns {Suggestion[]}
+ */
+function workerClockInfos(render) {
   const brackets = Array.isArray(render.brackets) ? render.brackets : [];
   let workerMs = 0;
   let priced = 0;
@@ -494,7 +553,7 @@ export function suggestFromRender(render, resolution, reads) {
     priced++;
   }
   if (priced > 0) {
-    out.push({
+    return [{
       kind: 'info',
       subject: 'workers',
       evidence: `worker wall clock reported by the host: ${minutes(workerMs)} across`
@@ -506,15 +565,24 @@ export function suggestFromRender(render, resolution, reads) {
         + " /cad-report prints beside it, which includes the orchestrator's own time"
         + ' between the two writes.',
       action: null,
-    });
+    }];
   }
+  return [];
+}
 
-  // R9: one human authorization, written as two receipts. An override re-applied to a second range is two events by
-  // construction (`risk-check status` wants one per fired range), so nothing said the pair came from one answer.
-  // `trace append --authorization-id` carries the id minted at the answer; this counts decisions against writes.
-  // An unlabelled receipt counts as its own decision: overrides from before the flag have no id, and reading them as
-  // one answer would report a reuse on every old trace.
-  // Silent where the figures agree, or every render gains a "2 decisions from 2 writes" line; `action` is null.
+/**
+ * R9: one human authorization, written as two receipts. An override re-applied to a second range is two events by
+ * construction (`risk-check status` wants one per fired range), so nothing said the pair came from one answer.
+ * `trace append --authorization-id` carries the id minted at the answer; this counts decisions against writes.
+ * An unlabelled receipt counts as its own decision: overrides from before the flag have no id, and reading them as
+ * one answer would report a reuse on every old trace.
+ * Silent where the figures agree, or every render gains a "2 decisions from 2 writes" line; `action` is null.
+ * @param {Map<string, {writes: number, ids: Set<string>, unlabelled: number}>} overrides
+ * @returns {Suggestion[]}
+ */
+function overrideInfos(overrides) {
+  /** @type {Suggestion[]} */
+  const out = [];
   for (const [trigger, row] of [...overrides.entries()].sort()) {
     if (row.writes < MIN_OVERRIDES_FOR_AUTHORIZATION_INFO) continue;
     const decisions = row.ids.size + row.unlabelled;
@@ -530,7 +598,32 @@ export function suggestFromRender(render, resolution, reads) {
       action: null,
     });
   }
+  return out;
+}
 
+/**
+ * All suggestions the render supports, `suggest` before `info`, then by subject so the order is stable for
+ * tests.
+ * @param {RenderLike} render
+ * @param {Resolution} [resolution] values read off disk for the keys these rules name; absent, `current` is unset
+ * @param {InDispatchReads} [reads] per-role in-dispatch file figures, passed in to keep the rules pure; R7 needs them
+ * @returns {Suggestion[]}
+ */
+export function suggestFromRender(render, resolution, reads) {
+  const events = Array.isArray(render.events) ? render.events : [];
+  const { fires, rearmed, rungs, checkpoints, overrides } = gather(events);
+  // the rules push in R1..R9 order: the sort below is stable, so ties keep it
+  const out = [
+    ...gateSuggestions(fires, resolution),
+    ...rearmInfos(rearmed),
+    ...escalationSuggestions(rungs, resolution),
+    ...checkpointSuggestions(checkpoints, resolution),
+    ...spendInfos(render),
+    ...coordinatorInfos(render),
+    ...inDispatchInfos(reads),
+    ...workerClockInfos(render),
+    ...overrideInfos(overrides),
+  ];
   out.sort((a, b) => (a.kind === b.kind ? (a.subject < b.subject ? -1 : a.subject > b.subject ? 1 : 0) : a.kind === 'suggest' ? -1 : 1));
   return out;
 }

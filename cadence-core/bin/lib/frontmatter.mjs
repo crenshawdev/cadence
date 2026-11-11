@@ -6,8 +6,8 @@
 // Pure lib: no fs, no emit, no process, no Date, no randomness, nothing at top level beyond the exports.
 'use strict';
 
-/** A leading frontmatter block; group 1 is the text between the fences. */
-export const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
+/** A leading frontmatter block, LF or CRLF; group 1 is the text between the fences. */
+export const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 
 /**
  * Parse a frontmatter block's `skills:` value into skill names. It takes the three spellings a hand-written
@@ -26,7 +26,7 @@ export function parseSkillsField(fmText) {
       .split(',').map(unquote).filter(Boolean);
   }
   const out = [];
-  for (const line of fmText.slice(m.index + m[0].length).split('\n')) {
+  for (const line of fmText.slice(m.index + m[0].length).split(/\r?\n/)) {
     const item = line.match(/^[ \t]+-[ \t]*(.+)$/);
     if (item) {
       const name = unquote(item[1]);

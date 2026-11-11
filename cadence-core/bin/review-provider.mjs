@@ -80,14 +80,8 @@ function fail(reason, detail, hint) {
 
 // ok and fail throw DONE to unwind the command and the entry point swallows it
 // anything else thrown is a bug, and these handlers turn it into {ok:false,reason:"internal"} instead of a stack
-process.on('unhandledRejection', (/** @type {any} */ e) => {
-  if (e === DONE) return;
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
-});
-process.on('uncaughtException', (/** @type {any} */ e) => {
-  if (e === DONE) return;
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
-});
+process.on('unhandledRejection', unwind);
+process.on('uncaughtException', unwind);
 
 // each declared flag is read through its row in lib/arg-contract.mjs, after a leading subcommand
 // the old loop let a valueless flag eat the next one, so the error blamed a flag the caller did pass
@@ -813,29 +807,39 @@ async function readPayload(opts) {
   }
 }
 
-// Shared preamble for the two structured-output commands.
-function resolveProvider(opts, cmdName) {
-  const provider = opts.provider;
+// the adapter for --provider, or bad-provider; the first refusal on every command that talks to a provider
+function adapterFor(provider) {
   const adapter = ADAPTERS[provider];
   if (!adapter) fail('bad-provider', `unknown provider: ${provider}`,
     `pass --provider as one of: ${Object.keys(ADAPTERS).join(', ')}`);
+  return adapter;
+}
+
+// the provider's key and the warnings reading it raised, or no-key
+function keyFor(provider, keyFile) {
+  const { key, where, warnings } = resolveKey(provider, keyFile);
+  if (!key) fail('no-key', `set ${where}`,
+    'write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config');
+  return { key, warnings };
+}
+
+// Shared preamble for the two structured-output commands.
+function resolveProvider(opts, cmdName) {
+  const provider = opts.provider;
+  const adapter = adapterFor(provider);
   if (!opts.model) fail('bad-args', `${cmdName} needs --model`,
     'pass --model with an id this provider serves - `review-provider.mjs detect-models --provider <name>` lists them');
   // before the key is read or any request: the id lands in a request path and a command line
   if (!isModelId(opts.model)) fail('bad-args',
     `${cmdName} --model ${JSON.stringify(opts.model)} is not a model id`,
     'pass --model with an id this provider serves - `review-provider.mjs detect-models --provider <name>` lists them');
-  const { key, where, warnings } = resolveKey(provider, opts['key-file']);
-  if (!key) fail('no-key', `set ${where}`,
-    'write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config');
+  const { key, warnings } = keyFor(provider, opts['key-file']);
   return { provider, adapter, key, warnings };
 }
 
-// run a structured-output request through the transport, extract and parse, or degrade via fail()
-// schema validation is the caller's, since review and consult assert different shapes
-// meta is the trace event's subject, stamped with started by the caller so one event covers the whole call
-// each degrading exit records itself right before the fail() that unwinds; success records nothing
-async function callStructured(adapter, key, reqSpec, meta) {
+// one request through the transport, or a degrading exit: a transport throw and a non-2xx both record and unwind here
+// the one sender for the structured commands and detect-models; reqSpec carries no body for a GET
+async function send(adapter, key, reqSpec, meta) {
   const { path: p, method, body } = reqSpec;
   let res;
   try {
@@ -848,6 +852,15 @@ async function callStructured(adapter, key, reqSpec, meta) {
     fail('http', { status: res.status, body: bodyExcerpt(res.raw) },
       HTTP_HINT);
   }
+  return res;
+}
+
+// run a structured-output request through the transport, extract and parse, or degrade via fail()
+// schema validation is the caller's, since review and consult assert different shapes
+// meta is the trace event's subject, stamped with started by the caller so one event covers the whole call
+// each degrading exit records itself right before the fail() that unwinds; success records nothing
+async function callStructured(adapter, key, reqSpec, meta) {
+  const res = await send(adapter, key, reqSpec, meta);
   // set before the degrading exits: a call that burned its budget and came back unusable still has to show its cost
   // it reads the raw response because this frame is the only one holding it; http and pre-request refusals set nothing
   meta.usage = adapter.extractUsage(res.json);
@@ -943,26 +956,9 @@ async function cmdDetect(opts) {
     // detect-models has no model or effort, so tier is null by construction
     // don't read opts here, or a --model this command never sends would get recorded
   const meta = beginProviderCall('detect-models', { provider, model: null, effort: null });
-  const adapter = ADAPTERS[provider];
-  if (!adapter) fail('bad-provider', `unknown provider: ${provider}`,
-    `pass --provider as one of: ${Object.keys(ADAPTERS).join(', ')}`);
-
-  const { key, where, warnings: keyWarnings } = resolveKey(provider, opts['key-file']);
-  if (!key) fail('no-key', `set ${where}`,
-    'write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config');
-
-  const { path: p, method } = adapter.detectRequest();
-  let res;
-  try {
-    res = await request(adapter.base + p, { method, headers: adapter.authHeaders(key) });
-  } catch (e) {
-    failRequest(meta, e);
-  }
-  if (res.status < 200 || res.status >= 300) {
-    traceProvider(meta, 'http', `HTTP ${res.status}`);
-    fail('http', { status: res.status, body: bodyExcerpt(res.raw) },
-      HTTP_HINT);
-  }
+  const adapter = adapterFor(provider);
+  const { key, warnings: keyWarnings } = keyFor(provider, opts['key-file']);
+  const res = await send(adapter, key, adapter.detectRequest(), meta);
   const ids = adapter.extractModels(res.json);
   traceProvider(meta, 'ok');
   const env = detectEnvelope(provider, ids);

@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { autoCloseLayers } from './lib/repo-auto-close.mjs';
-import { emit } from './lib/seam-io.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
 import { integrationBranchName, configuredNameProblem } from './lib/branch-decision.mjs';
 import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-decision.mjs';
 // the one statement of what an entry means to a settling fire; here because lib/close-decision.mjs has no deps or I/O
@@ -23,7 +23,7 @@ import { refuseBase } from './lib/base-ref.mjs';
 // readFileSync stays for readFindings' fd-0 read; readText returns '' on failure, which is a different question
 import { readText } from './lib/seam-input.mjs';
 // requireFlag raises the refusal the catch at the foot renders; --dir refuses, since wrong-tree advice gets acted on
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 
 /**
  * The branches `git branch --merged <base>` reports at `dir`, or [] if git
@@ -142,7 +142,7 @@ const cmd = argv[0];
 /** This script's declared rows. A subcommand's own row wins over the `'*'` row, where flags every arm takes live. */
 const ROWS = CONTRACTS['land-cleanup.mjs'];
 /** One flag of `sub`, read through its declared row. The row owns the rule; this just adapts our argv. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 try {
   // --dir refuses when empty, valueless or flag-shaped, so gate refuses before reading stdin; the rest fall back
@@ -156,8 +156,5 @@ try {
       detail: 'subcommands: cleanup [--dir <path>] [--branch <name>] [--base <name>] [--merged <true|false>] | gate [--dir <path>]' });
   }
 } catch (e) {
-  // the seam arm: a refusal carries no message, so without this a valueless --dir emits detail "[object Object]"
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
-    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  emitCaught(e);
 }

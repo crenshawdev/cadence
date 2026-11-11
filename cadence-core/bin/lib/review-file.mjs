@@ -18,7 +18,7 @@
 // data. markSurvivor is the one change a written file takes: a re-ruling line ahead of a survivor's headings. Pure
 'use strict';
 
-import { RAISED_SEVERITIES } from './adjudication-record.mjs';
+import { isText, MAX_FILE_CHARS, RAISED_SEVERITIES } from './adjudication-record.mjs';
 import { isPlainObject } from './text-util.mjs';
 
 /** The six headings, in John's order, each beside the payload key that fills it. */
@@ -32,11 +32,8 @@ export const HEADINGS = Object.freeze([
 ]);
 
 const SURVIVOR_KEYS = ['file', 'line', 'severity', 'voices', 'root_cause', ...HEADINGS.map(([k]) => k)];
-/** `FINDING_SCHEMA`'s own bound on a cited path. */
-const MAX_FILE_CHARS = 1024;
 /** A line break to any reader: CR, LF, and the three Unicode ones. */
 const BREAK = /\r\n|[\r\n\u0085\u2028\u2029]/;
-const isText = (v) => typeof v === 'string' && v.trim() !== '';
 /** A value that lands on a line of its own file: text, and no break or control character in it. */
 const isOneLine = (v) => isText(v) && !BREAK.test(v) && !/[\u0000-\u001f\u007f]/.test(v);
 

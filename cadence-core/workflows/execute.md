@@ -113,11 +113,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch \
-  testing.scope planning.workflow_plans
+  testing.scope planning.workflow_plans review.triggers.diff.when
 ```
 
 `testing.scope` set means a testing policy is active. It gates the one line
-`execute_sequential` adds to the dispatch.
+`execute_sequential` adds to the dispatch. `review.triggers.diff.when` answering
+`phase_end` means one diff review at phase end; any other answer, `null` included,
+means `per_plan`. It is not a gate, so the paragraph below still holds.
 
 The `diff` and `phase_diff` gates are NOT read here: fire(trigger) takes every
 gate from the routing bundle (`route.mjs resolve`). A `config.mjs get` of a gate
@@ -524,6 +526,22 @@ Then fire the `diff` review trigger
 `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
 reviewer runs the diff itself. The schema default is `off`. The
 arms below are what a user who sets `review.triggers.diff.gate` gets.
+
+With `review.triggers.diff.when` at `phase_end`, as `locate` read it, this fire
+is not made per plan. It is made once instead, after the last plan of the
+dispatch set is reported done and before `goal_check`, with the refs
+`{base_ref: PHASE_BASE, head_ref: HEAD}`. PHASE_BASE is the phase's OLDEST
+`phase_start` anchor, so plans an earlier run finished sit inside the range:
+the `sha` on the first line of
+`grep '"event":"phase_start"' .planning/trace.jsonl` that carries `"phase":"<N>"`,
+and PHASE_START when there is none or `git rev-parse --verify` refuses it. Every arm below applies to that
+one fire unchanged, read three ways: advisory findings land at
+`.planning/phases/<N>/REVIEW-diff-phase.md`, there being no next dispatch to
+overlap; adjudicated survivors are fixed by the continuation `cad-executor`
+under worker key `phase`, never a plan's, so its `risk-check run`, `risk-check
+status` and receipts (`--plan phase`) and any `risk_surface` fire it calls for
+(discriminator `plan-phase`, a re-arm counted on its own) never touch a plan's;
+and that fix's range gets its own `risk-check run` and `risk-check status`.
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
 than waiting: the artifact is two immutable refs, so the reviewer reads nothing

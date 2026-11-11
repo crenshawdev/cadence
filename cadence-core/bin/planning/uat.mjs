@@ -6,12 +6,11 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, phaseSpellingCollision, ok, read, readJsonPayload } from './core.mjs';
+import { fail, intFlag, phaseGuard, ok, read, readJsonPayload } from './core.mjs';
 import {
   UAT_FIELDS_VERSION, UAT_ORIGINS, UAT_SOURCES, atomicWrite, parseUat, renderUat,
   uatComplete,
 } from '../lib/planning-files.mjs';
-import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 
 function uatFile(dir, n) { return join(dir, 'phases', String(n), 'UAT.md'); }
@@ -45,17 +44,11 @@ const UAT_TEXT_FIELDS = ['reason', 'reported', 'cause', 'fix', 'evidence', 'job'
 
 function cmdUat(dir, sub, opts) {
   // n stays the caller's spelling, never a number, so 1.10 reads `phases/1.10` and not the 1.1 checklist
-  const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) {
-    return fail('bad-args', 'uat needs --phase <N>',
-      'pass --phase <N> naming the phase whose checklist this call touches, then re-run');
-  }
   // before any read of the phase directory, so `phases/1.10/` still works on a tree with no `phases/1.1/`
-  const collision = phaseSpellingCollision(dir, parsedPhase);
-  if (collision) {
-    return fail('bad-args', `uat ${collision}`,
-      're-run with one of the two spellings the detail names - nothing was read');
-  }
+  const parsedPhase = phaseGuard('uat', dir, opts.phase, 'uat needs --phase <N>',
+    'pass --phase <N> naming the phase whose checklist this call touches, then re-run',
+    're-run with one of the two spellings the detail names - nothing was read');
+  if (!parsedPhase) return;
   const n = parsedPhase.raw;
 
   if (sub === 'init' || sub === 'refresh') {
@@ -118,12 +111,12 @@ function cmdUat(dir, sub, opts) {
     const uat = loadUat(dir, n);
     if (!uat) return;
     // a valueless --item parses as true and Number(true) is 1, so an unset $K recorded against item 1 for good
-    const parsedItem = requireInt(opts.item);
-    if (!parsedItem.ok) {
-      return fail('bad-args', 'uat record needs --item <k>',
-        "pass --item <k> using the item's number from this phase's UAT.md, then re-run; a"
-        + ' `--item "$K"` with the variable unset arrives here as a flag with no value');
-    }
+    const parsedItem = intFlag(opts.item, null, 'uat record needs --item <k>',
+      "pass --item <k> using the item's number from this phase's UAT.md, then re-run; a"
+      + ' `--item "$K"` with the variable unset'
+      + ' arrives here as a flag'
+      + ' with no value');
+    if (!parsedItem.ok) return;
     const k = parsedItem.value;
     const item = uat.items.find((i) => Number(i.k) === k);
     if (!item) {

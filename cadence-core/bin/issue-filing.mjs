@@ -7,16 +7,16 @@
 // A decline stays local: as a forge issue it published every refusal on a tracker meant for real work.
 'use strict';
 
-import { execFileSync } from 'node:child_process';
 import { lstatSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { boundedRun as run } from './lib/bounded-run.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { withPlanningFileLock } from './lib/capture-file.mjs';
 import {
   appendDeclinedRow, appendFiledRow, atomicWrite, parseDeclinedRows, parseFiledRows,
 } from './lib/planning-files.mjs';
-import { emit } from './lib/seam-io.mjs';
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { onPath } from './lib/on-path.mjs';
 import { teaLoginNameForHost } from './lib/issue-decision.mjs';
@@ -37,26 +37,6 @@ const VISIBILITY_TIMEOUT_MS = 30000;
 
 /** A create writes, so longer than a lookup, but still bounded: an unbounded child in a gate step hangs the run. */
 const CREATE_TIMEOUT_MS = 60000;
-
-/**
- * Run a child and say only whether it worked and what it printed on stdout.
- * stderr is ignored at the spawn, as in forge.mjs and issue-check.mjs: a forge CLI's stderr isn't ours to read.
- * `ok: false` means "this call didn't come back clean", not "the remote did nothing": a nonzero exit, a SIGKILL on the
- * timeout and a transport failure are one value, and on a write the last two can follow a remote that committed.
- * @param {string} bin @param {string[]} args
- * @param {{cwd: string, timeout: number}} opts
- */
-function run(bin, args, { cwd, timeout }) {
-  try {
-    return {
-      ok: true,
-      stdout: execFileSync(bin, args, {
-        cwd, timeout, killSignal: 'SIGKILL', encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }),
-    };
-  } catch { return { ok: false, stdout: '' }; }
-}
 
 /**
  * The persisted forge record, the row that drives it, the binary and the login it needs, or the one refusal that says
@@ -153,29 +133,44 @@ function readPayload(file) {
  * @returns {{ok: true, fingerprints: Set<string>}
  *   | {ok: false, reason: string, detail: string, hint: string}} */
 function readDeclines(dir) {
-  const file = join(dir, '.planning', 'DECLINED.md');
-  let text;
-  try { text = readFileSync(file, 'utf8'); } catch (e) {
-    // ENOENT alone isn't absence: a dangling symlink reads it too, and every decline behind that link would resurface
-    const absent = /** @type {any} */ (e)?.code === 'ENOENT' && !entryExists(file);
-    if (absent) return { ok: true, fingerprints: new Set() };
-    return { ok: false, reason: 'declines-unreadable',
-      detail: `${file}: ${redactUrl(e && e.message ? e.message : String(e))}`,
+  const got = readLedger(join(dir, '.planning', 'DECLINED.md'), {
+    unreadable: { reason: 'declines-unreadable',
       hint: 'this fire cannot tell which findings were already declined, so it refuses rather '
         + 'than re-asking about them: make that file readable - a wrong mode and a dangling '
         + 'symlink are the two common answers - then re-run this step; nothing has been filed '
-        + 'and no finding is lost' };
-  }
-  // a conflicted record is untrustworthy, not partial: the grammar skips non-row lines, so a row a merge damaged would
-  // silently leave the set and the gate would re-ask; conflict markers are the one unambiguous damage, so they refuse
-  if (/^(<{7}|={7}|>{7})(\s|$)/m.test(text)) {
-    return { ok: false, reason: 'declines-conflicted',
-      detail: `${file} holds git conflict markers, so its rows cannot be trusted`,
+        + 'and no finding is lost' },
+    conflicted: { reason: 'declines-conflicted',
       hint: 'resolve the conflict in that file - every `- ` row from BOTH sides is wanted, '
         + 'the record is append-only and a row on either side is a question somebody already '
-        + 'answered - then re-run this step; nothing has been filed and no finding is lost' };
+        + 'answered - then re-run this step; nothing has been filed and no finding is lost' },
+  });
+  if (got.ok === false) return got;
+  return { ok: true, fingerprints: new Set(got.text === null ? [] : parseDeclinedRows(got.text).map((r) => r.fingerprint)) };
+}
+
+/** One ledger file's text, or a refusal: `text` is null for an absent file, so each reader owns what an empty ledger is.
+ *
+ * ENOENT alone isn't absence: a dangling symlink reads it too, and every row behind that link would resurface.
+ * A conflicted record is untrustworthy, not partial: the grammar skips non-row lines, so a row a merge damaged would
+ * silently leave the set; conflict markers are the one unambiguous damage, so they refuse.
+ * @param {string} file
+ * @param {{unreadable: {reason: string, hint: string}, conflicted: {reason: string, hint: string}}} refusals
+ * @returns {{ok: true, text: string|null} | {ok: false, reason: string, detail: string, hint: string}} */
+function readLedger(file, refusals) {
+  let text;
+  try { text = readFileSync(file, 'utf8'); } catch (e) {
+    const absent = /** @type {any} */ (e)?.code === 'ENOENT' && !entryExists(file);
+    if (absent) return { ok: true, text: null };
+    return { ok: false, reason: refusals.unreadable.reason,
+      detail: `${file}: ${redactUrl(e && e.message ? e.message : String(e))}`,
+      hint: refusals.unreadable.hint };
   }
-  return { ok: true, fingerprints: new Set(parseDeclinedRows(text).map((r) => r.fingerprint)) };
+  if (/^(<{7}|={7}|>{7})(\s|$)/m.test(text)) {
+    return { ok: false, reason: refusals.conflicted.reason,
+      detail: `${file} holds git conflict markers, so its rows cannot be trusted`,
+      hint: refusals.conflicted.hint };
+  }
+  return { ok: true, text };
 }
 
 /** The FILED.md ledger, keyed by fingerprint, or a refusal.
@@ -189,28 +184,21 @@ function readDeclines(dir) {
  * @returns {{ok: true, rows: Map<string, {date: string, unconfirmed: boolean}>}
  *   | {ok: false, reason: string, detail: string, hint: string}} */
 function readFiled(dir) {
-  const file = join(dir, '.planning', 'FILED.md');
-  let text;
-  try { text = readFileSync(file, 'utf8'); } catch (e) {
-    const absent = /** @type {any} */ (e)?.code === 'ENOENT' && !entryExists(file);
-    if (absent) return { ok: true, rows: new Map() };
-    return { ok: false, reason: 'filed-unreadable',
-      detail: `${file}: ${redactUrl(e && e.message ? e.message : String(e))}`,
+  const got = readLedger(join(dir, '.planning', 'FILED.md'), {
+    unreadable: { reason: 'filed-unreadable',
       hint: 'this fire cannot tell which findings it already filed, so it refuses rather than '
         + 'risking a second issue for one of them: make that file readable - a wrong mode and '
         + 'a dangling symlink are the two common answers - then re-run this step; nothing has '
-        + 'been filed and no finding is lost' };
-  }
-  if (/^(<{7}|={7}|>{7})(\s|$)/m.test(text)) {
-    return { ok: false, reason: 'filed-conflicted',
-      detail: `${file} holds git conflict markers, so its rows cannot be trusted`,
+        + 'been filed and no finding is lost' },
+    conflicted: { reason: 'filed-conflicted',
       hint: 'resolve the conflict in that file - every `- ` row from BOTH sides is wanted, the '
         + 'record is append-only and a row on either side points at an issue that exists - '
-        + 'then re-run this step; nothing has been filed and no finding is lost' };
-  }
+        + 'then re-run this step; nothing has been filed and no finding is lost' },
+  });
+  if (got.ok === false) return got;
   /** @type {Map<string, {date: string, unconfirmed: boolean}>} */
   const rows = new Map();
-  for (const r of parseFiledRows(text)) {
+  for (const r of parseFiledRows(got.text ?? '')) {
     if (rows.has(r.fingerprint) && r.unconfirmed !== true) continue;
     rows.set(r.fingerprint, { date: r.date, unconfirmed: r.unconfirmed === true });
   }
@@ -226,6 +214,15 @@ function entryExists(file) {
 }
 
 /**
+ * A refusal an inner step returned, emitted as this face's one envelope: its reason, detail and hint as they came,
+ * then the warnings the forge resolution collected so far.
+ * @param {{reason: string, detail: string, hint: string}} x @param {string[]} warnings
+ */
+function forwardRefusal(x, warnings) {
+  emit({ ok: false, reason: x.reason, detail: x.detail, hint: x.hint, warnings });
+}
+
+/**
  * `unfixed --payload <file>` - the findings this fire should put to the user.
  * The selection is filing-decision's, off the payload alone; this face adds the entries already declined.
  * @param {string} dir @param {string} payloadFile
@@ -233,8 +230,7 @@ function entryExists(file) {
 function cmdUnfixed(dir, payloadFile) {
   const payload = readPayload(payloadFile);
   if (payload.ok === false) {
-    emit({ ok: false, reason: payload.reason, detail: payload.detail,
-      hint: payload.hint, warnings: [] });
+    forwardRefusal(payload, []);
     return;
   }
 
@@ -254,15 +250,13 @@ function cmdUnfixed(dir, payloadFile) {
   // the decline set is a local file, read before the forge is resolved: an all-declined fire costs nothing to find out
   const declines = readDeclines(dir);
   if (declines.ok === false) {
-    emit({ ok: false, reason: declines.reason, detail: declines.detail,
-      hint: declines.hint, warnings: [] });
+    forwardRefusal(declines, []);
     return;
   }
 
   const forge = resolveForge(dir);
   if (forge.ok === false) {
-    emit({ ok: false, reason: forge.reason, detail: forge.detail,
-      hint: forge.hint, warnings: forge.warnings });
+    forwardRefusal(forge, forge.warnings);
     return;
   }
 
@@ -458,17 +452,16 @@ function lookupFiled(dir, forge, fingerprints) {
 }
 
 /**
- * `file --payload <file>` - one issue per accepted entry, and a DECLINED.md row per declined one.
- * Stops at the first failure and names both halves: a batch of forge creates can't be atomic, so say exactly which
- * findings are on the tracker and which aren't.
- * @param {string} dir @param {string} payloadFile
+ * Read the payload into its entries: the file, the dispositions, then one entry per fingerprint.
+ * Emits the refusal itself and answers `null` when there is no set to file.
+ * @param {string} payloadFile
+ * @returns {Array<{finding: any, disposition: string}>|null}
  */
-function cmdFile(dir, payloadFile) {
+function readEntries(payloadFile) {
   const payload = readPayload(payloadFile);
   if (payload.ok === false) {
-    emit({ ok: false, reason: payload.reason, detail: payload.detail,
-      hint: payload.hint, warnings: [] });
-    return;
+    forwardRefusal(payload, []);
+    return null;
   }
 
   const read = readDispositions(payload.value);
@@ -477,7 +470,7 @@ function cmdFile(dir, payloadFile) {
       detail: `the dispositions payload is not readable: ${read.detail}`,
       hint: 'send {"entries": [{"finding": {...}, "disposition": "accept"|"decline"}, ...]} - '
         + "the findings are `unfixed`'s own answer and the disposition is what the user chose" });
-    return;
+    return null;
   }
 
   // one fingerprint, one entry, first occurrence wins, decided before anything else looks at the set
@@ -490,7 +483,18 @@ function cmdFile(dir, payloadFile) {
     seenPrints.add(print);
     entries.push(e);
   }
+  return entries;
+}
 
+/**
+ * The ledger, the forge and the tracker's answers a fire files against, all read before the first create.
+ * Emits the refusal itself and answers `null` when any of them refuses.
+ * @param {string} dir
+ * @param {Array<{finding: any, disposition: string}>} entries
+ * @returns {{forge: any, ledger: Map<string, {date: string, unconfirmed: boolean}>,
+ *   answers: Map<string, {answered: boolean, number: number|null}>}|null}
+ */
+function prepareFiling(dir, entries) {
   // read before the forge is resolved so its refusal precedes every child this fire spawns; only an accept reads it
   /** @type {Map<string, {date: string, unconfirmed: boolean}>} */
   let ledger = new Map();
@@ -498,18 +502,16 @@ function cmdFile(dir, payloadFile) {
   if (hasAccept) {
     const filedRows = readFiled(dir);
     if (filedRows.ok === false) {
-      emit({ ok: false, reason: filedRows.reason, detail: filedRows.detail,
-        hint: filedRows.hint, warnings: [] });
-      return;
+      forwardRefusal(filedRows, []);
+      return null;
     }
     ledger = filedRows.rows;
   }
 
   const forge = resolveForge(dir);
   if (forge.ok === false) {
-    emit({ ok: false, reason: forge.reason, detail: forge.detail,
-      hint: forge.hint, warnings: forge.warnings });
-    return;
+    forwardRefusal(forge, forge.warnings);
+    return null;
   }
 
   // the tracker is asked once, before the first create, and only when there's an accept: declines alone touch no forge
@@ -523,11 +525,118 @@ function cmdFile(dir, payloadFile) {
     if (looked.ok === false) {
       emit({ ok: false, reason: looked.reason, provider: forge.provider, repo: forge.repo,
         detail: looked.detail, hint: looked.hint, warnings: forge.warnings });
-      return;
+      return null;
     }
     answers = looked.answers;
   }
+  return { forge, ledger, answers };
+}
 
+/**
+ * Whether an accepted entry is already on the tracker or in the ledger, so it is reported and not created; `null`
+ * is a create. `ledgerStoodIn` is set when a confirmed ledger row answered instead of the tracker, so the envelope
+ * says the local file stood in.
+ * Pure: the same fingerprint, answer, row and forge always decide the same way.
+ * @param {string} print
+ * @param {{answered: boolean, number: number|null}|undefined} answer
+ * @param {{date: string, unconfirmed: boolean}|undefined} held
+ * @param {any} forge
+ * @returns {{issue: number|null, authority: string, filed_on: string|null, ledgerStoodIn: boolean}|null}
+ */
+function suppressionFor(print, answer, held, forge) {
+  // precedence, in this order:
+  // 1. an unconfirmed row suppresses whatever the tracker said, since the index couldn't be trusted for it
+  // 2. a completed lookup is final, but a miss only where the lookup argv was measured; a hit suppresses everywhere.
+  //    On github a miss creates even over a confirmed row, so rows for deleted issues become re-fileable. On
+  //    forgejo and gitlab the query is an assumption, so a confirmed row still suppresses
+  // 3. the lookup couldn't run, so a confirmed row stands in; with no row the fire creates, or offline drops findings
+  const known = answer && answer.answered ? answer.number : null;
+  if (held && held.unconfirmed) {
+    return { issue: known, authority: 'FILED.md', filed_on: held.date, ledgerStoodIn: false };
+  }
+  if (answer && answer.answered) {
+    if (known !== null) {
+      return { issue: known, authority: 'tracker', filed_on: null, ledgerStoodIn: false };
+    }
+    // a miss is only as good as its query: lookupMeasured is false where the search is assumed, so the ledger decides
+    if (held && forge.row.lookupMeasured !== true) {
+      return { issue: null, authority: 'FILED.md', filed_on: held.date, ledgerStoodIn: true };
+    }
+  } else if (held) {
+    return { issue: null, authority: 'FILED.md', filed_on: held.date, ledgerStoodIn: true };
+  }
+  return null;
+}
+
+/**
+ * The refusal for a create that failed: what is filed, what isn't, and the recall pointer the filed ones still get.
+ * @param {string} dir @param {any} forge
+ * @param {Array<{finding: any, disposition: string}>} entries
+ * @param {number} i the entry whose create failed
+ * @param {Array<{fingerprint: string, disposition: string, title: string}>} filed
+ * @param {any[]} suppressed
+ * @param {boolean} ledgerStoodIn
+ */
+function emitCreateFailed(dir, forge, entries, i, filed, suppressed, ledgerStoodIn) {
+  const { finding, disposition } = entries[i];
+  const unfiled = entries.slice(i).map((e) => ({
+    fingerprint: fingerprint(e.finding),
+    disposition: e.disposition,
+    title: issueTitle(e.finding),
+  }));
+  // the mirror runs before the refusal is emitted: the issues that landed are on the tracker, and a recall pointer
+  // they never got is a second loss; its answer rides the envelope so recall and the retry can find them
+  // a nonzero create is ambiguous: a refusal, our own SIGKILL and a dropped connection are one {ok: false}, and the
+  // last two are where the forge created the issue anyway, so the entry rides the mirror flagged `unconfirmed`
+  // a lookup alone can't cover it, since index freshness isn't measurable read-only; a local row has no index
+  const failed = unfiled[0].fingerprint;
+  const mirror = mirrorFiled(dir, forge.provider, forge.repo,
+    [...filed, { fingerprint: fingerprint(finding), disposition, title: issueTitle(finding), unconfirmed: true }]);
+  const retry = `run \`${forge.bin}\` yourself in this directory to see why. The create for `
+    + `${failed} is AMBIGUOUS rather than known-failed: a timeout, a kill on this step's `
+    + 'own bound and a dropped connection all look here exactly like a refusal, and the '
+    + `forge may have created that issue anyway. You do not have to resolve that by hand: `
+    + `${failed} now has an \`unconfirmed\` row in .planning/FILED.md, and this seam asks `
+    + `${forge.repo} for the titles carrying a fire's own fingerprints before it creates `
+    + 'anything. So re-run this step with ONLY the unfiled entries this envelope names - '
+    + 'the row and the lookup between them suppress the duplicate, and they are still in '
+    + 'hand, so none of them is lost.';
+  // only when the mirror also failed: a hint that always warns about the recall pointer teaches readers to skip it
+  const lostPointer = mirror.ok === false
+    ? ` AND the recall pointer was NOT written (${mirror.reason}: ${mirror.detail}), so the `
+      + `${filed.length} entries this envelope lists as \`filed\` are on ${forge.repo} with `
+      + 'NOTHING in .planning/FILED.md pointing at them, and the ambiguous one got no '
+      + `\`unconfirmed\` row either - so re-running is NOT safe until this is fixed. Fix `
+      + 'the write that detail names (a stale .planning/FILED.md.lock is the usual answer) '
+      + 'and add one `- ` row per ACCEPTED filed entry by hand, plus one carrying '
+      + `\`${failed} unconfirmed:\` for the ambiguous one. Do not re-file them - they `
+      + 'already exist.'
+    : '';
+  emit({ ok: false, reason: 'create-failed', provider: forge.provider, repo: forge.repo,
+    filed, unfiled, suppressed, ledger_stood_in: ledgerStoodIn,
+    warnings: forge.warnings,
+    mirrored: mirror.ok === true,
+    mirror_reason: mirror.ok === false ? mirror.reason : null,
+    mirror_detail: mirror.ok === false ? mirror.detail : null,
+    detail: `${forge.bin} could not create the issue for ${unfiled[0].fingerprint} on `
+      + `${forge.repo}: ${filed.length} of ${entries.length} were filed and `
+      + `${unfiled.length} were not`
+      + (suppressed.length
+        ? `, and ${suppressed.length} were already on ${forge.repo} and not filed again`
+        : ''),
+    hint: retry + lostPointer });
+}
+
+/**
+ * The filing loop: a decline is recorded, a suppressed accept is reported, and anything else is created on the forge.
+ * Stops at the first failed create, emits its refusal and answers `null`.
+ * @param {string} dir
+ * @param {Array<{finding: any, disposition: string}>} entries
+ * @param {{forge: any, ledger: Map<string, {date: string, unconfirmed: boolean}>,
+ *   answers: Map<string, {answered: boolean, number: number|null}>}} prep
+ */
+function fileEntries(dir, entries, prep) {
+  const { forge, ledger, answers } = prep;
   /** @type {Array<{fingerprint: string, disposition: string, title: string}>} */
   const filed = [];
   // an accept the tracker already holds is reported by number, with no create and no FILED.md row, since that file
@@ -546,93 +655,40 @@ function cmdFile(dir, payloadFile) {
       filed.push({ fingerprint: print, disposition, title });
       continue;
     }
-    // precedence, in this order:
-    // 1. an unconfirmed row suppresses whatever the tracker said, since the index couldn't be trusted for it
-    // 2. a completed lookup is final, but a miss only where the lookup argv was measured; a hit suppresses everywhere.
-    //    On github a miss creates even over a confirmed row, so rows for deleted issues become re-fileable. On
-    //    forgejo and gitlab the query is an assumption, so a confirmed row still suppresses
-    // 3. the lookup couldn't run, so a confirmed row stands in; with no row the fire creates, or offline drops findings
-    const answer = answers.get(print);
-    const known = answer && answer.answered ? answer.number : null;
-    const held = ledger.get(print);
-    if (held && held.unconfirmed) {
+    const skip = suppressionFor(print, answers.get(print), ledger.get(print), forge);
+    if (skip) {
+      if (skip.ledgerStoodIn) ledgerStoodIn = true;
       suppressed.push({ fingerprint: print, disposition, title,
-        issue: known, authority: 'FILED.md', filed_on: held.date });
-      continue;
-    }
-    if (answer && answer.answered) {
-      if (known !== null) {
-        suppressed.push({ fingerprint: print, disposition, title,
-          issue: known, authority: 'tracker', filed_on: null });
-        continue;
-      }
-      // a miss is only as good as its query: lookupMeasured is false where the search is assumed, so the ledger decides
-      if (held && forge.row.lookupMeasured !== true) {
-        ledgerStoodIn = true;
-        suppressed.push({ fingerprint: print, disposition, title,
-          issue: null, authority: 'FILED.md', filed_on: held.date });
-        continue;
-      }
-    } else if (held) {
-      ledgerStoodIn = true;
-      suppressed.push({ fingerprint: print, disposition, title,
-        issue: null, authority: 'FILED.md', filed_on: held.date });
+        issue: skip.issue, authority: skip.authority, filed_on: skip.filed_on });
       continue;
     }
     const argv = forge.row.create(forge.repo, {
       title, body: issueBody(finding), declined: false,
     }, forge.login);
     if (!run(forge.bin, argv, { cwd: dir, timeout: CREATE_TIMEOUT_MS }).ok) {
-      const unfiled = entries.slice(i).map((e) => ({
-        fingerprint: fingerprint(e.finding),
-        disposition: e.disposition,
-        title: issueTitle(e.finding),
-      }));
-      // the mirror runs before the refusal is emitted: the issues that landed are on the tracker, and a recall pointer
-      // they never got is a second loss; its answer rides the envelope so recall and the retry can find them
-      // a nonzero create is ambiguous: a refusal, our own SIGKILL and a dropped connection are one {ok: false}, and the
-      // last two are where the forge created the issue anyway, so the entry rides the mirror flagged `unconfirmed`
-      // a lookup alone can't cover it, since index freshness isn't measurable read-only; a local row has no index
-      const failed = unfiled[0].fingerprint;
-      const mirror = mirrorFiled(dir, forge.provider, forge.repo,
-        [...filed, { fingerprint: print, disposition, title, unconfirmed: true }]);
-      const retry = `run \`${forge.bin}\` yourself in this directory to see why. The create for `
-        + `${failed} is AMBIGUOUS rather than known-failed: a timeout, a kill on this step's `
-        + 'own bound and a dropped connection all look here exactly like a refusal, and the '
-        + `forge may have created that issue anyway. You do not have to resolve that by hand: `
-        + `${failed} now has an \`unconfirmed\` row in .planning/FILED.md, and this seam asks `
-        + `${forge.repo} for the titles carrying a fire's own fingerprints before it creates `
-        + 'anything. So re-run this step with ONLY the unfiled entries this envelope names - '
-        + 'the row and the lookup between them suppress the duplicate, and they are still in '
-        + 'hand, so none of them is lost.';
-      // only when the mirror also failed: a hint that always warns about the recall pointer teaches readers to skip it
-      const lostPointer = mirror.ok === false
-        ? ` AND the recall pointer was NOT written (${mirror.reason}: ${mirror.detail}), so the `
-          + `${filed.length} entries this envelope lists as \`filed\` are on ${forge.repo} with `
-          + 'NOTHING in .planning/FILED.md pointing at them, and the ambiguous one got no '
-          + `\`unconfirmed\` row either - so re-running is NOT safe until this is fixed. Fix `
-          + 'the write that detail names (a stale .planning/FILED.md.lock is the usual answer) '
-          + 'and add one `- ` row per ACCEPTED filed entry by hand, plus one carrying '
-          + `\`${failed} unconfirmed:\` for the ambiguous one. Do not re-file them - they `
-          + 'already exist.'
-        : '';
-      emit({ ok: false, reason: 'create-failed', provider: forge.provider, repo: forge.repo,
-        filed, unfiled, suppressed, ledger_stood_in: ledgerStoodIn,
-        warnings: forge.warnings,
-        mirrored: mirror.ok === true,
-        mirror_reason: mirror.ok === false ? mirror.reason : null,
-        mirror_detail: mirror.ok === false ? mirror.detail : null,
-        detail: `${forge.bin} could not create the issue for ${unfiled[0].fingerprint} on `
-          + `${forge.repo}: ${filed.length} of ${entries.length} were filed and `
-          + `${unfiled.length} were not`
-          + (suppressed.length
-            ? `, and ${suppressed.length} were already on ${forge.repo} and not filed again`
-            : ''),
-        hint: retry + lostPointer });
-      return;
+      emitCreateFailed(dir, forge, entries, i, filed, suppressed, ledgerStoodIn);
+      return null;
     }
     filed.push({ fingerprint: print, disposition, title });
   }
+  return { filed, suppressed, ledgerStoodIn };
+}
+
+/**
+ * `file --payload <file>` - one issue per accepted entry, and a DECLINED.md row per declined one.
+ * Stops at the first failure and names both halves: a batch of forge creates can't be atomic, so say exactly which
+ * findings are on the tracker and which aren't.
+ * @param {string} dir @param {string} payloadFile
+ */
+function cmdFile(dir, payloadFile) {
+  const entries = readEntries(payloadFile);
+  if (entries === null) return;
+  const prep = prepareFiling(dir, entries);
+  if (prep === null) return;
+  const outcome = fileEntries(dir, entries, prep);
+  if (outcome === null) return;
+  const { forge } = prep;
+  const { filed, suppressed, ledgerStoodIn } = outcome;
 
   const mirror = mirrorFiled(dir, forge.provider, forge.repo, filed);
   if (mirror.ok === false) {
@@ -662,7 +718,7 @@ const cmd = argv[0];
 const ROWS = CONTRACTS['issue-filing.mjs'];
 
 /** Each flag read through its declared row, as forge.mjs does: a refusal raises and the catch below publishes it. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 try {
   if (cmd === 'unfixed' || cmd === 'file') {
@@ -676,10 +732,5 @@ try {
         + 'file --payload <file> [--dir <path>]' });
   }
 } catch (e) {
-  if (e && e.seam) {
-    emit({ ok: false, reason: e.seam, detail: e.detail,
-      hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  } else {
-    emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
-  }
+  emitCaught(e, redactUrl);
 }

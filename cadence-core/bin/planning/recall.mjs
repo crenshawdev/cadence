@@ -5,13 +5,11 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { PHASE_DIR_NAME, fail, memoryBackend, ok, read } from './core.mjs';
+import { PHASE_DIR_NAME, fail, intFlag, memoryBackend, ok, read } from './core.mjs';
 import { buildIndex, search } from '../lib/bm25.mjs';
 import {
-  parseArchiveRows, parseCaptureSnippets, parseContextDecisions, parseFiledRows,
-  parseSummarySnippets, parseTaskRecordSnippets, parseUat,
+  parseArchiveRows, parseCaptureSnippets, parseFiledRows, parseTaskRecordSnippets, phaseRecallSnippets,
 } from '../lib/planning-files.mjs';
-import { requireInt } from '../lib/require-int.mjs';
 import { taskRecordsIn } from '../lib/task-record.mjs';
 
 // deterministic (sorted traversal, total result order, no timestamps)
@@ -25,11 +23,9 @@ function cmdRecall(dir, query, opts) {
   // --top bounds the returned set (default 5), since an unbounded one got spooled by the host; total shows truncation
   let top = 5;
   if (opts.top !== undefined) {
-    const parsed = requireInt(opts.top);
-    if (!parsed.ok || parsed.value < 1) {
-      return fail('bad-args', '--top must be a positive integer',
-        'send --top as a whole number of 1 or more, or drop it to take the default 5 results');
-    }
+    const parsed = intFlag(opts.top, 1, '--top must be a positive integer',
+      'send --top as a whole number of 1 or more, or drop it to take the default 5 results');
+    if (!parsed.ok) return;
     top = parsed.value;
   }
 
@@ -53,18 +49,8 @@ function cmdRecall(dir, query, opts) {
       const pdir = join(phasesDir, n);
       // phase is the number the name parses to and source carries the name, since 1.1 and 1.10 share a number
       const phase = Number(n);
-      const summary = read(join(pdir, 'SUMMARY.md'));
-      if (summary) for (const text of parseSummarySnippets(summary)) {
-        corpus.push({ text, source: `phases/${n}/SUMMARY.md`, phase });
-      }
-      const uatText = read(join(pdir, 'UAT.md'));
-      if (uatText) for (const it of parseUat(uatText).items) {
-        const text = `${it.name || ''} ${it.expected || ''}`.trim();
-        if (text) corpus.push({ text, source: `phases/${n}/UAT.md`, phase });
-      }
-      const context = read(join(pdir, 'CONTEXT.md'));
-      if (context) for (const text of parseContextDecisions(context)) {
-        corpus.push({ text, source: `phases/${n}/CONTEXT.md`, phase });
+      for (const { file, text } of phaseRecallSnippets((f) => read(join(pdir, f)))) {
+        corpus.push({ text, source: `phases/${n}/${file}`, phase });
       }
     }
   }

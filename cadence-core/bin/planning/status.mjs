@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import {
   PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, planPosition, read, readPlanReports, readQueue,
 } from './core.mjs';
-import { classifyPhaseList, parseCursor, parseRequirements } from '../lib/planning-files.mjs';
+import { classifyPhaseList, parseRequirements } from '../lib/planning-files.mjs';
+import { parseCursor } from '../lib/state-cursor.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 /**
@@ -210,12 +211,13 @@ function cmdStatus(dir) {
   // always present, [] when empty, like deferred: an absent key would read as "seam predates the field"
   // read here, not by spawning replay-check per phase; not a new status, which would turn older cursors into drift
   // the dir resolves through String(p.n) as derivePhases does, so phases/1.10 reads as phases/1.1 here too
+  // each phase's reports are read here once and handed on to the plan position below
+  const reportsOf = derived.map((p) => readPlanReports(join(dir, 'phases', String(p.n)), p.plans));
   const outstanding = [];
-  for (const p of derived) {
-    const plans = readPlanReports(join(dir, 'phases', String(p.n)), p.plans)
-      .filter((r) => !r.complete).map((r) => r.plan);
+  derived.forEach((p, i) => {
+    const plans = reportsOf[i].filter((r) => !r.complete).map((r) => r.plan);
     if (plans.length) outstanding.push({ phase: p.n, plans });
-  }
+  });
 
   ok({
     current, total: derived.length,
@@ -223,10 +225,10 @@ function cmdStatus(dir) {
     outstanding,
     // only when closed, or current === null alone reads a closed milestone as all complete
     ...(closed ? { cycle: 'none' } : {}),
-    phases: derived.map((p) => ({
+    phases: derived.map((p, i) => ({
       n: p.n, name: p.name, status: p.status,
       // the plan to run next, from the helper cursor set writes Plan: from; absent when none or all complete
-      ...planPositionEntry(dir, p.n),
+      ...planPositionEntry(dir, p.n, reportsOf[i]),
       // plans listed only when they deviate from a single PLAN.md
       ...(p.plans.length > 1 || (p.plans.length === 1 && p.plans[0] !== 'PLAN.md')
         ? { plans: p.plans } : {}),
@@ -238,8 +240,8 @@ function cmdStatus(dir) {
 }
 
 /** `{plan: {k, j, name?}}` for a phase with an unfinished plan, else `{}`. */
-function planPositionEntry(dir, n) {
-  const plan = planPosition(join(dir, 'phases', String(n)));
+function planPositionEntry(dir, n, reports) {
+  const plan = planPosition(join(dir, 'phases', String(n)), reports);
   return plan ? { plan } : {};
 }
 

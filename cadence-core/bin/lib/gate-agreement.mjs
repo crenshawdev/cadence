@@ -7,16 +7,12 @@
 // Pure: no fs, no emit, no process, no Date, no randomness.
 'use strict';
 
-/** @param {any} v */
-const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+import { escapeRe, isPlainObject, show } from './text-util.mjs';
+
 /** @param {any} v @returns {any} */
-const obj = (v) => (isObj(v) ? v : null);
+const obj = (v) => (isPlainObject(v) ? v : null);
 /** @param {any} v @returns {string[]} */
 const strs = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x) : []);
-/** @param {any} v */
-const show = (v) => JSON.stringify(v === undefined ? null : v);
-/** @param {string} s */
-const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * The three fields one trigger carries, in walk order, so one trigger's three rows show together in a run of problems.
@@ -91,7 +87,7 @@ export function gateAgreementIssues(schemaKeys) {
       // Longest member first, so a member that prefixes another can't claim its match.
       const purpose = spec.purpose;
       const text = typeof purpose === 'string' ? purpose : '';
-      const alts = [...values].sort((a, b) => b.length - a.length).map(esc).join('|');
+      const alts = [...values].sort((a, b) => b.length - a.length).map(escapeRe).join('|');
       /** @type {string[]} */
       const named = [];
       if (alts) {

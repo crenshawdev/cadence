@@ -27,7 +27,7 @@ export function flatten(obj, prefix, acc) {
   for (const [k, v] of Object.entries(obj)) {
     if (k === '_meta') continue;
     const path = prefix ? `${prefix}.${k}` : k;
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) flatten(v, path, acc);
+    if (isPlainObject(v)) flatten(v, path, acc);
     else Object.defineProperty(acc, path, { value: v, writable: true, enumerable: true, configurable: true });
   }
   return acc;

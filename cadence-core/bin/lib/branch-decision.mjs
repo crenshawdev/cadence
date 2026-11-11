@@ -5,6 +5,7 @@
 // Published tags come in as an argument, tested by membership, not "highest tag", so `v1.9.1` stays open past `v2.0.0`.
 import { compareVersions } from './release-decision.mjs';
 import { isBranchName } from './config-value.mjs';
+import { fenceScanner } from './text-util.mjs';
 
 // a semver-ish token, v1.2.3 with an optional prerelease suffix: the milestone-of-record a branch is named after
 const VERSION_RE = /v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/;
@@ -40,11 +41,14 @@ function opensSentence(body, i) {
 export function activeVersion(projectText) {
   if (!projectText) return null;
   const lines = String(projectText).split('\n');
-  const start = lines.findIndex((l) => /^###\s+Active\b/.test(l));
+  // a fenced `### Active` template or `# comment` line is neither the start nor the end of the section
+  const inFence = fenceScanner();
+  const fenced = lines.map((l) => inFence(l));
+  const start = lines.findIndex((l, i) => !fenced[i] && /^###\s+Active\b/.test(l));
   if (start < 0) return null;
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
-    if (/^#{1,3}\s/.test(lines[i])) { end = i; break; }
+    if (!fenced[i] && /^#{1,3}\s/.test(lines[i])) { end = i; break; }
   }
   const body = lines.slice(start + 1, end);
   let loose = null;

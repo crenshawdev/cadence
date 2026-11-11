@@ -8,11 +8,10 @@
 'use strict';
 
 import {
-  appendFileSync, closeSync, existsSync, linkSync, lstatSync, openSync, readFileSync,
-  readSync, renameSync, statSync, unlinkSync, writeFileSync,
+  appendFileSync, closeSync, lstatSync, openSync, readFileSync, readSync, statSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { sleep } from './text-util.mjs';
+import { ROTATION_EVENT, rotateJsonl } from './jsonl-rotation.mjs';
 
 export const TRACE_FILE = 'trace.jsonl';
 
@@ -57,6 +56,19 @@ function moreComplete(into, from, k) {
 }
 
 /**
+ * Fold what one line reports into a row or fact that may already hold some of it. The cache figures take the larger
+ * read; the two strings fill only an empty slot, since `moreComplete` compares with `>`, meaningless for an enum,
+ * and a rung doesn't grow.
+ * The fact map, a repeat close and the post-pass all fold through here, so the rule can't drift between them.
+ * @param {Record<string, any>} into
+ * @param {Record<string, any>} from the figure keys and `effort` / `rung` the line carried, each only when present
+ */
+function foldFigures(into, from) {
+  for (const k of CACHE_KEYS) if (moreComplete(into, from, k)) into[k] = from[k];
+  for (const k of ['effort', 'rung']) if (!(k in into) && k in from) into[k] = from[k];
+}
+
+/**
  * Written by the coordinator at the start of a step. A lifecycle name, not a fifth family: `counts` is a fixed
  * four-key literal.
  * No `--role` or `--tokens` (a nameless worker row, and no return to read), so its cost is derived from the
@@ -79,7 +91,7 @@ export const STEP_WINDOW = 'step_window';
  * It takes the carried anchor's `corr` and `phase`, so it files under the run that was cut. Never in
  * `TERMINAL`.
  */
-export const ROTATION = 'record_rotated';
+export const ROTATION = ROTATION_EVENT;
 
 /** @param {string} planningRoot */
 export function tracePath(planningRoot) {
@@ -106,7 +118,7 @@ export function rotationClaimPath(planningRoot) {
  * `1` and `"1"` are the same worker, and a role-named one keys like a plan number.
  * @param {any} v
  */
-function key(v) {
+export function key(v) {
   return v === undefined || v === null ? '' : String(v);
 }
 
@@ -141,6 +153,28 @@ function readLines(planningRoot) {
 }
 
 /**
+ * The newest `lifecycle` event called `name` that `want` accepts, and its line index, or null. Walks backwards, a line
+ * that isn't a JSON object is skipped.
+ * @param {string[]} lines
+ * @param {string} name
+ * @param {(e: any) => boolean} [want]
+ * @returns {{e: any, at: number}|null}
+ */
+function newestLifecycle(lines, name, want) {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (e.family !== 'lifecycle' || e.event !== name) continue;
+    if (want && !want(e)) continue;
+    return { e, at: i };
+  }
+  return null;
+}
+
+/**
  * The per-phase correlation id, derived and never stored.
  * `ownSha` lets the anchor event derive its own id, or the first `phase_start` gets the bare form and the rest
  * the sha form.
@@ -154,18 +188,9 @@ export function correlationId(planningRoot, phase, ownSha) {
   if (typeof ownSha === 'string' && ownSha) return `${p}-${ownSha}`;
   const lines = readLines(planningRoot);
   if (lines === null) return p;
-  // from the end: the newest anchor wins, so a re-run of a phase gets a new id
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
-    if (e.family !== 'lifecycle' || e.event !== ANCHOR) continue;
-    if (key(e.phase) !== p) continue;
-    return typeof e.sha === 'string' && e.sha ? `${p}-${e.sha}` : p;
-  }
-  return p;
+  // the newest anchor wins, so a re-run of a phase gets a new id
+  const found = newestLifecycle(lines, ANCHOR, (e) => key(e.phase) === p);
+  return found && typeof found.e.sha === 'string' && found.e.sha ? `${p}-${found.e.sha}` : p;
 }
 
 /**
@@ -200,23 +225,11 @@ function renderEvent(planningRoot, event) {
  */
 function rotationMarker(text) {
   const lines = text.split('\n');
-  let at = -1;
-  let anchorCorr = '';
-  /** @type {any} */
-  let anchorPhase;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
-    if (e.family !== 'lifecycle' || e.event !== ANCHOR) continue;
-    at = i;
-    // the id the run was already writing, read off the anchor; re-deriving would answer about the post-cut file
-    anchorCorr = typeof e.corr === 'string' && e.corr ? e.corr : key(e.phase);
-    anchorPhase = e.phase;
-    break;
-  }
+  const found = newestLifecycle(lines, ANCHOR);
+  const at = found ? found.at : -1;
+  // the id the run was already writing, read off the anchor; re-deriving would answer about the post-cut file
+  const anchorCorr = !found ? '' : typeof found.e.corr === 'string' && found.e.corr ? found.e.corr : key(found.e.phase);
+  const anchorPhase = found ? found.e.phase : undefined;
   // same key order as `renderEvent`; `phase` is undefined with no anchor and drops out of the JSON
   const marker = `${JSON.stringify({
     corr: anchorCorr,
@@ -277,54 +290,20 @@ function freshRecord(text, reserve) {
   return survivors.length ? `${survivors.join('\n')}\n${marker}` : marker;
 }
 
-/** A ceiling in ms, not a deadline. It only matters when the winner died holding the claim. */
-const ROTATE_WAIT_MS = 250;
-
 /**
- * How old a claim's sidecar must be before the claim reads as abandoned. A constant, not a config key.
- * About 4,600x the slowest rotation measured, so a live claim never gets near it. It also caps the degraded
- * cost: roughly 252 ms an append until the claim ages out.
+ * The offset the newest rotation marker in `text` sealed its generation at, or null for no seal.
+ * Newest marker decides; a non-numeric or negative seal is no seal, so a hand-edited line can't aim a read.
+ * @param {string} text
+ * @returns {number|null}
  */
-const CLAIM_STALE_MS = 30_000;
-
-/**
- * Is the sibling a rotation in flight (same inode as the live path) or a leftover generation?
- * Evicting a live claim loses a writer its swap; calling a stale generation live means the record never rotates
- * again.
- * Unknowable reads as in flight, the answer that never evicts. It costs a deferred rotation; the append still
- * lands.
- * @param {string} file @param {string} sibling
- */
-function rotationInFlight(file, sibling) {
-  try {
-    const a = statSync(file);
-    const b = statSync(sibling);
-    if (!a.ino || !b.ino) return true;
-    return a.ino === b.ino && a.dev === b.dev;
-  } catch {
-    return true;
-  }
-}
-
-/**
- * Has the in-flight claim been abandoned by a killed process? A live claim and a dead one look the same to
- * `rotationInFlight`, only the sidecar's age differs.
- * Unknowable reads as live: a wrong "live" costs one deferred rotation, a wrong "abandoned" costs the whole
- * record.
- * @param {string} claim
- */
-function claimAbandoned(claim) {
-  try {
-    return Date.now() - statSync(claim).mtimeMs > CLAIM_STALE_MS;
-  } catch {
-    return false;
-  }
+function sealedAt(text) {
+  const found = newestLifecycle(text.split('\n'), ROTATION);
+  const at = found && found.e.carried_bytes;
+  return typeof at === 'number' && Number.isFinite(at) && at >= 0 ? at : null;
 }
 
 /**
  * Claim the record, swap in a fresh one carrying the run in flight, and hand the old one to `ROTATED_TRACE_FILE`.
- * No lock: the `SubagentStop` hook writes through here and can't speak on the path a lock refusal would use.
- * The claim is `linkSync`, not `renameSync`: a rename silently replaces a finished rotation's generation.
  * @param {string} planningRoot
  * @param {number} reserve bytes the fresh file owes beyond the carried tail
  * Exported so a test can reach the losing arm, which `appendEvent` can't (it re-stats).
@@ -333,221 +312,12 @@ function claimAbandoned(claim) {
  * bytes the rescue couldn't carry from the destroyed generation, `null` when unknown.
  */
 export function rotateTrace(planningRoot, reserve) {
-  const file = tracePath(planningRoot);
-  const sibling = rotatedTracePath(planningRoot);
-  const priv = `${process.pid}.${Math.random().toString(36).slice(2)}`;
-  /** @type {string|null} */
-  let temp = null;
-  /** @type {string|null} */
-  let evicted = null;
-  // only for a leftover generation; an abandoned claim is the live inode, so rescuing it would re-append the
-  // record to itself
-  /** @type {string|null} */
-  let leftover = null;
-  const claim = rotationClaimPath(planningRoot);
-  /** @type {string|null} */
-  let dated = null;
-  // the mtime we stamped on the sidecar, so the confirm can tell our write from another claimant's refresh
-  /** @type {number|null} */
-  let mine = null;
-  // held from the link until the swap; every failure arm must release it or the record never rotates again
-  let held = false;
-  // our stamp at its private path until the link says the claim is ours; cleared once renamed in
-  /** @type {string|null} */
-  let pending = null;
-  /** Only for arms that know the claim is ours to date; `mine` is what the confirm compares against. */
-  const publish = () => {
-    if (!pending) return;
-    try { renameSync(pending, claim); dated = claim; mine = statSync(claim).mtimeMs; }
-    catch { mine = null; /* fail live: no stamp reads as a live claim */ }
-    pending = null;
-  };
-  try {
-    let claimed = false;
-    for (let attempt = 0; attempt < 2 && !claimed; attempt++) {
-      // read the age before publishing: every publish overwrites the only evidence a killed claimant left
-      let wasStale = false;
-      try {
-        wasStale = claimAbandoned(claim);
-        // stamp private, publish only when the claim is ours, and before `linkSync` or a third process evicts our live
-        // claim on the dead claimant's age. Writing straight to `claim` let every losing append refresh someone else's,
-        // so an abandoned one never aged out. Only the link winner and the evictor publish.
-        // plain overwrite, not `wx`: the retry after an eviction reuses `priv` and would throw on our own leftover
-        // a failed sidecar write is swallowed: no sidecar reads as live, and throwing would send an unwritable root
-        // down the no-hard-links fallback
-        pending = `${claim}.${priv}`;
-        try { writeFileSync(pending, `${new Date().toISOString()}\n`); }
-        catch { pending = null; /* fail live: no sidecar reads as a live claim */ }
-        linkSync(file, sibling);
-        claimed = true;
-        held = true;
-        // ours now, so publish the stamp. A third writer evicting on the stale age in the gap is caught by its
-        // own confirm
-        publish();
-      } catch (e) {
-        const code = e && /** @type {any} */ (e).code;
-        if (code === 'ENOENT') return { rotated: false };
-        if (code !== 'EEXIST') {
-          // no hard links here, so fall back to the replacing rename and accept its window (the link is what closes it)
-          try { renameSync(file, sibling); claimed = true; } catch { return { rotated: false }; }
-          break;
-        }
-        // someone else holds the claim. Wait for their swap, because until then our append would land in the
-        // old inode's sibling.
-        // Not a lock: it acquires nothing and always proceeds when the budget runs out, far under the hook's 10
-        // second timeout.
-        // Unless the claim was abandoned: a killed claimant never runs its `finally`, so every append would pay
-        // the full wait forever.
-        // Shortening the wait doesn't help, only a completed rotation ends the state. The sidecar's age is
-        // consulted only here.
-        let abandoned = false;
-        if (attempt > 0 || rotationInFlight(file, sibling)) {
-          abandoned = attempt === 0 && wasStale;
-          if (!abandoned) {
-            for (let waited = 0; waited < ROTATE_WAIT_MS && rotationInFlight(file, sibling); waited++) {
-              sleep(1);
-            }
-            return { rotated: false };
-          }
-        }
-        // evicting a leftover generation is the one destructive act here, so re-stat first and never rotate a
-        // file we didn't see over the trigger.
-        // Otherwise B (stale stat) carries away the fresh live file A just wrote and destroys A's generation.
-        // `EEXIST` can't see it.
-        let now = null;
-        try { now = statSync(file).size; } catch { return { rotated: false }; }
-        if (now + reserve < MAX_TRACE_BYTES) return { rotated: false };
-        // publish here and nowhere else: we're evicting the claim this stamp dates, and the confirm reads this mtime
-        publish();
-        // evict single-winner: one contender renames it to a private path and the rest get `ENOENT`
-        const path = `${sibling}.evict.${priv}`;
-        try { renameSync(sibling, path); } catch { return { rotated: false }; }
-        evicted = path;
-        if (!abandoned) leftover = path;
-        // confirm after claiming, on both eviction arms, before anything is read or written: a writer that
-        // linked since the discriminator ran has its live claim renamed away, and breaking that costs the whole
-        // record.
-        // The leftover arm needs it too, its discriminator ran before the rename.
-        // Put the sibling back only if nothing took the path meanwhile, and clear `evicted` so the release
-        // can't delete a restored claim.
-        let refreshed = false;
-        try { refreshed = mine === null || statSync(claim).mtimeMs !== mine; } catch { refreshed = true; }
-        if (refreshed) {
-          try {
-            if (!existsSync(sibling)) renameSync(path, sibling);
-            else unlinkSync(path);
-          } catch { /* it vanished under us, nothing to restore */ }
-          evicted = null;
-          leftover = null;
-          return { rotated: false };
-        }
-      }
-    }
-    if (!claimed) return { rotated: false };
-
-    // read after the claim: only then do we own the bytes we're judging
-    let carried;
-    try { carried = readFileSync(sibling, 'utf8'); } catch { carried = ''; }
-    let seen = Buffer.byteLength(carried);
-
-    temp = `${file}.rotate.${priv}`;
-    writeFileSync(temp, freshRecord(carried, reserve), { flag: 'wx' });
-    renameSync(temp, file);
-    temp = null;
-    held = false;
-
-    // close the window: appends that landed in what is now the sibling between the claim and the swap are read
-    // back into the fresh record.
-    // A refused writer mustn't also lose its event, and a duplicate in a file nothing reads is free. Whole
-    // lines only, bounded.
-    for (let pass = 0; pass < 4; pass++) {
-      let grown = 0;
-      try { grown = statSync(sibling).size; } catch { break; }
-      if (grown <= seen) break;
-      /** @type {Buffer} */
-      let delta;
-      try {
-        const buf = Buffer.alloc(grown - seen);
-        const fd = openSync(sibling, 'r');
-        let read = 0;
-        try { read = readSync(fd, buf, 0, buf.length, seen); } finally { closeSync(fd); }
-        delta = buf.subarray(0, read);
-      } catch { break; }
-      const cut = delta.lastIndexOf(0x0a);
-      if (cut < 0) break;
-      const whole = delta.subarray(0, cut + 1);
-      try { appendFileSync(file, whole); } catch { break; }
-      seen += whole.length;
-    }
-
-    // the second window: an append landing in the old inode after rotation 1 stopped carrying back lives only in the
-    // generation, and rotation 2 evicts it, so the writer about to destroy a leftover generation finishes the job
-    // it starts at the newest marker's `carried_bytes`; with no seal it reports `shortfall: null`, since guessing an
-    // offset risks re-appending a whole generation
-    // unlike the loop above it skips lines already here, or `renderTrace` would count a duplicate
-    // a failed rescue never throws or decides whether the rotation rotated, but every failure arm reports `shortfall`
-    /** @type {number|null|undefined} */
-    let shortfall;
-    if (leftover) {
-      /** @type {number|null} the offset rotation 1 sealed its generation at */
-      let sealed = null;
-      const prior = carried.split('\n');
-      for (let i = prior.length - 1; i >= 0; i--) {
-        const line = prior[i].trim();
-        if (!line) continue;
-        let e;
-        try { e = JSON.parse(line); } catch { continue; }
-        if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
-        if (e.family !== 'lifecycle' || e.event !== ROTATION) continue;
-        // newest marker decides; a non-numeric or negative seal is no seal, so a hand-edited line can't aim a read
-        if (typeof e.carried_bytes === 'number' && Number.isFinite(e.carried_bytes)
-          && e.carried_bytes >= 0) sealed = e.carried_bytes;
-        break;
-      }
-      if (sealed !== null) {
-        /** @type {number|null} */
-        let beyond = null;
-        try { beyond = Math.max(0, statSync(leftover).size - sealed); } catch { beyond = null; }
-        if (beyond === null) shortfall = null;
-        else if (beyond > 0) {
-          let done = false;
-          try {
-            const buf = Buffer.alloc(beyond);
-            const fd = openSync(leftover, 'r');
-            let read = 0;
-            try { read = readSync(fd, buf, 0, buf.length, sealed); } finally { closeSync(fd); }
-            const delta = buf.subarray(0, read);
-            const cut = delta.lastIndexOf(0x0a);
-            if (cut >= 0) {
-              const already = new Set(prior);
-              const rescue = delta.subarray(0, cut + 1).toString('utf8')
-                .split('\n').filter((l) => l && !already.has(l));
-              if (rescue.length) appendFileSync(file, `${rescue.join('\n')}\n`);
-              done = true;
-            }
-          } catch { /* stated on `shortfall`, never thrown and never a `reason` */ }
-          if (!done) shortfall = beyond;
-        }
-      } else shortfall = null;
-    }
-    // rescued lines that leave the record over the bound are carried anyway; the next append rotates again
-    return shortfall === undefined ? { rotated: true } : { rotated: true, shortfall };
-  } catch (e) {
-    return { rotated: false, reason: (e && /** @type {any} */ (e).code) || 'rotate-failed' };
-  } finally {
-    // leave nothing behind on any arm
-    if (temp) { try { unlinkSync(temp); } catch { /* already gone */ } }
-    if (held) { try { unlinkSync(sibling); } catch { /* already released */ } }
-    // guarded by `held` like the release above: `held` goes false at the swap while we're still carrying back,
-    // so an unconditional unlink would delete a second process's fresh sidecar.
-    // A completed rotation leaves its sidecar behind on purpose; it's inert, the next claimant overwrites it,
-    // and `.gitignore` keeps it out of commits.
-    if (held && dated) { try { unlinkSync(dated); } catch { /* already released */ } }
-    // a stamp this call never published is at a path only we can see. Always drop it, a losing append mustn't
-    // refresh the shared sidecar
-    if (pending) { try { unlinkSync(pending); } catch { /* already gone */ } }
-    if (evicted) { try { unlinkSync(evicted); } catch { /* already gone */ } }
-  }
+  return rotateJsonl({
+    file: tracePath(planningRoot), sibling: rotatedTracePath(planningRoot), claim: rotationClaimPath(planningRoot),
+    max: MAX_TRACE_BYTES, carry: true, renameFallback: true,
+    fresh: ({ carried, reserve: owed }) => freshRecord(carried, owed),
+    sealOf: (_sibling, carried) => sealedAt(carried),
+  }, reserve);
 }
 
 /**
@@ -655,7 +425,7 @@ export function appendEvent(planningRoot, event) {
  * @param {any} v
  * @returns {number|null}
  */
-function millis(v) {
+export function millis(v) {
   if (typeof v !== 'string' || !v) return null;
   const t = Date.parse(v);
   return Number.isFinite(t) ? t : null;
@@ -679,19 +449,10 @@ function mergeSpans(spans) {
 }
 
 /**
- * Read the trace in line order, group by family, and pair every worker bracket.
- * A dispatch is closed by the oldest later `return`, `checkpoint` or `escalation` with the same `(corr, phase,
- * plan)`. `plan` is the worker key, a plan number or a role name.
- * `corr` is in the key because a re-run starts a new id; without it the second run's terminal would close the
- * first run's stranded dispatch.
- * An absent file renders empty, never an error. `coordinator` is present only with a marker.
- * @param {string} planningRoot
- * @param {any} [phase] restrict to one phase
+ * @param {string} file @param {string|null} wanted
  * @returns {TraceRender}
  */
-export function renderTrace(planningRoot, phase) {
-  const file = tracePath(planningRoot);
-  const wanted = phase === undefined || phase === null ? null : key(phase);
+function emptyRender(file, wanted) {
   /** @type {TraceRender} */
   const out = {
     file,
@@ -706,25 +467,39 @@ export function renderTrace(planningRoot, phase) {
     unpaired: [],
     mismatched: [],
   };
+  return out;
+}
 
+/** @param {Map<string, any>} roleTotals @param {string} k */
+function roleRow(roleTotals, k) {
+  let row = roleTotals.get(k);
+  if (!row) {
+    row = {
+      dispatches: 0, tokens: 0, recorded: 0, figures: 0,
+      turns: 0, turnsRecorded: 0, turnsFigures: 0,
+    };
+    roleTotals.set(k, row);
+  }
+  return row;
+}
+
+/** @param {Map<string, any>} coord @param {any} c */
+function coordRow(coord, c) {
+  const k = key(c);
+  let row = coord.get(k);
+  if (!row) { row = { markers: [], spans: [], last: -Infinity }; coord.set(k, row); }
+  return row;
+}
+
+// the accumulators the account pass fills: per-role totals, the coordinator's runs, and the worker bookkeeping
+/** @param {TraceRender} out */
+function newAccounting(out) {
   // per-role accumulators beside `out.roles`: `recorded` only goes out as its complement, `unrecorded`.
   // `figures` alone gates the total, since gating on `recorded` would drop an unmatched terminal's real number.
   // Turns get their own triple: tokens and turns arrive independently and one counter would blur which one was
   // missing.
   /** @type {Map<string, {dispatches: number, tokens: number, recorded: number, figures: number, turns: number, turnsRecorded: number, turnsFigures: number}>} */
   const roleTotals = new Map();
-  /** @param {string} k */
-  const roleRow = (k) => {
-    let row = roleTotals.get(k);
-    if (!row) {
-      row = {
-        dispatches: 0, tokens: 0, recorded: 0, figures: 0,
-        turns: 0, turnsRecorded: 0, turnsFigures: 0,
-      };
-      roleTotals.set(k, row);
-    }
-    return row;
-  };
 
   // keyed by `corr`, never phase: a phase number isn't a run, and a phase-keyed rollup bills the gap between
   // two sessions as coordinator time.
@@ -733,79 +508,6 @@ export function renderTrace(planningRoot, phase) {
   // No `corr` keys the empty string, like a missing `plan` does for the worker key.
   /** @type {Map<string, {markers: {phase: any, step: any, ts: any, t: number}[], spans: {a: number, b: number}[], last: number}>} */
   const coord = new Map();
-  /** @param {any} c */
-  const coordRow = (c) => {
-    const k = key(c);
-    let row = coord.get(k);
-    if (!row) { row = { markers: [], spans: [], last: -Infinity }; coord.set(k, row); }
-    return row;
-  };
-
-  try {
-    out.capped = statSync(file).size >= MAX_TRACE_BYTES;
-  } catch { /* absent or unreadable, the read below handles it */ }
-
-  const lines = readLines(planningRoot);
-  if (lines === null) return out;
-
-  /** @type {any} the newest rotation marker in the record, or null for never */
-  let rotated = null;
-  /** @type {any} the requested phase's newest anchor, or null for none */
-  let anchor = null;
-
-  // pass 1: parse, scope, count. Accounting is pass 2 because the repair between them has to see later events
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) continue;
-    let e;
-    try { e = JSON.parse(line); } catch { out.malformed++; continue; }
-    if (!e || typeof e !== 'object' || Array.isArray(e)) { out.malformed++; continue; }
-    // before the phase filter: a rotation cut every phase's events, so this describes the record, like `capped`
-    if (e.family === 'lifecycle' && e.event === ROTATION) rotated = e;
-    if (wanted !== null && key(e.phase) !== wanted) continue;
-    if (e.family === 'lifecycle' && e.event === ANCHOR) anchor = e;
-    out.events.push(e);
-    if (Object.prototype.hasOwnProperty.call(out.counts, e.family)) out.counts[e.family]++;
-  }
-
-  // named as this reader reaches the sibling, not as the marker spells it: a hand-edited `file` could say anything
-  if (anchor && typeof anchor.sha === 'string' && anchor.sha) out.corr = `${wanted}-${anchor.sha}`;
-
-  if (rotated) out.rotated = { file: rotatedTracePath(planningRoot), ts: rotated.ts };
-
-  // pass 2: repair pre-anchor events at read time only. /cad-plan writes resolves before /cad-execute writes
-  // the anchor, so one phase carries two ids.
-  // A bare event goes to the first `phase_start` of its phase at or after it, forward where `correlationId`
-  // scans back: a reader has the whole file, a writer doesn't.
-  // Nothing is written back, so the file stays append-only. An event following a bare anchor keeps its id, or
-  // the next run's terminal could fund a dispatch it never made (`anchoredBare`).
-  /** @type {boolean[]} */
-  const anchoredBare = new Array(out.events.length).fill(false);
-  {
-    /** @type {Map<string, boolean>} phase -> the most recent preceding anchor is bare */
-    const lastAnchorBare = new Map();
-    for (let i = 0; i < out.events.length; i++) {
-      const e = out.events[i];
-      const p = key(e.phase);
-      if (e.family === 'lifecycle' && e.event === ANCHOR) {
-        lastAnchorBare.set(p, !(typeof e.sha === 'string' && e.sha));
-      } else if (lastAnchorBare.get(p)) {
-        anchoredBare[i] = true;
-      }
-    }
-  }
-  /** @type {Map<string, string>} phase -> the id of the next anchor at or after here */
-  const nextAnchor = new Map();
-  for (let i = out.events.length - 1; i >= 0; i--) {
-    const e = out.events[i];
-    const p = key(e.phase);
-    if (e.family === 'lifecycle' && e.event === ANCHOR) {
-      // a sha-less anchor derives the bare form, so it still shadows later anchors for the events before it
-      nextAnchor.set(p, typeof e.sha === 'string' && e.sha ? `${p}-${e.sha}` : p);
-    } else if (!anchoredBare[i] && typeof e.corr === 'string' && e.corr === p && nextAnchor.has(p)) {
-      e.corr = /** @type {string} */ (nextAnchor.get(p));
-    }
-  }
 
   // each pending entry carries `role` (a terminal bills the half that opened the worker) and `funded` (funded once)
   /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any, role: string, funded: boolean, tokens: number|null, turnsFunded: boolean, turns: number|null}[]>} */
@@ -837,231 +539,343 @@ export function renderTrace(planningRoot, phase) {
   // step-window facts, same key. The later line wins: a window doesn't grow like a cache sum
   /** @type {Map<string, number>} */
   const stepFacts = new Map();
-  for (const e of out.events) {
-    // every family feeds the run's end mark, or the clock stops early while routing and outcome events land
-    const t = millis(e.ts);
-    if (t !== null) {
-      const row = coordRow(e.corr);
-      if (t > row.last) row.last = t;
-    }
+  return { out, roleTotals, coord, open, seenTerminals, pairedRows, cacheFacts, stepFacts };
+}
 
-    if (e.family !== 'lifecycle') continue;
+/** @typedef {ReturnType<typeof newAccounting>} Accounting */
 
-    // kept out of the per-role chain: no `--role` here would render a nameless worker row
-    if (e.event === COORDINATOR) {
-      if (t !== null) coordRow(e.corr).markers.push({ phase: e.phase, step: e.step, ts: e.ts, t });
-      continue;
-    }
+// pass 1: the record's lines, parsed, scoped to the phase and counted; false when there is no record to read
+/** @param {string} planningRoot @param {string|null} wanted @param {TraceRender} out */
+function readEvents(planningRoot, wanted, out) {
+  try {
+    out.capped = statSync(out.file).size >= MAX_TRACE_BYTES;
+  } catch { /* absent or unreadable, the read below handles it */ }
 
-    // per-role accounting rides the pairing, not each event's `role`: the two halves are written separately and
-    // can disagree. The dispatch opened the worker, so it's the authority.
-    // No `--role` keys the empty string so a forgotten flag stays visible. A non-numeric `tokens` from a
-    // hand-edited line contributes nothing.
-    const tokens = typeof e.tokens === 'number' && Number.isFinite(e.tokens) ? e.tokens : null;
-    // same guard for `turns`, same reason
-    const turns = typeof e.turns === 'number' && Number.isFinite(e.turns) ? e.turns : null;
-    // and for the host's wall clock: `"duration_ms": "1m 23s"` must not be concatenated onto a number callers sum
-    const duration = typeof e.duration_ms === 'number' && Number.isFinite(e.duration_ms)
-      ? e.duration_ms : null;
-    // and the cache figures, collected as only the keys that passed so omit-when-absent is a spread
-    /** @type {Record<string, number>} */
-    const cache = {};
-    for (const k of CACHE_KEYS) {
-      if (typeof e[k] === 'number' && Number.isFinite(e[k])) cache[k] = e[k];
-    }
+  const lines = readLines(planningRoot);
+  if (lines === null) return false;
 
-    // the two strings the hook writes: what the transcript says it ran at, and the rung it was dispatched
-    // under. Anything but a non-empty string contributes nothing.
-    // Not checked against the rung enum: that's what a user may ask for, this is what the host served, and a
-    // renamed host rung is the signal.
-    const effort = typeof e.effort === 'string' && e.effort ? e.effort : null;
-    const rung = typeof e.rung === 'string' && e.rung ? e.rung : null;
+  /** @type {any} the newest rotation marker in the record, or null for never */
+  let rotated = null;
+  /** @type {any} the requested phase's newest anchor, or null for none */
+  let anchor = null;
 
-    // the cache-only fact, folded after the loop: the host fires `SubagentStop` when the worker stops, the
-    // orchestrator writes the `--agent-id` close later, so the fact usually arrives first.
-    // A fact with no id can never reach a bracket, and one reporting nothing has nothing to give. An effort
-    // counts as something, or the one observation of a silent downgrade gets dropped.
-    if (e.event === WORKER_CACHE) {
-      if (typeof e.agent_id === 'string' && e.agent_id
-        && (CACHE_KEYS.some((k) => k in cache) || effort !== null || rung !== null)) {
-        const pair = `${key(e.corr)}\0${e.agent_id}`;
-        const prior = cacheFacts.get(pair);
-        if (!prior) {
-          cacheFacts.set(pair, {
-            ...cache,
-            ...(effort !== null ? { effort } : {}),
-            ...(rung !== null ? { rung } : {}),
-          });
-        } else {
-          for (const k of CACHE_KEYS) if (moreComplete(prior, cache, k)) prior[k] = cache[k];
-          // fill-only-empty for the two strings, not the larger-wins the figures use
-          if (!('effort' in prior) && effort !== null) prior.effort = effort;
-          if (!('rung' in prior) && rung !== null) prior.rung = rung;
-        }
-      }
-      continue;
-    }
+  // pass 1: parse, scope, count. Accounting is pass 2 because the repair between them has to see later events
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { out.malformed++; continue; }
+    if (!e || typeof e !== 'object' || Array.isArray(e)) { out.malformed++; continue; }
+    // before the phase filter: a rotation cut every phase's events, so this describes the record, like `capped`
+    if (e.family === 'lifecycle' && e.event === ROTATION) rotated = e;
+    if (wanted !== null && key(e.phase) !== wanted) continue;
+    if (e.family === 'lifecycle' && e.event === ANCHOR) anchor = e;
+    out.events.push(e);
+    if (Object.prototype.hasOwnProperty.call(out.counts, e.family)) out.counts[e.family]++;
+  }
 
-    // the step-window fact, folded after the loop for the same reason. Only traces from before 3.9.0 hold one
-    if (e.event === STEP_WINDOW) {
-      if (typeof e.agent_id === 'string' && e.agent_id
-        && Number.isInteger(e.tokens) && e.tokens >= 0) {
-        stepFacts.set(`${key(e.corr)}\0${e.agent_id}`, e.tokens);
-      }
-      continue;
-    }
+  // named as this reader reaches the sibling, not as the marker spells it: a hand-edited `file` could say anything
+  if (anchor && typeof anchor.sha === 'string' && anchor.sha) out.corr = `${wanted}-${anchor.sha}`;
 
-    const worker = `${key(e.corr)}\0${key(e.phase)}\0${key(e.plan)}`;
-    if (e.event === DISPATCH) {
-      const role = key(e.role);
-      const row = roleRow(role);
-      row.dispatches++;
-      // a figure on the open half is unusual but counted, and it marks this dispatch funded
-      const entry = {
-        corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, role,
-        funded: false, tokens: null, turnsFunded: false, turns: null,
-      };
-      if (tokens !== null) { row.tokens += tokens; row.recorded++; row.figures++; entry.funded = true; entry.tokens = tokens; }
-      // funded separately from the token half, so a dispatch funded by tokens can still record its turns
-      if (turns !== null) {
-        row.turns += turns; row.turnsRecorded++; row.turnsFigures++;
-        entry.turnsFunded = true; entry.turns = turns;
-      }
-      const pending = open.get(worker) || [];
-      pending.push(entry);
-      open.set(worker, pending);
-    } else if (TERMINAL.includes(e.event)) {
-      // a byte-identical repeat of a terminal is a replay: it pairs with nothing and funds nothing, though it
-      // stays in `out.events` and `counts`.
-      // A close differing only in `role` isn't a replay, it shows in `mismatched`. Closes differing in turns
-      // are two closes.
-      const identity = `${worker}\0${e.event}\0${key(e.role)}\0${key(e.ts)}\0${tokens === null ? '' : tokens}\0${turns === null ? '' : turns}`;
-      if (seenTerminals.has(identity)) continue;
-      seenTerminals.add(identity);
+  if (rotated) out.rotated = { file: rotatedTracePath(planningRoot), ts: rotated.ts };
+  return true;
+}
 
-      const pending = open.get(worker);
-      // the delayed repeat: a close that lands after the next dispatch of its key would be handed that dispatch
-      // by FIFO (the steal), and its tell is a negative `ms`.
-      // Reachable because the hook fires when the host decides, so a retried plan can see the first attempt's
-      // close land after the second attempt's dispatch. The stolen row is funded, so the role is billed three
-      // times.
-      // Narrow on purpose: both clocks parse, the terminal is strictly earlier than the head dispatch, and
-      // `pairedRows` has a row. Otherwise FIFO stands, an unreadable clock never reclassifies a close.
-      const head = pending && pending.length ? pending[0] : null;
-      const headT = head ? millis(head.ts) : null;
-      const delayedRepeat = head !== null && t !== null && headT !== null
-        && t < headT && pairedRows.has(worker);
-      let matched = head && !delayedRepeat ? pending.shift() : null;
-      // a repeat close: nothing open on this key but it already opened a row, so this is the second writer on
-      // the same bracket.
-      // It adopts that entry so `funded` and `turnsFunded` bill the dispatch once.
-      const repeat = matched ? null : pairedRows.get(worker);
-      if (repeat) matched = repeat.entry;
-      // a bracket adds to the residue only once paired: an unpaired dispatch has no known end, and inventing
-      // one hides the gap
-      if (matched && !repeat) {
-        const a = millis(matched.ts);
-        if (a !== null && t !== null && t > a) coordRow(e.corr).spans.push({ a, b: t });
-        // bracket row: `ms` is null, not 0, when a timestamp is unreadable; `tokens` prefers the terminal's figure
-        const bracketRow = {
-          corr: e.corr, phase: e.phase, plan: e.plan, role: matched.role,
-          event: e.event, ts: matched.ts, end: e.ts,
-          ms: a !== null && t !== null ? t - a : null,
-          tokens: tokens !== null ? tokens : matched.tokens,
-          // `turns` is omitted, not null: a null would add a new key to every bracket of every older trace
-          ...(turns !== null || matched.turns !== null
-            ? { turns: turns !== null ? turns : matched.turns }
-            : {}),
-          // omitted likewise, from the terminal alone (`--duration-ms` is only on the close). Not derived: `ms`
-          // measures the step
-          ...(duration !== null ? { duration_ms: duration } : {}),
-          // cache figures: omitted likewise, from the terminal alone, and they ride this row and go nowhere else
-          ...cache,
-          // what it ran at and was dispatched under, from the terminal alone, omitted independently so older
-          // records render unchanged
-          ...(effort !== null ? { effort } : {}),
-          ...(rung !== null ? { rung } : {}),
-          // the worker's host id, from the terminal alone; the hook reads it to spot an already-closed bracket
-          ...(e.agent_id ? { agent_id: e.agent_id } : {}),
-        };
-        out.brackets.push(bracketRow);
-        // the row this key owns now, so a second close folds in; a later real pairing overwrites it
-        pairedRows.set(worker, { row: bracketRow, entry: matched });
-        // reported, never billed: the dispatch stays the authority, but two halves naming different roles is a
-        // prose defect worth surfacing.
-        // A terminal with no role isn't a mismatch, that would false-alarm on every historical bracket.
-        const closed = key(e.role);
-        if (closed && closed !== matched.role) {
-          out.mismatched.push({
-            corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, event: e.event,
-            dispatched: matched.role, closed,
-          });
-        }
-      } else if (repeat) {
-        // the fold: each figure fills a field the row left empty and never overwrites the first writer's
-        const b = repeat.row;
-        if (b.tokens === null && tokens !== null) b.tokens = tokens;
-        if (!('turns' in b) && turns !== null) b.turns = turns;
-        if (!('duration_ms' in b) && duration !== null) b.duration_ms = duration;
-        // larger read wins for the cache figures alone (see `moreComplete`): the hook is their only writer, so
-        // two values are two reads of one growing transcript
-        for (const k of CACHE_KEYS) if (moreComplete(b, cache, k)) b[k] = cache[k];
-        // back to fill-only-empty for the strings: `moreComplete` compares with `>`, meaningless for an enum,
-        // and a rung doesn't grow
-        if (!('effort' in b) && effort !== null) b.effort = effort;
-        if (!('rung' in b) && rung !== null) b.rung = rung;
-        // identity folds fill-only-empty too: the hook's close usually opens the row, so an id on the
-        // hand-written close would otherwise be dropped
-        if (!('agent_id' in b) && e.agent_id) b.agent_id = e.agent_id;
-        // the span isn't fill-only-empty, since `end` is never empty and that would freeze it at the first
-        // close. `ms` is dispatch-to-close, so the later close ends it.
-        // Monotonic: a delayed repeat close mustn't shrink a span that already closed later.
-        const a2 = millis(repeat.entry.ts);
-        if (t !== null && (millis(b.end) === null || t > millis(b.end))) {
-          b.end = e.ts;
-          b.ms = a2 !== null ? t - a2 : null;
-          // the coordinator span extends with it, or `residue_ms` bills the coordinator for time a worker held
-          if (a2 !== null && t > a2) coordRow(e.corr).spans.push({ a: a2, b: t });
-        }
-        // upgrade one way only: a figureless writer that ran first would otherwise turn every checkpoint into a
-        // clean `return`
-        if (b.event === 'return' && e.event !== 'return') b.event = e.event;
-        // no `mismatched` row, that's the pairing's to report
-      }
-      if (tokens !== null) {
-        // bill the dispatch's role. An unmatched terminal falls back to its own, but funds no dispatch so
-        // `unrecorded` can't go negative.
-        const row = roleRow(matched ? matched.role : key(e.role));
-        row.tokens += tokens;
-        row.figures++;
-        // `recorded` counts funded dispatches, not token-bearing events, or a replay could hide an unrecorded worker
-        if (matched && !matched.funded) { row.recorded++; matched.funded = true; }
-      }
-      if (turns !== null) {
-        // same authority and fallback as the token half
-        const row = roleRow(matched ? matched.role : key(e.role));
-        row.turns += turns;
-        row.turnsFigures++;
-        if (matched && !matched.turnsFunded) { row.turnsRecorded++; matched.turnsFunded = true; }
+// pass 2: repair pre-anchor events at read time only. /cad-plan writes resolves before /cad-execute writes
+// the anchor, so one phase carries two ids.
+// A bare event goes to the first `phase_start` of its phase at or after it, forward where `correlationId`
+// scans back: a reader has the whole file, a writer doesn't.
+// Nothing is written back, so the file stays append-only. An event following a bare anchor keeps its id, or
+// the next run's terminal could fund a dispatch it never made (`anchoredBare`).
+/** @param {TraceRender} out */
+function repairCorr(out) {
+  /** @type {boolean[]} */
+  const anchoredBare = new Array(out.events.length).fill(false);
+  {
+    /** @type {Map<string, boolean>} phase -> the most recent preceding anchor is bare */
+    const lastAnchorBare = new Map();
+    for (let i = 0; i < out.events.length; i++) {
+      const e = out.events[i];
+      const p = key(e.phase);
+      if (e.family === 'lifecycle' && e.event === ANCHOR) {
+        lastAnchorBare.set(p, !(typeof e.sha === 'string' && e.sha));
+      } else if (lastAnchorBare.get(p)) {
+        anchoredBare[i] = true;
       }
     }
   }
-  // the post-pass fold. Every bracket is built by now, so a fact that arrived first still finds the row its
-  // `agent_id` names.
-  // Row only, not `roleTotals`, `seenTerminals` or `pairedRows`: a cache sum isn't denominated like a return's
-  // tokens, and `roles` stays byte-identical with or without facts.
-  // Two brackets sharing an `agent_id` under one `corr` get only the first, or one worker's traffic bills
-  // twice.
-  // Each field folds by the rule it uses on a repeat close, so the two can't drift: cache figures take the
-  // larger read, the strings fill only empty.
-  for (const [pair, fact] of cacheFacts) {
-    for (const b of out.brackets) {
-      if (!b.agent_id || `${key(b.corr)}\0${b.agent_id}` !== pair) continue;
-      for (const k of CACHE_KEYS) if (moreComplete(b, fact, k)) b[k] = fact[k];
-      if (!('effort' in b) && 'effort' in fact) b.effort = fact.effort;
-      if (!('rung' in b) && 'rung' in fact) b.rung = fact.rung;
-      break;
+  /** @type {Map<string, string>} phase -> the id of the next anchor at or after here */
+  const nextAnchor = new Map();
+  for (let i = out.events.length - 1; i >= 0; i--) {
+    const e = out.events[i];
+    const p = key(e.phase);
+    if (e.family === 'lifecycle' && e.event === ANCHOR) {
+      // a sha-less anchor derives the bare form, so it still shadows later anchors for the events before it
+      nextAnchor.set(p, typeof e.sha === 'string' && e.sha ? `${p}-${e.sha}` : p);
+    } else if (!anchoredBare[i] && typeof e.corr === 'string' && e.corr === p && nextAnchor.has(p)) {
+      e.corr = /** @type {string} */ (nextAnchor.get(p));
     }
+  }
+}
+
+// what one line reports, each figure only when it is a finite number or a non-empty string
+/** @param {any} e */
+function figuresOf(e) {
+  const tokens = typeof e.tokens === 'number' && Number.isFinite(e.tokens) ? e.tokens : null;
+  // same guard for `turns`, same reason
+  const turns = typeof e.turns === 'number' && Number.isFinite(e.turns) ? e.turns : null;
+  // and for the host's wall clock: `"duration_ms": "1m 23s"` must not be concatenated onto a number callers sum
+  const duration = typeof e.duration_ms === 'number' && Number.isFinite(e.duration_ms)
+    ? e.duration_ms : null;
+  // and the cache figures, collected as only the keys that passed so omit-when-absent is a spread
+  /** @type {Record<string, number>} */
+  const cache = {};
+  for (const k of CACHE_KEYS) {
+    if (typeof e[k] === 'number' && Number.isFinite(e[k])) cache[k] = e[k];
+  }
+
+  // the two strings the hook writes: what the transcript says it ran at, and the rung it was dispatched
+  // under. Anything but a non-empty string contributes nothing.
+  // Not checked against the rung enum: that's what a user may ask for, this is what the host served, and a
+  // renamed host rung is the signal.
+  const effort = typeof e.effort === 'string' && e.effort ? e.effort : null;
+  const rung = typeof e.rung === 'string' && e.rung ? e.rung : null;
+  // what this line reports in the shape `foldFigures` takes: only the keys that passed, so omit-when-absent is a spread
+  const figures = {
+    ...cache,
+    ...(effort !== null ? { effort } : {}),
+    ...(rung !== null ? { rung } : {}),
+  };
+  return { tokens, turns, duration, cache, effort, rung, figures };
+}
+
+// the cache-only fact, folded after the loop: the host fires `SubagentStop` when the worker stops, the
+// orchestrator writes the `--agent-id` close later, so the fact usually arrives first.
+// A fact with no id can never reach a bracket, and one reporting nothing has nothing to give. An effort
+// counts as something, or the one observation of a silent downgrade gets dropped.
+function noteCacheFact(acc, e, fig) {
+  const { cacheFacts } = acc;
+  const { cache, effort, rung, figures } = fig;
+  if (typeof e.agent_id === 'string' && e.agent_id
+    && (CACHE_KEYS.some((k) => k in cache) || effort !== null || rung !== null)) {
+    const pair = `${key(e.corr)}\0${e.agent_id}`;
+    const prior = cacheFacts.get(pair);
+    if (prior) foldFigures(prior, figures);
+    else cacheFacts.set(pair, figures);
+  }
+}
+
+// the step-window fact, folded after the loop for the same reason. Only traces from before 3.9.0 hold one
+function noteStepFact(acc, e) {
+  const { stepFacts } = acc;
+  if (typeof e.agent_id === 'string' && e.agent_id
+    && Number.isInteger(e.tokens) && e.tokens >= 0) {
+    stepFacts.set(`${key(e.corr)}\0${e.agent_id}`, e.tokens);
+  }
+}
+
+function openDispatch(acc, e, worker, fig) {
+  const { roleTotals, open } = acc;
+  const { tokens, turns } = fig;
+  const role = key(e.role);
+  const row = roleRow(roleTotals, role);
+  row.dispatches++;
+  // a figure on the open half is unusual but counted, and it marks this dispatch funded
+  const entry = {
+    corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, role,
+    funded: false, tokens: null, turnsFunded: false, turns: null,
+  };
+  if (tokens !== null) { row.tokens += tokens; row.recorded++; row.figures++; entry.funded = true; entry.tokens = tokens; }
+  // funded separately from the token half, so a dispatch funded by tokens can still record its turns
+  if (turns !== null) {
+    row.turns += turns; row.turnsRecorded++; row.turnsFigures++;
+    entry.turnsFunded = true; entry.turns = turns;
+  }
+  const pending = open.get(worker) || [];
+  pending.push(entry);
+  open.set(worker, pending);
+}
+
+// a bracket adds to the residue only once paired: an unpaired dispatch has no known end, and inventing
+// one hides the gap
+function pairBracket(acc, e, worker, matched, t, fig) {
+  const { out, coord, pairedRows } = acc;
+  const { tokens, turns, duration, figures } = fig;
+  const a = millis(matched.ts);
+  if (a !== null && t !== null && t > a) coordRow(coord, e.corr).spans.push({ a, b: t });
+  // bracket row: `ms` is null, not 0, when a timestamp is unreadable; `tokens` prefers the terminal's figure
+  const bracketRow = {
+    corr: e.corr, phase: e.phase, plan: e.plan, role: matched.role,
+    event: e.event, ts: matched.ts, end: e.ts,
+    ms: a !== null && t !== null ? t - a : null,
+    tokens: tokens !== null ? tokens : matched.tokens,
+    // `turns` is omitted, not null: a null would add a new key to every bracket of every older trace
+    ...(turns !== null || matched.turns !== null
+      ? { turns: turns !== null ? turns : matched.turns }
+      : {}),
+    // omitted likewise, from the terminal alone (`--duration-ms` is only on the close). Not derived: `ms`
+    // measures the step
+    ...(duration !== null ? { duration_ms: duration } : {}),
+    // cache figures, then what it ran at and was dispatched under: omitted likewise and independently, from the
+    // terminal alone, so older records render unchanged. They ride this row and go nowhere else
+    ...figures,
+    // the worker's host id, from the terminal alone; the hook reads it to spot an already-closed bracket
+    ...(e.agent_id ? { agent_id: e.agent_id } : {}),
+  };
+  out.brackets.push(bracketRow);
+  // the row this key owns now, so a second close folds in; a later real pairing overwrites it
+  pairedRows.set(worker, { row: bracketRow, entry: matched });
+  // reported, never billed: the dispatch stays the authority, but two halves naming different roles is a
+  // prose defect worth surfacing.
+  // A terminal with no role isn't a mismatch, that would false-alarm on every historical bracket.
+  const closed = key(e.role);
+  if (closed && closed !== matched.role) {
+    out.mismatched.push({
+      corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, event: e.event,
+      dispatched: matched.role, closed,
+    });
+  }
+}
+
+function foldRepeatClose(acc, e, repeat, t, fig) {
+  const { coord } = acc;
+  const { tokens, turns, duration, figures } = fig;
+  // the fold: each figure fills a field the row left empty and never overwrites the first writer's
+  const b = repeat.row;
+  if (b.tokens === null && tokens !== null) b.tokens = tokens;
+  if (!('turns' in b) && turns !== null) b.turns = turns;
+  if (!('duration_ms' in b) && duration !== null) b.duration_ms = duration;
+  // the cache figures take the larger read: the hook is their only writer, so two values are two reads of
+  // one growing transcript. The strings fill only empty
+  foldFigures(b, figures);
+  // identity folds fill-only-empty too: the hook's close usually opens the row, so an id on the
+  // hand-written close would otherwise be dropped
+  if (!('agent_id' in b) && e.agent_id) b.agent_id = e.agent_id;
+  // the span isn't fill-only-empty, since `end` is never empty and that would freeze it at the first
+  // close. `ms` is dispatch-to-close, so the later close ends it.
+  // Monotonic: a delayed repeat close mustn't shrink a span that already closed later.
+  const a2 = millis(repeat.entry.ts);
+  if (t !== null && (millis(b.end) === null || t > millis(b.end))) {
+    b.end = e.ts;
+    b.ms = a2 !== null ? t - a2 : null;
+    // the coordinator span extends with it, or `residue_ms` bills the coordinator for time a worker held
+    if (a2 !== null && t > a2) coordRow(coord, e.corr).spans.push({ a: a2, b: t });
+  }
+  // upgrade one way only: a figureless writer that ran first would otherwise turn every checkpoint into a
+  // clean `return`
+  if (b.event === 'return' && e.event !== 'return') b.event = e.event;
+  // no `mismatched` row, that's the pairing's to report
+}
+
+function billTerminal(acc, e, matched, fig) {
+  const { roleTotals } = acc;
+  const { tokens, turns } = fig;
+  if (tokens !== null) {
+    // bill the dispatch's role. An unmatched terminal falls back to its own, but funds no dispatch so
+    // `unrecorded` can't go negative.
+    const row = roleRow(roleTotals, matched ? matched.role : key(e.role));
+    row.tokens += tokens;
+    row.figures++;
+    // `recorded` counts funded dispatches, not token-bearing events, or a replay could hide an unrecorded worker
+    if (matched && !matched.funded) { row.recorded++; matched.funded = true; }
+  }
+  if (turns !== null) {
+    // same authority and fallback as the token half
+    const row = roleRow(roleTotals, matched ? matched.role : key(e.role));
+    row.turns += turns;
+    row.turnsFigures++;
+    if (matched && !matched.turnsFunded) { row.turnsRecorded++; matched.turnsFunded = true; }
+  }
+}
+
+function closeTerminal(acc, e, worker, t, fig) {
+  const { open, seenTerminals, pairedRows } = acc;
+  const { tokens, turns } = fig;
+  // a byte-identical repeat of a terminal is a replay: it pairs with nothing and funds nothing, though it
+  // stays in `out.events` and `counts`.
+  // A close differing only in `role` isn't a replay, it shows in `mismatched`. Closes differing in turns
+  // are two closes.
+  const identity = `${worker}\0${e.event}\0${key(e.role)}\0${key(e.ts)}\0${tokens === null ? '' : tokens}\0${turns === null ? '' : turns}`;
+  if (seenTerminals.has(identity)) return;
+  seenTerminals.add(identity);
+
+  const pending = open.get(worker);
+  // the delayed repeat: a close that lands after the next dispatch of its key would be handed that dispatch
+  // by FIFO (the steal), and its tell is a negative `ms`.
+  // Reachable because the hook fires when the host decides, so a retried plan can see the first attempt's
+  // close land after the second attempt's dispatch. The stolen row is funded, so the role is billed three
+  // times.
+  // Narrow on purpose: both clocks parse, the terminal is strictly earlier than the head dispatch, and
+  // `pairedRows` has a row. Otherwise FIFO stands, an unreadable clock never reclassifies a close.
+  const head = pending && pending.length ? pending[0] : null;
+  const headT = head ? millis(head.ts) : null;
+  const delayedRepeat = head !== null && t !== null && headT !== null
+    && t < headT && pairedRows.has(worker);
+  let matched = head && !delayedRepeat ? pending.shift() : null;
+  // a repeat close: nothing open on this key but it already opened a row, so this is the second writer on
+  // the same bracket.
+  // It adopts that entry so `funded` and `turnsFunded` bill the dispatch once.
+  const repeat = matched ? null : pairedRows.get(worker);
+  if (repeat) matched = repeat.entry;
+  if (matched && !repeat) pairBracket(acc, e, worker, matched, t, fig);
+  else if (repeat) foldRepeatClose(acc, e, repeat, t, fig);
+  billTerminal(acc, e, matched, fig);
+}
+
+// one event through the account pass: the run's clock, then the coordinator, a fact, a dispatch or a terminal
+function accountEvent(acc, e) {
+  const { coord } = acc;
+  // every family feeds the run's end mark, or the clock stops early while routing and outcome events land
+  const t = millis(e.ts);
+  if (t !== null) {
+    const row = coordRow(coord, e.corr);
+    if (t > row.last) row.last = t;
+  }
+
+  if (e.family !== 'lifecycle') return;
+
+  // kept out of the per-role chain: no `--role` here would render a nameless worker row
+  if (e.event === COORDINATOR) {
+    if (t !== null) coordRow(coord, e.corr).markers.push({ phase: e.phase, step: e.step, ts: e.ts, t });
+    return;
+  }
+
+  // per-role accounting rides the pairing, not each event's `role`: the two halves are written separately and
+  // can disagree. The dispatch opened the worker, so it's the authority.
+  // No `--role` keys the empty string so a forgotten flag stays visible. A non-numeric `tokens` from a
+  // hand-edited line contributes nothing.
+  const fig = figuresOf(e);
+
+  if (e.event === WORKER_CACHE) {
+    noteCacheFact(acc, e, fig);
+    return;
+  }
+
+  if (e.event === STEP_WINDOW) {
+    noteStepFact(acc, e);
+    return;
+  }
+
+  const worker = `${key(e.corr)}\0${key(e.phase)}\0${key(e.plan)}`;
+  if (e.event === DISPATCH) {
+    openDispatch(acc, e, worker, fig);
+  } else if (TERMINAL.includes(e.event)) {
+    closeTerminal(acc, e, worker, t, fig);
+  }
+}
+
+// the post-pass fold. Every bracket is built by now, so a fact that arrived first still finds the row its
+// `agent_id` names.
+// Row only, not `roleTotals`, `seenTerminals` or `pairedRows`: a cache sum isn't denominated like a return's
+// tokens, and `roles` stays byte-identical with or without facts.
+// Two brackets sharing an `agent_id` under one `corr` get only the first, or one worker's traffic bills
+// twice.
+// Folded by `foldFigures`, the rule a repeat close uses too.
+function foldPostPass(acc) {
+  const { out, cacheFacts, stepFacts } = acc;
+  for (const [pair, fact] of cacheFacts) {
+    const b = out.brackets.find((r) => r.agent_id && `${key(r.corr)}\0${r.agent_id}` === pair);
+    if (b) foldFigures(b, fact);
   }
 
   // the step-window fold: the first bracket under that `corr` and `agent_id` with a null `tokens` gets the
@@ -1072,19 +886,24 @@ export function renderTrace(planningRoot, phase) {
       && `${key(r.corr)}\0${r.agent_id}` === pair);
     if (b) b.tokens = tokens;
   }
+}
 
+function listUnpaired(acc) {
+  const { out, open } = acc;
   for (const pending of open.values()) {
     for (const p of pending) {
       out.unpaired.push({ corr: p.corr, phase: p.phase, plan: p.plan, ts: p.ts, role: p.role });
     }
   }
+}
 
-  // the token total is omitted when nothing was recorded, so a role never shows a zero it didn't spend.
-  // `unrecorded` is omitted at zero.
-  // Built with `Object.fromEntries`: role names come from the file, and assigning `__proto__` hits the
-  // prototype setter and erases the row. `Object.create(null)` would change the prototype callers expect.
-  // Both turn keys are gated on `turnsFigures`, unlike the token pair: a `turns_unrecorded` on every role would
-  // add a key to every older trace, and the verbatim fixture pins `roles` byte-for-byte.
+// the token total is omitted when nothing was recorded, so a role never shows a zero it didn't spend.
+// `unrecorded` is omitted at zero.
+// Built with `Object.fromEntries`: role names come from the file, and assigning `__proto__` hits the
+// prototype setter and erases the row. `Object.create(null)` would change the prototype callers expect.
+// Both turn keys are gated on `turnsFigures`, unlike the token pair: a `turns_unrecorded` on every role would
+// add a key to every older trace, and the verbatim fixture pins `roles` byte-for-byte.
+function roleRows(roleTotals) {
   /** @type {[string, {dispatches: number, tokens?: number, turns?: number, unrecorded?: number, turns_unrecorded?: number}][]} */
   const rows = [];
   for (const [role, row] of roleTotals) {
@@ -1098,14 +917,16 @@ export function renderTrace(planningRoot, phase) {
       ...(row.turnsFigures && turnsUnrecorded ? { turns_unrecorded: turnsUnrecorded } : {}),
     }]);
   }
-  out.roles = Object.fromEntries(rows);
+  return Object.fromEntries(rows);
+}
 
-  // the coordinator's time is computed once so `/cad-report` and `trace suggest` can't report different numbers
-  // for one run.
-  // A step's window runs from its marker to the next one in the same run, the last ending at that run's own
-  // last event, never at a later run sharing the phase number.
-  // Bracket spans clipped to the window are subtracted. Floored at zero: a bracket straddling two markers can
-  // exceed a window.
+// the coordinator's time is computed once so `/cad-report` and `trace suggest` can't report different numbers
+// for one run.
+// A step's window runs from its marker to the next one in the same run, the last ending at that run's own
+// last event, never at a later run sharing the phase number.
+// Bracket spans clipped to the window are subtracted. Floored at zero: a bracket straddling two markers can
+// exceed a window.
+function coordinatorOf(coord) {
   /** @type {{phase: any, step: any, ts: any, t: number, residue_ms: number}[]} */
   const stepRows = [];
   let wallMs = 0;
@@ -1132,14 +953,40 @@ export function renderTrace(planningRoot, phase) {
       residueMs += residue;
     }
   }
-  if (stepRows.length) {
-    stepRows.sort((x, y) => x.t - y.t);
-    out.coordinator = {
-      wall_ms: wallMs,
-      bracket_ms: bracketMs,
-      residue_ms: residueMs,
-      steps: stepRows.map(({ phase: p, step, ts, residue_ms }) => ({ phase: p, step, ts, residue_ms })),
-    };
-  }
+  if (!stepRows.length) return null;
+  stepRows.sort((x, y) => x.t - y.t);
+  return {
+    wall_ms: wallMs,
+    bracket_ms: bracketMs,
+    residue_ms: residueMs,
+    steps: stepRows.map(({ phase: p, step, ts, residue_ms }) => ({ phase: p, step, ts, residue_ms })),
+  };
+}
+
+/**
+ * Read the trace in line order, group by family, and pair every worker bracket.
+ * A dispatch is closed by the oldest later `return`, `checkpoint` or `escalation` with the same `(corr, phase,
+ * plan)`. `plan` is the worker key, a plan number or a role name.
+ * `corr` is in the key because a re-run starts a new id; without it the second run's terminal would close the
+ * first run's stranded dispatch.
+ * An absent file renders empty, never an error. `coordinator` is present only with a marker.
+ * @param {string} planningRoot
+ * @param {any} [phase] restrict to one phase
+ * @returns {TraceRender}
+ */
+export function renderTrace(planningRoot, phase) {
+  const file = tracePath(planningRoot);
+  const wanted = phase === undefined || phase === null ? null : key(phase);
+  const out = emptyRender(file, wanted);
+  if (!readEvents(planningRoot, wanted, out)) return out;
+  repairCorr(out);
+
+  const acc = newAccounting(out);
+  for (const e of out.events) accountEvent(acc, e);
+  foldPostPass(acc);
+  listUnpaired(acc);
+  out.roles = roleRows(acc.roleTotals);
+  const coordinator = coordinatorOf(acc.coord);
+  if (coordinator) out.coordinator = coordinator;
   return out;
 }

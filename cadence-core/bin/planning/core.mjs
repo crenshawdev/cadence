@@ -6,19 +6,23 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
-import { dirname, join, resolve as resolvePath } from 'node:path';
+import { basename, dirname, join, relative, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS } from '../lib/arg-contract.mjs';
+import { readFacts } from '../lib/codemap-facts.mjs';
+import { entryFile, moduleState, partition } from '../lib/codemap-partition.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
-import { PLAN_FILE, byPlanNumber, planNumber } from '../lib/phase-plans.mjs';
+import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
 import { parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { testSeamOpen } from '../lib/test-seam.mjs';
+import { manifestPath } from '../lib/test-seam.mjs';
+import { isPlainObject } from '../lib/text-util.mjs';
+import { appendEvent, renderTrace, TERMINAL } from '../lib/trace.mjs';
 
 // raw argument list: arg-contract flags need the spelling, and parseArgs collapses bare, empty and flag-shaped into one
 const ARGV = process.argv.slice(2);
@@ -27,6 +31,34 @@ const ok = (o) => emit({ ok: true, ...o });
 
 const fail = (reason, detail, hint) =>
   emit({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}) });
+
+/**
+ * The detail for a carry or prune path that exists and is not a real directory, the symlink note included.
+ * It builds the text only: each refusal keeps its own literal reason and hint at its own `fail`.
+ * `call` names the fs call that would follow the link, so the note says what would have gone wrong.
+ * @param {string} label the path as the refusal names it
+ * @param {import('node:fs').Stats} stat the path's `lstatSync`
+ * @param {string} call
+ * @returns {string}
+ */
+function notRealDirDetail(label, stat, call) {
+  return `${label} exists and is not a real directory`
+    + `${stat.isSymbolicLink() ? ` (it is a symlink, which ${call} would follow out of the planning root)` : ''}`
+    + ' - move or remove it, then re-run';
+}
+
+/**
+ * A directory flag resolved, and the refusal detail when it names nothing or something that is not a directory (else null).
+ * It builds the text only: each command keeps its own literal reason and its own hint at its own `fail`.
+ * @param {string} flag the flag's name, without the dashes @param {unknown} value what it was given
+ * @returns {{abs: string, detail: string|null}}
+ */
+function dirFlag(flag, value) {
+  const abs = resolvePath(String(value));
+  let st = null;
+  try { st = lstatSync(abs); } catch { /* refused by the caller */ }
+  return { abs, detail: st && st.isDirectory() ? null : `--${flag} ${abs} is not a directory` };
+}
 
 /** Read a file or return null - absence is data here, never a crash. */
 function read(file) {
@@ -76,14 +108,38 @@ function phaseSpellingCollision(dir, parsed) {
     + ` already exists on this tree - two different phases - send --phase "${canonical}" for that`
     + ` one, or rename phases/${parsed.raw}/ to a spelling that does not normalize onto ${canonical}`;
 }
+/**
+ * The one `--phase` check every path-resolving face runs first: parse it, then refuse a spelling that collides on this tree.
+ * It emits its own refusal and answers null, like fireIdentity, so the caller's arm is `if (!parsed) return;`.
+ * Each face keeps its own wording, passed in; the reason stays a literal here because the reason census reads it.
+ * @param {string} face the subcommand's spelling, which opens the collision detail
+ * @param {string} dir the planning directory (`--dir`)
+ * @param {unknown} phase `opts.phase`, as the caller sent it
+ * @param {string} needs the refusal detail for a missing or malformed phase
+ * @param {string} needsHint the hint that goes with it
+ * @param {string} collisionHint the hint for a spelling that collides
+ * @returns {{ok: true, raw: string, value: number} | null}
+ */
+function phaseGuard(face, dir, phase, needs, needsHint, collisionHint) {
+  const parsed = requirePhaseArg(phase);
+  if (!parsed.ok) {
+    fail('bad-args', needs, needsHint);
+    return null;
+  }
+  const collision = phaseSpellingCollision(dir, parsed);
+  if (collision) {
+    fail('bad-args', `${face} ${collision}`, collisionHint);
+    return null;
+  }
+  return parsed;
+}
 // `cadence-core/bin`, not this directory: its consumers swallow read failures, so a wrong level answers ok:true
 // resolve and not join, so it stays the same normalized absolute path planning.mjs computed
 const HERE = resolvePath(dirname(fileURLToPath(import.meta.url)), '..');
 
 // the one path read outside --dir, resolved from the script and not the cwd, so it names the plugin that's running
 // CADENCE_PLUGIN_MANIFEST overrides it only under the test seam, silently: this resolves before a warning can go out
-const MANIFEST_PATH = (testSeamOpen() && process.env.CADENCE_PLUGIN_MANIFEST)
-  || join(HERE, '..', '..', '.claude-plugin', 'plugin.json');
+const MANIFEST_PATH = manifestPath(join(HERE, '..', '..', '.claude-plugin', 'plugin.json'));
 
 /**
  * The running plugin's version, or null when the manifest is unreadable, malformed or has none.
@@ -101,10 +157,8 @@ function pluginVersion() {
 function derivePhases(dir, roadmapPhases) {
   return roadmapPhases.map((p) => {
     const pdir = join(dir, 'phases', String(p.n));
-    let plans = [];
-    try {
-      plans = readdirSync(pdir).filter((f) => PLAN_FILE.test(f)).sort(byPlanNumber);
-    } catch { /* no dir -> unplanned */ }
+    // no dir -> unplanned
+    const plans = planFilesIn(pdir) ?? [];
     const summary = existsSync(join(pdir, 'SUMMARY.md'));
     const uatText = read(join(pdir, 'UAT.md'));
     const uat = uatText ? parseUat(uatText) : null;
@@ -183,13 +237,8 @@ function listPlanFiles(pdir) {
   let entries;
   try { entries = readdirSync(pdir); }
   catch { return { plans: [], nonconforming: [], missing: true }; }
-  const plans = [];
-  const nonconforming = [];
-  for (const f of entries) {
-    if (PLAN_FILE.test(f)) plans.push(f);
-    else if (f.startsWith('PLAN') && f.endsWith('.md')) nonconforming.push(f);
-  }
-  return { plans: plans.sort(byPlanNumber), nonconforming: nonconforming.sort() };
+  const nonconforming = entries.filter((f) => !PLAN_FILE.test(f) && f.startsWith('PLAN') && f.endsWith('.md'));
+  return { plans: planFilesOf(entries), nonconforming: nonconforming.sort() };
 }
 
 // one definition of "this plan's report says it is complete", since replay-check and status both decide from it
@@ -220,14 +269,15 @@ function readPlanReports(pdir, plans) {
 // J is the count of conforming plans, and the name comes from planName and is left off when the heading gives none
 // null when the dir is missing, has no plan or every plan is complete; `cursor set` and `status` share it
 // @param {string} pdir the phase directory
+// @param {ReturnType<typeof readPlanReports>} [reports] the phase's plan reports when the caller already read them: one per conforming plan, so `status` reads each once
 // @returns {{k: number, j: number, name?: string}|null}
-function planPosition(pdir) {
-  const { plans } = listPlanFiles(pdir);
-  const next = readPlanReports(pdir, plans).filter((r) => !r.complete)
+function planPosition(pdir, reports) {
+  const all = reports ?? readPlanReports(pdir, listPlanFiles(pdir).plans);
+  const next = all.filter((r) => !r.complete)
     .sort((a, b) => a.k - b.k)[0];
   if (!next) return null;
   const name = planName(read(join(pdir, next.plan)) ?? '');
-  return { k: next.k, j: plans.length, ...(name ? { name } : {}) };
+  return { k: next.k, j: all.length, ...(name ? { name } : {}) };
 }
 
 /**
@@ -428,19 +478,11 @@ const RECORD_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
  *   `task` is only there when the fire named one.
  */
 function fireIdentity(face, dir, opts) {
-  const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) {
-    fail('bad-args', `${face} needs --phase <N>`,
-      `pass --phase <N> for the phase this fire belongs to, then re-run the ${face}`);
-    return null;
-  }
   // before the token rails and fireHome, whose `no-phase-dir` names the right directory but neither fix
-  const collision = phaseSpellingCollision(dir, parsedPhase);
-  if (collision) {
-    fail('bad-args', `${face} ${collision}`,
-      `re-run the ${face} with one of those two spellings - nothing was written`);
-    return null;
-  }
+  const parsedPhase = phaseGuard(face, dir, opts.phase, `${face} needs --phase <N>`,
+    `pass --phase <N> for the phase this fire belongs to, then re-run the ${face}`,
+    `re-run the ${face} with one of those two spellings - nothing was written`);
+  if (!parsedPhase) return null;
   // the caller's own spelling, as uatFile addresses a phase: only ever a path or a label, never arithmetic
   const n = parsedPhase.raw;
 
@@ -461,16 +503,13 @@ function fireIdentity(face, dir, opts) {
   // the re-arm round: without it a blocking re-arm's artifact replaces round one's, the record an auditor reads
   let round = 1;
   if ('round' in opts) {
-    const parsedRound = requireInt(opts.round);
-    if (!parsedRound.ok || parsedRound.value < 1) {
-      fail('bad-args',
-        `${face} --round needs the re-arm round after it, a whole number of at `
-        + 'least 1: --round 2',
-        'send --round 2 for the first re-arm of this trigger, or leave the flag off for a first'
-        + " fire - without it a re-arm would overwrite round one's record, which is the one an"
-        + ' auditor reads');
-      return null;
-    }
+    const parsedRound = intFlag(opts.round, 1,
+      `${face} --round needs the re-arm round after it, a whole number of at `
+      + 'least 1: --round 2',
+      'send --round 2 for the first re-arm of this trigger, or leave the flag off for a first'
+      + " fire - without it a re-arm would overwrite round one's record, which is the one an"
+      + ' auditor reads');
+    if (!parsedRound.ok) return null;
     round = parsedRound.value;
   }
 
@@ -528,15 +567,6 @@ function fireIdentity(face, dir, opts) {
 }
 
 /**
- * The directory a fire's artifact is written into, or null once the refusal is out.
- * It sits beside the sibling REVIEW file, never in `<plandir>/reports/`, where lease-check exempts only one path.
- * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/`, then `deferred/<N>/`.
- * @param {string} dir @param {string} n the phase as the caller spelled it
- * @param {string} what the artifact, for the refusal's wording
- * @param {string} [task] the task slug, when this fire is a task's
- * @returns {string|null}
- */
-/**
  * Is `<dir>/<name>` a real directory, present and not a symlink?
  * lstat follows a symlinked parent in passing, so the parent gets the same test as the leaf.
  * @param {string} dir @param {string} name @returns {boolean}
@@ -547,6 +577,15 @@ function realDir(dir, name) {
   return stat.isDirectory();
 }
 
+/**
+ * The directory a fire's artifact is written into, or null once the refusal is out.
+ * It sits beside the sibling REVIEW file, never in `<plandir>/reports/`, where lease-check exempts only one path.
+ * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/`, then `deferred/<N>/`.
+ * @param {string} dir @param {string} n the phase as the caller spelled it
+ * @param {string} what the artifact, for the refusal's wording
+ * @param {string} [task] the task slug, when this fire is a task's
+ * @returns {string|null}
+ */
 function fireHome(dir, n, what, task) {
   if (task) {
     const tdir = join(dir, 'tasks', task);
@@ -579,6 +618,85 @@ function fireHome(dir, n, what, task) {
     + `already carried this phase's queue out, run \`deferred carry --phase ${n}\`, which is what `
     + 'creates the second home');
   return null;
+}
+
+/**
+ * A whole-number flag, or its refusal: `requireInt`, then a floor, then a `bad-args` refusal the caller words.
+ * Emits its own refusal and answers `{ok: false}`, like firePayload, so the caller's arm is `if (!n.ok) return;`.
+ * @param {unknown} raw @param {number|null} min the lowest accepted value, null for no floor
+ * @param {string} detail @param {string} hint
+ * @returns {{ok: true, value: number} | {ok: false}}
+ */
+function intFlag(raw, min, detail, hint) {
+  const parsed = requireInt(raw);
+  if (!parsed.ok || (min !== null && parsed.value < min)) {
+    fail('bad-args', detail, hint);
+    return { ok: false };
+  }
+  return parsed;
+}
+
+/**
+ * A fire's `--payload`, read once. An absent flag is refused here, never fed to stdin: evaluateRow checks values and
+ * not presence, and readJsonPayload with no argument would sit reading a stdin no gate site opens.
+ * Emits its own refusal and answers `{ok: false}`, like readJsonPayload, so the caller's arm is `if (!p.ok) return;`.
+ * @param {any} opts @param {string} detail @param {string} hint what the fire's own refusal says
+ * @returns {{ok: true, value: any} | {ok: false}}
+ */
+function firePayload(opts, detail, hint) {
+  if (opts.payload === undefined) {
+    fail('bad-args', detail, hint);
+    return { ok: false };
+  }
+  return readJsonPayload(opts.payload);
+}
+
+/**
+ * The range a fire reviewed, resolved, or null once the refusal is out. An unresolvable range refuses, since a head
+ * that can't be checked out can't be triaged.
+ * @param {string} n @param {string} base @param {string} head
+ * @returns {ReturnType<typeof resolveRange> | null}
+ */
+function fireRange(n, base, head) {
+  const range = resolveRange(base, head);
+  if (range.ok) return range;
+  emit({
+    ok: false,
+    reason: 'unresolved-range',
+    phase: n,
+    base,
+    head,
+    detail: range.error,
+    hint: 'name a --base and --head this repository can resolve, then re-run this record',
+  });
+  return null;
+}
+
+/** What each fire's artifact holds and is called in its refusal: [held, noun]. */
+const FIRE_TARGETS = {
+  record: ['rulings', 'a record'],
+  queue: ['deferred findings', 'a queue member'],
+  review: ['survivors', 'a review file'],
+};
+
+/**
+ * Refuses, and answers true, when the fire's target already exists: forgetting --round on a re-arm would silently
+ * lose the first round. lstat, since a symlink at the target is already something there.
+ * @param {string} dir the planning directory @param {string} file @param {number} round
+ * @param {'record'|'queue'|'review'} kind
+ * @returns {boolean}
+ */
+function fireTargetTaken(dir, file, round, kind) {
+  let existing = null;
+  try { existing = lstatSync(file); } catch { /* the ordinary case */ }
+  if (!existing) return false;
+  const [held, noun] = FIRE_TARGETS[kind];
+  const detail = `${relative(dir, file)} already exists and holds round ${round}'s ${held} - this seam never overwrites ${noun}`;
+  const hint = 'a re-arm is a SECOND fire of the same trigger on the same plan: pass --round '
+    + `${round + 1} so it lands beside round ${round} instead of replacing it`;
+  if (kind === 'review') fail('review-exists', detail, hint);
+  else fail('record-exists', detail, hint);
+  return true;
 }
 
 /** The two directories under `.planning/` a queue member may live in. */
@@ -739,13 +857,167 @@ function argRefusal(key, flag) {
   return `${global ? '' : `${key} `}${flag} ${flagSentence(flag, spec)}`;
 }
 
+const MAP_DIR = 'codemap';
+const INDEX_FILE = 'index.json';
+
+// the index holds a row per tracked path and its symbols, so a big repository writes a big one. Measured on a file of
+// `{},` repeated: 64 MiB parsed in 4.1 s at 2,049 MiB RSS, 128 MiB in 17.4 s at 4,044 MiB, and 256 MiB dumped core, an
+// abort no catch sees. A scan never writes a larger one: it sheds the edges, then the symbols, and refuses if that is
+// not enough. A larger file is a leftover or a clone's, a fresh cut for scan, and status and slice refuse it by name. An
+// entry file is one module's, so it keeps the smaller limit
+const MAX_INDEX = 128 * 1024 * 1024;
+const MAX_ENTRY = 64 * 1024 * 1024;
+
+/**
+ * The stored index, or null. The map is derived, so an absent, oversized, torn or non-regular index means a fresh cut;
+ * `tooLarge` says which of those it was, for status to name.
+ * @param {string} map
+ * @returns {{index: any, tooLarge: boolean}}
+ */
+function storedIndex(map) {
+  const r = readCapped(join(map, INDEX_FILE), MAX_INDEX);
+  if (r.text === null) return { index: null, tooLarge: r.tooLarge === true };
+  try {
+    return { index: JSON.parse(r.text), tooLarge: false };
+  } catch {
+    return { index: null, tooLarge: false };
+  }
+}
+
+/**
+ * One module's entry file, or null when it's absent, not a regular file, too big or won't parse: all of them read as unbuilt.
+ * @param {string} map @param {string} entry
+ */
+function readEntry(map, entry) {
+  const r = readCapped(join(map, entry), MAX_ENTRY);
+  if (r.text === null) return null;
+  try {
+    return JSON.parse(r.text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A regular file's text under a size cap, or why it can't be had (`tooLarge` apart from the rest).
+ * @param {string} file @param {number} cap
+ * @returns {{text: string|null, why: string, tooLarge?: boolean}}
+ */
+function readCapped(file, cap) {
+  const cannot = (/** @type {any} */ e) => ({ text: null, why: `cannot be read (${(e && e.code) || 'error'})` });
+  let st;
+  try { st = lstatSync(file); } catch (e) { return cannot(e); }
+  if (!st.isFile()) return { text: null, why: 'is not a regular file' };
+  if (st.size > cap) return { text: null, why: `is ${st.size} bytes, over the ${cap} byte cap`, tooLarge: true };
+  try { return { text: readFileSync(file, 'utf8'), why: '' }; } catch (e) { return cannot(e); }
+}
+
+/**
+ * Write the run's brackets. A worker whose dispatch is on the record gets only its terminal, so a retry after a half-written
+ * pair closes it, and one with both is skipped. When the run's `<run id>-notice` bracket is already there, an earlier call
+ * billed the run's totals and billing it per agent as well would count it twice, so none are written. The same holds the other
+ * way: with any `<run id>-` agent bracket on the record, the notice bracket is not written on top of them.
+ * @param {string} dir the planning directory
+ * @param {string} phase @param {string} runId @param {{plan: string, dispatch: any, terminal: any}[]} list
+ * @returns {{written: number, already: number, failed: {plan: string, reason: string}[]}}
+ */
+function writeBrackets(dir, phase, runId, list) {
+  const events = renderTrace(dir, phase).events.filter((e) => e.family === 'lifecycle');
+  const dispatched = new Set(events.filter((e) => e.event === 'dispatch').map((e) => String(e.plan)));
+  const closed = new Set(events.filter((e) => TERMINAL.includes(e.event)).map((e) => String(e.plan)));
+  const out = { written: 0, already: 0, failed: /** @type {{plan: string, reason: string}[]} */ ([]) };
+  const billedAsTotals = dispatched.has(`${runId}-notice`);
+  // the run file gone on a retry leaves only the notice's totals, and agents billed earlier already hold that spend
+  const billedPerAgent = [...dispatched].some((p) => p.startsWith(`${runId}-`) && p !== `${runId}-notice`);
+  for (const b of list) {
+    if (closed.has(b.plan) || (billedAsTotals && b.plan !== `${runId}-notice`) || (billedPerAgent && b.plan === `${runId}-notice`)) { out.already += 1; continue; }
+    for (const event of dispatched.has(b.plan) ? [b.terminal] : [b.dispatch, b.terminal]) {
+      const r = appendEvent(dir, event);
+      if (!r.written) { out.failed.push({ plan: b.plan, reason: r.reason || 'not-written' }); break; }
+      if (event === b.terminal) out.written += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * The completion notice's run totals from the three `--notice-*` flags, or what is wrong with one. `codemap write` takes the same three.
+ * @param {any} opts @param {string} seam the command's name, for the message
+ * @returns {{ok: true, totals: {tokens?: number, turns?: number, duration_ms?: number}} | {ok: false, detail: string}}
+ */
+function noticeTotals(opts, seam) {
+  /** @type {{tokens?: number, turns?: number, duration_ms?: number}} */
+  const totals = {};
+  for (const [flag, key] of [['notice-tokens', 'tokens'], ['notice-turns', 'turns'], ['notice-duration-ms', 'duration_ms']]) {
+    if (!(flag in opts)) continue;
+    const n = requireInt(opts[flag]);
+    if (!n.ok || n.value < 0) return { ok: false, detail: `${seam} --${flag} needs a non-negative whole number` };
+    totals[key] = n.value;
+  }
+  return { ok: true, totals };
+}
+
+/**
+ * The stored map as `slice` reads it: the index with its checks, the current facts, each module's state and entry, and the
+ * marks. A failure comes back as `error` instead of a refusal, so a seam that can do without a map reads it as no map.
+ * @param {string} dir the planning directory
+ * @returns {{error: {reason: string, message: string, hint: string}} | {index: any, states: Map<string, string>, entries: Map<string, any>, entryPath: (name: string) => string, current: Set<string>, marks: {edges_shed?: true, symbols_shed?: true}}}
+ */
+function readStoredMap(dir) {
+  const root = dirname(resolvePath(dir));
+  const map = join(dir, MAP_DIR);
+  let real = false;
+  try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
+  const { index, tooLarge } = real ? storedIndex(map) : { index: null, tooLarge: false };
+  if (tooLarge) {
+    return { error: { reason: 'index-too-large', message: `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so slice won't read it`,
+      hint: 'run `planning.mjs codemap scan` to rebuild the map' } };
+  }
+  // the index comes from a file a clone can supply: every row has a path, and its symbols are objects
+  const wellFormed = index && Array.isArray(index.rows) && Array.isArray(index.modules)
+    && index.modules.every((/** @type {any} */ m) => m && typeof m.name === 'string' && Array.isArray(m.paths))
+    && index.rows.every((/** @type {any} */ r) => isPlainObject(r) && typeof r.path === 'string'
+      && (r.symbols === undefined || (Array.isArray(r.symbols) && r.symbols.every(isPlainObject))));
+  if (!wellFormed) {
+    return { error: { reason: 'no-index', message: `there is no code map at ${map}`, hint: 'run `planning.mjs codemap scan` first to build the map' } };
+  }
+  let current;
+  try {
+    current = readFacts(root);
+  } catch {
+    return { error: { reason: 'no-git', message: `${root} is not inside a git repository, so there is nothing to compare`,
+      hint: 'run from the project\'s repository, or pass --dir naming its .planning directory' } };
+  }
+  // staleness is the way status takes it: the stored list placed against the files as they are now, each entry's built_from against current hashes
+  const { modules } = partition(current, index.modules);
+  const byPath = new Map(current.map((r) => [r.path, r]));
+  /** @type {Map<string, string>} */
+  const states = new Map();
+  /** @type {Map<string, any>} */
+  const entries = new Map();
+  for (const m of modules) {
+    const entry = readEntry(map, entryFile(m.name));
+    const state = moduleState(m, entry, byPath);
+    states.set(m.name, state);
+    if (entry && (state === 'built' || state === 'stale')) entries.set(m.name, entry);
+  }
+  const base = `${basename(resolvePath(dir))}/${MAP_DIR}`;
+  /** @type {{edges_shed?: true, symbols_shed?: true}} */
+  const marks = { ...(index.edges_shed === true ? { edges_shed: true } : {}), ...(index.symbols_shed === true ? { symbols_shed: true } : {}) };
+  return { index, states, entries, entryPath: (name) => `${base}/${entryFile(name)}`, current: new Set(current.map((r) => r.path)), marks };
+}
+
 // one export list, so every body above stays byte-identical to what planning.mjs shipped
 export {
   ARGV,
   DISPATCH_WINDOW_DEFAULTS,
   FLAG_SENTENCES,
   HERE,
+  INDEX_FILE,
   MANIFEST_PATH,
+  MAP_DIR,
+  MAX_ENTRY,
+  MAX_INDEX,
   PHASE_DIR_NAME,
   QUEUE_HOMES,
   RECORD_TOKEN,
@@ -753,26 +1025,39 @@ export {
   argRefusal,
   decimalRefusal,
   derivePhases,
+  dirFlag,
   fail,
   fireHome,
   fireIdentity,
+  firePayload,
+  fireRange,
+  fireTargetTaken,
   flagSentence,
+  intFlag,
   listPlanFiles,
   memoryBackend,
+  noticeTotals,
+  notRealDirDetail,
   ok,
+  phaseGuard,
   phaseSpellingCollision,
   phaseSpellingRefusal,
   planKey,
   pluginVersion,
   read,
+  readCapped,
+  readEntry,
   readJsonPayload,
   readPlanReports,
   planPosition,
   readQueue,
   readReadsRecords,
+  readStoredMap,
   resolveIndex,
   resolveRange,
   resolveRef,
   riskRef,
   routeLadder,
+  storedIndex,
+  writeBrackets,
 };

@@ -1,12 +1,12 @@
 // @ts-check
 // planning-files.mjs - every .planning grammar lives here (cursor, ROADMAP phases, REQUIREMENTS
-// traceability, UAT items), except the cursor parser, which sits in state-cursor.mjs and is re-exported
+// traceability, UAT items), except the cursor parser, which lives in state-cursor.mjs
 // a format change is one function here plus its tests, workflow prose never describes file mechanics
 'use strict';
 
 import { writeFileSync, renameSync, lstatSync } from 'node:fs';
 import { isRefusedSpelling } from './lease-grammar.mjs';
-import { parseCursor } from './state-cursor.mjs';
+import { fenceScanner } from './text-util.mjs';
 
 // the only Status values the cursor may carry
 export const CURSOR_STATUSES = [
@@ -15,9 +15,6 @@ export const CURSOR_STATUSES = [
 ];
 
 // STATE.md: the cursor
-
-// re-exported so callers keep importing it from here
-export { parseCursor };
 
 /**
  * Render the canonical cursor under `# State`. The optional `Plan:` line sits right after `Phase:`,
@@ -143,8 +140,8 @@ export function parseRequirements(text) {
 // single-line edits, these return the whole text so callers stay pure
 
 // phase numbers can be decimal, and an unescaped dot would match any character
-/** @param {number} n */
-const escN = (n) => String(n).replace(/\./g, '\\.');
+/** Decimal-safe: `2.1` must not match `291`. @param {string|number} n */
+export const escN = (n) => String(n).replace(/\./g, '\\.');
 
 /**
  * Flip a phase's `## Phases` checkbox. Returns {text, line} (1-indexed), or null when there's no such phase line.
@@ -215,6 +212,31 @@ export function isRequirementId(id) {
 }
 
 /**
+ * Every `### Phase <N>:` detail section in `lines` as `{start, end}`: the heading's own line and the next unfenced
+ * line opening with one to three `#` and a space (or `lines.length`). Empty when there is none. The one locator for
+ * a detail section, so the criteria count, the cut and the milestone prune can't disagree about where it ends.
+ * The scanner is fed every line from the top and never restarted, so the fence state is the whole document's: a
+ * fenced `# comment` or `### ` line neither ends a section nor starts one. The heading is the escaped number with
+ * the colon right after it, then nothing or a space-led name, so a longer number can't match a shorter n.
+ * Lines are read, never changed, so a caller that writes them back keeps every byte, `\r` included.
+ * @param {string[]} lines @param {string|number} n
+ * @returns {Array<{start: number, end: number}>}
+ */
+export function phaseDetailSpans(lines, n) {
+  const head = new RegExp(`^### Phase ${escN(n)}:(?: .*)?\\r?$`);
+  const fenced = fenceScanner();
+  const spans = [];
+  let open = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (fenced(lines[i])) continue;
+    if (open >= 0 && /^#{1,3} /.test(lines[i])) { spans.push({ start: open, end: i }); open = -1; }
+    if (open < 0 && head.test(lines[i])) open = i;
+  }
+  if (open >= 0) spans.push({ start: open, end: lines.length });
+  return spans;
+}
+
+/**
  * One phase's `### Phase <N>:` detail block verbatim, or null when the roadmap has none.
  * Shared by phaseRequirements and phaseCriteria so they can't disagree about where a block ends,
  * or a criteria count would swallow the next phase's list.
@@ -224,15 +246,9 @@ export function isRequirementId(id) {
  * @returns {string|null}
  */
 function phaseDetailBlock(body, phase) {
-  const head = new RegExp(`^### Phase ${String(phase).replace('.', '\\.')}:`, 'm');
-  const at = body.search(head);
-  if (at < 0) return null;
-  const rest = body.slice(at);
-  // start after our own heading line, slicing by one char would re-find it and return a one-character block
-  const afterHeading = rest.indexOf('\n') + 1;
-  const tail = afterHeading > 0 ? rest.slice(afterHeading) : '';
-  const nextHeading = tail.search(/^#{1,3} /m);
-  return nextHeading < 0 ? rest : rest.slice(0, afterHeading + nextHeading);
+  const lines = body.split('\n');
+  const [span] = phaseDetailSpans(lines, phase);
+  return span ? lines.slice(span.start, span.end).join('\n') : null;
 }
 
 /**
@@ -270,8 +286,7 @@ const CRITERIA_ITEM_G = /^\d+[.)]\s+\S/gm;
  * How many success criteria a phase's ROADMAP detail block declares: the numbered items under either heading
  * spelling, up to the next `^#{1,3} ` heading. No heading gives `{found: false, count: 0}`, as phaseRequirements
  * does, so a phase nobody wrote criteria for is never compared against a floor.
- * Fenced lines are dropped first, or a fenced example's items get counted. The block boundary is still fence-blind,
- * so a fenced `### Phase N:` heading can end a block early.
+ * Fenced lines are dropped first, or a fenced example's items get counted.
  *
  * @param {string} text the ROADMAP.md bytes
  * @param {string|number} phase the caller's own spelling
@@ -292,11 +307,14 @@ export function phaseCriteria(text, phase) {
 /**
  * The `### Task <n>: <name>` headings in one plan's bytes, in file order.
  * Anchored to the heading level the plan template writes, so a `## Tasks` heading or a `#### ` sub-bullet isn't a task.
+ * A line inside a fenced block is no heading.
  * @param {string} text @returns {string[]} the task titles
  */
 export function planTaskTitles(text) {
-  return [...normalizeCrlf(String(text || '')).matchAll(/^### Task\s+[\d.]+\s*:?\s*(.*)$/gm)]
-    .map((m) => m[1].trim());
+  // a fenced line is blanked, not dropped, so a fenced `### Task` example is no task and the rest reads as before
+  const fenced = fenceScanner();
+  const open = normalizeCrlf(String(text || '')).split('\n').map((l) => (fenced(l) ? '' : l)).join('\n');
+  return [...open.matchAll(/^### Task\s+[\d.]+\s*:?\s*(.*)$/gm)].map((m) => m[1].trim());
 }
 
 /**
@@ -310,11 +328,9 @@ export function planTaskTitles(text) {
  */
 export function planName(text) {
   if (typeof text !== 'string') return null;
-  let body = normalizeCrlf(text);
-  if (body.startsWith('---\n')) {
-    const end = body.indexOf('\n---', 3);
-    if (end !== -1) body = body.slice(end + 4);
-  }
+  const lines = normalizeCrlf(text).split('\n');
+  const bounds = frontmatterBounds(lines);
+  const body = (bounds && bounds.close !== -1 ? lines.slice(bounds.close + 1) : lines).join('\n');
   const h1 = /^# (.*)$/m.exec(body);
   if (!h1) return null;
   const parts = [...h1[1].matchAll(/\s[-\u2014]\s+Plan(?!\w)/g)];
@@ -479,13 +495,17 @@ export function insertReqRows(text, rows) {
 // recall corpus snippets for BM25. A missing section is data, not a throw; template placeholders are skipped
 
 /**
- * One `## Heading` section's body, cut at the next `## `, or null when the heading is absent.
+ * One `## Heading` section's body, cut at the next `## ` outside a fence, or null when the heading is absent outside
+ * one. Both ends come from `sectionSpan`: a `## build output` line in a fenced block neither ends the section nor
+ * counts as its heading. A present empty section is "", never null, which parseContextDecisions's fallback rests on.
  * @param {string} text @param {string} heading
+ * @returns {string|null}
  */
 function sectionBody(text, heading) {
-  const parts = text.split(new RegExp(`^## ${heading}\\s*$`, 'm'));
-  if (parts.length < 2) return null;
-  return parts[1].split(/^## /m)[0];
+  // parse only: none of the callers writes the text back, the condition `normalize` sets, so CRLF reads as its LF twin
+  const lines = normalize(text).split('\n');
+  const { start, end } = sectionSpan(lines, `## ${heading}`);
+  return start < 0 ? null : lines.slice(start + 1, end).join('\n');
 }
 
 /**
@@ -498,13 +518,24 @@ export function parseSummarySnippets(text) {
   for (const heading of ['Deviations', 'Open items']) {
     const body = sectionBody(text, heading);
     if (!body) continue;
-    for (const line of body.split('\n')) {
-      const m = line.match(/^-\s+(.*)$/);
-      if (!m) continue;
-      const raw = m[1].trim();
-      if (!raw || raw.startsWith('None') || raw.startsWith('<')) continue;
-      out.push(raw.replace(/^\[deviation\]\s*/, ''));
-    }
+    for (const raw of bulletSnippets(body)) out.push(raw.replace(/^\[deviation\]\s*/, ''));
+  }
+  return out;
+}
+
+/**
+ * The bullets of one section body as trimmed snippets: a `^-\s+` line, template placeholders (`None...`, `<...>`) and
+ * empty bullets skipped. The one loop both snippet readers share.
+ * @param {string} body @returns {string[]}
+ */
+function bulletSnippets(body) {
+  const out = [];
+  for (const line of body.split('\n')) {
+    const m = line.match(/^-\s+(.*)$/);
+    if (!m) continue;
+    const raw = m[1].trim();
+    if (!raw || raw.startsWith('None') || raw.startsWith('<')) continue;
+    out.push(raw);
   }
   return out;
 }
@@ -520,17 +551,8 @@ export function parseSummarySnippets(text) {
  * @param {string} text one RECORD.md's bytes @returns {string[]}
  */
 export function parseTaskRecordSnippets(text) {
-  const out = [];
   const body = sectionBody(text, 'What shipped');
-  if (!body) return out;
-  for (const line of body.split('\n')) {
-    const m = line.match(/^-\s+(.*)$/);
-    if (!m) continue;
-    const raw = m[1].trim();
-    if (!raw || raw.startsWith('None') || raw.startsWith('<')) continue;
-    out.push(raw);
-  }
-  return out;
+  return body ? bulletSnippets(body) : [];
 }
 
 /**
@@ -704,6 +726,9 @@ export function parseArchiveRows(text) {
   return out;
 }
 
+/** One line, whitespace runs around a newline collapsed to a space, null and undefined as ''. */
+const flat = (v) => String(v ?? '').replace(/\s*\n+\s*/g, ' ').trim();
+
 /**
  * Land `rows` under `label`'s section in ARCHIVE.md `text` and return the new text. They go after that section's last
  * row, so a resumed close extends its heading instead of minting a second one, or into a new section at the end.
@@ -716,7 +741,6 @@ export function parseArchiveRows(text) {
  * @returns {string}
  */
 export function appendArchiveRows(text, label, rows) {
-  const flat = (v) => String(v ?? '').replace(/\s*\n+\s*/g, ' ').trim();
   const emitted = (rows || [])
     .filter((r) => r && flat(r.text))
     .map((r) => `- \`${flat(r.origin)}\`: ${flat(r.text)}`);
@@ -886,7 +910,6 @@ export function appendDeclinedRow(text, row) {
 /** The shared body of both appenders.
  * @param {string} text @param {any} row @param {string} preamble */
 function appendRow(text, row, preamble) {
-  const flat = (v) => String(v ?? '').replace(/\s*\n+\s*/g, ' ').trim();
   const r = row && typeof row === 'object' ? row : /** @type {any} */ ({});
   const line = `- ${flat(r.date)} ${flat(r.provider)} ${flat(r.slug)} `
     + `${flat(r.fingerprint)}${r.unconfirmed === true ? ' unconfirmed' : ''}: ${flat(r.title)}`;
@@ -923,26 +946,6 @@ const CRITERION_SUB = /^\s+[-*+]\s+(?:\[[ xX]\]\s+)?AC\d+\b/;
 const CRITERION_ID_DECLARED = /^\s*(?:(?:[-*+]|#{1,6}|\d+[.)])\s*)?(?:\[[ xX]\]\s*)?(?:[*_`]+\s*)?AC\d+\b/i;
 
 /**
- * A stateful line filter: `true` while the line is a fence marker or inside a fenced code block, `false` for
- * content. One scanner per walk, fed every line in order.
- * Follows CommonMark closely enough: up to three spaces of indent, three or more backticks or tildes, and a
- * closer of the same character, at least as long, with no info string. Shared by sectionBound and the criteria
- * walk, which had the same bug in two places.
- */
-function fenceScanner() {
-  /** @type {{char: string, len: number}|null} */
-  let fence = null;
-  return (/** @type {string} */ line) => {
-    const f = line.match(/^ {0,3}(`{3,}|~{3,})\s*(.*)$/);
-    if (!f) return fence !== null;
-    const char = f[1][0], len = f[1].length;
-    if (fence === null) fence = { char, len };
-    else if (char === fence.char && len >= fence.len && !f[2].trim()) fence = null;
-    return true;
-  };
-}
-
-/**
  * Classify the `## Acceptance criteria` section of a context file: the criteria it declares as `{id, text}`, plus
  * lines that look like they declare one but fall outside the canonical head. Pure and total.
  * No exact heading is `{criteria: null, issues: []}`. A near-miss heading (`## Acceptance Criteria`, `###`) reports
@@ -961,11 +964,11 @@ export function classifyAcceptanceCriteria(text) {
     if (/^## Acceptance criteria\s*$/.test(lines[i])) { heading = i; break; }
   }
   if (heading === -1) {
-    // no exact heading: look for a line meant to be it (capital C, trailing colon, `###`), or coverage goes silent
+    // no exact heading: look for a line meant to be it (capital C, trailing colon, `###`, up to three spaces of indent), or coverage goes silent
     const nearFenced = fenceScanner();
     for (let i = 0; i < lines.length; i++) {
       if (nearFenced(lines[i])) continue;
-      if (/^#{1,6}\s*acceptance\s+criteri/i.test(lines[i])) {
+      if (/^ {0,3}#{1,6}\s*acceptance\s+criteri/i.test(lines[i])) {
         // 'unknown', never 'none': the section is never walked, so a typo mustn't earn the "declared nothing" exemption
         return { criteria: null, declaresIds: 'unknown',
           issues: [{ line: i + 1, code: 'criteria-heading-near-miss', text: issueText(lines[i]) }] };
@@ -1089,8 +1092,8 @@ function countStatuses(items) {
  * A bare `/^## /` test cut the section short on a `## build output` line inside a code block, destroying the
  * closing fence and everything after it, and the odd fence count made the regenerated `## Summary` render as
  * code. That broke UAT.md's promise that a hand-added section survives a rewrite verbatim.
- * Exported for the debt harvest's CAPTURE.md section writer, which rewrites one `## ` section wholesale and needs
- * this exact rule. A second fence scanner there would drift and bring the same truncation back.
+ * Exported for `lib/why-record.mjs`, which bounds a task body with it so a fenced `## ` can't end the body early.
+ * The debt harvest's CAPTURE.md writer uses `replaceSection`, which is built on `sectionSpan`.
  * @param {string[]} lines
  * @returns {number}
  */
@@ -1143,6 +1146,7 @@ const UAT_HEAD = /^(\d+)\.\s+(\S(?:.*\S)?|[^\S\n\r\u2028\u2029](?=[\n\r\u2028\u2
  * @param {string} text
  */
 export function parseUat(text) {
+  text = normalizeCrlf(text);
   const fmMatch = text.match(/^---\n([\s\S]*?)\n---/);
   /** @type {Record<string, string>} */
   const fm = {};
@@ -1155,9 +1159,16 @@ export function parseUat(text) {
   const items = [];
   /** @type {string[]} Hand-added `### ` sections, preserved verbatim. */
   const extras = [];
-  const parts = text.split(/^### /m).slice(1);
-  for (const part of parts) {
-    const lines = part.split('\n');
+  // one scanner fed every line in order: a `### ` line inside a fence is content, never a chunk start
+  const fenced = fenceScanner();
+  /** @type {string[][]} */
+  const parts = [];
+  for (const line of text.split('\n')) {
+    const inFence = fenced(line);
+    if (!inFence && line.startsWith('### ')) parts.push([line.slice(4)]);
+    else if (parts.length) parts[parts.length - 1].push(line);
+  }
+  for (const lines of parts) {
     // both loops stop at the same fence-aware bound, a `## ` inside a code block is content
     const bound = sectionBound(lines);
     const body = bound === -1 ? lines : lines.slice(0, bound);
@@ -1178,6 +1189,30 @@ export function parseUat(text) {
   }
   const counts = countStatuses(items);
   return { status: fm.status || null, phase: fm.phase || null, fm, items, counts, extras };
+}
+
+/**
+ * What a phase folder gives to recall, in fixed order: each SUMMARY snippet, each UAT item's name and expected, each CONTEXT
+ * decision, every one with the file it came from. Recall and the milestone close's archive rows both read it, so they cannot
+ * disagree. `readFile` answers null for a file to skip, and is asked for the three in that order.
+ * @param {(file: string) => string|null} readFile the phase folder's file by name
+ * @returns {{file: string, text: string}[]}
+ */
+export function phaseRecallSnippets(readFile) {
+  /** @type {{file: string, text: string}[]} */
+  const out = [];
+  const summary = readFile('SUMMARY.md');
+  if (summary) for (const text of parseSummarySnippets(summary)) out.push({ file: 'SUMMARY.md', text });
+  const uatText = readFile('UAT.md');
+  if (uatText) {
+    for (const it of parseUat(uatText).items) {
+      const text = `${it.name || ''} ${it.expected || ''}`.trim();
+      if (text) out.push({ file: 'UAT.md', text });
+    }
+  }
+  const context = readFile('CONTEXT.md');
+  if (context) for (const text of parseContextDecisions(context)) out.push({ file: 'CONTEXT.md', text });
+  return out;
 }
 
 /**
@@ -1255,6 +1290,10 @@ export function issueText(line) {
   const t = line.trim();
   return t.length > 120 ? `${t.slice(0, 120)}...` : t;
 }
+
+/** A task line's declared-file item, normalized: backticks dropped, one trailing parenthetical cut, trimmed. */
+export const normalizeTaskItem = (/** @type {string} */ raw) =>
+  raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
 
 /**
  * Scan a frontmatter value left to right tracking quote state: a quote opens a span when none is open and closes it
@@ -1419,6 +1458,23 @@ const ITEM_LINE = /^\s*-\s+(.*)$/;
 const MALFORMED_KEY_LINE = /^[A-Za-z_][A-Za-z0-9_.-]*:/;
 
 /**
+ * Where a text's leading frontmatter block opens and closes, as indices into `lines`: leading blank lines are
+ * tolerated, both fences are bare `---` lines, and any other first non-blank line means no block (null).
+ * `close` is -1 when the block never closes. The one locator, so no reader can disagree about where a plan's
+ * frontmatter is.
+ * @param {string[]} lines
+ * @returns {{open: number, close: number}|null}
+ */
+export function frontmatterBounds(lines) {
+  let open = 0;
+  while (open < lines.length && BLANK_LINE.test(lines[open])) open++;
+  if (open >= lines.length || !FENCE_LINE.test(lines[open])) return null;
+  let close = open + 1;
+  while (close < lines.length && !FENCE_LINE.test(lines[close])) close++;
+  return { open, close: close < lines.length ? close : -1 };
+}
+
+/**
  * Classify every line of a plan's leading frontmatter block in one pass: each key's value list and the stray lines.
  * One pass, not one scan per key, so the structural diagnostics don't depend on which key the caller asked for.
  * A key with an empty remainder opens a block that runs to another key line, the closing fence or the end of the
@@ -1430,15 +1486,11 @@ const MALFORMED_KEY_LINE = /^[A-Za-z_][A-Za-z0-9_.-]*:/;
 export function parseFrontmatter(text) {
   const norm = normalize(text);
   const lines = norm.split('\n');
-  let i = 0;
-  while (i < lines.length && BLANK_LINE.test(lines[i])) i++;
-  if (i >= lines.length || !FENCE_LINE.test(lines[i])) {
-    return { keys: new Map(), issues: [] };
-  }
+  const bounds = frontmatterBounds(lines);
+  if (!bounds) return { keys: new Map(), issues: [] };
+  const { open: i, close: j } = bounds;
   const fenceStartLine = i + 1;
-  let j = i + 1;
-  while (j < lines.length && !FENCE_LINE.test(lines[j])) j++;
-  if (j >= lines.length) {
+  if (j === -1) {
     return {
       keys: new Map(),
       issues: [{ line: fenceStartLine, code: 'unterminated-frontmatter', text: issueText(lines[i]) }],
@@ -1551,15 +1603,6 @@ export function readFrontmatterList(text, key) {
 }
 
 /**
- * The requirement ids a plan commits to deliver, plus the grammar issues from the pass that read them.
- * @param {string} text @returns {{ids: string[], issues: Issue[]}}
- */
-export function parsePlanRequirements(text) {
-  const { items, issues } = readFrontmatterList(text, 'requirements');
-  return { ids: items, issues };
-}
-
-/**
  * Where the frontmatter `files:` list is written, for a diagnostic that has to name a line: the key line itself
  * (`line`/`text`), plus `lines`, the list's own declaring lines (the key line alone for the inline form, the item
  * lines for a block).
@@ -1571,12 +1614,9 @@ export function parsePlanRequirements(text) {
 function filesListRegion(text) {
   const empty = { line: 1, text: '', lines: [] };
   const lines = normalize(text).split('\n');
-  let i = 0;
-  while (i < lines.length && BLANK_LINE.test(lines[i])) i++;
-  if (i >= lines.length || !FENCE_LINE.test(lines[i])) return empty;
-  let j = i + 1;
-  while (j < lines.length && !FENCE_LINE.test(lines[j])) j++;
-  if (j >= lines.length) return empty;
+  const bounds = frontmatterBounds(lines);
+  if (!bounds || bounds.close === -1) return empty;
+  const { open: i, close: j } = bounds;
   for (let k = i + 1; k < j; k++) {
     const km = lines[k].match(KEY_LINE);
     if (!km || km[1] !== 'files') continue; // first occurrence wins, as the parse does
@@ -1616,8 +1656,6 @@ const WRAP_PAIRS = /** @type {const} */ ([
  */
 export function parsePlanFiles(text) {
   const files = new Set();
-  /** The task-line arm's normalization: backticks and one trailing parenthetical. */
-  const normalizeTaskItem = (raw) => raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
   /**
    * Markdown decoration around a declared path, every shape under one code: a matched wrap (`WRAP_PAIRS`), the link
    * form (`[src/a.rs](src/a.rs)`), and a matched interior backtick pair (`` src/`a`.rs ``), two or more inside.
@@ -1808,24 +1846,21 @@ export function findProsePhaseRefs(text, from) {
 }
 
 /**
- * Cut a phase's `### Phase N: ...` detail section out of ROADMAP text, from its heading to the next ### or ##
- * heading. Returns the text unchanged when it's absent. A name-less heading (exactly `### Phase N:`) matches too,
- * so a bare heading and its body aren't left behind.
+ * Cut a phase's `### Phase N: ...` detail section out of ROADMAP text, from its heading to the next unfenced heading
+ * of one to three `#`. Returns the text unchanged when it's absent. A name-less heading (exactly `### Phase N:`)
+ * matches too, so a bare heading and its body aren't left behind.
  * That tolerance stays in this function: unifying every `Phase N:` matcher would change what counts as a phase for
- * status, audit, phase-done and the cursor's `total`. The colon stays right after the escaped number, so a longer
- * number can't match a shorter n.
+ * status, audit, phase-done and the cursor's `total`. The locator is `phaseDetailSpans`, working on lines without
+ * changing a byte, so a CRLF checkout round-trips.
  * @param {string} text @param {number} n
  */
 export function cutPhaseDetail(text, n) {
-  const re = new RegExp(`^### Phase ${escN(n)}:(?: .*)?$`, 'm');
-  const start = text.search(re);
-  if (start === -1) return text;
-  const headingEnd = text.indexOf('\n', start);
-  if (headingEnd === -1) return text.slice(0, start);
-  const rest = text.slice(headingEnd + 1);
-  const endRel = rest.search(/^#{2,3} /m);
-  const end = endRel === -1 ? text.length : headingEnd + 1 + endRel;
-  return text.slice(0, start) + text.slice(end);
+  const lines = text.split('\n');
+  const [span] = phaseDetailSpans(lines, n);
+  if (!span) return text;
+  // a section running to the end leaves the line before it terminated, as slicing the text at the heading did
+  if (span.end === lines.length) return span.start > 0 ? `${lines.slice(0, span.start).join('\n')}\n` : '';
+  return [...lines.slice(0, span.start), ...lines.slice(span.end)].join('\n');
 }
 
 // atomic write: write a sibling temp file and rename over the target, so a crash never leaves a torn file

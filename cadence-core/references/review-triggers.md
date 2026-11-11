@@ -369,9 +369,9 @@ The gate column is each key's own schema default. A config layer writing
 | Trigger | Fired by | When | Payload artifact | Default gate |
 |---|---|---|---|---|
 | `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s), plus `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and `.planning/phases/<N>/CONTEXT.md` (optional) - the artifacts the plan is checked AGAINST | advisory |
-| `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off |
+| `diff` | `cad-execute` | at plan completion; once at phase end over `<PHASE_BASE>..HEAD` (the phase's oldest `phase_start` anchor) with `review.triggers.diff.when: phase_end` | (a) refs `<pre-plan HEAD>..HEAD` | off |
 | `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | on detection match, ONCE per plan/task/fix - `cad-execute`/`cad-task` on the completed commit range, never mid-plan; `cad-debug`/`cad-verify` on their single staged fix | (c) the range-diff FILE path, or (b) the staged-diff scope for a single in-tree fix | blocking |
-| `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off |
+| `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge; with `review.triggers.diff.when: phase_end` it stands in for the `diff` fire | (a) refs `<PHASE_START>..HEAD` | off |
 
 `risk_surface` defaults to `blocking` on purpose: it fires only on a
 detection match, and there is no project for which a matched risk surface is

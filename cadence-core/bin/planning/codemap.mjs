@@ -7,7 +7,7 @@
 import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { emit } from '../lib/seam-io.mjs';
-import { fail, ok } from './core.mjs';
+import { INDEX_FILE, MAP_DIR, MAX_ENTRY, MAX_INDEX, dirFlag, fail, noticeTotals, ok, readCapped, readEntry, readStoredMap, storedIndex, writeBrackets } from './core.mjs';
 import { judgeEntry } from '../lib/codemap-entry.mjs';
 import { addEdges, stripEdges } from '../lib/codemap-edges.mjs';
 import { readFacts, readNested } from '../lib/codemap-facts.mjs';
@@ -17,10 +17,6 @@ import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '.
 import { atomicWrite } from '../lib/planning-files.mjs';
 import { LIST_CAP, MAX_RUN_BYTES, agentBrackets, agentRows, noticeBracket, parseCompleted } from '../lib/workflow-run.mjs';
 import { isPlainObject } from '../lib/text-util.mjs';
-import { noticeTotals, readCapped, writeBrackets } from './workflow-run.mjs';
-
-const MAP_DIR = 'codemap';
-const INDEX_FILE = 'index.json';
 
 /**
  * The map's directory path, or null when it can't be trusted. A clone can track `.planning` or `.planning/codemap` as a
@@ -40,79 +36,50 @@ function mapDir(dir) {
   return real(map) === false ? null : map;
 }
 
-// the index holds a row per tracked path and its symbols, so a big repository writes a big one. Measured on a file of
-// `{},` repeated: 64 MiB parsed in 4.1 s at 2,049 MiB RSS, 128 MiB in 17.4 s at 4,044 MiB, and 256 MiB dumped core, an
-// abort no catch sees. A scan never writes a larger one: it sheds the edges, then the symbols, and refuses if that is
-// not enough. A larger file is a leftover or a clone's, a fresh cut for scan, and status and slice refuse it by name. An
-// entry file is one module's, so it keeps the smaller limit
-const MAX_INDEX = 128 * 1024 * 1024;
-const MAX_ENTRY = 64 * 1024 * 1024;
-
 /**
- * The stored index, or null. The map is derived, so an absent, oversized, torn or non-regular index means a fresh cut;
- * `tooLarge` says which of those it was, for status to name.
- * @param {string} map
- * @returns {{index: any, tooLarge: boolean}}
+ * Every module's state, each entry file read once and dropped as soon as it is classified, so the entries under the cap
+ * never add up to the abort MAX_ENTRY exists to prevent. Only a stale entry is kept, and only when `keepStale` says the
+ * launch will carry it.
+ * @param {string} map @param {{name: string, paths: string[]}[]} modules @param {Map<string, any>} byPath the current facts
+ * @param {boolean} keepStale
+ * @returns {{states: Map<string, string>, stale: Map<string, any>}}
  */
-function storedIndex(map) {
-  try {
-    const file = join(map, INDEX_FILE);
-    const st = lstatSync(file);
-    if (st.isFile() && st.size > MAX_INDEX) return { index: null, tooLarge: true };
-    if (!st.isFile()) return { index: null, tooLarge: false };
-    return { index: JSON.parse(readFileSync(file, 'utf8')), tooLarge: false };
-  } catch {
-    return { index: null, tooLarge: false };
+function readStates(map, modules, byPath, keepStale) {
+  /** @type {Map<string, string>} */
+  const states = new Map();
+  /** @type {Map<string, any>} */
+  const stale = new Map();
+  for (const m of modules) {
+    const entry = readEntry(map, entryFile(m.name));
+    const state = moduleState(m, entry, byPath);
+    states.set(m.name, state);
+    if (keepStale && state === 'stale') stale.set(m.name, entry);
   }
-}
-
-/** @param {string} map @returns {{modules: any, tooLarge: boolean}} the stored module list, or null */
-function storedModules(map) {
-  const { index, tooLarge } = storedIndex(map);
-  return { modules: index?.modules ?? null, tooLarge };
-}
-
-/**
- * One module's entry file, or null when it's absent, not a regular file, too big or won't parse: all of them read as unbuilt.
- * @param {string} map @param {string} entry
- */
-function readEntry(map, entry) {
-  try {
-    const file = join(map, entry);
-    const st = lstatSync(file);
-    if (!st.isFile() || st.size > MAX_ENTRY) return null;
-    return JSON.parse(readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
+  return { states, stale };
 }
 
 /**
  * Each module's state and the figures a launch would be priced on. A reader opens only the regular text files at or
  * under the cap in a stale or unbuilt module, so `reader_bytes` counts those and a one-module refresh stays small.
- * @param {string} map @param {{name: string, paths: string[]}[]} modules @param {any[]} rows
+ * @param {Map<string, string>} states from `readStates` @param {{name: string, paths: string[]}[]} modules @param {any[]} rows
+ * @param {Map<string, any>} byPath
  */
-function stateOf(map, modules, rows) {
-  const byPath = new Map(rows.map((r) => [r.path, r]));
+function stateOf(states, modules, rows, byPath) {
   /** @type {Record<string, string[]>} */
   const names = { built: [], stale: [], unbuilt: [], no_reader: [] };
   let readerBytes = 0;
   for (const m of modules) {
-    const state = moduleState(m, readEntry(map, entryFile(m.name)), byPath);
+    const state = /** @type {string} */ (states.get(m.name));
     names[state].push(m.name);
     if (state === 'stale' || state === 'unbuilt') {
       for (const p of m.paths) if (byPath.get(p)?.kind === 'text') readerBytes += byPath.get(p).bytes || 0;
     }
   }
-  const listed = (key) => ({
-    [key]: names[key].length, [`${key}_modules`]: names[key].slice(0, LIST_CAP),
-    ...(names[key].length > LIST_CAP ? { [`${key}_more`]: names[key].length - LIST_CAP } : {}),
-  });
   return {
     modules: modules.length, bytes: rows.reduce((n, r) => n + (r.bytes || 0), 0),
     built: names.built.length, no_reader: names.no_reader.length,
     readers: names.stale.length + names.unbuilt.length, reader_bytes: readerBytes,
-    ...listed('stale'), ...listed('unbuilt'),
+    ...capped('stale', names.stale), ...capped('unbuilt', names.unbuilt),
   };
 }
 
@@ -167,12 +134,11 @@ function cmdStatus(dir, opts) {
   /** @type {string|null} */
   let outDir = null;
   if (opts['out-dir'] !== undefined) {
-    outDir = resolve(String(opts['out-dir']));
-    let st = null;
-    try { st = lstatSync(outDir); } catch { /* refused below */ }
-    if (!st || !st.isDirectory()) {
-      return fail('bad-args', `--out-dir ${outDir} is not a directory`, 'make the scratch directory first and pass it - nothing was written');
+    const dirArg = dirFlag('out-dir', opts['out-dir']);
+    if (dirArg.detail !== null) {
+      return fail('bad-args', dirArg.detail, 'make the scratch directory first and pass it - nothing was written');
     }
+    outDir = dirArg.abs;
   }
   let real = false;
   try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
@@ -194,14 +160,14 @@ function cmdStatus(dir, opts) {
   }
   // the stored list placed against the files as they are now, so a file added or removed since the scan counts and nothing is written
   const { modules } = partition(rows, stored);
-  const state = stateOf(map, modules, rows);
-  if (outDir === null) return ok({ action: 'status', ...state });
   const byPath = new Map(rows.map((r) => [r.path, r]));
+  const { states, stale } = readStates(map, modules, byPath, outDir !== null);
+  const state = stateOf(states, modules, rows, byPath);
+  if (outDir === null) return ok({ action: 'status', ...state });
   const toRead = [];
   for (const m of modules) {
-    const entry = readEntry(map, entryFile(m.name));
-    const s = moduleState(m, entry, byPath);
-    if (s === 'stale' || s === 'unbuilt') toRead.push({ ...m, entry: s === 'stale' ? entry : null });
+    const s = states.get(m.name);
+    if (s === 'stale' || s === 'unbuilt') toRead.push({ ...m, entry: s === 'stale' ? stale.get(m.name) : null });
   }
   const launch = writeLaunch({ root, outDir, modules: toRead, rows, indexRows: Array.isArray(index?.rows) ? index.rows : [] });
   return ok({ action: 'status', ...state, launch });
@@ -231,7 +197,7 @@ function cmdScan(dir) {
     return fail('unsafe-dir', `${join(dir, MAP_DIR)} or ${dir} exists and is not a real directory`,
       'remove it or replace it with a directory; nothing was written, because a write through a link would leave the repository');
   }
-  const { modules, oversized } = partition(rows, storedModules(map).modules);
+  const { modules, oversized } = partition(rows, storedIndex(map).index?.modules ?? null);
   const byPath = new Map(rows.map((r) => [r.path, r]));
   const listed = modules.map((m) => ({ name: m.name, entry: entryFile(m.name), no_reader: startsNoReader(m, byPath), paths: m.paths }));
   // never an index over the limit: the edges go first, then the symbols, and a row left with neither says so in the marks
@@ -270,7 +236,7 @@ function cmdScan(dir) {
   return ok({
     action: 'scan', files: rows.length, text: count('text'), binary: count('binary'), over_cap: count('over_cap'),
     symlinks: count('symlink'), gitlinks: count('gitlink'), missing: count('missing'),
-    ...stateOf(map, modules, rows), oversized, ...marks,
+    ...stateOf(readStates(map, modules, byPath, false).states, modules, rows, byPath), oversized, ...marks,
   });
 }
 
@@ -430,57 +396,6 @@ function cmdWrite(dir, opts) {
 const listOf = (v) => (typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : []);
 
 /**
- * The stored map as `slice` reads it: the index with its checks, the current facts, each module's state and entry, and the
- * marks. A failure comes back as `error` instead of a refusal, so a seam that can do without a map reads it as no map.
- * @param {string} dir the planning directory
- * @returns {{error: {reason: string, message: string, hint: string}} | {index: any, states: Map<string, string>, entries: Map<string, any>, entryPath: (name: string) => string, current: Set<string>, marks: {edges_shed?: true, symbols_shed?: true}}}
- */
-function readStoredMap(dir) {
-  const root = dirname(resolve(dir));
-  const map = join(dir, MAP_DIR);
-  let real = false;
-  try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
-  const { index, tooLarge } = real ? storedIndex(map) : { index: null, tooLarge: false };
-  if (tooLarge) {
-    return { error: { reason: 'index-too-large', message: `the code map's index at ${join(map, INDEX_FILE)} is over ${MAX_INDEX / 1024 / 1024} MiB, so slice won't read it`,
-      hint: 'run `planning.mjs codemap scan` to rebuild the map' } };
-  }
-  const isObject = (/** @type {any} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-  // the index comes from a file a clone can supply: every row has a path, and its symbols are objects
-  const wellFormed = index && Array.isArray(index.rows) && Array.isArray(index.modules)
-    && index.modules.every((/** @type {any} */ m) => m && typeof m.name === 'string' && Array.isArray(m.paths))
-    && index.rows.every((/** @type {any} */ r) => isObject(r) && typeof r.path === 'string'
-      && (r.symbols === undefined || (Array.isArray(r.symbols) && r.symbols.every(isObject))));
-  if (!wellFormed) {
-    return { error: { reason: 'no-index', message: `there is no code map at ${map}`, hint: 'run `planning.mjs codemap scan` first to build the map' } };
-  }
-  let current;
-  try {
-    current = readFacts(root);
-  } catch {
-    return { error: { reason: 'no-git', message: `${root} is not inside a git repository, so there is nothing to compare`,
-      hint: 'run from the project\'s repository, or pass --dir naming its .planning directory' } };
-  }
-  // staleness is the way status takes it: the stored list placed against the files as they are now, each entry's built_from against current hashes
-  const { modules } = partition(current, index.modules);
-  const byPath = new Map(current.map((r) => [r.path, r]));
-  /** @type {Map<string, string>} */
-  const states = new Map();
-  /** @type {Map<string, any>} */
-  const entries = new Map();
-  for (const m of modules) {
-    const entry = readEntry(map, entryFile(m.name));
-    const state = moduleState(m, entry, byPath);
-    states.set(m.name, state);
-    if (entry && (state === 'built' || state === 'stale')) entries.set(m.name, entry);
-  }
-  const base = `${basename(resolve(dir))}/${MAP_DIR}`;
-  /** @type {{edges_shed?: true, symbols_shed?: true}} */
-  const marks = { ...(index.edges_shed === true ? { edges_shed: true } : {}), ...(index.symbols_shed === true ? { symbols_shed: true } : {}) };
-  return { index, states, entries, entryPath: (name) => `${base}/${entryFile(name)}`, current: new Set(current.map((r) => r.path)), marks };
-}
-
-/**
  * The rows asked for, and no way to ask for all of them: a call naming none of the selectors is refused.
  * @param {string} dir the planning directory @param {any} opts
  */
@@ -509,4 +424,4 @@ function cmdCodemap(dir, sub, opts) {
   return fail('usage', 'codemap <scan|status|slice|write>');
 }
 
-export { cmdCodemap, readStoredMap };
+export { cmdCodemap };

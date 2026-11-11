@@ -12,10 +12,12 @@ export const CODE = 'unbatched-dispatch';
 /** A claim that a set of dispatches happens at the same time. */
 const CONCURRENCY = /\b(?:in parallel|parallel|concurrent|concurrently|simultaneously)\b/i;
 
+/** The shapes that instruct one-at-a-time delivery, written once for the two patterns built from it. */
+const SERIAL_ALTERNATION = 'one at a time|one by one|in turn|per reviewer|per message'
+  + '|one (?:dispatch|call|request|agent|reviewer|executor|verifier) per';
+
 /** Hands the set out one member at a time; "one dispatch per message" counts, though it has no loop. */
-const SERIAL_SHAPE = new RegExp('\\b(?:for each|for every|one at a time|one by one'
-  + '|in turn|per reviewer|per message'
-  + '|one (?:dispatch|call|request|agent|reviewer|executor|verifier) per)\\b', 'i');
+const SERIAL_SHAPE = new RegExp(`\\b(?:for each|for every|${SERIAL_ALTERNATION})\\b`, 'i');
 
 /** A host-capability hedge, which makes the rule optional and so a suggestion. */
 const HOST_HEDGE = /\b(?:if|when|where)\s+the\s+host\s+(?:allows|supports|permits)\b/i;
@@ -43,9 +45,7 @@ const MANDATE = /\b(?:in|as) one (?:message|batch)\b/i;
 const BATCH_AFFIRMING = /\b(?:in the batch|across the batch|the whole batch)\b/i;
 
 /** The shapes that instruct one-at-a-time delivery, unlike loop heads, which only distribute. */
-const SERIALIZES = new RegExp('\\b(?:one at a time|one by one|in turn|per reviewer'
-  + '|per message'
-  + '|one (?:dispatch|call|request|agent|reviewer|executor|verifier) per)\\b', 'i');
+const SERIALIZES = new RegExp(`\\b(?:${SERIAL_ALTERNATION})\\b`, 'i');
 
 /** How much of the offending sentence the detail quotes. */
 const QUOTE = 200;

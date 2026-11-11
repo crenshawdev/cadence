@@ -8,11 +8,11 @@
 //     Makes a PRIVATE repo. --remote-url is required where create wires no remote (forgejo, github), refused on gitlab.
 'use strict';
 
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import { boundedRun as run } from './lib/bounded-run.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { emit } from './lib/seam-io.mjs';
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
+import { CONTRACTS, requireFlag, rowReader } from './lib/arg-contract.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { onPath } from './lib/on-path.mjs';
 import { classifyOrigin, loginNamesHost } from './lib/issue-decision.mjs';
@@ -31,32 +31,12 @@ const CREATE_TIMEOUT_MS = 60000;
 const LOGIN_TIMEOUT_MS = 10000;
 
 /**
- * Run a command, bounded, and never throw. SIGKILL because a child that ignores SIGTERM outlives its own timeout.
- * Stderr is dropped at the spawn, since the default passes a failing CLI's stderr to the terminal and leaks it.
- *
- * @param {string} bin @param {string[]} args
- * @param {{cwd: string, timeout: number}} opts
- * @returns {{ok: boolean, stdout: string}}
- */
-function run(bin, args, { cwd, timeout }) {
-  try {
-    return {
-      ok: true,
-      stdout: execFileSync(bin, args, {
-        cwd, timeout, killSignal: 'SIGKILL', encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }),
-    };
-  } catch { return { ok: false, stdout: '' }; }
-}
-
-/**
  * The origin URL as `git` reports it, or ''. No origin, not a repo and no git all mean the same: no default to offer.
  * @param {string} dir @returns {string}
  */
 function readOrigin(dir) {
-  return run('git', ['-C', dir, 'remote', 'get-url', 'origin'],
-    { cwd: dir, timeout: GIT_TIMEOUT_MS }).stdout.trim();
+  const r = run('git', ['-C', dir, 'remote', 'get-url', 'origin'], { cwd: dir, timeout: GIT_TIMEOUT_MS });
+  return r.ok ? r.stdout.trim() : '';
 }
 
 /**
@@ -129,52 +109,56 @@ function detect(dir) {
 }
 
 /**
- * Create the repository the caller named, through the CLI its provider names.
- * Every refusal comes before the create: a check after it would report on a repo that already exists, with no undo.
- * The login probe is the one command ahead of that line, and it only reads.
+ * The create row for the provider the caller named, or `null` after emitting the refusal that ends the run: no
+ * confirmation, a flag left off, or a provider outside the table.
  * `--confirmed` is the caller's word that it asked the user, since the seam can't ask without hanging on stdin.
- * Visibility isn't a parameter: `CREATE_TABLE` pins `--private` on every row.
- *
- * @param {string} dir the directory the CLI is run in, and the planning root
- *   whose persisted `git.forge_host` names the instance to check the URL against
- * @param {{provider: string, repo: string, confirmed: boolean,
- *   remoteUrl: string|undefined}} args
+ * @param {string|undefined} provider @param {string|undefined} repo @param {boolean} confirmed
  */
-function create(dir, { provider, repo, confirmed, remoteUrl }) {
+function createRowFor(provider, repo, confirmed) {
   if (!confirmed) {
     emit({ ok: false, reason: 'this create was not confirmed: no repository is created without the user answering the question first',
       detail: null,
       hint: 'put the confirmation to the user - naming the provider, the owner, the repository name and that it will be PRIVATE - and pass --confirmed only once they have said yes' });
-    return;
+    return null;
   }
+  // both provider refusals below list the table's own keys
+  const providerHint = `pass --provider as one of ${Object.keys(CREATE_TABLE).join(', ')}`;
   // presence is worded here, not at the argument door, so a caller who named neither flag hears what create needs
   for (const [flag, what, hint] of [
-    ['--provider', 'no forge was named to create it on',
-      `pass --provider as one of ${Object.keys(CREATE_TABLE).join(', ')}`],
+    ['--provider', 'no forge was named to create it on', providerHint],
     ['--repo', 'no repository was named to create',
       'pass --repo as owner/name - the same selector the setup step persists as git.forge_repo'],
   ]) {
     if ((flag === '--provider' ? provider : repo) === undefined) {
       emit({ ok: false, reason: `create needs ${flag}: ${what}`, detail: null, hint });
-      return;
+      return null;
     }
   }
-  // a provider outside the table has no argv and no binary; the hint lists the table's own keys
+  // a provider outside the table has no argv and no binary
   const row = Object.prototype.hasOwnProperty.call(CREATE_TABLE, provider)
     ? CREATE_TABLE[provider] : null;
   if (!row) {
     emit({ ok: false, reason: `no forge provider is spelled "${provider}": there is no way to create a repository through it`,
       detail: null,
-      hint: `pass --provider as one of ${Object.keys(CREATE_TABLE).join(', ')}` });
-    return;
+      hint: providerHint });
+    return null;
   }
+  return row;
+}
+
+/**
+ * The slug split and the classified `--remote-url`, or `null` after emitting the refusal: a slug no forge serves, a
+ * row that needs a URL and got none usable, or a URL passed to a row that wires its own remote.
+ * @param {string} provider @param {string} repo @param {string|undefined} remoteUrl @param {any} row
+ */
+function slugAndRemote(provider, repo, remoteUrl, row) {
   // one slug grammar here and at setup, so no segment can read as a flag once it's in the argv
   const parts = splitSlug(repo);
   if (!parts) {
     emit({ ok: false, reason: 'the repository selector is not an owner/name a forge serves',
       detail: null,
       hint: 'pass --repo as owner/name - letters, digits, dot, underscore and dash, no leading dash on any segment, and a nested GitLab subgroup path is allowed' });
-    return;
+    return null;
   }
   // whether a URL is needed comes off `wiresRemote`, and it's settled before the spawn: no place for origin, no create
   // a URL opening on `-` is refused outright: it would read as a flag in `git remote add`
@@ -186,7 +170,7 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
       emit({ ok: false, reason: `${provider} does not wire a git remote when it creates a repository, and no usable --remote-url was given to wire one with`,
         detail: null,
         hint: 'pass --remote-url as the URL this repository will be reached at - https://<host>/<owner>/<name>.git or git@<host>:<owner>/<name>.git - so origin can be set once the repository exists' });
-      return;
+      return null;
     }
   } else if (remoteUrl !== undefined) {
     // a row that wires its own remote never reads `--remote-url`, so a caller who passed one got silence. GH-105
@@ -194,11 +178,20 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
     emit({ ok: false, reason: `${provider}'s create wires origin itself, through the --remoteName origin pinned in its own create argv, so a --remote-url passed here would be read by nothing and origin would be whatever ${PROVIDER_TABLE[provider]} chose`,
       detail: null,
       hint: `drop --remote-url on ${provider} - the create sets origin, and there is no second URL for it to take` });
-    return;
+    return null;
   }
+  return { parts, classified };
+}
 
-  // does this URL name the configured instance? Before the PATH check and login probe, so a refusal spawns nothing
-  // keyed on the persisted port, never a provider name: github and gitlab carry a null host
+/**
+ * The merged layers' `warnings`, or `null` after emitting the refusal for a `--remote-url` whose port contradicts the
+ * configured instance's.
+ * Before the PATH check and login probe, so a refusal spawns nothing.
+ * @param {string} dir @param {ReturnType<typeof classifyOrigin>} classified
+ */
+function instancePort(dir, classified) {
+  // does this URL name the configured instance? keyed on the persisted port, never a provider name: github and
+  // gitlab carry a null host
   const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const instance = splitForgeHost((config.git || {}).forge_host ?? null);
   // fold case here: `splitForgeHost` keeps what was typed, so an exact match skipped `Forge.Example.COM:3001`
@@ -217,33 +210,50 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
         detail: null, warnings,
         hint: `pass --remote-url naming the configured port - https://${instance.hostname}:${instance.port}/<owner>/<name>.git, or ssh://git@${instance.hostname}:<ssh-port>/<owner>/<name>.git when the SSH endpoint is on a different port - or change git.forge_host if the instance really moved`,
       });
-      return;
+      return null;
     }
   }
+  return warnings;
+}
 
+/**
+ * The CLI binary and, where the row needs one, the login that names the repository's owner; `null` after emitting the
+ * refusal for a CLI off PATH or a login that serves no host.
+ * @param {string} dir @param {string} provider @param {any} row
+ * @param {{owner: string}} parts @param {ReturnType<typeof classifyOrigin>} classified @param {string[]} warnings
+ */
+function pathAndLogin(dir, provider, row, parts, classified, warnings) {
   const bin = PROVIDER_TABLE[provider];
   if (!onPath(bin)) {
     emit({ ok: false, reason: `${provider} was selected but ${bin} does not resolve on PATH, so there is nothing to create the repository with`,
       detail: null, warnings,
       hint: `install ${bin} and re-run this step, or re-run setup and pick a provider whose CLI is installed` });
-    return;
+    return null;
   }
 
   // `tea repos create --owner` looks the name up as an org and fails for a personal repo, so ask who's logged in
   // it refuses rather than fall back to the argv that already failed; host and port come off `--remote-url`
-  const { owner, name } = parts;
   let login = null;
   if (row.needsLogin) {
     login = classified.host === null
       ? null : teaLoginFor(bin, dir, classified.host, classified.httpPort);
     if (!login) {
-      emit({ ok: false, reason: `no ${bin} login serves ${classified.host ?? 'that instance'}, so there is no way to tell whether ${owner} is your own account or an organization there`,
+      emit({ ok: false, reason: `no ${bin} login serves ${classified.host ?? 'that instance'}, so there is no way to tell whether ${parts.owner} is your own account or an organization there`,
         detail: null, warnings,
         hint: `run \`${bin} login add\` for that instance and re-run this step - ${bin} needs a login on it before a repository can be created with the right owner` });
-      return;
+      return null;
     }
   }
+  return { bin, login };
+}
 
+/**
+ * Make the repository and, where its row doesn't wire origin itself, add the remote.
+ * @param {string} dir @param {string} provider @param {any} row @param {string} bin @param {any} login
+ * @param {{owner: string, name: string}} parts @param {string|undefined} remoteUrl @param {string[]} warnings
+ */
+function createAndWire(dir, provider, row, bin, login, parts, remoteUrl, warnings) {
+  const { owner, name } = parts;
   if (!run(bin, row.argv(owner, name, login), { cwd: dir, timeout: CREATE_TIMEOUT_MS }).ok) {
     // the child's own text isn't carried: a forge CLI's stderr is exactly where a token or authenticated URL turns up
     emit({ ok: false, reason: `${bin} could not create ${owner}/${name}: the create command failed`,
@@ -267,13 +277,37 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
     visibility: 'private', remote_wired: true, detail: null, warnings });
 }
 
+/**
+ * Create the repository the caller named, through the CLI its provider names.
+ * Every refusal comes before the create: a check after it would report on a repo that already exists, with no undo.
+ * The login probe is the one command ahead of that line, and it only reads.
+ * Visibility isn't a parameter: `CREATE_TABLE` pins `--private` on every row.
+ *
+ * @param {string} dir the directory the CLI is run in, and the planning root
+ *   whose persisted `git.forge_host` names the instance to check the URL against
+ * @param {{provider: string, repo: string, confirmed: boolean,
+ *   remoteUrl: string|undefined}} args
+ */
+function create(dir, { provider, repo, confirmed, remoteUrl }) {
+  const row = createRowFor(provider, repo, confirmed);
+  if (row === null) return;
+  const remote = slugAndRemote(provider, repo, remoteUrl, row);
+  if (remote === null) return;
+  const { parts, classified } = remote;
+  const warnings = instancePort(dir, classified);
+  if (warnings === null) return;
+  const cli = pathAndLogin(dir, provider, row, parts, classified, warnings);
+  if (cli === null) return;
+  createAndWire(dir, provider, row, cli.bin, cli.login, parts, remoteUrl, warnings);
+}
+
 const argv = process.argv.slice(2);
 const cmd = argv[0];
 
 const ROWS = CONTRACTS['forge.mjs'];
 
 /** One flag read, resolved against the declared row; this seam states no flag rule of its own. */
-const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+const arg = rowReader(argv, ROWS);
 
 /**
  * The same read as a value door only: a bad value refuses by name, and an absent flag reads as `undefined`.
@@ -298,11 +332,5 @@ try {
         + '--repo <owner/name> --confirmed [--dir <path>]' });
   }
 } catch (e) {
-  // `requireFlag` puts the refusing flag on `.seam` and `.detail`; anything else is ours, so `redactUrl` the message
-  if (e && e.seam) {
-    emit({ ok: false, reason: e.seam, detail: e.detail,
-      hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  } else {
-    emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
-  }
+  emitCaught(e, redactUrl);
 }

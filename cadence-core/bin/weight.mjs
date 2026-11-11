@@ -13,13 +13,13 @@
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { emit } from './lib/seam-io.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { residentWeight } from './lib/resident-weight.mjs';
 // Flag rules are declared rows in lib/arg-contract.mjs, and `requireFlag` throws the refusal in the form the catch arm
 // below renders (raised bare, it surfaces as detail "[object Object]"). All three flags refuse on both axes, which is
 // the "never a silent default" above.
-import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -29,7 +29,8 @@ try {
   const ROWS = CONTRACTS['weight.mjs'];
   const sub = argv[0] === 'resident' ? 'resident' : '';
   /** One flag read through its declared row; the row owns the rule and this is only an adapter over argv. */
-  const arg = (name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+  const row = rowReader(argv, ROWS);
+  const arg = (name) => row(sub, name);
   const root = arg('--root') || join(HERE, '..', '..');
   if (argv[0] === 'resident') {
     const r = residentWeight(root);
@@ -59,7 +60,5 @@ try {
     emit({ ok: true, checked: 'surface-weight', surfaces: weighAll(root) });
   }
 } catch (e) {
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
-    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
-  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  emitCaught(e);
 }

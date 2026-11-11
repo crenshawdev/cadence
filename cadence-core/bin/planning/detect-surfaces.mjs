@@ -6,7 +6,7 @@
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, ok, read } from './core.mjs';
-import { CATEGORIES, interviewOptions, scanTree } from '../lib/surface-scan.mjs';
+import { CATEGORIES, interviewOptions, parseSurfaceList, scanTree } from '../lib/surface-scan.mjs';
 
 // a seam, not model judgment: a model guessing what a tree "looks like" is the keyword pass that was rejected
 // --root is the project root, not --dir, read two levels deep: `db/migrate` and `packages/api` are where structure is
@@ -88,20 +88,18 @@ function manifestDeps(name, text) {
  *   has answered
  */
 function cmdDetectSurfaces(root, answeredArg) {
-  // the already-answered set is read the way `risk-check run` reads --surfaces: split, trim, drop empties, then refuse
+  // the already-answered set is read the way `risk-check run` reads --surfaces, by parseSurfaceList, then refused
   // it arrives as a flag, never from config, so /cad-config's re-entrant arm hands over the value it resolved
   // a token outside the eight is refused, not dropped: a mistyped set would get a list built from an answer nobody gave
   /** @type {string[]} */
   let answered = [];
   if (answeredArg !== undefined) {
-    const raw = typeof answeredArg === 'string' ? answeredArg : '';
-    const tokens = raw.split(',').map((t) => t.trim()).filter(Boolean);
+    const { tokens, unknown } = parseSurfaceList(answeredArg);
     if (!tokens.length) {
       return fail('bad-args', 'detect-surfaces --answered needs a comma-separated list after it: --answered <a,b,c>',
         'list the surfaces already answered as one comma-separated value, or leave --answered off'
         + ' entirely when none have been');
     }
-    const unknown = tokens.filter((t) => !CATEGORIES.includes(t));
     if (unknown.length) {
       return fail('bad-args',
         `detect-surfaces --answered names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`,

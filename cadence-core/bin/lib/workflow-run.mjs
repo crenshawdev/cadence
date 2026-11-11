@@ -24,7 +24,7 @@
 // `buildEntries` stays the one judge of what is storable. Pure: no fs, no git, no env
 'use strict';
 
-import { buildEntries, HALTING_SEVERITIES, RAISED_SEVERITIES, RULINGS } from './adjudication-record.mjs';
+import { buildEntries, HALTING_SEVERITIES, isText, RAISED_SEVERITIES, RULINGS } from './adjudication-record.mjs';
 import { HEADINGS } from './review-file.mjs';
 import { requirePlanKey } from './plan-key.mjs';
 import { roleOfAgent } from './rung-agent.mjs';
@@ -49,7 +49,6 @@ const SETTLEMENT_KEYS = ['fix_commit', 'fix_file', 'overridden'];
 const RULING_KEYS = ['ruling', 'severity', 'counter_evidence', ...SIX];
 const EVIDENCE_KEYS = ['file', 'line', 'note'];
 
-const isText = (v) => typeof v === 'string' && v.trim() !== '';
 /** A refusal with its one named reason. @param {string} reason @param {string} detail */
 const refuse = (reason, detail) => ({ ok: false, reason, detail });
 
@@ -160,7 +159,7 @@ function providerFindings(voice, env) {
   const used = new Set();
   const from = [];
   const orphan = [];
-  env.findings.forEach((f, i) => {
+  env.findings.forEach((f) => {
     const j = isPlainObject(f) ? retyped.findIndex((x, k) => !used.has(k) && isPlainObject(x) && canon(x) === canon(f)) : -1;
     if (j >= 0) used.add(j);
     from.push(j);
@@ -508,6 +507,14 @@ export function agentBrackets(run, at) {
   return agentRows(run).map((row, i) => agentBracket(row, i, at));
 }
 
+/** A totals object as figures, a key left off where the figure is not one the host could have reported. @param {any} totals */
+function totalsFigures(totals) {
+  /** @type {Record<string, any>} */
+  const figures = {};
+  for (const [key, v] of Object.entries(totals)) if (figure(v) !== undefined) figures[key] = v;
+  return figures;
+}
+
 /** A row's own figures, a key left off where the host gave none and its agent id when it gave one. @param {any} row */
 function rowFigures(row) {
   /** @type {Record<string, any>} */
@@ -654,9 +661,7 @@ export function waveBrackets(run, at) {
   (at.planned || []).filter((plan) => !rowed.has(plan)).forEach((plan, n) => {
     const carries = rows.length === 0 && n === 0;
     const reason = rows.length === 0 ? at.why : `the run file holds no agent row labelled "plan ${plan}"`;
-    /** @type {Record<string, any>} */
-    const figures = {};
-    if (carries) for (const [key, v] of Object.entries(at.totals || {})) if (figure(v) !== undefined) figures[key] = v;
+    const figures = carries ? totalsFigures(at.totals || {}) : {};
     closes.push({
       plan,
       terminal: {
@@ -677,11 +682,8 @@ export function waveBrackets(run, at) {
  *   totals: {tokens?: number, turns?: number, duration_ms?: number}}} at
  */
 export function noticeBracket(at) {
-  /** @type {Record<string, any>} */
-  const figures = {};
-  for (const [key, v] of Object.entries(at.totals)) if (figure(v) !== undefined) figures[key] = v;
   return bracket({
-    phase: at.phase, plan: `${at.runId}-notice`, role: at.role || WORKFLOW_ROLE, read: at.payloadRef, figures,
+    phase: at.phase, plan: `${at.runId}-notice`, role: at.role || WORKFLOW_ROLE, read: at.payloadRef, figures: totalsFigures(at.totals),
     terminal: 'return',
     detail: `the run's totals from the completion notice, because ${at.why}`,
   });

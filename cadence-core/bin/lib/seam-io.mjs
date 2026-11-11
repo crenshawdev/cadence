@@ -21,3 +21,18 @@ export function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + '\n');
   process.exitCode = obj.ok === false ? 1 : 0;
 }
+
+/**
+ * The catch arm every seam entry script ends in. A refusal `requireFlag` raised carries `.seam` and `.detail`
+ * and no `message`, so without the split a valueless --dir would surface as internal "[object Object]".
+ * @param {any} e whatever the dispatch threw
+ * @param {(msg: string) => any} [scrub] what the internal detail passes through (`redactUrl` where a URL can ride a message)
+ */
+export function emitCaught(e, scrub = (msg) => msg) {
+  if (e && e.seam) {
+    emit({ ok: false, reason: e.seam, detail: e.detail,
+      hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
+  } else {
+    emit({ ok: false, reason: 'internal', detail: scrub(e && e.message ? e.message : String(e)) });
+  }
+}

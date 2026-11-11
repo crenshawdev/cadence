@@ -32,21 +32,35 @@ export function scratchNames(name) {
   return { item: `${stem}.item.json`, old: `${stem}.old.json`, diff: `${stem}.diff` };
 }
 
-/** @param {string} root @param {string[]} args @param {string} [input] */
-function git(root, args, input) {
-  return spawnSync('git', [...GIT, '-C', root, ...args], { maxBuffer: MAX_DIFF, env: ENV, ...(input !== undefined ? { input } : {}) });
-}
-
 /**
- * The text of an old blob, or null when it no longer resolves. Whether it's a blob is asked first, so a name that is a commit or a tree is no blob.
- * @param {string} root @param {unknown} hash @returns {Buffer|null}
+ * The text of each old blob in one `cat-file --batch` call, or null where a name no longer resolves, isn't a blob (a commit or a tree is no blob) or is over MAX_DIFF.
+ * Each body is cut by the size in its header and the next header is read after it, never searched for, because a blob can hold anything.
+ * @param {string} root @param {unknown[]} hashes @returns {(Buffer|null)[]}
  */
-function oldBlob(root, hash) {
-  if (typeof hash !== 'string' || !OBJECT_NAME.test(hash)) return null;
-  const kind = git(root, ['cat-file', '-t', hash]);
-  if (kind.status !== 0 || String(kind.stdout).trim() !== 'blob') return null;
-  const blob = git(root, ['cat-file', 'blob', hash]);
-  return blob.status === 0 ? blob.stdout : null;
+function oldBlobs(root, hashes) {
+  /** @type {(Buffer|null)[]} */
+  const out = hashes.map(() => null);
+  const asked = hashes.flatMap((h, i) => (typeof h === 'string' && OBJECT_NAME.test(h) ? [i] : []));
+  if (!asked.length) return out;
+  // any one null sends the whole module to a full read, so a stream past the bound for every name at once can be refused whole
+  const r = spawnSync('git', [...GIT, '-C', root, 'cat-file', '--batch'],
+    { maxBuffer: asked.length * (MAX_DIFF + 256), env: ENV, input: `${asked.map((i) => hashes[i]).join('\n')}\n` });
+  if (r.status !== 0 || !Buffer.isBuffer(r.stdout)) return out;
+  const buf = r.stdout;
+  let at = 0;
+  for (const i of asked) {
+    const eol = buf.indexOf(10, at);
+    if (eol === -1) return hashes.map(() => null);
+    const [, type, size] = buf.toString('latin1', at, eol).split(' ');
+    at = eol + 1;
+    // a `<name> missing` header has no size and no body
+    if (size === undefined) continue;
+    const n = Number(size);
+    if (!Number.isSafeInteger(n) || at + n + 1 > buf.length) return hashes.map(() => null);
+    if (type === 'blob' && n <= MAX_DIFF) out[i] = buf.subarray(at, at + n);
+    at += n + 1;
+  }
+  return out;
 }
 
 /**
@@ -73,6 +87,12 @@ function openable(realRoot, root, n) {
   } catch { return false; }
 }
 
+/** @type {NodeJS.ProcessEnv|undefined} */
+let noRepo;
+// no GIT_DIR that exists, no config layer read: git finds no repository, so no filter can be named, whichever .gitattributes it sees
+// ENV never changes, so it's built on the first diff and every later one reuses it
+const noRepoEnv = () => (noRepo ??= { ...localGitEnv(ENV), GIT_DIR: '/dev/null/cad-no-git-dir', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_ATTR_NOSYSTEM: '1' });
+
 /**
  * The hunks of a diff between an old blob and the file as it is now, working-tree edits included. `--no-index` reads the
  * blob from stdin and the file from disk, so nothing is stored and the index is not asked. Git's own header names a
@@ -81,8 +101,7 @@ function openable(realRoot, root, n) {
  * @returns {string|null}
  */
 function diffOf(root, outDir, rel, blob) {
-  // no GIT_DIR that exists, no config layer read: git finds no repository, so no filter can be named, whichever .gitattributes it sees
-  const env = { ...localGitEnv(ENV), GIT_DIR: '/dev/null/cad-no-git-dir', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_ATTR_NOSYSTEM: '1' };
+  const env = noRepoEnv();
   const r = spawnSync('git', [...GIT, '-c', 'core.attributesFile=', 'diff', '--no-index', '--no-color', '--no-ext-diff', '--no-textconv', '--', '-', join(root, rel)],
     { cwd: outDir, input: blob, maxBuffer: MAX_DIFF, env });
 
@@ -112,7 +131,7 @@ function refreshOf(root, outDir, m, entry, byPath, read, names) {
   const oldEntry = join(outDir, names.old);
   atomicWrite(oldEntry, JSON.stringify(entry));
   const refresh = { old_entry: oldEntry, changed: changed.map(abs), added: added.map(abs), removed };
-  const blobs = changed.map((p) => oldBlob(root, from[p]));
+  const blobs = oldBlobs(root, changed.map((p) => from[p]));
   const diffFile = join(outDir, names.diff);
   if (blobs.some((b) => b === null)) {
     rmSync(diffFile, { force: true });

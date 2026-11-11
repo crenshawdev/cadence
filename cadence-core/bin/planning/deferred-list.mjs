@@ -3,8 +3,7 @@
 'use strict';
 
 import { existsSync } from 'node:fs';
-import { fail, ok, phaseSpellingCollision, readQueue } from './core.mjs';
-import { requirePhaseArg } from '../lib/require-int.mjs';
+import { fail, ok, phaseGuard, readQueue } from './core.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 // membership is a `DEFERRED-<trigger>-<discriminator>[-r<round>].json` with no ADJUDICATION sibling beside it
@@ -12,18 +11,12 @@ import { emit } from '../lib/seam-io.mjs';
 function cmdDeferredList(dir, opts) {
   let wantPhase = null;
   if ('phase' in opts) {
-    const parsed = requirePhaseArg(opts.phase);
-    if (!parsed.ok) {
-      return fail('bad-args', 'deferred list --phase needs a phase number (N or N.M)',
-        'send a plain phase number, or drop --phase to list every finding still queued across the'
-        + ' milestone');
-    }
     // wantPhase is a directory component: with both spellings on disk the answer would be about the other phase
-    const collision = phaseSpellingCollision(dir, parsed);
-    if (collision) {
-      return fail('bad-args', `deferred list ${collision}`,
-        're-run the list with one of the two spellings the detail names - nothing was read');
-    }
+    const parsed = phaseGuard('deferred list', dir, opts.phase, 'deferred list --phase needs a phase number (N or N.M)',
+      'send a plain phase number, or drop --phase to list every finding still queued across the'
+      + ' milestone',
+      're-run the list with one of the two spellings the detail names - nothing was read');
+    if (!parsed) return;
     // the caller's own spelling: a directory component before arithmetic, and String(Number('08')) is another phase
     wantPhase = parsed.raw;
   }

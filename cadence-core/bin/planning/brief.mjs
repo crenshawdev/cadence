@@ -3,15 +3,12 @@
 // reads no config: the caller gates it on planning.workflow_plans, so a bare run composes and checks without writing
 'use strict';
 
-import { lstatSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { fail, listPlanFiles, ok, phaseSpellingCollision, read } from './core.mjs';
-import { readStoredMap } from './codemap.mjs';
+import { join } from 'node:path';
+import { dirFlag, fail, intFlag, listPlanFiles, ok, phaseGuard, read, readStoredMap } from './core.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
 import { composeBrief } from '../lib/plan-brief.mjs';
 import { planFileFor, planNumber } from '../lib/phase-plans.mjs';
 import { atomicWrite } from '../lib/planning-files.mjs';
-import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 
 /**
  * The stored map for the plan's check and its rows, or null: any failure the shared read hands back, from no map to no git,
@@ -40,32 +37,22 @@ function loadMap(dir) {
  * @param {any} opts `--out-dir` names an existing directory where the brief file is written; `--main-root` names the main tree's root, so the head's paths are absolute there
  */
 function cmdBrief(dir, opts) {
-  const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) {
-    return fail('bad-args', 'brief needs --phase <N>',
-      'pass --phase <N> for the phase the plan belongs to, then re-run');
-  }
-  const collision = phaseSpellingCollision(dir, parsedPhase);
-  if (collision) {
-    return fail('bad-args', `brief ${collision}`,
-      're-run with one of the two spellings the detail names - nothing was read');
-  }
-  const parsedPlan = requireInt(opts.plan);
-  if (!parsedPlan.ok) {
-    return fail('bad-args', 'brief needs --plan <k>',
-      'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
-  }
+  const parsedPhase = phaseGuard('brief', dir, opts.phase, 'brief needs --phase <N>',
+    'pass --phase <N> for the phase the plan belongs to, then re-run',
+    're-run with one of the two spellings the detail names - nothing was read');
+  if (!parsedPhase) return;
+  const parsedPlan = intFlag(opts.plan, null, 'brief needs --plan <k>',
+    'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
+  if (!parsedPlan.ok) return;
   /** @type {Record<string, string|null>} */
   const dirs = { 'out-dir': null, 'main-root': null };
   for (const flag of Object.keys(dirs)) {
     if (opts[flag] === undefined) continue;
-    const abs = resolve(String(opts[flag]));
-    let st = null;
-    try { st = lstatSync(abs); } catch { /* refused below */ }
-    if (!st || !st.isDirectory()) {
-      return fail('bad-args', `--${flag} ${abs} is not a directory`, 'make the directory first and pass it - nothing was written');
+    const dirArg = dirFlag(flag, opts[flag]);
+    if (dirArg.detail !== null) {
+      return fail('bad-args', dirArg.detail, 'make the directory first and pass it - nothing was written');
     }
-    dirs[flag] = abs;
+    dirs[flag] = dirArg.abs;
   }
   const outDir = dirs['out-dir'];
 

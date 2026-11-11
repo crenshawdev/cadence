@@ -302,19 +302,26 @@ function renderEntry(raw) {
 }
 
 /**
+ * The commits `renderChain` will show for `top`, in its order, so the seam joins only those.
+ * @param {ChainEntry[]} entries @param {number|undefined} top @returns {ChainEntry[]}
+ */
+export function capChain(entries, top) {
+  return sortEntries(entries).slice(0, Number.isInteger(top) && top > 0 ? top : DEFAULT_TOP);
+}
+
+/**
  * Render `entries` into the one `text` string the seam emits, plus the envelope's counts and the sorted, capped list.
  * `excluded` is the simplification report. Absent or empty renders nothing; it comes before the truncation note so
- * the `Pass --top` line stays last.
+ * the `Pass --top` line stays last. `total` is the chain's commit count before `capChain` cut it, and defaults to the
+ * entries given.
  *
  * @param {ChainEntry[]} entries
- * @param {{top?: number, excluded?: {sha: string, parentCount: number}[]|null, path?: string}} [opts]
+ * @param {{top?: number, total?: number, excluded?: {sha: string, parentCount: number}[]|null, path?: string}} [opts]
  * @returns {{text: string, shown: number, total: number, entries: ChainEntry[]}}
  */
 export function renderChain(entries, opts = {}) {
-  const top = Number.isInteger(opts.top) && opts.top > 0 ? opts.top : DEFAULT_TOP;
-  const sorted = sortEntries(entries);
-  const total = sorted.length;
-  const capped = sorted.slice(0, top);
+  const capped = capChain(entries, opts.top);
+  const total = opts.total ?? entries.length;
 
   if (capped.length === 0) return { text: 'No commits in this chain.', shown: 0, total, entries: [] };
 

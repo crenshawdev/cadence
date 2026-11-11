@@ -6,10 +6,12 @@
 // Pure lib: no fs, no emit, no process, no Date, no randomness. It returns names and problem codes.
 'use strict';
 
+import { isPlainObject } from './text-util.mjs';
+
 /**
- * The rung ladder, weakest first: the whole vocabulary of rung names and the order `rungFiles` returns a role's files
- * in. It sits beside RUNG_FILES because the two are one statement (the ladder names rungs, the map says which file
- * carries each), and `rungOrderIssues` holds them together.
+ * The rung ladder, weakest first: the whole vocabulary of rung names and the order a role's files are listed in.
+ * It sits beside RUNG_FILES because the two are one statement (the ladder names rungs, the map says which file
+ * carries each), and the rung-agent tests hold them together.
  * @type {readonly string[]}
  */
 export const RUNG_ORDER = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -75,34 +77,6 @@ export const RUNG_FILES = Object.freeze({
 });
 
 /**
- * Whether the map and the ladder still say the same thing: every role's rung keys are exactly RUNG_ORDER, in order.
- * Nothing else compares them. A role missing `xhigh` resolves `rungFile` to null and route.mjs fails open, and
- * reordered keys hand `rungFiles` and `rungPrefixIssues` a tie-break order that isn't the ladder's; both are silent.
- * Takes the map so a caller can hold a drifted one against the ladder.
- * @param {any} [files] the rung map to check, stem values unread
- * @param {any} [order] the ladder to check it against, weakest first
- * @returns {{code: string, role: string, detail: string}[]}
- */
-export function rungOrderIssues(files, order) {
-  const map = files !== undefined && files !== null ? files : RUNG_FILES;
-  const ladder = Array.isArray(order) ? order : RUNG_ORDER;
-  /** @type {{code: string, role: string, detail: string}[]} */
-  const out = [];
-  const read = map !== null && typeof map === 'object' && !Array.isArray(map) ? map : {};
-  for (const role of Object.keys(read)) {
-    const rungs = read[role];
-    const got = rungs !== null && typeof rungs === 'object' && !Array.isArray(rungs)
-      ? Object.keys(rungs) : [];
-    if (got.length === ladder.length && ladder.every((r, i) => got[i] === r)) continue;
-    out.push({ code: 'rung-order-drift', role,
-      detail: `${role} files rungs ${JSON.stringify(got)}, but the rung ladder is ${
-        JSON.stringify([...ladder])} - the map and RUNG_ORDER are one statement `
-        + 'and nothing else holds them together' });
-  }
-  return out;
-}
-
-/**
  * The agent-file stem for one rung of one role, or null when the pair isn't in the map. Null and not a guessed
  * `<role>-<rung>`: a guess names a file that doesn't exist and reads as a real answer.
  * @param {string} role
@@ -113,17 +87,6 @@ export function rungFile(role, rung) {
   const map = typeof role === 'string' ? RUNG_FILES[role] : undefined;
   if (!map || typeof rung !== 'string') return null;
   return Object.prototype.hasOwnProperty.call(map, rung) ? map[rung] : null;
-}
-
-/**
- * Every agent-file stem one role's map names, in rung order. An unknown role yields an empty array, since self-verify
- * calls this on a table it hasn't validated yet.
- * @param {string} role
- * @returns {string[]}
- */
-export function rungFiles(role) {
-  const map = typeof role === 'string' ? RUNG_FILES[role] : undefined;
-  return map ? Object.values(map) : [];
 }
 
 // Reverse lookups for a recorded `agent_type`; a suffix regex would be a second statement of the map.
@@ -196,7 +159,7 @@ export function rungOfAgent(agent) {
  * @returns {{code: string, role: string, stems: string[], detail: string}[]}
  */
 export function rungPrefixIssues(bodies) {
-  const read = bodies !== null && typeof bodies === 'object' && !Array.isArray(bodies)
+  const read = isPlainObject(bodies)
     ? bodies : {};
   const bodyOf = (stem) => (Object.prototype.hasOwnProperty.call(read, stem)
     && typeof read[stem] === 'string' ? read[stem] : null);
@@ -287,10 +250,10 @@ export const ROLES_EFFORT_SUFFIX = '.effort';
 /**
  * The key one role's start rung is written under.
  * @param {string} role
- * @returns {string[]}
+ * @returns {string}
  */
-function effortKeyNames(role) {
-  return [`${ROLES_PREFIX}${role}${ROLES_EFFORT_SUFFIX}`];
+function effortKey(role) {
+  return `${ROLES_PREFIX}${role}${ROLES_EFFORT_SUFFIX}`;
 }
 
 /**
@@ -318,52 +281,51 @@ function effortKeyRole(key) {
 export function effortEnumIssues(schema, rungOrder) {
   /** @type {{code: string, detail: string}[]} */
   const out = [];
-  const keys = schema !== null && typeof schema === 'object' && !Array.isArray(schema)
+  const keys = isPlainObject(schema)
     ? schema : {};
   const order = Array.isArray(rungOrder) ? rungOrder.filter((r) => typeof r === 'string') : [];
 
   for (const role of Object.keys(RUNG_FILES)) {
-    for (const key of effortKeyNames(role)) {
-      const spec = keys[key];
-      if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
-        out.push({ code: 'missing-effort-key',
-          detail: `${key} is absent, but lib/rung-agent.mjs files ${
-            Object.keys(RUNG_FILES[role]).length} rungs for ${role}` });
-        continue;
-      }
-      // Type first: `checkValue` enforces `values` only for "enum", so a key drifted to "string" accepts any rung.
-      if (spec.type !== 'enum') {
-        out.push({ code: 'effort-enum-drift',
-          detail: `${key} has type ${JSON.stringify(spec.type)}, must be "enum" - `
-            + 'a non-enum type disables the write-face refusal' });
-        continue;
-      }
-      // Declared order then null, so a reordered enum reads as drift; the order is what the refusal message shows.
-      const want = [...Object.keys(RUNG_FILES[role]), null];
-      const got = Array.isArray(spec.values) ? spec.values : null;
-      if (!got || got.length !== want.length || want.some((v, i) => got[i] !== v)) {
-        out.push({ code: 'effort-enum-drift',
-          detail: `${key} holds ${JSON.stringify(got)}, but lib/rung-agent.mjs files ${
-            role} at ${JSON.stringify(want)}` });
-        continue;
-      }
-      // The default answers when no layer names a rung, so it must name a rung this role has a file for.
-      const def = spec.default;
-      if (typeof def !== 'string'
-        || !Object.prototype.hasOwnProperty.call(RUNG_FILES[role], def)) {
-        out.push({ code: 'effort-default-invalid',
-          detail: `${key} defaults to ${def === undefined ? '(absent)' : JSON.stringify(def)}, `
-            + `which is not one of ${role}'s rungs (${Object.keys(RUNG_FILES[role]).join(', ')}) `
-            + '- this default IS the rung route.mjs resolves when no layer sets one' });
-      }
+    const key = effortKey(role);
+    const spec = keys[key];
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+      out.push({ code: 'missing-effort-key',
+        detail: `${key} is absent, but lib/rung-agent.mjs files ${
+          Object.keys(RUNG_FILES[role]).length} rungs for ${role}` });
+      continue;
+    }
+    // Type first: `checkValue` enforces `values` only for "enum", so a key drifted to "string" accepts any rung.
+    if (spec.type !== 'enum') {
+      out.push({ code: 'effort-enum-drift',
+        detail: `${key} has type ${JSON.stringify(spec.type)}, must be "enum" - `
+          + 'a non-enum type disables the write-face refusal' });
+      continue;
+    }
+    // Declared order then null, so a reordered enum reads as drift; the order is what the refusal message shows.
+    const want = [...Object.keys(RUNG_FILES[role]), null];
+    const got = Array.isArray(spec.values) ? spec.values : null;
+    if (!got || got.length !== want.length || want.some((v, i) => got[i] !== v)) {
+      out.push({ code: 'effort-enum-drift',
+        detail: `${key} holds ${JSON.stringify(got)}, but lib/rung-agent.mjs files ${
+          role} at ${JSON.stringify(want)}` });
+      continue;
+    }
+    // The default answers when no layer names a rung, so it must name a rung this role has a file for.
+    const def = spec.default;
+    if (typeof def !== 'string'
+      || !Object.prototype.hasOwnProperty.call(RUNG_FILES[role], def)) {
+      out.push({ code: 'effort-default-invalid',
+        detail: `${key} defaults to ${def === undefined ? '(absent)' : JSON.stringify(def)}, `
+          + `which is not one of ${role}'s rungs (${Object.keys(RUNG_FILES[role]).join(', ')}) `
+          + '- this default IS the rung route.mjs resolves when no layer sets one' });
+    }
 
-      if (!order.length) continue;
-      const strays = want.filter((v) => v !== null && !order.includes(v));
-      if (strays.length) {
-        out.push({ code: 'effort-enum-drift',
-          detail: `${key} offers ${JSON.stringify(strays)}, which the rung ladder `
-            + `(${order.join(', ')}) does not carry` });
-      }
+    if (!order.length) continue;
+    const strays = want.filter((v) => v !== null && !order.includes(v));
+    if (strays.length) {
+      out.push({ code: 'effort-enum-drift',
+        detail: `${key} offers ${JSON.stringify(strays)}, which the rung ladder `
+          + `(${order.join(', ')}) does not carry` });
     }
   }
 
@@ -389,15 +351,10 @@ export function effortEnumIssues(schema, rungOrder) {
  * @returns {null|{role: string, rung: string, detail: string}} null when they agree
  */
 export function rungEffortIssue(stem, effort) {
-  for (const role of Object.keys(RUNG_FILES)) {
-    const map = RUNG_FILES[role];
-    for (const rung of Object.keys(map)) {
-      if (map[rung] !== stem) continue;
-      if (effort === rung) return null;
-      const found = effort === undefined ? 'carries no effort' : `carries effort: ${effort}`;
-      return { role, rung,
-        detail: `lib/rung-agent.mjs files this as ${role}'s ${rung} rung, but it ${found}` };
-    }
-  }
-  return null;
+  const rung = RUNG_OF_STEM.get(stem);
+  if (rung === undefined || effort === rung) return null;
+  const role = ROLE_OF_STEM.get(stem);
+  const found = effort === undefined ? 'carries no effort' : `carries effort: ${effort}`;
+  return { role, rung,
+    detail: `lib/rung-agent.mjs files this as ${role}'s ${rung} rung, but it ${found}` };
 }
