@@ -13,7 +13,7 @@ import { captureHealth } from '../lib/capture-health.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import { escN, sectionSpan } from '../lib/planning-files.mjs';
 import { renderPhasesList } from '../lib/state-views.mjs';
-import { changeState, derivedStatus, loadState } from './state-import.mjs';
+import { changeState, derivedStatus, foldPhase, loadState } from './state-import.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
@@ -93,11 +93,12 @@ function cmdPhaseDone(dir, opts) {
   /** @type {Array<[string, () => void]>} */
   const steps = [['state', () => {
     const done = changeState(dir,
-      (s) => ({
+      // folded here so a closed phase's plans read finished at once, not after the next cursor set (D-23)
+      (s) => foldPhase(dir, {
         ...s,
         phases: s.phases.map((p) => (p.n === n ? { ...p, status } : p)),
         requirements: s.requirements.map((r) => (ids.includes(r.id) ? { ...r, status: want } : r)),
-      }), views,
+      }, n), views,
       { wrote: rendered, onFail: (res) => { landed = res.stateWritten === true; throw new Error(`${res.reason} - ${res.detail}`); } });
     if (!done) throw new Error('the state was not written');
     landed = true;
