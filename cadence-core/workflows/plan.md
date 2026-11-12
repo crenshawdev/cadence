@@ -618,8 +618,9 @@ opinion, not another iteration.
    CONTINUES regardless - the plan is already on disk, seeding is not a gate.
 
 2. If planning.commit_docs is true: apply the protected-branch guard
-   (references/git-guard.md rail 1), then commit the plan file(s), STATE.md, and
-   `.planning/REQUIREMENTS.md` when seed-reqs reported any `seeded` ids -
+   (references/git-guard.md rail 1), then commit the plan file(s),
+   STATE.md, `.planning/records/state.json`, and `.planning/REQUIREMENTS.md`
+   when seed-reqs reported any `seeded` ids -
    `docs: plan phase {N} - {name}` - staging exactly those files.
 
 3. A review fire that held a `blocker` or `high` survivor records now: its

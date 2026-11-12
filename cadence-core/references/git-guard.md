@@ -96,6 +96,9 @@ off the base pass silently.
 One logical change per commit: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`,
 `test:`, `perf:`, `style:`. Stage the specific files you changed, not `git add -A`. Planning docs
 commit separately from code (`docs:` prefix) when `planning.commit_docs` is true.
+The state file is a planning document: a commit that carries
+`STATE.md`, the `## Phases` list or the `## Traceability` table carries
+`.planning/records/state.json` with it.
 
 **The one migration commit.** The seam call that converts an unstamped project
 says so in its answer's `migration` field. With `commit_due: true`, stage the

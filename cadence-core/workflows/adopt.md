@@ -418,8 +418,9 @@ commits at all has nothing to branch from: skip the guard and let this commit
 create the root commit on the current branch.)
 
 Then ONE commit, `docs: adopt existing project into Cadence`, staging exactly
-the six files written: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
-`.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/config.json` and
+the eight files written: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
+`.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/records/state.json`,
+`.planning/records/.gitignore`, `.planning/config.json` and
 `.github/cadence/coverage-policy.json`. One
 commit, not three - all three documents were derived in a single pass, so there
 is no intermediate state worth a separate commit.
@@ -485,6 +486,6 @@ on disk in `.planning/`.
 - [ ] STATE.md is a four-line cursor (no `Plan:` line) pointing at phase 1, and no `phases/` dir
       was created
 - [ ] One `docs:` commit under references/git-guard.md, respecting
-      `planning.commit_docs`, staging the six files by name and pushing nothing
+      `planning.commit_docs`, staging the eight files by name and pushing nothing
 - [ ] No subagent was dispatched
 </success_criteria>

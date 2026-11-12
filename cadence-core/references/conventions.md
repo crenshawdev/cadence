@@ -278,9 +278,9 @@ earlier answer stay sequential.
   cad-pause's one-line resume pointer. The cursor gains no line for it.
 - `cad-progress` treats the cursor as a hint: if it disagrees with the derived
   state it rewrites it in this schema. Any skill that changes phase state
-  overwrites the cursor and commits it with that step's docs commit - never
-  leave it dirty. /cad-execute's per-plan and per-batch rewrites ride its `state`
-  step's docs commit.
+  overwrites the cursor and commits it, with `.planning/records/state.json`, in
+  that step's docs commit - never leave either dirty. /cad-execute's per-plan and
+  per-batch rewrites ride its `state` step's docs commit.
 
 ## Subagents and reviews
 

@@ -518,8 +518,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N
 next unfinished plan and is gone once every plan is complete. Run it the same way
 after a plan the user chose to stop incomplete: that plan is still the next one.
 The status stays `planned` until the `state` step. These mid-run writes are not
-committed: with `planning.commit_docs` true, STATE.md rides the `state` step's
-docs commit.
+committed: with `planning.commit_docs` true,
+STATE.md and `.planning/records/state.json` ride the `state` step's docs commit.
 
 Then fire the `diff` review trigger
 (references/review-triggers.md) with the refs
@@ -725,7 +725,8 @@ the very next `/cad-progress`. The pointer is a HINT; the count `/cad-progress`
 prints comes from the `status` envelope's `deferred` block and never from this
 string.
 
-If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, every plan's
+If `planning.commit_docs` is true, commit SUMMARY.md,
+STATE.md, `.planning/records/state.json`, every plan's
 `<plandir>/records/reports/` DIRECTORY, `.planning/phases/<N>/CONTEXT.md` if the
 summary step annotated a corrected decision, and `.planning/CAPTURE.md` only if
 the summary step's debt harvest reported `written` - `docs(<N>): phase <N>

@@ -93,9 +93,10 @@ A success-criteria change is a plain edit to the `### Phase N:` section.
   the tree partly renumbered, and the state file, written last, still holds the
   old numbering unless the detail says it was written. Reverse the completed
   directory moves and text edits until `status` is clean, before committing
-  anything; never edit the list, the table, `STATE.md` or the state file to
-  match a half-moved tree.
+  anything; never edit the list, the table, `STATE.md` or
+  `.planning/records/state.json` to match a half-moved tree.
 - Sanity: spot-check `planning.mjs status` runs clean.
 - Commit atomically (`chore: <op> phase N`) honoring the protected-branch
-  guard (references/git-guard.md). Cursor committed with it; never leave the tree
+  guard (references/git-guard.md). Cursor and `.planning/records/state.json`
+  committed with it; never leave the tree
   dirty.

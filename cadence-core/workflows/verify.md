@@ -462,7 +462,8 @@ On a **partial** session, do neither - the phase is not done.
 If `planning.commit_docs` is true (`config.mjs get planning.commit_docs`),
 commit UAT.md, `phases/<N>/records/FINDINGS.json` and
 `phases/<N>/records/verifier-findings.json` if a deep pass wrote them, plus
-whichever of STATE.md, ROADMAP.md, and REQUIREMENTS.md changed:
+whichever of STATE.md, ROADMAP.md, REQUIREMENTS.md and
+`.planning/records/state.json` changed:
 `docs: phase <N> UAT - {passed} passed, {failed} failed`.
 
 Report tersely. Under a testing policy (`testing.scope` set) the report's first

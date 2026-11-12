@@ -449,7 +449,8 @@ table left as bare headers (seeded per phase by `/cad-plan`, never here).
 
 On "Not yet", return to scoping.
 
-Commit: `docs: define requirements` with `.planning/REQUIREMENTS.md`.
+Commit: `docs: define requirements` with `.planning/REQUIREMENTS.md` and
+`.planning/records/state.json`.
 </step>
 
 <step name="testing_policy">
@@ -557,7 +558,8 @@ already present; the grammar for `<N>` is stated in
 `references/roadmap-phases.md`.
 
 Commit: `docs: create roadmap ([N] phases)` with `.planning/ROADMAP.md`,
-`.planning/STATE.md`, `.planning/REQUIREMENTS.md`, `.planning/config.json` and
+`.planning/STATE.md`, `.planning/REQUIREMENTS.md`, `.planning/records/state.json`,
+`.planning/records/.gitignore`, `.planning/config.json` and
 `.github/cadence/coverage-policy.json`.
 </step>
 
