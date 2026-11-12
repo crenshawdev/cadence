@@ -14,7 +14,7 @@
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fail } from './core.mjs';
@@ -22,11 +22,10 @@ import { importState, writeViews } from './state-import.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   archivePath, codemapDir, declinedPath, deferredDir, ensurePhaseRecordsDir, ensureRecordsDir, ensureRecordsIgnore,
-  filedPath, movePath, phaseRecordsDir, phaseReportsDir, recordsPath, riskCarryDir, withPlanningFileLock,
+  filedPath, movePath, phaseRecordsDir, phaseReportsDir, recordsDir, recordsPath, riskCarryDir, unlinkFile, withPlanningFileLock,
 } from '../lib/planning-store.mjs';
 import { readState, STATE_LAYOUT, statePath, writeState } from '../lib/project-state.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { dirents } from '../lib/surface-weight.mjs';
 import { CLAIM_FILE, claimHolder } from '../lib/workflow-claim.mjs';
 
 /** The run record, the read record, their rotated generation, claim sidecars and rotation temps. */
@@ -42,7 +41,8 @@ const LOCK_NAME = 'layout-migration';
 const NAMED_MAX = 8;
 
 /** @typedef {{reason: string, detail: string, hint: string, issues?: unknown[]}} Refusal */
-/** @typedef {{from: string, to: string, phase: string | null, link: boolean, whole: boolean, skip: boolean}} Move */
+/** @typedef {{from: string, to: string, phase: string | null, link: boolean, whole: boolean, dup: boolean}} Move */
+/** @typedef {{moves: Move[], links: string[], unread: string[]}} Plan */
 
 /** @type {{converted: true, layout: number, commit_due: boolean, hint?: string} | null} What the last converting call says about itself; null when it converted nothing. */
 let note = null;
@@ -146,16 +146,35 @@ function named(paths) {
 
 /**
  * Every move the layout asks for, each destination taken from the write module. Names come from reading the folders, so a
- * thing that is not there is not listed; a linked phase or archive folder is not walked.
+ * thing that is not there is not listed. A linked phase or archive folder is not walked, and a folder that can't be read
+ * shows nothing: both are listed so the judgment refuses them, or the stamp would land on records left at the old place.
  * @param {string} dir
- * @returns {Move[]}
+ * @returns {Plan}
  */
 function planMoves(dir) {
   /** @type {Move[]} */
   const moves = [];
+  /** @type {string[]} */
+  const links = [];
+  /** @type {string[]} */
+  const unread = [];
   /** @param {string} from @param {string} to @param {string | null} phase @param {import('node:fs').Dirent} e */
-  const add = (from, to, phase, e) => moves.push({ from, to, phase, link: e.isSymbolicLink(), whole: e.isDirectory(), skip: false });
-  const top = dirents(dir);
+  const add = (from, to, phase, e) => moves.push({ from, to, phase, link: e.isSymbolicLink(), whole: e.isDirectory(), dup: false });
+  /** @param {string} p @returns {import('node:fs').Dirent[]} */
+  const list = (p) => {
+    try { return readdirSync(p, { withFileTypes: true }); } catch (e) {
+      // absent or not a folder holds nothing of ours; anything else would pass as empty
+      const code = e && /** @type {any} */ (e).code;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') unread.push(p);
+      return [];
+    }
+  };
+  /** A link that stands where a folder would be walked. @param {string} p @param {import('node:fs').Dirent} e */
+  const linkedDir = (p, e) => {
+    if (!e.isSymbolicLink()) return false;
+    try { return statSync(p).isDirectory(); } catch { return false; }
+  };
+  const top = list(dir);
   const ledgers = /** @type {[string, string][]} */ ([
     ['ARCHIVE.md', archivePath(dir)], ['FILED.md', filedPath(dir)], ['DECLINED.md', declinedPath(dir)],
     ['deferred', deferredDir(dir)], ['risk-carry', riskCarryDir(dir)], ['codemap', codemapDir(dir)],
@@ -165,12 +184,18 @@ function planMoves(dir) {
     if (LOG_NAME.test(e.name)) add(join(dir, e.name), recordsPath(dir, e.name), null, e);
     else if (ledger) add(join(dir, e.name), ledger[1], null, e);
   }
-  const groups = ['phases', ...top.filter((e) => e.isDirectory() && e.name.startsWith('_archive-')).map((e) => e.name)];
+  const groups = ['phases'];
+  for (const e of top) {
+    if (!e.name.startsWith('_archive-')) continue;
+    if (e.isDirectory()) groups.push(e.name);
+    else if (linkedDir(join(dir, e.name), e)) links.push(join(dir, e.name));
+  }
   for (const group of groups) {
-    for (const p of dirents(join(dir, group))) {
-      if (!p.isDirectory()) continue;
+    for (const p of list(join(dir, group))) {
       const pdir = join(dir, group, p.name);
-      for (const e of dirents(pdir)) {
+      if (linkedDir(pdir, p)) { links.push(pdir); continue; }
+      if (!p.isDirectory()) continue;
+      for (const e of list(pdir)) {
         if (e.name === 'reports' && (e.isDirectory() || e.isSymbolicLink())) add(join(pdir, e.name), phaseReportsDir(pdir), pdir, e);
         else if (PHASE_PREFIXES.some((x) => e.name.startsWith(x)) || PHASE_FILES.includes(e.name)) {
           add(join(pdir, e.name), join(phaseRecordsDir(pdir), e.name), pdir, e);
@@ -178,23 +203,28 @@ function planMoves(dir) {
       }
     }
   }
-  return moves;
+  return { moves, links, unread };
 }
 
 /**
- * Judge the moves: a link, a records path that is not a real directory, or a destination already taken is a refusal that
- * names the paths. A destination holding the same bytes as a plain-file source is already done and is marked to skip,
- * which is what lets a run that stopped part way be finished.
- * @param {Move[]} moves
+ * Judge the plan: a link, a folder that can't be read, a records path that is not a real directory, or a destination
+ * already taken is a refusal that names the paths. A destination holding the same bytes as a plain-file source is a twin,
+ * marked so the move drops the source, which is what lets a run that stopped part way be finished.
+ * @param {string} dir @param {Plan} plan
  * @returns {Refusal | null}
  */
-function judgeMoves(moves) {
-  const links = moves.filter((m) => m.link).map((m) => m.from);
+function judgeMoves(dir, { moves, links: linked, unread }) {
+  const links = [...linked, ...moves.filter((m) => m.link).map((m) => m.from)];
   if (links.length) {
     return { reason: 'layout-symlink', detail: `these are links, so they are not moved: ${named(links)}`,
       hint: 'replace each link with the real file or folder (or move it out of .planning), then re-run - nothing was changed' };
   }
-  const intos = [...new Set(moves.map((m) => dirname(m.to)))];
+  if (unread.length) {
+    return { reason: 'layout-unreadable', detail: `these folders can't be read, so what they hold was not looked at: ${named(unread)}`,
+      hint: 'make each one readable (or move it out of .planning), then re-run - nothing was changed' };
+  }
+  // the state file lands in the top records folder last, so it is judged whenever anything moves, not only top-level files
+  const intos = [...new Set([...(moves.length ? [recordsDir(dir)] : []), ...moves.map((m) => dirname(m.to))])];
   const odd = intos.filter((p) => { const st = lstatOf(p); return st !== null && !st.isDirectory(); });
   if (odd.length) {
     return { reason: 'layout-records-not-dir', detail: `these should be real folders but are not: ${named(odd)}`,
@@ -204,7 +234,7 @@ function judgeMoves(moves) {
   for (const m of moves) {
     const there = lstatOf(m.to);
     if (!there) continue;
-    if (!m.whole && there.isFile() && sameBytes(m.from, m.to)) m.skip = true;
+    if (!m.whole && there.isFile() && sameBytes(m.from, m.to)) m.dup = true;
     else taken.push(m.to);
   }
   if (taken.length) {
@@ -254,9 +284,9 @@ function judge(dir) {
         hint: 'finish and merge that plan, or remove the worktree with `git worktree remove`, then re-run; nothing was changed' } };
     }
   }
-  const moves = planMoves(dir);
-  const refusal = judgeMoves(moves);
-  return refusal ? { refusal } : { moves };
+  const plan = planMoves(dir);
+  const refusal = judgeMoves(dir, plan);
+  return refusal ? { refusal } : { moves: plan.moves };
 }
 
 /**
@@ -284,7 +314,9 @@ function commitDue(dir) {
  * @returns {Refusal | null}
  */
 function convert(dir, moves) {
-  const steps = moves.filter((m) => !m.skip).map((m) => /** @type {[string, () => void]} */ ([m.from, () => {
+  const steps = moves.map((m) => /** @type {[string, () => void]} */ ([m.from, () => {
+    // its twin is already home, so dropping the old copy is the whole move
+    if (m.dup) return unlinkFile(m.from);
     if (m.phase === null) {
       const made = ensureRecordsDir(dir);
       if (made.ok === false) throw new Error(`the records folder cannot be used: ${made.reason}`);
@@ -307,7 +339,9 @@ function convert(dir, moves) {
   const wrote = writeState(dir, imported.state);
   if (wrote.ok === false) {
     return { reason: 'state-write-failed', detail: `${statePath(dir)}: ${wrote.reason} - ${wrote.detail}`,
-      hint: 'fix the cause the detail names and re-run - no state file was written, and the project files were not changed' };
+      hint: steps.length
+        ? 'fix the cause the detail names and re-run - the records were already moved into the layout and no state file was written; the next run finishes the conversion'
+        : 'fix the cause the detail names and re-run - no state file was written, and the project files were not changed' };
   }
   const worked = existsSync(join(dir, 'ROADMAP.md')) || steps.length > 0;
   // a view the project never had is not invented here; the seams that own the cursor write STATE.md when they first set it
