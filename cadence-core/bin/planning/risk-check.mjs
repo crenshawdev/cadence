@@ -40,8 +40,8 @@ function surfaceVocabulary() {
  * @type {readonly string[]}
  */
 const REVIEWER_TEXT_PATHSPECS = Object.freeze([
-  ':(top,exclude).planning/phases/*/ADJUDICATION-*.json',
-  ':(top,exclude).planning/phases/*/REVIEW-*.md',
+  ':(top,exclude).planning/phases/*/records/ADJUDICATION-*.json',
+  ':(top,exclude).planning/phases/*/records/REVIEW-*.md',
   ':(top,exclude).planning/phases/*/FINDINGS.json',
   ':(top,exclude).planning/phases/*/verifier-findings.json',
 ]);

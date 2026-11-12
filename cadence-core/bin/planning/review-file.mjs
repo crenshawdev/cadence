@@ -7,7 +7,7 @@ import { lstatSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fail, fireHome, fireIdentity, firePayload, fireTargetTaken, intFlag, ok } from './core.mjs';
 import { buildReviewFile, markSurvivor, reviewFileName } from '../lib/review-file.mjs';
-import { atomicWrite } from '../lib/planning-store.mjs';
+import { atomicWrite, makeDir } from '../lib/planning-store.mjs';
 
 // the one change a written file takes: --mark <n> puts a re-ruling ahead of survivor n's headings, from the payload
 function markFile(dir, opts, id, payload) {
@@ -57,6 +57,7 @@ function cmdReviewFile(dir, opts) {
   const rel = relative(dir, file);
   // refused, never overwritten, like the record
   if (fireTargetTaken(dir, file, round, 'review')) return;
+  makeDir(pdir);
   atomicWrite(file, built.text);
   return ok({ phase: n, trigger, discriminator, round, review: rel, raised: built.raised, survivors: built.survivors });
 }

@@ -7,7 +7,7 @@ import { join, relative, sep } from 'node:path';
 import { fail, notRealDirDetail, ok, phaseGuard, readQueue } from './core.mjs';
 import { queueName } from '../lib/deferred-queue.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { deferredDir, ensureRecordsDir, makeDir, movePath, recordsDir } from '../lib/planning-store.mjs';
+import { deferredDir, ensureRecordsDir, makeDir, movePath, phaseRecordsDir, recordsDir } from '../lib/planning-store.mjs';
 
 /** Where the carry lands, relative to the planning directory, as every message and answer here names it. */
 const CARRY_REL = relative('.', deferredDir('.')).split(sep).join('/');
@@ -65,8 +65,8 @@ function cmdDeferredCarry(dir, opts) {
 
   // a member already under the carry folder's <N>/ is where this puts things, so a re-run after a partial carry finishes the job
   // a settled member (ADJUDICATION sibling) stays to be pruned, or a cleared finding would face every later land
-  const src = join(dir, 'phases', n);
-  const moving = q.members.filter((m) => m.path.startsWith(`phases/${n}/`));
+  const src = phaseRecordsDir(join(dir, 'phases', n));
+  const moving = q.members.filter((m) => m.path.startsWith(`phases/${n}/records/`));
   if (!moving.length) {
     return ok({ phase: n, moved: [], carried: 0, findings: 0 });
   }

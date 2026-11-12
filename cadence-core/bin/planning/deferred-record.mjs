@@ -5,7 +5,7 @@
 import { join, relative } from 'node:path';
 import { fail, fireHome, fireIdentity, firePayload, fireRange, fireTargetTaken, ok } from './core.mjs';
 import { buildQueue, queueName } from '../lib/deferred-queue.mjs';
-import { atomicWrite } from '../lib/planning-store.mjs';
+import { atomicWrite, makeDir } from '../lib/planning-store.mjs';
 
 // the opposite of the adjudication record: that says a fire was judged, this says it wasn't yet
 function cmdDeferredRecord(dir, opts) {
@@ -57,6 +57,7 @@ function cmdDeferredRecord(dir, opts) {
     findings: queued.findings,
   };
   // no adjudication record, no fourth ruling: a finding with no ruling is a refusal, so RULINGS stays at three
+  makeDir(pdir);
   atomicWrite(file, `${JSON.stringify(record, null, 2)}\n`);
 
   return ok({

@@ -16,7 +16,7 @@ import { CONTRACTS, evaluateFlag } from '../lib/arg-contract.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { unfixedFromEntries } from '../lib/filing-decision.mjs';
 import { planTaskTitles } from '../lib/planning-files.mjs';
-import { ensureRecordsDir, ensureRecordsIgnore, makeDir, recordsPath } from '../lib/planning-store.mjs';
+import { ensureRecordsDir, ensureRecordsIgnore, makeDir, phaseRecordsDir, recordsPath } from '../lib/planning-store.mjs';
 import { planFileFor } from '../lib/phase-plans.mjs';
 import {
   READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
@@ -757,7 +757,7 @@ function cmdTrace(dir, sub, opts) {
  * The record a receipt settles, as an absolute path, or '' (never a throw) when none can be resolved.
  * A per-plan fire resolves by `plan-<k>`; every other fire matches the directory on trigger, round and head prefix.
  * Two candidates answer '', not a guess: a check that might read another fire's rulings refuses a correct receipt.
- * Homes by phase: `phases/<N>/`, or every `.planning/tasks/<slug>/` for a task's 0, since a receipt carries no slug.
+ * Homes by phase: `phases/<N>/records/`, or every `.planning/tasks/<slug>/` for a task's 0, since a receipt carries no slug.
  * `deferred/<N>/` is deliberately left out (see fireHome); `trigger` goes through RECORD_TOKEN before `join`.
  * @param {string} dir @param {string|number} phaseRaw
  * @param {string|undefined} trigger @param {any} plan @param {any} sha
@@ -769,7 +769,7 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
   /** @type {string[]} */
   let homes = [];
   if (String(phaseRaw) !== '0') {
-    homes = [join(dir, 'phases', String(phaseRaw))];
+    homes = [phaseRecordsDir(join(dir, 'phases', String(phaseRaw)))];
   } else {
     // lstat tasks/ first, as fireHome does: readdirSync follows a symlink and would walk outside the planning tree
     // each entry's isDirectory reads as lstat does, so a symlink to a directory is false

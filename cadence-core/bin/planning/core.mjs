@@ -16,7 +16,7 @@ import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
 import { parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
-import { codemapDir, deferredDir, phaseReportsDir, recordsPath } from '../lib/planning-store.mjs';
+import { codemapDir, deferredDir, phaseRecordsDir, phaseReportsDir, recordsPath } from '../lib/planning-store.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
@@ -581,7 +581,8 @@ function realDir(dir, name) {
 /**
  * The directory a fire's artifact is written into, or null once the refusal is out.
  * It sits beside the sibling REVIEW file, never in `<plandir>/records/reports/`, where lease-check exempts only one path.
- * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/`, then the carried queue's `<N>/`.
+ * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/records/`, then the carried queue's `<N>/`.
+ * The phase must exist; its records folder need not, and nothing is created here: the writer makes it on its first write.
  * @param {string} dir @param {string} n the phase as the caller spelled it
  * @param {string} what the artifact, for the refusal's wording
  * @param {string} [task] the task slug, when this fire is a task's
@@ -609,7 +610,19 @@ function fireHome(dir, n, what, task) {
     const hdir = join(home.path, String(n));
     let hstat = null;
     try { hstat = lstatSync(hdir); } catch { /* absent is the answer, never a throw */ }
-    if (hstat && hstat.isDirectory()) return hdir;
+    if (!hstat || !hstat.isDirectory()) continue;
+    if (!home.inner) return hdir;
+    // the phase's records folder is made by the writer on its first write; one that is already there must be real,
+    // since a link would carry the file out of the tree
+    const rdir = phaseRecordsDir(hdir);
+    let rstat = null;
+    try { rstat = lstatSync(rdir); } catch { /* not made yet */ }
+    if (rstat && !rstat.isDirectory()) {
+      fail('records-unusable', notRealDirDetail(`${home.rel}/${n}/${home.inner}/`, rstat, 'a write'),
+        'clear that path and re-run - nothing was written');
+      return null;
+    }
+    return rdir;
   }
   fail('no-phase-dir',
     `neither phases/${n}/ nor ${DEFERRED_REL}/${n}/ is a directory under ${dir} - the ${what} is `
@@ -706,13 +719,19 @@ const posixRel = (/** @type {string} */ p) => relative('.', p).split(sep).join('
 /** Where the carried queue lives, relative to the planning directory (the write module decides). */
 const DEFERRED_REL = posixRel(deferredDir('.'));
 
+/** Where a phase keeps its records, relative to the phase directory (the write module decides). */
+const PHASE_RECORDS_REL = posixRel(phaseRecordsDir('.'));
+
 /**
  * The two directories a queue member may live in: `rel` is how an answer names it, `path` where it is on disk.
+ * Each holds one directory per phase; `inner` is the folder inside a phase's directory that holds its members, empty
+ * for the carried queue, whose phase directory holds them directly.
  * @param {string} dir the planning directory
- * @returns {{rel: string, path: string}[]}
+ * @returns {{rel: string, path: string, inner: string}[]}
  */
 function queueHomes(dir) {
-  return [{ rel: 'phases', path: join(dir, 'phases') }, { rel: DEFERRED_REL, path: deferredDir(dir) }];
+  return [{ rel: 'phases', path: join(dir, 'phases'), inner: PHASE_RECORDS_REL },
+    { rel: DEFERRED_REL, path: deferredDir(dir), inner: '' }];
 }
 
 /** Is every component of `rel` under `dir` a real directory? lstat follows all but the last, so each is asked. */
@@ -763,17 +782,20 @@ function readQueue(dir, wantPhase) {
       }
       // a regular file here holds no queue member, only a directory can
       if (!ent.isDirectory()) continue;
-      const pdir = join(home.path, ent.name);
+      const pdir = home.inner ? join(home.path, ent.name, home.inner) : join(home.path, ent.name);
+      const where = home.inner ? `${rel}/${home.inner}` : rel;
       /** @type {string[]} */
       let names;
       try { names = readdirSync(pdir); } catch (e) {
-        unreadable.push({ path: rel, detail: why(e) });
+        // a phase that wrote no record has no records folder, which is absence and not a fault
+        if (home.inner && e && /** @type {any} */ (e).code === 'ENOENT') continue;
+        unreadable.push({ path: where, detail: why(e) });
         continue;
       }
       const present = new Set(names);
       for (const name of names) {
         if (!isQueueName(name)) continue;
-        const path = `${rel}/${name}`;
+        const path = `${where}/${name}`;
         const file = join(pdir, name);
         let stat = null;
         try { stat = lstatSync(file); } catch (e) {
@@ -796,7 +818,7 @@ function readQueue(dir, wantPhase) {
         }
         // a member's phase must match its directory, or a hand move makes --phase narrow to a phase it doesn't claim
         if (id.phase !== ent.name) {
-          unreadable.push({ path, detail: `queue member says phase ${id.phase} but sits in ${rel}/` });
+          unreadable.push({ path, detail: `queue member says phase ${id.phase} but sits in ${where}/` });
           continue;
         }
         // supersession is one filename comparison, regular files only, or a link to anything could clear a queue
