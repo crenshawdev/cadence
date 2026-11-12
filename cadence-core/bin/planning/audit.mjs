@@ -9,7 +9,7 @@ import { derivePhases, fail, listPlanFiles, ok, read } from './core.mjs';
 import { activeVersion, tagCarrying, titleVersion } from '../lib/branch-decision.mjs';
 import { readTags } from '../lib/git-tags.mjs';
 import {
-  classifyActiveSection, isRequirementId, parseRequirements, readFrontmatterList,
+  classifyActiveSection, isRequirementId, readFrontmatterList,
 } from '../lib/planning-files.mjs';
 import { normalizeTargetVersion } from '../lib/release-decision.mjs';
 import { loadState, phaseListOf } from './state-import.mjs';
@@ -52,7 +52,7 @@ function cmdAudit(dir) {
     }
   }
 
-  const rows = parseRequirements(reqText);
+  const rows = state.requirements;
   // the declared milestone scope, read once, since parseRoadmapPhases carries no id mapping
   const active = classifyActiveSection(reqText);
   const requirements = [];
@@ -112,7 +112,7 @@ function cmdAudit(dir) {
   // `blocked` is terminal, so a parked phase would pin the gate at FAIL; nothing answerable left stops holding it too
   // rolled-over work looks like work in flight on disk; only the rows differ, as the close marks them `Deferred`
   // no rows is not exempt: an empty set satisfies "every row is Deferred" vacuously, and unplanned is mid-cycle
-  // read off the `rows` parseRequirements already produced, so it's the same row set as the arithmetic above
+  // read off the `rows` the state already supplied, so it's the same row set as the arithmetic above
   const settled = (p) => p.status === 'complete'
     || (p.uat !== null && p.uat.items.length > 0 && p.uat.items.every((i) =>
       i.status === 'pass' || i.status === 'blocked'

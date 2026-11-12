@@ -1,6 +1,7 @@
 // @ts-check
 // planning/milestone-prune.mjs - `milestone-prune`: the mechanical half of a milestone close, in one call
-// the phases it prunes are the ones the state holds complete; the state drops them and the list in ROADMAP.md is rendered from it
+// the phases it prunes are the ones the state holds complete; the state drops them and their shipped rows, and the list in
+// ROADMAP.md and the table in REQUIREMENTS.md are rendered from it. `## Shipped` and `## Active` stay text edits
 'use strict';
 
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
@@ -166,7 +167,8 @@ function cmdMilestonePrune(dir, opts) {
   for (const n of pruned.missingSections) {
     warnings.push(`phase ${n}: no "### Phase ${n}:" detail section found to remove`);
   }
-  const reqResult = reqText === null ? null : archiveRequirements(reqText, applied, label);
+  // the shipped rows are the state's; the text edit moves their bullets and rows, and the table is rendered from the state
+  const reqResult = reqText === null ? null : archiveRequirements(reqText, applied, label, state.requirements);
 
   // nothing cleared, nothing to say: skip the writes and don't rename an identical file into place
   // the detail sections go as text edits; the pruned phases leave the state and the list is rendered from it
@@ -174,7 +176,11 @@ function cmdMilestonePrune(dir, opts) {
     atomicWrite(roadmapFile, pruned.text);
     if (reqResult && reqResult.moved.length) atomicWrite(reqFile, reqResult.text);
     const gone = new Set(applied);
-    const landed = changeState(dir, (s) => withPhases(s, s.phases.filter((p) => !gone.has(p.n))), ['STATE.md', 'ROADMAP.md'], {
+    const shipped = new Set((reqResult ? reqResult.moved : []).map((r) => r.id));
+    const landed = changeState(dir, (s) => ({
+      ...withPhases(s, s.phases.filter((p) => !gone.has(p.n))),
+      requirements: s.requirements.filter((r) => !shipped.has(r.id)),
+    }), ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md'], {
       onFail: (res) => emit({
         ok: false, reason: 'state-write-failed', detail: `${res.reason} - ${res.detail}`,
         hint: 'the phase directories and the detail sections are already pruned but the state still lists the phases; '

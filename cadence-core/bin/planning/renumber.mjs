@@ -12,9 +12,10 @@ import { fail, intFlag, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   cutPhaseDetail, findProsePhaseRefs, nextNamesPhase,
-  parseRoadmapPhases, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
+  parseRequirements, parseRoadmapPhases, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
 import { atomicWrite, movePath, removeTree } from '../lib/planning-store.mjs';
+import { renderTraceability } from '../lib/state-views.mjs';
 import { changeState, loadState, phaseListOf, withPhases } from './state-import.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
@@ -196,11 +197,25 @@ function cmdRenumber(dir, sub, opts) {
   let movedComplete = [];
   /** @type {Array<{line: number, text: string}> | null} */
   let reqRefs = null;
-  let newReqText = null;
+  /** @type {Array<{id: string, phase: number | null, status: string}> | null} */
+  let newReqs = null;
   if (reqText !== null) {
+    // the rows are the state's: the shift runs over the table as the state renders it, so a hand edit to a row is not
+    // moved, and the state takes the shifted rows back
     // both ops leave shipped history alone (GH-259, GH-301): only Pending Traceability rows move or get blanked
-    ({ text: newReqText, changes: reqRowChanges, movedComplete, refs: reqRefs, orphans: orphanedReqs } =
-      shiftPendingReqRows(reqText, at, delta));
+    const shown = renderTraceability(state, reqText);
+    const base = shown.missing ? reqText : shown.text;
+    const shifted = shiftPendingReqRows(base, at, delta);
+    ({ movedComplete, refs: reqRefs, orphans: orphanedReqs } = shifted);
+    reqRowChanges = shifted.changes;
+    if (!shown.missing) {
+      newReqs = parseRequirements(shifted.text);
+      // each changed row as the regenerated file shows it, which is the form the renderer writes
+      const after = renderTraceability({ ...state, requirements: newReqs }, reqText).text.split('\n');
+      const bare = (/** @type {string} */ l) => l.replace(/\r$/, '');
+      reqRowChanges = base.split('\n').flatMap((before, i) => (before === after[i]
+        ? [] : [{ line: i + 1, before: bare(before), after: bare(after[i]) }]));
+    }
   }
 
   // the cursor it re-points is the state's; STATE.md is rendered from the state afterwards, never read
@@ -259,7 +274,7 @@ function cmdRenumber(dir, sub, opts) {
     ...(sub === 'remove' && existingDir(at) ? [{ rm: `phases/${at}` }] : []),
     { edit: 'ROADMAP.md', changes: roadmapShift.count + (sub === 'remove' ? 1 : 0) },
     // both ops count changed lines, same as req_row_changes below
-    ...(newReqText !== null ? [{ edit: 'REQUIREMENTS.md', changes: reqRowChanges.length }] : []),
+    ...(reqText !== null ? [{ edit: 'REQUIREMENTS.md', changes: reqRowChanges.length }] : []),
     ...(newCursor ? [{ edit: 'STATE.md', changes: 1 }] : []),
   ];
 
@@ -301,14 +316,14 @@ function cmdRenumber(dir, sub, opts) {
       () => gitMv(join(dir, 'phases', String(f)), join(dir, 'phases', String(t)))]);
   }
   steps.push([{ edit: 'ROADMAP.md' }, () => atomicWrite(roadmapFile, newRoadmap)]);
-  if (newReqText !== null) steps.push([{ edit: 'REQUIREMENTS.md' }, () => atomicWrite(reqFile, newReqText)]);
   // last: the state takes the renumbered phases and cursor, then the list in ROADMAP.md and STATE.md are rendered from it
   // the shifted text above already shows the new numbers, so a render keeps those lines as they are
   steps.push([newCursor ? { edit: 'STATE.md' } : { edit: 'state.json' }, () => {
     const renumbered = state.phases
       .filter((p) => !(sub === 'remove' && p.n === at))
       .map((p) => (Number.isInteger(p.n) && p.n >= shiftFrom ? { ...p, n: p.n + delta } : p));
-    changeState(dir, (s) => ({ ...withPhases(s, renumbered), cursor: newCursor ?? s.cursor }), ['STATE.md', 'ROADMAP.md'], {
+    changeState(dir, (s) => ({ ...withPhases(s, renumbered), cursor: newCursor ?? s.cursor, requirements: newReqs ?? s.requirements }),
+      ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md'], {
       onFail: (res) => { throw new Error(`the state file was ${res.stateWritten ? 'written, the generated files were not' : 'not written'}: ${res.reason} - ${res.detail}`); },
     });
   }]);

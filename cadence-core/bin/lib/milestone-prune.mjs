@@ -65,11 +65,12 @@ const SHIPPED_PREAMBLE = [
  * @param {string} text
  * @param {number[]} completed
  * @param {string} label
+ * @param {{id: string, phase: number|null, status: string}[]} [rows] the requirement rows to judge, which the seam takes
+ *   from the state; the table in `text` when omitted
  * @returns {{text: string, moved: {id: string, phase: number|null}[],
  *            createdSection: boolean}}
  */
-export function archiveRequirements(text, completed, label) {
-  const rows = parseRequirements(text);
+export function archiveRequirements(text, completed, label, rows = parseRequirements(text)) {
   const shipped = rows.filter((r) => r.phase !== null && completed.includes(r.phase)
     && r.status !== 'Deferred');
   if (!shipped.length) return { text, moved: [], createdSection: false };

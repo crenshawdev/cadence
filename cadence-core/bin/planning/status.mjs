@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import {
   PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, planPosition, read, readPlanReports, readQueue,
 } from './core.mjs';
-import { parseRequirements, sectionSpan } from '../lib/planning-files.mjs';
+import { sectionSpan } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { cursorOf, loadState, phaseListOf } from './state-import.mjs';
 
@@ -110,8 +110,6 @@ function cmdStatus(dir) {
     return { ...p, status: held.status, derivedStatus: p.status };
   });
   const reportsOf = derived.map((p) => readPlanReports(join(dir, 'phases', String(p.n)), p.plans));
-  const reqText = read(join(dir, 'REQUIREMENTS.md'));
-  const reqRows = reqText !== null ? parseRequirements(reqText) : null;
   const currentEntry = derived.find((p) => p.status !== 'complete') || null;
   const current = currentEntry ? currentEntry.n : null;
 
@@ -144,10 +142,10 @@ function cmdStatus(dir) {
   // checked in every state: a directory Cadence can't address is cheapest to rename while the cycle is open
   drift.push(...phaseDirGrammarDrift(dir));
 
-  // optional file; Deferred and unmapped rows are audit's concern, not drift
-  if (reqRows !== null) {
+  // the state's rows against the state's phases; Deferred and unmapped rows are audit's concern, not drift
+  {
     const byN = new Map(derived.map((p) => [p.n, p.status]));
-    for (const r of reqRows) {
+    for (const r of state.requirements) {
       if (r.phase === null || r.status === 'Deferred' || !byN.has(r.phase)) continue;
       const phaseDone = byN.get(r.phase) === 'complete';
       if (phaseDone && r.status !== 'Complete') {

@@ -1,7 +1,7 @@
 // @ts-check
 // planning/phase-done.mjs - `phase-done`, the two status flips verify.md owns (and undo reverses)
-// it records phase N complete (or, undone, what its artifacts derive) and sets its traceability rows, in one call
-// the state is written first and the ROADMAP list and STATE.md are rendered from it; the box is output, never flipped
+// it records phase N complete (or, undone, what its artifacts derive) and sets its requirement rows, in one call
+// both are the state's; the ROADMAP list, the traceability table and STATE.md are rendered from it, never flipped
 // deferred rows are never touched unless --reqs names them
 // every edit is decided before the first write, so a malformed sibling leaves the tree untouched under ok:false
 'use strict';
@@ -11,10 +11,7 @@ import { join } from 'node:path';
 import { fail, ok, read } from './core.mjs';
 import { captureHealth } from '../lib/capture-health.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
-import {
-  escN, parseRequirements, sectionSpan, setReqStatus,
-} from '../lib/planning-files.mjs';
-import { atomicWrite } from '../lib/planning-store.mjs';
+import { escN, sectionSpan } from '../lib/planning-files.mjs';
 import { renderPhasesList } from '../lib/state-views.mjs';
 import { changeState, derivedStatus, loadState } from './state-import.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
@@ -73,43 +70,38 @@ function cmdPhaseDone(dir, opts) {
   if (reqPresent) {
     try { reqRegular = statSync(reqFile).isFile(); } catch { reqRegular = false; }
   }
-  const reqText = reqRegular ? read(reqFile) : null;
-  const reqUnreadable = reqPresent && reqText === null;
-  let reqs = [];
-  let newReqText = null;
-  if (reqText !== null) {
-    const rows = parseRequirements(reqText);
-    const ids = namedReqs
-      ?? rows.filter((r) => r.phase === n && r.status !== 'Deferred').map((r) => r.id);
-    const res = setReqStatus(reqText, ids, undo ? 'Pending' : 'Complete');
-    reqs = res.changed;
-    newReqText = res.text;
-  }
+  const reqUnreadable = reqPresent && (!reqRegular || read(reqFile) === null);
+  // which rows close is the state's say: this phase's non-Deferred rows, or exactly the ids --reqs names
+  // an id the state has no row for changes nothing and is not reported, as an id with no table row never was
+  const want = undo ? 'Pending' : 'Complete';
+  const ids = namedReqs ?? state.requirements.filter((r) => r.phase === n && r.status !== 'Deferred').map((r) => r.id);
+  const reqs = state.requirements.filter((r) => ids.includes(r.id)).map((r) => r.id);
 
   // the close asserts the capture queue is empty and doesn't empty it: an item leaves at the gate that declined it
   // a non-empty queue is a named problem, never a refusal: a phase's completion is a fact about the work, not this file
   // read before the transition so the result can't depend on which documents are written; unopenable is `unread`
   const capture = undo ? null : readQueue(join(dir, 'CAPTURE.md'));
 
-  // one ordered step list, stopped at the first failure: the state and the generated files rendered from it, then
-  // REQUIREMENTS.md when there's one to write
-  // keyed by document name, not the joined path, because that's what the envelope reports
+  // one step: the state, then the generated files rendered from it while the lock is held
   // the preflight makes "nothing was written" true: a rename is atomic for one file only
   // satisfied answers from a value in hand and does no I/O, so it can't throw past runTransition
-  // the state step lands the phase's status first, so a later failure leaves the state ahead of the views and never behind
+  // the state lands first, so a later failure leaves the state ahead of the views and never behind
   const status = undo ? derivedStatus(dir, n) : 'complete';
-  const views = ['STATE.md', 'ROADMAP.md'];
+  const views = ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md'];
   const rendered = [];
   let landed = false;
   /** @type {Array<[string, () => void]>} */
   const steps = [['state', () => {
     const done = changeState(dir,
-      (s) => ({ ...s, phases: s.phases.map((p) => (p.n === n ? { ...p, status } : p)) }), views,
+      (s) => ({
+        ...s,
+        phases: s.phases.map((p) => (p.n === n ? { ...p, status } : p)),
+        requirements: s.requirements.map((r) => (ids.includes(r.id) ? { ...r, status: want } : r)),
+      }), views,
       { wrote: rendered, onFail: (res) => { landed = res.stateWritten === true; throw new Error(`${res.reason} - ${res.detail}`); } });
     if (!done) throw new Error('the state was not written');
     landed = true;
   }]];
-  if (newReqText !== null) steps.push(['REQUIREMENTS.md', () => atomicWrite(reqFile, newReqText)]);
   const applied = runTransition({
     steps,
     discipline: 'stop-at-first-failure',
@@ -127,8 +119,7 @@ function cmdPhaseDone(dir, opts) {
     // the shapes no readability check can see (EACCES on .planning, a planted atomicWrite temp symlink, ENOSPC)
     // emitted directly like cmdRenumber's partial arm: fail() has no write record, and the dispatch catch drops it
     const e = applied.failures[0].error;
-    const wrote = [...(landed ? ['records/state.json'] : []), ...rendered.filter((v) => v !== 'STATE.md'),
-      ...applied.completed.filter((v) => v !== 'state')];
+    const wrote = [...(landed ? ['records/state.json'] : []), ...rendered.filter((v) => v !== 'STATE.md')];
     return emit({
       ok: false, reason: 'partial-flip', wrote,
       detail: e && e.message ? e.message : String(e),
@@ -144,9 +135,9 @@ function cmdPhaseDone(dir, opts) {
   const at = lines.findIndex((l, i) => i > start && i < end && new RegExp(`^- \\[( |x)\\] \\*\\*Phase ${escN(n)}: `).test(l));
   const box = at >= 0 && lines[at].startsWith('- [x]') ? '[x]' : '[ ]';
   // wrote is the completed record: document names in write order, so "both moved" differs from "only the roadmap did"
-  // reqs stays the ids setReqStatus changed and never becomes null, because /cad-verify and /cad-undo read it
+  // reqs stays the ids whose rows were set and never becomes null, because /cad-verify and /cad-undo read it
   // capture rides the close arm only: reopening a phase says nothing about the queue, so --undo omits it
-  ok({ roadmap: { line: at + 1, now: box }, reqs, wrote: ['ROADMAP.md', ...applied.completed.filter((v) => v !== 'state')],
+  ok({ roadmap: { line: at + 1, now: box }, reqs, wrote: rendered.filter((v) => v !== 'STATE.md'),
     ...(capture ? { capture } : {}) });
 }
 
