@@ -3,9 +3,11 @@
 'use strict';
 
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
-import { join, resolve as resolvePath, sep } from 'node:path';
+import { dirname, join, resolve as resolvePath, sep } from 'node:path';
 import { fail, notRealDirDetail, ok, read } from './core.mjs';
-import { atomicWrite, makeDir, movePath, removeTree, withPlanningFileLock } from '../lib/planning-store.mjs';
+import {
+  archivePath, atomicWrite, ensureRecordsDir, makeDir, movePath, removeTree, withPlanningFileLock,
+} from '../lib/planning-store.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import { archiveRequirements, completedPhases, pruneRoadmap } from '../lib/milestone-prune.mjs';
 import {
@@ -92,10 +94,17 @@ function cmdMilestonePrune(dir, opts) {
   // the rows come from the helper cmdRecall reads, in fixed order, never a model-authored summary
   // writing ahead costs idempotence: a phase whose removal fails is read twice, so filter by this label's heading
   // one containment test keyed on the label, outside appendArchiveRows, a pure appender that can't judge a phase
-  const archiveFile = join(dir, 'ARCHIVE.md');
+  const archiveFile = archivePath(dir);
   const residue = [];
   // read, containment test and write are one critical section under the lock /cad-capture takes on CAPTURE.md
   // unserialized, two closes clobber each other's rows and the directories are gone: this loses the only copy
+  // the lock file is a sibling of the ledger, so the records folder has to be there, and real, before the lock is taken
+  const records = ensureRecordsDir(dir);
+  if (!records.ok) {
+    return fail('records-unusable', `${dirname(archiveFile)} cannot be used (${records.reason})`,
+      'make that path a real directory - a symlink there is refused because it would carry the ledgers out of the'
+      + ' tree - and re-run the close; nothing was pruned and no phase directory moved');
+  }
   const archiveGuard = withPlanningFileLock(archiveFile, () => {
   const archiveText = read(archiveFile) ?? '';
   // two properties this test must hold, or a suppressed write plus the directory removal loses data for good

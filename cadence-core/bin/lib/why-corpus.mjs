@@ -8,12 +8,13 @@
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { within } from './contained.mjs';
 
 import { recordName } from './adjudication-record.mjs';
 import { phaseDirsIn } from './phase-plans.mjs';
 import { parseArchiveRows } from './planning-files.mjs';
+import { archivePath } from './planning-store.mjs';
 import { RECORD_FILE, TASKS_DIR, taskRecordsIn } from './task-record.mjs';
 import { parseAdjudication, parseCommitRows, shaMatches } from './why-record.mjs';
 
@@ -329,6 +330,12 @@ export const PRUNE_ARGV = Object.freeze([
   `--format=${PRUNE_FORMAT}`, '--', PRUNED_SUMMARY,
 ]);
 
+/**
+ * Where a close added its heading, newest layout first. A close committed before the ledgers moved under the records
+ * folder added it to `.planning/ARCHIVE.md`, so history is asked about both.
+ */
+const ARCHIVE_PATHSPECS = Object.freeze([archivePath('.planning').split(sep).join('/'), '.planning/ARCHIVE.md']);
+
 /** The heading a close appends to ARCHIVE.md, as a diff line. */
 const ADDED_SECTION = /^\+## (.+?)\s*$/;
 
@@ -369,7 +376,7 @@ function pruneLabels(repoDir, commits) {
   for (const c of commits) added.set(c, []);
   if (!commits.length) return new Map();
 
-  const out = git(repoDir, ['show', '-U0', '-M', '--format=%x01%H', ...commits, '--', '.planning/ARCHIVE.md']);
+  const out = git(repoDir, ['show', '-U0', '-M', '--format=%x01%H', ...commits, '--', ...ARCHIVE_PATHSPECS]);
   let current = null;
   for (const line of out.stdout.split('\n')) {
     if (line.startsWith('\x01')) { current = line.slice(1).trim(); continue; }
@@ -644,7 +651,7 @@ export function closeOver(prunes, date) {
 export function archiveSections(planningRoot) {
   /** @type {Map<string, Array<{origin: string, text: string}>>} */
   const out = new Map();
-  const { text } = readArtifact(join(planningRoot, 'ARCHIVE.md'));
+  const { text } = readArtifact(archivePath(planningRoot));
   if (text === null) return out;
   for (const row of parseArchiveRows(text)) {
     if (!out.has(row.label)) out.set(row.label, []);

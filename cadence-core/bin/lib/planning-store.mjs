@@ -138,6 +138,25 @@ const RECORDS_IGNORE = [
 ].join('\n');
 
 /**
+ * The three ledgers a person can read and git carries: the milestone residue, the findings filed to the tracker and
+ * the findings declined. Each lock file stays a sibling of its ledger, so it moves with it.
+ * @param {string} planningRoot
+ */
+export function archivePath(planningRoot) {
+  return recordsPath(planningRoot, 'ARCHIVE.md');
+}
+
+/** @param {string} planningRoot */
+export function filedPath(planningRoot) {
+  return recordsPath(planningRoot, 'FILED.md');
+}
+
+/** @param {string} planningRoot */
+export function declinedPath(planningRoot) {
+  return recordsPath(planningRoot, 'DECLINED.md');
+}
+
+/**
  * Write the records folder's `.gitignore` unless one is already there. An existing file is left byte-identical,
  * hand-edited or not. Returns whether this call created it.
  * @param {string} planningRoot

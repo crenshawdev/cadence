@@ -8,10 +8,12 @@
 'use strict';
 
 import { lstatSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { boundedRun as run } from './lib/bounded-run.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { atomicWrite, makeDir, withPlanningFileLock } from './lib/planning-store.mjs';
+import {
+  atomicWrite, declinedPath, ensureRecordsDir, filedPath, makeDir, withPlanningFileLock,
+} from './lib/planning-store.mjs';
 import {
   appendDeclinedRow, appendFiledRow, parseDeclinedRows, parseFiledRows,
 } from './lib/planning-files.mjs';
@@ -124,7 +126,10 @@ function readPayload(file) {
   }
 }
 
-/** The decline set, read off `.planning/DECLINED.md`, as fingerprints or a refusal.
+/** The filed ledger's path as a hint spells it, from the write module so the folder's name lives in one place. */
+const FILED_AT = filedPath('.planning').split(sep).join('/');
+
+/** The decline set, read off the DECLINED.md ledger under the records folder, as fingerprints or a refusal.
  *
  * A missing file is an empty set: nothing declined yet is how every repository starts. Any other read error refuses,
  * since a fire that can't tell what was already declined must not guess.
@@ -133,7 +138,7 @@ function readPayload(file) {
  * @returns {{ok: true, fingerprints: Set<string>}
  *   | {ok: false, reason: string, detail: string, hint: string}} */
 function readDeclines(dir) {
-  const got = readLedger(join(dir, '.planning', 'DECLINED.md'), {
+  const got = readLedger(declinedPath(join(dir, '.planning')), {
     unreadable: { reason: 'declines-unreadable',
       hint: 'this fire cannot tell which findings were already declined, so it refuses rather '
         + 'than re-asking about them: make that file readable - a wrong mode and a dangling '
@@ -184,7 +189,7 @@ function readLedger(file, refusals) {
  * @returns {{ok: true, rows: Map<string, {date: string, unconfirmed: boolean}>}
  *   | {ok: false, reason: string, detail: string, hint: string}} */
 function readFiled(dir) {
-  const got = readLedger(join(dir, '.planning', 'FILED.md'), {
+  const got = readLedger(filedPath(join(dir, '.planning')), {
     unreadable: { reason: 'filed-unreadable',
       hint: 'this fire cannot tell which findings it already filed, so it refuses rather than '
         + 'risking a second issue for one of them: make that file readable - a wrong mode and '
@@ -318,15 +323,20 @@ function markUnconfirmed(text, print) {
 function mirrorFiled(dir, provider, repo, filed) {
   const date = new Date().toISOString().slice(0, 10);
   for (const arm of [
-    { name: 'FILED.md', want: 'accept', append: appendFiledRow, lock: 'filed-locked', dedup: true },
-    { name: 'DECLINED.md', want: 'decline', append: appendDeclinedRow, lock: 'declined-locked', dedup: false },
+    { name: 'FILED.md', pathOf: filedPath, want: 'accept', append: appendFiledRow, lock: 'filed-locked', dedup: true },
+    { name: 'DECLINED.md', pathOf: declinedPath, want: 'decline', append: appendDeclinedRow, lock: 'declined-locked',
+      dedup: false },
   ]) {
     const rows = filed.filter((f) => f.disposition === arm.want);
     if (!rows.length) continue;
-    const file = join(dir, '.planning', arm.name);
+    const file = arm.pathOf(join(dir, '.planning'));
     try {
       // before the lock: the lock is a sibling of the target, so its create and atomicWrite's rename need the directory
       makeDir(join(dir, '.planning'));
+      const records = ensureRecordsDir(join(dir, '.planning'));
+      if (!records.ok) {
+        return { ok: false, reason: 'write-failed', detail: `${file}: the records folder is not usable (${records.reason})` };
+      }
       const guarded = withPlanningFileLock(file, () => {
         // an unreadable file isn't an empty one: catching every read error into `text = ''` erased the rows on write
         let text = '';
@@ -596,7 +606,7 @@ function emitCreateFailed(dir, forge, entries, i, filed, suppressed, ledgerStood
     + `${failed} is AMBIGUOUS rather than known-failed: a timeout, a kill on this step's `
     + 'own bound and a dropped connection all look here exactly like a refusal, and the '
     + `forge may have created that issue anyway. You do not have to resolve that by hand: `
-    + `${failed} now has an \`unconfirmed\` row in .planning/FILED.md, and this seam asks `
+    + `${failed} now has an \`unconfirmed\` row in ${FILED_AT}, and this seam asks `
     + `${forge.repo} for the titles carrying a fire's own fingerprints before it creates `
     + 'anything. So re-run this step with ONLY the unfiled entries this envelope names - '
     + 'the row and the lookup between them suppress the duplicate, and they are still in '
@@ -605,9 +615,9 @@ function emitCreateFailed(dir, forge, entries, i, filed, suppressed, ledgerStood
   const lostPointer = mirror.ok === false
     ? ` AND the recall pointer was NOT written (${mirror.reason}: ${mirror.detail}), so the `
       + `${filed.length} entries this envelope lists as \`filed\` are on ${forge.repo} with `
-      + 'NOTHING in .planning/FILED.md pointing at them, and the ambiguous one got no '
+      + `NOTHING in ${FILED_AT} pointing at them, and the ambiguous one got no `
       + `\`unconfirmed\` row either - so re-running is NOT safe until this is fixed. Fix `
-      + 'the write that detail names (a stale .planning/FILED.md.lock is the usual answer) '
+      + `the write that detail names (a stale ${FILED_AT}.lock is the usual answer) `
       + 'and add one `- ` row per ACCEPTED filed entry by hand, plus one carrying '
       + `\`${failed} unconfirmed:\` for the ambiguous one. Do not re-file them - they `
       + 'already exist.'
@@ -698,8 +708,8 @@ function cmdFile(dir, payloadFile) {
       detail: `every issue was created on ${forge.repo}, but the recall pointer could `
         + `not be written: ${mirror.detail}`,
       hint: 'the issues are FILED and must not be filed again - fix the write the detail '
-        + 'names (a stale .planning/FILED.md.lock is the usual answer) and add one `- ` '
-        + 'row per accepted issue to .planning/FILED.md by hand, or re-run only the '
+        + `names (a stale ${FILED_AT}.lock is the usual answer) and add one \`- \` `
+        + `row per accepted issue to ${FILED_AT} by hand, or re-run only the `
         + 'mirror once the path is writable' });
     return;
   }
