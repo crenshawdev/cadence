@@ -169,8 +169,11 @@ try {
     // `trace ignore` reports what the project had before, so its stamp (which creates the records folder) waits for its answer
     // `--check` is the read-only report cad-health runs and writes nothing, so it leaves the stamp to the next seam
     const late = cmd === 'trace' && sub === 'ignore';
+    // a release touches only the claim file in the git dir, and the conversion refuses while a claim is held,
+    // so it skips the gate or a dead claim could never be freed; take still converts first or a workflow would block itself
+    const freeing = cmd === 'workflow-claim' && sub === 'release';
     const { ensureState, conversionNote, holdAnswer } = await import('./planning/migrate.mjs');
-    if (ensureState(planningDir, late ? 'before' : 'now')) {
+    if (freeing || ensureState(planningDir, late ? 'before' : 'now')) {
       const afterwards = late && !('check' in opts);
       // the call that converted adds one field to its own answer, so its stdout is held until the field can join
       const release = conversionNote() || afterwards ? holdAnswer() : null;

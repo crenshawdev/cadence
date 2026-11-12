@@ -27,7 +27,7 @@ import {
 import { readState, STATE_LAYOUT, statePath, writeState } from '../lib/project-state.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { dirents } from '../lib/surface-weight.mjs';
-import { claimHolder } from '../lib/workflow-claim.mjs';
+import { CLAIM_FILE, claimHolder } from '../lib/workflow-claim.mjs';
 
 /** The run record, the read record, their rotated generation, claim sidecars and rotation temps. */
 const LOG_NAME = /^(?:trace|reads)(?:\.1)?\.jsonl(?:\.(?:claim|rotate|evict)(?:\..+)?)?$/;
@@ -233,11 +233,19 @@ function judge(dir) {
   const root = resolve(dir, '..');
   const common = git(['-C', root, 'rev-parse', '--git-common-dir']);
   if (common !== null) {
-    const holder = claimHolder(resolve(root, common));
+    const gitDir = resolve(root, common);
+    const holder = claimHolder(gitDir);
     if (holder) {
+      // the release this names skips the conversion in planning.mjs, so following the hint works on this very project
+      // label and id come from a file, so only a plain token goes into a command someone may paste
+      const plain = (/** @type {string|null} */ s) => (s !== null && /^[\w.:-]{1,200}$/.test(s) ? s : null);
+      const fire = plain(holder.label) ?? 'stale-claim';
+      const free = plain(holder.id) ? `--id ${holder.id}` : holder.id === null ? '--stale' : null;
       return { refusal: { reason: 'workflow-claim-held',
-        detail: `a workflow claim is held by ${holder.label ?? 'an unknown holder'} (${holder.age_seconds}s old), and a conversion would move files under it`,
-        hint: 'let that workflow finish, or free a dead one with `planning.mjs workflow-claim release`, then re-run; nothing was changed' } };
+        detail: `a workflow claim is held by ${holder.label ?? 'an unknown holder'} (id ${holder.id ?? 'none'}, ${holder.age_seconds}s old), and a conversion would move files under it`,
+        hint: `let that workflow finish, or if it is dead free it with ${free
+          ? `\`planning.mjs workflow-claim release --fire ${fire} ${free}\``
+          : `by removing ${join(gitDir, CLAIM_FILE)} by hand`}, then re-run; nothing was changed` } };
     }
     const live = planWorktrees(root)[0];
     if (live) {
