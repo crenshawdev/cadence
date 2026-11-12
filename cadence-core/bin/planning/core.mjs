@@ -784,6 +784,20 @@ function readQueue(dir, wantPhase) {
       if (!ent.isDirectory()) continue;
       const pdir = home.inner ? join(home.path, ent.name, home.inner) : join(home.path, ent.name);
       const where = home.inner ? `${rel}/${home.inner}` : rel;
+      // readdirSync follows a link, so the records folder is asked first: one link there would list files from outside the tree
+      if (home.inner) {
+        let istat = null;
+        try { istat = lstatSync(pdir); } catch (e) {
+          // a phase that wrote no record has no records folder, which is absence and not a fault
+          if (e && /** @type {any} */ (e).code === 'ENOENT') continue;
+          unreadable.push({ path: where, detail: why(e) });
+          continue;
+        }
+        if (!istat.isDirectory()) {
+          unreadable.push({ path: where, detail: 'a symlink or file where the records folder should be - not followed' });
+          continue;
+        }
+      }
       /** @type {string[]} */
       let names;
       try { names = readdirSync(pdir); } catch (e) {

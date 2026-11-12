@@ -31,7 +31,7 @@ function surfaceVocabulary() {
 }
 
 /**
- * The four `.planning/phases/` artifacts the range read withholds, as git pathspecs after the `git diff` separator.
+ * The four `.planning/phases/` artifacts the range read withholds, each at its records place and its old one, as git pathspecs after the `git diff` separator.
  * They store reviewer text verbatim, so a finding quoting a destructive command re-tripped the gate that found it.
  * A pathspec and not a scanDiff exemption: the fix goes at the mention, never at a path. Plan files stay scanned.
  * A range whose changed files are all withheld reads `empty: true` and still clears.
@@ -44,6 +44,11 @@ const REVIEWER_TEXT_PATHSPECS = Object.freeze([
   ':(top,exclude).planning/phases/*/records/REVIEW-*.md',
   ':(top,exclude).planning/phases/*/records/FINDINGS.json',
   ':(top,exclude).planning/phases/*/records/verifier-findings.json',
+  // the pre-layout place too: a project not yet migrated, and the migration commit itself, show these as plain deletions
+  ':(top,exclude).planning/phases/*/ADJUDICATION-*.json',
+  ':(top,exclude).planning/phases/*/REVIEW-*.md',
+  ':(top,exclude).planning/phases/*/FINDINGS.json',
+  ':(top,exclude).planning/phases/*/verifier-findings.json',
 ]);
 
 // the check used to be prose telling a model to scan a diff, and a skipped one looked the same as a clean one

@@ -271,10 +271,11 @@ export function readAdjudications(dir, repoDir) {
   for (const name of listed.names) {
     // the name came from a listing; an empty read means the reader already warned, and that's the whole answer
     const before = warnings.length;
-    const text = pull(listed.sub ? `${listed.sub}/${name}` : name);
+    const shown = listed.sub ? `${listed.sub}/${name}` : name;
+    const text = pull(shown);
     if (warnings.length > before) continue;
     const parsed = parseAdjudication(text);
-    for (const issue of parsed.issues) warnings.push(`${dir.label}/${name}: ${issue}`);
+    for (const issue of parsed.issues) warnings.push(`${dir.label}/${shown}: ${issue}`);
     records.push({ ...parsed, name });
   }
   return { records, warnings };
