@@ -13,6 +13,7 @@ import { quotePath } from '../lib/codemap-facts.mjs';
 import { covers } from '../lib/lease-grammar.mjs';
 import { parsePlanFiles } from '../lib/planning-files.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
+import { phaseReportsDir } from '../lib/planning-store.mjs';
 import { isReportName } from '../lib/report-rotation.mjs';
 import { appendEvent } from '../lib/trace.mjs';
 import { emit } from '../lib/seam-io.mjs';
@@ -231,9 +232,9 @@ function cmdLeaseCheck(dir, opts) {
 
   // exactly one exemption: the plan's own reports, which the contract has the executor write and no plan declares
   // not a directory lease: the risk diffs sit in the plan dir, and a gate's evidence mustn't ride a task commit
-  // two halves: directly in this plan's `reports/` (nested ones stay refused), and a name for this `k`
+  // two halves: directly in this plan's `records/reports/` (nested ones stay refused), and a name for this `k`
   // rotation keeps `plan-<k>.md` and `plan-<k>.<n>.md` at once, so a byte-equal match refused the rotated sibling
-  const reportsDir = repoRel(top, join(pdir, 'reports'));
+  const reportsDir = repoRel(top, phaseReportsDir(pdir));
   const isOwnReport = (/** @type {string} */ p) => {
     if (!p.startsWith(`${reportsDir}/`)) return false;
     const name = p.slice(reportsDir.length + 1);

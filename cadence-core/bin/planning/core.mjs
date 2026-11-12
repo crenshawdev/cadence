@@ -16,7 +16,7 @@ import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
 import { parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
-import { codemapDir, deferredDir, recordsPath } from '../lib/planning-store.mjs';
+import { codemapDir, deferredDir, phaseReportsDir, recordsPath } from '../lib/planning-store.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
@@ -258,7 +258,7 @@ function readPlanReports(pdir, plans) {
   return plans.map((plan) => {
     const k = planNumber(plan);
     // the exact filename, never a plan-*.md glob: report-rotation mints plan-<k>.<n>.md siblings an old one would win
-    const report = join('reports', `plan-${k}.md`);
+    const report = relative(pdir, join(phaseReportsDir(pdir), `plan-${k}.md`));
     const status = firstLine(read(join(pdir, report)));
     return { plan, k, report, exists: status !== null, status,
       complete: status === 'PLAN COMPLETE' };
@@ -580,7 +580,7 @@ function realDir(dir, name) {
 
 /**
  * The directory a fire's artifact is written into, or null once the refusal is out.
- * It sits beside the sibling REVIEW file, never in `<plandir>/reports/`, where lease-check exempts only one path.
+ * It sits beside the sibling REVIEW file, never in `<plandir>/records/reports/`, where lease-check exempts only one path.
  * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/`, then the carried queue's `<N>/`.
  * @param {string} dir @param {string} n the phase as the caller spelled it
  * @param {string} what the artifact, for the refusal's wording
