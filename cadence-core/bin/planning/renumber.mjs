@@ -222,18 +222,20 @@ function cmdRenumber(dir, sub, opts) {
   const cursor = state.cursor;
   let newCursor = null;
   let warn;
+  // one rule for the report here and for the write under the lock, which applies it to the cursor it finds then
+  // `Next:` keeps naming the same work, so its phase numbers shift by the same rule, a decimal cursor too
+  // the number only shifts for an integer cursor: a decimal cursor's own token and dir never shift. total still moves
+  const shiftCursor = (c) => ({
+    ...c,
+    next: shiftNextPhases(c.next, shiftFrom, delta),
+    ...(c.phase >= shiftFrom && Number.isInteger(c.phase) ? { phase: c.phase + delta } : {}),
+  });
   if (cursor) {
-    // `Next:` keeps naming the same work, so its phase numbers shift by the same rule, a decimal cursor too
-    newCursor = { ...cursor, next: shiftNextPhases(cursor.next, shiftFrom, delta) };
-    // the number only shifts for an integer cursor: a decimal cursor's own token and dir never shift. total still moves
-    if (cursor.phase >= shiftFrom) {
-      if (Number.isInteger(cursor.phase)) {
-        newCursor.phase = cursor.phase + delta;
-      } else {
-        warn = `cursor sits on decimal phase ${cursor.phase}, which renumber ` +
-          `never shifts (its ROADMAP token and phases/${cursor.phase}/ did not ` +
-          `move either); total is now ${total + delta} - re-point it (cursor set)`;
-      }
+    newCursor = shiftCursor(cursor);
+    if (cursor.phase >= shiftFrom && !Number.isInteger(cursor.phase)) {
+      warn = `cursor sits on decimal phase ${cursor.phase}, which renumber ` +
+        `never shifts (its ROADMAP token and phases/${cursor.phase}/ did not ` +
+        `move either); total is now ${total + delta} - re-point it (cursor set)`;
     }
     if (sub === 'remove' && cursor.phase === at) {
       warn = `cursor points at removed phase ${at}; number left as-is - re-point it (cursor set)`;
@@ -319,11 +321,19 @@ function cmdRenumber(dir, sub, opts) {
   // last: the state takes the renumbered phases and cursor, then the list in ROADMAP.md and STATE.md are rendered from it
   // the shifted text above already shows the new numbers, so a render keeps those lines as they are
   steps.push([newCursor ? { edit: 'STATE.md' } : { edit: 'state.json' }, () => {
-    const renumbered = state.phases
-      .filter((p) => !(sub === 'remove' && p.n === at))
-      .map((p) => (Number.isInteger(p.n) && p.n >= shiftFrom ? { ...p, n: p.n + delta } : p));
-    changeState(dir, (s) => ({ ...withPhases(s, renumbered), cursor: newCursor ?? s.cursor, requirements: newReqs ?? s.requirements }),
-      ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md'], {
+    // applied to the state as the lock finds it, never to the snapshot read at the top: a phase, cursor or row another seam
+    // committed while the directories moved is shifted, not overwritten
+    changeState(dir, (s) => {
+      const renumbered = s.phases
+        .filter((p) => !(sub === 'remove' && p.n === at))
+        .map((p) => (Number.isInteger(p.n) && p.n >= shiftFrom ? { ...p, n: p.n + delta } : p));
+      let requirements = s.requirements;
+      if (reqText !== null) {
+        const shown = renderTraceability(s, reqText);
+        if (!shown.missing) requirements = parseRequirements(shiftPendingReqRows(shown.text, at, delta).text);
+      }
+      return { ...withPhases(s, renumbered), cursor: s.cursor ? shiftCursor(s.cursor) : s.cursor, requirements };
+    }, ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md'], {
       onFail: (res) => { throw new Error(`the state file was ${res.stateWritten ? 'written, the generated files were not' : 'not written'}: ${res.reason} - ${res.detail}`); },
     });
   }]);

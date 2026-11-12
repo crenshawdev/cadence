@@ -11,7 +11,7 @@ import {
   archivePath, atomicWrite, ensureRecordsDir, makeDir, movePath, removeTree, withPlanningFileLock,
 } from '../lib/planning-store.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
-import { archiveRequirements, completedPhases, pruneRoadmap } from '../lib/milestone-prune.mjs';
+import { archiveRequirements, completedPhases, pruneRoadmap, shippedRows } from '../lib/milestone-prune.mjs';
 import {
   appendArchiveRows, parseArchiveRows, phaseRecallSnippets,
 } from '../lib/planning-files.mjs';
@@ -176,7 +176,9 @@ function cmdMilestonePrune(dir, opts) {
     atomicWrite(roadmapFile, pruned.text);
     if (reqResult && reqResult.moved.length) atomicWrite(reqFile, reqResult.text);
     const gone = new Set(applied);
-    const shipped = new Set((reqResult ? reqResult.moved : []).map((r) => r.id));
+    // every row the close ships leaves the state, not only the ones this run moved: a re-run after a failed state write
+    // finds them already filed under `## Shipped`, and they still have to go
+    const shipped = new Set(shippedRows(state.requirements, applied).map((r) => r.id));
     const landed = changeState(dir, (s) => ({
       ...withPhases(s, s.phases.filter((p) => !gone.has(p.n))),
       requirements: s.requirements.filter((r) => !shipped.has(r.id)),

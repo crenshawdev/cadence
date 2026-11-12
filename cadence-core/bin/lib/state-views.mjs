@@ -53,12 +53,16 @@ export function renderPhasesList(state, text) {
   const fenced = fenceScanner();
   /** @type {Map<number, string>} */
   const old = new Map();
+  // the malformed test stops at the first heading: a `### Phase N:` section under this one is hand-written, and a criterion in it
+  // that opens with `Phase N` is not a list entry. The canonical test runs the whole span, as the reader does
+  let inList = true;
   for (let i = start + 1; i < end; i++) {
     if (fenced(lines[i])) continue;
+    if (/^#{1,6}\s/.test(lines[i])) inList = false;
     const p = parseRoadmapPhases(`## Phases\n${lines[i].replace(/\r$/, '')}`)[0];
     if (p) old.set(i, `${p.n}|${p.name}|${p.desc}|${p.checked}`);
     // a bullet, numbered item or table row that opens with a phase is a malformed entry; the key can't match a wanted row
-    else if (MALFORMED_ENTRY.test(lines[i])) old.set(i, `malformed|${i}`);
+    else if (inList && MALFORMED_ENTRY.test(lines[i])) old.set(i, `malformed|${i}`);
   }
 
   const wanted = [...state.phases].sort((a, b) => a.n - b.n).map((p) => {

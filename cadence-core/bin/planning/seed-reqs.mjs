@@ -78,23 +78,26 @@ function cmdSeedReqs(dir, opts) {
       'add a `## Traceability` heading to REQUIREMENTS.md with a markdown table under it - a header'
       + ' row and its `| --- |` separator - then re-run; nothing was written');
   }
-  // an id the state already holds is skipped, and mismatched when its phase differs (a stale renumber)
-  const held = new Map(state.requirements.map((r) => [r.id, r]));
-  const res = { inserted: [], skipped: [], mismatched: [] };
-  const added = [];
-  for (const { id, phase } of rows) {
-    const row = held.get(id);
-    if (row) {
-      res.skipped.push(id);
-      if (row.phase !== phase) res.mismatched.push({ id, row_phase: row.phase });
-    } else {
-      res.inserted.push(id);
-      // Pending is a literal, so no writer but cad-verify can create any other Status
-      added.push({ id, phase, status: 'Pending' });
+  // judged against the state under the lock, so a second seed of the same id sees what the first one added
+  let res = { inserted: [], skipped: [], mismatched: [] };
+  const done = changeState(dir, (s) => {
+    // an id the state already holds is skipped, and mismatched when its phase differs (a stale renumber)
+    const held = new Map(s.requirements.map((r) => [r.id, r]));
+    res = { inserted: [], skipped: [], mismatched: [] };
+    const added = [];
+    for (const { id, phase } of rows) {
+      const row = held.get(id);
+      if (row) {
+        res.skipped.push(id);
+        if (row.phase !== phase) res.mismatched.push({ id, row_phase: row.phase });
+      } else {
+        res.inserted.push(id);
+        // Pending is a literal, so no writer but cad-verify can create any other Status
+        added.push({ id, phase, status: 'Pending' });
+      }
     }
-  }
-  const done = changeState(dir, (s) => ({ ...foldPhase(dir, s, n), requirements: [...s.requirements, ...added] }),
-    ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md']);
+    return { ...foldPhase(dir, s, n), requirements: [...s.requirements, ...added] };
+  }, ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md']);
   if (!done) return;
 
   // seeded and skipped are always present, even empty: a step that failed twice by writing nothing must say so
