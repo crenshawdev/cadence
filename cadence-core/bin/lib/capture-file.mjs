@@ -4,13 +4,13 @@
 // walk doesn't visit, and nothing could fail
 // heading names live in CAPTURE_WALK_SECTIONS (planning-files.mjs) and CAPTURE_HEADINGS derives from it
 // never appendFileSync at EOF: the live order ends at `## Debt markers`, outside the walk, where those bullets landed
-// the lock guard can't reach a hand edit that never takes the lock; see takeLock and appendCapture
+// the lock guard can't reach a hand edit that never takes the lock; see takeLock (planning-store.mjs) and appendCapture
 'use strict';
 
-import { readFileSync, mkdirSync, existsSync, openSync, closeSync, statSync, unlinkSync, renameSync } from 'node:fs';
+import { readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { atomicWrite, sectionSpan, CAPTURE_WALK_SECTIONS } from './planning-files.mjs';
-import { sleep } from './text-util.mjs';
+import { sectionSpan, CAPTURE_WALK_SECTIONS } from './planning-files.mjs';
+import { atomicWrite, withPlanningFileLock } from './planning-store.mjs';
 
 /**
  * The kind a caller may ask for and the heading it lands under. Not extensible: the three names are the walk's.
@@ -101,90 +101,9 @@ function read(file) {
   }
 }
 
-// --- the guard -------------------------------------------------------------
-
-/** Suffix of the sibling lock file. */
-const LOCK_SUFFIX = '.lock';
-
-/**
- * Total time a writer waits for a held lock before refusing. Ordinary overlap, two writers inside each other's write,
- * lets both bullets land. It's bounded because this sits in an interactive `/cad-capture` step. Two seconds leaves
- * margin for a twenty-writer burst on a busy runner.
- */
-const LOCK_WAIT_MS = 2_000;
-
-/** One poll interval, jittered up to double so writers that collided once don't re-collide in lockstep. */
-const LOCK_POLL_MS = 5;
-
-/**
- * A lock older than this belongs to a writer that died holding it, and is broken so a crashed `/cad-capture` can't
- * wedge the queue. Minutes, not seconds: the critical section is one small read and one rename, so the margin is for
- * a machine suspended mid-write.
- */
-const LOCK_STALE_MS = 120_000;
-
-/**
- * Take `lockPath` by exclusive create: the first writer wins, every later one
- * sees EEXIST and retries until the budget runs out.
- * @param {string} lockPath
- * @returns {{ok: true} | {ok: false, detail: string}}
- */
-function takeLock(lockPath) {
-  const deadline = Date.now() + LOCK_WAIT_MS;
-  for (;;) {
-    try {
-      // `wx` is the whole guard: atomic create-or-fail, the one exclusion primitive that needs no dependency
-      closeSync(openSync(lockPath, 'wx'));
-      return { ok: true };
-    } catch (e) {
-      const code = e && /** @type {any} */ (e).code;
-      // anything but "somebody else holds it" is a real I/O failure and retrying can't help
-      if (code !== 'EEXIST') {
-        return { ok: false,
-          detail: `could not create the lock ${lockPath}: ${e && e.message ? e.message : String(e)}` };
-      }
-    }
-    // break a stale lock by claiming it first: unlinkSync after a statSync deletes whatever is there now, so a third
-    // writer holding a dead lock's stat could unlink a fresh lock and walk in beside its owner. renameSync is atomic
-    // and single-winner: one contender moves it aside, the losers get ENOENT. Re-stat after claiming to judge our bytes
-    try {
-      if (Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS) {
-        const claimed = `${lockPath}.break.${process.pid}.${Math.random().toString(36).slice(2)}`;
-        renameSync(lockPath, claimed);
-        if (Date.now() - statSync(claimed).mtimeMs > LOCK_STALE_MS) unlinkSync(claimed);
-        // fresh after all, so we took a live writer's lock: put it back, unless something took the path meanwhile
-        else if (!existsSync(lockPath)) renameSync(claimed, lockPath);
-        else unlinkSync(claimed);
-      }
-    } catch { /* gone under us, so the next create is the retry */ }
-    if (Date.now() >= deadline) {
-      return { ok: false, detail: `another writer holds ${lockPath}` };
-    }
-    sleep(LOCK_POLL_MS + Math.floor(Math.random() * LOCK_POLL_MS));
-  }
-}
-
-/**
- * Run `fn` holding the lock on `file`, and release it whatever happens. A throw from `fn` propagates, lock released.
- * Refusing the lock is `ok:false` with `reason` (default `'capture-locked'`), a value and not a throw: a throw inside a
- * `/cad-capture` step with no handler would lose the user's sentence behind a stack trace.
- * Not capture-specific: ARCHIVE.md needs it more, since a close removes the phase directories right after its write.
- * The guard sits above atomicWrite on purpose: that promises crash-safety, not mutual exclusion.
- * @template T
- * @param {string} file @param {() => T} fn @param {string} [reason]
- * @returns {{ok: true, value: T} | {ok: false, reason: string, detail: string}}
- */
-export function withPlanningFileLock(file, fn, reason = 'capture-locked') {
-  const lockPath = `${file}${LOCK_SUFFIX}`;
-  const taken = takeLock(lockPath);
-  if (taken.ok === false) return { ok: false, reason, detail: taken.detail };
-  try {
-    return { ok: true, value: fn() };
-  } finally {
-    // finally, so a throw in the write can't leak the lock and make the next writer wait out the staleness threshold
-    try { unlinkSync(lockPath); } catch { /* already gone, a stale break took it */ }
-  }
-}
+// --- the guard ---------------------------------------------------------------
+// the lock lives in planning-store.mjs; re-exported so every current importer resolves until Plan 2 repoints them
+export { withPlanningFileLock };
 
 /**
  * How many times an overwritten bullet is re-appended before the write is called lost.
