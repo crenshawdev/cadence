@@ -110,7 +110,52 @@ export function recordsPath(planningRoot, ...parts) {
 }
 
 /**
- * Make sure the records directory is there and is a real directory. A link here would carry every log, ledger and
+ * What the records folder's own `.gitignore` holds. The rules sit beside the logs, so they move with them and edit
+ * nothing outside `.planning/`. One rule per thing a log can leave: the live record, its generation, the claim sidecar
+ * and its dated forms (a pid and a random suffix, so patterns), and the read record's two rotation temps.
+ * The base names are spelled in lib/trace.mjs and lib/read-trace.mjs, which this module can't import (builtins only,
+ * the read hook loads it), so planning-trace-ignore.test.mjs derives every name from those constants and asks git.
+ * `risk-carry/` is ignored because carried risk rulings are transient and never staged; the ledgers, the state file,
+ * the carried deferred queue and the code map are committed, so nothing here names them.
+ */
+const RECORDS_IGNORE = [
+  "# Cadence's local diagnostics: the run record, the read record, their rotated generations, claim files and",
+  '# killed-mid-rotation temps. One machine\'s events, never committed.',
+  '/trace.jsonl',
+  '/trace.1.jsonl',
+  '/trace.1.jsonl.claim',
+  '/trace.1.jsonl.claim.*',
+  '/reads.jsonl',
+  '/reads.1.jsonl',
+  '/reads.1.jsonl.claim',
+  '/reads.1.jsonl.claim.*',
+  '/reads.jsonl.rotate.*',
+  '/reads.1.jsonl.evict.*',
+  '',
+  '# Carried risk rulings are transient and never staged',
+  '/risk-carry/',
+  '',
+].join('\n');
+
+/**
+ * Write the records folder's `.gitignore` unless one is already there. An existing file is left byte-identical,
+ * hand-edited or not. Returns whether this call created it.
+ * @param {string} planningRoot
+ * @returns {boolean}
+ */
+export function ensureRecordsIgnore(planningRoot) {
+  try {
+    writeFileSync(recordsPath(planningRoot, '.gitignore'), RECORDS_IGNORE, { flag: 'wx' });
+    return true;
+  } catch {
+    // EEXIST is the ordinary case; any other failure leaves the folder unignored for `trace ignore` to report
+    return false;
+  }
+}
+
+/**
+ * Make sure the records directory is there and is a real directory, writing its `.gitignore` when this call creates
+ * it. A link here would carry every log, ledger and
  * carried queue out of the tree, so it is refused the way a symlinked file is. A planning root that is itself absent
  * stays an error (`ENOENT`): this creates the folder, never the project.
  * @param {string} planningRoot
@@ -128,9 +173,12 @@ export function ensureRecordsDir(planningRoot) {
     mkdirSync(dir);
   } catch (e) {
     const code = e && /** @type {any} */ (e).code;
-    // a concurrent first writer made it between our lstat and our mkdir
-    if (code !== 'EEXIST') return { ok: false, reason: code || 'mkdir-failed' };
+    // a concurrent first writer made it between our lstat and our mkdir, and its call writes the ignore file
+    if (code === 'EEXIST') return { ok: true };
+    return { ok: false, reason: code || 'mkdir-failed' };
   }
+  // the folder is born with its ignore file, so no log can land in it unignored
+  ensureRecordsIgnore(planningRoot);
   return { ok: true };
 }
 
