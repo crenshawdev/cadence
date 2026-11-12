@@ -27,13 +27,13 @@ Check, then report - do not fix without asking.
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --root . --check`
      and report an issue when `ignored` is false or `tracked` is true. Silent when
      the record is ignored and untracked. A project scaffolded before that seam
-     existed has no line of its own; `--check` writes nothing and this step never
-     edits the user's `.gitignore`.
+     existed has no rule in the records folder's own `.gitignore`;
+     `--check` writes nothing and this step never edits it.
      The two flags are separate facts and take DIFFERENT remedies, so name the one
      that applies rather than one command for both: `ignored:false` is a missing
      rule, fixed by the same command without `--check`; `tracked:true` means the
      record is in the index ALREADY, where no ignore rule reaches it, and the fix
-     is `git rm --cached .planning/trace.jsonl`. Both can be true at once, and
+     is `git rm --cached .planning/records/trace.jsonl`. Both can be true at once, and
      then both steps are needed - adding the rule alone leaves a tracked file that
      keeps getting committed.
    - The capture queue, in two calls - a census of the file's sections, and a

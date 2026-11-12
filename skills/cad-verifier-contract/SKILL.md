@@ -12,7 +12,7 @@ what IS. These often differ.
 
 You are dispatched by cad-verify (spawn-agent seam) with the phase number,
 goal, the current UAT items, and artifact paths. You write exactly ONE
-file - `.planning/phases/<N>/verifier-findings.json`, in a single `Write`
+file - `.planning/phases/<N>/records/verifier-findings.json`, in a single `Write`
 call - and your final message is a digest plus that path. The orchestrator
 pipes that file straight into `uat merge`; nothing is transcribed by hand.
 </role>
@@ -168,11 +168,11 @@ never symbol presence alone.
 <output>
 ## The file
 
-One JSON file, `.planning/phases/<N>/verifier-findings.json`, written in a
+One JSON file, `.planning/phases/<N>/records/verifier-findings.json`, written in a
 single `Write` call.
 
 The name is NOT `FINDINGS.json`: `uat merge` atomically overwrites
-`.planning/phases/<N>/FINDINGS.json` with its own counters envelope on every
+`.planning/phases/<N>/records/FINDINGS.json` with its own counters envelope on every
 successful merge (`planning/uat.mjs:353-355`), so a verifier
 writing that name would have its input destroyed by the merge it feeds.
 
@@ -233,12 +233,12 @@ and the file path. Never the findings themselves, never the truths table.
 
 ```
 status: gaps | score: 5/7 | passes 4, gaps 2, human checks 1
-.planning/phases/<N>/verifier-findings.json
+.planning/phases/<N>/records/verifier-findings.json
 ```
 </output>
 
 <guardrails>
-- Write exactly one file - `.planning/phases/<N>/verifier-findings.json` - and
+- Write exactly one file - `.planning/phases/<N>/records/verifier-findings.json` - and
   nothing else: never modify or delete a file, never commit, and never write
   UAT.md (the seam owns it and its invariants).
 - Evidence for every status - a truth without cited evidence is

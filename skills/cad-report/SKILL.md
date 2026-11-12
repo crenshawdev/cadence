@@ -9,7 +9,7 @@ allowed-tools:
 ---
 
 <objective>
-Turn `.planning/trace.jsonl` and a phase's artifacts into the story of what
+Turn `.planning/records/trace.jsonl` and a phase's artifacts into the story of what
 your tokens bought: every dispatch priced, every gate's outcome named, every
 refuted assumption cited. Read-only - it renders the record, it never writes
 it. `--all` spans the whole record for a milestone-shaped view.
