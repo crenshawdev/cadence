@@ -132,6 +132,8 @@ const COMMANDS = {
   // a phase's list entry, written to the state; the `## Phases` line is rendered from it
   'phase-entry': async (dir, sub, opts) =>
     (await import('./planning/phase-entry.mjs')).cmdPhaseEntry(dir, sub, opts),
+  // re-points one requirement row at a phase, or defers a Pending one; the `## Traceability` row is rendered from it
+  'req-row': async (dir, _sub, opts) => (await import('./planning/req-row.mjs')).cmdReqRow(dir, opts),
   'milestone-prune': async (dir, _sub, opts) =>
     (await import('./planning/milestone-prune.mjs')).cmdMilestonePrune(dir, opts),
   // rebuilds a state file that is there and does not parse from the artifacts; every other call refuses until it runs

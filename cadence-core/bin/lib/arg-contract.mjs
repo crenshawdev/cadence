@@ -650,6 +650,12 @@ export const CONTRACTS = {
       '--description': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--description-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // exactly one of --phase and --defer per call, which a row can't state, so the seam refuses neither-or-both
+    'req-row': {
+      '--id': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--defer': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
   },
   'config.mjs': {
     '*': {},
