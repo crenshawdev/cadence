@@ -236,6 +236,40 @@ export function writeState(planningRoot, state) {
   return locked(planningRoot, (file) => commit(file, shaped.state));
 }
 
+/** The invalid states a rebuild may replace: ones it read and judged. A newer layout or a file it could not read is not one. */
+const REBUILDABLE = ['not-json', 'no-stamp', 'bad-shape'];
+
+/**
+ * Replace a state file that is there and does not parse with `state`, the look and the write under one lock, so a state
+ * another call made valid meanwhile is never overwritten. A valid or absent file is left alone (`changed: false`), since a
+ * valid one may hold what no artifact does. `afterWrite` renders the views under the same lock, as in `updateState`.
+ * @param {string} planningRoot @param {ProjectState} state @param {(state: ProjectState) => void} [afterWrite]
+ * @returns {(StateWrite & {ok: true, was: StateRead['kind'] | string}) | (Exclude<StateWrite, {ok: true}> & {stateWritten?: boolean})
+ *   | {ok: false, reason: 'newer-layout' | 'unreadable', detail: string}}
+ */
+export function rebuildState(planningRoot, state, afterWrite) {
+  const shaped = shapeOf(state);
+  if (shaped.ok === false) return { ok: false, reason: 'bad-shape', detail: shaped.detail };
+  const box = /** @type {{was: string, refused: {reason: 'newer-layout' | 'unreadable', detail: string} | null, committed: boolean}} */ ({ was: 'absent', refused: null, committed: false });
+  const wrote = locked(planningRoot, (file) => {
+    const now = readState(planningRoot);
+    box.was = now.kind === 'invalid' ? now.reason : now.kind;
+    if (now.kind !== 'invalid') return { ok: true, changed: false };
+    if (!REBUILDABLE.includes(now.reason)) {
+      box.refused = { reason: /** @type {'newer-layout' | 'unreadable'} */ (now.reason), detail: `${file}: ${now.detail}` };
+      return { ok: true, changed: false };
+    }
+    const done = commit(file, shaped.state);
+    if (done.ok) box.committed = true;
+    if (done.ok && afterWrite) afterWrite(structuredClone(shaped.state));
+    return done;
+  });
+  if (box.refused) return { ok: false, ...box.refused };
+  if (wrote.ok) return { ...wrote, was: box.was };
+  const failed = /** @type {Exclude<StateWrite, {ok: true}>} */ (wrote);
+  return box.committed ? { ...failed, stateWritten: true } : failed;
+}
+
 /**
  * Read, change and write with the lock held across all three, so two seams updating different facts can't erase each
  * other. `change` gets a copy and returns the next state. A file that is absent or invalid is a refusal, not a

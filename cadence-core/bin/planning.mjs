@@ -131,6 +131,8 @@ const COMMANDS = {
     (await import('./planning/renumber.mjs')).cmdRenumber(dir, sub, opts),
   'milestone-prune': async (dir, _sub, opts) =>
     (await import('./planning/milestone-prune.mjs')).cmdMilestonePrune(dir, opts),
+  // rebuilds a state file that is there and does not parse from the artifacts; every other call refuses until it runs
+  'state-rebuild': async (dir, _sub, _opts) => (await import('./planning/migrate.mjs')).cmdStateRebuild(dir),
 };
 
 try {
@@ -172,8 +174,10 @@ try {
     // a release touches only the claim file in the git dir, and the conversion refuses while a claim is held,
     // so it skips the gate or a dead claim could never be freed; take still converts first or a workflow would block itself
     const freeing = cmd === 'workflow-claim' && sub === 'release';
+    // a state file that does not parse refuses every call but the one that rebuilds it; an unstamped project still converts first
+    const mode = late ? 'before' : cmd === 'state-rebuild' ? 'rebuild' : 'now';
     const { ensureState, conversionNote, holdAnswer } = await import('./planning/migrate.mjs');
-    if (freeing || ensureState(planningDir, late ? 'before' : 'now')) {
+    if (freeing || ensureState(planningDir, mode)) {
       const afterwards = late && !('check' in opts);
       // the call that converted adds one field to its own answer, so its stdout is held until the field can join
       const release = conversionNote() || afterwards ? holdAnswer() : null;

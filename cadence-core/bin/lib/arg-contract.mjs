@@ -311,6 +311,8 @@ export const CONTRACTS = {
     'seed-reqs': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
+    // no flags of its own: it rebuilds the state file of the planning directory --dir names
+    'state-rebuild': {},
     // --plan-time is the same operation asked before an executor runs, against the plan's declared lease and the
     // census registry, not after the fact against the staged set. A flag, not a second word. --plan stays required on
     // both arms, since neither can resolve a plan file without it.

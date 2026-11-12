@@ -54,9 +54,11 @@ Its one JSON line carries everything this workflow reads:
   present, the same rule `deferred` carries: an absent key means a seam that
   predates the field, never "nothing is outstanding".
 
-On `ok:false`, relay `reason`/`hint` (e.g. `no-planning-dir` -> "No Cadence
-project here. /cad-new-project starts one from a blank page; /cad-adopt starts
-one from a repo that already has code and history.") and stop.
+On `ok:false` with `invalid-state` and a hint naming `state-rebuild`, go to
+the reconcile step's first arm. On any other `ok:false`, relay `reason`/`hint`
+(e.g. `no-planning-dir` -> "No Cadence project here. /cad-new-project starts
+one from a blank page; /cad-adopt starts one from a repo that already has code
+and history.") and stop.
 
 On `--stats`, branch straight to the stats step now - it derives its own commit
 timeline and needs nothing else; do NOT walk reconcile, which writes STATE.md,
@@ -69,7 +71,16 @@ prior call's output is serialized.
 </step>
 
 <step name="reconcile">
-- Drift kind `cursor` (or no STATE.md at all): rewrite the cursor to the
+- `invalid-state` naming `state-rebuild`: the state file does not parse. Run
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" state-rebuild
+  ```
+
+  then `status` again and go on with that answer. Never repair the file by
+  hand. A refused rebuild: relay its `reason`/`hint` and stop.
+- Drift kind `cursor`, or no `cursor` in the answer (no STATE.md, or a
+  rebuilt state that had none to keep): rewrite the cursor to the
   derivation through the seam - never by hand:
 
   ```

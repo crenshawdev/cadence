@@ -7,7 +7,8 @@
 // a worktree executor, a held workflow claim and a live `cadence/phase-<N>-plan-<k>` worktree each refuse; no hook script imports this file
 // the script makes no commit: the answer of the call that converted says whether one is due (`conversionNote`)
 // a move is a plain rename through the write module and a moved file is never read, so review, adjudication and deferred files keep their bytes
-// a project the importer can't read gets no stamp, and a state file that is there but not valid is never rewritten here
+// a project the importer can't read gets no stamp, and a state file that is there but not valid is rewritten only by
+// `state-rebuild` (`cmdStateRebuild`), the one call the gate lets through for it; that rebuild moves nothing
 // a seam that reports what the project had BEFORE (`trace ignore`) asks for mode 'before' ahead of its handler, which judges
 // everything and writes nothing, and mode 'after' once it has answered, which converts and says nothing more
 // a Rust-era `.planning/state.json` and everything this file does not name are left exactly where they are
@@ -17,14 +18,14 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fail } from './core.mjs';
-import { importState, writeViews } from './state-import.mjs';
+import { fail, ok } from './core.mjs';
+import { importState, loadState, writeViews } from './state-import.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   archivePath, codemapDir, declinedPath, deferredDir, ensurePhaseRecordsDir, ensureRecordsDir, ensureRecordsIgnore,
   filedPath, movePath, phaseRecordsDir, phaseReportsDir, recordsDir, recordsPath, riskCarryDir, unlinkFile, withPlanningFileLock,
 } from '../lib/planning-store.mjs';
-import { readState, STATE_LAYOUT, statePath, writeState } from '../lib/project-state.mjs';
+import { readState, rebuildState, STATE_LAYOUT, statePath, writeState } from '../lib/project-state.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { CLAIM_FILE, claimHolder } from '../lib/workflow-claim.mjs';
 
@@ -37,6 +38,8 @@ const PHASE_FILES = ['FINDINGS.json', 'verifier-findings.json'];
 const PLAN_BRANCH = /^cadence\/phase-\d+(?:\.\d+)?-plan-\d+$/;
 /** The lock file a conversion holds, beside the state file's own folder; gone again when the call ends. */
 const LOCK_NAME = 'layout-migration';
+/** The three generated views, rendered from the state; one the project never had is not invented. */
+const VIEWS = ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md'];
 /** How many paths a refusal names before it says "and N more". */
 const NAMED_MAX = 8;
 
@@ -345,7 +348,7 @@ function convert(dir, moves) {
   }
   const worked = existsSync(join(dir, 'ROADMAP.md')) || steps.length > 0;
   // a view the project never had is not invented here; the seams that own the cursor write STATE.md when they first set it
-  if (worked) writeViews(dir, imported.state, ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md'].filter((v) => existsSync(join(dir, v))));
+  if (worked) writeViews(dir, imported.state, VIEWS.filter((v) => existsSync(join(dir, v))));
   if (worked) {
     const due = commitDue(dir);
     note = { converted: true, layout: STATE_LAYOUT, commit_due: due,
@@ -354,10 +357,59 @@ function convert(dir, moves) {
   return null;
 }
 
+/** A refusal's hint for a state file that is there but not valid, by why it is not. @param {string} why */
+function invalidHint(why) {
+  if (why === 'newer-layout') return 'this project was written by a newer Cadence - update the plugin; the file was not touched';
+  if (why === 'unreadable') return 'make the state file readable and re-run - it was not touched, since a file that could not be read may still be valid';
+  return 'run `planning.mjs state-rebuild`, which rebuilds the state file from the project\'s files, then re-run this; nothing was changed';
+}
+
+/**
+ * `state-rebuild`: a state file that is there and does not parse is replaced, under its lock, with what the importer reads
+ * from the project as it stands, stamped at this layout, and the views are rendered from it. Nothing moves: a rebuild is
+ * not a conversion. A valid state is left alone, since it may hold what no artifact does.
+ * @param {string} dir
+ */
+export function cmdStateRebuild(dir) {
+  const file = statePath(dir);
+  const got = readState(dir);
+  // an unstamped project was converted before this ran, so absent here is the linked planning directory nothing stamps
+  if (got.kind === 'absent') return loadState(dir);
+  if (got.kind === 'valid') return ok({ rebuilt: false, file, detail: 'the state file is valid, so nothing was rebuilt' });
+  if (got.reason === 'newer-layout' || got.reason === 'unreadable') {
+    return fail('invalid-state', `${file}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
+  }
+  const imported = importState(dir);
+  if (imported.ok === false) {
+    const { reason, detail, issues, hint } = imported;
+    return emit({ ok: false, reason, detail, ...(issues ? { issues } : {}), hint: `${hint} - the state file was not touched` });
+  }
+  /** @type {string[]} */
+  const views = [];
+  const wrote = rebuildState(dir, imported.state, (state) => {
+    writeViews(dir, state, VIEWS.filter((v) => existsSync(join(dir, v))), views);
+  });
+  if (wrote.ok === false) {
+    if (wrote.reason === 'newer-layout' || wrote.reason === 'unreadable') {
+      return fail('invalid-state', wrote.detail, invalidHint(wrote.reason));
+    }
+    const written = 'stateWritten' in wrote && wrote.stateWritten;
+    return fail('state-write-failed', `${file}: ${wrote.reason} - ${wrote.detail}`, written
+      ? 'the state file was rebuilt, but the generated files may still show the old state - fix the cause the detail names; the next state write renders them again'
+      : 'fix the cause the detail names and re-run - the state file was not touched');
+  }
+  // another call made the file valid between the look and the lock
+  if (!wrote.changed && wrote.was === 'valid') return ok({ rebuilt: false, file, detail: 'the state file is valid, so nothing was rebuilt' });
+  const s = imported.state;
+  return ok({ rebuilt: true, file, layout: STATE_LAYOUT, was: got.reason,
+    phases: s.phases.length, requirements: s.requirements.length, cursor: s.cursor !== null, views });
+}
+
 /**
  * Make sure the planning directory has a valid state file before a handler runs, converting an unstamped project once.
  * @param {string} dir the planning directory the call resolved
- * @param {'now' | 'before' | 'after'} [mode] 'now' judges and converts; 'before' judges only; 'after' converts with no refusal emitted
+ * @param {'now' | 'before' | 'after' | 'rebuild'} [mode] 'now' judges and converts; 'before' judges only; 'after' converts
+ *   with no refusal emitted; 'rebuild' is 'now' that lets a state file that is there but not valid through to `state-rebuild`
  * @returns {boolean} true when the handler may run; false when a refusal has been emitted and the handler must not
  */
 export function ensureState(dir, mode = 'now') {
@@ -375,11 +427,10 @@ export function ensureState(dir, mode = 'now') {
   if (got.kind === 'valid') return true;
 
   if (got.kind === 'invalid') {
+    // the rebuild judges the file again under its own lock, newer layouts and unreadable files included
+    if (mode === 'rebuild') return true;
     if (quiet) return false;
-    fail('invalid-state', `${statePath(dir)}: ${got.reason} - ${got.detail}`,
-      got.reason === 'newer-layout'
-        ? 'this project was written by a newer Cadence - update the plugin; the file was not touched'
-        : '/cad-progress rebuilds the state file from the project\'s files; nothing was changed');
+    fail('invalid-state', `${statePath(dir)}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
     return false;
   }
 
