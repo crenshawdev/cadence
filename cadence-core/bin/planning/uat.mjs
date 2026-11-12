@@ -10,7 +10,7 @@ import { fail, intFlag, phaseGuard, ok, read, readJsonPayload } from './core.mjs
 import {
   UAT_FIELDS_VERSION, UAT_ORIGINS, UAT_SOURCES, parseUat, renderUat, uatComplete,
 } from '../lib/planning-files.mjs';
-import { atomicWrite } from '../lib/planning-store.mjs';
+import { atomicWrite, ensurePhaseRecordsDir } from '../lib/planning-store.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 
 function uatFile(dir, n) { return join(dir, 'phases', String(n), 'UAT.md'); }
@@ -345,11 +345,12 @@ function cmdUat(dir, sub, opts) {
     writeUat(dir, n, uat);
     // own file, not a UAT.md section: the next uat record would drop a "## Verifier findings" block and look durable
     // written on every successful merge, even all-zero, so no file means no merge ran
-    const findingsRel = `phases/${n}/FINDINGS.json`;
+    const findingsRel = `phases/${n}/records/FINDINGS.json`;
     let findingsError = null;
     try {
       // under --dir like uatFile, or a temp-tree merge writes into the cwd
-      atomicWrite(join(dir, 'phases', String(n), 'FINDINGS.json'),
+      const records = ensurePhaseRecordsDir(join(dir, 'phases', String(n)));
+      atomicWrite(join(records, 'FINDINGS.json'),
         `${JSON.stringify({ auto_passed: auto, gaps, added, skipped, rejected,
           rejected_entries: rejectedEntries, skipped_entries: skippedEntries }, null, 2)}\n`);
     } catch (e) {

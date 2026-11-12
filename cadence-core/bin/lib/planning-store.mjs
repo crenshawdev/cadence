@@ -187,6 +187,21 @@ export function phaseRecordsDir(phaseDir) {
   return join(phaseDir, RECORDS_DIR);
 }
 
+/**
+ * Make a phase's records directory, for a writer about to put a file there. A link or a file where the folder belongs
+ * is a throw, since a write through a link would leave the planning tree.
+ * @param {string} phaseDir
+ * @returns {string} the records directory
+ */
+export function ensurePhaseRecordsDir(phaseDir) {
+  const dir = phaseRecordsDir(phaseDir);
+  let st = null;
+  try { st = lstatSync(dir); } catch { /* not made yet */ }
+  if (st && !st.isDirectory()) throw new Error(`${dir} is not a real directory, so nothing is written there`);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 /** The executor reports directory inside a phase's records. @param {string} phaseDir */
 export function phaseReportsDir(phaseDir) {
   return join(phaseRecordsDir(phaseDir), 'reports');

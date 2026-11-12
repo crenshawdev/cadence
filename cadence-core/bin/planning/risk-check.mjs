@@ -42,8 +42,8 @@ function surfaceVocabulary() {
 const REVIEWER_TEXT_PATHSPECS = Object.freeze([
   ':(top,exclude).planning/phases/*/records/ADJUDICATION-*.json',
   ':(top,exclude).planning/phases/*/records/REVIEW-*.md',
-  ':(top,exclude).planning/phases/*/FINDINGS.json',
-  ':(top,exclude).planning/phases/*/verifier-findings.json',
+  ':(top,exclude).planning/phases/*/records/FINDINGS.json',
+  ':(top,exclude).planning/phases/*/records/verifier-findings.json',
 ]);
 
 // the check used to be prose telling a model to scan a diff, and a skipped one looked the same as a clean one
