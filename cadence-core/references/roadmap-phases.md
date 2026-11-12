@@ -7,6 +7,11 @@ state rather than a parse failure, and so that a line which looks like a phase
 but is not one is reported with its own diagnostic rather than guessed at in
 either direction.
 
+In a project with a state file the list is generated from it: `phase-entry
+add|edit`, `renumber`, `phase-done` and `milestone-prune` change it, and a
+hand-written line is overwritten on the next state write. The grammar below is
+the line the renderer writes and the importer reads.
+
 Two functions in `cadence-core/bin/lib/planning-files.mjs` implement it:
 `parseRoadmapPhases` (the canonical entry, unchanged) and `classifyPhaseList`
 (the classifier over the section). Every claim below is pinned by a row in the
@@ -119,18 +124,28 @@ it in `source`: that is what says which of the two a record describes.
 
 ## The four states
 
-| State | When | `status` does | `cursor set` does |
-|---|---|---|---|
-| `live` | One or more canonical entries in the canonical extent | Today's derivation: `current`, `total`, per-phase status | Derives `name` from the matching entry, `total` from the entry count |
-| `closed` | No canonical entry AND no phase token anywhere below the heading | `ok:true` with `cycle:"none"` (see below) | Fills `no active cycle` / `0` for whichever of name/total was not passed |
-| `out-of-grammar` | No canonical entry, but a phase token survives somewhere below the heading | `ok:false`, `reason:"unparseable-roadmap"`, `detail` naming the FIRST offending line, `issues` listing every one | Nothing: falls through to the prior cursor, then `cannot-derive` |
-| `no-section` | No `## Phases` heading at all | `ok:false`, `reason:"unparseable-roadmap"`, detail "no `## Phases` section in ROADMAP.md" | Same as `out-of-grammar` |
+In a project that has a state file, `status` answers from the state: it
+refuses only a missing `## Phases` heading and does not classify the lines
+under it. The four states are what the importer reports when an unstamped
+project is converted or `state-rebuild` rebuilds a state file:
 
-`out-of-grammar` deliberately does NOT derive a closed cursor. A roadmap
-holding unrecognized phase-shaped lines is broken, not closed, and writing
-`of 0` there would erase a live cycle's total.
+| State | When | The import does |
+|---|---|---|
+| `live` | One or more canonical entries in the canonical extent | Reads each entry into the state's phases |
+| `closed` | No canonical entry AND no phase token anywhere below the heading | An empty phase list with no cycle open; `status` then answers `cycle:"none"` (see below) |
+| `out-of-grammar` | No canonical entry, but a phase token survives somewhere below the heading | Refuses `unparseable-roadmap`, `detail` naming the FIRST offending line, `issues` listing every one |
+| `no-section` | No `## Phases` heading at all | Refuses `unparseable-roadmap`, detail "no `## Phases` section in ROADMAP.md" |
+
+`out-of-grammar` deliberately does NOT import as closed. A roadmap holding
+unrecognized phase-shaped lines is broken, not closed, and an empty phase list
+there would erase a live cycle.
 
 ## Out of grammar
+
+These codes are the importer's. Where a state file exists there is nothing to
+repair: the next state write regenerates the list from the state. Where the
+conversion or the rebuild refused the roadmap, the list is still the input,
+and the Fix column says how to repair its line by hand.
 
 These shapes are NOT phases. Each is reported with its own code, at most one
 per line, in line order, as `{line, code, text}` - `line` 1-indexed into the
@@ -140,10 +155,10 @@ grammar uses. Every row is pinned by a test.
 
 | Code | Example line | What the classifier does | Fix |
 |---|---|---|---|
-| `phase-bullet` | `- Phase 1: Ship auth`, `- ✓ Phase 1: Auth`, `- [ ] Phase 1: Auth`, `- [ ] **Phase 1 Auth**` | Reports the line; the phase list is out of grammar, never closed | Rewrite as the canonical entry - checkbox, bold span, colon after the number |
-| `phase-heading` | `### Phase 1: Auth` (a detail section outliving its list line), `## Phase 12: Auth` | Same | Finish the prune (remove the detail section too), or restore the list line |
-| `phase-ordered-item` | `1. Phase 1: Auth`, `1) Phase 1: Auth` | Same | Rewrite as the canonical entry |
-| `phase-table-row` | `\| Phase 1 \| Auth \|` | Same | Rewrite as the canonical entry; ROADMAP has no phase table |
+| `phase-bullet` | `- Phase 1: Ship auth`, `- ✓ Phase 1: Auth`, `- [ ] Phase 1: Auth`, `- [ ] **Phase 1 Auth**` | Reports the line; the phase list is out of grammar, never closed | In a roadmap the conversion or the rebuild refused: Rewrite as the canonical entry - checkbox, bold span, colon after the number |
+| `phase-heading` | `### Phase 1: Auth` (a detail section outliving its list line), `## Phase 12: Auth` | Same | Finish the prune (remove the detail section too), or, in a roadmap the conversion or the rebuild refused, restore the list line |
+| `phase-ordered-item` | `1. Phase 1: Auth`, `1) Phase 1: Auth` | Same | In a roadmap the conversion or the rebuild refused: Rewrite as the canonical entry |
+| `phase-table-row` | `\| Phase 1 \| Auth \|` | Same | In a roadmap the conversion or the rebuild refused: Rewrite as the canonical entry; ROADMAP has no phase table |
 | `phase-prose-line` | `Phase 2 rolls to the next milestone.` | Same - the catch-all, so a shape outside the grammar gets a diagnostic rather than silence | Move the sentence out of the `## Phases` section, or lowercase the reference (`phase 2` is prose) |
 | `phase-outside-section` | a byte-perfect `- [ ] **Phase 1: Auth** - desc` sitting under a LATER `## ` heading | Same - but the shape is already canonical, so the fault is the location, not the syntax | Move the entry up into `## Phases`; it is the right line under the wrong heading |
 
@@ -164,27 +179,15 @@ milestone close and the next cycle - not an error:
   field is present ONLY in this state, and it is what stops a caller branching
   on `current === null` alone from reading a closed milestone as "all phases
   complete" and routing back to `/cad-milestone`. The next action is
-  `/cad-phase add`, the only workflow that appends a phase line to an existing
-  roadmap.
+  `/cad-phase add`, which enters a phase through `phase-entry add`.
 - A surviving `phases/<N>/` directory is reported as drift kind `phase-dir`,
   computed in `cmdStatus` from the filesystem. The classifier itself never
   reads the filesystem, so the pair is accurate: the milestone IS closed AND
   the prune was interrupted. One orphan directory can never block the closed
   state.
-- The cursor reads `Phase: <N> of 0 (no active cycle)`, which still satisfies
-  the canonical cursor shape (`references/conventions.md`) - the name group is
-  non-empty. `cursor set` derives it with no `--name` or `--total` flags. No
-  new lifecycle status exists for this state.
-- A cursor whose `total` is not `0` against a zero-phase roadmap reports drift
-  kind `cursor` regardless of agreement: after a tagged close deletes the
-  phase directories, that stale `of <M>` is the only surviving evidence the
-  close never finished.
-- `--status paused` is the ONE status that does NOT derive `of 0` here. It
-  preserves a non-zero prior `total` (and that cursor's name) when the prior
-  cursor names the same phase. Pausing is a hold, not a transition, and
-  `/cad-pause` calls `cursor set` flaglessly - deriving `0` would let a pause
-  silently erase the evidence the bullet above depends on. Every other status
-  derives `no active cycle` / `0` as usual.
+- `STATE.md` says in words that no cycle is open and keeps `Next:` and
+  `Updated:`, with no `Phase:` line (`references/conventions.md`). The same
+  `cursor set` call writes it. No new lifecycle status exists for this state.
 - Cursor agreement against an empty phase list:
 
 | Cursor status | Agrees | Why |
