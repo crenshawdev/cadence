@@ -89,6 +89,9 @@ const COMMANDS = {
   // the adjudicated gate's Markdown review file; the other gates keep their JSON
   'review-file': async (dir, _sub, opts) =>
     (await import('./planning/review-file.mjs')).cmdReviewFile(dir, opts),
+  // makes a phase's records folder for a writer that cannot, such as the advisory reviewer's heredoc
+  'records-dir': async (dir, _sub, opts) =>
+    (await import('./planning/records-dir.mjs')).cmdRecordsDir(dir, opts),
   // a finished review-panel run, read from its run file, becomes the record's payload and the review file's input
   'workflow-run': async (dir, _sub, opts) =>
     (await import('./planning/workflow-run.mjs')).cmdWorkflowRun(dir, opts),

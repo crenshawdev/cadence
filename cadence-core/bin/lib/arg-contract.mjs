@@ -427,6 +427,10 @@ export const CONTRACTS = {
       // the correction face: marks survivor <n> re-ruled, the payload then being {ruling, found} and not the survivors
       '--mark': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
+    // makes phases/<N>/records/ (or the carried queue's) when absent; nothing else, and a linked folder is refused
+    'records-dir': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
     // A finished review-panel run to the record's payload and the review file's input. --run-file is the host's
     // `<session>/workflows/<run id>.json`, read whole because the completion notice cuts a long result short. --out-dir is
     // this run's scratch directory and must exist; the payload, the survivors and the kept answers land in it.

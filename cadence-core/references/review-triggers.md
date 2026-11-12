@@ -195,7 +195,15 @@ reviewer set never does. Per backend:
   dispatch recorded with findings and return lost is a review that burned a
   full dispatch to report to nobody. So when step 1 resolved the gate
   `advisory`, the DISPATCH PROMPT carries a persistence tail and the REVIEWER,
-  not this site, closes the bracket:
+  not this site, closes the bracket. The reviewer's heredoc makes no parent
+  folder, so BEFORE the dispatch this site makes the phase's records folder
+  (a link there is refused), with `<N>` as the bracket above names it:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" records-dir --phase <N>
+  ```
+
+  The tail carries:
   - the findings path `.planning/phases/<N>/records/REVIEW-<trigger>.md` (a per-plan
     fire suffixes it: `REVIEW-diff-plan-<k>.md`), where the reviewer writes
     the same JSON object it returns, and
