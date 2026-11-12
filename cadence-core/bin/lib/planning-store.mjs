@@ -175,6 +175,55 @@ export function codemapDir(planningRoot) {
   return recordsPath(planningRoot, 'codemap');
 }
 
+// --- a phase's records folder -----------------------------------------------
+// the same folder name sits inside each phase; the functions take the phase DIRECTORY, so `phases/<N>/` and an archived
+// `_archive-<label>/<N>/` resolve alike. Nothing here creates a directory: the caller makes one when it first writes
+
+/**
+ * A phase's records directory: where its executor reports, review, adjudication and deferred files, and findings go.
+ * @param {string} phaseDir
+ */
+export function phaseRecordsDir(phaseDir) {
+  return join(phaseDir, RECORDS_DIR);
+}
+
+/** The executor reports directory inside a phase's records. @param {string} phaseDir */
+export function phaseReportsDir(phaseDir) {
+  return join(phaseRecordsDir(phaseDir), 'reports');
+}
+
+/** The area reserved for the review redesign's files; the names inside it are not decided yet. @param {string} phaseDir */
+export function phaseReviewsDir(phaseDir) {
+  return join(phaseRecordsDir(phaseDir), 'reviews');
+}
+
+/** The area reserved for the structured returns; the names inside it are not decided yet. @param {string} phaseDir */
+export function phaseReturnsDir(phaseDir) {
+  return join(phaseRecordsDir(phaseDir), 'returns');
+}
+
+/**
+ * One path component for an area, refused when it could leave the area. The result is handed to a write, so a bad
+ * name is a throw and not a value to check.
+ * @param {string} name
+ */
+function areaName(name) {
+  if (typeof name !== 'string' || name === '' || name === '.' || name === '..' || /[/\\\0]/.test(name)) {
+    throw new Error(`records: ${JSON.stringify(name)} is not a file name inside a records area`);
+  }
+  return name;
+}
+
+/** The path of a named review record inside a phase's reviews area. @param {string} phaseDir @param {string} name */
+export function phaseReviewPath(phaseDir, name) {
+  return join(phaseReviewsDir(phaseDir), areaName(name));
+}
+
+/** The path of a named structured return inside a phase's returns area. @param {string} phaseDir @param {string} name */
+export function phaseReturnPath(phaseDir, name) {
+  return join(phaseReturnsDir(phaseDir), areaName(name));
+}
+
 /**
  * Write the records folder's `.gitignore` unless one is already there. An existing file is left byte-identical,
  * hand-edited or not. Returns whether this call created it.
