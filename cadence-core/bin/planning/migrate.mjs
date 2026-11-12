@@ -5,7 +5,7 @@
 // the project at its new place, writes it LAST with the layout number, and regenerates the three views from it
 // it judges everything first and moves nothing unless every judgment passes, so a refused project is byte-identical
 // a worktree executor, a held workflow claim and a live `cadence/phase-<N>-plan-<k>` worktree each refuse; no hook script imports this file
-// the script makes no commit
+// the script makes no commit: the answer of the call that converted says whether one is due (`conversionNote`)
 // a move is a plain rename through the write module and a moved file is never read, so review, adjudication and deferred files keep their bytes
 // a project the importer can't read gets no stamp, and a state file that is there but not valid is never rewritten here
 // a seam that reports what the project had BEFORE (`trace ignore`) asks for mode 'before' ahead of its handler, which judges
@@ -16,6 +16,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { fail } from './core.mjs';
 import { importState, writeViews } from './state-import.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
@@ -23,7 +24,7 @@ import {
   archivePath, codemapDir, declinedPath, deferredDir, ensurePhaseRecordsDir, ensureRecordsDir, ensureRecordsIgnore,
   filedPath, movePath, phaseRecordsDir, phaseReportsDir, recordsPath, riskCarryDir,
 } from '../lib/planning-store.mjs';
-import { readState, statePath, writeState } from '../lib/project-state.mjs';
+import { readState, STATE_LAYOUT, statePath, writeState } from '../lib/project-state.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { dirents } from '../lib/surface-weight.mjs';
 import { claimHolder } from '../lib/workflow-claim.mjs';
@@ -40,6 +41,46 @@ const NAMED_MAX = 8;
 
 /** @typedef {{reason: string, detail: string, hint: string, issues?: unknown[]}} Refusal */
 /** @typedef {{from: string, to: string, phase: string | null, link: boolean, whole: boolean, skip: boolean}} Move */
+
+/** @type {{converted: true, layout: number, commit_due: boolean, hint?: string} | null} What the last converting call says about itself; null when it converted nothing. */
+let note = null;
+
+/**
+ * The added field a converting call's answer carries: that it converted, and whether a commit is due.
+ * @returns {{converted: true, layout: number, commit_due: boolean, hint?: string} | null}
+ */
+export function conversionNote() {
+  return note;
+}
+
+/**
+ * Hold what the process writes to stdout until the returned function runs, which puts the converting call's field into
+ * the one JSON answer and writes it. The handlers emit through their own channel, so this is the one place the field joins.
+ * @returns {() => void}
+ */
+export function holdAnswer() {
+  const write = process.stdout.write;
+  /** @type {string[]} */
+  const chunks = [];
+  // @ts-ignore a stand-in for the stream's write; only the text matters here
+  process.stdout.write = (chunk, ...rest) => {
+    chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+    const done = rest.find((r) => typeof r === 'function');
+    if (done) done();
+    return true;
+  };
+  return () => {
+    process.stdout.write = write;
+    let text = chunks.join('');
+    if (note) {
+      try {
+        const answer = JSON.parse(text);
+        if (answer && typeof answer === 'object' && !Array.isArray(answer)) text = `${JSON.stringify({ ...answer, migration: note })}\n`;
+      } catch { /* not one JSON object, so it goes out as it came */ }
+    }
+    if (text) process.stdout.write(text);
+  };
+}
 
 /** One git read: trimmed stdout, or null on any failure. @param {string[]} args @param {string} [cwd] */
 function git(args, cwd) {
@@ -209,6 +250,25 @@ function judge(dir) {
 }
 
 /**
+ * Is a commit due after a conversion: the project commits its planning files, and git does not ignore them.
+ * @param {string} dir
+ */
+function commitDue(dir) {
+  // the config seam resolves the key across both layers and the schema default, so this file holds no second merge
+  try {
+    const got = JSON.parse(execFileSync(process.execPath, [fileURLToPath(new URL('../config.mjs', import.meta.url)),
+      'get', '--file', join(resolve(dir), 'config.json'), 'planning.commit_docs'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+    if (got.values?.['planning.commit_docs'] === false) return false;
+  } catch { /* unreadable settings leave the default, which is to commit */ }
+  const root = resolve(dir, '..');
+  if (git(['-C', root, 'rev-parse', '--git-dir']) === null) return false;
+  try {
+    execFileSync('git', ['-C', root, 'check-ignore', '-q', '--', join(resolve(dir), 'ROADMAP.md')], { stdio: 'ignore' });
+    return false;
+  } catch { return true; }
+}
+
+/**
  * Do the moves, then build the state from the project at its new place, write it last and render the views.
  * @param {string} dir @param {Move[]} moves
  * @returns {Refusal | null}
@@ -239,7 +299,13 @@ function convert(dir, moves) {
     return { reason: 'state-write-failed', detail: `${statePath(dir)}: ${wrote.reason} - ${wrote.detail}`,
       hint: 'fix the cause the detail names and re-run - no state file was written, and the project files were not changed' };
   }
-  if (existsSync(join(dir, 'ROADMAP.md')) || steps.length > 0) writeViews(dir, imported.state, ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md']);
+  const worked = existsSync(join(dir, 'ROADMAP.md')) || steps.length > 0;
+  if (worked) writeViews(dir, imported.state, ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md']);
+  if (worked) {
+    const due = commitDue(dir);
+    note = { converted: true, layout: STATE_LAYOUT, commit_due: due,
+      ...(due ? { hint: 'make one commit of the planning directory before going on (git add -A on it, then git commit), under the rule in references/git-guard.md' } : {}) };
+  }
   return null;
 }
 
@@ -251,6 +317,7 @@ function convert(dir, moves) {
  */
 export function ensureState(dir, mode = 'now') {
   const quiet = mode === 'after';
+  note = null;
   // no directory, or a file where it belongs, is the handler's to report (`no-planning-dir`, or its own best-effort answer)
   let st = null;
   try { st = statSync(dir); } catch { /* absent */ }

@@ -7,7 +7,7 @@
 // Fields are additive-only, so don't rename one
 // --dir overrides `.planning` for tests; --root names the project root for commands that read source
 // A new subcommand is a COMMANDS entry, never an if-chain
-// Before a handler runs, planning/migrate.mjs gives the project its state file (records/state.json) if it has none
+// Before a handler runs, planning/migrate.mjs gives the project its state file (records/state.json), converting an unstamped v4.0 project into the layout once
 'use strict';
 
 import {
@@ -169,10 +169,17 @@ try {
     // `trace ignore` reports what the project had before, so its stamp (which creates the records folder) waits for its answer
     // `--check` is the read-only report cad-health runs and writes nothing, so it leaves the stamp to the next seam
     const late = cmd === 'trace' && sub === 'ignore';
-    const { ensureState } = await import('./planning/migrate.mjs');
+    const { ensureState, conversionNote, holdAnswer } = await import('./planning/migrate.mjs');
     if (ensureState(planningDir, late ? 'before' : 'now')) {
-      await handler(planningDir, sub, opts, words.slice(1));
-      if (late && !('check' in opts)) ensureState(planningDir, 'after');
+      const afterwards = late && !('check' in opts);
+      // the call that converted adds one field to its own answer, so its stdout is held until the field can join
+      const release = conversionNote() || afterwards ? holdAnswer() : null;
+      try {
+        await handler(planningDir, sub, opts, words.slice(1));
+        if (afterwards) ensureState(planningDir, 'after');
+      } finally {
+        if (release) release();
+      }
     }
   }
 } catch (e) {
