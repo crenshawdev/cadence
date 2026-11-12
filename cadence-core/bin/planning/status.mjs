@@ -6,10 +6,8 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, planPosition, read, readPlanReports, readQueue,
+  PHASE_DIR_NAME, fail, listPlanFiles, ok, planPosition, readProject, readQueue,
 } from './core.mjs';
-import { classifyPhaseList, parseRequirements } from '../lib/planning-files.mjs';
-import { parseCursor } from '../lib/state-cursor.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 /**
@@ -93,30 +91,14 @@ const AGREE = {
 
 function cmdStatus(dir) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
-  const roadmapText = read(join(dir, 'ROADMAP.md'));
-  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`, '/cad-new-project');
-  // an empty section is a derived closed milestone, not a parse failure
-  const classified = classifyPhaseList(roadmapText);
-  if (classified.state === 'no-section') {
-    return fail('unparseable-roadmap', 'no `## Phases` section in ROADMAP.md',
-      'add a `## Phases` heading to ROADMAP.md, outside any code fence - a closed milestone'
-      + ' is that heading with nothing under it, never a missing heading');
-  }
-  if (classified.state === 'out-of-grammar') {
+  const project = readProject(dir);
+  if (project.missing) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`, '/cad-new-project');
+  if (project.refusal) {
     // emitted directly because fail has no channel for the issue list
-    const first = classified.issues[0];
-    return emit({
-      ok: false, reason: 'unparseable-roadmap',
-      detail: `line ${first.line}: ${first.text}`,
-      issues: classified.issues,
-      hint: 'rewrite each line listed in `issues` as `- [ ] **Phase <n>: <name>** - <description>`'
-        + ' under `## Phases`, or move it out of that section',
-    });
+    const { reason, detail, issues, hint } = project.refusal;
+    return emit({ ok: false, reason, detail, ...(issues ? { issues } : {}), hint });
   }
-  const closed = classified.state === 'closed';
-  const roadmap = classified.phases;
-
-  const derived = derivePhases(dir, roadmap);
+  const { closed, derived, reportsOf, reqRows } = project;
   const currentEntry = derived.find((p) => p.status !== 'complete') || null;
   const current = currentEntry ? currentEntry.n : null;
 
@@ -152,10 +134,9 @@ function cmdStatus(dir) {
   drift.push(...phaseDirGrammarDrift(dir));
 
   // optional file; Deferred and unmapped rows are audit's concern, not drift
-  const reqText = read(join(dir, 'REQUIREMENTS.md'));
-  if (reqText !== null) {
+  if (reqRows !== null) {
     const byN = new Map(derived.map((p) => [p.n, p.status]));
-    for (const r of parseRequirements(reqText)) {
+    for (const r of reqRows) {
       if (r.phase === null || r.status === 'Deferred' || !byN.has(r.phase)) continue;
       const phaseDone = byN.get(r.phase) === 'complete';
       if (phaseDone && r.status !== 'Complete') {
@@ -167,8 +148,7 @@ function cmdStatus(dir) {
   }
 
   // the cursor is a hint, the derivation wins
-  const cursorText = read(join(dir, 'STATE.md'));
-  const parsed = cursorText !== null ? parseCursor(cursorText) : null;
+  const parsed = project.cursor;
   let cursor;
   if (parsed) {
     let agrees;
@@ -211,8 +191,7 @@ function cmdStatus(dir) {
   // always present, [] when empty, like deferred: an absent key would read as "seam predates the field"
   // read here, not by spawning replay-check per phase; not a new status, which would turn older cursors into drift
   // the dir resolves through String(p.n) as derivePhases does, so phases/1.10 reads as phases/1.1 here too
-  // each phase's reports are read here once and handed on to the plan position below
-  const reportsOf = derived.map((p) => readPlanReports(join(dir, 'phases', String(p.n)), p.plans));
+  // each phase's reports are read once, in readProject, and handed on to the plan position below
   const outstanding = [];
   derived.forEach((p, i) => {
     const plans = reportsOf[i].filter((r) => !r.complete).map((r) => r.plan);

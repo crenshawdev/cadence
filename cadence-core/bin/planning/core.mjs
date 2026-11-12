@@ -15,11 +15,12 @@ import { entryFile, moduleState, partition } from '../lib/codemap-partition.mjs'
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
-import { parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
+import { classifyPhaseList, parseRequirements, parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
 import { codemapDir, deferredDir, phaseRecordsDir, phaseReportsDir, recordsPath } from '../lib/planning-store.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
+import { parseCursor } from '../lib/state-cursor.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { manifestPath } from '../lib/test-seam.mjs';
 import { isPlainObject } from '../lib/text-util.mjs';
@@ -279,6 +280,44 @@ function planPosition(pdir, reports) {
   if (!next) return null;
   const name = planName(read(join(pdir, next.plan)) ?? '');
   return { k: next.k, j: all.length, ...(name ? { name } : {}) };
+}
+
+/**
+ * What `status` derives from a planning directory, read once: the roadmap classified, the phases derived from their
+ * artifacts, each phase's plan reports, the requirement rows and the cursor. `status` and the state importer both
+ * call this, so neither can drift from the other. It decides nothing about the directory itself; the caller owns
+ * `no-planning-dir`, and a missing ROADMAP.md comes back as `{missing: true}` for each caller to answer its own way.
+ * A roadmap that can't be parsed is `{refusal}` carrying the reason, detail, hint and (out of grammar) the issues.
+ * `reqRows` is null when there is no REQUIREMENTS.md and `cursor` null when STATE.md is missing or off-grammar.
+ * @param {string} dir the planning directory
+ */
+function readProject(dir) {
+  const roadmapText = read(join(dir, 'ROADMAP.md'));
+  if (roadmapText === null) return { missing: true };
+  // an empty section is a derived closed milestone, not a parse failure
+  const classified = classifyPhaseList(roadmapText);
+  if (classified.state === 'no-section') {
+    return { refusal: { reason: 'unparseable-roadmap', detail: 'no `## Phases` section in ROADMAP.md',
+      hint: 'add a `## Phases` heading to ROADMAP.md, outside any code fence - a closed milestone'
+        + ' is that heading with nothing under it, never a missing heading' } };
+  }
+  if (classified.state === 'out-of-grammar') {
+    const first = classified.issues[0];
+    return { refusal: { reason: 'unparseable-roadmap', detail: `line ${first.line}: ${first.text}`,
+      issues: classified.issues,
+      hint: 'rewrite each line listed in `issues` as `- [ ] **Phase <n>: <name>** - <description>`'
+        + ' under `## Phases`, or move it out of that section' } };
+  }
+  const derived = derivePhases(dir, classified.phases);
+  // each phase's reports are read once; the dir resolves through String(p.n) as derivePhases does
+  const reportsOf = derived.map((p) => readPlanReports(join(dir, 'phases', String(p.n)), p.plans));
+  const reqText = read(join(dir, 'REQUIREMENTS.md'));
+  const cursorText = read(join(dir, 'STATE.md'));
+  return {
+    closed: classified.state === 'closed', derived, reportsOf,
+    reqRows: reqText !== null ? parseRequirements(reqText) : null,
+    cursor: cursorText !== null ? parseCursor(cursorText) : null,
+  };
 }
 
 /**
@@ -1110,6 +1149,7 @@ export {
   readEntry,
   readJsonPayload,
   readPlanReports,
+  readProject,
   planPosition,
   readQueue,
   readReadsRecords,
