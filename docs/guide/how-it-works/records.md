@@ -12,9 +12,11 @@ Cadence keeps enough on disk for a new session to work out what the project inte
 | `.planning/STATE.md` | A cursor pointing at current work; a hint that progress checks against other evidence. |
 | A phase's `CONTEXT.md` | Settled decisions and acceptance criteria. |
 | Its `PLAN.md` or numbered plans | The tasks and checks to execute. |
-| Its executor reports | Completed tasks, commits and remaining work. |
+| Its executor reports, under `records/reports/` | Completed tasks, commits and remaining work. |
 | Its `SUMMARY.md` | What the execution run delivered, deviations and open items. |
 | Its `UAT.md` | Verification results, including pending CI and recorded CI verification. |
+
+A person's documents sit at the top of `.planning/` and of each phase. What scripts and gates keep sits under a `records/` folder at both levels: at the top, the run and read records, the ledgers, the deferred queue carried out of closed phases, the carried risk rulings and the code map; in a phase, the executor reports, the review, adjudication and deferred files and the findings files.
 
 A summary says a run finished reporting. It doesn't by itself prove that the phase passed, or that a gap plan written later has been executed.
 
@@ -26,7 +28,7 @@ That separation matters when files disagree. The answer is to examine the underl
 
 ## Run evidence
 
-`.planning/trace.jsonl` records dispatch and workflow events, including the information used for cost and review-outcome reporting. `.planning/reads.jsonl` records file paths read by tools, not file contents. With `workflow.use_workflows` on, each agent a review starts through a workflow appears in the run record as one bracket with its own tokens, turns and duration. If the host's run file can't be read, the run appears as one bracket with the totals from its completion notice. These are local records, not telemetry sent to Cadence's author.
+`.planning/records/trace.jsonl` records dispatch and workflow events, including the information used for cost and review-outcome reporting. `.planning/records/reads.jsonl` records file paths read by tools, not file contents. With `workflow.use_workflows` on, each agent a review starts through a workflow appears in the run record as one bracket with its own tokens, turns and duration. If the host's run file can't be read, the run appears as one bracket with the totals from its completion notice. These are local records, not telemetry sent to Cadence's author.
 
 `/cadence:cad-report` reads the run record. `/cadence:cad-suggest` uses it to propose changes that the evidence supports. A missing or incomplete record limits what either can establish.
 

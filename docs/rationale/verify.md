@@ -56,7 +56,7 @@ items" rule governing pass 2 unchanged.
 
 ## walk - why one `uat record` per item, never `uat merge`
 
-`merge` atomically overwrites `phases/<N>/FINDINGS.json` on every success and
+`merge` atomically overwrites `phases/<N>/records/FINDINGS.json` on every success and
 would clobber the deep pass's envelope - the file that exists to make a discarded
 verifier finding recoverable.
 

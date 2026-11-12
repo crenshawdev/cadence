@@ -47,7 +47,7 @@ git history at bd052ac3) dispatched
 two real executors at already-committed work and measured zero commits and zero
 byte changes. The cost is money and a false run record, not a corrupted tree -
 which is why this is a guard and not a resume path. Both probes had
-`reports/plan-<k>.md` on disk with no `SUMMARY.md` beside it, so the report file
+`records/reports/plan-<k>.md` on disk with no `SUMMARY.md` beside it, so the report file
 alone separates the two states and `locate` cross-checks it against no git read.
 
 It quantifies over EVERY plan because the simpler rule - any `PLAN COMPLETE`
@@ -56,7 +56,7 @@ report is a replay - would strand a multi-plan phase mid-flight and force a
 
 One state this cannot see, stated rather than left out: a parallel-path plan
 whose report was written inside an unmerged worktree leaves nothing at
-`.planning/phases/<N>/reports/` for `locate` to read. The stop does not fire for
+`.planning/phases/<N>/records/reports/` for `locate` to read. The stop does not fire for
 it, and that run behaves as it does today.
 
 ## git_guard - the two gaps the index check cannot close
@@ -165,7 +165,7 @@ since an open item is by definition what did not finish inside the phase.
 ## state - why DEFERRED-*.json is staged regardless of commit_docs
 
 A queue member is the only durable evidence a fire was deferred:
-`.planning/trace.jsonl` is gitignored and the sibling REVIEW file is committed by
+`.planning/records/trace.jsonl` is gitignored and the sibling REVIEW file is committed by
 nothing. An untracked member is gone on a fresh clone, and it also leaves the
 tree dirty at `/cad-land` step 2.
 

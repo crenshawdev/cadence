@@ -62,6 +62,8 @@ Every seam that makes a decision splits in two. The decision is a pure function 
 
 That split is why the invariants hold. The judgment that is easy to get wrong is the part that never touches the disk and is tested to death, and the part that touches the disk is too small to hide a bug in. Prose keeps the judgment, the scripts keep the invariants, and the scripts are boring on purpose.
 
+A script that writes a planning file does it through `cadence-core/bin/lib/planning-store.mjs`, and that module is also the one place that spells the records folder, at the top of `.planning/` and in each phase.
+
 Read the code: the `*-decision.mjs` cores under `cadence-core/bin/lib` and their tests (`close-decision.test.mjs`, `publish-decision.test.mjs`, `branch-decision.test.mjs`, `release-decision.test.mjs`), which are in the cadence-tests repository (https://github.com/crenshawdev/cadence-tests), mounted at tests/.
 
 ## Workflows

@@ -37,8 +37,8 @@ Context7 is used when it's installed and skipped when it's not, and Cadence does
 
 ## The two hooks that watch
 
-- `subagent-trace` reads the stopped subagent's own transcript, the file the host keeps for that agent, to price the dispatch in `.planning/trace.jsonl`.
-- `read-trace` logs the path of each project file a tool call opens to `.planning/reads.jsonl`. Paths only, never contents. A file inside the plugin is recorded relative to the plugin, and any other path outside the project is recorded only as `outside`.
+- `subagent-trace` reads the stopped subagent's own transcript, the file the host keeps for that agent, to price the dispatch in `.planning/records/trace.jsonl`.
+- `read-trace` logs the path of each project file a tool call opens to `.planning/records/reads.jsonl`. Paths only, never contents. A file inside the plugin is recorded relative to the plugin, and any other path outside the project is recorded only as `outside`.
 
 ## The Workflow tool
 
