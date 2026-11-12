@@ -8,7 +8,7 @@
 // a read answers with a value and never throws; a write validates, takes the lock and replaces the file atomically
 'use strict';
 
-import { lstatSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { atomicWrite, ensureRecordsDir, recordsDir, statePath, withPlanningFileLock } from './planning-store.mjs';
 
 export { statePath };
@@ -175,8 +175,9 @@ export function recordsReady(planningRoot) {
   let st;
   try { st = lstatSync(recordsDir(planningRoot)); } catch (e) {
     const code = e && /** @type {any} */ (e).code;
-    // no records folder means nothing was ever stamped here
-    return { ok: false, reason: code === 'ENOENT' ? 'no-valid-state' : (code || 'stat-failed') };
+    if (code !== 'ENOENT') return { ok: false, reason: code || 'stat-failed' };
+    // no planning root at all stays ENOENT, the token a treeless /cad-task run reads as done; a root with no records was never stamped
+    return { ok: false, reason: existsSync(planningRoot) ? 'no-valid-state' : 'ENOENT' };
   }
   if (st.isSymbolicLink()) return { ok: false, reason: 'symlinked-records' };
   if (!st.isDirectory()) return { ok: false, reason: 'ENOTDIR' };
