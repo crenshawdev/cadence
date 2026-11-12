@@ -63,5 +63,5 @@ are the on-demand and standalone gates.
   offered by cad-debug, cad-execute (structural stop), cad-plan (phase too big).
 
 ## Help and bug reports
-Questions: #cadence on the jcrenshaw.dev Discord, https://discord.gg/fedQDmhRrx.
+Questions: #cadence on the jcrenshaw.dev Discord, https://jcrenshaw.dev/discord.
 Bugs: https://github.com/crenshawdev/cadence/issues.
