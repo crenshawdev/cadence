@@ -87,20 +87,26 @@ removal. `renumber insert` and `renumber remove` both shift them only on rows
 whose Status is exactly `Pending`. `Complete` and `Deferred` rows, and every
 REQUIREMENTS line outside this table including `## Shipped`, stay
 byte-identical. A `Complete` row citing a moved phase, or on remove the
-removed one, is named in `warn` so it can be re-pointed by hand.
+removed one, is named in `warn` so it can be re-pointed with `req-row --id <id>
+--phase <N>`.
 
 ## Who writes what
+
+The rows live in the state file, and this table is generated from it. Three
+seams change them:
 
 - `/cad-plan` (the `seed-reqs` seam call) CREATES rows, and only ever at
   Status `Pending`. It is incapable of writing any other status - the seam
   has no parameter for it.
-- `/cad-verify`'s `phase-done` is the only writer of any Status beyond
-  `Pending` (`Complete`, and `Pending` again on `--undo`).
+- `/cad-verify`'s `phase-done` is the only writer of `Complete` (and of
+  `Pending` again on `--undo`).
+- `req-row` re-points a row at a phase the state holds, keeping its Status,
+  or writes `Deferred` over a `Pending` one (`/cad-phase remove`'s orphans).
 - `/cad-audit` reads this table and never writes it.
 
 This is the invariant restated from row-existence to Status-transition: the
-table's rows are no longer solely cad-verify's to create, but a non-`Pending`
-Status is still solely cad-verify's to set.
+table's rows are no longer solely cad-verify's to create, but `Complete` is
+still solely cad-verify's to set.
 
 ## Seeding rules
 

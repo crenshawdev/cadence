@@ -1,8 +1,9 @@
 # REQUIREMENTS.md template
 
 Fill and write to `.planning/REQUIREMENTS.md` - checkable requirements that
-define "done". The Traceability table is left as bare headers; `/cad-plan`
-seeds each row when its phase is planned (`references/req-traceability.md`).
+define "done". The Traceability table is generated from the state file and
+never edited by hand: write it as bare headers; `/cad-plan` seeds each row when
+its phase is planned (`references/req-traceability.md`).
 
 <template>
 
@@ -80,7 +81,7 @@ Notes:
   postponed with the user's consent - /cad-audit lists deferred rows
   separately and never counts them as delivered; no other deferral notation
   is recognized.
-  This column and the ROADMAP phase checkbox are the only persisted status -
-  everything else is derived.
+  This column and the ROADMAP phase checkbox show the status the state file
+  holds - everything else is derived.
 - Unmapped v1 requirements are a roadmap gap - coverage must reach 100%
   before the roadmap is approved.

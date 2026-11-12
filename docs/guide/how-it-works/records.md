@@ -18,6 +18,8 @@ Cadence keeps enough on disk for a new session to work out what the project inte
 
 A person's documents sit at the top of `.planning/` and of each phase. What scripts and gates keep sits under a `records/` folder at both levels: at the top, the run and read records, the ledgers, the deferred queue carried out of closed phases, the carried risk rulings and the code map; in a phase, the executor reports, the review, adjudication and deferred files and the findings files.
 
+Phase, plan and requirement status, the cursor and whether a cycle is open live in one state file, `.planning/records/state.json`, and only Cadence's scripts write it. Three things are generated from it: the `## Phases` list in `ROADMAP.md`, the `## Traceability` table in `REQUIREMENTS.md`, and `STATE.md`. Don't edit those by hand, because the next state write overwrites them. If the state file stops parsing, run `/cadence:cad-progress`, which rebuilds it from the project's files.
+
 A summary says a run finished reporting. It doesn't by itself prove that the phase passed, or that a gap plan written later has been executed.
 
 ## Records have different jobs

@@ -231,10 +231,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
   --phase 1 --status "ready to plan" --next "/cad-phase add"
 ```
 
-On a fully pruned roadmap this needs no flags beyond those: the seam derives
-`of 0 (no active cycle)` from the empty phase list step 3 now produces.
-`/cad-phase add` is the destination because it is the only workflow that
-appends a phase line to an existing roadmap - `/cad-plan` stops with "Phase
+On a fully pruned roadmap this needs no flags beyond those, and the cursor then
+reads as no cycle open. `/cad-phase add` is the destination because it is the
+only workflow that adds a phase to an existing roadmap - `/cad-plan` stops with "Phase
 {N} is not in ROADMAP.md".
 
 (Pass `--name`/`--total` explicitly when this close DEFERRED work: step 3's

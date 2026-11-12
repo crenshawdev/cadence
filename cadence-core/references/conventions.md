@@ -28,6 +28,12 @@ Nothing here reaches an agent that has not read it.
   carried queues and the code map at the top; executor reports, review,
   adjudication and deferred files and findings in a phase. What a person reads
   stays at the top of `.planning/` and of each phase.
+- State file: `.planning/records/state.json` holds phase, plan and requirement
+  status, the cursor and whether a cycle is open, and only scripts write it.
+  The ROADMAP `## Phases` list, the REQUIREMENTS `## Traceability` table and
+  `STATE.md` are generated from it and never edited by hand. A seam refusing
+  because the file does not parse is answered by running `/cad-progress`, never
+  by repairing the file.
 
 ## Deliberate shortcuts
 
@@ -239,7 +245,7 @@ earlier answer stay sequential.
 - `STATE.md` is a cursor of four required lines plus an optional `Plan:` line. It
   is overwritten in place, never appended.
   The only correct writer is the seam (`planning.mjs cursor set` - it derives
-  name/total from ROADMAP, validates the status, stamps the date, and writes
+  name/total from the state file, validates the status, stamps the date, and writes
   atomically); read it with `cursor get`. Never hand-edit the file. NO audit
   logs, no activity tables, no session narratives - git history is the log.
   Derive views from `git log` on demand.
@@ -253,6 +259,9 @@ earlier answer stay sequential.
   Next: <the one command to run next>
   Updated: <YYYY-MM-DD>
   ```
+
+  With no cycle open there is no `Phase:` or `Status:` line: under `# State`, a
+  sentence saying no cycle is open, then `Next:` and `Updated:`.
 
 - The `Plan:` line: `cursor set` writes it from disk on every write, with no
   flag. K is the lowest-numbered plan whose report is not `PLAN COMPLETE`, by its
