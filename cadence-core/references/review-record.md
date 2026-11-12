@@ -156,10 +156,10 @@ homes only, so a member under a slug would be created and never found - and a
 task's only gate is `risk_surface`, whose `blocking` schema default never
 resolves `deferred`.
 
-It lands at `.planning/phases/<N>/ADJUDICATION-<trigger>-<discriminator>.json`,
+It lands at `.planning/phases/<N>/records/ADJUDICATION-<trigger>-<discriminator>.json`,
 beside the sibling `REVIEW-<trigger>-<discriminator>.md` and on the same
 discriminator grammar, which `references/review-triggers.md` step 5 states
 once. It does NOT go
-inside `<plandir>/reports/`: the lease check
+inside `<plandir>/records/reports/`: the lease check
 exempts exactly one path under that directory by byte equality, so anything else
 staged from there answers `undeclared-files`.

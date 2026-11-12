@@ -10,7 +10,7 @@ reviewer ran.
   the RUN. Persist the findings exactly as the `risk_surface` persistence rule
   in `references/review-triggers.md` step 5 already specifies - the settled
   `{ "findings": [...] }` object written to
-  `.planning/phases/<N>/REVIEW-<trigger>-<discriminator>.md`, on the same
+  `.planning/phases/<N>/records/REVIEW-<trigger>-<discriminator>.md`, on the same
   discriminator grammar (`plan-<k>` for a per-plan fire, `<command>-<short HEAD
   sha>` otherwise, and no unsuffixed path). This arm's file stays JSON whatever
   `review.mode` says, because `deferred record --payload` parses it; only gate
@@ -18,7 +18,7 @@ reviewer ran.
   queue member's payload:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred record --phase <N> --trigger <trigger> --discriminator <discriminator> --base <base> --head <head> --payload .planning/phases/<N>/REVIEW-<trigger>-<discriminator>.md [--round <round>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred record --phase <N> --trigger <trigger> --discriminator <discriminator> --base <base> --head <head> --payload .planning/phases/<N>/records/REVIEW-<trigger>-<discriminator>.md [--round <round>]
 ```
 
   then leave the receipt that says this fire happened:
@@ -31,7 +31,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
   at the fire - the finding is answered at `/cad-land`, which refuses while any
   queue member is unadjudicated. The queue member is COMMITTED, unlike the
   REVIEW file beside it: stage it with the next commit this run makes.
-  `.planning/trace.jsonl` is gitignored and a REVIEW file left untracked
+  `.planning/records/trace.jsonl` is gitignored and a REVIEW file left untracked
   evaporates on a fresh clone, so a queue that lived in either is a queue that
   is gone by the time the land reads it. This arm writes NO adjudication record
   - `RULINGS` has three values and none of them is "not yet" - so a member
@@ -246,7 +246,7 @@ still true in a session that has forgotten everything else, so the fire is what
 the count is keyed to.
 
 On disk means the FILENAMES in the fire's home
-(`.planning/phases/<N>/`, or `.planning/deferred/<N>/` once a close has carried
+(`.planning/phases/<N>/records/`, or `.planning/records/deferred/<N>/` once a close has carried
 it there): the highest `-r<n>` suffix among that fire's
 `DEFERRED-<trigger>-<discriminator>*.json`, an unsuffixed name being round one.
 Count a member an adjudication has already SUPERSEDED - a settled round is a
@@ -263,7 +263,7 @@ still surviving round two is the terminal STOP-and-ask, never a round three.
   USER's choice, not the model's. Present them as a NUMBERED list with one entry
   per survivor: severity, `file:line`, then What breaks, Why I should care, What
   is still uncertain and Your recommendation, each from the review file
-  `.planning/phases/<N>/REVIEW-<trigger>-<discriminator>[-rN].md`, whose path you
+  `.planning/phases/<N>/records/REVIEW-<trigger>-<discriminator>[-rN].md`, whose path you
   print where the list prints. The recommendation is advice: nothing is
   preselected and no answer word is added. Then ask which to act on through
   `AskUserQuestion` with `multiSelect: true`, and END THE TURN on that question.
@@ -350,7 +350,7 @@ size.
 **Stated once, here, and both arms above point at it.** A gate that produces
 findings it will not fix NOW asks the user about them IN THE STEP THAT DECIDED,
 and every answer is recorded - an ACCEPTED one as an issue on this repository's
-own tracker, a DECLINED one as a row in `.planning/DECLINED.md` and nowhere
+own tracker, a DECLINED one as a row in `.planning/records/DECLINED.md` and nowhere
 else. Nothing is written to `.planning/CAPTURE.md` on either answer, nothing is
 annotated, and nothing is carried to a later batch.
 
@@ -369,7 +369,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-filing.mjs" unfixed --payload
 
 `<path>` is THE SAME composed payload file the adjudication record was written
 from - the `{voices: [...]}` object, not the rendered findings. THE ASK FACE
-reads `.planning/DECLINED.md` and makes one read-only visibility read of the
+reads `.planning/records/DECLINED.md` and makes one read-only visibility read of the
 configured repository - no list, no create, no page to fill, whatever the
 finding count. The one lookup that searches the tracker belongs to the `file`
 call below, which is where it is stated. What comes back
@@ -413,7 +413,7 @@ repository.
   names the target repository (the envelope's `repo`) and its visibility
   (`visibility`); an unreadable visibility (`visibility_read` false) is shown
   as public;
-- a finding the user does NOT name is written to `.planning/DECLINED.md`, which
+- a finding the user does NOT name is written to `.planning/records/DECLINED.md`, which
   is what stops a later fire asking the same question forever, and it never
   reaches the tracker in any form;
 - either way NOTHING is written to `.planning/CAPTURE.md`, and no finding is
@@ -442,13 +442,13 @@ ONLY THE ACCEPTS CROSS THE NETWORK, and what they do there is now two steps. A
 fire holding at least one accept makes ONE title-scoped lookup per chunk of six
 of its own fingerprints BEFORE its first create, then one create per accept the
 tracker does not already hold. A fingerprint already on the tracker - open or
-closed - or carrying an `unconfirmed` row in `.planning/FILED.md` is reported
+closed - or carrying an `unconfirmed` row in `.planning/records/FILED.md` is reported
 with the issue it already has and is not filed again. A lookup that came back
 having FILLED ITS PAGE refuses the whole fire before any create, because a page
 full of rows in answer to a six-token title search is either truncation or a
 forge that ignored the search, and reading either as "not filed" duplicates an
 issue that exists. A lookup that COULD NOT RUN does not refuse: it falls through
-to `.planning/FILED.md`, where a row for the fingerprint suppresses. And a
+to `.planning/records/FILED.md`, where a row for the fingerprint suppresses. And a
 create the seam could not confirm landed leaves an `unconfirmed` row of its own,
 so the retry cannot duplicate it - a nonzero create is ambiguous rather than
 known-failed, and the row says so where the next fire reads it.
@@ -484,7 +484,7 @@ ask.** `/cad-land` fires no review of its own - v3.2.0 removed the one it had -
 so there is no triage prompt there to switch off. What the key still governs is
 the unattended close's halt: with it true, `/cad-land` reads what this branch's
 own `risk_surface` fires ADJUDICATED - the `ADJUDICATION-risk_surface*.json`
-records under `.planning/phases/*/` and under `.planning/risk-carry/*/`, where
+records under `.planning/phases/*/records/` and under `.planning/records/risk-carry/*/`, where
 `/cad-milestone` copies them before pruning - unions every round's `entries[]`,
 and pipes that to `land-cleanup.mjs gate`. Three consequences follow, and only
 these three: an entry the record leaves genuinely unfixed halts the merge, a

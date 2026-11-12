@@ -25,9 +25,9 @@ dispatch; none of them applies on the sequential path.
   rotated report too whenever your first write rotated a previous run's aside -
   unnamed it stays untracked, never reaches the branch, and dies with the
   worktree, which is the evidence the rotation exists to keep:
-  `git add <plandir>/reports/plan-<k>.md [<plandir>/reports/plan-<k>.<n>.md]`
+  `git add <plandir>/records/reports/plan-<k>.md [<plandir>/records/reports/plan-<k>.<n>.md]`
   then
-  `git commit -- <plandir>/reports/plan-<k>.md [<plandir>/reports/plan-<k>.<n>.md]`
+  `git commit -- <plandir>/records/reports/plan-<k>.md [<plandir>/records/reports/plan-<k>.<n>.md]`
   with message `docs({phase}-{plan}): plan {k} executor report`. All three parts
   are load-bearing. The `add` is not optional: `git commit -- <pathspec>` commits
   only paths git already TRACKS, so an untracked report - every rotated
@@ -37,7 +37,7 @@ dispatch; none of them applies on the sequential path.
   checkpoint deliberately leaves the flagged changes STAGED, and a bare
   `git commit` after a broad `git add` would sweep them in - turning a blocking
   gate into a landed commit. Naming the paths commits the reports and leaves
-  everything else staged exactly as it was; the enclosing `<plandir>/reports/`
+  everything else staged exactly as it was; the enclosing `<plandir>/records/reports/`
   directory is NOT a path you may `add` or commit here, because the flagged diff
   below lives inside it - which is why the `add` names the same exact paths the
   commit does. Committing on the non-final branches is what makes the report
@@ -82,6 +82,6 @@ worktree may lack it:
   names, in the run's scratch directory. Never write into the main tree; the
   host refuses it.
 - Report: it goes to the path the prompt names, in place of
-  `<plandir>/reports/plan-<k>.md`, and you NEVER commit it. Write its first
+  `<plandir>/records/reports/plan-<k>.md`, and you NEVER commit it. Write its first
   line as your contract says, `PLAN COMPLETE` included: the main session moves
   it into the main tree only after it has merged your branch.

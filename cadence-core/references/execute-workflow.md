@@ -38,7 +38,7 @@ Pick the wave in `choose_path`'s order. In every wave of `waves`, keep only the 
 
   "Workflow worktree executor on branch `cadence/phase-<N>-plan-<k>` - worktree mode, workflow rules apply."
 
-  Above width 1 every `.planning/` path the prompt names is the main tree's absolute path. The prompt also names the plan's report path, `<the scratch directory>/reports/plan-<k>.md`, which the workflow arm of `references/worktree-executor.md` writes in place of `<plandir>/reports/plan-<k>.md`, because the host refuses a worktree agent's write into the main tree.
+  Above width 1 every `.planning/` path the prompt names is the main tree's absolute path. The prompt also names the plan's report path, `<the scratch directory>/reports/plan-<k>.md`, which the workflow arm of `references/worktree-executor.md` writes in place of `<plandir>/records/reports/plan-<k>.md`, because the host refuses a worktree agent's write into the main tree.
 
 Print each plan's dispatching line, with the position line `locate` states.
 
@@ -90,7 +90,7 @@ Sort each plan by its outcome:
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` and follow steps 3 to 5 for the plans that settled, with these differences.
 
 - **Step 3, merge.** Merge each plan's branch `cadence/phase-<N>-plan-<k>` in plan order, with both HEADs recorded. A settled plan with no such branch landed nothing, so its two HEADs are one commit and step 5 takes the skip for it.
-- **The report moves after its merge.** Once a plan's branch has merged, move its report from `<the scratch directory>/reports/plan-<k>.md` into `<plandir>/reports/plan-<k>.md`. First rotate a report already there aside to the next free `plan-<k>.<n>.md`, as the executor contract's rotation rule does. Edit nothing in the moved file (D-06). A plan whose branch has not merged keeps its report in the scratch directory, so the main tree never holds a `PLAN COMPLETE` for unmerged work.
+- **The report moves after its merge.** Once a plan's branch has merged, move its report from `<the scratch directory>/reports/plan-<k>.md` into `<plandir>/records/reports/plan-<k>.md`. First rotate a report already there aside to the next free `plan-<k>.<n>.md`, as the executor contract's rotation rule does. Edit nothing in the moved file (D-06). A plan whose branch has not merged keeps its report in the scratch directory, so the main tree never holds a `PLAN COMPLETE` for unmerged work.
 - **Step 4, cleanup.** Remove a worktree only if the host kept it: look for the branch in `git worktree list --porcelain`. Delete each merged branch.
 - **Step 5, the suite and the risk sequence.** The suite runs after this wave, not once at the end, because the next wave forks from this merge. Then run the skip or `risk-check run` for every settled plan first. Then the fires: each `risk_surface` fire a `run` answer called for, and each plan's `diff` trigger. Then each plan's `status`, since `status` counts every executor the run closed, so a plan's done waits on its wave-mates' records. A `risk_surface` fix runs in the main tree under worker key `<k>`. Under `review.triggers.diff.when` `phase_end`, those fires leave out each plan's `diff` trigger, and the `risk_surface` fires and each plan's `status` run as above.
 
@@ -98,7 +98,7 @@ The report on this path is never in a worktree and no executor commits it. The m
 
 ### A wave of one plan
 
-It ran in the normal tree, so nothing merges and its report is already at `<plandir>/reports/plan-<k>.md`. The plan's range is its pre-plan HEAD to HEAD. The risk sequence, the cursor write and the `diff` fire are `execute_sequential`'s, as it states them. Under `review.triggers.diff.when` `phase_end` it takes `execute_sequential`'s skip of the per-plan `diff` fire and does not make its phase-end fire, which belongs to the sequential path; the one phase-end review here is the one in "Then".
+It ran in the normal tree, so nothing merges and its report is already at `<plandir>/records/reports/plan-<k>.md`. The plan's range is its pre-plan HEAD to HEAD. The risk sequence, the cursor write and the `diff` fire are `execute_sequential`'s, as it states them. Under `review.triggers.diff.when` `phase_end` it takes `execute_sequential`'s skip of the per-plan `diff` fire and does not make its phase-end fire, which belongs to the sequential path; the one phase-end review here is the one in "Then".
 
 ### Then
 
@@ -112,7 +112,7 @@ A wave is done only when each of its plans is, and a stopped plan, an open quest
 
 **A null slot, a turn cap or a digest that does not parse**, and a `PLAN PARTIAL`:
 
-- In a wave of one plan the executor ran in the normal tree and made no branch. Do what `execute_sequential`'s turn-cap arm does: read `<plandir>/reports/plan-<k>.md`, check it against `git log {pre-plan HEAD}..HEAD`, report what landed, and ask whether to re-dispatch the remainder or stop. A re-dispatch runs under worker key `<k>`.
+- In a wave of one plan the executor ran in the normal tree and made no branch. Do what `execute_sequential`'s turn-cap arm does: read `<plandir>/records/reports/plan-<k>.md`, check it against `git log {pre-plan HEAD}..HEAD`, report what landed, and ask whether to re-dispatch the remainder or stop. A re-dispatch runs under worker key `<k>`.
 - In a wave wider than 1, read the plan's report in the scratch directory and check whether its branch exists. No branch means nothing landed and nothing merges, so its report moves in as it stands, unless it reads `PLAN COMPLETE`, which is named and left in the scratch directory. The next wave still waits for the answer. A branch is handled like a checkpoint: it waits for the answer, which is today's turn-cap question, whether to re-dispatch the remainder or stop. Then it merges, and a remainder runs in the normal tree.
 
 **A restart.** A plan whose agent the host restarted is named in that plan's relay, from `restarted` in `workflow-run`'s answer. Its outcome is judged as any other: the restarted executor continued from its own commits after the pre-plan HEAD.

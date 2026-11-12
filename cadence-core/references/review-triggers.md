@@ -196,7 +196,7 @@ reviewer set never does. Per backend:
   full dispatch to report to nobody. So when step 1 resolved the gate
   `advisory`, the DISPATCH PROMPT carries a persistence tail and the REVIEWER,
   not this site, closes the bracket:
-  - the findings path `.planning/phases/<N>/REVIEW-<trigger>.md` (a per-plan
+  - the findings path `.planning/phases/<N>/records/REVIEW-<trigger>.md` (a per-plan
     fire suffixes it: `REVIEW-diff-plan-<k>.md`), where the reviewer writes
     the same JSON object it returns, and
   - the return-append command above with `${CLAUDE_PLUGIN_ROOT}` already
@@ -316,7 +316,7 @@ uncertain, Your recommendation. On the workflow path the checkers have filled
 them already, and you fill only a finding a checker left. Compose them as a file in this run's scratch
 directory, the way `references/review-record.md` composes its payload, and run
 `planning.mjs review-file` before triage; that file is
-`.planning/phases/<N>/REVIEW-<trigger>-<discriminator>[-rN].md`. The GATE
+`.planning/phases/<N>/records/REVIEW-<trigger>-<discriminator>[-rN].md`. The GATE
 decides the file's format and `review.mode` does not. Only gate `adjudicated`
 and `/cad-verify`'s fire, which is always triaged as `adjudicated`, write it.
 This arm is also reached by a `blocking` or `deferred` gate under

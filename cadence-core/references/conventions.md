@@ -23,6 +23,11 @@ Nothing here reaches an agent that has not read it.
   that needs it (cad-context or cad-plan). The grammar for `<N>`, and the
   guarantee that no spelling is ever silently redirected to a DIFFERENT phase's
   directory, are stated in `references/roadmap-phases.md` and nowhere else.
+- Records folder: `.planning/records/` and `.planning/phases/<N>/records/` hold
+  what scripts and gates keep - the run and read records, the ledgers, the
+  carried queues and the code map at the top; executor reports, review,
+  adjudication and deferred files and findings in a phase. What a person reads
+  stays at the top of `.planning/` and of each phase.
 
 ## Deliberate shortcuts
 
@@ -163,7 +168,7 @@ rest. Read only the keys you need. Unknown keys are ignored, never fatal.
 - The size test, asked once per tool call a prose site PRESCRIBES: does that
   call's own measured response cross 10,000 bytes? That figure is the mean
   `Read` response on this repository - 10,323 B over 780 recorded calls,
-  `.planning/reads.jsonl`, measured 2026-08-17. If yes, then its output
+  `.planning/records/reads.jsonl`, measured 2026-08-17. If yes, then its output
   rides a file, not the transcript: redirect the call into a scratch path
   inside THIS RUN's own directory (`> "$D/<name>"`, where `D` is a directory
   this run made with `mktemp -d`) and hand the transcript a DIGEST of what the

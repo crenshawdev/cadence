@@ -106,7 +106,7 @@ on this path is a real defect to report, not the fork-point default.
    `PHASE_BASE..HEAD` fires here, PHASE_BASE being the phase's oldest `phase_start`
    anchor as `execute_sequential` states it: `phase_diff` when its gate is not `off`, else
    `diff` with the same refs, never both. It carries its own trigger's gate arms,
-   and a `diff` fire here persists to `.planning/phases/<N>/REVIEW-diff-phase.md`.
+   and a `diff` fire here persists to `.planning/phases/<N>/records/REVIEW-diff-phase.md`.
    Its adjudicated survivors are fixed in the main tree by the continuation
    `cad-executor` under worker key `phase`, never a plan's, and that fix's range
    gets its own `risk-check run`, any `risk_surface` fire (discriminator
