@@ -92,6 +92,13 @@ export function cursorOf(state) {
   };
 }
 
+/** A refusal's hint for a state file that is there but not valid, by why it is not. @param {string} why */
+export function invalidHint(why) {
+  if (why === 'newer-layout') return 'this project was written by a newer Cadence - update the plugin; the file was not touched';
+  if (why === 'unreadable') return 'make the state file readable and re-run - it was not touched, since a file that could not be read may still be valid';
+  return 'run `planning.mjs state-rebuild`, which rebuilds the state file from the project\'s files, then re-run this; nothing was changed';
+}
+
 /**
  * The project's state, or null after emitting the refusal. Absent here means the stamp could not be written (a linked
  * planning directory, which `ensureState` leaves alone), since a seam that gets this far was given its state file first.
@@ -100,10 +107,10 @@ export function cursorOf(state) {
 export function loadState(dir) {
   const got = readState(dir);
   if (got.kind === 'valid') return got.state;
-  fail('no-state', got.kind === 'absent' ? `${statePath(dir)} does not exist` : `${statePath(dir)}: ${got.detail}`,
-    got.kind === 'absent'
-      ? 'a planning directory that is itself a link is never stamped - point --dir at the real directory; nothing was changed'
-      : '/cad-progress rebuilds the state file from the project\'s files; nothing was changed');
+  // the gate never judges a linked directory, so its torn file is refused here, in the gate's own words
+  if (got.kind === 'invalid') fail('invalid-state', `${statePath(dir)}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
+  else fail('no-state', `${statePath(dir)} does not exist`,
+    'a planning directory that is itself a link is never stamped - point --dir at the real directory; nothing was changed');
   return null;
 }
 
@@ -148,7 +155,9 @@ export function changeState(dir, change, views, opts = {}) {
   if (opts.onFail) opts.onFail(res);
   else {
     const bad = /** @type {any} */ (res);
-    fail(bad.reason === 'state-locked' ? 'state-locked' : 'state-write-failed', `${statePath(dir)}: ${bad.reason} - ${bad.detail}`,
+    // a file that broke after the gate looked gets the gate's refusal, not a generic write failure
+    if (bad.reason === 'state-invalid') fail('invalid-state', bad.detail, invalidHint(bad.why));
+    else fail(bad.reason === 'state-locked' ? 'state-locked' : 'state-write-failed', `${statePath(dir)}: ${bad.reason} - ${bad.detail}`,
       bad.reason === 'state-locked'
         ? 'another seam is writing the state file - let it finish, or clear a stale lock the detail names, then re-run'
         : 'fix the cause the detail names and re-run; the state file and the generated files agree again on the next state write');

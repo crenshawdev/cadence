@@ -280,17 +280,17 @@ export function rebuildState(planningRoot, state, afterWrite) {
  * back as `write-failed` with `stateWritten: true`, since the state itself is already down by then.
  * @param {string} planningRoot @param {(state: ProjectState) => ProjectState} change
  * @param {(state: ProjectState) => void} [afterWrite]
- * @returns {(StateWrite & {ok: true, state: ProjectState}) | (Exclude<StateWrite, {ok: true}> & {stateWritten?: boolean}) | {ok: false, reason: 'state-absent' | 'state-invalid', detail: string}}
+ * @returns {(StateWrite & {ok: true, state: ProjectState}) | (Exclude<StateWrite, {ok: true}> & {stateWritten?: boolean}) | {ok: false, reason: 'state-absent' | 'state-invalid', why?: string, detail: string}}
  */
 export function updateState(planningRoot, change, afterWrite) {
   // an unlocked look first, so a project with no state gets its refusal without a records folder appearing
   if (readState(planningRoot).kind === 'absent') return { ok: false, reason: 'state-absent', detail: 'there is no state file to update' };
   // one holder, so the body's assignments aren't narrowed away from the code after it
-  const box = /** @type {{result: ProjectState | null, committed: boolean, refused: {reason: 'state-absent' | 'state-invalid', detail: string} | null}} */ ({ result: null, committed: false, refused: null });
+  const box = /** @type {{result: ProjectState | null, committed: boolean, refused: {reason: 'state-absent' | 'state-invalid', why?: string, detail: string} | null}} */ ({ result: null, committed: false, refused: null });
   const wrote = locked(planningRoot, (file) => {
     const now = readState(planningRoot);
     if (now.kind === 'absent') { box.refused = { reason: 'state-absent', detail: 'there is no state file to update' }; return { ok: true, changed: false }; }
-    if (now.kind === 'invalid') { box.refused = { reason: 'state-invalid', detail: `${file}: ${now.detail}` }; return { ok: true, changed: false }; }
+    if (now.kind === 'invalid') { box.refused = { reason: 'state-invalid', why: now.reason, detail: `${file}: ${now.reason} - ${now.detail}` }; return { ok: true, changed: false }; }
     const next = shapeOf(change(structuredClone(now.state)));
     if (next.ok === false) return { ok: false, reason: 'bad-shape', detail: next.detail };
     box.result = next.state;

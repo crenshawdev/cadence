@@ -19,7 +19,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSyn
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fail, ok } from './core.mjs';
-import { importState, loadState, writeViews } from './state-import.mjs';
+import { importState, invalidHint, loadState, writeViews } from './state-import.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   archivePath, codemapDir, declinedPath, deferredDir, ensurePhaseRecordsDir, ensureRecordsDir, ensureRecordsIgnore,
@@ -355,13 +355,6 @@ function convert(dir, moves) {
       ...(due ? { hint: 'make one commit of the planning directory before going on (git add -A on it, then git commit), under the rule in references/git-guard.md' } : {}) };
   }
   return null;
-}
-
-/** A refusal's hint for a state file that is there but not valid, by why it is not. @param {string} why */
-function invalidHint(why) {
-  if (why === 'newer-layout') return 'this project was written by a newer Cadence - update the plugin; the file was not touched';
-  if (why === 'unreadable') return 'make the state file readable and re-run - it was not touched, since a file that could not be read may still be valid';
-  return 'run `planning.mjs state-rebuild`, which rebuilds the state file from the project\'s files, then re-run this; nothing was changed';
 }
 
 /**
