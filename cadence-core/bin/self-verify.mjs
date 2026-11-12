@@ -39,6 +39,7 @@ import { bulkOutputIssues } from './lib/bulk-output.mjs';
 import { scratchPathIssues } from './lib/scratch-path.mjs';
 import { captureWriterIssues } from './lib/capture-writers.mjs';
 import { hookEventIssues } from './lib/hook-events.mjs';
+import { writeModuleIssues } from './lib/planning-writers.mjs';
 // the flag table, its accessor and the evaluator are defined in lib/arg-contract.mjs and imported, not restated
 import { CONTRACTS, flagNames, evaluateFlag, subcommandKey } from './lib/arg-contract.mjs';
 
@@ -946,6 +947,26 @@ function checkNulBytes(root, problems) {
   }
 }
 
+// 37. a script under cadence-core/bin calls a node:fs write only in lib/planning-store.mjs or under a register row (lib/planning-writers.mjs)
+// read through binFiles like check 15, so an unreadable file is reported once and a fixture with no bin directory passes
+function checkWriteModule(root, isFullTree, problems) {
+  const files = [];
+  for (const { file, unreadable } of binFiles(root)) {
+    const rel = relative(root, file).split(sep).join('/');
+    if (unreadable) {
+      problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
+      continue;
+    }
+    try {
+      files.push({ file: rel, text: readFileSync(file, 'utf8') });
+    } catch (e) {
+      problems.push({ kind: 'unreadable-surface', file: rel, detail: e && e.code ? e.code : String(e) });
+      files.push({ file: rel, text: null });
+    }
+  }
+  problems.push(...writeModuleIssues(files, isFullTree));
+}
+
 function checkRegisters(root, problems) {
   // 16. an @-included references/templates surface must be named in the command's eager prose (include-consumers)
   for (const issue of includeConsumerIssues(root)) problems.push(issue);
@@ -999,6 +1020,7 @@ function run(root) {
   checkContractedScripts(root, problems);
   checkNulBytes(root, problems);
   checkRegisters(root, problems);
+  checkWriteModule(root, v.isFullTree, problems);
   checkWorkflowScripts(root, problems, lintProse);
   return problems;
 }
@@ -1015,7 +1037,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations, setting-conditions, plain-words, workflow-scripts', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations, setting-conditions, plain-words, workflow-scripts, write-module', problems });
 } catch (e) {
   emitCaught(e);
 }
