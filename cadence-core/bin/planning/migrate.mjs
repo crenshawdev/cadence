@@ -4,7 +4,7 @@
 // the conversion moves what scripts keep into `records/` (top level and each phase, archived ones too), builds the state from
 // the project at its new place, writes it LAST with the layout number, and regenerates the three views from it
 // it judges everything first and moves nothing unless every judgment passes, so a refused project is byte-identical
-// a held workflow claim and a live `cadence/phase-<N>-plan-<k>` worktree each refuse
+// a worktree executor, a held workflow claim and a live `cadence/phase-<N>-plan-<k>` worktree each refuse; no hook script imports this file
 // the script makes no commit
 // a move is a plain rename through the write module and a moved file is never read, so review, adjudication and deferred files keep their bytes
 // a project the importer can't read gets no stamp, and a state file that is there but not valid is never rewritten here
@@ -46,6 +46,26 @@ function git(args, cwd) {
   try {
     return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch { return null; }
+}
+
+/** @param {string} p */
+function real(p) {
+  try { return realpathSync(p); } catch { return resolve(p); }
+}
+
+/**
+ * Is this call a worktree executor's: the working directory is in a linked worktree, and the planning directory the call
+ * resolved sits outside it. That is the `--dir <main tree>/.planning` shape the executor contract prescribes. A planning
+ * directory in no repository, or inside the same worktree, is the main session's.
+ * @param {string} dir
+ */
+function isExecutorCall(dir) {
+  const gitDir = git(['rev-parse', '--git-dir']);
+  const common = git(['rev-parse', '--git-common-dir']);
+  if (gitDir === null || common === null || real(resolve(gitDir)) === real(resolve(common))) return false;
+  const here = git(['rev-parse', '--show-toplevel']);
+  const there = git(['rev-parse', '--show-toplevel'], resolve(dir));
+  return here !== null && there !== null && real(here) !== real(there);
 }
 
 /**
@@ -157,6 +177,11 @@ function judgeMoves(moves) {
  * @returns {{refusal: Refusal} | {moves: Move[]}}
  */
 function judge(dir) {
+  if (isExecutorCall(dir)) {
+    return { refusal: { reason: 'executor-cannot-convert',
+      detail: `${resolve(dir)} has no state file, and this call comes from a linked worktree whose planning directory is outside it`,
+      hint: 'the main session converts the project on its next command - re-run after that; nothing was changed' } };
+  }
   const imported = importState(dir);
   if (imported.ok === false) {
     const { reason, detail, issues, hint } = imported;
