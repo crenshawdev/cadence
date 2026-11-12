@@ -3,9 +3,9 @@
 'use strict';
 
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { fail, notRealDirDetail, ok, phaseGuard } from './core.mjs';
-import { copyFile, makeDir } from '../lib/planning-store.mjs';
+import { copyFile, ensureRecordsDir, makeDir, recordsDir, riskCarryDir } from '../lib/planning-store.mjs';
 
 // risk_surface reviews and adjudications are copied out of `phases/<N>/` before the prune removes it
 // a seam, not a prose step: /cad-milestone chains /cad-land after the prune unattended
@@ -14,6 +14,11 @@ import { copyFile, makeDir } from '../lib/planning-store.mjs';
 // basenames are kept: the gate pairs a review with its adjudication by name
 // every path is lstat'ed on both sides, because readdirSync and copyFileSync follow links
 // the phase stays a directory level, or two phases firing the same trigger overwrite each other
+
+/** Where the carry lands, relative to the planning directory, as every message and answer here names it. */
+const CARRY_REL = relative('.', riskCarryDir('.')).split(sep).join('/');
+/** The folder that holds it, which is checked on its own because a link there carries the copies out of the tree. */
+const RECORDS_REL = relative('.', recordsDir('.')).split(sep).join('/');
 
 /** The two stems this carry takes, as `[prefix, extension]` pairs. */
 const CARRIED = Object.freeze([
@@ -36,11 +41,11 @@ const UNSEARCHABLE_HINT = 'make every directory on that path readable and search
 
 /** The `carry-dest-unsearchable` detail for a destination path whose stat failed; it never claims the path exists. */
 const undestinable = (label) =>
-  `${label} could not be inspected (risk-carry/ or a directory under it may not be searchable),`
+  `${label} could not be inspected (${CARRY_REL}/ or a directory under it may not be searchable),`
   + ' so this carry cannot tell what is already there';
 
 /** The remedy for a destination path that could not be stat'ed. */
-const UNSEARCHABLE_DEST_HINT = 'make risk-carry/ and everything under it readable, writable and'
+const UNSEARCHABLE_DEST_HINT = `make ${CARRY_REL}/ and everything under it readable, writable and`
   + ' searchable (chmod u+rwx), then re-run BEFORE milestone-prune - nothing was copied, and the'
   + ' rulings are still in the phase directory the prune deletes';
 
@@ -55,13 +60,14 @@ function cmdRiskCarry(dir, opts) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
 
   // destination first, both components and not the last alone: lstatSync follows every component before the final one
-  const carryRoot = join(dir, 'risk-carry');
-  const dest = join(dir, 'risk-carry', n);
-  for (const [path, label] of [[carryRoot, 'risk-carry/'], [dest, `risk-carry/${n}`]]) {
+  // the records folder first: a link there carries everything below it out of the tree
+  const carryRoot = riskCarryDir(dir);
+  const dest = join(carryRoot, n);
+  for (const [path, label] of [[recordsDir(dir), `${RECORDS_REL}/`], [carryRoot, `${CARRY_REL}/`], [dest, `${CARRY_REL}/${n}`]]) {
     let stat;
     try { stat = lstatSync(path, { throwIfNoEntry: false }); }
     catch {
-      // not absence (GH-302): without its search bit `risk-carry/` can't say whether `<N>` is there
+      // not absence (GH-302): without its search bit the carry folder cannot say whether `<N>` is there
       return fail('carry-dest-unsearchable', undestinable(label), UNSEARCHABLE_DEST_HINT);
     }
     if (stat && !stat.isDirectory()) {
@@ -142,14 +148,14 @@ function cmdRiskCarry(dir, opts) {
     let destStat;
     try { destStat = lstatSync(to, { throwIfNoEntry: false }); }
     catch {
-      return fail('carry-dest-unsearchable', undestinable(`risk-carry/${n}/${name}`),
+      return fail('carry-dest-unsearchable', undestinable(`${CARRY_REL}/${n}/${name}`),
         UNSEARCHABLE_DEST_HINT);
     }
     if (!destStat) { copying.push(name); continue; }
     // a regular file or nothing: readFileSync follows, so a link back at its own target compares identical
     if (!destStat.isFile()) {
       return fail('carry-dest-unusable',
-        `risk-carry/${n}/${name} exists and is not a regular file`
+        `${CARRY_REL}/${n}/${name} exists and is not a regular file`
         + `${destStat.isSymbolicLink() ? ' (it is a symlink, which the prune leaves dangling however its target compares today)' : ''}`
         + ' - move or remove it, then re-run',
         'clear that path and re-run BEFORE milestone-prune - nothing has been copied yet, and the'
@@ -160,14 +166,14 @@ function cmdRiskCarry(dir, opts) {
     try { toBytes = readFileSync(to); }
     catch {
       return fail('unreadable-carried-copy',
-        `risk-carry/${n}/${name} already exists and could not be read, so this carry cannot tell`
+        `${CARRY_REL}/${n}/${name} already exists and could not be read, so this carry cannot tell`
         + ` whether it matches phases/${n}/${name}`,
         'make that file readable (chmod u+r) and re-run BEFORE milestone-prune - nothing was'
         + ' copied, and this seam never overwrites a carried ruling it has not compared');
     }
     if (toBytes.equals(fromBytes)) { skipped.push(name); continue; }
     return fail('carry-exists',
-      `risk-carry/${n}/${name} already exists and differs from phases/${n}/${name} - this seam`
+      `${CARRY_REL}/${n}/${name} already exists and differs from phases/${n}/${name} - this seam`
       + ' never overwrites a carried ruling',
       'move or delete it first, then re-run; a differing file under that name is another fire\'s'
       + ' record of what was ruled, and the gate reads it at close time');
@@ -176,11 +182,13 @@ function cmdRiskCarry(dir, opts) {
   // a plain copy loop, no staging dir: a partial carry self-heals since identical files are skipped
   // a failed write is named, never `internal` (GH-302); what already arrived is listed because the re-run skips it
   const done = [];
-  let at = `risk-carry/${n}/`;
+  let at = `${CARRY_REL}/${n}/`;
   try {
+    // the folder is made by the write module, which also gives it its .gitignore; a refusal here is a failed write
+    if (!ensureRecordsDir(dir).ok) throw new Error('records folder unusable');
     makeDir(dest);
     for (const name of copying) {
-      at = `risk-carry/${n}/${name}`;
+      at = `${CARRY_REL}/${n}/${name}`;
       copyFile(join(src, name), join(dest, name));
       done.push(name);
     }
@@ -188,12 +196,12 @@ function cmdRiskCarry(dir, opts) {
     return fail('carry-write-failed',
       `${at} could not be written`
       + (done.length ? ` (${done.length} of ${copying.length} copied before it)` : ' - nothing was copied'),
-      'make risk-carry/ and everything under it writable and searchable (chmod u+rwx), then re-run'
+      `make ${CARRY_REL}/ and everything under it writable and searchable (chmod u+rwx), then re-run`
       + ' BEFORE milestone-prune - a re-run skips what already arrived and copies the rest');
   }
   return ok({
     phase: n,
-    carried: copying.map((name) => ({ from: `phases/${n}/${name}`, to: `risk-carry/${n}/${name}` })),
+    carried: copying.map((name) => ({ from: `phases/${n}/${name}`, to: `${CARRY_REL}/${n}/${name}` })),
     copied: copying.length,
     skipped: skipped.length,
   });

@@ -157,6 +157,25 @@ export function declinedPath(planningRoot) {
 }
 
 /**
+ * The three folders under the records directory that hold what scripts carry: the deferred review queue a milestone
+ * close moves out of the phase directories, the carried risk rulings, and the code map.
+ * @param {string} planningRoot
+ */
+export function deferredDir(planningRoot) {
+  return recordsPath(planningRoot, 'deferred');
+}
+
+/** @param {string} planningRoot */
+export function riskCarryDir(planningRoot) {
+  return recordsPath(planningRoot, 'risk-carry');
+}
+
+/** @param {string} planningRoot */
+export function codemapDir(planningRoot) {
+  return recordsPath(planningRoot, 'codemap');
+}
+
+/**
  * Write the records folder's `.gitignore` unless one is already there. An existing file is left byte-identical,
  * hand-edited or not. Returns whether this call created it.
  * @param {string} planningRoot

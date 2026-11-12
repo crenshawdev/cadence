@@ -3,11 +3,16 @@
 'use strict';
 
 import { existsSync, lstatSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { fail, notRealDirDetail, ok, phaseGuard, readQueue } from './core.mjs';
 import { queueName } from '../lib/deferred-queue.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { makeDir, movePath } from '../lib/planning-store.mjs';
+import { deferredDir, ensureRecordsDir, makeDir, movePath, recordsDir } from '../lib/planning-store.mjs';
+
+/** Where the carry lands, relative to the planning directory, as every message and answer here names it. */
+const CARRY_REL = relative('.', deferredDir('.')).split(sep).join('/');
+/** The folder that holds it, checked on its own because a link there carries the members out of the tree. */
+const RECORDS_REL = relative('.', recordsDir('.')).split(sep).join('/');
 
 // a seam, not prose: a half-run step would leave what stops the land in a directory milestone-prune is about to remove
 function cmdDeferredCarry(dir, opts) {
@@ -21,22 +26,24 @@ function cmdDeferredCarry(dir, opts) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
 
   // destination first: renameSync follows a symlink squatting it and would deposit artifacts wherever it points
-  const carryRoot = join(dir, 'deferred');
-  // check every component: lstat follows all but the last, so deferred/ itself could be a link out of the tree
-  const rootStat = lstatSync(carryRoot, { throwIfNoEntry: false });
-  if (rootStat && !rootStat.isDirectory()) {
-    return fail('carry-dest-unusable',
-      notRealDirDetail('deferred/', rootStat, 'renameSync'),
-      'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
-      + ' are still in the phase directory the prune deletes');
+  const carryRoot = deferredDir(dir);
+  // check every component: lstat follows all but the last, so either folder could be a link out of the tree
+  for (const [path, label] of [[recordsDir(dir), `${RECORDS_REL}/`], [carryRoot, `${CARRY_REL}/`]]) {
+    const rootStat = lstatSync(path, { throwIfNoEntry: false });
+    if (rootStat && !rootStat.isDirectory()) {
+      return fail('carry-dest-unusable',
+        notRealDirDetail(label, rootStat, 'renameSync'),
+        'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
+        + ' are still in the phase directory the prune deletes');
+    }
   }
 
   // the phase is a directory level, not in the filename: two phases routinely defer the same trigger on one plan-<k>
-  const dest = join(dir, 'deferred', n);
+  const dest = join(carryRoot, n);
   const destStat = lstatSync(dest, { throwIfNoEntry: false });
   if (destStat && !destStat.isDirectory()) {
     return fail('carry-dest-unusable',
-      notRealDirDetail(`deferred/${n}`, destStat, 'renameSync'),
+      notRealDirDetail(`${CARRY_REL}/${n}`, destStat, 'renameSync'),
       'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
       + ' are still in the phase directory the prune deletes');
   }
@@ -56,7 +63,7 @@ function cmdDeferredCarry(dir, opts) {
     });
   }
 
-  // a member already under deferred/<N>/ is where this puts things, so a re-run after a partial carry finishes the job
+  // a member already under the carry folder's <N>/ is where this puts things, so a re-run after a partial carry finishes the job
   // a settled member (ADJUDICATION sibling) stays to be pruned, or a cleared finding would face every later land
   const src = join(dir, 'phases', n);
   const moving = q.members.filter((m) => m.path.startsWith(`phases/${n}/`));
@@ -69,11 +76,17 @@ function cmdDeferredCarry(dir, opts) {
     const name = queueName(m.trigger, m.discriminator, m.round);
     if (lstatSync(join(dest, name), { throwIfNoEntry: false })) {
       return fail('carry-exists',
-        `deferred/${n}/${name} already exists - this seam never overwrites a carried queue member`,
+        `${CARRY_REL}/${n}/${name} already exists - this seam never overwrites a carried queue member`,
         'adjudicate or move it first; it is another fire\'s only copy of what was deferred');
     }
   }
 
+  const records = ensureRecordsDir(dir);
+  if (!records.ok) {
+    return fail('carry-dest-unusable', `${RECORDS_REL}/ cannot be used (${records.reason})`,
+      'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
+      + ' are still in the phase directory the prune deletes');
+  }
   makeDir(dest);
   const moved = [];
   for (const m of moving) {
@@ -85,7 +98,7 @@ function cmdDeferredCarry(dir, opts) {
       discriminator: m.discriminator,
       round: m.round,
       from: m.path,
-      to: `deferred/${n}/${name}`,
+      to: `${CARRY_REL}/${n}/${name}`,
       findings: m.findings,
     });
   }

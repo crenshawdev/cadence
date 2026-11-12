@@ -6,7 +6,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve as resolvePath } from 'node:path';
+import { basename, dirname, join, relative, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS } from '../lib/arg-contract.mjs';
@@ -16,7 +16,7 @@ import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
 import { parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
-import { recordsPath } from '../lib/planning-store.mjs';
+import { codemapDir, deferredDir, recordsPath } from '../lib/planning-store.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
@@ -581,7 +581,7 @@ function realDir(dir, name) {
 /**
  * The directory a fire's artifact is written into, or null once the refusal is out.
  * It sits beside the sibling REVIEW file, never in `<plandir>/reports/`, where lease-check exempts only one path.
- * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/`, then `deferred/<N>/`.
+ * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/`, then the carried queue's `<N>/`.
  * @param {string} dir @param {string} n the phase as the caller spelled it
  * @param {string} what the artifact, for the refusal's wording
  * @param {string} [task] the task slug, when this fire is a task's
@@ -604,15 +604,15 @@ function fireHome(dir, n, what, task) {
       + 'gate there is settled by the user rather than recorded here');
     return null;
   }
-  for (const home of QUEUE_HOMES) {
-    if (!realDir(dir, home)) continue;
-    const hdir = join(dir, home, String(n));
+  for (const home of queueHomes(dir)) {
+    if (!realChain(dir, home.rel)) continue;
+    const hdir = join(home.path, String(n));
     let hstat = null;
     try { hstat = lstatSync(hdir); } catch { /* absent is the answer, never a throw */ }
     if (hstat && hstat.isDirectory()) return hdir;
   }
   fail('no-phase-dir',
-    `neither phases/${n}/ nor deferred/${n}/ is a directory under ${dir} - the ${what} is `
+    `neither phases/${n}/ nor ${DEFERRED_REL}/${n}/ is a directory under ${dir} - the ${what} is `
     + 'written BESIDE the sibling REVIEW file, or beside the queue member a milestone close '
     + 'carried out of that phase, so one of the two has to exist already',
     `check the --phase spelling first - it addresses phases/${n}/ verbatim. If the milestone close `
@@ -700,8 +700,32 @@ function fireTargetTaken(dir, file, round, kind) {
   return true;
 }
 
-/** The two directories under `.planning/` a queue member may live in. */
-const QUEUE_HOMES = ['phases', 'deferred'];
+/** A planning-relative path with forward slashes, the way an answer names a directory. */
+const posixRel = (/** @type {string} */ p) => relative('.', p).split(sep).join('/');
+
+/** Where the carried queue lives, relative to the planning directory (the write module decides). */
+const DEFERRED_REL = posixRel(deferredDir('.'));
+
+/**
+ * The two directories a queue member may live in: `rel` is how an answer names it, `path` where it is on disk.
+ * @param {string} dir the planning directory
+ * @returns {{rel: string, path: string}[]}
+ */
+function queueHomes(dir) {
+  return [{ rel: 'phases', path: join(dir, 'phases') }, { rel: DEFERRED_REL, path: deferredDir(dir) }];
+}
+
+/** Is every component of `rel` under `dir` a real directory? lstat follows all but the last, so each is asked. */
+function realChain(/** @type {string} */ dir, /** @type {string} */ rel) {
+  let at = dir;
+  for (const part of rel.split('/')) {
+    at = join(at, part);
+    let stat = null;
+    try { stat = lstatSync(at); } catch { return false; }
+    if (!stat.isDirectory()) return false;
+  }
+  return true;
+}
 
 /**
  * Every unadjudicated queue member under dir, and everything in the two homes that couldn't be proven to hold none.
@@ -721,17 +745,17 @@ function readQueue(dir, wantPhase) {
   // redactUrl on every message: a land refusal prints these, and they can carry a path nobody wants published
   const why = (/** @type {any} */ e) => redactUrl(e && e.message ? e.message : String(e));
 
-  for (const home of QUEUE_HOMES) {
+  for (const home of queueHomes(dir)) {
     let entries;
-    try { entries = readdirSync(join(dir, home), { withFileTypes: true }); } catch (e) {
-      // ENOENT is absence (`deferred/` only exists once a close carried something); anything else might hide a queue
+    try { entries = readdirSync(home.path, { withFileTypes: true }); } catch (e) {
+      // ENOENT is absence (the carried queue only exists once a close carried something); anything else might hide one
       if (e && /** @type {any} */ (e).code === 'ENOENT') continue;
-      unreadable.push({ path: `${home}/`, detail: why(e) });
+      unreadable.push({ path: `${home.rel}/`, detail: why(e) });
       continue;
     }
     for (const ent of entries) {
       if (wantPhase !== null && ent.name !== wantPhase) continue;
-      const rel = `${home}/${ent.name}`;
+      const rel = `${home.rel}/${ent.name}`;
       // withFileTypes classifies the link, not its target: a symlink where a phase directory belongs is refused
       if (ent.isSymbolicLink()) {
         unreadable.push({ path: rel, detail: 'a symlink where a phase directory should be - not followed' });
@@ -739,7 +763,7 @@ function readQueue(dir, wantPhase) {
       }
       // a regular file here holds no queue member, only a directory can
       if (!ent.isDirectory()) continue;
-      const pdir = join(dir, home, ent.name);
+      const pdir = join(home.path, ent.name);
       /** @type {string[]} */
       let names;
       try { names = readdirSync(pdir); } catch (e) {
@@ -858,7 +882,8 @@ function argRefusal(key, flag) {
   return `${global ? '' : `${key} `}${flag} ${flagSentence(flag, spec)}`;
 }
 
-const MAP_DIR = 'codemap';
+/** The code map's folder name under the records directory, for the display paths an answer carries. */
+const MAP_REL = posixRel(codemapDir('.'));
 const INDEX_FILE = 'index.json';
 
 // the index holds a row per tracked path and its symbols, so a big repository writes a big one. Measured on a file of
@@ -966,7 +991,7 @@ function noticeTotals(opts, seam) {
  */
 function readStoredMap(dir) {
   const root = dirname(resolvePath(dir));
-  const map = join(dir, MAP_DIR);
+  const map = codemapDir(dir);
   let real = false;
   try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
   const { index, tooLarge } = real ? storedIndex(map) : { index: null, tooLarge: false };
@@ -1002,7 +1027,7 @@ function readStoredMap(dir) {
     states.set(m.name, state);
     if (entry && (state === 'built' || state === 'stale')) entries.set(m.name, entry);
   }
-  const base = `${basename(resolvePath(dir))}/${MAP_DIR}`;
+  const base = `${basename(resolvePath(dir))}/${MAP_REL}`;
   /** @type {{edges_shed?: true, symbols_shed?: true}} */
   const marks = { ...(index.edges_shed === true ? { edges_shed: true } : {}), ...(index.symbols_shed === true ? { symbols_shed: true } : {}) };
   return { index, states, entries, entryPath: (name) => `${base}/${entryFile(name)}`, current: new Set(current.map((r) => r.path)), marks };
@@ -1016,11 +1041,10 @@ export {
   HERE,
   INDEX_FILE,
   MANIFEST_PATH,
-  MAP_DIR,
+  MAP_REL,
   MAX_ENTRY,
   MAX_INDEX,
   PHASE_DIR_NAME,
-  QUEUE_HOMES,
   RECORD_TOKEN,
   RISK_DIFF_MAX_BUFFER,
   argRefusal,
