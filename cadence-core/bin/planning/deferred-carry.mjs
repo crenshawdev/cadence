@@ -2,11 +2,12 @@
 // planning/deferred-carry.mjs - `deferred carry`: moves the queue out of the phase directory a close is about to delete
 'use strict';
 
-import { existsSync, lstatSync, mkdirSync, renameSync } from 'node:fs';
+import { existsSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, notRealDirDetail, ok, phaseGuard, readQueue } from './core.mjs';
 import { queueName } from '../lib/deferred-queue.mjs';
 import { emit } from '../lib/seam-io.mjs';
+import { makeDir, movePath } from '../lib/planning-store.mjs';
 
 // a seam, not prose: a half-run step would leave what stops the land in a directory milestone-prune is about to remove
 function cmdDeferredCarry(dir, opts) {
@@ -73,12 +74,12 @@ function cmdDeferredCarry(dir, opts) {
     }
   }
 
-  mkdirSync(dest, { recursive: true });
+  makeDir(dest);
   const moved = [];
   for (const m of moving) {
     const name = queueName(m.trigger, m.discriminator, m.round);
     // a move, not a copy: the archived phase directory would count one fire twice. Basename stays for `deferred list`
-    renameSync(join(src, name), join(dest, name));
+    movePath(join(src, name), join(dest, name));
     moved.push({
       trigger: m.trigger,
       discriminator: m.discriminator,

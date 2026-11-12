@@ -4,7 +4,7 @@
 // still lists consistent paths; the facts live in .planning/codemap/, which a nested .gitignore keeps out of every commit
 'use strict';
 
-import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { emit } from '../lib/seam-io.mjs';
 import { INDEX_FILE, MAP_DIR, MAX_ENTRY, MAX_INDEX, dirFlag, fail, noticeTotals, ok, readCapped, readEntry, readStoredMap, storedIndex, writeBrackets } from './core.mjs';
@@ -14,7 +14,7 @@ import { readFacts, readNested } from '../lib/codemap-facts.mjs';
 import { writeLaunch } from '../lib/codemap-launch.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
 import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '../lib/codemap-partition.mjs';
-import { atomicWrite } from '../lib/planning-files.mjs';
+import { atomicWrite, makeDir, unlinkFile } from '../lib/planning-store.mjs';
 import { LIST_CAP, MAX_RUN_BYTES, agentBrackets, agentRows, noticeBracket, parseCompleted } from '../lib/workflow-run.mjs';
 import { isPlainObject } from '../lib/text-util.mjs';
 
@@ -216,7 +216,7 @@ function cmdScan(dir) {
       }
     }
   }
-  mkdirSync(map, { recursive: true });
+  makeDir(map);
   const ignore = join(map, '.gitignore');
   // read only a regular file of exactly the 2 bytes it should hold; anything else, a link included, is replaced by the write
   let held = null;
@@ -230,7 +230,7 @@ function cmdScan(dir) {
   const named = new Set(listed.map((m) => m.entry));
   for (const f of readdirSync(map)) {
     if (!ENTRY_FILE.test(f) || named.has(f)) continue;
-    try { unlinkSync(join(map, f)); } catch { /* a directory wearing an entry's name is left as it is */ }
+    try { unlinkFile(join(map, f)); } catch { /* a directory wearing an entry's name is left as it is */ }
   }
   const count = (kind) => rows.filter((r) => r.kind === kind).length;
   return ok({

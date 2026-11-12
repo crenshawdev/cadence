@@ -2,9 +2,10 @@
 // planning/risk-carry.mjs - `risk-carry`: copies risk_surface rulings out of a phase dir before the close deletes it
 'use strict';
 
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, notRealDirDetail, ok, phaseGuard } from './core.mjs';
+import { copyFile, makeDir } from '../lib/planning-store.mjs';
 
 // risk_surface reviews and adjudications are copied out of `phases/<N>/` before the prune removes it
 // a seam, not a prose step: /cad-milestone chains /cad-land after the prune unattended
@@ -177,10 +178,10 @@ function cmdRiskCarry(dir, opts) {
   const done = [];
   let at = `risk-carry/${n}/`;
   try {
-    mkdirSync(dest, { recursive: true });
+    makeDir(dest);
     for (const name of copying) {
       at = `risk-carry/${n}/${name}`;
-      copyFileSync(join(src, name), join(dest, name));
+      copyFile(join(src, name), join(dest, name));
       done.push(name);
     }
   } catch {

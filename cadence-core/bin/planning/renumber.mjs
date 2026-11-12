@@ -4,14 +4,15 @@
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import { fail, intFlag, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
-  atomicWrite, cutPhaseDetail, findProsePhaseRefs, nextNamesPhase,
+  cutPhaseDetail, findProsePhaseRefs, nextNamesPhase,
   parseRoadmapPhases, renderCursor, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
+import { atomicWrite, movePath, removeTree } from '../lib/planning-store.mjs';
 import { parseCursor } from '../lib/state-cursor.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
@@ -19,7 +20,7 @@ import { emit } from '../lib/seam-io.mjs';
 // REQUIREMENTS.md tokens shift only on Pending `## Traceability` rows; every other line is copied byte-identical
 function gitMv(from, to) {
   try { execFileSync('git', ['mv', from, to], { stdio: 'pipe' }); return 'git'; }
-  catch { renameSync(from, to); return 'fs'; }
+  catch { movePath(from, to); return 'fs'; }
 }
 
 /**
@@ -289,7 +290,7 @@ function cmdRenumber(dir, sub, opts) {
           // worded to what is known: a failed `git rm` proves the git state went unread, nothing stronger
           throw new Error(`git rm -r failed for phases/${at} and a git repository sits at, above or inside it, so the git state this delete depends on is unread - refusing the recursive fallback, since the object store may hold the only copy; run \`git rm -r -- .planning/phases/${at}\` from the repository to see git's own answer`);
         }
-        rmSync(target, { recursive: true });
+        removeTree(target);
       }
     }]);
   }

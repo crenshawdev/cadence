@@ -2,14 +2,14 @@
 // planning/milestone-prune.mjs - `milestone-prune`: the mechanical half of a milestone close, in one call
 'use strict';
 
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join, resolve as resolvePath, sep } from 'node:path';
 import { fail, notRealDirDetail, ok, read } from './core.mjs';
-import { withPlanningFileLock } from '../lib/capture-file.mjs';
+import { atomicWrite, makeDir, movePath, removeTree, withPlanningFileLock } from '../lib/planning-store.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import { archiveRequirements, completedPhases, pruneRoadmap } from '../lib/milestone-prune.mjs';
 import {
-  appendArchiveRows, atomicWrite, parseArchiveRows, phaseRecallSnippets,
+  appendArchiveRows, parseArchiveRows, phaseRecallSnippets,
 } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
@@ -129,14 +129,14 @@ function cmdMilestonePrune(dir, opts) {
   const steps = completed.map((n) => [n, () => {
     const src = join(dir, 'phases', String(n));
     if (!existsSync(src)) { dirs.missing.push(n); return; }
-    if (mode === 'delete') { rmSync(src, { recursive: true }); dirs.deleted.push(n); return; }
-    mkdirSync(archiveRoot, { recursive: true });
+    if (mode === 'delete') { removeTree(src); dirs.deleted.push(n); return; }
+    makeDir(archiveRoot);
     const dest = join(archiveRoot, String(n));
     // refuse an existing destination, don't let renameSync decide: it follows a symlink; a half-run close is evidence
     if (lstatSync(dest, { throwIfNoEntry: false })) {
       throw new Error(`${dest} already exists - a previous close left it there`);
     }
-    renameSync(src, dest);
+    movePath(src, dest);
     dirs.archived.push(n);
   }]);
   const pass = runTransition({ steps, discipline: 'continue-past-failure' });
