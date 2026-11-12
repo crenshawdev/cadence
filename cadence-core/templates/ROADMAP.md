@@ -1,7 +1,9 @@
 # ROADMAP.md template
 
 Fill and write to `.planning/ROADMAP.md` - phases with falsifiable success
-criteria. /cad-phase edits phases later; /cad-milestone prunes completed ones
+criteria. The `## Phases` list is generated from the state file and never
+edited by hand: write the heading empty and enter each line with `phase-entry
+add`. /cad-phase edits phases later; /cad-milestone prunes completed ones
 at version cuts (git is the archive - no collapsed-history sections here).
 
 <template>
@@ -52,9 +54,9 @@ Notes:
 - Every v1 REQ-ID appears in exactly one phase. Do not hand-author
   REQUIREMENTS.md's Traceability table to match - `/cad-plan` seeds each row
   when its phase is planned (`references/req-traceability.md`).
-- Phase status is the `## Phases` checkbox, and nothing else: `- [ ]` open,
-  `- [x]` complete. /cad-verify checks the box when a phase's UAT fully
-  passes; /cad-progress reconciles it if it ever drifts. There is no separate
+- Phase status is held in the state file and shown as the `## Phases`
+  checkbox: `- [ ]` open, `- [x]` complete. /cad-verify completes a phase when
+  its UAT fully passes; /cad-progress reconciles it if it ever drifts. There is no separate
   progress table - live status is derived by /cad-progress from phase
   artifacts (git is the log, not a hand-maintained mirror).
 - No time estimates, no plan sub-lists - plans live in

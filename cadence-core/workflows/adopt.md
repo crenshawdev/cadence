@@ -323,8 +323,9 @@ first when `check` finds no gate.
 
 <step name="write_roadmap">
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
-`.planning/ROADMAP.md`. It covers REMAINING work only, derived here - there is
-no roadmapper agent.
+`.planning/ROADMAP.md`: the overview, an empty `## Phases` heading and every
+`### Phase N:` detail section. It covers REMAINING work only, derived here -
+there is no roadmapper agent.
 
 1. Every `## Phases` entry is `- [ ]`. Never reconstruct shipped work as an
    `- [x]` phase: /cad-health rule 5 flags an `- [x]` phase whose mapped
@@ -346,6 +347,13 @@ no roadmapper agent.
    the real figure. It is one of rule 2's counted phases, it maps no `## Active`
    id unless one is about this work, and its criteria are the thresholds met and
    the required jobs passing. It never lowers a threshold to make that easier.
+
+Then enter each phase, in order. The list is generated from the state file, so
+a hand-written line would be overwritten:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
+```
 
 Then count what you just wrote - rule 4 above is prose until a seam counts it:
 
@@ -370,8 +378,20 @@ phase and its numbers) and take it through the approval gate (ask-user seam):
   - "Change phases" - you tell me what to change, and I update the roadmap
   - "Show the whole file" - I print the roadmap file as written, then ask again
 
-On "Change phases", take the feedback, revise ROADMAP.md inline, re-present, and
-loop until approved. On "Show the whole file", show the file and re-ask.
+On "Change phases", take the feedback and edit the overview, the
+`### Phase N:` sections and their criteria inline. Every change to the phase
+list goes through a seam - a name or description, a new phase, a dropped one,
+an inserted one whose slot `phase-entry add` fills:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry edit --phase <N> [--name <name>] [--description <one line>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" renumber remove --n <N>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" renumber insert --at <N>
+```
+
+Run `criteria-size` again, re-present, and loop until approved. On "Show the
+whole file", show the file and re-ask.
 </step>
 
 <step name="state">

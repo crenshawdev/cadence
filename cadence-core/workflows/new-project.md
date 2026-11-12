@@ -488,9 +488,17 @@ Derivation rules:
 6. Order by dependency; state each phase's `Depends on` explicitly.
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
-`.planning/ROADMAP.md`. Leave REQUIREMENTS.md's Traceability table as bare
+`.planning/ROADMAP.md`: the overview, an empty `## Phases` heading and every
+`### Phase N:` detail section. Leave REQUIREMENTS.md's Traceability table as bare
 headers - `/cad-plan` seeds each row when its phase is planned
 (`references/req-traceability.md`); do not hand-author a row here.
+
+Then enter each phase, in order. The list is generated from the state file, so
+a hand-written line would be overwritten:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
+```
 
 Then count what you just wrote - rule 5 above is prose until a seam counts it:
 
@@ -517,9 +525,20 @@ criteria. Name every `over` phase and its numbers in that same presentation.
   - "Change phases" - you tell me what to change, and I update the roadmap
   - "Show the whole file" - I print the roadmap file as written, then ask again
 
-On "Change phases": take the feedback, revise ROADMAP.md and the
-traceability mapping inline, re-present, loop until approved. On "Show the
-whole file": show the file, then re-ask.
+On "Change phases": take the feedback and edit the overview, the
+`### Phase N:` sections and their criteria and requirement mapping inline.
+Every change to the phase list goes through a seam - a name or description, a
+new phase, a dropped one, an inserted one whose slot `phase-entry add` fills:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry edit --phase <N> [--name <name>] [--description <one line>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" renumber remove --n <N>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" renumber insert --at <N>
+```
+
+Run `criteria-size` again, re-present, loop until approved. On "Show the whole
+file": show the file, then re-ask.
 </step>
 
 <step name="state">
