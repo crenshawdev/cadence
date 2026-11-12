@@ -6,14 +6,14 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
-import { fail, intFlag, ok, read } from './core.mjs';
+import { fail, intFlag, ok, read, readProject } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   cutPhaseDetail, findProsePhaseRefs, nextNamesPhase,
-  parseRoadmapPhases, renderCursor, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
+  parseRoadmapPhases, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
 import { atomicWrite, movePath, removeTree } from '../lib/planning-store.mjs';
-import { parseCursor } from '../lib/state-cursor.mjs';
+import { changeState, loadState, phasesOf } from './state-import.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 // structured edits are automated, lowercase prose refs are reported for the model; --dry-run touches nothing
@@ -200,14 +200,15 @@ function cmdRenumber(dir, sub, opts) {
       shiftPendingReqRows(reqText, at, delta));
   }
 
-  const stateFile = join(dir, 'STATE.md');
-  const stateText = read(stateFile);
-  const cursor = parseCursor(stateText || '');
+  // the cursor it re-points is the state's; STATE.md is rendered from the state afterwards, never read
+  const state = loadState(dir);
+  if (!state) return;
+  const cursor = state.cursor;
   let newCursor = null;
   let warn;
   if (cursor) {
     // `Next:` keeps naming the same work, so its phase numbers shift by the same rule, a decimal cursor too
-    newCursor = { ...cursor, total: total + delta, next: shiftNextPhases(cursor.next, shiftFrom, delta) };
+    newCursor = { ...cursor, next: shiftNextPhases(cursor.next, shiftFrom, delta) };
     // the number only shifts for an integer cursor: a decimal cursor's own token and dir never shift. total still moves
     if (cursor.phase >= shiftFrom) {
       if (Number.isInteger(cursor.phase)) {
@@ -241,7 +242,7 @@ function cmdRenumber(dir, sub, opts) {
 
   // prose refs the shift leaves alone are for the model to repair; REQUIREMENTS refs come from the pass above
   const inTextRefs = [];
-  const readEarlier = { 'ROADMAP.md': roadmapText, 'REQUIREMENTS.md': reqText, 'STATE.md': stateText };
+  const readEarlier = { 'ROADMAP.md': roadmapText, 'REQUIREMENTS.md': reqText };
   for (const f of ['ROADMAP.md', 'REQUIREMENTS.md', 'STATE.md', 'PROJECT.md']) {
     const t = f in readEarlier ? readEarlier[f] : read(join(dir, f));
     if (t === null) continue;
@@ -300,7 +301,17 @@ function cmdRenumber(dir, sub, opts) {
   }
   steps.push([{ edit: 'ROADMAP.md' }, () => atomicWrite(roadmapFile, newRoadmap)]);
   if (newReqText !== null) steps.push([{ edit: 'REQUIREMENTS.md' }, () => atomicWrite(reqFile, newReqText)]);
-  if (newCursor) steps.push([{ edit: 'STATE.md' }, () => atomicWrite(stateFile, renderCursor(newCursor))]);
+  if (newCursor) {
+    steps.push([{ edit: 'STATE.md' }, () => {
+      // the roadmap has been edited by now and the list is still its to say, so the state takes the list from it
+      const project = readProject(dir);
+      const fold = !project.missing && !project.refusal ? { cycleOpen: !project.closed, phases: phasesOf(project) } : {};
+      const wrote = changeState(dir, (s) => ({ ...s, ...fold, cursor: newCursor }), ['STATE.md'], {
+        onFail: (res) => { throw new Error(`the state file was not written: ${res.reason} - ${res.detail}`); },
+      });
+      if (!wrote) throw new Error('the state file was not written');
+    }]);
+  }
 
   // stop at the first throw: once a step fails the tree no longer matches the plan, and running on would compound it
   const applied = runTransition({ steps, discipline: 'stop-at-first-failure' });

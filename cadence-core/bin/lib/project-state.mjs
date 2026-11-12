@@ -221,14 +221,18 @@ export function writeState(planningRoot, state) {
  * Read, change and write with the lock held across all three, so two seams updating different facts can't erase each
  * other. `change` gets a copy and returns the next state. A file that is absent or invalid is a refusal, not a
  * rebuild: this is for a project that already has a state.
+ * `afterWrite` runs under the same lock once the state is on disk, with the state as written: the seams render the
+ * generated files there, so two writers can't leave a view that shows the older of two states. A throw from it comes
+ * back as `write-failed` with `stateWritten: true`, since the state itself is already down by then.
  * @param {string} planningRoot @param {(state: ProjectState) => ProjectState} change
- * @returns {(StateWrite & {ok: true, state: ProjectState}) | Exclude<StateWrite, {ok: true}> | {ok: false, reason: 'state-absent' | 'state-invalid', detail: string}}
+ * @param {(state: ProjectState) => void} [afterWrite]
+ * @returns {(StateWrite & {ok: true, state: ProjectState}) | (Exclude<StateWrite, {ok: true}> & {stateWritten?: boolean}) | {ok: false, reason: 'state-absent' | 'state-invalid', detail: string}}
  */
-export function updateState(planningRoot, change) {
+export function updateState(planningRoot, change, afterWrite) {
   // an unlocked look first, so a project with no state gets its refusal without a records folder appearing
   if (readState(planningRoot).kind === 'absent') return { ok: false, reason: 'state-absent', detail: 'there is no state file to update' };
   // one holder, so the body's assignments aren't narrowed away from the code after it
-  const box = /** @type {{result: ProjectState | null, refused: {reason: 'state-absent' | 'state-invalid', detail: string} | null}} */ ({ result: null, refused: null });
+  const box = /** @type {{result: ProjectState | null, committed: boolean, refused: {reason: 'state-absent' | 'state-invalid', detail: string} | null}} */ ({ result: null, committed: false, refused: null });
   const wrote = locked(planningRoot, (file) => {
     const now = readState(planningRoot);
     if (now.kind === 'absent') { box.refused = { reason: 'state-absent', detail: 'there is no state file to update' }; return { ok: true, changed: false }; }
@@ -236,8 +240,12 @@ export function updateState(planningRoot, change) {
     const next = shapeOf(change(structuredClone(now.state)));
     if (next.ok === false) return { ok: false, reason: 'bad-shape', detail: next.detail };
     box.result = next.state;
-    return commit(file, next.state);
+    const done = commit(file, next.state);
+    if (done.ok) box.committed = true;
+    if (done.ok && afterWrite) afterWrite(structuredClone(next.state));
+    return done;
   });
   if (box.refused) return { ok: false, ...box.refused };
-  return wrote.ok && box.result ? { ...wrote, state: box.result } : /** @type {Exclude<StateWrite, {ok: true}>} */ (wrote);
+  if (wrote.ok && box.result) return { ...wrote, state: box.result };
+  return box.committed ? { .../** @type {Exclude<StateWrite, {ok: true}>} */ (wrote), stateWritten: true } : /** @type {Exclude<StateWrite, {ok: true}>} */ (wrote);
 }

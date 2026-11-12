@@ -1,5 +1,5 @@
 // @ts-check
-// planning/status.mjs - `status`: where the project is, from phase artifacts, reconciled against the STATE.md cursor
+// planning/status.mjs - `status`: where the project is, from phase artifacts, reconciled against the state file's cursor
 // phaseDirGrammarDrift and AGREE live here because nothing else reads them; the grammar is in core.mjs, shared
 'use strict';
 
@@ -8,7 +8,9 @@ import { join } from 'node:path';
 import {
   PHASE_DIR_NAME, fail, listPlanFiles, ok, planPosition, readProject, readQueue,
 } from './core.mjs';
+import { readState } from '../lib/project-state.mjs';
 import { emit } from '../lib/seam-io.mjs';
+import { cursorOf } from './state-import.mjs';
 
 /**
  * Every `phases/` entry outside `PHASE_DIR_NAME`, as one drift entry per colliding group.
@@ -147,8 +149,9 @@ function cmdStatus(dir) {
     }
   }
 
-  // the cursor is a hint, the derivation wins
-  const parsed = project.cursor;
+  // the cursor is a hint, the derivation wins; it is the state's, and STATE.md is never read
+  const held = readState(dir);
+  const parsed = held.kind === 'valid' ? cursorOf(held.state) : null;
   let cursor;
   if (parsed) {
     let agrees;
