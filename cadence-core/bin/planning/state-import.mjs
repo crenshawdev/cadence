@@ -40,14 +40,17 @@ export function importState(dir) {
   const phases = project.derived.map((p, i) => {
     const done = new Map(project.reportsOf[i].map((r) => [r.plan, r.complete]));
     return {
-      n: p.n, name: p.name, description: p.desc, status: p.status,
+      // a name that parses blank (`**Phase 1:  **`) can't be stored; the number stands in for it, as the views do for a missing one
+      n: p.n, name: p.name.trim() === '' ? `Phase ${p.n}` : p.name, description: p.desc, status: p.status,
       plans: p.plans.map((file) => ({ file, finished: p.status === 'complete' || done.get(file) === true })),
     };
   });
   const c = project.cursor;
   // a status outside the six lifecycle words is left out, not repaired; `next` is carried exactly as parsed
+  // a `Plan:` position the state can't hold (`Plan: 0 of 2`, which /cad-health allows) is dropped from the cursor alone
+  const plan = c?.plan && c.plan.k >= 1 && c.plan.j >= 1 ? { plan: c.plan } : {};
   const cursor = c && CURSOR_WORDS.includes(c.status)
-    ? { phase: c.phase, status: c.status, next: c.next, updated: c.updated, ...(c.plan ? { plan: c.plan } : {}) }
+    ? { phase: c.phase, status: c.status, next: c.next, updated: c.updated, ...plan }
     : null;
   return {
     ok: true,
