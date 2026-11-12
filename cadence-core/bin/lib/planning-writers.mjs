@@ -47,6 +47,8 @@ const WRITE_NAMES = new Set([
   'rename', 'renameSync', 'copyFile', 'copyFileSync', 'cp', 'cpSync', 'rm', 'rmSync', 'rmdir', 'rmdirSync',
   'unlink', 'unlinkSync', 'link', 'linkSync', 'symlink', 'symlinkSync', 'truncate', 'truncateSync',
   'createWriteStream', 'open', 'openSync',
+  // the disposable temp directories and the write-stream constructors (a `new` in front still matches the call)
+  'mkdtempDisposable', 'mkdtempDisposableSync', 'WriteStream', 'FileWriteStream', 'Utf8Stream',
 ]);
 /** open creates only under a write flag, so it counts only when one is spelled next to the call. */
 const OPEN_NAMES = new Set(['open', 'openSync']);
