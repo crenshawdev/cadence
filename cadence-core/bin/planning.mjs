@@ -166,8 +166,13 @@ try {
   else {
     // a project without a state file gets one here, once, before any handler reads or writes; a refusal is its own answer
     const planningDir = args.values['--dir'] || '.planning';
-    if ((await import('./planning/migrate.mjs')).ensureState(planningDir)) {
+    // `trace ignore` reports what the project had before, so its stamp (which creates the records folder) waits for its answer
+    // `--check` is the read-only report cad-health runs and writes nothing, so it leaves the stamp to the next seam
+    const late = cmd === 'trace' && sub === 'ignore';
+    const { ensureState } = await import('./planning/migrate.mjs');
+    if (ensureState(planningDir, late ? 'before' : 'now')) {
       await handler(planningDir, sub, opts, words.slice(1));
+      if (late && !('check' in opts)) ensureState(planningDir, 'after');
     }
   }
 } catch (e) {
