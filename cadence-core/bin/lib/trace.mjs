@@ -10,8 +10,9 @@
 import {
   closeSync, lstatSync, openSync, readFileSync, readSync, statSync,
 } from 'node:fs';
-import { appendFile, ensureRecordsDir, recordsPath } from './planning-store.mjs';
+import { appendFile, recordsPath } from './planning-store.mjs';
 import { ROTATION_EVENT, rotateJsonl } from './jsonl-rotation.mjs';
+import { recordsReady } from './project-state.mjs';
 
 export const TRACE_FILE = 'trace.jsonl';
 
@@ -325,6 +326,8 @@ export function rotateTrace(planningRoot, reserve) {
  * envelope byte-identical.
  * A symlinked trace is refused with `reason:'symlinked-trace'`, the append would follow it out of the tree; a symlinked
  * records folder with `reason:'symlinked-records'`, it would carry the record out the same way.
+ * A planning directory with no valid state file is `reason:'no-valid-state'`, and nothing is written there: a hook
+ * or route.mjs can't convert a project, and a log landing in `records/` first would block the main session's conversion.
  * Size isn't a refusal: at `MAX_TRACE_BYTES` the record rotates and the append lands. What's left is
  * `oversized-event` (a single line that reaches the bound alone) and a failed rotation's code.
  * @param {string} planningRoot
@@ -335,9 +338,9 @@ export function appendEvent(planningRoot, event) {
   if (!event || typeof event !== 'object' || Array.isArray(event)) {
     return { written: false, reason: 'bad-event' };
   }
-  // the first write creates the records folder; a link there is refused before anything is joined to it
-  const records = ensureRecordsDir(planningRoot);
-  if (!records.ok) return { written: false, reason: records.reason };
+  // unconverted or damaged is hands off until the main session stamps it; a link is refused before anything joins it
+  const records = recordsReady(planningRoot);
+  if (records.ok === false) return { written: false, reason: records.reason };
   const file = tracePath(planningRoot);
 
   // `lstat` classifies the link itself, ahead of the size stat: a redirected trace is refused at any size

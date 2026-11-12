@@ -12,7 +12,8 @@ import { homedir } from 'node:os';
 // reverse lookups from an agent_type stem to its role sit beside RUNG_FILES
 import { roleOfAgent } from './rung-agent.mjs';
 import { ROTATION_EVENT, rotateJsonl } from './jsonl-rotation.mjs';
-import { appendFile, ensureRecordsDir, recordsPath } from './planning-store.mjs';
+import { appendFile, recordsPath } from './planning-store.mjs';
+import { recordsReady } from './project-state.mjs';
 
 export const READS_FILE = 'reads.jsonl';
 
@@ -371,6 +372,8 @@ export function rotateReads(planningRoot, reserve) {
 /**
  * Append one record, guarded like lib/trace.mjs: symlink check, bound enforced before the write, reason returned.
  * The size bound rotates instead of refusing; `oversized-record` is for a single line that reaches the bound alone.
+ * No valid state file is `no-valid-state` and writes nothing, as appendEvent: the hook may never touch an unconverted
+ * project.
  * @param {string} planningRoot
  * @param {any} record
  */
@@ -378,9 +381,9 @@ export function appendRead(planningRoot, record) {
   if (!record || typeof record !== 'object' || Array.isArray(record)) {
     return { written: false, reason: 'bad-record' };
   }
-  // the first write creates the records folder; a link there is refused before anything is joined to it
-  const records = ensureRecordsDir(planningRoot);
-  if (!records.ok) return { written: false, reason: records.reason };
+  // the hook fires on every tool call, so this stays one lstat and one small file read
+  const records = recordsReady(planningRoot);
+  if (records.ok === false) return { written: false, reason: records.reason };
   const file = readsPath(planningRoot);
   // the symlink guard stays first, so a redirected record is refused whatever its size
   try {

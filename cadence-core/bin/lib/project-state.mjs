@@ -8,8 +8,8 @@
 // a read answers with a value and never throws; a write validates, takes the lock and replaces the file atomically
 'use strict';
 
-import { readFileSync } from 'node:fs';
-import { atomicWrite, ensureRecordsDir, statePath, withPlanningFileLock } from './planning-store.mjs';
+import { lstatSync, readFileSync } from 'node:fs';
+import { atomicWrite, ensureRecordsDir, recordsDir, statePath, withPlanningFileLock } from './planning-store.mjs';
 
 export { statePath };
 
@@ -162,6 +162,25 @@ export function readState(planningRoot) {
     return { kind: 'invalid', reason: 'unreadable', detail: `it could not be read: ${code || String(e)}` };
   }
   return judge(text);
+}
+
+/**
+ * May a log writer append under `records/`? Only in a project stamped with a valid state, and never through a link.
+ * It creates nothing: hooks and route.mjs call the log writers, and neither may convert a project (D-10). A folder
+ * that is a link or not a folder keeps the reason it always had, ahead of the state's.
+ * @param {string} planningRoot
+ * @returns {{ok: true} | {ok: false, reason: string}}
+ */
+export function recordsReady(planningRoot) {
+  let st;
+  try { st = lstatSync(recordsDir(planningRoot)); } catch (e) {
+    const code = e && /** @type {any} */ (e).code;
+    // no records folder means nothing was ever stamped here
+    return { ok: false, reason: code === 'ENOENT' ? 'no-valid-state' : (code || 'stat-failed') };
+  }
+  if (st.isSymbolicLink()) return { ok: false, reason: 'symlinked-records' };
+  if (!st.isDirectory()) return { ok: false, reason: 'ENOTDIR' };
+  return readState(planningRoot).kind === 'valid' ? { ok: true } : { ok: false, reason: 'no-valid-state' };
 }
 
 /**
