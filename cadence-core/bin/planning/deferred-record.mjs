@@ -5,7 +5,7 @@
 import { join, relative } from 'node:path';
 import { fail, fireHome, fireIdentity, firePayload, fireRange, fireTargetTaken, ok } from './core.mjs';
 import { buildQueue, queueName } from '../lib/deferred-queue.mjs';
-import { atomicWrite } from '../lib/planning-files.mjs';
+import { atomicWrite } from '../lib/planning-store.mjs';
 
 // the opposite of the adjudication record: that says a fire was judged, this says it wasn't yet
 function cmdDeferredRecord(dir, opts) {

@@ -11,8 +11,9 @@ import { fail, ok, read } from './core.mjs';
 import { captureHealth } from '../lib/capture-health.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
-  atomicWrite, parseRequirements, setPhaseBox, setReqStatus,
+  parseRequirements, setPhaseBox, setReqStatus,
 } from '../lib/planning-files.mjs';
+import { atomicWrite } from '../lib/planning-store.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 

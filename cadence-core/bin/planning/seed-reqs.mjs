@@ -5,8 +5,9 @@
 import { join } from 'node:path';
 import { fail, ok, phaseSpellingRefusal, read } from './core.mjs';
 import {
-  atomicWrite, insertReqRows, parseActiveIds, readFrontmatterList,
+  insertReqRows, parseActiveIds, readFrontmatterList,
 } from '../lib/planning-files.mjs';
+import { atomicWrite } from '../lib/planning-store.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { planFilesIn } from '../lib/phase-plans.mjs';
 

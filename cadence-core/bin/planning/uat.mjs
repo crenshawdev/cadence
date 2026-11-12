@@ -8,9 +8,9 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, intFlag, phaseGuard, ok, read, readJsonPayload } from './core.mjs';
 import {
-  UAT_FIELDS_VERSION, UAT_ORIGINS, UAT_SOURCES, atomicWrite, parseUat, renderUat,
-  uatComplete,
+  UAT_FIELDS_VERSION, UAT_ORIGINS, UAT_SOURCES, parseUat, renderUat, uatComplete,
 } from '../lib/planning-files.mjs';
+import { atomicWrite } from '../lib/planning-store.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 
 function uatFile(dir, n) { return join(dir, 'phases', String(n), 'UAT.md'); }

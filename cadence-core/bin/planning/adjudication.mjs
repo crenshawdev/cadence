@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 import { fail, fireHome, fireIdentity, firePayload, fireRange, fireTargetTaken, ok } from './core.mjs';
 import { buildEntries, recordName } from '../lib/adjudication-record.mjs';
-import { atomicWrite } from '../lib/planning-files.mjs';
+import { atomicWrite } from '../lib/planning-store.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 
 // a gate used to summarize itself and the finding bodies went nowhere, so a refutation couldn't be checked against code

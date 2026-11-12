@@ -8,8 +8,9 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, ok, phaseSpellingRefusal, planPosition, read } from './core.mjs';
 import {
-  CLOSED_CYCLE_NAME, CURSOR_STATUSES, atomicWrite, classifyPhaseList, renderCursor,
+  CLOSED_CYCLE_NAME, CURSOR_STATUSES, classifyPhaseList, renderCursor,
 } from '../lib/planning-files.mjs';
+import { atomicWrite } from '../lib/planning-store.mjs';
 import { parseCursor } from '../lib/state-cursor.mjs';
 import { requireCursorNumber, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';

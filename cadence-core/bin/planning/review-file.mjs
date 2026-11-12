@@ -7,7 +7,7 @@ import { lstatSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fail, fireHome, fireIdentity, firePayload, fireTargetTaken, intFlag, ok } from './core.mjs';
 import { buildReviewFile, markSurvivor, reviewFileName } from '../lib/review-file.mjs';
-import { atomicWrite } from '../lib/planning-files.mjs';
+import { atomicWrite } from '../lib/planning-store.mjs';
 
 // the one change a written file takes: --mark <n> puts a re-ruling ahead of survivor n's headings, from the payload
 function markFile(dir, opts, id, payload) {

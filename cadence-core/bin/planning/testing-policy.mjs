@@ -9,14 +9,15 @@
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { boundedRun } from '../lib/bounded-run.mjs';
 import { readTestingPolicy } from '../lib/config-merge.mjs';
 import { isForgeSlug } from '../lib/forge-decision.mjs';
 import { onPath } from '../lib/on-path.mjs';
-import { atomicWrite, parseUat, renderUat } from '../lib/planning-files.mjs';
+import { parseUat, renderUat } from '../lib/planning-files.mjs';
+import { atomicWrite, makeDir } from '../lib/planning-store.mjs';
 import { localGitEnv, publishAuthorized } from '../lib/publish-authorization.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { schemaPath } from '../lib/test-seam.mjs';
@@ -99,7 +100,7 @@ function cmdRender(root) {
     return fail('no-policy', 'testing.scope is unset, so no policy was accepted and there is nothing to render', NO_POLICY_HINT);
   }
   const file = join(root, POLICY_FILE);
-  mkdirSync(dirname(file), { recursive: true });
+  makeDir(dirname(file));
   atomicWrite(file, `${JSON.stringify(policy, null, 2)}\n`);
   return ok({ file: POLICY_FILE, policy });
 }

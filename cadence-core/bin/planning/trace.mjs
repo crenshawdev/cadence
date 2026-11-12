@@ -15,7 +15,8 @@ import { deriveCounts, recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS, evaluateFlag } from '../lib/arg-contract.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { unfixedFromEntries } from '../lib/filing-decision.mjs';
-import { atomicWrite, planTaskTitles } from '../lib/planning-files.mjs';
+import { planTaskTitles } from '../lib/planning-files.mjs';
+import { atomicWrite } from '../lib/planning-store.mjs';
 import { planFileFor } from '../lib/phase-plans.mjs';
 import {
   READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
