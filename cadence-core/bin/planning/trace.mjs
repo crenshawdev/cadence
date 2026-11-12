@@ -1,5 +1,5 @@
 // @ts-check
-// planning/trace.mjs - the `trace` family: the joined run record (.planning/trace.jsonl) and its .gitignore arm
+// planning/trace.mjs - the `trace` family: the joined run record (.planning/records/trace.jsonl) and its .gitignore arm
 // both handlers live here: cmdTrace's `ignore` arm calls cmdTraceIgnore, and a split makes it a cross-command import
 // everything else serves one of the two, and both mergeLayers callers carry the layer warnings, so no header marker
 'use strict';

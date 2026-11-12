@@ -16,6 +16,7 @@ import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
 import { parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
+import { recordsPath } from '../lib/planning-store.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
@@ -281,7 +282,7 @@ function planPosition(pdir, reports) {
 }
 
 /**
- * The one `.planning/reads.jsonl` parse, shared by `cmdReads` and `trace suggest`, so the partial-tail rule lives once.
+ * The one `.planning/records/reads.jsonl` parse, shared by `cmdReads` and `trace suggest`, so the partial-tail rule lives once.
  * It reports `absent` and `unreadable` apart and decides nothing: `reads` fails on unreadable, `trace suggest` warns.
  * The rotation marker is dropped and reported as `rotated`, or it bills as a call and shows up as a phantom read.
  * @param {string} dir the planning directory
@@ -289,7 +290,7 @@ function planPosition(pdir, reports) {
  *   rotated?: {file: string, ts: string}}}
  */
 function readReadsRecords(dir) {
-  const file = join(dir, READS_FILE);
+  const file = recordsPath(dir, READS_FILE);
   let text;
   try {
     text = readFileSync(file, 'utf8');

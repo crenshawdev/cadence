@@ -1,5 +1,5 @@
 // @ts-check
-// reads.jsonl writer: one line per tool call, so billing can see what a dispatch opened after it started.
+// records/reads.jsonl writer: one line per tool call, so billing can see what a dispatch opened after it started.
 // its own file, not a trace.jsonl family: that one has a single writer and a 1 MiB cap sized for tens of events
 // paths only, never payloads: a command or grep pattern can carry a secret, and a model reads this file back
 // outside the project, a path becomes ${CLAUDE_PLUGIN_ROOT}/... or `outside`, so no home directory reaches a report
@@ -12,7 +12,7 @@ import { homedir } from 'node:os';
 // reverse lookups from an agent_type stem to its role sit beside RUNG_FILES
 import { roleOfAgent } from './rung-agent.mjs';
 import { ROTATION_EVENT, rotateJsonl } from './jsonl-rotation.mjs';
-import { appendFile } from './planning-store.mjs';
+import { appendFile, ensureRecordsDir, recordsPath } from './planning-store.mjs';
 
 export const READS_FILE = 'reads.jsonl';
 
@@ -33,7 +33,7 @@ export const MAX_FILES_PER_CALL = 12;
 
 /** @param {string} planningRoot */
 export function readsPath(planningRoot) {
-  return join(planningRoot, READS_FILE);
+  return recordsPath(planningRoot, READS_FILE);
 }
 
 /** Spelled once so writer, .gitignore and tests agree; the `reads.` prefix lets a test catch a leaked temp. */
@@ -53,12 +53,12 @@ export const READS_EVICT_TEMP_FILE = `${ROTATED_READS_FILE}.evict`;
 
 /** @param {string} planningRoot */
 export function rotatedReadsPath(planningRoot) {
-  return join(planningRoot, ROTATED_READS_FILE);
+  return recordsPath(planningRoot, ROTATED_READS_FILE);
 }
 
 /** @param {string} planningRoot */
 export function readsClaimPath(planningRoot) {
-  return join(planningRoot, READS_CLAIM_FILE);
+  return recordsPath(planningRoot, READS_CLAIM_FILE);
 }
 
 /** The trace's `ROTATION` too, both read off jsonl-rotation.mjs: a hook shouldn't load all of trace.mjs for one name. */
@@ -378,6 +378,9 @@ export function appendRead(planningRoot, record) {
   if (!record || typeof record !== 'object' || Array.isArray(record)) {
     return { written: false, reason: 'bad-record' };
   }
+  // the first write creates the records folder; a link there is refused before anything is joined to it
+  const records = ensureRecordsDir(planningRoot);
+  if (!records.ok) return { written: false, reason: records.reason };
   const file = readsPath(planningRoot);
   // the symlink guard stays first, so a redirected record is refused whatever its size
   try {

@@ -1,5 +1,5 @@
 // @ts-check
-// trace.mjs - the one writer and reader of `.planning/trace.jsonl`, the record of what a run did.
+// trace.mjs - the one writer and reader of `.planning/records/trace.jsonl`, the record of what a run did.
 // The correlation id is derived from disk, never minted: producers are one-shot processes with no state.
 // Writes append, because a read-modify-write would lose events under parallel dispatch.
 // It never throws or speaks on a stream, since a record of a decision can't change the decision.
@@ -10,8 +10,7 @@
 import {
   closeSync, lstatSync, openSync, readFileSync, readSync, statSync,
 } from 'node:fs';
-import { join } from 'node:path';
-import { appendFile } from './planning-store.mjs';
+import { appendFile, ensureRecordsDir, recordsPath } from './planning-store.mjs';
 import { ROTATION_EVENT, rotateJsonl } from './jsonl-rotation.mjs';
 
 export const TRACE_FILE = 'trace.jsonl';
@@ -96,7 +95,7 @@ export const ROTATION = ROTATION_EVENT;
 
 /** @param {string} planningRoot */
 export function tracePath(planningRoot) {
-  return join(planningRoot, TRACE_FILE);
+  return recordsPath(planningRoot, TRACE_FILE);
 }
 
 /**
@@ -104,7 +103,7 @@ export function tracePath(planningRoot) {
  * @param {string} planningRoot
  */
 export function rotatedTracePath(planningRoot) {
-  return join(planningRoot, ROTATED_TRACE_FILE);
+  return recordsPath(planningRoot, ROTATED_TRACE_FILE);
 }
 
 /**
@@ -112,7 +111,7 @@ export function rotatedTracePath(planningRoot) {
  * @param {string} planningRoot
  */
 export function rotationClaimPath(planningRoot) {
-  return join(planningRoot, ROTATION_CLAIM_FILE);
+  return recordsPath(planningRoot, ROTATION_CLAIM_FILE);
 }
 
 /**
@@ -324,7 +323,8 @@ export function rotateTrace(planningRoot, reserve) {
 /**
  * Append one event. Never throws or writes to a stream: a trace that can't be written must leave its caller's
  * envelope byte-identical.
- * A symlinked trace is refused with `reason:'symlinked-trace'`, the append would follow it out of the tree.
+ * A symlinked trace is refused with `reason:'symlinked-trace'`, the append would follow it out of the tree; a symlinked
+ * records folder with `reason:'symlinked-records'`, it would carry the record out the same way.
  * Size isn't a refusal: at `MAX_TRACE_BYTES` the record rotates and the append lands. What's left is
  * `oversized-event` (a single line that reaches the bound alone) and a failed rotation's code.
  * @param {string} planningRoot
@@ -335,6 +335,9 @@ export function appendEvent(planningRoot, event) {
   if (!event || typeof event !== 'object' || Array.isArray(event)) {
     return { written: false, reason: 'bad-event' };
   }
+  // the first write creates the records folder; a link there is refused before anything is joined to it
+  const records = ensureRecordsDir(planningRoot);
+  if (!records.ok) return { written: false, reason: records.reason };
   const file = tracePath(planningRoot);
 
   // `lstat` classifies the link itself, ahead of the size stat: a redirected trace is refused at any size

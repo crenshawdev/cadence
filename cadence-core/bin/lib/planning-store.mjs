@@ -9,6 +9,7 @@ import {
   appendFileSync, closeSync, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, openSync, renameSync, rmSync,
   statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
+import { join } from 'node:path';
 // the one local import: text-util.mjs has no imports and no I/O, and the helper census allows one sleep
 import { sleep } from './text-util.mjs';
 
@@ -82,6 +83,55 @@ export function unlinkFile(file) {
 /** Delete a directory and everything under it. @param {string} dir */
 export function removeTree(dir) {
   rmSync(dir, { recursive: true });
+}
+
+// --- the records folder -----------------------------------------------------
+// what scripts keep lives under `.planning/records/`; what a person reads stays at the top of `.planning/`
+// this module is the only place that spells the folder's name, every other script asks it for a path
+
+/** The folder name, used at the top of `.planning/` and (Plan 4) in each phase. */
+const RECORDS_DIR = 'records';
+
+/**
+ * The top-level records directory of a planning root.
+ * @param {string} planningRoot
+ */
+export function recordsDir(planningRoot) {
+  return join(planningRoot, RECORDS_DIR);
+}
+
+/**
+ * A path inside the top-level records directory.
+ * @param {string} planningRoot
+ * @param {...string} parts
+ */
+export function recordsPath(planningRoot, ...parts) {
+  return join(planningRoot, RECORDS_DIR, ...parts);
+}
+
+/**
+ * Make sure the records directory is there and is a real directory. A link here would carry every log, ledger and
+ * carried queue out of the tree, so it is refused the way a symlinked file is. A planning root that is itself absent
+ * stays an error (`ENOENT`): this creates the folder, never the project.
+ * @param {string} planningRoot
+ * @returns {{ok: true} | {ok: false, reason: string}} `reason` is `symlinked-records` or the fs error code
+ */
+export function ensureRecordsDir(planningRoot) {
+  const dir = recordsDir(planningRoot);
+  let st = null;
+  try { st = lstatSync(dir); } catch { /* ENOENT is the first write */ }
+  if (st) {
+    if (st.isSymbolicLink()) return { ok: false, reason: 'symlinked-records' };
+    return st.isDirectory() ? { ok: true } : { ok: false, reason: 'ENOTDIR' };
+  }
+  try {
+    mkdirSync(dir);
+  } catch (e) {
+    const code = e && /** @type {any} */ (e).code;
+    // a concurrent first writer made it between our lstat and our mkdir
+    if (code !== 'EEXIST') return { ok: false, reason: code || 'mkdir-failed' };
+  }
+  return { ok: true };
 }
 
 // --- the lock --------------------------------------------------------------

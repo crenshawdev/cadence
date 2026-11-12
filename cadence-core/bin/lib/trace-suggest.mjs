@@ -474,7 +474,7 @@ function coordinatorInfos(render) {
 }
 
 /**
- * R7: in-dispatch re-reading, per role, off `.planning/reads.jsonl`, which nothing had ever acted on.
+ * R7: in-dispatch re-reading, per role, off `.planning/records/reads.jsonl`, which nothing had ever acted on.
  * `action` is null: no schema key governs it. `workflow.max_plan_tasks` is closest, but lowering it turns the
  * same opens into more dispatches, a better ratio with a bigger bill.
  * The remedy is discipline (anchors on a plan's `files:` entries, targeted reads), so the entry says it in
@@ -513,7 +513,7 @@ function inDispatchInfos(reads) {
         + ` over ${row.brackets} dispatch(es), and DOWN is the direction that helps`
         + ` - worst inside one dispatch: read \`${worst.path}\` ${worst.count} times${where}.`
         + ` Computed over ${coverage}.`
-        + ' SCOPE: nothing prunes `.planning/reads.jsonl` at a milestone close, and the one thing'
+        + ' SCOPE: nothing prunes `.planning/records/reads.jsonl` at a milestone close, and the one thing'
         + ' that ever shortens it is the cut at its size bound, which moves the older generation'
         + ' to a sibling no fold here reads - so an unscoped run reaches every milestone still in'
         + ' the LIVE record, and `reads.rotated` on this envelope says whether the record was cut.'
