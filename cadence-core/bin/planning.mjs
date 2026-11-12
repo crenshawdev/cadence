@@ -7,6 +7,7 @@
 // Fields are additive-only, so don't rename one
 // --dir overrides `.planning` for tests; --root names the project root for commands that read source
 // A new subcommand is a COMMANDS entry, never an if-chain
+// Before a handler runs, planning/migrate.mjs gives the project its state file (records/state.json) if it has none
 'use strict';
 
 import {
@@ -162,7 +163,13 @@ try {
       + ' rearm` or `--event deferral` instead. Nothing was written');
   }
   else if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
-  else await handler(args.values['--dir'] || '.planning', sub, opts, words.slice(1));
+  else {
+    // a project without a state file gets one here, once, before any handler reads or writes; a refusal is its own answer
+    const planningDir = args.values['--dir'] || '.planning';
+    if ((await import('./planning/migrate.mjs')).ensureState(planningDir)) {
+      await handler(planningDir, sub, opts, words.slice(1));
+    }
+  }
 } catch (e) {
   fail('internal', e && e.message ? e.message : String(e));
 }
