@@ -7,8 +7,9 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { derivePhases, fail, read, readProject } from './core.mjs';
-import { CLOSED_CYCLE_NAME } from '../lib/planning-files.mjs';
+import { derivePhases, fail, read, readPlanReports, readProject } from './core.mjs';
+import { planNumber } from '../lib/phase-plans.mjs';
+import { CLOSED_CYCLE_NAME, planName } from '../lib/planning-files.mjs';
 import { atomicWrite } from '../lib/planning-store.mjs';
 import { CURSOR_WORDS, readState, statePath, updateState } from '../lib/project-state.mjs';
 import { renderPhasesList, renderStateMd, renderTraceability } from '../lib/state-views.mjs';
@@ -166,15 +167,36 @@ export function phaseListOf(state) {
 }
 
 /**
- * Put what phase `n`'s artifacts derive into the state's entry for it: a seam that touches a phase records where the
- * phase really stands as part of its own write. A phase the state doesn't hold is left alone.
+ * Put where phase `n` really stands into the state's entry for it: the status its artifacts derive, and its plan files
+ * with whether each is finished. A plan is finished when its report's first line says `PLAN COMPLETE`, and every plan of a
+ * phase held complete is finished even with no report (D-23). A phase already held complete stays complete: that is
+ * `phase-done`'s say, and `status` reports it as drift if the artifacts disagree. A phase the state doesn't hold is left alone.
  * @param {string} dir @param {import('../lib/project-state.mjs').ProjectState} state @param {number} n
  * @returns {import('../lib/project-state.mjs').ProjectState}
  */
 export function foldPhase(dir, state, n) {
-  if (!state.phases.some((p) => p.n === n)) return state;
+  const held = state.phases.find((p) => p.n === n);
+  if (!held) return state;
   const [derived] = derivePhases(dir, [{ n }]);
-  return { ...state, phases: state.phases.map((p) => (p.n === n ? { ...p, status: derived.status } : p)) };
+  const status = held.status === 'complete' ? 'complete' : derived.status;
+  const done = new Map(readPlanReports(join(dir, 'phases', String(n)), derived.plans).map((r) => [r.plan, r.complete]));
+  const plans = derived.plans.map((/** @type {string} */ file) => ({ file, finished: status === 'complete' || done.get(file) === true }));
+  return { ...state, phases: state.phases.map((p) => (p.n === n ? { ...p, status, plans } : p)) };
+}
+
+/**
+ * The plan to run next in a phase, from the state: the lowest-numbered plan not finished, of all the phase's plans, with
+ * its heading's name when it has one. Null when the phase has no plan or every plan is finished.
+ * @param {string} dir @param {import('../lib/project-state.mjs').StatePhase | undefined} phase
+ * @returns {{k: number, j: number, name?: string} | null}
+ */
+export function planPositionOf(dir, phase) {
+  if (!phase) return null;
+  const open = phase.plans.filter((p) => !p.finished).map((p) => ({ file: p.file, k: planNumber(p.file) }))
+    .sort((a, b) => a.k - b.k)[0];
+  if (!open) return null;
+  const name = planName(read(join(dir, 'phases', String(phase.n), open.file)) ?? '');
+  return { k: open.k, j: phase.plans.length, ...(name ? { name } : {}) };
 }
 
 /** The state with its phase list replaced; a cycle is open exactly when there are phases. */

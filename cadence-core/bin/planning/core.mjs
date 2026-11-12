@@ -15,7 +15,7 @@ import { entryFile, moduleState, partition } from '../lib/codemap-partition.mjs'
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
-import { classifyPhaseList, parseRequirements, parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
+import { classifyPhaseList, parseRequirements, parseUat, uatComplete } from '../lib/planning-files.mjs';
 import { codemapDir, deferredDir, phaseRecordsDir, phaseReportsDir, recordsPath } from '../lib/planning-store.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
@@ -266,26 +266,10 @@ function readPlanReports(pdir, plans) {
   });
 }
 
-// where one phase's plans stand: the plan to run next, by position
-// K is the lowest plan number whose report isn't complete, not the first list entry, which may be a complete one: listPlanFiles lists in plan-number order
-// J is the count of conforming plans, and the name comes from planName and is left off when the heading gives none
-// null when the dir is missing, has no plan or every plan is complete; `cursor set` and `status` share it
-// @param {string} pdir the phase directory
-// @param {ReturnType<typeof readPlanReports>} [reports] the phase's plan reports when the caller already read them: one per conforming plan, so `status` reads each once
-// @returns {{k: number, j: number, name?: string}|null}
-function planPosition(pdir, reports) {
-  const all = reports ?? readPlanReports(pdir, listPlanFiles(pdir).plans);
-  const next = all.filter((r) => !r.complete)
-    .sort((a, b) => a.k - b.k)[0];
-  if (!next) return null;
-  const name = planName(read(join(pdir, next.plan)) ?? '');
-  return { k: next.k, j: all.length, ...(name ? { name } : {}) };
-}
-
 /**
- * What `status` derives from a planning directory, read once: the roadmap classified, the phases derived from their
- * artifacts, each phase's plan reports, the requirement rows and the cursor. `status` and the state importer both
- * call this, so neither can drift from the other. It decides nothing about the directory itself; the caller owns
+ * What the Markdown and the phase folders say about a planning directory, read once: the roadmap classified, the phases
+ * derived from their artifacts, each phase's plan reports, the requirement rows and the cursor. The state importer is the
+ * one caller now: `status` reads the state file, and this is the derivation that builds it. It decides nothing about the directory itself; the caller owns
  * `no-planning-dir`, and a missing ROADMAP.md comes back as `{missing: true}` for each caller to answer its own way.
  * A roadmap that can't be parsed is `{refusal}` carrying the reason, detail, hint and (out of grammar) the issues.
  * `reqRows` is null when there is no REQUIREMENTS.md and `cursor` null when STATE.md is missing or off-grammar.
@@ -1150,7 +1134,6 @@ export {
   readJsonPayload,
   readPlanReports,
   readProject,
-  planPosition,
   readQueue,
   readReadsRecords,
   readStoredMap,

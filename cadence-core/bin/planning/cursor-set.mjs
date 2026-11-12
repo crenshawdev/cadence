@@ -8,9 +8,9 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, ok, phaseSpellingRefusal, planPosition } from './core.mjs';
+import { fail, ok, phaseSpellingRefusal } from './core.mjs';
 import { CLOSED_CYCLE_NAME, CURSOR_STATUSES } from '../lib/planning-files.mjs';
-import { changeState, foldPhase, loadState } from './state-import.mjs';
+import { changeState, foldPhase, loadState, planPositionOf } from './state-import.mjs';
 import { requireCursorNumber, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 
@@ -89,18 +89,18 @@ function cmdCursorSet(dir, opts) {
       + ' so both can be derived from it');
   }
 
-  // the plan line is derived from disk on every write: the lowest plan not `PLAN COMPLETE`, absent if none or all done
-  const plan = planPosition(join(dir, 'phases', String(opts.phase)));
-  const cursor = {
-    phase, total, name, status: opts.status, next,
-    updated: new Date().toISOString().slice(0, 10),
-    ...(plan ? { plan } : {}),
-  };
-  const stored = {
-    phase, status: opts.status, next, updated: cursor.updated, ...(plan ? { plan } : {}),
-  };
-  const done = changeState(dir, (s) => ({ ...foldPhase(dir, s, phase), cursor: stored }), ['STATE.md', 'ROADMAP.md']);
+  // the plan line is derived on every write: the lowest plan of the phase not finished, absent if none or all done
+  // the phase is folded first, under the lock, so the position comes from the plan files and reports as they are now
+  const updated = new Date().toISOString().slice(0, 10);
+  /** @type {{k: number, j: number, name?: string} | null} */
+  let plan = null;
+  const done = changeState(dir, (s) => {
+    const folded = foldPhase(dir, s, phase);
+    plan = planPositionOf(dir, folded.phases.find((p) => p.n === phase));
+    return { ...folded, cursor: { phase, status: opts.status, next, updated, ...(plan ? { plan } : {}) } };
+  }, ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md']);
   if (!done) return;
+  const cursor = { phase, total, name, status: opts.status, next, updated, ...(plan ? { plan } : {}) };
   ok({ cursor });
 }
 

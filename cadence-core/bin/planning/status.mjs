@@ -6,11 +6,11 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, planPosition, read, readPlanReports, readQueue,
+  PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, read, readPlanReports, readQueue,
 } from './core.mjs';
 import { sectionSpan } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { cursorOf, loadState, phaseListOf } from './state-import.mjs';
+import { cursorOf, loadState, phaseListOf, planPositionOf } from './state-import.mjs';
 
 /**
  * Every `phases/` entry outside `PHASE_DIR_NAME`, as one drift entry per colliding group.
@@ -105,11 +105,12 @@ function cmdStatus(dir) {
   if (!state) return;
   // the phases are the state's; the artifacts are only asked what they would derive, to report where the two disagree
   const closed = state.phases.length === 0;
-  const derived = derivePhases(dir, phaseListOf(state)).map((p, i) => {
-    const held = [...state.phases].sort((a, b) => a.n - b.n)[i];
-    return { ...p, status: held.status, derivedStatus: p.status };
-  });
-  const reportsOf = derived.map((p) => readPlanReports(join(dir, 'phases', String(p.n)), p.plans));
+  // plans too: the files a phase has and which are finished are the state's, and a report that says finished while the
+  // state does not is drift, not a change to what is answered
+  const sorted = [...state.phases].sort((a, b) => a.n - b.n);
+  const derived = derivePhases(dir, phaseListOf(state)).map((p, i) => ({
+    ...p, status: sorted[i].status, derivedStatus: p.status, held: sorted[i], plans: sorted[i].plans.map((q) => q.file),
+  }));
   const currentEntry = derived.find((p) => p.status !== 'complete') || null;
   const current = currentEntry ? currentEntry.n : null;
 
@@ -137,6 +138,18 @@ function cmdStatus(dir) {
       });
     }
     drift.push(...phaseDirNumericCollisions(surviving));
+  }
+
+  for (const p of derived) {
+    const reports = readPlanReports(join(dir, 'phases', String(p.n)), p.plans);
+    p.held.plans.forEach((q, i) => {
+      if (reports[i].complete && !q.finished) {
+        drift.push({
+          kind: 'plan-report', phase: p.n, plan: reports[i].k,
+          detail: `plan ${reports[i].k} of phase ${p.n} has a report that says PLAN COMPLETE, and the state has it unfinished`,
+        });
+      }
+    });
   }
 
   // checked in every state: a directory Cadence can't address is cheapest to rename while the cycle is open
@@ -186,15 +199,13 @@ function cmdStatus(dir) {
   // always present, so a refusal surface can tell "nothing deferred" from "seam predates the queue"
   const queue = readQueue(dir, null);
 
-  // plans a phase still owes, off the same readPlanReports replay-check dispatches from, so routing and dispatch agree
+  // plans a phase still owes, from the state the execute flow keeps through `cursor set` and `replay-check`, so routing and dispatch agree
   // a SUMMARY ends a run, not the work, so a phase with a later gap plan shows up here
   // always present, [] when empty, like deferred: an absent key would read as "seam predates the field"
-  // read here, not by spawning replay-check per phase; not a new status, which would turn older cursors into drift
-  // the dir resolves through String(p.n) as derivePhases does, so phases/1.10 reads as phases/1.1 here too
-  // each phase's reports are read once, in readProject, and handed on to the plan position below
+  // not a new status, which would turn older cursors into drift
   const outstanding = [];
-  derived.forEach((p, i) => {
-    const plans = reportsOf[i].filter((r) => !r.complete).map((r) => r.plan);
+  derived.forEach((p) => {
+    const plans = p.held.plans.filter((q) => !q.finished).map((q) => q.file);
     if (plans.length) outstanding.push({ phase: p.n, plans });
   });
 
@@ -204,10 +215,10 @@ function cmdStatus(dir) {
     outstanding,
     // only when closed, or current === null alone reads a closed milestone as all complete
     ...(closed ? { cycle: 'none' } : {}),
-    phases: derived.map((p, i) => ({
+    phases: derived.map((p) => ({
       n: p.n, name: p.name, status: p.status,
       // the plan to run next, from the helper cursor set writes Plan: from; absent when none or all complete
-      ...planPositionEntry(dir, p.n, reportsOf[i]),
+      ...planPositionEntry(dir, p.held),
       // plans listed only when they deviate from a single PLAN.md
       ...(p.plans.length > 1 || (p.plans.length === 1 && p.plans[0] !== 'PLAN.md')
         ? { plans: p.plans } : {}),
@@ -219,8 +230,8 @@ function cmdStatus(dir) {
 }
 
 /** `{plan: {k, j, name?}}` for a phase with an unfinished plan, else `{}`. */
-function planPositionEntry(dir, n, reports) {
-  const plan = planPosition(join(dir, 'phases', String(n)), reports);
+function planPositionEntry(dir, held) {
+  const plan = planPositionOf(dir, held);
   return plan ? { plan } : {};
 }
 
