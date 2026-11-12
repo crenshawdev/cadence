@@ -6,12 +6,13 @@
 // never throws, exits 0: it runs after every tool call and a recorder that can fail one is worse than none
 'use strict';
 
-import { appendFileSync, closeSync, lstatSync, openSync, readSync, statSync } from 'node:fs';
+import { closeSync, lstatSync, openSync, readSync, statSync } from 'node:fs';
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 // reverse lookups from an agent_type stem to its role sit beside RUNG_FILES
 import { roleOfAgent } from './rung-agent.mjs';
 import { ROTATION_EVENT, rotateJsonl } from './jsonl-rotation.mjs';
+import { appendFile } from './planning-store.mjs';
 
 export const READS_FILE = 'reads.jsonl';
 
@@ -410,7 +411,7 @@ export function appendRead(planningRoot, record) {
     if (rot.reason) return { written: false, reason: rot.reason };
   }
   try {
-    appendFileSync(file, line);
+    appendFile(file, line);
   } catch (e) {
     return { written: false, reason: (e && /** @type {any} */ (e).code) || 'append-failed' };
   }

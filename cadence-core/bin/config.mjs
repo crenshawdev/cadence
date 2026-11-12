@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GLOBAL_CONFIG, layerIdentity, mergeLayers, isPlainObject, sharesGlobal } from './lib/config-merge.mjs';
 import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
-import { atomicWrite } from './lib/planning-files.mjs';
+import { atomicWrite, makeDir } from './lib/planning-store.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 import { schemaPath } from './lib/test-seam.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
@@ -189,7 +189,7 @@ function set(file, tokens, create) {
   if (pathErrors.length) fail('invalid', pathErrors,
     `edit ${file} by hand to free the path each error names, then re-run`);
   for (const { key, value } of pairs) setInto(cfg, key, value);
-  if (create) mkdirSync(dirname(file), { recursive: true });
+  if (create) makeDir(dirname(file));
   // atomicWrite, not a bare write: every other seam reads this layer mid-session and a crash can't leave it torn
   atomicWrite(file, JSON.stringify(cfg, null, 2) + '\n');
   out({ ok: true, file, changed: pairs });

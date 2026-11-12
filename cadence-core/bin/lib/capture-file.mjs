@@ -7,10 +7,10 @@
 // the lock guard can't reach a hand edit that never takes the lock; see takeLock (planning-store.mjs) and appendCapture
 'use strict';
 
-import { readFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { sectionSpan, CAPTURE_WALK_SECTIONS } from './planning-files.mjs';
-import { atomicWrite, withPlanningFileLock } from './planning-store.mjs';
+import { atomicWrite, makeDir, withPlanningFileLock } from './planning-store.mjs';
 
 /**
  * The kind a caller may ask for and the heading it lands under. Not extensible: the three names are the walk's.
@@ -130,7 +130,7 @@ export function appendCapture(file, kind, text, phase) {
     let guarded;
     try {
       // before the lock, which sits beside the target, and the `--cadence` queue's directory may not exist yet
-      if (!existsSync(file)) mkdirSync(dirname(file), { recursive: true });
+      if (!existsSync(file)) makeDir(dirname(file));
       // read inside the lock with the write, or two writers read the same bytes and the second rename erases the first
       guarded = withPlanningFileLock(file, () => {
         const existing = read(file);

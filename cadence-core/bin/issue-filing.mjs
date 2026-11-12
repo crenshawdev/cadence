@@ -7,13 +7,13 @@
 // A decline stays local: as a forge issue it published every refusal on a tracker meant for real work.
 'use strict';
 
-import { lstatSync, mkdirSync, readFileSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { boundedRun as run } from './lib/bounded-run.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { withPlanningFileLock } from './lib/capture-file.mjs';
+import { atomicWrite, makeDir, withPlanningFileLock } from './lib/planning-store.mjs';
 import {
-  appendDeclinedRow, appendFiledRow, atomicWrite, parseDeclinedRows, parseFiledRows,
+  appendDeclinedRow, appendFiledRow, parseDeclinedRows, parseFiledRows,
 } from './lib/planning-files.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
@@ -326,7 +326,7 @@ function mirrorFiled(dir, provider, repo, filed) {
     const file = join(dir, '.planning', arm.name);
     try {
       // before the lock: the lock is a sibling of the target, so its create and atomicWrite's rename need the directory
-      mkdirSync(join(dir, '.planning'), { recursive: true });
+      makeDir(join(dir, '.planning'));
       const guarded = withPlanningFileLock(file, () => {
         // an unreadable file isn't an empty one: catching every read error into `text = ''` erased the rows on write
         let text = '';

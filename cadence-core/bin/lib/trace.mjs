@@ -8,9 +8,10 @@
 'use strict';
 
 import {
-  appendFileSync, closeSync, lstatSync, openSync, readFileSync, readSync, statSync,
+  closeSync, lstatSync, openSync, readFileSync, readSync, statSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { appendFile } from './planning-store.mjs';
 import { ROTATION_EVENT, rotateJsonl } from './jsonl-rotation.mjs';
 
 export const TRACE_FILE = 'trace.jsonl';
@@ -381,7 +382,7 @@ export function appendEvent(planningRoot, event) {
   }
 
   try {
-    appendFileSync(file, line);
+    appendFile(file, line);
   } catch (e) {
     return { written: false, reason: (e && e.code) || 'append-failed' };
   }

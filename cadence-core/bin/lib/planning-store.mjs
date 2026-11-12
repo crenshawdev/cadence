@@ -6,7 +6,7 @@
 'use strict';
 
 import {
-  appendFileSync, closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, renameSync, rmSync,
+  appendFileSync, closeSync, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, openSync, renameSync, rmSync,
   statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 // the one local import: text-util.mjs has no imports and no I/O, and the helper census allows one sleep
@@ -42,6 +42,21 @@ export function atomicWrite(file, text) {
 /** Append `data` to `file`, creating it. @param {string} file @param {string | Uint8Array} data */
 export function appendFile(file, data) {
   appendFileSync(file, data);
+}
+
+/** Overwrite `file` with `data`, creating it. Not atomic: a crash can leave it torn, so a caller that needs more uses atomicWrite. @param {string} file @param {string | Uint8Array} data */
+export function writeFile(file, data) {
+  writeFileSync(file, data);
+}
+
+/** Create `file` holding `data`, throwing EEXIST when it is already there (the `wx` flag). @param {string} file @param {string | Uint8Array} data */
+export function writeFileNew(file, data) {
+  writeFileSync(file, data, { flag: 'wx' });
+}
+
+/** Hard-link `existing` at `path`, throwing EEXIST when `path` is taken. @param {string} existing @param {string} path */
+export function linkFile(existing, path) {
+  linkSync(existing, path);
 }
 
 /** Create `dir` and any missing parents; an existing one is fine. @param {string} dir */
