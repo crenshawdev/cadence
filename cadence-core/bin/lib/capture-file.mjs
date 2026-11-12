@@ -102,9 +102,6 @@ function read(file) {
 }
 
 // --- the guard ---------------------------------------------------------------
-// the lock lives in planning-store.mjs; re-exported so every current importer resolves until Plan 2 repoints them
-export { withPlanningFileLock };
-
 /**
  * How many times an overwritten bullet is re-appended before the write is called lost.
  * Breaking a stale lock can't be made ownership-safe with stat, unlink and rename, so two writers can share a section.

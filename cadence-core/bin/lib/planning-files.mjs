@@ -1861,6 +1861,3 @@ export function cutPhaseDetail(text, n) {
   if (span.end === lines.length) return span.start > 0 ? `${lines.slice(0, span.start).join('\n')}\n` : '';
   return [...lines.slice(0, span.start), ...lines.slice(span.end)].join('\n');
 }
-
-// atomicWrite lives in planning-store.mjs now; re-exported so every current importer resolves until Plan 2 repoints them
-export { atomicWrite } from './planning-store.mjs';

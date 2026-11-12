@@ -10,7 +10,7 @@
 import { lstatSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { dirFlag, fail, noticeTotals, ok, readCapped, writeBrackets } from './core.mjs';
-import { atomicWrite } from '../lib/planning-files.mjs';
+import { atomicWrite } from '../lib/planning-store.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { appendEvent, renderTrace, TERMINAL } from '../lib/trace.mjs';

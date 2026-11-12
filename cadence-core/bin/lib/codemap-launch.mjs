@@ -13,7 +13,7 @@ import { isAbsolute, join, posix, sep } from 'node:path';
 import { isTestPath } from './codemap-edges.mjs';
 import { SYMBOL_MAX } from './codemap-entry.mjs';
 import { entryFile } from './codemap-partition.mjs';
-import { atomicWrite } from './planning-files.mjs';
+import { atomicWrite } from './planning-store.mjs';
 import { localGitEnv } from './publish-authorization.mjs';
 import { LIST_CAP } from './workflow-run.mjs';
 

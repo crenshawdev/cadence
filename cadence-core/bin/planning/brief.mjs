@@ -8,7 +8,7 @@ import { dirFlag, fail, intFlag, listPlanFiles, ok, phaseGuard, read, readStored
 import { slice } from '../lib/codemap-slice.mjs';
 import { composeBrief } from '../lib/plan-brief.mjs';
 import { planFileFor, planNumber } from '../lib/phase-plans.mjs';
-import { atomicWrite } from '../lib/planning-files.mjs';
+import { atomicWrite } from '../lib/planning-store.mjs';
 
 /**
  * The stored map for the plan's check and its rows, or null: any failure the shared read hands back, from no map to no git,
