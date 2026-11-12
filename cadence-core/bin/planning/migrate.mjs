@@ -22,7 +22,7 @@ import { importState, writeViews } from './state-import.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   archivePath, codemapDir, declinedPath, deferredDir, ensurePhaseRecordsDir, ensureRecordsDir, ensureRecordsIgnore,
-  filedPath, movePath, phaseRecordsDir, phaseReportsDir, recordsPath, riskCarryDir,
+  filedPath, movePath, phaseRecordsDir, phaseReportsDir, recordsPath, riskCarryDir, withPlanningFileLock,
 } from '../lib/planning-store.mjs';
 import { readState, STATE_LAYOUT, statePath, writeState } from '../lib/project-state.mjs';
 import { emit } from '../lib/seam-io.mjs';
@@ -36,6 +36,8 @@ const PHASE_PREFIXES = ['REVIEW-', 'ADJUDICATION-', 'DEFERRED-'];
 const PHASE_FILES = ['FINDINGS.json', 'verifier-findings.json'];
 /** A branch an executor worktree is made on. Phases can be decimal (`1.1`). */
 const PLAN_BRANCH = /^cadence\/phase-\d+(?:\.\d+)?-plan-\d+$/;
+/** The lock file a conversion holds, beside the state file's own folder; gone again when the call ends. */
+const LOCK_NAME = 'layout-migration';
 /** How many paths a refusal names before it says "and N more". */
 const NAMED_MAX = 8;
 
@@ -300,7 +302,8 @@ function convert(dir, moves) {
       hint: 'fix the cause the detail names and re-run - no state file was written, and the project files were not changed' };
   }
   const worked = existsSync(join(dir, 'ROADMAP.md')) || steps.length > 0;
-  if (worked) writeViews(dir, imported.state, ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md']);
+  // a view the project never had is not invented here; the seams that own the cursor write STATE.md when they first set it
+  if (worked) writeViews(dir, imported.state, ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md'].filter((v) => existsSync(join(dir, v))));
   if (worked) {
     const due = commitDue(dir);
     note = { converted: true, layout: STATE_LAYOUT, commit_due: due,
@@ -338,8 +341,23 @@ export function ensureState(dir, mode = 'now') {
     return false;
   }
 
-  const verdict = judge(dir);
-  const refusal = 'refusal' in verdict ? verdict.refusal : (mode === 'before' ? null : convert(dir, verdict.moves));
+  // two first calls at once would each move the same files, so the conversion holds a lock and the loser looks again
+  /** @type {Refusal | null} */
+  let refusal = null;
+  if (mode === 'before') {
+    const verdict = judge(dir);
+    refusal = 'refusal' in verdict ? verdict.refusal : null;
+  } else {
+    const held = withPlanningFileLock(join(dir, LOCK_NAME), () => {
+      if (readState(dir).kind !== 'absent') return null;
+      const verdict = judge(dir);
+      return 'refusal' in verdict ? verdict.refusal : convert(dir, verdict.moves);
+    }, 'layout-locked');
+    refusal = held.ok === false
+      ? { reason: held.reason, detail: held.detail,
+        hint: 'another seam is converting this project - let it finish and re-run, or clear a stale lock the detail names; nothing was changed' }
+      : held.value;
+  }
   if (refusal) {
     if (quiet) return false;
     // emitted directly because fail has no channel for the issue list
