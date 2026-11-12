@@ -138,6 +138,15 @@ const RECORDS_IGNORE = [
 ].join('\n');
 
 /**
+ * The project's state file: phase, plan and requirement status, the cursor and whether a cycle is open.
+ * Not `.planning/state.json`, which is a Rust-era leftover nothing here opens.
+ * @param {string} planningRoot
+ */
+export function statePath(planningRoot) {
+  return recordsPath(planningRoot, 'state.json');
+}
+
+/**
  * The three ledgers a person can read and git carries: the milestone residue, the findings filed to the tracker and
  * the findings declined. Each lock file stays a sibling of its ledger, so it moves with it.
  * @param {string} planningRoot
