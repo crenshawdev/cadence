@@ -635,6 +635,21 @@ export const CONTRACTS = {
       '--n': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
       '--dry-run': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
+    // name and description are caller text, so each has a -file form; add needs both, edit at least one, the seam says which
+    'phase-entry add': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--name': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--name-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--description': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--description-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'phase-entry edit': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--name': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--name-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--description': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--description-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
   },
   'config.mjs': {
     '*': {},

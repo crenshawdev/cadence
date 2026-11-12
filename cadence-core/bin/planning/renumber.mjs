@@ -288,7 +288,7 @@ function cmdRenumber(dir, sub, opts) {
     ...(orphanedReqs.length ? { orphaned_reqs: orphanedReqs } : {}),
     ...(decimalPhases.length ? { decimal_phases: decimalPhases } : {}),
     ...(warn ? { warn } : {}),
-    ...(sub === 'insert' ? { slot: `add the new "- [ ] **Phase ${at}: ...**" line and its detail section` } : {}),
+    ...(sub === 'insert' ? { slot: `fill phase ${at} with \`phase-entry add --phase ${at} --name <name> --description <one line>\`, then hand-write its "### Phase ${at}:" detail section` } : {}),
   };
   if ('dry-run' in opts) return ok({ dry_run: true, ...result });
 
