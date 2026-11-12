@@ -1,5 +1,6 @@
 // @ts-check
 // planning/milestone-prune.mjs - `milestone-prune`: the mechanical half of a milestone close, in one call
+// the phases it prunes are the ones the state holds complete; the state drops them and the list in ROADMAP.md is rendered from it
 'use strict';
 
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
@@ -14,6 +15,7 @@ import {
   appendArchiveRows, parseArchiveRows, phaseRecallSnippets,
 } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
+import { changeState, loadState, withPhases } from './state-import.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 
 // three hand-surgeries once left a tree failing its own audit; the text transforms live in lib/milestone-prune.mjs
@@ -76,7 +78,9 @@ function cmdMilestonePrune(dir, opts) {
       'make ROADMAP.md readable at that path and re-run - the checked phase boxes there are what'
       + ' says which phases this close may prune, and nothing was pruned');
   }
-  const completed = completedPhases(roadmapText);
+  const state = loadState(dir);
+  if (!state) return;
+  const completed = completedPhases(state);
   if (!completed.length) {
     return ok({ action: 'skip', reason: 'no completed (checked) phases to prune' });
   }
@@ -164,10 +168,20 @@ function cmdMilestonePrune(dir, opts) {
   }
   const reqResult = reqText === null ? null : archiveRequirements(reqText, applied, label);
 
-  // nothing cleared, nothing to say: skip both writes and don't rename an identical file into place
+  // nothing cleared, nothing to say: skip the writes and don't rename an identical file into place
+  // the detail sections go as text edits; the pruned phases leave the state and the list is rendered from it
   if (applied.length) {
     atomicWrite(roadmapFile, pruned.text);
     if (reqResult && reqResult.moved.length) atomicWrite(reqFile, reqResult.text);
+    const gone = new Set(applied);
+    const landed = changeState(dir, (s) => withPhases(s, s.phases.filter((p) => !gone.has(p.n))), ['STATE.md', 'ROADMAP.md'], {
+      onFail: (res) => emit({
+        ok: false, reason: 'state-write-failed', detail: `${res.reason} - ${res.detail}`,
+        hint: 'the phase directories and the detail sections are already pruned but the state still lists the phases; '
+          + 'fix the cause the detail names and re-run milestone-prune, which finishes the state and the list',
+      }),
+    });
+    if (!landed) return;
   }
 
   const envelope = {

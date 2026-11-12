@@ -6,11 +6,11 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  PHASE_DIR_NAME, fail, listPlanFiles, ok, planPosition, readProject, readQueue,
+  PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, planPosition, read, readPlanReports, readQueue,
 } from './core.mjs';
-import { readState } from '../lib/project-state.mjs';
+import { parseRequirements, sectionSpan } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { cursorOf } from './state-import.mjs';
+import { cursorOf, loadState, phaseListOf } from './state-import.mjs';
 
 /**
  * Every `phases/` entry outside `PHASE_DIR_NAME`, as one drift entry per colliding group.
@@ -93,23 +93,32 @@ const AGREE = {
 
 function cmdStatus(dir) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
-  const project = readProject(dir);
-  if (project.missing) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`, '/cad-new-project');
-  if (project.refusal) {
-    // emitted directly because fail has no channel for the issue list
-    const { reason, detail, issues, hint } = project.refusal;
-    return emit({ ok: false, reason, detail, ...(issues ? { issues } : {}), hint });
+  const roadmapText = read(join(dir, 'ROADMAP.md'));
+  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`, '/cad-new-project');
+  // the list is output the state renders into this heading, so the heading is all that is asked of the file
+  if (sectionSpan(roadmapText.split('\n'), '## Phases').start < 0) {
+    return fail('unparseable-roadmap', 'no `## Phases` section in ROADMAP.md',
+      'add a `## Phases` heading to ROADMAP.md, outside any code fence - a closed milestone'
+      + ' is that heading with nothing under it, never a missing heading');
   }
-  const { closed, derived, reportsOf, reqRows } = project;
+  const state = loadState(dir);
+  if (!state) return;
+  // the phases are the state's; the artifacts are only asked what they would derive, to report where the two disagree
+  const closed = state.phases.length === 0;
+  const derived = derivePhases(dir, phaseListOf(state)).map((p, i) => {
+    const held = [...state.phases].sort((a, b) => a.n - b.n)[i];
+    return { ...p, status: held.status, derivedStatus: p.status };
+  });
+  const reportsOf = derived.map((p) => readPlanReports(join(dir, 'phases', String(p.n)), p.plans));
+  const reqText = read(join(dir, 'REQUIREMENTS.md'));
+  const reqRows = reqText !== null ? parseRequirements(reqText) : null;
   const currentEntry = derived.find((p) => p.status !== 'complete') || null;
   const current = currentEntry ? currentEntry.n : null;
 
   const drift = [];
   for (const p of derived) {
-    if (p.checked && p.status !== 'complete') {
-      drift.push({ kind: 'roadmap-box', phase: p.n, detail: `box checked, derived ${p.status}` });
-    } else if (!p.checked && p.status === 'complete') {
-      drift.push({ kind: 'roadmap-box', phase: p.n, detail: 'derived complete, box unchecked' });
+    if (p.status !== p.derivedStatus) {
+      drift.push({ kind: 'roadmap-box', phase: p.n, detail: `state says ${p.status}, derived ${p.derivedStatus}` });
     }
   }
 
@@ -150,8 +159,7 @@ function cmdStatus(dir) {
   }
 
   // the cursor is a hint, the derivation wins; it is the state's, and STATE.md is never read
-  const held = readState(dir);
-  const parsed = held.kind === 'valid' ? cursorOf(held.state) : null;
+  const parsed = cursorOf(state);
   let cursor;
   if (parsed) {
     let agrees;
@@ -172,15 +180,6 @@ function cmdStatus(dir) {
         detail: `cursor says phase ${parsed.phase} ${parsed.status}; derived ` +
           (closed ? 'closed milestone (no phases in ROADMAP)'
             : current === null ? 'all complete' : `phase ${current} ${currentEntry.status}`),
-      });
-    }
-    // a stale "of <M>" on a zero-phase roadmap is reported on its own
-    // a tagged close deletes phases/<N>/, so a cursor rewrite that never ran leaves this total as the only sign
-    if (closed && parsed.total !== 0) {
-      drift.push({
-        kind: 'cursor', phase: parsed.phase,
-        detail: `cursor totals ${parsed.total} phases; ROADMAP has none - ` +
-          'milestone close did not finish (run cursor set)',
       });
     }
   }

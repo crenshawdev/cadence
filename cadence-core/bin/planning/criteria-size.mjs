@@ -6,9 +6,10 @@
 import { join } from 'node:path';
 import { fail, phaseGuard, ok, read } from './core.mjs';
 import {
-  classifyAcceptanceCriteria, parseRoadmapPhases, phaseCriteria,
+  classifyAcceptanceCriteria, phaseCriteria,
 } from '../lib/planning-files.mjs';
 import { requireInt } from '../lib/require-int.mjs';
+import { loadState, phaseListOf } from './state-import.mjs';
 
 // context.md says 3-7 acceptance criteria, new-project.md and adopt.md 2-5 per roadmap phase; nothing counted either
 // two grammars in one call: CONTEXT via classifyAcceptanceCriteria, ROADMAP's per-phase list via phaseCriteria
@@ -54,7 +55,9 @@ function cmdCriteriaSize(dir, opts) {
     if (!parsedPhase) return;
     targets = [{ n: parsedPhase.value, raw: parsedPhase.raw }];
   } else {
-    targets = parseRoadmapPhases(roadmapText).map((p) => ({ n: p.n, raw: String(p.n) }));
+    const state = loadState(dir);
+    if (!state) return;
+    targets = phaseListOf(state).map((p) => ({ n: p.n, raw: String(p.n) }));
   }
 
   const phases = [];

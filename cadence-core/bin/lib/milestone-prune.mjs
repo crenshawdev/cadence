@@ -2,7 +2,7 @@
 // the mechanical half of a milestone close, as pure text transforms
 // pure and total: a section that can't be found gets reported, never invented
 
-import { escN, parseRoadmapPhases, parseRequirements, phaseDetailSpans, sectionSpan } from './planning-files.mjs';
+import { escN, parseRequirements, phaseDetailSpans, sectionSpan } from './planning-files.mjs';
 import { escapeRe } from './text-util.mjs';
 
 /**
@@ -151,10 +151,11 @@ export function archiveRequirements(text, completed, label) {
 }
 
 /**
- * The completed (checked) phases of a roadmap.
- * @param {string} roadmapText
+ * The phases the state holds complete, in phase order: the ones a close may prune. A checked box in ROADMAP.md says
+ * nothing here, since the list is rendered from the state.
+ * @param {{phases: {n: number, status: string}[]}} state
  * @returns {number[]}
  */
-export function completedPhases(roadmapText) {
-  return parseRoadmapPhases(roadmapText).filter((p) => p.checked).map((p) => p.n);
+export function completedPhases(state) {
+  return state.phases.filter((p) => p.status === 'complete').map((p) => p.n).sort((a, b) => a - b);
 }

@@ -7,7 +7,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, read, readProject } from './core.mjs';
+import { derivePhases, fail, read, readProject } from './core.mjs';
 import { CLOSED_CYCLE_NAME } from '../lib/planning-files.mjs';
 import { atomicWrite } from '../lib/planning-store.mjs';
 import { CURSOR_WORDS, readState, statePath, updateState } from '../lib/project-state.mjs';
@@ -113,7 +113,7 @@ const VIEW_FILES = ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md'];
  * Write the named generated files from a state, leaving a file the state already agrees with as it was. A file that is
  * missing, or whose heading is missing, is skipped: a view is never invented.
  * @param {string} dir @param {import('../lib/project-state.mjs').ProjectState} state @param {string[]} views
- * @param {string[]} [wrote] gets the names written, in order, so a caller can say how far a failed write got
+ * @param {string[]} [wrote] gets the name of each file once it agrees with the state, in order, so a caller can say how far a failed write got
  */
 export function writeViews(dir, state, views, wrote = []) {
   for (const v of VIEW_FILES.filter((f) => views.includes(f))) {
@@ -127,7 +127,8 @@ export function writeViews(dir, state, views, wrote = []) {
       if (r.missing) continue;
       text = r.text;
     }
-    if (text !== had) { atomicWrite(file, text); wrote.push(v); }
+    if (text !== had) atomicWrite(file, text);
+    wrote.push(v);
   }
   return wrote;
 }
@@ -152,4 +153,36 @@ export function changeState(dir, change, views, opts = {}) {
         : 'fix the cause the detail names and re-run; the state file and the generated files agree again on the next state write');
   }
   return null;
+}
+
+/**
+ * The state's phases in the shape `parseRoadmapPhases` gives, for the readers that walk a phase list: a phase is
+ * checked when the state holds it complete.
+ * @param {import('../lib/project-state.mjs').ProjectState} state
+ */
+export function phaseListOf(state) {
+  return [...state.phases].sort((a, b) => a.n - b.n)
+    .map((p) => ({ n: p.n, name: p.name, desc: p.description, checked: p.status === 'complete' }));
+}
+
+/**
+ * Put what phase `n`'s artifacts derive into the state's entry for it: a seam that touches a phase records where the
+ * phase really stands as part of its own write. A phase the state doesn't hold is left alone.
+ * @param {string} dir @param {import('../lib/project-state.mjs').ProjectState} state @param {number} n
+ * @returns {import('../lib/project-state.mjs').ProjectState}
+ */
+export function foldPhase(dir, state, n) {
+  if (!state.phases.some((p) => p.n === n)) return state;
+  const [derived] = derivePhases(dir, [{ n }]);
+  return { ...state, phases: state.phases.map((p) => (p.n === n ? { ...p, status: derived.status } : p)) };
+}
+
+/** The state with its phase list replaced; a cycle is open exactly when there are phases. */
+export function withPhases(state, phases) {
+  return { ...state, phases, cycleOpen: phases.length > 0 };
+}
+
+/** What phase `n`'s artifacts derive as its status. */
+export function derivedStatus(dir, n) {
+  return derivePhases(dir, [{ n }])[0].status;
 }

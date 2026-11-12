@@ -1,19 +1,21 @@
 // @ts-check
 // planning/renumber.mjs - `renumber`: phase insert/remove mechanics
+// the phases it renumbers are the state's; the list in ROADMAP.md is rendered from the state after the last move, so a
+// failed apply leaves the state holding the old numbering. The `Phase K` tokens and detail sections are text edits
 // two probes below are pinned by source in the tests: the nested one uses lstat, and the rm fallback waits on both
 'use strict';
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
-import { fail, intFlag, ok, read, readProject } from './core.mjs';
+import { fail, intFlag, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   cutPhaseDetail, findProsePhaseRefs, nextNamesPhase,
   parseRoadmapPhases, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
 import { atomicWrite, movePath, removeTree } from '../lib/planning-store.mjs';
-import { changeState, loadState, phasesOf } from './state-import.mjs';
+import { changeState, loadState, phaseListOf, withPhases } from './state-import.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 // structured edits are automated, lowercase prose refs are reported for the model; --dry-run touches nothing
@@ -98,12 +100,13 @@ function cmdRenumber(dir, sub, opts) {
       'point --dir at the .planning/ directory that holds ROADMAP.md - renumbering is computed FROM'
       + ' the roadmap, so there is nothing to renumber against without it');
   }
-  const phases = parseRoadmapPhases(roadmapText);
+  // the phases are the state's: a line added to the list by hand is not a phase, and one taken out is not a removal
+  const state = loadState(dir);
+  if (!state) return;
+  const phases = phaseListOf(state);
   if (!phases.length) {
-    return fail('unparseable-roadmap', 'no phase lines under ## Phases',
-      'give ROADMAP.md at least one phase line spelled'
-      + ' `- [ ] **Phase <n>: <name>** - <description>` under `## Phases`, then re-run - nothing was'
-      + ' moved');
+    return fail('unparseable-roadmap', 'the project has no phases to renumber',
+      'add a phase to the project first (/cad-phase add), then re-run - nothing was moved');
   }
   const total = phases.length;
   // dir-move ceiling is integer phases only: a decimal ceiling would walk fractional ks past every integer dir (#36)
@@ -125,8 +128,8 @@ function cmdRenumber(dir, sub, opts) {
       + ' nothing was moved');
   }
   if (sub === 'remove' && !phases.some((p) => p.n === at)) {
-    return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`,
-      "re-run with a phase number that appears in ROADMAP.md's `## Phases` list; nothing was"
+    return fail('unknown-phase', `phase ${at} is not in the project's phase list`,
+      "re-run with a phase number that appears in the `## Phases` list of ROADMAP.md; nothing was"
       + ' moved');
   }
 
@@ -201,8 +204,6 @@ function cmdRenumber(dir, sub, opts) {
   }
 
   // the cursor it re-points is the state's; STATE.md is rendered from the state afterwards, never read
-  const state = loadState(dir);
-  if (!state) return;
   const cursor = state.cursor;
   let newCursor = null;
   let warn;
@@ -301,17 +302,16 @@ function cmdRenumber(dir, sub, opts) {
   }
   steps.push([{ edit: 'ROADMAP.md' }, () => atomicWrite(roadmapFile, newRoadmap)]);
   if (newReqText !== null) steps.push([{ edit: 'REQUIREMENTS.md' }, () => atomicWrite(reqFile, newReqText)]);
-  if (newCursor) {
-    steps.push([{ edit: 'STATE.md' }, () => {
-      // the roadmap has been edited by now and the list is still its to say, so the state takes the list from it
-      const project = readProject(dir);
-      const fold = !project.missing && !project.refusal ? { cycleOpen: !project.closed, phases: phasesOf(project) } : {};
-      const wrote = changeState(dir, (s) => ({ ...s, ...fold, cursor: newCursor }), ['STATE.md'], {
-        onFail: (res) => { throw new Error(`the state file was not written: ${res.reason} - ${res.detail}`); },
-      });
-      if (!wrote) throw new Error('the state file was not written');
-    }]);
-  }
+  // last: the state takes the renumbered phases and cursor, then the list in ROADMAP.md and STATE.md are rendered from it
+  // the shifted text above already shows the new numbers, so a render keeps those lines as they are
+  steps.push([newCursor ? { edit: 'STATE.md' } : { edit: 'state.json' }, () => {
+    const renumbered = state.phases
+      .filter((p) => !(sub === 'remove' && p.n === at))
+      .map((p) => (Number.isInteger(p.n) && p.n >= shiftFrom ? { ...p, n: p.n + delta } : p));
+    changeState(dir, (s) => ({ ...withPhases(s, renumbered), cursor: newCursor ?? s.cursor }), ['STATE.md', 'ROADMAP.md'], {
+      onFail: (res) => { throw new Error(`the state file was ${res.stateWritten ? 'written, the generated files were not' : 'not written'}: ${res.reason} - ${res.detail}`); },
+    });
+  }]);
 
   // stop at the first throw: once a step fails the tree no longer matches the plan, and running on would compound it
   const applied = runTransition({ steps, discipline: 'stop-at-first-failure' });
@@ -323,7 +323,7 @@ function cmdRenumber(dir, sub, opts) {
       detail: e && e.message ? e.message : String(e),
       // deliberately no "re-run": it recomputes from a half-applied tree and, on a remove, rm's the next phase's work
       hint: applied.completed.length
-        ? 'the tree is partly renumbered and no longer matches ROADMAP - reconcile the completed ops by hand before any further renumber; re-running this command against the half-applied tree can destroy a phase directory'
+        ? 'the tree is partly renumbered - reverse the completed directory moves and text edits by hand before any further renumber, and never the phase list, the traceability table or STATE.md, which are rendered from the state file; it still holds the old numbering unless the detail says it was written; re-running this command against the half-applied tree can destroy a phase directory'
         : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
     });
   }

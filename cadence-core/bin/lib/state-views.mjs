@@ -4,6 +4,7 @@
 // only the generated span changes; every other byte comes back as it was, including the `### Phase N:` detail sections
 // a line the state already agrees with is kept as written, so a project whose files are in step renders to the same bytes
 // a missing heading is flagged and never invented
+// an entry-shaped line under the heading that opens with a phase but isn't a phase line (`- Phase 3: X`) is view text too, and goes
 'use strict';
 
 import { parseRequirements, parseRoadmapPhases, renderCursor, sectionSpan } from './planning-files.mjs';
@@ -32,6 +33,9 @@ function swapRows(lines, old, wanted, fallback) {
   return out;
 }
 
+// an entry-shaped line: a list marker, a table bar, then (after an optional box and bold marks) `Phase N` first
+const MALFORMED_ENTRY = /^\s*(?:(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?|\|\s*)\*{0,2}Phase \d+(?:\.\d+)?\b/;
+
 const eolOf = (/** @type {string} */ line) => (line.endsWith('\r') ? '\r' : '');
 
 /**
@@ -53,6 +57,8 @@ export function renderPhasesList(state, text) {
     if (fenced(lines[i])) continue;
     const p = parseRoadmapPhases(`## Phases\n${lines[i].replace(/\r$/, '')}`)[0];
     if (p) old.set(i, `${p.n}|${p.name}|${p.desc}|${p.checked}`);
+    // a bullet, numbered item or table row that opens with a phase is a malformed entry; the key can't match a wanted row
+    else if (MALFORMED_ENTRY.test(lines[i])) old.set(i, `malformed|${i}`);
   }
 
   const wanted = [...state.phases].sort((a, b) => a.n - b.n).map((p) => {

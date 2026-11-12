@@ -8,9 +8,9 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, ok, phaseSpellingRefusal, planPosition, read, readProject } from './core.mjs';
-import { CLOSED_CYCLE_NAME, CURSOR_STATUSES, classifyPhaseList } from '../lib/planning-files.mjs';
-import { cursorOf, changeState, loadState, phasesOf } from './state-import.mjs';
+import { fail, ok, phaseSpellingRefusal, planPosition } from './core.mjs';
+import { CLOSED_CYCLE_NAME, CURSOR_STATUSES } from '../lib/planning-files.mjs';
+import { changeState, foldPhase, loadState } from './state-import.mjs';
 import { requireCursorNumber, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 
@@ -60,51 +60,32 @@ function cmdCursorSet(dir, opts) {
       + ' are the lifecycle, not free text');
   }
 
-  const state = loadState(dir);
-  if (!state) return;
-  // name/total: explicit flag > ROADMAP derivation > existing cursor > fail.
+  // name/total: explicit flag > the state's phase list > fail. No phases at all is a closed cycle: no name and a total of 0
   let name = opts.name;
   let total;
-  // a paused cursor on a closed roadmap keeps the state's phase list as it is, so the stale total survives
-  let keepList = false;
   if ('total' in opts) {
     const parsed = requireCursorNumber(opts.total);
     if (!parsed.ok) {
       return fail('bad-args', 'cursor set --total needs a non-negative integer',
         'send --total as the number of phases in this milestone, or drop the flag and let'
-        + " ROADMAP.md's phase list supply the count");
+        + " the project's phase list supply the count");
     }
     total = parsed.value;
   }
+  const state = loadState(dir);
+  if (!state) return;
   if (name === undefined || total === undefined) {
-    // closed fills no active cycle and 0 so a pruned roadmap succeeds; `of 0` elsewhere would erase a live total
-    const { state: listState, phases } = classifyPhaseList(read(join(dir, 'ROADMAP.md')) || '');
-    const entry = phases.find((p) => p.n === phase);
+    const entry = state.phases.find((p) => p.n === phase);
     if (name === undefined && entry) name = entry.name;
-    if (total === undefined && phases.length) total = phases.length;
-    if (listState === 'closed') {
-      // before the prior-cursor fallback: a stale total would write `Phase: 1 of 5` on a zero-phase roadmap
-      // paused is the exception: deriving 0 would erase the stale `of <M>` that marks an unfinished close
-      const prior = opts.status === 'paused' ? cursorOf(state) : null;
-      if (prior && prior.total && prior.phase === phase) {
-        keepList = true;
-        if (name === undefined) name = prior.name;
-        if (total === undefined) total = prior.total;
-      }
+    if (total === undefined && state.phases.length) total = state.phases.length;
+    if (!state.phases.length) {
       if (name === undefined) name = CLOSED_CYCLE_NAME;
       if (total === undefined) total = 0;
     }
   }
   if (name === undefined || total === undefined) {
-    const prior = cursorOf(state);
-    if (prior) {
-      if (name === undefined && prior.phase === phase) name = prior.name;
-      if (total === undefined) total = prior.total;
-    }
-  }
-  if (name === undefined || total === undefined) {
-    return fail('cannot-derive', 'phase name/total not in flags, ROADMAP.md, or the existing cursor',
-      'pass --name and --total explicitly, or add this phase to the `## Phases` list in ROADMAP.md'
+    return fail('cannot-derive', 'phase name/total not in flags or the project\'s phase list',
+      'pass --name and --total explicitly, or add this phase to the project\'s phase list'
       + ' so both can be derived from it');
   }
 
@@ -115,14 +96,10 @@ function cmdCursorSet(dir, opts) {
     updated: new Date().toISOString().slice(0, 10),
     ...(plan ? { plan } : {}),
   };
-  // the list and the open/closed flag come from the roadmap only when it can be read; a refusal or no file leaves them
-  const project = keepList ? null : readProject(dir);
-  const fold = project && !project.missing && !project.refusal
-    ? { cycleOpen: !project.closed, phases: phasesOf(project) } : {};
   const stored = {
     phase, status: opts.status, next, updated: cursor.updated, ...(plan ? { plan } : {}),
   };
-  const done = changeState(dir, (s) => ({ ...s, ...fold, cursor: stored }), ['STATE.md']);
+  const done = changeState(dir, (s) => ({ ...foldPhase(dir, s, phase), cursor: stored }), ['STATE.md', 'ROADMAP.md']);
   if (!done) return;
   ok({ cursor });
 }
