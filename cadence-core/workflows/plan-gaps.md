@@ -28,7 +28,7 @@ at `spawn_planner` with Mode: gaps.
    through `PLAN-3.md` gets `PLAN-4.md`. Carry that exact filename forward.
 
    Why a new file. Measured on a fixture 2026-08-31: with the gap plan written
-   OVER `PLAN.md`, the prior run's `reports/plan-1.md` still read
+   OVER `PLAN.md`, the prior run's `records/reports/plan-1.md` still read
    `PLAN COMPLETE` and `replay-check` answered `dispatch_set: []`, so nothing
    routing off the seam could see the gap plan at all. Renaming it `PLAN-2.md`
    in that same fixture returned `dispatch_set: ["PLAN-2.md"]` - which is what

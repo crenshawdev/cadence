@@ -396,7 +396,7 @@ Once per plan file the phase has, because `--plan` names one plan file:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase {N} --plan <k>
 ```
 
-In a `--gaps` run, skip a plan whose `reports/plan-<k>.md` opens `PLAN COMPLETE`: `/cad-execute` never dispatches it. If its brief would have been refused, say so in one line and re-dispatch nothing for it.
+In a `--gaps` run, skip a plan whose `records/reports/plan-<k>.md` opens `PLAN COMPLETE`: `/cad-execute` never dispatches it. If its brief would have been refused, say so in one line and re-dispatch nothing for it.
 
 With no `--out-dir` it writes nothing. An `ok:true` answer may carry `reads_missing`, the `Reads` entries the index lacks, or `reads_unchecked`: relay either in one line per plan and re-dispatch nothing for it. On `ok:false`, say what the answer names out loud, and re-dispatch ONCE:
 
@@ -567,7 +567,7 @@ Review line then reports the gate as off rather than as a pass:
 - **advisory** (the default) -> fire in the SAME message as the
   `commit` step's seam calls rather than waiting. The dispatch carries the
   advisory persistence tail (review-triggers.md step 4): the reviewer writes its
-  findings to `.planning/phases/<N>/REVIEW-plan.md` and closes its own bracket,
+  findings to `.planning/phases/<N>/records/REVIEW-plan.md` and closes its own bracket,
   so this session ending before the return lands loses nothing. `done` reads
   that file if it is on disk by then; otherwise its Review line names the path
   as in flight - never a clean pass.
@@ -641,7 +641,7 @@ differs:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cite-count --phase {N} --point committed --payload "<the echoed scratch directory>/surfaced.json"
 ```
 
-Both counts reach `.planning/trace.jsonl` as their own `outcome`-family events
+Both counts reach `.planning/records/trace.jsonl` as their own `outcome`-family events
 under this phase's correlation id: the seam appends each one itself, so neither
 figure is retyped onto a flag, and the envelope's `trace` field is the only
 place a caller learns a record was dropped. Hold this count for `done` beside

@@ -23,13 +23,13 @@ a scoping flag would be a seam contract change, and there is no correlation-id
 scoping to reach for either.
 
 The scope is REPORTED, never narrowed. Say which record was read - the return's
-`file` names it - and what it spans: nothing prunes `.planning/trace.jsonl` at a
+`file` names it - and what it spans: nothing prunes `.planning/records/trace.jsonl` at a
 close, so an unscoped run spans every milestone still in the LIVE record, and a
 `--phase <N>` run admits an older cycle's phase `N` beside this one's. The one
 thing that ever shortens it is the cut at its size bound, which `rotated`
 reports. The user reading a suggestion needs both.
 
-The same is true of the SECOND record the seam reads, `.planning/reads.jsonl`,
+The same is true of the SECOND record the seam reads, `.planning/records/reads.jsonl`,
 and it has one more caveat of its own: nothing prunes it at a close either, the
 one thing that ever shortens it is the same cut at its size bound - which
 `reads.rotated` reports - and it carries NO phase scoping at all: it is one
@@ -52,12 +52,12 @@ record was cut), and `capped` / `rotated` / `malformed` / `warnings` when any of
 the four is present - a
 `warnings` entry is a config layer the merge could not read whole, so a `current`
 below may be reading less than the project set, and it is relayed rather than
-swallowed. A `warnings` entry naming `.planning/reads.jsonl` is that file being
+swallowed. A `warnings` entry naming `.planning/records/reads.jsonl` is that file being
 unreadable, so no in-dispatch figure was measured this run - relay it the same
 way rather than reporting an absence as a low number.
 
-That one call reads TWO records - `.planning/trace.jsonl` and
-`.planning/reads.jsonl` - and open NEITHER. The seam is the reader, and prose
+That one call reads TWO records - `.planning/records/trace.jsonl` and
+`.planning/records/reads.jsonl` - and open NEITHER. The seam is the reader, and prose
 that re-reads either is prose that can disagree with it.
 </step>
 

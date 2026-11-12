@@ -20,7 +20,7 @@ On `ok:false`, relay its `reason` and `hint` and stop. The answer carries `modul
 
 - The `Workflow` tool is not in this session's tool list: report `modules`, `bytes`, `stale` and `unbuilt`, say the build needs that tool, and stop. There is no single-agent fallback.
 - `readers` is 0: say the map is current and stop. Start nothing and ask nothing.
-- Otherwise print the count of modules and `bytes`, then the `readers` this launch will start and the `reader_bytes` they will open, which cover only the stale and unbuilt modules. Say a first build's token cost isn't measured. Name each module in `oversized` and give the line that re-cuts the partition: `rm .planning/codemap/index.json`.
+- Otherwise print the count of modules and `bytes`, then the `readers` this launch will start and the `reader_bytes` they will open, which cover only the stale and unbuilt modules. Say a first build's token cost isn't measured. Name each module in `oversized` and give the line that re-cuts the partition: `rm .planning/records/codemap/index.json`.
 
 End the turn in plain text asking for a yes, and ask on a refresh too: a branch switch can stale most of the map. Only a typed yes in the next message goes on. Any other reply starts nothing.
 

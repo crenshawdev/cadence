@@ -344,7 +344,7 @@ For each item with `status: fail` and no recorded cause:
    references/conventions.md; a re-record of the same result adds the field;
    first_pass is safe). When the
    item was recorded by the deep pass, open
-   `.planning/phases/<N>/verifier-findings.json` AT THIS POINT - the only
+   `.planning/phases/<N>/records/verifier-findings.json` AT THIS POINT - the only
    place this workflow opens it - and read the gap's `missing` (or the human
    check's `why_human`) before diagnosing: that is the diagnosis the verifier
    already did, and it is why those fields ride the file. If a
@@ -460,8 +460,8 @@ one commit:
 On a **partial** session, do neither - the phase is not done.
 
 If `planning.commit_docs` is true (`config.mjs get planning.commit_docs`),
-commit UAT.md, `phases/<N>/FINDINGS.json` and
-`phases/<N>/verifier-findings.json` if a deep pass wrote them, plus
+commit UAT.md, `phases/<N>/records/FINDINGS.json` and
+`phases/<N>/records/verifier-findings.json` if a deep pass wrote them, plus
 whichever of STATE.md, ROADMAP.md, and REQUIREMENTS.md changed:
 `docs: phase <N> UAT - {passed} passed, {failed} failed`.
 

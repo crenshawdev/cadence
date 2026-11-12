@@ -45,11 +45,12 @@ Two stops first, before anything is written.
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" detect --dir .
    ```
 
-   The ignore line is not optional: `.planning/trace.jsonl` is ONE MACHINE's
+   The ignore rule is not optional: `.planning/records/trace.jsonl` is ONE MACHINE's
    run record, this seam is the only thing in Cadence that writes the rule, and
    /cad-health reports `ignored:false` and `tracked:true` as separate issues
-   with different remedies. Append-if-absent, so a brownfield `.gitignore` keeps
-   every line it had and a re-run adds no second line.
+   with different remedies. The rule sits in the records folder's own
+   `.planning/records/.gitignore`, created only when absent, so a brownfield
+   `.gitignore` is never edited and a re-run changes nothing.
 
    The config template is copied VERBATIM - ask no configuration questions,
    with THREE deliberate exceptions and no others. The first is item 4 below: the
@@ -451,7 +452,7 @@ on disk in `.planning/`.
 - [ ] `.planning/` holds PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and
       config.json, with config.json copied verbatim from the engine template and
       written only with the forge, roles and testing policy answers
-- [ ] The trace ignore line is present and `.planning/trace.jsonl` is untracked
+- [ ] The trace ignore rule is present and `.planning/records/trace.jsonl` is untracked
 - [ ] Nothing the README, the manifests, the tree or the log already answered
       was re-asked, and every question asked named the gap it was filling
 - [ ] PROJECT.md's Validated section carries what the code already does; its

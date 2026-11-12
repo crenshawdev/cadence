@@ -42,13 +42,14 @@ line):
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --root .
    ```
 
-   Append-if-absent: it creates `.gitignore` when there is none, and a
-   brownfield `.gitignore` keeps every line it had. A re-run adds no second
-   line (`written:false`, `reason:"already-ignored"`), and a project that
-   ignores `.planning/` wholesale is already correct and is left alone.
-   `.planning/trace.jsonl` is ONE MACHINE's routing/provider/worker record, so a
-   project must not commit it - and this seam is the only thing in Cadence that
-   writes that line.
+   Create-if-absent: the rules live in the records folder's own
+   `.planning/records/.gitignore`, so the project's `.gitignore` is never
+   edited, and a records `.gitignore` that already exists keeps every line it
+   had. A re-run writes nothing (`written:false`, `reason:"already-ignored"`),
+   and a project that ignores `.planning/` wholesale is already correct and is
+   left alone. `.planning/records/trace.jsonl` is ONE MACHINE's
+   routing/provider/worker record, so a project must not commit it - and this
+   seam is the only thing in Cadence that writes that file.
 4. If `.planning/config.json` does not exist, copy the engine template
    verbatim:
 
