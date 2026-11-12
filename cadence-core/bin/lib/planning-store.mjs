@@ -270,7 +270,7 @@ export function ensureRecordsIgnore(planningRoot) {
  * carried queue out of the tree, so it is refused the way a symlinked file is. A planning root that is itself absent
  * stays an error (`ENOENT`): this creates the folder, never the project.
  * @param {string} planningRoot
- * @returns {{ok: true} | {ok: false, reason: string}} `reason` is `symlinked-records` or the fs error code
+ * @returns {{ok: boolean, reason?: string}} `reason` is `symlinked-records` or the fs error code
  */
 export function ensureRecordsDir(planningRoot) {
   const dir = recordsDir(planningRoot);
