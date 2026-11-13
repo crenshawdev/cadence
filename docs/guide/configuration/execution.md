@@ -48,7 +48,7 @@ Enable the goal-backward deep-verification path. The risk floor can request it a
 
 **Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
 
-Change the next-step suggestion for an unplanned phase in `/cad-progress`. It suggests planning instead of context gathering; it does not skip a workflow step.
+Change the next-step suggestion for an unplanned phase in `/cad-progress`, and the `Next:` step `/cad-phase add` writes when it adds a phase and no other phase is unfinished. It suggests planning instead of context gathering; it does not skip a workflow step.
 
 ### `workflow.inline_plan_threshold`
 

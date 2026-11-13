@@ -6,6 +6,7 @@
 
 import { join } from 'node:path';
 import { PHASE_DIR_NAME, fail, ok, phaseSpellingRefusal, read } from './core.mjs';
+import { mergeLayers } from '../lib/config-merge.mjs';
 import { parseRoadmapPhases } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { renderPhasesList } from '../lib/state-views.mjs';
@@ -29,6 +30,7 @@ function unreadable(entry) {
     'take the `**` and any other list markup out of the name and description, then re-run - the `## Phases` line'
     + ' is parsed back into the state, and nothing was written'];
 }
+
 
 function cmdPhaseEntry(dir, sub, opts) {
   if (sub !== 'add' && sub !== 'edit') {
@@ -96,7 +98,7 @@ function cmdPhaseEntry(dir, sub, opts) {
   // judged against the state under the lock, so two adds of one number can't both land
   // a refusal there empties the view list and hands the state back as it was, which the store writes as no change
   // one holder, so the body's assignments aren't narrowed away from the code after it
-  const box = /** @type {{refused: [string, string, string] | null, entry: StatePhase | null, opened: boolean}} */ ({ refused: null, entry: null, opened: false });
+  const box = /** @type {{refused: [string, string, string] | null, entry: StatePhase | null, opened: boolean, warnings: string[]}} */ ({ refused: null, entry: null, opened: false, warnings: [] });
   const views = ['STATE.md', 'ROADMAP.md'];
   const done = changeState(dir, (s) => {
     const held = s.phases.find((p) => p.n === n);
@@ -117,14 +119,25 @@ function cmdPhaseEntry(dir, sub, opts) {
     const e = box.entry;
     box.opened = !s.cycleOpen;
     const phases = held ? s.phases.map((p) => (p.n === n ? e : p)) : [...s.phases, e].sort((a, b) => a.n - b.n);
+    // with nothing else unfinished the new phase IS the work, so the cursor moves here, in the same write as the phase;
+    // a paused cursor is the user's bookmark and stays put
+    let cursor = s.cursor;
+    if (!held && s.phases.every((p) => p.status === 'complete') && s.cursor?.status !== 'paused') {
+      // mergeLayers warnings[]: ridden on the envelope; a torn layer reads skip_discuss as unset, so /cad-context
+      const { config, warnings } = mergeLayers(join(dir, 'config.json'));
+      box.warnings = warnings;
+      const next = `${config?.workflow?.skip_discuss === true ? '/cad-plan' : '/cad-context'} ${n}`;
+      cursor = { phase: n, status: 'ready to plan', next, updated: new Date().toISOString().slice(0, 10) };
+    }
     // the first phase into a closed state opens the cycle; an edit leaves it as it was
-    return { ...s, phases, cycleOpen: held ? s.cycleOpen : true };
+    return { ...s, phases, cursor, cycleOpen: held ? s.cycleOpen : true };
   }, views);
   if (!done) return;
   const { refused, entry } = box;
   if (refused) return fail(refused[0], refused[1], refused[2]);
   if (!entry) return fail('internal', 'phase-entry wrote no entry and gave no reason');
-  ok({ phase: n, name: entry.name, description: entry.description, ...(sub === 'add' && box.opened ? { opened_cycle: true } : {}) });
+  ok({ phase: n, name: entry.name, description: entry.description, ...(sub === 'add' && box.opened ? { opened_cycle: true } : {}),
+    ...(box.warnings.length ? { warnings: box.warnings } : {}) });
 }
 
 export { cmdPhaseEntry };
