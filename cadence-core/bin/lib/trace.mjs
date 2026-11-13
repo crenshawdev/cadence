@@ -95,8 +95,9 @@ export const STEP_WINDOW = 'step_window';
 export const ROTATION = ROTATION_EVENT;
 
 /**
- * A lifecycle event with no `phase` that marks a cycle boundary: a phase-scoped read starts after the newest one,
- * so this cycle's phase 1 isn't summed with the last cycle's. A record without one reads as one span.
+ * A lifecycle event with no `phase` that marks a cycle boundary: a phase-scoped read and `correlationId` both start
+ * after the newest one, so this cycle's phase 1 isn't summed with the last cycle's. A record without one reads as
+ * one span.
  */
 export const CYCLE = 'cycle_boundary';
 
@@ -161,19 +162,21 @@ function readLines(planningRoot) {
 
 /**
  * The newest `lifecycle` event called `name` that `want` accepts, and its line index, or null. Walks backwards, a line
- * that isn't a JSON object is skipped.
+ * that isn't a JSON object is skipped. A `lifecycle` event called `stop` ends the walk with null.
  * @param {string[]} lines
  * @param {string} name
  * @param {(e: any) => boolean} [want]
+ * @param {string} [stop]
  * @returns {{e: any, at: number}|null}
  */
-function newestLifecycle(lines, name, want) {
+function newestLifecycle(lines, name, want, stop) {
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
     if (!line) continue;
     let e;
     try { e = JSON.parse(line); } catch { continue; }
     if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (stop !== undefined && e.family === 'lifecycle' && e.event === stop) return null;
     if (e.family !== 'lifecycle' || e.event !== name) continue;
     if (want && !want(e)) continue;
     return { e, at: i };
@@ -215,8 +218,9 @@ export function correlationId(planningRoot, phase, ownSha) {
   if (typeof ownSha === 'string' && ownSha) return `${p}-${ownSha}`;
   const lines = readLines(planningRoot);
   if (lines === null) return p;
-  // the newest anchor wins, so a re-run of a phase gets a new id
-  const found = newestLifecycle(lines, ANCHOR, (e) => key(e.phase) === p);
+  // the newest anchor wins, so a re-run of a phase gets a new id; an anchor behind a cycle marker is the last
+  // cycle's, and readEvents drops it at the same line (D-22), or the re-arm cap misses the rearm it just wrote
+  const found = newestLifecycle(lines, ANCHOR, (e) => key(e.phase) === p, CYCLE);
   return found && typeof found.e.sha === 'string' && found.e.sha ? `${p}-${found.e.sha}` : p;
 }
 
