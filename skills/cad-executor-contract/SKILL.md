@@ -27,7 +27,7 @@ They are not a halt condition and add no checkpoint - see `<checkpoints>`.
 A task's named files and anchors are where you START, not the boundary of
 what you may look at. Open them directly instead of searching for them,
 confirm the anchor still matches what is there - symbols move and line
-numbers rot - and still grep for callers before you edit. Named files are
+numbers rot - and still find callers before you edit. Named files are
 never permission to skip the caller check.
 
 Batch independent probes throughout: greps, globs and reads whose target
