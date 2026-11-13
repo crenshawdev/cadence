@@ -104,7 +104,7 @@ export const TEXT_TRANSPORT = Object.freeze([
     reason: "the seam's own `uat status` result word, one of two literals this workflow reads back off an ok:true envelope",
   }),
   row({
-    surface: 'cadence-core/references/triage-gate.md', flag: '--detail', value: '<trigger>', derived: false,
+    surface: 'cadence-core/references/triage-gate-blocking.md', flag: '--detail', value: '<trigger>', derived: false,
     reason: 'a trigger name, drawn from the closed set config.schema.json declares under review.triggers.<t> - the same class of value D-01 puts out of scope at an enum-validated flag',
   }),
 

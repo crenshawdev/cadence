@@ -330,7 +330,7 @@ and `/cad-verify`'s fire, which is always triaged as `adjudicated`, write it.
 This arm is also reached by a `blocking` or `deferred` gate under
 `review.mode: adjudicated`, the schema default, and those keep their JSON
 object (`references/risk-surface.md`, and the `deferred` bullet of
-`references/triage-gate.md`). So each gate has one rule and the seam never
+`references/triage-gate-deferred.md`). So each gate has one rule and the seam never
 meets a path already written.
 
 A RE-ARM PASSES `--round 2`, and the fire site is the only actor that knows

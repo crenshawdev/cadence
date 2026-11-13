@@ -85,7 +85,8 @@ export const BULK_OUTPUT = Object.freeze([
   // each redirects to a scratch path and reads back only what its step prints or branches on; the
   // rows keep matching the converted call, so deleting the redirect is a reported regression
   Object.freeze({
-    surface: 'cadence-core/references/triage-gate.md',
+    // moved with the blocking re-arm's read-back when triage-gate.md became a router
+    surface: 'cadence-core/references/triage-gate-blocking.md',
     shape: 'trace render', call: 'trace render --phase <N>',
     bytes: 14857, measured: '2026-08-17', transport: 'redirect',
   }),

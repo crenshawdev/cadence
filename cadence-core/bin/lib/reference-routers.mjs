@@ -68,11 +68,32 @@ export const ROUTERS = Object.freeze([
   Object.freeze({
     // not a cut a router split made: registering it makes "every gate
     // arm is one Read from the router" a checked property
-    // the one-round cap on a blocking re-arm lives only in triage-gate.md, so
-    // a deleted Read line is an uncapped re-arm with a green tree
+    // triage-gate.md is itself a router now, and the blocking re-arm's cap sits
+    // one Read below it: a deleted Read line is an uncapped re-arm with a green tree
     router: 'cadence-core/references/review-triggers.md',
     branch: 'triage-gate (step 6, ANY gate)',
     cold: 'cadence-core/references/triage-gate.md',
+  }),
+  Object.freeze({
+    router: 'cadence-core/references/triage-gate.md',
+    branch: 'deferred (the gate, and the triage of a deferred queue at /cad-land)',
+    cold: 'cadence-core/references/triage-gate-deferred.md',
+  }),
+  Object.freeze({
+    // fire sites re-read the router for the one-round re-arm cap, and this row is what keeps it one Read away
+    router: 'cadence-core/references/triage-gate.md',
+    branch: 'blocking (the gate, and the one-round cap on its re-arm)',
+    cold: 'cadence-core/references/triage-gate-blocking.md',
+  }),
+  Object.freeze({
+    router: 'cadence-core/references/triage-gate.md',
+    branch: "adjudicated (the gate, and /cad-verify's fire)",
+    cold: 'cadence-core/references/triage-gate-adjudicated.md',
+  }),
+  Object.freeze({
+    router: 'cadence-core/references/triage-gate.md',
+    branch: 'unfixed (a gate holding a finding it will not fix now)',
+    cold: 'cadence-core/references/triage-gate-unfixed.md',
   }),
 ]);
 
