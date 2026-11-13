@@ -62,7 +62,8 @@ const ENTRY_SCHEMA = {
   },
 };
 
-const base = { agentType: a.agent_type, disallowedTools: ['Bash'], ...(text(a.model) ? { model: a.model } : {}) };
+// A reader has a cloned repo's text in front of it, so it gets neither a shell nor a language server to run on it.
+const base = { agentType: a.agent_type, disallowedTools: ['Bash', 'LSP'],...(text(a.model) ? { model: a.model } : {}) };
 
 // A refused spawn or a dead agent costs its one module and nothing more.
 const ask = async (prompt, opts, what) => {
