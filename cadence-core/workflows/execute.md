@@ -470,6 +470,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check status --p
 
 Fire only when that `status` does not answer the full range settled. Settled
 means the pass was carried and its receipt is in the trace: write none of your own.
+A fixed FAIL is not carried, even when its round-1 receipt is a `gate_pass`: its
+narrowed round still runs.
 
 On a fire, write `git diff {pre-plan HEAD}..HEAD` to
 `<plandir>/records/reports/plan-<k>-risk.diff` and fire the trigger with that

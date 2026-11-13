@@ -930,4 +930,5 @@ function overrideAccounted(loadRecord, fire) {
 }
 
 // only cmdTrace is dispatched; cmdTraceIgnore is exported beside it, though nothing imports it and no census names it
-export { cmdTrace, cmdTraceIgnore };
+// fireRecordLoader is risk-check run's too: a carry reads its source fire's record by the same lookup a receipt does
+export { cmdTrace, cmdTraceIgnore, fireRecordLoader };

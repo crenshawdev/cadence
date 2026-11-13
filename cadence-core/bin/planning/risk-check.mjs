@@ -11,7 +11,9 @@ import {
   RISK_DIFF_MAX_BUFFER, fail, ok, planKey, resolveIndex, resolveRange, resolveRef, riskRef,
   routeLadder,
 } from './core.mjs';
+import { fireRecordLoader } from './trace.mjs';
 import { isPlainObject, mergeLayers } from '../lib/config-merge.mjs';
+import { HALTING_SEVERITIES } from '../lib/filing-decision.mjs';
 import { requirePlanKey } from '../lib/plan-key.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
@@ -246,7 +248,7 @@ function cmdRiskCheckRun(dir, opts) {
     const from = fireReceipts(r.events, signoffWindow(r.events)).filter((rc) => rc.key === k
       && PASSING_RECEIPTS.includes(rc.event) && shaMatches(rc.sha, baseId)
       && /^[0-9a-f]{7,64}$/i.test(rc.base || '')).pop();
-    if (from) {
+    if (from && firePassed(dir, parsedPhase.raw, from)) {
       const settled = { base: /** @type {string} */ (from.base), head: /** @type {string} */ (from.sha) };
       const follow = { base: baseId, head: headId };
       // base and sha are the range it settles, B..H2, the two fields settledBy reads
@@ -307,8 +309,29 @@ const CARRY_RECEIPT = 'gate_carry';
  */
 const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override', 'deferral', CARRY_RECEIPT];
 
-/** The receipts a carry may start from: a review that passed. A blocker's fix commit gets reviewed, not carried. */
+/**
+ * The receipts a carry may start from, a name check only: firePassed then reads a `gate_pass`'s own record.
+ * The blocking arm settles a fixed FAIL as a `gate_pass` too, so the name alone would carry a fix nobody reviewed.
+ */
 const PASSING_RECEIPTS = ['gate_pass', CARRY_RECEIPT];
+
+/**
+ * Did this carry source's fire leave no blocker or high standing? D-04: only a review that passed is carried.
+ * A carry receipt passed this check when run wrote it. A `gate_pass` is judged by its fire's record, never its figures:
+ * any survived blocker or high, fixed, fix_file or overridden, was a FAIL whose narrowed round still has to run.
+ * No record, an unreadable one or one with no entries list is no carry: the carry fails closed.
+ * @param {string} dir @param {string|number} phaseRaw
+ * @param {{event: string, plan: any, sha: string|null, round: number}} rc
+ * @returns {boolean}
+ */
+function firePassed(dir, phaseRaw, rc) {
+  if (rc.event === CARRY_RECEIPT) return true;
+  const loaded = fireRecordLoader(dir, phaseRaw,
+    { trigger: RISK_TRIGGER, plan: rc.plan, sha: rc.sha, round: rc.round })();
+  const entries = loaded && loaded.readable && loaded.record ? loaded.record.entries : undefined;
+  if (!Array.isArray(entries)) return false;
+  return !entries.some((e) => e && e.ruling === 'survived' && HALTING_SEVERITIES.includes(e.severity));
+}
 
 /** Row identity is run plus plan, so invocation 2 can't clear invocation 1's ranges by checking its own. */
 const rowKey = (/** @type {any} */ corr, /** @type {any} */ plan) =>
@@ -363,7 +386,7 @@ function signoffWindow(events) {
  * Each receipt carries its row identity and the range it settled, so a later range can't ride an earlier fire.
  * @param {any[]} events
  * @param {(e: any) => boolean} inCycle
- * @returns {{key: string, event: string, sha: string|null, base: string|null}[]}
+ * @returns {{key: string, event: string, plan: any, round: number, sha: string|null, base: string|null}[]}
  */
 function fireReceipts(events, inCycle) {
   const receipts = [];
@@ -376,7 +399,9 @@ function fireReceipts(events, inCycle) {
       const why = typeof e.detail === 'string' ? e.detail.trim() : '';
       if (!why) continue;
     }
-    receipts.push({ key: rowKey(e.corr, e.plan), event: e.event,
+    // plan and round name the fire's record file for a carry's source check; an absent round is round 1, as trace's
+    receipts.push({ key: rowKey(e.corr, e.plan), event: e.event, plan: e.plan,
+      round: Number.isInteger(e.round) && e.round >= 1 ? e.round : 1,
       sha: typeof e.sha === 'string' ? e.sha : null, base: typeof e.base === 'string' ? e.base : null });
   }
   return receipts;
