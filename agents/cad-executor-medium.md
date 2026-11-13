@@ -1,6 +1,6 @@
 ---
 name: cad-executor-medium
-description: The `medium` rung of `cad-executor`; `bin/route.mjs` picks it, not the user.
+description: The `medium` rung of `cad-executor` (plan task execution); `bin/route.mjs` picks it, not the user.
 tools: Read, Write, Edit, Bash, Grep, Glob, LSP
 color: yellow
 effort: medium

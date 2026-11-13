@@ -905,6 +905,13 @@ export const CONTRACTS = {
       '--out': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
   },
+  // agent-files.mjs takes no subcommand; --root points it at another tree, which the tests need
+  'agent-files.mjs': {
+    '*': {},
+    '': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+  },
 };
 
 // --- the conditional presence rules: script -> subcommand -> one rule --------

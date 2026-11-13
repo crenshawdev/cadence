@@ -1,11 +1,11 @@
 ---
 name: cad-verifier-max
-description: The `max` rung of `cad-verifier`; `bin/route.mjs` picks it, not the user.
+description: The `max` rung of `cad-verifier` (goal-backward phase verification); `bin/route.mjs` picks it, not the user.
 tools: Read, Write, Bash, Grep, Glob
+disallowedTools: Edit, MultiEdit
 color: green
 effort: max
 maxTurns: 200
-disallowedTools: Edit, MultiEdit
 skills:
   - cad-verifier-contract
 ---

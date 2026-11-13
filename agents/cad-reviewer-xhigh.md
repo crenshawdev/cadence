@@ -1,7 +1,7 @@
 ---
 name: cad-reviewer-xhigh
-description: The `xhigh` rung of `cad-reviewer`; `bin/route.mjs` picks it, not the user.
-tools: Read, Bash, Glob, Grep
+description: The `xhigh` rung of `cad-reviewer` (adversarial artifact review); `bin/route.mjs` picks it, not the user.
+tools: Read, Bash, Grep, Glob
 disallowedTools: Write, Edit, MultiEdit
 color: red
 effort: xhigh

@@ -1,7 +1,7 @@
 ---
 name: cad-planner-xhigh
-description: The `xhigh` rung of `cad-planner`; `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Edit, Bash, Glob, Grep
+description: The `xhigh` rung of `cad-planner` (phase plan authoring); `bin/route.mjs` picks it, not the user.
+tools: Read, Write, Edit, Bash, Grep, Glob
 color: green
 effort: xhigh
 maxTurns: 200

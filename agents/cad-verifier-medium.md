@@ -1,11 +1,11 @@
 ---
 name: cad-verifier-medium
-description: The `medium` rung of `cad-verifier`; `bin/route.mjs` picks it, not the user.
+description: The `medium` rung of `cad-verifier` (goal-backward phase verification); `bin/route.mjs` picks it, not the user.
 tools: Read, Write, Bash, Grep, Glob
+disallowedTools: Edit, MultiEdit
 color: green
 effort: medium
 maxTurns: 200
-disallowedTools: Edit, MultiEdit
 skills:
   - cad-verifier-contract
 ---

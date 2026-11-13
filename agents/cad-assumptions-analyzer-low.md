@@ -1,6 +1,6 @@
 ---
 name: cad-assumptions-analyzer-low
-description: The `low` rung of `cad-assumptions-analyzer`; `bin/route.mjs` picks it, not the user.
+description: The `low` rung of `cad-assumptions-analyzer` (codebase assumption gathering); `bin/route.mjs` picks it, not the user.
 tools: Read, Bash, Grep, Glob
 disallowedTools: Write, Edit, MultiEdit
 color: cyan

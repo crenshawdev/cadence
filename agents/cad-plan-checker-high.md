@@ -1,7 +1,7 @@
 ---
 name: cad-plan-checker-high
-description: The `high` rung of `cad-plan-checker`; `bin/route.mjs` picks it, not the user.
-tools: Read, Bash, Glob, Grep
+description: The `high` rung of `cad-plan-checker` (goal-backward plan gate); `bin/route.mjs` picks it, not the user.
+tools: Read, Bash, Grep, Glob
 disallowedTools: Write, Edit, MultiEdit
 color: green
 effort: high
