@@ -40,7 +40,7 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
 - The payload is FENCED before the cap: every string field crosses one filter
   that takes four shapes - an env assignment with a literal value whose
   upper-case name ends like a credential (`OPENAI_API_KEY=`, or the YAML
-  `env:` spelling `OPENAI_API_KEY: ...`), URL userinfo
+  `env:` spelling `OPENAI_API_KEY: ...` and its `|` block), URL userinfo
   other than the SSH user `git`, an `Authorization: Bearer` value, a quoted
   `"api_key"` pair - and leaves ordinary code byte for byte, so
   `over-cap` measures what actually leaves the machine. `redactions: <n>` on the

@@ -20,7 +20,7 @@ The key comes from the environment first. When the variable isn't set, `cadence-
 - `consult` sends a short description of a dead end, the goal, what was tried and the exact failing signal, after the same redaction. It runs only with `review.consult.enabled` true, and only after you say yes to an offer that names the provider and model. `/cadence:cad-debug`, `/cadence:cad-execute` and `/cadence:cad-plan` make that offer.
 - `detect-models` sends no project content, only the key as the request's credential, to list the provider's models when you run `/cadence:cad-config --review`.
 
-Redaction catches a credential by its shape, not by a list of known prefixes, and it takes four shapes: an env assignment like `OPENAI_API_KEY=...`, or its YAML `env:` spelling, with a literal value, a URL's userinfo, an `Authorization: Bearer` header, and a quoted `"api_key"` pair. Everything else, ordinary code included, goes out as written. A bare key sitting in a diff with nothing naming it goes out as written too, so don't point a reviewer at a secrets file.
+Redaction catches a credential by its shape, not by a list of known prefixes, and it takes four shapes: an env assignment like `OPENAI_API_KEY=...`, or its YAML `env:` spelling, a `|` block included, with a literal value, a URL's userinfo, an `Authorization: Bearer` header, and a quoted `"api_key"` pair. Everything else, ordinary code included, goes out as written. A bare key sitting in a diff with nothing naming it goes out as written too, so don't point a reviewer at a secrets file.
 
 ## Your forge
 

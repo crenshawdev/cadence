@@ -137,6 +137,50 @@ const OUT_YAML_ENV = new RegExp(`^([+ -]?[ \\t]*(?:-[ \\t]+)?(?:${OUT_NAME})[ \\
   + `(?:"(?!${OUT_VAR}|")[^"\\n]+"|'(?![<'])[^'\\n]+'`
   + `|(?!${OUT_VAR}|["'|>]|[A-Za-z_.[\\]]+[ \\t]*(?:#.*)?$)\\S*[^\\s,;{(\\[])(?=[ \\t]*(?:#.*)?$)`, 'gm');
 
+// the YAML block form of that entry (`PRIVATE_KEY: |`, `>-`): every line indented deeper than the key goes as one mark
+const OUT_YAML_BLOCK = new RegExp(`^([+ -]?)([ \\t]*(?:-[ \\t]+)?)(?:${OUT_NAME})[ \\t]*:[ \\t]+[|>][+-]?[ \\t]*(?:#.*)?$`,
+  'gm');
+
+/**
+ * `text` with the block under each OUT_YAML_BLOCK key replaced by one mark line, the key line and the rest as they were.
+ * @param {string} text
+ * @returns {string}
+ */
+function redactYamlBlocks(text) {
+  let out = '';
+  let from = 0;
+  OUT_YAML_BLOCK.lastIndex = 0;
+  for (let head = OUT_YAML_BLOCK.exec(text); head !== null; head = OUT_YAML_BLOCK.exec(text)) {
+    const headEnd = head.index + head[0].length;
+    // a diff marker on the key means one on every line under it, so the depth is measured past it
+    const marker = head[1].length;
+    const depth = head[2].length;
+    let at = headEnd;
+    let blockEnd = headEnd;
+    let lead = '';
+    while (at < text.length) {
+      let end = text.indexOf('\n', at + 1);
+      if (end === -1) end = text.length;
+      const line = text.slice(at + 1, end);
+      const body = marker && /^[+ -]/.test(line) ? line.slice(1) : line;
+      const indent = /^[ \t]*/.exec(body)?.[0].length ?? 0;
+      // blank lines belong to a block but never end one, so a trailing blank stays outside the mark
+      if (body.trim() !== '') {
+        if (indent <= depth) break;
+        if (blockEnd === headEnd) lead = line.slice(0, line.length - body.length + indent);
+        blockEnd = end;
+      }
+      at = end;
+    }
+    if (blockEnd > headEnd) {
+      out += `${text.slice(from, headEnd + 1)}${lead}${MARK}`;
+      from = blockEnd;
+      OUT_YAML_BLOCK.lastIndex = blockEnd;
+    }
+  }
+  return out + text.slice(from);
+}
+
 // URL userinfo with or without a password, every RFC 3986 userinfo character plus a whole `${NAME}` or `${{ ... }}`;
 // exactly `git` is the SSH user, no secret
 const OUT_USERINFO = new RegExp('(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\\/\\/)(?!git@)'
@@ -154,7 +198,7 @@ const OUT_API_KEY = new RegExp(
 
 /**
  * `s` with the four outbound credential shapes replaced by `<redacted>`, every other byte as it was:
- * an upper-case credential-named env assignment's literal value (`NAME=v` or a YAML `NAME: v` entry),
+ * an upper-case credential-named env assignment's literal value (`NAME=v`, a YAML `NAME: v` entry or its `|` block),
  * URL userinfo other than `git`, an `Authorization: Bearer` value, and a quoted `api_key` pair's value.
  * Coerces and never throws, for the same reason `redactUrl` does.
  * @param {unknown} s
@@ -164,7 +208,10 @@ export function redactOutbound(s) {
   let text = String(s);
   // a cheap literal check gates each rule, so a text without the literal never runs the regex
   if (text.indexOf('=') !== -1) text = text.replace(OUT_ENV, `$1${MARK}`);
-  if (/(?:TOKEN|SECRET|PASSWORD|PASSWD|_KEY)[ \t]*:/.test(text)) text = text.replace(OUT_YAML_ENV, `$1${MARK}`);
+  if (/(?:TOKEN|SECRET|PASSWORD|PASSWD|_KEY)[ \t]*:/.test(text)) {
+    if (/:[ \t]+[|>]/.test(text)) text = redactYamlBlocks(text);
+    text = text.replace(OUT_YAML_ENV, `$1${MARK}`);
+  }
   if (text.indexOf('://') !== -1 && text.indexOf('@') !== -1) {
     text = text.replace(OUT_USERINFO, (whole, scheme, info) => (
       info.split(':').every((part) => part === '' || OUT_USERINFO_VAR.test(part)) ? whole : `${scheme}${MARK}@`));
