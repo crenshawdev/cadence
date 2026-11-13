@@ -348,7 +348,7 @@ function cmdRenumber(dir, sub, opts) {
       detail: e && e.message ? e.message : String(e),
       // deliberately no "re-run": it recomputes from a half-applied tree and, on a remove, rm's the next phase's work
       hint: applied.completed.length
-        ? 'the tree is partly renumbered - reverse the completed directory moves and text edits by hand before any further renumber, and never the phase list, the traceability table or STATE.md, which are rendered from the state file; it still holds the old numbering unless the detail says it was written; re-running this command against the half-applied tree can destroy a phase directory'
+        ? 'the tree is partly renumbered - reverse the completed directory moves and text edits before any further renumber, and never the phase list, the traceability table or STATE.md, which are rendered from the state file; it still holds the old numbering unless the detail says it was written; re-running this command against the half-applied tree can destroy a phase directory'
         : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
     });
   }
