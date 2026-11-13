@@ -767,7 +767,7 @@ function checkRungBodies(agentBodies, problems) {
 function checkRungLadder(root, isFullTree, agentFiles, problems) {
   if (isFullTree) {
     for (const role of Object.keys(RUNG_FILES)) {
-      for (const [rung, stem] of Object.entries(RUNG_FILES[role])) {
+      for (const [rung, stem] of Object.entries(RUNG_FILES[role].rungs)) {
         if (!existsSync(join(root, 'agents', `${stem}.md`))) {
           problems.push({ kind: 'missing-rung-agent',
             file: 'cadence-core/bin/lib/rung-agent.mjs',

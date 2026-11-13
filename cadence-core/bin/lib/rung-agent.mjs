@@ -17,64 +17,114 @@ import { isPlainObject } from './text-util.mjs';
 export const RUNG_ORDER = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
 
 /**
- * The rung -> agent-file map, stated per role and not derived. The unsuffixed `agents/<role>.md` is one rung among the
+ * One role's row: its rung -> agent-file map, and everything else that differs between that role's agent files.
+ * `rungs` sits under its own key so a reader iterating rungs never counts a data key as one.
+ * @typedef {Readonly<{
+ *   rungs: Readonly<Record<string, string>>,
+ *   tools: readonly string[],
+ *   disallowedTools: readonly string[],
+ *   color: string,
+ *   gloss: string,
+ *   skills: readonly string[],
+ * }>} RoleRow
+ */
+
+/**
+ * One frozen role row. The first skill is the role's contract, the one the body names.
+ * @param {Record<string, string>} rungs
+ * @param {{tools: string[], disallowedTools?: string[], color: string, gloss: string, skills: string[]}} rest
+ * @returns {RoleRow}
+ */
+function roleRow(rungs, { tools, disallowedTools = [], color, gloss, skills }) {
+  return Object.freeze({
+    rungs: Object.freeze(rungs),
+    tools: Object.freeze(tools),
+    disallowedTools: Object.freeze(disallowedTools),
+    color,
+    gloss,
+    skills: Object.freeze(skills),
+  });
+}
+
+/** The read-only grant four roles share: they read and run, and the host refuses them any file write. */
+const READ_ONLY = Object.freeze({ tools: ['Read', 'Bash', 'Grep', 'Glob'], disallowedTools: ['Write', 'Edit', 'MultiEdit'] });
+
+/**
+ * The agent table: per role, the rung -> agent-file map, stated and not derived, beside the grant, color, gloss and
+ * preloaded skills every one of that role's files renders. The unsuffixed `agents/<role>.md` is one rung among the
  * others and a rung's name doesn't say which file carries it: `cad-assumptions-analyzer` is the `xhigh` rung while its
  * `-high` sibling is the lower one.
  * Renaming five of six files to make a convention true would break every exact-fit weight budget. Rungs are listed in
- * RUNG_ORDER, and the map is frozen so a caller can't make route.mjs and self-verify disagree.
- * @type {Readonly<Record<string, Readonly<Record<string, string>>>>}
+ * RUNG_ORDER, and the table is frozen so a caller can't make route.mjs and self-verify disagree.
+ * `agents/*.md` for these stems are rendered from here by `agentFileText`; there is no second table.
+ * @type {Readonly<Record<string, RoleRow>>}
  */
 export const RUNG_FILES = Object.freeze({
-  'cad-planner': Object.freeze({
+  'cad-planner': roleRow({
     low: 'cad-planner-low',
     medium: 'cad-planner-medium',
     high: 'cad-planner',
     xhigh: 'cad-planner-xhigh',
     max: 'cad-planner-max',
-  }),
-  'cad-assumptions-analyzer': Object.freeze({
+  }, { tools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'], color: 'green',
+    gloss: 'phase plan authoring', skills: ['cad-planner-contract'] }),
+  'cad-assumptions-analyzer': roleRow({
     low: 'cad-assumptions-analyzer-low',
     medium: 'cad-assumptions-analyzer-medium',
     high: 'cad-assumptions-analyzer-high',
     xhigh: 'cad-assumptions-analyzer',
     max: 'cad-assumptions-analyzer-max',
-  }),
-  'cad-verifier': Object.freeze({
+  }, { ...READ_ONLY, color: 'cyan', gloss: 'codebase assumption gathering',
+    skills: ['cad-assumptions-analyzer-contract'] }),
+  // the one deliberate exception: Write for its findings file, Edit and MultiEdit denied (self-verify check 7c)
+  'cad-verifier': roleRow({
     low: 'cad-verifier-low',
     medium: 'cad-verifier-medium',
     high: 'cad-verifier',
     xhigh: 'cad-verifier-xhigh',
     max: 'cad-verifier-max',
-  }),
-  'cad-reviewer': Object.freeze({
+  }, { tools: ['Read', 'Write', 'Bash', 'Grep', 'Glob'], disallowedTools: ['Edit', 'MultiEdit'], color: 'green',
+    gloss: 'goal-backward phase verification', skills: ['cad-verifier-contract'] }),
+  'cad-reviewer': roleRow({
     low: 'cad-reviewer-low',
     medium: 'cad-reviewer-medium',
     high: 'cad-reviewer',
     xhigh: 'cad-reviewer-xhigh',
     max: 'cad-reviewer-max',
-  }),
-  'cad-executor': Object.freeze({
+  }, { ...READ_ONLY, color: 'red', gloss: 'adversarial artifact review', skills: ['cad-reviewer-contract'] }),
+  'cad-executor': roleRow({
     low: 'cad-executor-low',
     medium: 'cad-executor-medium',
     high: 'cad-executor',
     xhigh: 'cad-executor-xhigh',
     max: 'cad-executor-max',
-  }),
-  'cad-plan-checker': Object.freeze({
+  }, { tools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'LSP'], color: 'yellow',
+    gloss: 'plan task execution', skills: ['cad-executor-contract'] }),
+  'cad-plan-checker': roleRow({
     low: 'cad-plan-checker',
     medium: 'cad-plan-checker-medium',
     high: 'cad-plan-checker-high',
     xhigh: 'cad-plan-checker-xhigh',
     max: 'cad-plan-checker-max',
-  }),
-  'cad-mapper': Object.freeze({
+  }, { ...READ_ONLY, color: 'green', gloss: 'goal-backward plan gate', skills: ['cad-plan-checker-contract'] }),
+  'cad-mapper': roleRow({
     low: 'cad-mapper-low',
     medium: 'cad-mapper-medium',
     high: 'cad-mapper',
     xhigh: 'cad-mapper-xhigh',
     max: 'cad-mapper-max',
-  }),
+  }, { ...READ_ONLY, color: 'cyan', gloss: 'code map reader', skills: ['cad-mapper-contract'] }),
 });
+
+/**
+ * One role's row, or null for a name the table doesn't hold. Own keys only, so `constructor` is no role.
+ * @param {any} role
+ * @returns {RoleRow|null}
+ */
+function roleRowOf(role) {
+  return typeof role === 'string' && Object.prototype.hasOwnProperty.call(RUNG_FILES, role)
+    ? RUNG_FILES[role] : null;
+}
 
 /**
  * The agent-file stem for one rung of one role, or null when the pair isn't in the map. Null and not a guessed
@@ -84,9 +134,9 @@ export const RUNG_FILES = Object.freeze({
  * @returns {string|null}
  */
 export function rungFile(role, rung) {
-  const map = typeof role === 'string' ? RUNG_FILES[role] : undefined;
-  if (!map || typeof rung !== 'string') return null;
-  return Object.prototype.hasOwnProperty.call(map, rung) ? map[rung] : null;
+  const row = roleRowOf(role);
+  if (!row || typeof rung !== 'string') return null;
+  return Object.prototype.hasOwnProperty.call(row.rungs, rung) ? row.rungs[rung] : null;
 }
 
 // Reverse lookups for a recorded `agent_type`; a suffix regex would be a second statement of the map.
@@ -94,14 +144,14 @@ export function rungFile(role, rung) {
 /** Every rung file's stem, mapped back to the role whose rung it is. */
 const ROLE_OF_STEM = new Map(
   Object.keys(RUNG_FILES).flatMap(
-    (role) => Object.values(RUNG_FILES[role]).map((stem) => [stem, role]),
+    (role) => Object.values(RUNG_FILES[role].rungs).map((stem) => [stem, role]),
   ),
 );
 
 /** The same stems mapped back to their rung, built off the same import so a new rung reaches both maps or neither. */
 const RUNG_OF_STEM = new Map(
   Object.keys(RUNG_FILES).flatMap(
-    (role) => Object.entries(RUNG_FILES[role]).map(([rung, stem]) => [stem, rung]),
+    (role) => Object.entries(RUNG_FILES[role].rungs).map(([rung, stem]) => [stem, rung]),
   ),
 );
 
@@ -168,7 +218,7 @@ export function rungPrefixIssues(bodies) {
   const out = [];
   for (const role of Object.keys(RUNG_FILES)) {
     // Declared rung order, so the tie-break and the listed order are reproducible and not filesystem-dependent.
-    const stems = Object.values(RUNG_FILES[role]).filter((s) => bodyOf(s) !== null);
+    const stems = Object.values(RUNG_FILES[role].rungs).filter((s) => bodyOf(s) !== null);
     if (stems.length < 2) continue;
 
     /** @type {Map<string, string[]>} */
@@ -210,6 +260,35 @@ export function rungPrefixIssues(bodies) {
 export function rungBody(skill) {
   return `Follow the preloaded \`${skill}\` skill exactly - it is your full\n`
     + 'contract. This file names that contract and adds nothing else.\n';
+}
+
+/**
+ * The whole text of one table-named agent file, frontmatter then `rungBody`, or null for a stem the table doesn't name.
+ * The one renderer: agent-files.mjs writes it and self-verify holds the disk to it, so they can't disagree.
+ * One key order and the gloss on every rung, so no file carries a quirk a sibling lacks.
+ * @param {string} stem the agent file's basename without `.md`
+ * @returns {string|null}
+ */
+export function agentFileText(stem) {
+  const role = ROLE_OF_STEM.get(stem);
+  if (role === undefined) return null;
+  const row = RUNG_FILES[role];
+  const rung = RUNG_OF_STEM.get(stem);
+  const lines = [
+    '---',
+    `name: ${stem}`,
+    `description: The \`${rung}\` rung of \`${role}\` (${row.gloss}); \`bin/route.mjs\` picks it, not the user.`,
+    `tools: ${row.tools.join(', ')}`,
+    ...(row.disallowedTools.length ? [`disallowedTools: ${row.disallowedTools.join(', ')}`] : []),
+    `color: ${row.color}`,
+    `effort: ${rung}`,
+    'maxTurns: 200',
+    'skills:',
+    ...row.skills.map((s) => `  - ${s}`),
+    '---',
+    '',
+  ];
+  return `${lines.join('\n')}\n${rungBody(row.skills[0])}`;
 }
 
 /**
@@ -291,7 +370,7 @@ export function effortEnumIssues(schema, rungOrder) {
     if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
       out.push({ code: 'missing-effort-key',
         detail: `${key} is absent, but lib/rung-agent.mjs files ${
-          Object.keys(RUNG_FILES[role]).length} rungs for ${role}` });
+          Object.keys(RUNG_FILES[role].rungs).length} rungs for ${role}` });
       continue;
     }
     // Type first: `checkValue` enforces `values` only for "enum", so a key drifted to "string" accepts any rung.
@@ -302,7 +381,7 @@ export function effortEnumIssues(schema, rungOrder) {
       continue;
     }
     // Declared order then null, so a reordered enum reads as drift; the order is what the refusal message shows.
-    const want = [...Object.keys(RUNG_FILES[role]), null];
+    const want = [...Object.keys(RUNG_FILES[role].rungs), null];
     const got = Array.isArray(spec.values) ? spec.values : null;
     if (!got || got.length !== want.length || want.some((v, i) => got[i] !== v)) {
       out.push({ code: 'effort-enum-drift',
@@ -313,10 +392,10 @@ export function effortEnumIssues(schema, rungOrder) {
     // The default answers when no layer names a rung, so it must name a rung this role has a file for.
     const def = spec.default;
     if (typeof def !== 'string'
-      || !Object.prototype.hasOwnProperty.call(RUNG_FILES[role], def)) {
+      || !Object.prototype.hasOwnProperty.call(RUNG_FILES[role].rungs, def)) {
       out.push({ code: 'effort-default-invalid',
         detail: `${key} defaults to ${def === undefined ? '(absent)' : JSON.stringify(def)}, `
-          + `which is not one of ${role}'s rungs (${Object.keys(RUNG_FILES[role]).join(', ')}) `
+          + `which is not one of ${role}'s rungs (${Object.keys(RUNG_FILES[role].rungs).join(', ')}) `
           + '- this default IS the rung route.mjs resolves when no layer sets one' });
     }
 

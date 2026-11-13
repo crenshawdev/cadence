@@ -518,7 +518,8 @@ function startRung(opts, roleEntry, reason, warnings) {
   const rolesEffortKey = `roles.${opts.role}.effort`;
   const rolesEffort = roleEntry.effort;
   const rolesEffortSet = rolesEffort !== null && rolesEffort !== undefined;
-  const hasRungs = Object.keys(RUNG_FILES[opts.role] || {});
+  const hasRungs = Object.keys(Object.prototype.hasOwnProperty.call(RUNG_FILES, opts.role)
+    ? RUNG_FILES[opts.role].rungs : {});
   const schemaEffort = schemaRow(rolesEffortKey).default;
   const rungSources = [
     ...(rolesEffortSet ? [{ key: rolesEffortKey, value: rolesEffort, set: true }] : []),
@@ -941,7 +942,7 @@ function parseArgs(a) {
 }
 
 // Every agent file stem Cadence ships. A typo or an already-prefixed name is refused instead of doubling the prefix.
-const AGENT_STEMS = new Set(Object.values(RUNG_FILES).flatMap((rungs) => Object.values(rungs)));
+const AGENT_STEMS = new Set(Object.values(RUNG_FILES).flatMap((row) => Object.values(row.rungs)));
 
 /**
  * `agent-type --stem <name>`: the prefixed name for a dispatch that resolves no routing (`/cad-minimalism-review`,
