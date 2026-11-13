@@ -159,22 +159,69 @@ const esc = (s) => s.replace(/[$]/g, '\\$&');
  * @param {Set<string>} spaces
  */
 function bind(clause, names, spaces) {
-  const brace = clause.match(/\{([^}]*)\}/);
-  if (brace) {
-    for (const part of brace[1].split(',')) {
+  // the first `{` and the first `}` after it: no `}` after the first `{` means no later `{` has one either
+  const open = clause.indexOf('{');
+  const close = open < 0 ? -1 : clause.indexOf('}', open);
+  let rest = clause;
+  if (close >= 0) {
+    for (const part of clause.slice(open + 1, close).split(',')) {
       const m = part.trim().match(/^([\w$]+)(?:\s+as\s+([\w$]+))?$/);
       if (!m) continue;
       if (m[1] === 'promises') spaces.add(m[2] || m[1]);
       else if (WRITE_NAMES.has(m[1])) names.set(m[2] || m[1], m[1]);
     }
+    rest = clause.slice(0, open) + clause.slice(close + 1);
   }
-  const rest = clause.replace(/\{[^}]*\}/, '');
   const star = rest.match(/\*\s*as\s+([\w$]+)/);
   if (star) spaces.add(star[1]);
   else {
-    const def = rest.match(/^\s*([\w$]+)\s*,?\s*$/);
+    // trim strips exactly `\s`, so the two `\s*` that sat side by side have nothing left to trade
+    const def = rest.trim().match(/^([\w$]+)\s*,?$/);
     if (def) spaces.add(def[1]);
   }
+}
+
+const IMPORT_STOPS = '\'"`;';
+const SPACE = /\s/;
+const WORD = /\w/;
+
+/**
+ * Every `import <clause> from '` in the blanked code: the clause and the offset just past the quote. The same
+ * matches `/\bimport\s+([^'"`;]*?)\s*from\s*['"]/g` made, without its rescans: the stop after a clause start is found
+ * once and reused by every later `import` that starts before it, so a line of failing imports stays linear.
+ * @param {string} code
+ * @returns {{clause: string, end: number}[]}
+ */
+function importClauses(code) {
+  const out = [];
+  const space = (/** @type {number} */ at) => at < code.length && SPACE.test(code[at]);
+  let stop = -1; // the first stop character at or after the latest clause start
+  let fromAt = -1; // where a `from` ending in only whitespace before `stop` starts; -1 when there is none
+  let clauseEnd = -1; // where the whitespace before that `from` starts
+  let at = code.indexOf('import');
+  while (at >= 0) {
+    let next = at + 1;
+    let start = at + 6;
+    if ((at === 0 || !WORD.test(code[at - 1])) && space(start)) {
+      while (space(start)) start++;
+      if (stop < start) {
+        stop = start;
+        while (stop < code.length && !IMPORT_STOPS.includes(code[stop])) stop++;
+        if (stop === code.length) break; // no stop left, so no later import can match either
+        let e = stop;
+        while (e > 0 && space(e - 1)) e--;
+        fromAt = e >= 4 && code.startsWith('from', e - 4) ? e - 4 : -1;
+        clauseEnd = fromAt;
+        while (clauseEnd > 0 && space(clauseEnd - 1)) clauseEnd--;
+      }
+      if (fromAt >= start && (code[stop] === '\'' || code[stop] === '"')) {
+        out.push({ clause: code.slice(start, Math.max(start, clauseEnd)), end: stop + 1 });
+        next = stop + 1;
+      }
+    }
+    at = code.indexOf('import', next);
+  }
+  return out;
 }
 
 /**
@@ -198,9 +245,8 @@ export function fsWriteCalls(text) {
     const close = code.indexOf(q, end);
     return close < 0 ? '' : text.slice(end, close);
   };
-  for (const m of code.matchAll(/\bimport\s+([^'"`;]*?)\s*from\s*['"]/g)) {
-    const end = /** @type {number} */ (m.index) + m[0].length;
-    if (FS_SPECIFIER.test(specAfter(end))) bind(m[1], names, spaces);
+  for (const { clause, end } of importClauses(code)) {
+    if (FS_SPECIFIER.test(specAfter(end))) bind(clause, names, spaces);
   }
   for (const m of code.matchAll(/\bexport\s*(\*|\{[^}]*\})\s*(?:as\s+[\w$]+\s*)?from\s*['"]/g)) {
     const at = /** @type {number} */ (m.index);
