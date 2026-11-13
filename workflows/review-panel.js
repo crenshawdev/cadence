@@ -1,6 +1,6 @@
 export const meta = {
   name: 'review-panel',
-  description: 'Run the review panel for one fire: one reviewer agent per local voice, then one checker per finding per raising voice, and return every ruling, refuted ones included. Started by the review fire with args, never by hand.',
+  description: 'Run the review panel for one fire: one reviewer agent per local voice, then one checker per finding per raising voice, and return per voice whether it ran and counts of what it raised and how its checkers ruled. The findings and rulings stay in the run\'s journal. Started by the review fire with args, never by hand.',
 };
 
 // args: { trigger, instruction, artifact, checker_artifact, reviewers: ['claude-subagent', <provider>...], agent_type, model: string|null,
@@ -9,8 +9,10 @@ export const meta = {
 //   The main session settles these in steps 1 to 3. 'claude-subagent' runs here. A provider runs through a wrapper agent: the main session
 //   composed its payload before launch and passes the whole seam line with absolute paths, since CLAUDE_PLUGIN_ROOT is unset in a workflow
 //   agent, the file to tee the provider's own output to, the Bash timeout in ms, and the provider's model for the record.
-// Returns { voices: [{ voice, ran, reason?, result, rulings: [{ index, finding, ruling }], fallback?, envelope?, model? }] }, no merging.
-//   ran false names its reason, and a voice whose wrapper launched keeps envelope and model, so the seam can still read what the provider teed. A reviewer or checker that died stays null, and the main model owns that slot.
+// Returns { voices: [{ voice, ran, reason?, fallback?, envelope?, model?, redactions?, warnings?, counts: { raised, proved, refuted, neither, unruled } }] }, no merging.
+//   No finding or ruling text: the completion notice carries this return, and workflow-run reads the findings and rulings from the run's journal,
+//   joined on the labels below, so they stay exactly `reviewer <voice>`, `provider <voice>` and `checker <voice> <n>`, n counting from 1.
+//   ran false names its reason, and a voice whose wrapper launched keeps envelope and model, so the seam can still read what the provider teed. A checker that died counts as unruled, and the main model owns that slot.
 //   When no voice ran, the local reviewer runs once more as the fallback and is marked fallback: true.
 
 const LOCAL = 'claude-subagent';
@@ -113,8 +115,10 @@ const checkPrompt = (finding) => [
   'END FINDING',
 ].join('\n');
 
+const zero = () => ({ raised: 0, proved: 0, refuted: 0, neither: 0, unruled: 0 });
+
 // kept is what a voice carries after its wrapper launched: the envelope path and model, since the provider may have teed before the wrapper failed to answer.
-const none = (voice, reason, kept) => ({ voice, ran: false, reason, result: null, rulings: [], ...kept });
+const none = (voice, reason, kept) => ({ voice, ran: false, reason, ...kept, counts: zero() });
 
 // The wrapper runs one line and retypes its output, and nothing else: it holds no Read, Glob, Grep or LSP, and its rung denies the write tools.
 const viaProvider = (voice) => {
@@ -137,29 +141,30 @@ const viaProvider = (voice) => {
       if (r.ok !== true) return none(voice, text(r.reason) ? `the provider reported ${r.reason}` : 'the provider reported ok:false with no reason', kept);
       if (!Array.isArray(r.findings)) return none(voice, 'the provider wrapper returned ok:true with no findings array', kept);
       return {
-        voice, ran: true, model: p.model, result: { findings: r.findings }, rulings: [], envelope: p.envelope,
+        voice, ran: true, model: p.model, envelope: p.envelope, found: r.findings,
         ...(r.redactions > 0 ? { redactions: r.redactions } : {}), ...(Array.isArray(r.warnings) && r.warnings.length ? { warnings: r.warnings } : {}),
       };
     });
 };
 
+// found rides along to the checkers only, and check drops it so no finding text reaches the return
 const review = (voice) => {
   if (voice !== LOCAL) return viaProvider(voice);
   return ask(`${a.instruction}\n\n${a.artifact}`, { ...base, schema: FINDING_SCHEMA, label: `reviewer ${voice}` }, `reviewer ${voice}`)
     .then((result) => (result
-      ? { voice, ran: true, result, rulings: [] }
+      ? { voice, ran: true, found: result.findings }
       : none(voice, 'the reviewer returned nothing')));
 };
 
 // Each voice's findings go to checkers as soon as that voice returns, and nothing merges before then.
 const check = async (entry) => {
-  const found = entry.ran && Array.isArray(entry.result.findings) ? entry.result.findings : [];
-  const rulings = await parallel(found.map((finding, index) => async () => ({
-    index,
-    finding,
-    ruling: await ask(checkPrompt(finding), { ...base, schema: CHECK_SCHEMA, label: `checker ${entry.voice} ${index + 1}`, disallowedTools: ['Bash'] }, `checker ${entry.voice} ${index + 1}`),
-  })));
-  return { ...entry, rulings: rulings.map((r, index) => r || { index, finding: found[index], ruling: null }) };
+  const { found, ...kept } = entry;
+  const list = entry.ran && Array.isArray(found) ? found : [];
+  const rulings = await parallel(list.map((finding, index) => () =>
+    ask(checkPrompt(finding), { ...base, schema: CHECK_SCHEMA, label: `checker ${entry.voice} ${index + 1}`, disallowedTools: ['Bash'] }, `checker ${entry.voice} ${index + 1}`)));
+  const counts = { ...zero(), raised: list.length };
+  for (const r of rulings) counts[r && CHECK_SCHEMA.properties.ruling.enum.includes(r.ruling) ? r.ruling : 'unruled'] += 1;
+  return { ...kept, counts };
 };
 
 const voices = (await pipeline(a.reviewers, review, check))
