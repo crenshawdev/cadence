@@ -46,18 +46,60 @@ function codeOnly(command) {
     kept.push(line);
     for (const m of line.matchAll(HEREDOC)) pending.push(m[2]);
   }
-  const text = kept.join('\n');
+  return inertQuotes(kept.join('\n'));
+}
+
+/**
+ * The index of the `)` closing the `(` at `open`, its own quoted spans skipped. Unclosed runs to the end.
+ * @param {string} text @param {number} open @returns {number}
+ */
+function substitutionEnd(text, open) {
+  let depth = 1;
+  for (let j = open + 1; j < text.length; j += 1) {
+    const ch = text[j];
+    if (ch === '\\') j += 1;
+    else if (ch === '(') depth += 1;
+    else if (ch === ')' && --depth === 0) return j;
+    else if (ch === '\'' || ch === '"') {
+      let k = j + 1;
+      while (k < text.length && text[k] !== ch) k += ch === '"' && text[k] === '\\' ? 2 : 1;
+      j = k;
+    }
+  }
+  return text.length;
+}
+
+/**
+ * Each quoted span made one inert `_`. The one exception (D-17): a `$(...)` or backtick run inside double quotes is
+ * code the shell runs, so its text goes on a line of its own after the rest - the `_` keeps its place in the outer line.
+ * @param {string} text @returns {string}
+ */
+function inertQuotes(text) {
   let out = '';
+  const ran = [];
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i];
     if (ch === '\\') { out += text.slice(i, i + 2); i += 1; continue; } // `it\'s` opens no quote
     if (ch !== '\'' && ch !== '"') { out += ch; continue; }
     let j = i + 1;
-    while (j < text.length && text[j] !== ch) j += ch === '"' && text[j] === '\\' ? 2 : 1;
+    while (j < text.length && text[j] !== ch) {
+      if (ch === '\'') j += 1;
+      else if (text[j] === '\\') j += 2;
+      else if (text.startsWith('$(', j)) {
+        const close = substitutionEnd(text, j + 1);
+        ran.push(inertQuotes(text.slice(j + 2, close)));
+        j = close + 1;
+      } else if (text[j] === '`') {
+        let k = j + 1;
+        while (k < text.length && text[k] !== '`') k += text[k] === '\\' ? 2 : 1;
+        ran.push(inertQuotes(text.slice(j + 1, k)));
+        j = k + 1;
+      } else j += 1;
+    }
     out += '_'; // a word still stands here: `"$BIN" grep` runs $BIN, not grep
     i = j;
   }
-  return out;
+  return ran.length ? `${out}\n${ran.join('\n')}` : out;
 }
 
 /**
