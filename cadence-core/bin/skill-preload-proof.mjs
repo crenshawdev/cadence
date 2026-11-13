@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // @ts-check
 // skill-preload-proof.mjs - proves the host preloads the SECOND entry of an agent's `skills:` list (D-02).
-// The shared skill every Cadence agent will carry rests on that claim, so it is a script with its answer stored
+// The shared skill every Cadence agent carries rests on that claim, so it is a script with its answer stored
 // beside it in skill-preload-proof.result.json, and /cad-verify re-runs it on whatever host is installed then.
+// Two runs: a tool-less proof agent, then one real generated agent quoting the rule only cad-shared-rules holds.
 //
 // Usage: skill-preload-proof.mjs [--out <path>]
 //   --out   where the result goes. ABSENT means the stored skill-preload-proof.result.json beside this file.
@@ -13,6 +14,9 @@
 //   1. the proof agent says `tools: []` - the host reads the present-but-empty key as none; an absent key is all tools
 //   2. the parent gets `--tools Agent`, so it has no file or shell tool to read the skill and answer for the agent
 //   3. the counts come from the stream: calls inside the subagent, and the parent's calls beside the one dispatch
+// The second run dispatches a table-named agent from this tree as it is. It holds tools, and `--tools Agent` on the
+// parent would narrow its pool to none and the host refuses that spawn, so the parent is held by deny rules instead
+// and the count inside the subagent is what rules out a Read of the skill's file.
 // A run that fails for any reason writes nothing, so the stored file only ever holds a passing run.
 // Stream shapes are Claude Code 2.1.323's, captured on 2026-11-13 with --verbose and --forward-subagent-text.
 'use strict';
@@ -26,8 +30,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { makeDir, writeFile, removeTree } from './lib/planning-store.mjs';
+import { SHARED_RULE, SHARED_SKILL, carriesSharedRule } from './lib/shared-rule.mjs';
+import { RUNG_FILES } from './lib/rung-agent.mjs';
 
-export const STORED_RESULT = join(dirname(fileURLToPath(import.meta.url)), 'skill-preload-proof.result.json');
+const HERE = dirname(fileURLToPath(import.meta.url));
+export const STORED_RESULT = join(HERE, 'skill-preload-proof.result.json');
+// this tree, never an installed Cadence: the proof is about the files this checkout generates
+const PLUGIN_ROOT = join(HERE, '..', '..');
 
 // Each marker lives only in its skill's BODY: the parent sees skill names and descriptions and could pass one down.
 export const MARKERS = Object.freeze({ first: 'PRELOAD-FIRST-K7M2QX', second: 'PRELOAD-SECOND-R4T9ZW' });
@@ -44,6 +53,18 @@ const HOST_TIMEOUT_MS = 300_000;
 export const PROMPT = `Use the Agent tool exactly once, to dispatch the ${AGENT_TYPE} agent. Ask it to reply with `
   + 'the line each of its preloaded skills holds, verbatim, the second-listed skill\'s line included. '
   + 'Then reply with what it returned.';
+
+// the smallest contract among the agents that hold Read, so a file read is possible and the count has teeth
+export const SECOND_AGENT = RUNG_FILES['cad-mapper'].rungs.low;
+export const SECOND_AGENT_TYPE = `cadence:${SECOND_AGENT}`;
+// the parent's file and shell tools, denied so it can't read the skill and hand the rule down
+const PARENT_DENY = 'Read,Write,Edit,MultiEdit,NotebookEdit,Bash,Grep,Glob';
+
+// No rule text in here: the marker is the rule itself, so an echo would pass
+export const SECOND_PROMPT = `Use the Agent tool exactly once, to dispatch the ${SECOND_AGENT_TYPE} agent. Ask it to answer `
+  + 'from what is already in its context and use no tool, and to reply with the rule its preloaded '
+  + `${SHARED_SKILL} skill gives about the LSP tool and grep, word for word as plain text, with no quote marks, `
+  + 'no formatting and nothing else. Then reply with what it returned.';
 
 /**
  * Write the throwaway plugin under `root`: one tool-less agent listing both skills, and the two skills.
@@ -87,6 +108,16 @@ export function hostArgs(pluginDir) {
     '--setting-sources', 'project', '--strict-mcp-config', '--no-session-persistence'];
 }
 
+/**
+ * The second run's argument list: this tree as the plugin, and the parent held by deny rules, not `--tools`.
+ * @returns {string[]}
+ */
+export function secondHostArgs() {
+  return ['-p', SECOND_PROMPT, '--output-format', 'stream-json', '--verbose', '--forward-subagent-text',
+    '--plugin-dir', PLUGIN_ROOT, '--allowedTools', 'Agent', '--disallowedTools', PARENT_DENY,
+    '--setting-sources', 'project', '--strict-mcp-config', '--no-session-persistence'];
+}
+
 /** @param {any} content a tool_result's content: a string or an array of blocks @returns {string} */
 function textOf(content) {
   if (typeof content === 'string') return content;
@@ -103,18 +134,18 @@ function toolUses(rec) {
 /**
  * Read the host's stream-json stdout. `dispatched:false` means no dispatch came back with a result, so the check did
  * not run. The return is the subagent's own tool_result, never the parent's final text.
- * @param {string} stdout
+ * @param {string} stdout @param {string} [agentType] the agent the script asked the parent to dispatch
  * @returns {{dispatched: false} | {dispatched: true, hostVersion: string|null, dispatchInput: any, returned: string,
  *   nestedRecords: number, subagentToolCalls: number, parentOtherCalls: number}}
  */
-export function readStream(stdout) {
+export function readStream(stdout, agentType = AGENT_TYPE) {
   /** @type {any[]} */
   const recs = [];
   for (const line of stdout.split('\n')) {
     try { recs.push(JSON.parse(line)); } catch { /* a blank or non-JSON line carries nothing to count */ }
   }
   const parentUses = recs.filter((r) => r && r.parent_tool_use_id == null).flatMap(toolUses);
-  const dispatch = parentUses.find((b) => DISPATCH_TOOLS.includes(b.name) && b.input && b.input.subagent_type === AGENT_TYPE);
+  const dispatch = parentUses.find((b) => DISPATCH_TOOLS.includes(b.name) && b.input && b.input.subagent_type === agentType);
   const handBack = dispatch && recs.find((r) => r && r.type === 'user' && r.parent_tool_use_id == null
     && Array.isArray(r.message && r.message.content)
     && r.message.content.some((b) => b && b.type === 'tool_result' && b.tool_use_id === dispatch.id));
@@ -159,69 +190,104 @@ export function judge(seen) {
 }
 
 /**
- * The stored shape, also what judge() reads back.
- * @param {Exclude<ReturnType<typeof readStream>, {dispatched: false}>} s
+ * Judge the second run: the rule back, whitespace-collapsed as self-verify reads it, and nothing read to get it.
+ * @param {{returned: string, subagentToolCalls: number}} seen
+ * @returns {{reason: string, detail: string}[]} every failure; empty is a pass
  */
-function resultOf(s) {
-  return {
-    host_version: s.hostVersion,
-    markers: { ...MARKERS },
-    returned: s.returned,
-    came_back: { first: s.returned.includes(MARKERS.first), second: s.returned.includes(MARKERS.second) },
-    subagent_tool_calls: s.subagentToolCalls,
-    parent_other_calls: s.parentOtherCalls,
-  };
+export function judgeSecond(seen) {
+  const out = [];
+  if (!carriesSharedRule(seen.returned)) {
+    out.push({ reason: 'shared-rule-missing',
+      detail: `the second run's return does not hold the rule lib/shared-rule.mjs holds: ${SHARED_RULE}` });
+  }
+  if (seen.subagentToolCalls !== 0) {
+    out.push({ reason: 'subagent-tool-calls',
+      detail: `second run: subagent_tool_calls is ${seen.subagentToolCalls}, not 0` });
+  }
+  return out;
 }
 
-/** @param {string[]} argv */
-function main(argv) {
-  const out = requireFlag(argv, '--out', CONTRACTS['skill-preload-proof.mjs']['']['--out']) || STORED_RESULT;
+/** @typedef {Exclude<ReturnType<typeof readStream>, {dispatched: false}>} Seen */
+
+const RUNS = [
+  { name: 'first', agentType: AGENT_TYPE, args: (/** @type {string} */ root) => hostArgs(writeFixture(root)),
+    judge, carries: (/** @type {string} */ t) => [MARKERS.first, MARKERS.second].filter((m) => t.includes(m)),
+    /** @param {Seen} s */
+    stored: (s) => ({ agent: AGENT_TYPE, host_version: s.hostVersion, markers: { ...MARKERS }, returned: s.returned,
+      came_back: { first: s.returned.includes(MARKERS.first), second: s.returned.includes(MARKERS.second) },
+      subagent_tool_calls: s.subagentToolCalls, parent_other_calls: s.parentOtherCalls }) },
+  { name: 'second', agentType: SECOND_AGENT_TYPE, args: () => secondHostArgs(),
+    judge: judgeSecond, carries: (/** @type {string} */ t) => (carriesSharedRule(t) ? [SHARED_RULE] : []),
+    /** @param {Seen} s */
+    stored: (s) => ({ agent: SECOND_AGENT_TYPE, host_version: s.hostVersion, marker: SHARED_RULE, returned: s.returned,
+      came_back: carriesSharedRule(s.returned),
+      subagent_tool_calls: s.subagentToolCalls, parent_other_calls: s.parentOtherCalls }) },
+];
+
+/**
+ * One headless dispatch in its own empty cwd; the temp tree goes either way.
+ * @param {(root: string) => string[]} args
+ */
+function spawnHost(args) {
   // a random name stands in for mkdtemp, which lib/planning-store.mjs doesn't offer
   const root = join(tmpdir(), `cad-preload-proof-${randomUUID()}`);
-  let run;
   try {
     const cwd = join(root, 'cwd');
     makeDir(cwd);
     // SIGKILL on the bound, as lib/bounded-run.mjs does; stderr kept here because it's what a refusal says
-    run = spawnSync('claude', hostArgs(writeFixture(root)), {
+    return spawnSync('claude', args(root), {
       cwd, timeout: HOST_TIMEOUT_MS, killSignal: 'SIGKILL', encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024,
     });
   } finally {
     removeTree(root);
   }
-  if (run.error || run.status !== 0) {
-    const why = run.error ? /** @type {any} */ (run.error).code || run.error.message : `exit ${run.status}`;
-    emit({ ok: false, reason: 'host-did-not-run', detail: `claude did not run to completion (${why}); nothing written`,
-      stderr: String(run.stderr || '').slice(-2000),
-      hint: 'run `claude -p hello` in a shell: it must answer before this proof can run; stderr holds what the host said' });
-    return;
+}
+
+/** @param {string[]} argv */
+function main(argv) {
+  const out = requireFlag(argv, '--out', CONTRACTS['skill-preload-proof.mjs']['']['--out']) || STORED_RESULT;
+  /** @type {Record<string, any>} */
+  const result = {};
+  /** @type {{run: string, reason: string, detail: string}[]} */
+  const failures = [];
+  for (const r of RUNS) {
+    const run = spawnHost(r.args);
+    if (run.error || run.status !== 0) {
+      const why = run.error ? /** @type {any} */ (run.error).code || run.error.message : `exit ${run.status}`;
+      emit({ ok: false, run: r.name, reason: 'host-did-not-run',
+        detail: `${r.name} run: claude did not run to completion (${why}); nothing written`,
+        stderr: String(run.stderr || '').slice(-2000),
+        hint: 'run `claude -p hello` in a shell: it must answer before this proof can run; stderr holds what the host said' });
+      return;
+    }
+    const seen = readStream(run.stdout, r.agentType);
+    if (!seen.dispatched) {
+      emit({ ok: false, run: r.name, reason: 'no-dispatch-result',
+        detail: `${r.name} run: the stream holds no hand-back from a ${r.agentType} dispatch; nothing written`,
+        hint: 're-run the command; a second miss means the parent no longer dispatches by this name or the stream shape changed' });
+      return;
+    }
+    const mine = r.judge(seen);
+    const input = Object.values(seen.dispatchInput || {}).map(String).join(' ');
+    for (const m of r.carries(input)) {
+      mine.push({ reason: 'dispatch-input-carries-marker', detail: `the dispatch input holds ${m}, so it proves nothing` });
+    }
+    if (seen.nestedRecords === 0) {
+      mine.push({ reason: 'no-subagent-record',
+        detail: 'the stream holds no record from inside the subagent besides its result, so its tool calls cannot be counted' });
+    }
+    failures.push(...mine.map((f) => ({ run: r.name, ...f })));
+    result[r.name] = r.stored(seen);
   }
-  const seen = readStream(run.stdout);
-  if (!seen.dispatched) {
-    emit({ ok: false, reason: 'no-dispatch-result',
-      detail: `the stream holds no hand-back from a ${AGENT_TYPE} dispatch; nothing written`,
-      hint: 're-run the command; a second miss means the parent no longer dispatches by this name or the stream shape changed' });
-    return;
-  }
-  const failures = judge(seen);
-  const input = JSON.stringify(seen.dispatchInput);
-  for (const m of [MARKERS.first, MARKERS.second].filter((x) => input.includes(x))) {
-    failures.push({ reason: 'dispatch-input-carries-marker', detail: `the dispatch input holds ${m}, so it proves nothing` });
-  }
-  if (seen.nestedRecords === 0) {
-    failures.push({ reason: 'no-subagent-record',
-      detail: 'the stream holds no record from inside the subagent besides its result, so its tool calls cannot be counted' });
-  }
-  const result = resultOf(seen);
   // the file carries no failure field, so a failed run written there would read as a pass
   if (failures.length) {
-    emit({ ok: false, reason: failures[0].reason, failures, seen: result,
+    emit({ ok: false, run: failures[0].run, reason: failures[0].reason, failures, seen: result,
       hint: `nothing written to ${out}; seen holds what came back; do not adjust the fixture until it passes, plans built on D-02 rest on this answer` });
     return;
   }
   writeFile(out, JSON.stringify(result, null, 2) + '\n');
-  emit({ ok: true, result: out, host_version: result.host_version });
+  emit({ ok: true, result: out, host_version: result.first.host_version });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
