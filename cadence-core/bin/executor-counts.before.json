@@ -1,0 +1,9 @@
+{
+  "label": "before: the one-layout-one-migration cycle, phase 1, plan 6, 2026-11-12, run by the cad-executor agent file from before this phase",
+  "counted_by": "cadence-core/bin/executor-counts.mjs",
+  "tool_calls": 126,
+  "lsp": 0,
+  "grep": 74,
+  "turns": 126,
+  "tokens": 263959
+}
