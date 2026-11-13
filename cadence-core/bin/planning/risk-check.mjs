@@ -234,6 +234,30 @@ function cmdRiskCheckRun(dir, opts) {
     ...(diffError === null ? {} : { detail: diffError }),
   });
 
+  // D-04: a clean H1..H2 carries a review that already passed over B..H1, as a receipt status reads like any other
+  // run writes it and status never does; a follow-up that edits a matched line has matches here and fires again
+  /** @type {null | {settled: {base: string, head: string}, follow: {base: string, head: string}, written: boolean, reason?: string}} */
+  let carry = null;
+  if (plan !== undefined && !staged && scan.checked && !scan.inconclusive && scan.matches.length === 0
+    && baseId && headId) {
+    const r = renderTrace(dir, parsedPhase.raw);
+    const k = rowKey(r.corr, plan);
+    // newest passing receipt of this run and plan ending at H1, joined by id; one with no hex start names no range
+    const from = fireReceipts(r.events, signoffWindow(r.events)).filter((rc) => rc.key === k
+      && PASSING_RECEIPTS.includes(rc.event) && shaMatches(rc.sha, baseId)
+      && /^[0-9a-f]{7,64}$/i.test(rc.base || '')).pop();
+    if (from) {
+      const settled = { base: /** @type {string} */ (from.base), head: /** @type {string} */ (from.sha) };
+      const follow = { base: baseId, head: headId };
+      // base and sha are the range it settles, B..H2, the two fields settledBy reads
+      const w = appendEvent(dir, {
+        phase: parsedPhase.raw, family: 'outcome', event: CARRY_RECEIPT, trigger: RISK_TRIGGER, plan,
+        base: settled.base, sha: headId, settled, follow,
+      });
+      carry = { settled, follow, written: w.written, ...(w.reason ? { reason: w.reason } : {}) };
+    }
+  }
+
   const envelope = {
     phase: n,
     ...(plan === undefined ? {} : { plan }),
@@ -248,6 +272,8 @@ function cmdRiskCheckRun(dir, opts) {
     inconclusive: scan.inconclusive,
     empty: scan.empty,
     trace: { written: res.written, ...(res.reason ? { reason: res.reason } : {}) },
+    // never silent: present whenever a carry applied, `written: false` when its trace line didn't land
+    ...(carry ? { carry } : {}),
   };
 
   // a range that couldn't be read is never ok, so a caller can't take "git refused" for "clean"
@@ -267,15 +293,94 @@ const RISK_TRIGGER = 'risk_surface';
 /** Appended in place of a check for a plan that landed no commits, so status reads that row as `skipped`. */
 const RISK_SKIP_EVENT = 'risk_check_skipped';
 
+/** The receipt `risk-check run` writes when a no-match follow-up range carries a passed review; no fire writes it. */
+const CARRY_RECEIPT = 'gate_carry';
+
 /**
- * The five `outcome` events a risk_surface fire can settle at, all accepted by `risk-check status` as proof:
+ * The six `outcome` events `risk-check status` accepts as proof a risk_surface range settled. Five are a fire's:
  * `adjudication` (survivors reported), `rearm` (narrowed second round), `gate_pass` (nothing blocker/high),
  * `override` (user cleared a FAIL, reason on file) and `deferral` (a deferred gate queued what it found).
  * `gate_pass` exists because a clean pass wrote nothing, so a matched clean range could never clear.
  * `deferral` has its own name: `gate_pass` reads as clean in every recount, and `override` is the manufactured clear.
  * Producers: references/triage-gate.md and references/review-triggers.md.
+ * The sixth, CARRY_RECEIPT, is run's own: a passed B..H1 carried over a no-match H1..H2, never a fire's outcome.
  */
-const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override', 'deferral'];
+const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override', 'deferral', CARRY_RECEIPT];
+
+/** The receipts a carry may start from: a review that passed. A blocker's fix commit gets reviewed, not carried. */
+const PASSING_RECEIPTS = ['gate_pass', CARRY_RECEIPT];
+
+/** Row identity is run plus plan, so invocation 2 can't clear invocation 1's ranges by checking its own. */
+const rowKey = (/** @type {any} */ corr, /** @type {any} */ plan) =>
+  `${planKey(corr)}\u0000${planKey(plan)}`;
+
+/**
+ * Does a receipt name this commit?
+ * Short and full spellings are the same commit, so the compare is prefix-wise in whichever direction is shorter.
+ * A receipt with no sha settles nothing; as a wildcard it would reopen the hole.
+ */
+const shaMatches = (/** @type {string|null} */ a, /** @type {string|null} */ b) => {
+  if (!a || !b) return false;
+  const [x, y] = a.length <= b.length ? [a, b] : [b, a];
+  return x.length >= 7 && y.startsWith(x);
+};
+
+/**
+ * This cycle, bounded by the phase's own last sign-off and not by the newest anchor alone.
+ * Phase numbers restart every milestone, so an unbounded scan demanded records for old cycles and could never be met.
+ * renderTrace's corr alone is too narrow: execute.md anchors at the short HEAD, so a resumed session takes a new id.
+ * The bound is the newest `uat_verdict` `complete` outcome; `partial` isn't one, and no sign-off drops nothing.
+ * @param {any[]} events
+ * @returns {(e: {ts?: any}) => boolean} in the cycle unless proven at or before a readable sign-off
+ */
+function signoffWindow(events) {
+  // epoch ms, not the raw string: a sign-off stamped "zzzz" sorts above every timestamp. An unparseable one isn't later
+  const stamp = (/** @type {any} */ v) => {
+    if (typeof v !== 'string') return null;
+    const ms = Date.parse(v);
+    return Number.isFinite(ms) ? ms : null;
+  };
+  let signoff = null;
+  for (const e of events) {
+    if (e.family !== 'outcome' || e.event !== 'uat_verdict' || e.detail !== 'complete') continue;
+    // an unreadable sign-off isn't a bound: it can't say when the cycle closed, so it requires more, never less
+    const ts = stamp(e.ts);
+    if (ts === null) continue;
+    if (signoff === null || ts > signoff) signoff = ts;
+  }
+  // a bad `ts` or a tie stays required
+  return (e) => {
+    if (signoff === null) return true;
+    const ts = stamp(e.ts);
+    return ts === null || ts >= signoff;
+  };
+}
+
+/**
+ * The fire's own receipts in this window, in trace order: the one read run and status share.
+ * "The detector ran" and "the fire happened" are different claims; proving only the first passed a skipped fire.
+ * The trigger is read off the structured `trigger` field, never parsed out of `detail`, where it has four spellings.
+ * Each receipt carries its row identity and the range it settled, so a later range can't ride an earlier fire.
+ * @param {any[]} events
+ * @param {(e: any) => boolean} inCycle
+ * @returns {{key: string, event: string, sha: string|null, base: string|null}[]}
+ */
+function fireReceipts(events, inCycle) {
+  const receipts = [];
+  for (const e of events) {
+    if (!inCycle(e)) continue;
+    if (e.family !== 'outcome' || !FIRE_RECEIPTS.includes(e.event)) continue;
+    if (e.trigger !== RISK_TRIGGER) continue;
+    // override is the one receipt written on a coordinator's own say-so, so it needs a reason
+    if (e.event === 'override') {
+      const why = typeof e.detail === 'string' ? e.detail.trim() : '';
+      if (!why) continue;
+    }
+    receipts.push({ key: rowKey(e.corr, e.plan), event: e.event,
+      sha: typeof e.sha === 'string' ? e.sha : null, base: typeof e.base === 'string' ? e.base : null });
+  }
+  return receipts;
+}
 
 function cmdRiskCheckStatus(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
@@ -370,37 +475,9 @@ function cmdRiskCheckStatus(dir, opts) {
   }
 
   // one reader of the record, through renderTrace; a second reader is how two readers disagree on what closed
+  // reads only: every plan close asks this, so a write here would land on every close (D-04)
   const r = renderTrace(dir, parsedPhase.raw);
-
-  // this cycle, bounded by the phase's own last sign-off and not by the newest anchor alone
-  // phase numbers restart every milestone, so an unbounded scan demanded records for old cycles and could never be met
-  // renderTrace's corr alone is too narrow: execute.md anchors at the short HEAD, so a resumed session takes a new id
-  // the bound is the newest `uat_verdict` `complete` outcome; `partial` isn't one, and no sign-off drops nothing
-  // epoch ms, not the raw string: a sign-off stamped "zzzz" sorts above every timestamp. An unparseable one isn't later
-  const stamp = (/** @type {any} */ v) => {
-    if (typeof v !== 'string') return null;
-    const ms = Date.parse(v);
-    return Number.isFinite(ms) ? ms : null;
-  };
-
-  let signoff = null;
-  for (const e of r.events) {
-    if (e.family !== 'outcome' || e.event !== 'uat_verdict' || e.detail !== 'complete') continue;
-    // an unreadable sign-off isn't a bound: it can't say when the cycle closed, so it requires more, never less
-    const ts = stamp(e.ts);
-    if (ts === null) continue;
-    if (signoff === null || ts > signoff) signoff = ts;
-  }
-  /** In the cycle unless proven at or before a readable sign-off; a bad `ts` or a tie stays required. */
-  const inCycle = (/** @type {{ts?: any}} */ e) => {
-    if (signoff === null) return true;
-    const ts = stamp(e.ts);
-    return ts === null || ts >= signoff;
-  };
-
-  /** Row identity is run plus plan, so invocation 2 can't clear invocation 1's ranges by checking its own. */
-  const rowKey = (/** @type {any} */ corr, /** @type {any} */ plan) =>
-    `${planKey(corr)}\u0000${planKey(plan)}`;
+  const inCycle = signoffWindow(r.events);
 
   /** Completed ranges by plan: a bracket ending in `return`; a `checkpoint` requires nothing. */
   /** @type {Map<string, {run: string|null, plan: string|null, completed: number}>} */
@@ -503,38 +580,9 @@ function cmdRiskCheckStatus(dir, opts) {
     skipsByPlan.get(p).push(skip);
   }
 
-  /**
-   * The fire's own receipts, keyed the same way the records are.
-   * "The detector ran" and "the fire happened" are different claims; proving only the first passed a skipped fire.
-   * Five event names, the five outcomes a fire can reach; FIRE_RECEIPTS is the list.
-   * The trigger is read off the structured `trigger` field, never parsed out of `detail`, where it has four spellings.
-   * Each receipt carries its row identity and the range it settled, so a later range can't ride an earlier fire.
-   * @type {{key: string, sha: string|null, base: string|null}[]}
-   */
-  const receipts = [];
-  for (const e of r.events) {
-    if (!inCycle(e)) continue;
-    if (e.family !== 'outcome' || !FIRE_RECEIPTS.includes(e.event)) continue;
-    if (e.trigger !== RISK_TRIGGER) continue;
-    // override is the one receipt written on a coordinator's own say-so, so it needs a reason
-    if (e.event === 'override') {
-      const why = typeof e.detail === 'string' ? e.detail.trim() : '';
-      if (!why) continue;
-    }
-    receipts.push({ key: rowKey(e.corr, e.plan), sha: typeof e.sha === 'string' ? e.sha : null, base: typeof e.base === 'string' ? e.base : null });
-  }
+  // keyed the same way the records are; joining on rowKey alone let one fire clear every later range
+  const receipts = fireReceipts(r.events, inCycle);
 
-  /**
-   * Does a receipt settle this range?
-   * Joining on rowKey alone let one fire clear every later range, so a receipt names its range with `--sha <head>`.
-   * Short and full spellings are the same commit, so the compare is prefix-wise in whichever direction is shorter.
-   * A receipt with no sha settles nothing; as a wildcard it would reopen the hole.
-   */
-  const shaMatches = (/** @type {string|null} */ a, /** @type {string|null} */ b) => {
-    if (!a || !b) return false;
-    const [x, y] = a.length <= b.length ? [a, b] : [b, a];
-    return x.length >= 7 && y.startsWith(x);
-  };
   /**
    * Does a receipt settle this one record?
    * Both ends of the range, not the head alone: B..C and A..C share a head and are different diffs.
@@ -626,7 +674,8 @@ function cmdRiskCheckStatus(dir, opts) {
       ...(malformed.size ? { malformed: [...malformed] } : {}),
       hint: unfiredOnly
         ? `fire the blocking ${RISK_TRIGGER} review for each plan listed and record its outcome`
-          + ` (one of ${FIRE_RECEIPTS.join(', ')}) under this phase's correlation id and that plan,`
+          + ` (one of ${FIRE_RECEIPTS.filter((e) => e !== CARRY_RECEIPT).join(', ')}) under this phase's`
+          + ' correlation id and that plan,'
           + ' then re-run this check'
         : `run risk-check run --phase ${parsedPhase.raw} --plan <k> --base <ref> --head <ref>`
           + ' for each plan listed (or, for a plan that landed no commits,'
