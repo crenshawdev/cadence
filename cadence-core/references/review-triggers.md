@@ -175,7 +175,7 @@ reviewer set never does. Per backend:
   Then dispatch the `agent_type` and `model` the step-1 resolve
   returned, through the spawn-agent seam, with the payload as its prompt. It
   gets the refs, the scope, or the path and PRODUCES the artifact itself - it
-  holds Read, Bash, Grep and Glob, and its cwd is this one. Parse
+  holds Read, Bash, Grep, Glob and LSP and shares this cwd. Parse
   the JSON object it returns, and close the bracket the moment you have it.
   OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 

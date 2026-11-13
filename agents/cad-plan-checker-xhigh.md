@@ -1,7 +1,7 @@
 ---
 name: cad-plan-checker-xhigh
 description: The `xhigh` rung of `cad-plan-checker` (goal-backward plan gate); `bin/route.mjs` picks it, not the user.
-tools: Read, Bash, Grep, Glob
+tools: Read, Bash, Grep, Glob, LSP
 disallowedTools: Write, Edit, MultiEdit
 color: green
 effort: xhigh

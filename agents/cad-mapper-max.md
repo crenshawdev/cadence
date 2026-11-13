@@ -1,7 +1,7 @@
 ---
 name: cad-mapper-max
 description: The `max` rung of `cad-mapper` (code map reader); `bin/route.mjs` picks it, not the user.
-tools: Read, Bash, Grep, Glob
+tools: Read, Bash, Grep, Glob, LSP
 disallowedTools: Write, Edit, MultiEdit
 color: cyan
 effort: max

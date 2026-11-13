@@ -47,7 +47,7 @@ function roleRow(rungs, { tools, disallowedTools = [], color, gloss, skills }) {
 }
 
 /** The read-only grant four roles share: they read and run, and the host refuses them any file write. */
-const READ_ONLY = Object.freeze({ tools: ['Read', 'Bash', 'Grep', 'Glob'], disallowedTools: ['Write', 'Edit', 'MultiEdit'] });
+const READ_ONLY = Object.freeze({ tools: ['Read', 'Bash', 'Grep', 'Glob', 'LSP'], disallowedTools: ['Write', 'Edit', 'MultiEdit'] });
 
 /**
  * The agent table: per role, the rung -> agent-file map, stated and not derived, beside the grant, color, gloss and
@@ -66,7 +66,7 @@ export const RUNG_FILES = Object.freeze({
     high: 'cad-planner',
     xhigh: 'cad-planner-xhigh',
     max: 'cad-planner-max',
-  }, { tools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'], color: 'green',
+  }, { tools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'LSP'], color: 'green',
     gloss: 'phase plan authoring', skills: ['cad-planner-contract'] }),
   'cad-assumptions-analyzer': roleRow({
     low: 'cad-assumptions-analyzer-low',
@@ -83,7 +83,7 @@ export const RUNG_FILES = Object.freeze({
     high: 'cad-verifier',
     xhigh: 'cad-verifier-xhigh',
     max: 'cad-verifier-max',
-  }, { tools: ['Read', 'Write', 'Bash', 'Grep', 'Glob'], disallowedTools: ['Edit', 'MultiEdit'], color: 'green',
+  }, { tools: ['Read', 'Write', 'Bash', 'Grep', 'Glob', 'LSP'], disallowedTools: ['Edit', 'MultiEdit'], color: 'green',
     gloss: 'goal-backward phase verification', skills: ['cad-verifier-contract'] }),
   'cad-reviewer': roleRow({
     low: 'cad-reviewer-low',

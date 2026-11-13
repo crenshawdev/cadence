@@ -1,7 +1,7 @@
 ---
 name: cad-verifier-max
 description: The `max` rung of `cad-verifier` (goal-backward phase verification); `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Bash, Grep, Glob
+tools: Read, Write, Bash, Grep, Glob, LSP
 disallowedTools: Edit, MultiEdit
 color: green
 effort: max
