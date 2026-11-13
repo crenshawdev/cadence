@@ -22,8 +22,43 @@ const ROW = CONTRACTS['executor-counts.mjs'];
 const SEPARATOR = /&&|\|\||\$\(|[;|&\n(`]/;
 // words that stand before a command word without being one
 const LEADING = new Set(['if', 'then', 'else', 'elif', 'do', 'while', 'until', '!', 'time', '{']);
+// wrappers that run the word after them; these three and no more, `timeout` first eating its duration
+const WRAPPERS = new Set(['command', 'timeout', 'xargs']);
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const SEARCH = /(^|\/)(grep|rg)$/;
+// `<<EOF`, `<<-EOF`, `<<'EOF'`, `<< "EOF"`; never the `<<<` here-string
+const HEREDOC = /(?<!<)<<(?!<)-?\s*(['"]?)([A-Za-z_][\w.-]*)\1/g;
+
+/**
+ * The line with heredoc bodies dropped and each quoted span made one inert `_`, so text an executor writes - a report
+ * table, a commit body, a `node -e` program - is never read as a command. Bodies go first, by lines, so a heredoc
+ * inside `"$(...)"` loses its body before the quotes around it are paired. Not a shell parser and not to become one.
+ * @param {string} command @returns {string}
+ */
+function codeOnly(command) {
+  const kept = [];
+  const pending = [];
+  for (const line of command.split('\n')) {
+    if (pending.length) {
+      if (line.trim() === pending[0]) pending.shift();
+      continue;
+    }
+    kept.push(line);
+    for (const m of line.matchAll(HEREDOC)) pending.push(m[2]);
+  }
+  const text = kept.join('\n');
+  let out = '';
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '\\') { out += text.slice(i, i + 2); i += 1; continue; } // `it\'s` opens no quote
+    if (ch !== '\'' && ch !== '"') { out += ch; continue; }
+    let j = i + 1;
+    while (j < text.length && text[j] !== ch) j += ch === '"' && text[j] === '\\' ? 2 : 1;
+    out += '_'; // a word still stands here: `"$BIN" grep` runs $BIN, not grep
+    i = j;
+  }
+  return out;
+}
 
 /**
  * Whether a shell line runs grep or rg as a command word anywhere in it. `cat grep-notes.txt` doesn't; `ls | rg x` does.
@@ -31,9 +66,12 @@ const SEARCH = /(^|\/)(grep|rg)$/;
  */
 export function runsSearch(command) {
   if (typeof command !== 'string') return false;
-  for (const segment of command.split(SEPARATOR)) {
-    for (const word of segment.trim().split(/\s+/)) {
-      if (!word || LEADING.has(word) || ASSIGNMENT.test(word)) continue;
+  for (const segment of codeOnly(command).split(SEPARATOR)) {
+    const words = segment.trim().split(/\s+/);
+    for (let i = 0; i < words.length; i += 1) {
+      const word = words[i];
+      if (word === 'timeout') i += 1;
+      if (!word || LEADING.has(word) || WRAPPERS.has(word) || ASSIGNMENT.test(word)) continue;
       if (SEARCH.test(word)) return true;
       break; // the first real word is the command; the rest are its arguments
     }
