@@ -42,7 +42,7 @@ Context7 is used when it's installed and skipped when it's not, and Cadence does
 
 ## The Workflow tool
 
-`/cadence:cad-plan`, `/cadence:cad-plan-review`, `/cadence:cad-execute`, `/cadence:cad-verify`, `/cadence:cad-task`, `/cadence:cad-debug` list `Workflow` in `allowed-tools`. It runs the review panel as a workflow, and only when `workflow.use_workflows` is true in both your repository's config and your user-global config, which is off by default. When it runs, Cadence reads the host's run file for that workflow, `workflows/<run id>.json` under the session directory, read-only, to price each agent and to take the result.
+`/cadence:cad-plan`, `/cadence:cad-plan-review`, `/cadence:cad-execute`, `/cadence:cad-verify`, `/cadence:cad-task`, `/cadence:cad-debug` list `Workflow` in `allowed-tools`. It runs the review panel as a workflow, and only when `workflow.use_workflows` is true in both your repository's config and your user-global config, which is off by default. When it runs, Cadence reads the host's run file for that workflow, `workflows/<run id>.json` under the session directory, read-only, to price each agent and to take the result. It also reads the run's journal beside the run file, `subagents/workflows/<run id>/journal.jsonl` under the session directory, read-only: the findings and rulings are read from it, it holds the full text each reviewer and checker returned, and it stays on this machine.
 
 `/cadence:cad-execute` can also start a workflow, `cadence:execute-wave`, whose agents are executors that edit files and commit code, each in its own worktree when a wave holds more than one plan. It runs only when `workflow.execute_workflows` is true in both your repository's config and your user-global config, which is off by default. Its run file is read the same way, to price each agent.
 
@@ -57,7 +57,7 @@ What Cadence writes outside your repository:
 - the `worktree.baseRef` key, merged into `.claude/settings.json` or `~/.claude/settings.json`, only after you pick the file at `/cadence:cad-config`;
 - scratch directories from `mktemp` under `TMPDIR`, or `/tmp` when it's unset.
 
-What it reads outside it: your user-global config, the host's workflow run file under the session directory, `providers.env` or the `review.key_file` file during a provider call, and `~/.claude/settings.json` and the platform's `managed-settings.json` to learn `worktree.baseRef` before running plans in parallel worktrees, and, with `planning.workflow_plans` on, an executor's brief from a scratch directory the run made.
+What it reads outside it: your user-global config, the host's workflow run file under the session directory and, for a review workflow, the run's journal beside it (`subagents/workflows/<run id>/journal.jsonl`, the findings and rulings with the full text each reviewer and checker returned, read-only and kept on this machine), `providers.env` or the `review.key_file` file during a provider call, and `~/.claude/settings.json` and the platform's `managed-settings.json` to learn `worktree.baseRef` before running plans in parallel worktrees, and, with `planning.workflow_plans` on, an executor's brief from a scratch directory the run made.
 
 ## Shell commands
 
