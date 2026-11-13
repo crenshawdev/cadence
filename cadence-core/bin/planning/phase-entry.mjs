@@ -5,7 +5,7 @@
 'use strict';
 
 import { join } from 'node:path';
-import { fail, ok, phaseSpellingRefusal, read } from './core.mjs';
+import { PHASE_DIR_NAME, fail, ok, phaseSpellingRefusal, read } from './core.mjs';
 import { parseRoadmapPhases } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { renderPhasesList } from '../lib/state-views.mjs';
@@ -44,6 +44,12 @@ function cmdPhaseEntry(dir, sub, opts) {
   if (spelling) {
     return fail('bad-args', `${label} ${spelling}`,
       'retype the flag in the spelling the detail names and re-run - the state stores the phase NUMBER; nothing was written');
+  }
+  // an add is a new phases/<N>/ to be, so it takes only what that directory can be named; edit still reaches any held number
+  if (sub === 'add' && !PHASE_DIR_NAME.test(parsedPhase.raw)) {
+    return fail('bad-args', `phase-entry add --phase "${parsedPhase.raw}" is not a number a phase directory can carry`,
+      'send a whole number from 1 (3), or one with a fraction that does not start with 0 (3.1), then re-run;'
+      + ' nothing was written');
   }
   const n = parsedPhase.value;
 
