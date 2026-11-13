@@ -28,6 +28,7 @@ import { globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
 import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
 import { relayIssues } from './lib/route-relay.mjs';
 import { dataRuleIssues } from './lib/data-rule.mjs';
+import { carriesSharedRule, roleTableIssues, SHARED_SKILL, CODE as SHARED_RULE_CODE } from './lib/shared-rule.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { FRONTMATTER_RE, parseSkillsField } from './lib/frontmatter.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
@@ -75,7 +76,7 @@ const REACH_DOC = join('cadence-core', 'references', 'config-reach.md');
 const WORKFLOWS_DIR = join('cadence-core', 'workflows') + sep;
 const REFERENCES_DIR = join('cadence-core', 'references') + sep;
 
-// LSP is also on the two cad-executor rungs' tools: lines, and both are needed: a token missing here is never scanned
+// LSP is on every agent file's tools: line and named by the shared skill; a token missing here is never scanned
 const KNOWN_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Grep',
   'Glob', 'Task', 'WebFetch', 'WebSearch', 'NotebookEdit', 'TodoWrite', 'LSP'];
 
@@ -819,6 +820,28 @@ function checkAgentFileRender(root, isFullTree, problems) {
   }
 }
 
+// 8d. the LSP-then-grep rule stays in the shared skill (lib/shared-rule.mjs), whitespace-collapsed so a rewrap is free
+function checkSharedRule(root, problems) {
+  const rel = `skills/${SHARED_SKILL}/SKILL.md`;
+  let text;
+  try {
+    text = readFileSync(join(root, rel), 'utf8');
+  } catch {
+    return;
+  }
+  if (!carriesSharedRule(text)) {
+    problems.push({ kind: SHARED_RULE_CODE, file: rel,
+      detail: 'the shared skill lacks the LSP-then-grep rule (lib/shared-rule.mjs)' });
+  }
+}
+
+// 8e. the table itself: a role that lost LSP or the shared skill renders files that match it, so 8c can't see it
+function checkRoleTable(problems) {
+  for (const { detail } of roleTableIssues(RUNG_FILES)) {
+    problems.push({ kind: 'role-lacks-shared-rule', file: 'cadence-core/bin/lib/rung-agent.mjs', detail });
+  }
+}
+
 // each of these reads the schema and files its issues against it, in this order; the comment says what it checks
 function checkSchemaRules(schema, problems) {
   for (const issues of [
@@ -1035,6 +1058,8 @@ function run(root) {
   checkRungBodies(agentBodies, problems);
   checkRungLadder(root, v.isFullTree, agentFiles, problems);
   checkAgentFileRender(root, v.isFullTree, problems);
+  checkSharedRule(root, problems);
+  checkRoleTable(problems);
   checkSchemaRules(v.schema, problems);
   checkReach(root, v.isFullTree, v.schema, problems);
   checkGlobalOnly(v.schema, problems);
@@ -1060,7 +1085,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, agent-file-render, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations, setting-conditions, plain-words, workflow-scripts, write-module', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, agent-file-render, shared-rule, role-table, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations, setting-conditions, plain-words, workflow-scripts, write-module', problems });
 } catch (e) {
   emitCaught(e);
 }
