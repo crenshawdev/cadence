@@ -3,8 +3,12 @@
 //
 // INPUT is the run file the host leaves (`<session>/workflows/<run id>.json`) read whole: the completion notice cuts a long
 // result short. Only `status`, `result` and `workflowProgress[]` are read, so an undocumented file is trusted for no more
-// than that. The result is the shape workflows/review-panel.js returns, and a test runs that script through here so the
-// two can't drift.
+// than that. The result is the per-voice skeleton workflows/review-panel.js returns, and a test runs that script through
+// here so the two can't drift. THE FINDINGS AND RULINGS come from the run's journal alone
+// (`<session>/subagents/workflows/<run id>/journal.jsonl`): each `result` line joined on `agentId` to its `started` line's
+// label, `reviewer <voice>` or `provider <voice>` for a voice's findings and `checker <voice> <n>` for the ruling on its
+// finding n - 1. Anything the run file's result still carries of them is ignored, and a voice that ran with no result in
+// the journal is a refusal, never an empty review (D-04)
 // NO RULING IS ADDED and no record key: the checker's three words map onto the record's three (D-04), and a finding the
 // record could not store is listed for the main session to rule, never stored as something it isn't (D-16)
 // BRACKETS: one dispatch and one terminal per `workflow_agent` row, from `workflowProgress[]`, since the completion notice
@@ -34,6 +38,10 @@ import { isPlainObject } from './text-util.mjs';
 export const MAX_RUN_BYTES = 8 * 1024 * 1024;
 /** The answers file's cap. */
 export const MAX_ANSWERS_BYTES = 1024 * 1024;
+/** The journal's cap. A real one is tens of KB even holding every agent's full return, so the run file's cap is plenty. */
+export const MAX_JOURNAL_BYTES = 8 * 1024 * 1024;
+/** The one reason a review is refused on when its journal can't give a voice's findings. */
+export const JOURNAL_REFUSAL = 'journal-unusable';
 /** The three files a call leaves in its output directory, so prose, tests and the next call agree on the names. */
 export const PAYLOAD_FILE = 'payload.json';
 export const REVIEW_INPUT_FILE = 'survivors.json';
@@ -190,7 +198,8 @@ export function parseCompleted(text) {
 }
 
 /**
- * Parse a run file's text and judge whether it is a completed run of this script.
+ * Parse a run file's text and judge whether it is a completed run of this script. A voice needs only its name and whether
+ * it ran here: its findings and rulings are the journal's, joined by `joinJournal`.
  * @param {string} text
  * @returns {{ok: boolean, reason?: string, detail?: string, run?: any}}
  */
@@ -208,21 +217,77 @@ export function parseRun(text) {
     if (!isPlainObject(voice) || !isText(voice.voice) || typeof voice.ran !== 'boolean') {
       return refuse('run-bad-result', `${at} does not name a voice and say whether it ran`);
     }
-    if (!voice.ran) continue;
-    if (!isPlainObject(voice.result) || !Array.isArray(voice.result.findings)) {
-      return refuse('run-bad-result', `${at} ran but holds no {findings: [...]} result`);
-    }
-    const sev = findingsProblem(voice.result.findings);
-    if (sev) return refuse('run-bad-result', `${at}.result ${sev}`);
-    if (voice.envelope !== undefined && !isText(voice.envelope)) return refuse('run-bad-result', `${at}.envelope is not a path`);
-    if (!Array.isArray(voice.rulings)) return refuse('run-bad-result', `${at}.rulings is not an array`);
-    for (const ruling of voice.rulings) {
-      const ok = isPlainObject(ruling) && Number.isSafeInteger(ruling.index) && ruling.index >= 0
-        && (ruling.ruling === null || isPlainObject(ruling.ruling));
-      if (!ok) return refuse('run-bad-result', `${at}.rulings holds an entry that is not {index, ruling}`);
-    }
+    if (voice.ran && voice.envelope !== undefined && !isText(voice.envelope)) return refuse('run-bad-result', `${at}.envelope is not a path`);
   }
   return { ok: true, run };
+}
+
+/**
+ * What each agent of a run returned, by label, from its journal's text: each `result` line joined on `agentId` to its
+ * `started` line's label. A line that is not JSON is skipped. A label met twice keeps its last non-null result, because
+ * the fallback reviewer reuses the label of the local reviewer that died before it, and a dead one returned nothing.
+ * @param {string} text
+ * @returns {Map<string, any>}
+ */
+export function journalReturns(text) {
+  const labels = new Map();
+  /** @type {any[]} */
+  const results = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    /** @type {any} */
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (!isPlainObject(e) || !isText(e.agentId)) continue;
+    if (e.type === 'started' && isText(e.label)) labels.set(e.agentId, e.label);
+    else if (e.type === 'result') results.push(e);
+  }
+  const out = new Map();
+  for (const e of results) {
+    const label = labels.get(e.agentId);
+    if (label !== undefined && e.result !== null && e.result !== undefined) out.set(label, e.result);
+  }
+  return out;
+}
+
+/**
+ * The run with each voice that ran given its findings and rulings from the journal, and whatever the run file's result
+ * carried of them dropped. A provider voice's findings are its wrapper's return, a local voice's its reviewer's. A checker
+ * with no result leaves its slot null, ruled by the main model like any null. Severities are judged here, before anything
+ * is written.
+ * @param {any} run a run `parseRun` accepted
+ * @param {Map<string, any>} returns from `journalReturns`
+ * @param {string} journal the journal's path, named in a refusal
+ * @returns {{ok: boolean, reason?: string, detail?: string, run?: any}}
+ */
+export function joinJournal(run, returns, journal) {
+  const seen = new Set();
+  /** @type {any[]} */
+  const voices = [];
+  for (let v = 0; v < run.result.voices.length; v += 1) {
+    const row = { ...run.result.voices[v] };
+    delete row.result;
+    delete row.rulings;
+    if (!row.ran) { voices.push(row); continue; }
+    const at = `result.voices[${v}]`;
+    // two ran voices of one name share every label, so the join could hand one the other's findings
+    if (seen.has(row.voice)) return refuse('run-bad-result', `${at} is a second voice named ${row.voice} that ran, so the journal can't tell their agents apart`);
+    seen.add(row.voice);
+    const label = `${isText(row.envelope) ? 'provider' : 'reviewer'} ${row.voice}`;
+    const got = returns.get(label);
+    if (got === undefined) return refuse(JOURNAL_REFUSAL, `the journal ${journal} holds no result for "${label}", and ${at} says ${row.voice} ran`);
+    if (!isPlainObject(got) || !Array.isArray(got.findings)) {
+      return refuse('run-bad-result', `${at} ran but "${label}" in the journal returned no {findings: [...]}`);
+    }
+    const sev = findingsProblem(got.findings);
+    if (sev) return refuse('run-bad-result', `${at}: "${label}" in the journal returned ${sev}`);
+    const rulings = got.findings.map((_, index) => {
+      const r = returns.get(`checker ${row.voice} ${index + 1}`);
+      return { index, ruling: isPlainObject(r) ? r : null };
+    });
+    voices.push({ ...row, result: { findings: got.findings }, rulings });
+  }
+  return { ok: true, run: { ...run, result: { ...run.result, voices } } };
 }
 
 /**
@@ -289,7 +354,7 @@ function settle(finding, verdict, answer, orphan) {
 
 /**
  * Build the payload, the review input and what the main session still owes, from a parsed run.
- * @param {any} run a run `parseRun` accepted
+ * @param {any} run a run `joinJournal` returned
  * @param {any[]} answers the accumulated answers
  * @param {Map<string, any>} [envelopes] each provider voice's parsed envelope file, null where it could not be read
  * @returns {{ok: boolean, reason?: string, detail?: string, payload?: any, review?: any, summary?: any}}

@@ -1,6 +1,7 @@
 // @ts-check
 // planning/workflow-run.mjs - `workflow-run`: a finished review-panel run becomes a payload and a review input
-// it reads the run file whole from disk and writes into the run's scratch directory. The record and the review file are
+// it reads the run file whole from disk, and a review's findings and rulings from the journal beside it, and writes into the
+// run's scratch directory. The record and the review file are
 // written by their own seams, so --round, --task and the receipts stay where review-record.md states them
 // the run's brackets go FIRST, whatever the file says: an agent that spent tokens on a killed or refused run is still billed
 // the same call twice writes no second set, because a resumed session may retry it: a bracket whose key is already there is skipped
@@ -8,15 +9,15 @@
 'use strict';
 
 import { lstatSync, readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { dirFlag, fail, noticeTotals, ok, readCapped, writeBrackets } from './core.mjs';
 import { atomicWrite } from '../lib/planning-store.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { appendEvent, renderTrace, TERMINAL } from '../lib/trace.mjs';
 import {
-  ANSWERS_FILE, MAX_ANSWERS_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
-  EXECUTOR_ROLE, agentBrackets, agentRows, isWaveRun, mapRun, mergeAnswers, noticeBracket, parseAnswers, parsePlanList, parseRun, parseWave, waveBrackets,
+  ANSWERS_FILE, JOURNAL_REFUSAL, MAX_ANSWERS_BYTES, MAX_JOURNAL_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
+  EXECUTOR_ROLE, agentBrackets, agentRows, isWaveRun, joinJournal, journalReturns, mapRun, mergeAnswers, noticeBracket, parseAnswers, parsePlanList, parseRun, parseWave, waveBrackets,
 } from '../lib/workflow-run.mjs';
 
 /** A provider's teed envelope is one JSON line, so this is generous. */
@@ -161,14 +162,26 @@ function cmdWorkflowRun(dir, opts) {
     if (!w.ok) return refuse(/** @type {string} */ (w.reason), w.detail, 'no outcome was handed back - the executors were billed, so read each plan\'s report and the run file another way');
     return ok({ phase: phase.raw, run_id: runId, plans: w.plans, restarted: w.restarted, brackets });
   }
+  const unclean = 'no payload was written - a run that did not complete cleanly is not a clean review, so rule this fire another way. Its agents were billed';
   const parsed = parseRun(runRead.text);
-  if (!parsed.ok) return refuse(/** @type {string} */ (parsed.reason), parsed.detail, 'no payload was written - a run that did not complete cleanly is not a clean review, so rule this fire another way. Its agents were billed');
+  if (!parsed.ok) return refuse(/** @type {string} */ (parsed.reason), parsed.detail, unclean);
+  // the findings and rulings are the journal's, beside the run file in the host's layout, named by the run file's own name (D-04)
+  const runFile = opts['run-file'];
+  const journal = join(dirname(dirname(runFile)), 'subagents', 'workflows', basename(runFile, '.json'), 'journal.jsonl');
+  let returns = new Map();
+  if (parsed.run.result.voices.some((/** @type {any} */ v) => v.ran)) {
+    const read = readCapped(journal, MAX_JOURNAL_BYTES);
+    if (read.text === null) return refuse(JOURNAL_REFUSAL, `the journal ${journal} ${read.why}`, unclean);
+    returns = journalReturns(read.text);
+  }
+  const joined = joinJournal(parsed.run, returns, journal);
+  if (!joined.ok) return refuse(/** @type {string} */ (joined.reason), joined.detail, unclean);
 
   const loaded = loadAnswers(outDir, opts['answers-file']);
   if (!loaded.ok) return refuse(/** @type {string} */ (loaded.reason), loaded.detail, 'nothing was written but the brackets - repair the answers and re-run');
   const answers = loaded.answers || [];
 
-  const mapped = mapRun(parsed.run, answers, readEnvelopes(parsed.run));
+  const mapped = mapRun(joined.run, answers, readEnvelopes(joined.run));
   if (!mapped.ok) return refuse(/** @type {string} */ (mapped.reason), mapped.detail, 'no payload was written - this run cannot be turned into a record. Its agents were billed');
 
   const files = {
