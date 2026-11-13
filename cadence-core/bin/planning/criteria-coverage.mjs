@@ -7,8 +7,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, ok, pluginVersion, read } from './core.mjs';
 import {
-  UAT_FIELDS_VERSION, classifyAcceptanceCriteria, parseRoadmapPhases, parseUat,
+  UAT_FIELDS_VERSION, classifyAcceptanceCriteria, parseUat,
 } from '../lib/planning-files.mjs';
+import { loadState, phaseListOf } from './state-import.mjs';
 
 // proves every criterion a phase declared reached that phase's checklist; `/cad-audit` folds this into its one verdict
 // a subcommand of its own, not an extension of `audit`: a criterion break has no requirement id to filter by milestone
@@ -48,7 +49,9 @@ function cmdCriteriaCoverage(dir) {
       + ' says which phases have criteria to cover');
   }
   // the same phase list cmdAudit walks, so there's one source of truth; milestone.md prunes finished phases from it
-  const roadmap = parseRoadmapPhases(roadmapText);
+  const state = loadState(dir);
+  if (!state) return;
+  const roadmap = phaseListOf(state);
 
   const phases = [];
   const breaks = [];

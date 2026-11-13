@@ -1,25 +1,29 @@
 // @ts-check
 // planning/renumber.mjs - `renumber`: phase insert/remove mechanics
+// the phases it renumbers are the state's; the list in ROADMAP.md is rendered from the state after the last move, so a
+// failed apply leaves the state holding the old numbering. The `Phase K` tokens and detail sections are text edits
 // two probes below are pinned by source in the tests: the nested one uses lstat, and the rm fallback waits on both
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import { fail, intFlag, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
-  atomicWrite, cutPhaseDetail, findProsePhaseRefs, nextNamesPhase,
-  parseRoadmapPhases, renderCursor, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
+  cutPhaseDetail, findProsePhaseRefs, nextNamesPhase,
+  parseRequirements, parseRoadmapPhases, shiftNextPhases, shiftPendingReqRows, shiftPhaseTokens,
 } from '../lib/planning-files.mjs';
-import { parseCursor } from '../lib/state-cursor.mjs';
+import { atomicWrite, movePath, removeTree } from '../lib/planning-store.mjs';
+import { renderTraceability } from '../lib/state-views.mjs';
+import { changeState, loadState, phaseListOf, withPhases } from './state-import.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 // structured edits are automated, lowercase prose refs are reported for the model; --dry-run touches nothing
 // REQUIREMENTS.md tokens shift only on Pending `## Traceability` rows; every other line is copied byte-identical
 function gitMv(from, to) {
   try { execFileSync('git', ['mv', from, to], { stdio: 'pipe' }); return 'git'; }
-  catch { renameSync(from, to); return 'fs'; }
+  catch { movePath(from, to); return 'fs'; }
 }
 
 /**
@@ -97,12 +101,13 @@ function cmdRenumber(dir, sub, opts) {
       'point --dir at the .planning/ directory that holds ROADMAP.md - renumbering is computed FROM'
       + ' the roadmap, so there is nothing to renumber against without it');
   }
-  const phases = parseRoadmapPhases(roadmapText);
+  // the phases are the state's: a line added to the list by hand is not a phase, and one taken out is not a removal
+  const state = loadState(dir);
+  if (!state) return;
+  const phases = phaseListOf(state);
   if (!phases.length) {
-    return fail('unparseable-roadmap', 'no phase lines under ## Phases',
-      'give ROADMAP.md at least one phase line spelled'
-      + ' `- [ ] **Phase <n>: <name>** - <description>` under `## Phases`, then re-run - nothing was'
-      + ' moved');
+    return fail('unparseable-roadmap', 'the project has no phases to renumber',
+      'add a phase to the project first (/cad-phase add), then re-run - nothing was moved');
   }
   const total = phases.length;
   // dir-move ceiling is integer phases only: a decimal ceiling would walk fractional ks past every integer dir (#36)
@@ -124,8 +129,8 @@ function cmdRenumber(dir, sub, opts) {
       + ' nothing was moved');
   }
   if (sub === 'remove' && !phases.some((p) => p.n === at)) {
-    return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`,
-      "re-run with a phase number that appears in ROADMAP.md's `## Phases` list; nothing was"
+    return fail('unknown-phase', `phase ${at} is not in the project's phase list`,
+      "re-run with a phase number that appears in the `## Phases` list of ROADMAP.md; nothing was"
       + ' moved');
   }
 
@@ -192,30 +197,45 @@ function cmdRenumber(dir, sub, opts) {
   let movedComplete = [];
   /** @type {Array<{line: number, text: string}> | null} */
   let reqRefs = null;
-  let newReqText = null;
+  /** @type {Array<{id: string, phase: number | null, status: string}> | null} */
+  let newReqs = null;
   if (reqText !== null) {
+    // the rows are the state's: the shift runs over the table as the state renders it, so a hand edit to a row is not
+    // moved, and the state takes the shifted rows back
     // both ops leave shipped history alone (GH-259, GH-301): only Pending Traceability rows move or get blanked
-    ({ text: newReqText, changes: reqRowChanges, movedComplete, refs: reqRefs, orphans: orphanedReqs } =
-      shiftPendingReqRows(reqText, at, delta));
+    const shown = renderTraceability(state, reqText);
+    const base = shown.missing ? reqText : shown.text;
+    const shifted = shiftPendingReqRows(base, at, delta);
+    ({ movedComplete, refs: reqRefs, orphans: orphanedReqs } = shifted);
+    reqRowChanges = shifted.changes;
+    if (!shown.missing) {
+      newReqs = parseRequirements(shifted.text);
+      // each changed row as the regenerated file shows it, which is the form the renderer writes
+      const after = renderTraceability({ ...state, requirements: newReqs }, reqText).text.split('\n');
+      const bare = (/** @type {string} */ l) => l.replace(/\r$/, '');
+      reqRowChanges = base.split('\n').flatMap((before, i) => (before === after[i]
+        ? [] : [{ line: i + 1, before: bare(before), after: bare(after[i]) }]));
+    }
   }
 
-  const stateFile = join(dir, 'STATE.md');
-  const stateText = read(stateFile);
-  const cursor = parseCursor(stateText || '');
+  // the cursor it re-points is the state's; STATE.md is rendered from the state afterwards, never read
+  const cursor = state.cursor;
   let newCursor = null;
   let warn;
+  // one rule for the report here and for the write under the lock, which applies it to the cursor it finds then
+  // `Next:` keeps naming the same work, so its phase numbers shift by the same rule, a decimal cursor too
+  // the number only shifts for an integer cursor: a decimal cursor's own token and dir never shift. total still moves
+  const shiftCursor = (c) => ({
+    ...c,
+    next: shiftNextPhases(c.next, shiftFrom, delta),
+    ...(c.phase >= shiftFrom && Number.isInteger(c.phase) ? { phase: c.phase + delta } : {}),
+  });
   if (cursor) {
-    // `Next:` keeps naming the same work, so its phase numbers shift by the same rule, a decimal cursor too
-    newCursor = { ...cursor, total: total + delta, next: shiftNextPhases(cursor.next, shiftFrom, delta) };
-    // the number only shifts for an integer cursor: a decimal cursor's own token and dir never shift. total still moves
-    if (cursor.phase >= shiftFrom) {
-      if (Number.isInteger(cursor.phase)) {
-        newCursor.phase = cursor.phase + delta;
-      } else {
-        warn = `cursor sits on decimal phase ${cursor.phase}, which renumber ` +
-          `never shifts (its ROADMAP token and phases/${cursor.phase}/ did not ` +
-          `move either); total is now ${total + delta} - re-point it (cursor set)`;
-      }
+    newCursor = shiftCursor(cursor);
+    if (cursor.phase >= shiftFrom && !Number.isInteger(cursor.phase)) {
+      warn = `cursor sits on decimal phase ${cursor.phase}, which renumber ` +
+        `never shifts (its ROADMAP token and phases/${cursor.phase}/ did not ` +
+        `move either); total is now ${total + delta} - re-point it (cursor set)`;
     }
     if (sub === 'remove' && cursor.phase === at) {
       warn = `cursor points at removed phase ${at}; number left as-is - re-point it (cursor set)`;
@@ -231,16 +251,16 @@ function cmdRenumber(dir, sub, opts) {
     const completeWarn = sub === 'insert'
       ? `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this ` +
         'insert moves and were left unchanged, so each may now name a different phase than the one ' +
-        'it shipped in - re-point a row by hand only if it belongs to the open milestone'
+        'it shipped in - re-point a row with req-row --id <id> --phase <N> only if it belongs to the open milestone'
       : `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this remove deletes ` +
         'or renumbers and were left unchanged, so each may now name a missing or different phase - ' +
-        're-point a row by hand only if it belongs to the open milestone';
+        're-point a row with req-row --id <id> --phase <N> only if it belongs to the open milestone';
     warn = warn ? `${warn}; ${completeWarn}` : completeWarn;
   }
 
   // prose refs the shift leaves alone are for the model to repair; REQUIREMENTS refs come from the pass above
   const inTextRefs = [];
-  const readEarlier = { 'ROADMAP.md': roadmapText, 'REQUIREMENTS.md': reqText, 'STATE.md': stateText };
+  const readEarlier = { 'ROADMAP.md': roadmapText, 'REQUIREMENTS.md': reqText };
   for (const f of ['ROADMAP.md', 'REQUIREMENTS.md', 'STATE.md', 'PROJECT.md']) {
     const t = f in readEarlier ? readEarlier[f] : read(join(dir, f));
     if (t === null) continue;
@@ -256,7 +276,7 @@ function cmdRenumber(dir, sub, opts) {
     ...(sub === 'remove' && existingDir(at) ? [{ rm: `phases/${at}` }] : []),
     { edit: 'ROADMAP.md', changes: roadmapShift.count + (sub === 'remove' ? 1 : 0) },
     // both ops count changed lines, same as req_row_changes below
-    ...(newReqText !== null ? [{ edit: 'REQUIREMENTS.md', changes: reqRowChanges.length }] : []),
+    ...(reqText !== null ? [{ edit: 'REQUIREMENTS.md', changes: reqRowChanges.length }] : []),
     ...(newCursor ? [{ edit: 'STATE.md', changes: 1 }] : []),
   ];
 
@@ -268,7 +288,7 @@ function cmdRenumber(dir, sub, opts) {
     ...(orphanedReqs.length ? { orphaned_reqs: orphanedReqs } : {}),
     ...(decimalPhases.length ? { decimal_phases: decimalPhases } : {}),
     ...(warn ? { warn } : {}),
-    ...(sub === 'insert' ? { slot: `add the new "- [ ] **Phase ${at}: ...**" line and its detail section` } : {}),
+    ...(sub === 'insert' ? { slot: `fill phase ${at} with \`phase-entry add --phase ${at} --name <name> --description <one line>\`, then hand-write its "### Phase ${at}:" detail section` } : {}),
   };
   if ('dry-run' in opts) return ok({ dry_run: true, ...result });
 
@@ -289,7 +309,7 @@ function cmdRenumber(dir, sub, opts) {
           // worded to what is known: a failed `git rm` proves the git state went unread, nothing stronger
           throw new Error(`git rm -r failed for phases/${at} and a git repository sits at, above or inside it, so the git state this delete depends on is unread - refusing the recursive fallback, since the object store may hold the only copy; run \`git rm -r -- .planning/phases/${at}\` from the repository to see git's own answer`);
         }
-        rmSync(target, { recursive: true });
+        removeTree(target);
       }
     }]);
   }
@@ -298,8 +318,25 @@ function cmdRenumber(dir, sub, opts) {
       () => gitMv(join(dir, 'phases', String(f)), join(dir, 'phases', String(t)))]);
   }
   steps.push([{ edit: 'ROADMAP.md' }, () => atomicWrite(roadmapFile, newRoadmap)]);
-  if (newReqText !== null) steps.push([{ edit: 'REQUIREMENTS.md' }, () => atomicWrite(reqFile, newReqText)]);
-  if (newCursor) steps.push([{ edit: 'STATE.md' }, () => atomicWrite(stateFile, renderCursor(newCursor))]);
+  // last: the state takes the renumbered phases and cursor, then the list in ROADMAP.md and STATE.md are rendered from it
+  // the shifted text above already shows the new numbers, so a render keeps those lines as they are
+  steps.push([newCursor ? { edit: 'STATE.md' } : { edit: 'state.json' }, () => {
+    // applied to the state as the lock finds it, never to the snapshot read at the top: a phase, cursor or row another seam
+    // committed while the directories moved is shifted, not overwritten
+    changeState(dir, (s) => {
+      const renumbered = s.phases
+        .filter((p) => !(sub === 'remove' && p.n === at))
+        .map((p) => (Number.isInteger(p.n) && p.n >= shiftFrom ? { ...p, n: p.n + delta } : p));
+      let requirements = s.requirements;
+      if (reqText !== null) {
+        const shown = renderTraceability(s, reqText);
+        if (!shown.missing) requirements = parseRequirements(shiftPendingReqRows(shown.text, at, delta).text);
+      }
+      return { ...withPhases(s, renumbered), cursor: s.cursor ? shiftCursor(s.cursor) : s.cursor, requirements };
+    }, ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md'], {
+      onFail: (res) => { throw new Error(`the state file was ${res.stateWritten ? 'written, the generated files were not' : 'not written'}: ${res.reason} - ${res.detail}`); },
+    });
+  }]);
 
   // stop at the first throw: once a step fails the tree no longer matches the plan, and running on would compound it
   const applied = runTransition({ steps, discipline: 'stop-at-first-failure' });
@@ -311,7 +348,7 @@ function cmdRenumber(dir, sub, opts) {
       detail: e && e.message ? e.message : String(e),
       // deliberately no "re-run": it recomputes from a half-applied tree and, on a remove, rm's the next phase's work
       hint: applied.completed.length
-        ? 'the tree is partly renumbered and no longer matches ROADMAP - reconcile the completed ops by hand before any further renumber; re-running this command against the half-applied tree can destroy a phase directory'
+        ? 'the tree is partly renumbered - reverse the completed directory moves and text edits before any further renumber, and never the phase list, the traceability table or STATE.md, which are rendered from the state file; it still holds the old numbering unless the detail says it was written; re-running this command against the half-applied tree can destroy a phase directory'
         : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
     });
   }

@@ -417,7 +417,8 @@ Hold its envelope's `cursor` for `done`: the position is composed from it.
 If `planning.commit_docs` - the value read in the `spend_gate` batch, never
 re-read here - is true: apply the protected-branch guard
 (references/git-guard.md rail 1 - context is the first act of a phase), then
-commit exactly `{phase_dir}/CONTEXT.md`, `.planning/STATE.md`, and - only
+commit exactly `{phase_dir}/CONTEXT.md`,
+`.planning/STATE.md`, `.planning/records/state.json`, and - only
 when the requirement-wording-drift step edited it - `.planning/REQUIREMENTS.md`:
 `docs: capture context for phase {N}`. Nothing this workflow wrote may be
 left dirty.

@@ -311,6 +311,8 @@ export const CONTRACTS = {
     'seed-reqs': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
+    // no flags of its own: it rebuilds the state file of the planning directory --dir names
+    'state-rebuild': {},
     // --plan-time is the same operation asked before an executor runs, against the plan's declared lease and the
     // census registry, not after the fact against the staged set. A flag, not a second word. --plan stays required on
     // both arms, since neither can resolve a plan file without it.
@@ -426,6 +428,10 @@ export const CONTRACTS = {
       '--task': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       // the correction face: marks survivor <n> re-ruled, the payload then being {ruling, found} and not the survivors
       '--mark': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
+    // makes phases/<N>/records/ (or the carried queue's) when absent; nothing else, and a linked folder is refused
+    'records-dir': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
     // A finished review-panel run to the record's payload and the review file's input. --run-file is the host's
     // `<session>/workflows/<run id>.json`, read whole because the completion notice cuts a long result short. --out-dir is
@@ -628,6 +634,27 @@ export const CONTRACTS = {
     'renumber remove': {
       '--n': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
       '--dry-run': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
+    // name and description are caller text, so each has a -file form; add needs both, edit at least one, the seam says which
+    'phase-entry add': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--name': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--name-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--description': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--description-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'phase-entry edit': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--name': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--name-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--description': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--description-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    // exactly one of --phase and --defer per call, which a row can't state, so the seam refuses neither-or-both
+    'req-row': {
+      '--id': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--defer': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
   },
   'config.mjs': {
@@ -869,6 +896,28 @@ export const CONTRACTS = {
     },
     '': {
       '--top': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
+  },
+  // skill-preload-proof.mjs takes no subcommand; --out is the only way it writes a result, the stored file included
+  'skill-preload-proof.mjs': {
+    '*': {},
+    '': {
+      '--out': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+  },
+  // agent-files.mjs takes no subcommand; --root points it at another tree, which the tests need
+  'agent-files.mjs': {
+    '*': {},
+    '': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+  },
+  // executor-counts.mjs takes no subcommand and reads the two files these name; neither has a default
+  'executor-counts.mjs': {
+    '*': {},
+    '': {
+      '--transcript': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--trace': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },
   },
 };

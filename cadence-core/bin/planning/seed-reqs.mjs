@@ -1,14 +1,15 @@
 // @ts-check
-// planning/seed-reqs.mjs - `seed-reqs`: the Traceability rows a phase's plans declare, inserted as /cad-plan writes
+// planning/seed-reqs.mjs - `seed-reqs`: the Traceability rows a phase's plans declare, added to the state as /cad-plan writes
+// the table in REQUIREMENTS.md is rendered from the state; `## Active` is still read from the file
 'use strict';
 
 import { join } from 'node:path';
 import { fail, ok, phaseSpellingRefusal, read } from './core.mjs';
-import {
-  atomicWrite, insertReqRows, parseActiveIds, readFrontmatterList,
-} from '../lib/planning-files.mjs';
+import { parseActiveIds, readFrontmatterList } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { planFilesIn } from '../lib/phase-plans.mjs';
+import { renderTraceability } from '../lib/state-views.mjs';
+import { changeState, foldPhase, loadState } from './state-import.mjs';
 
 // bounded by ## Active, called by /cad-plan where the plan is written: the Traceability table had no write path before
 function cmdSeedReqs(dir, opts) {
@@ -69,13 +70,35 @@ function cmdSeedReqs(dir, opts) {
     else orphanIds.push(id);
   }
 
-  const res = insertReqRows(reqText, rows);
-  if (res.error) {
+  // the table is rendered into its heading, so a missing heading or table is the refusal it always was, before any write
+  const state = loadState(dir);
+  if (!state) return;
+  if (renderTraceability(state, reqText).missing) {
     return fail('no-traceability-table', `${reqFile} has no "## Traceability" table with a header separator`,
       'add a `## Traceability` heading to REQUIREMENTS.md with a markdown table under it - a header'
       + ' row and its `| --- |` separator - then re-run; nothing was written');
   }
-  if (res.inserted.length) atomicWrite(reqFile, res.text);
+  // judged against the state under the lock, so a second seed of the same id sees what the first one added
+  let res = { inserted: [], skipped: [], mismatched: [] };
+  const done = changeState(dir, (s) => {
+    // an id the state already holds is skipped, and mismatched when its phase differs (a stale renumber)
+    const held = new Map(s.requirements.map((r) => [r.id, r]));
+    res = { inserted: [], skipped: [], mismatched: [] };
+    const added = [];
+    for (const { id, phase } of rows) {
+      const row = held.get(id);
+      if (row) {
+        res.skipped.push(id);
+        if (row.phase !== phase) res.mismatched.push({ id, row_phase: row.phase });
+      } else {
+        res.inserted.push(id);
+        // Pending is a literal, so no writer but cad-verify can create any other Status
+        added.push({ id, phase, status: 'Pending' });
+      }
+    }
+    return { ...foldPhase(dir, s, n), requirements: [...s.requirements, ...added] };
+  }, ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md']);
+  if (!done) return;
 
   // seeded and skipped are always present, even empty: a step that failed twice by writing nothing must say so
   ok({

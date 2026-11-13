@@ -6,7 +6,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve as resolvePath } from 'node:path';
+import { basename, dirname, join, relative, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS } from '../lib/arg-contract.mjs';
@@ -15,10 +15,12 @@ import { entryFile, moduleState, partition } from '../lib/codemap-partition.mjs'
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
-import { parseUat, planName, uatComplete } from '../lib/planning-files.mjs';
+import { classifyPhaseList, parseRequirements, parseUat, uatComplete } from '../lib/planning-files.mjs';
+import { codemapDir, deferredDir, phaseRecordsDir, phaseReportsDir, recordsPath } from '../lib/planning-store.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
+import { parseCursor } from '../lib/state-cursor.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { manifestPath } from '../lib/test-seam.mjs';
 import { isPlainObject } from '../lib/text-util.mjs';
@@ -257,31 +259,53 @@ function readPlanReports(pdir, plans) {
   return plans.map((plan) => {
     const k = planNumber(plan);
     // the exact filename, never a plan-*.md glob: report-rotation mints plan-<k>.<n>.md siblings an old one would win
-    const report = join('reports', `plan-${k}.md`);
+    const report = relative(pdir, join(phaseReportsDir(pdir), `plan-${k}.md`));
     const status = firstLine(read(join(pdir, report)));
     return { plan, k, report, exists: status !== null, status,
       complete: status === 'PLAN COMPLETE' };
   });
 }
 
-// where one phase's plans stand: the plan to run next, by position
-// K is the lowest plan number whose report isn't complete, not the first list entry, which may be a complete one: listPlanFiles lists in plan-number order
-// J is the count of conforming plans, and the name comes from planName and is left off when the heading gives none
-// null when the dir is missing, has no plan or every plan is complete; `cursor set` and `status` share it
-// @param {string} pdir the phase directory
-// @param {ReturnType<typeof readPlanReports>} [reports] the phase's plan reports when the caller already read them: one per conforming plan, so `status` reads each once
-// @returns {{k: number, j: number, name?: string}|null}
-function planPosition(pdir, reports) {
-  const all = reports ?? readPlanReports(pdir, listPlanFiles(pdir).plans);
-  const next = all.filter((r) => !r.complete)
-    .sort((a, b) => a.k - b.k)[0];
-  if (!next) return null;
-  const name = planName(read(join(pdir, next.plan)) ?? '');
-  return { k: next.k, j: all.length, ...(name ? { name } : {}) };
+/**
+ * What the Markdown and the phase folders say about a planning directory, read once: the roadmap classified, the phases
+ * derived from their artifacts, each phase's plan reports, the requirement rows and the cursor. The state importer is the
+ * one caller now: `status` reads the state file, and this is the derivation that builds it. It decides nothing about the directory itself; the caller owns
+ * `no-planning-dir`, and a missing ROADMAP.md comes back as `{missing: true}` for each caller to answer its own way.
+ * A roadmap that can't be parsed is `{refusal}` carrying the reason, detail, hint and (out of grammar) the issues.
+ * `reqRows` is null when there is no REQUIREMENTS.md and `cursor` null when STATE.md is missing or off-grammar.
+ * @param {string} dir the planning directory
+ */
+function readProject(dir) {
+  const roadmapText = read(join(dir, 'ROADMAP.md'));
+  if (roadmapText === null) return { missing: true };
+  // an empty section is a derived closed milestone, not a parse failure
+  const classified = classifyPhaseList(roadmapText);
+  if (classified.state === 'no-section') {
+    return { refusal: { reason: 'unparseable-roadmap', detail: 'no `## Phases` section in ROADMAP.md',
+      hint: 'add a `## Phases` heading to ROADMAP.md, outside any code fence - a closed milestone'
+        + ' is that heading with nothing under it, never a missing heading' } };
+  }
+  if (classified.state === 'out-of-grammar') {
+    const first = classified.issues[0];
+    return { refusal: { reason: 'unparseable-roadmap', detail: `line ${first.line}: ${first.text}`,
+      issues: classified.issues,
+      hint: 'rewrite each line listed in `issues` as `- [ ] **Phase <n>: <name>** - <description>`'
+        + ' under `## Phases`, or move it out of that section' } };
+  }
+  const derived = derivePhases(dir, classified.phases);
+  // each phase's reports are read once; the dir resolves through String(p.n) as derivePhases does
+  const reportsOf = derived.map((p) => readPlanReports(join(dir, 'phases', String(p.n)), p.plans));
+  const reqText = read(join(dir, 'REQUIREMENTS.md'));
+  const cursorText = read(join(dir, 'STATE.md'));
+  return {
+    closed: classified.state === 'closed', derived, reportsOf,
+    reqRows: reqText !== null ? parseRequirements(reqText) : null,
+    cursor: cursorText !== null ? parseCursor(cursorText) : null,
+  };
 }
 
 /**
- * The one `.planning/reads.jsonl` parse, shared by `cmdReads` and `trace suggest`, so the partial-tail rule lives once.
+ * The one `.planning/records/reads.jsonl` parse, shared by `cmdReads` and `trace suggest`, so the partial-tail rule lives once.
  * It reports `absent` and `unreadable` apart and decides nothing: `reads` fails on unreadable, `trace suggest` warns.
  * The rotation marker is dropped and reported as `rotated`, or it bills as a call and shows up as a phantom read.
  * @param {string} dir the planning directory
@@ -289,7 +313,7 @@ function planPosition(pdir, reports) {
  *   rotated?: {file: string, ts: string}}}
  */
 function readReadsRecords(dir) {
-  const file = join(dir, READS_FILE);
+  const file = recordsPath(dir, READS_FILE);
   let text;
   try {
     text = readFileSync(file, 'utf8');
@@ -579,8 +603,9 @@ function realDir(dir, name) {
 
 /**
  * The directory a fire's artifact is written into, or null once the refusal is out.
- * It sits beside the sibling REVIEW file, never in `<plandir>/reports/`, where lease-check exempts only one path.
- * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/`, then `deferred/<N>/`.
+ * It sits beside the sibling REVIEW file, never in `<plandir>/records/reports/`, where lease-check exempts only one path.
+ * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/records/`, then the carried queue's `<N>/`.
+ * The phase must exist; its records folder need not, and nothing is created here: the writer makes it on its first write.
  * @param {string} dir @param {string} n the phase as the caller spelled it
  * @param {string} what the artifact, for the refusal's wording
  * @param {string} [task] the task slug, when this fire is a task's
@@ -603,15 +628,27 @@ function fireHome(dir, n, what, task) {
       + 'gate there is settled by the user rather than recorded here');
     return null;
   }
-  for (const home of QUEUE_HOMES) {
-    if (!realDir(dir, home)) continue;
-    const hdir = join(dir, home, String(n));
+  for (const home of queueHomes(dir)) {
+    if (!realChain(dir, home.rel)) continue;
+    const hdir = join(home.path, String(n));
     let hstat = null;
     try { hstat = lstatSync(hdir); } catch { /* absent is the answer, never a throw */ }
-    if (hstat && hstat.isDirectory()) return hdir;
+    if (!hstat || !hstat.isDirectory()) continue;
+    if (!home.inner) return hdir;
+    // the phase's records folder is made by the writer on its first write; one that is already there must be real,
+    // since a link would carry the file out of the tree
+    const rdir = phaseRecordsDir(hdir);
+    let rstat = null;
+    try { rstat = lstatSync(rdir); } catch { /* not made yet */ }
+    if (rstat && !rstat.isDirectory()) {
+      fail('records-unusable', notRealDirDetail(`${home.rel}/${n}/${home.inner}/`, rstat, 'a write'),
+        'clear that path and re-run - nothing was written');
+      return null;
+    }
+    return rdir;
   }
   fail('no-phase-dir',
-    `neither phases/${n}/ nor deferred/${n}/ is a directory under ${dir} - the ${what} is `
+    `neither phases/${n}/ nor ${DEFERRED_REL}/${n}/ is a directory under ${dir} - the ${what} is `
     + 'written BESIDE the sibling REVIEW file, or beside the queue member a milestone close '
     + 'carried out of that phase, so one of the two has to exist already',
     `check the --phase spelling first - it addresses phases/${n}/ verbatim. If the milestone close `
@@ -699,8 +736,38 @@ function fireTargetTaken(dir, file, round, kind) {
   return true;
 }
 
-/** The two directories under `.planning/` a queue member may live in. */
-const QUEUE_HOMES = ['phases', 'deferred'];
+/** A planning-relative path with forward slashes, the way an answer names a directory. */
+const posixRel = (/** @type {string} */ p) => relative('.', p).split(sep).join('/');
+
+/** Where the carried queue lives, relative to the planning directory (the write module decides). */
+const DEFERRED_REL = posixRel(deferredDir('.'));
+
+/** Where a phase keeps its records, relative to the phase directory (the write module decides). */
+const PHASE_RECORDS_REL = posixRel(phaseRecordsDir('.'));
+
+/**
+ * The two directories a queue member may live in: `rel` is how an answer names it, `path` where it is on disk.
+ * Each holds one directory per phase; `inner` is the folder inside a phase's directory that holds its members, empty
+ * for the carried queue, whose phase directory holds them directly.
+ * @param {string} dir the planning directory
+ * @returns {{rel: string, path: string, inner: string}[]}
+ */
+function queueHomes(dir) {
+  return [{ rel: 'phases', path: join(dir, 'phases'), inner: PHASE_RECORDS_REL },
+    { rel: DEFERRED_REL, path: deferredDir(dir), inner: '' }];
+}
+
+/** Is every component of `rel` under `dir` a real directory? lstat follows all but the last, so each is asked. */
+function realChain(/** @type {string} */ dir, /** @type {string} */ rel) {
+  let at = dir;
+  for (const part of rel.split('/')) {
+    at = join(at, part);
+    let stat = null;
+    try { stat = lstatSync(at); } catch { return false; }
+    if (!stat.isDirectory()) return false;
+  }
+  return true;
+}
 
 /**
  * Every unadjudicated queue member under dir, and everything in the two homes that couldn't be proven to hold none.
@@ -720,17 +787,17 @@ function readQueue(dir, wantPhase) {
   // redactUrl on every message: a land refusal prints these, and they can carry a path nobody wants published
   const why = (/** @type {any} */ e) => redactUrl(e && e.message ? e.message : String(e));
 
-  for (const home of QUEUE_HOMES) {
+  for (const home of queueHomes(dir)) {
     let entries;
-    try { entries = readdirSync(join(dir, home), { withFileTypes: true }); } catch (e) {
-      // ENOENT is absence (`deferred/` only exists once a close carried something); anything else might hide a queue
+    try { entries = readdirSync(home.path, { withFileTypes: true }); } catch (e) {
+      // ENOENT is absence (the carried queue only exists once a close carried something); anything else might hide one
       if (e && /** @type {any} */ (e).code === 'ENOENT') continue;
-      unreadable.push({ path: `${home}/`, detail: why(e) });
+      unreadable.push({ path: `${home.rel}/`, detail: why(e) });
       continue;
     }
     for (const ent of entries) {
       if (wantPhase !== null && ent.name !== wantPhase) continue;
-      const rel = `${home}/${ent.name}`;
+      const rel = `${home.rel}/${ent.name}`;
       // withFileTypes classifies the link, not its target: a symlink where a phase directory belongs is refused
       if (ent.isSymbolicLink()) {
         unreadable.push({ path: rel, detail: 'a symlink where a phase directory should be - not followed' });
@@ -738,17 +805,34 @@ function readQueue(dir, wantPhase) {
       }
       // a regular file here holds no queue member, only a directory can
       if (!ent.isDirectory()) continue;
-      const pdir = join(dir, home, ent.name);
+      const pdir = home.inner ? join(home.path, ent.name, home.inner) : join(home.path, ent.name);
+      const where = home.inner ? `${rel}/${home.inner}` : rel;
+      // readdirSync follows a link, so the records folder is asked first: one link there would list files from outside the tree
+      if (home.inner) {
+        let istat = null;
+        try { istat = lstatSync(pdir); } catch (e) {
+          // a phase that wrote no record has no records folder, which is absence and not a fault
+          if (e && /** @type {any} */ (e).code === 'ENOENT') continue;
+          unreadable.push({ path: where, detail: why(e) });
+          continue;
+        }
+        if (!istat.isDirectory()) {
+          unreadable.push({ path: where, detail: 'a symlink or file where the records folder should be - not followed' });
+          continue;
+        }
+      }
       /** @type {string[]} */
       let names;
       try { names = readdirSync(pdir); } catch (e) {
-        unreadable.push({ path: rel, detail: why(e) });
+        // a phase that wrote no record has no records folder, which is absence and not a fault
+        if (home.inner && e && /** @type {any} */ (e).code === 'ENOENT') continue;
+        unreadable.push({ path: where, detail: why(e) });
         continue;
       }
       const present = new Set(names);
       for (const name of names) {
         if (!isQueueName(name)) continue;
-        const path = `${rel}/${name}`;
+        const path = `${where}/${name}`;
         const file = join(pdir, name);
         let stat = null;
         try { stat = lstatSync(file); } catch (e) {
@@ -771,7 +855,7 @@ function readQueue(dir, wantPhase) {
         }
         // a member's phase must match its directory, or a hand move makes --phase narrow to a phase it doesn't claim
         if (id.phase !== ent.name) {
-          unreadable.push({ path, detail: `queue member says phase ${id.phase} but sits in ${rel}/` });
+          unreadable.push({ path, detail: `queue member says phase ${id.phase} but sits in ${where}/` });
           continue;
         }
         // supersession is one filename comparison, regular files only, or a link to anything could clear a queue
@@ -832,10 +916,11 @@ function flagSentence(flag, spec) {
  * @param {string} key @param {string|undefined} raw @returns {string}
  */
 function decimalRefusal(key, raw) {
-  return key.startsWith('renumber ') && typeof raw === 'string'
-    && raw.includes('.') && requirePhaseArg(raw).ok
-    ? 'renumber operates on integer phases; re-place decimal phases by hand'
-    : '';
+  if (!key.startsWith('renumber ') || typeof raw !== 'string' || !raw.includes('.') || !requirePhaseArg(raw).ok) return '';
+  // no seam removes a decimal phase, so remove names no command - only that it wrote nothing
+  return key === 'renumber insert'
+    ? 'renumber operates on integer phases; a decimal phase goes in with phase-entry add --phase N.M'
+    : 'renumber operates on integer phases; refused, nothing was written';
 }
 
 /**
@@ -857,7 +942,8 @@ function argRefusal(key, flag) {
   return `${global ? '' : `${key} `}${flag} ${flagSentence(flag, spec)}`;
 }
 
-const MAP_DIR = 'codemap';
+/** The code map's folder name under the records directory, for the display paths an answer carries. */
+const MAP_REL = posixRel(codemapDir('.'));
 const INDEX_FILE = 'index.json';
 
 // the index holds a row per tracked path and its symbols, so a big repository writes a big one. Measured on a file of
@@ -965,7 +1051,7 @@ function noticeTotals(opts, seam) {
  */
 function readStoredMap(dir) {
   const root = dirname(resolvePath(dir));
-  const map = join(dir, MAP_DIR);
+  const map = codemapDir(dir);
   let real = false;
   try { real = lstatSync(map).isDirectory(); } catch { /* no map yet */ }
   const { index, tooLarge } = real ? storedIndex(map) : { index: null, tooLarge: false };
@@ -1001,7 +1087,7 @@ function readStoredMap(dir) {
     states.set(m.name, state);
     if (entry && (state === 'built' || state === 'stale')) entries.set(m.name, entry);
   }
-  const base = `${basename(resolvePath(dir))}/${MAP_DIR}`;
+  const base = `${basename(resolvePath(dir))}/${MAP_REL}`;
   /** @type {{edges_shed?: true, symbols_shed?: true}} */
   const marks = { ...(index.edges_shed === true ? { edges_shed: true } : {}), ...(index.symbols_shed === true ? { symbols_shed: true } : {}) };
   return { index, states, entries, entryPath: (name) => `${base}/${entryFile(name)}`, current: new Set(current.map((r) => r.path)), marks };
@@ -1015,11 +1101,10 @@ export {
   HERE,
   INDEX_FILE,
   MANIFEST_PATH,
-  MAP_DIR,
+  MAP_REL,
   MAX_ENTRY,
   MAX_INDEX,
   PHASE_DIR_NAME,
-  QUEUE_HOMES,
   RECORD_TOKEN,
   RISK_DIFF_MAX_BUFFER,
   argRefusal,
@@ -1049,7 +1134,7 @@ export {
   readEntry,
   readJsonPayload,
   readPlanReports,
-  planPosition,
+  readProject,
   readQueue,
   readReadsRecords,
   readStoredMap,

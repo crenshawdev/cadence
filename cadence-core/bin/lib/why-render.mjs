@@ -7,7 +7,9 @@
 // the truncation note and exclusion block live inside text because the skill relays text verbatim
 'use strict';
 
+import { sep } from 'node:path';
 import { MARKER_GAP } from './why-record.mjs';
+import { archivePath } from './planning-store.mjs';
 
 /** The default entry cap; the MEASURED CAP line in the header is pinned to this number by why-render.test.mjs. */
 export const DEFAULT_TOP = 6;
@@ -83,7 +85,7 @@ function gapLines(g) {
     lines.push('git records no paths touched by this commit');
   }
   if (g.archive && g.archive.length) {
-    lines.push(`.planning/ARCHIVE.md keeps ${g.archive.length} residue row(s) under that label, `
+    lines.push(`${archivePath('.planning').split(sep).join('/')} keeps ${g.archive.length} residue row(s) under that label, `
       + 'bound to the label and to no commit (D-04):',
     ...capped(g.archive.map((/** @type {any} */ r) => `${r.origin}: ${r.text}`), GAP_ROWS));
   }

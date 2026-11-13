@@ -8,12 +8,13 @@
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { within } from './contained.mjs';
 
 import { recordName } from './adjudication-record.mjs';
 import { phaseDirsIn } from './phase-plans.mjs';
 import { parseArchiveRows } from './planning-files.mjs';
+import { archivePath, phaseRecordsDir } from './planning-store.mjs';
 import { RECORD_FILE, TASKS_DIR, taskRecordsIn } from './task-record.mjs';
 import { parseAdjudication, parseCommitRows, shaMatches } from './why-record.mjs';
 
@@ -246,6 +247,9 @@ const ADJ_PREFIX = NAME_PROBE.slice(0, NAME_PROBE.indexOf('TRIGGER'));
 /** Everything it puts after the discriminator. */
 const ADJ_SUFFIX = NAME_PROBE.slice(NAME_PROBE.indexOf('DISCRIMINATOR') + 'DISCRIMINATOR'.length);
 
+/** The folder under a phase that holds its records (the write module decides). */
+const PHASE_RECORDS_SUB = phaseRecordsDir('.');
+
 /** A commit id as git may safely be handed one: hexadecimal, nothing else. */
 const COMMIT_ID = /^[0-9a-fA-F]{4,40}$/;
 
@@ -263,40 +267,53 @@ export function readAdjudications(dir, repoDir) {
   const records = [];
   if (!dir) return { records, warnings };
   const pull = artifactReader(dir, repoDir, warnings);
-  for (const name of listRecordNames(dir, repoDir)) {
+  const listed = listRecordNames(dir, repoDir);
+  for (const name of listed.names) {
     // the name came from a listing; an empty read means the reader already warned, and that's the whole answer
     const before = warnings.length;
-    const text = pull(name);
+    const shown = listed.sub ? `${listed.sub}/${name}` : name;
+    const text = pull(shown);
     if (warnings.length > before) continue;
     const parsed = parseAdjudication(text);
-    for (const issue of parsed.issues) warnings.push(`${dir.label}/${name}: ${issue}`);
+    for (const issue of parsed.issues) warnings.push(`${dir.label}/${shown}: ${issue}`);
     records.push({ ...parsed, name });
   }
   return { records, warnings };
 }
 
 /**
- * The adjudication record names in one phase directory, sorted, from whichever source holds it. The recovered
- * side lists the tree, since the `ADJUDICATION-<trigger>-<discriminator>[-rN].json` discriminator can't be guessed.
- * @param {any} dir @param {string|undefined} repoDir @returns {string[]}
+ * The adjudication record names in one phase directory, sorted, from whichever source holds it, and the folder under
+ * the phase they were listed in. The recovered side lists the tree, since the
+ * `ADJUDICATION-<trigger>-<discriminator>[-rN].json` discriminator can't be guessed.
+ * A disk phase keeps them in its records folder. A recovered tree that has a records folder is read there; one that
+ * has none predates the layout and is read at its top, since a commit already made cannot be converted.
+ * @param {any} dir @param {string|undefined} repoDir @returns {{names: string[], sub: string}}
  */
 function listRecordNames(dir, repoDir) {
   /** @type {string[]} */
   let names = [];
+  // a task keeps its fire files beside its PLAN.md, so only a phase has a records folder
+  let sub = dir.slug ? '' : PHASE_RECORDS_SUB;
   if (dir.path === null) {
     const at = dir.recovered;
-    if (!at || !repoDir) return [];
-    const out = git(repoDir, ['ls-tree', '--name-only', `${at.parent}:${at.tree}`]);
-    if (!out.ok) return [];
+    if (!at || !repoDir) return { names: [], sub };
+    let out = git(repoDir, ['ls-tree', '--name-only', `${at.parent}:${at.tree}/${PHASE_RECORDS_SUB}`]);
+    if (!out.ok) {
+      sub = '';
+      out = git(repoDir, ['ls-tree', '--name-only', `${at.parent}:${at.tree}`]);
+    }
+    if (!out.ok) return { names: [], sub };
     names = out.stdout.split('\n').map((n) => n.trim()).filter(Boolean);
   } else {
     try {
-      names = readdirSync(dir.path, { encoding: 'utf8' });
+      names = readdirSync(sub ? join(dir.path, sub) : dir.path, { encoding: 'utf8' });
     } catch {
-      return [];
+      return { names: [], sub };
     }
   }
-  return names.filter((n) => n.startsWith(ADJ_PREFIX) && n.endsWith(ADJ_SUFFIX)).sort();
+  // code-unit order, the default sort's, spelled out; never localeCompare, or the order follows the machine's locale
+  const byCodeUnit = (/** @type {string} */ a, /** @type {string} */ b) => (a < b ? -1 : a > b ? 1 : 0);
+  return { names: names.filter((n) => n.startsWith(ADJ_PREFIX) && n.endsWith(ADJ_SUFFIX)).sort(byCodeUnit), sub };
 }
 
 /**
@@ -328,6 +345,12 @@ export const PRUNE_ARGV = Object.freeze([
   'log', '--full-history', '-M', '--diff-filter=D', '--name-only',
   `--format=${PRUNE_FORMAT}`, '--', PRUNED_SUMMARY,
 ]);
+
+/**
+ * Where a close added its heading, newest layout first. A close committed before the ledgers moved under the records
+ * folder added it to `.planning/ARCHIVE.md`, so history is asked about both.
+ */
+const ARCHIVE_PATHSPECS = Object.freeze([archivePath('.planning').split(sep).join('/'), '.planning/ARCHIVE.md']);
 
 /** The heading a close appends to ARCHIVE.md, as a diff line. */
 const ADDED_SECTION = /^\+## (.+?)\s*$/;
@@ -369,7 +392,7 @@ function pruneLabels(repoDir, commits) {
   for (const c of commits) added.set(c, []);
   if (!commits.length) return new Map();
 
-  const out = git(repoDir, ['show', '-U0', '-M', '--format=%x01%H', ...commits, '--', '.planning/ARCHIVE.md']);
+  const out = git(repoDir, ['show', '-U0', '-M', '--format=%x01%H', ...commits, '--', ...ARCHIVE_PATHSPECS]);
   let current = null;
   for (const line of out.stdout.split('\n')) {
     if (line.startsWith('\x01')) { current = line.slice(1).trim(); continue; }
@@ -644,7 +667,7 @@ export function closeOver(prunes, date) {
 export function archiveSections(planningRoot) {
   /** @type {Map<string, Array<{origin: string, text: string}>>} */
   const out = new Map();
-  const { text } = readArtifact(join(planningRoot, 'ARCHIVE.md'));
+  const { text } = readArtifact(archivePath(planningRoot));
   if (text === null) return out;
   for (const row of parseArchiveRows(text)) {
     if (!out.has(row.label)) out.set(row.label, []);

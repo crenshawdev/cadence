@@ -7,9 +7,10 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, ok, read } from './core.mjs';
-import { EMPTY_CAPTURE, replaceSection, withPlanningFileLock } from '../lib/capture-file.mjs';
+import { EMPTY_CAPTURE, replaceSection } from '../lib/capture-file.mjs';
+import { withPlanningFileLock } from '../lib/planning-store.mjs';
 import { debtMarkersIn, renderDebtSection } from '../lib/debt-markers.mjs';
-import { atomicWrite } from '../lib/planning-files.mjs';
+import { atomicWrite } from '../lib/planning-store.mjs';
 
 // the grammar and rendering live in lib/debt-markers.mjs (pure); this owns the walk, the reads and the write
 // --root is the project root and not --dir: this scans source and writes into .planning, same as detect-commands

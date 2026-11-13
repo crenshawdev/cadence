@@ -31,7 +31,7 @@ function surfaceVocabulary() {
 }
 
 /**
- * The four `.planning/phases/` artifacts the range read withholds, as git pathspecs after the `git diff` separator.
+ * The four `.planning/phases/` artifacts the range read withholds, each at its records place and its old one, as git pathspecs after the `git diff` separator.
  * They store reviewer text verbatim, so a finding quoting a destructive command re-tripped the gate that found it.
  * A pathspec and not a scanDiff exemption: the fix goes at the mention, never at a path. Plan files stay scanned.
  * A range whose changed files are all withheld reads `empty: true` and still clears.
@@ -40,6 +40,11 @@ function surfaceVocabulary() {
  * @type {readonly string[]}
  */
 const REVIEWER_TEXT_PATHSPECS = Object.freeze([
+  ':(top,exclude).planning/phases/*/records/ADJUDICATION-*.json',
+  ':(top,exclude).planning/phases/*/records/REVIEW-*.md',
+  ':(top,exclude).planning/phases/*/records/FINDINGS.json',
+  ':(top,exclude).planning/phases/*/records/verifier-findings.json',
+  // the pre-layout place too: a project not yet migrated, and the migration commit itself, show these as plain deletions
   ':(top,exclude).planning/phases/*/ADJUDICATION-*.json',
   ':(top,exclude).planning/phases/*/REVIEW-*.md',
   ':(top,exclude).planning/phases/*/FINDINGS.json',
@@ -603,6 +608,10 @@ function cmdRiskCheckStatus(dir, opts) {
   });
 
   const offending = rows.filter((row) => row.state !== 'recorded' && row.state !== 'skipped');
+  // D-05: a --plan ask prints only its own row whole; narrowed after the verdict so a missing plan still refuses
+  const shown = wanted
+    ? rows.map((row) => ('wanted' in row ? row : { plan: row.plan, run: row.run, state: row.state }))
+    : rows;
   if (offending.length) {
     // the hint names the missing step: an unfired row has its record already; a mixed set leads with the record hint
     const unfiredOnly = offending.every((row) => row.state === 'unfired');
@@ -611,7 +620,7 @@ function cmdRiskCheckStatus(dir, opts) {
       ok: false,
       reason: unfiredOnly ? 'risk-fire-missing' : 'risk-record-missing',
       phase: n,
-      plans: rows,
+      plans: shown,
       missing: offending.map((row) => row.plan),
       // never folded into `missing`: no record can be written for these keys, so run would send the caller to a refusal
       ...(malformed.size ? { malformed: [...malformed] } : {}),
@@ -626,7 +635,7 @@ function cmdRiskCheckStatus(dir, opts) {
     });
   }
   // nothing to require isn't a failure, or a gate would block every phase's first plan; a malformed key rides the pass
-  ok({ phase: n, plans: rows, ...(malformed.size ? { malformed: [...malformed] } : {}) });
+  ok({ phase: n, plans: shown, ...(malformed.size ? { malformed: [...malformed] } : {}) });
 }
 
 function cmdRiskCheck(dir, sub, opts) {

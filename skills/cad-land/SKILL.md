@@ -197,7 +197,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      a HARD halt before any merge rather than an ask. This skill fires no review
      of its own: what it reads is what this branch's `risk_surface` fires
      already ADJUDICATED. Read every `ADJUDICATION-risk_surface*.json` under
-     BOTH record roots - `.planning/phases/*/` and `.planning/risk-carry/*/`,
+     BOTH record roots - `.planning/phases/*/records/` and `.planning/records/risk-carry/*/`,
      the copies `/cad-milestone` leaves when it prunes the phase dirs before
      chaining this command - and union every round's `entries[]`. Every round,
      never the highest alone: a re-arm is a second fire on the same
@@ -376,7 +376,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    branch in place. Report the final state: HEAD on `<base>`, pulled, branch
    reaped (or left).
 
-   **Then clear the carried rulings.** Delete `.planning/risk-carry/` - the
+   **Then clear the carried rulings.** Delete `.planning/records/risk-carry/` - the
    transient copies `/cad-milestone` made of this cycle's `risk_surface` reviews
    and records before it pruned the phase dirs. This step is the ONLY actor that
    clears them, and a confirmed merge is the only event proving the 3(b) halt

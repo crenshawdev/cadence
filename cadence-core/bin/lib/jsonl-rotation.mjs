@@ -5,10 +5,10 @@
 'use strict';
 
 import {
-  appendFileSync, closeSync, existsSync, linkSync, openSync, readFileSync, readSync, renameSync,
-  statSync, unlinkSync, writeFileSync,
+  closeSync, existsSync, openSync, readFileSync, readSync, statSync,
 } from 'node:fs';
 import { sleep } from './text-util.mjs';
+import { appendFile, linkFile, movePath, unlinkFile, writeFile, writeFileNew } from './planning-store.mjs';
 
 /** The event both logs name their rotation marker with. One spelling, so the two markers can't drift. */
 export const ROTATION_EVENT = 'record_rotated';
@@ -110,7 +110,7 @@ export function rotateJsonl(spec, reserve) {
   /** Only for arms that know the claim is ours to date; `mine` is what the confirm compares against. */
   const publish = () => {
     if (!pending) return;
-    try { renameSync(pending, claim); dated = claim; mine = statSync(claim).mtimeMs; }
+    try { movePath(pending, claim); dated = claim; mine = statSync(claim).mtimeMs; }
     catch { mine = null; /* fail live: no stamp reads as a live claim */ }
     pending = null;
   };
@@ -129,11 +129,11 @@ export function rotateJsonl(spec, reserve) {
         // a failed write is swallowed: no sidecar reads as live, and throwing would send an unwritable root down
         // the no-hard-links fallback
         pending = `${claim}.${priv}`;
-        try { writeFileSync(pending, `${new Date().toISOString()}\n`); }
+        try { writeFile(pending, `${new Date().toISOString()}\n`); }
         catch { pending = null; /* fail live: no sidecar reads as a live claim */ }
         // seal before the link, or a late writer's bytes fold into carried_bytes and never get rescued
         try { sealed = statSync(file).size; } catch { sealed = null; }
-        linkSync(file, sibling);
+        linkFile(file, sibling);
         claimed = true;
         held = true;
         // ours now, so publish the stamp. A third writer evicting on the stale age in the gap is caught by its
@@ -146,7 +146,7 @@ export function rotateJsonl(spec, reserve) {
         if (code !== 'EEXIST') {
           if (!spec.renameFallback) return { rotated: false, reason: code || 'claim-failed' };
           // no hard links here, so fall back to the replacing rename and accept its window (the link is what closes it)
-          try { renameSync(file, sibling); claimed = true; } catch { return { rotated: false }; }
+          try { movePath(file, sibling); claimed = true; } catch { return { rotated: false }; }
           break;
         }
         // someone else holds the claim. Wait for their swap, or our append lands in the old inode's sibling.
@@ -173,7 +173,7 @@ export function rotateJsonl(spec, reserve) {
         publish();
         // evict single-winner: one contender renames it to a private path and the rest get `ENOENT`
         const path = `${sibling}.evict.${priv}`;
-        try { renameSync(sibling, path); } catch { return { rotated: false }; }
+        try { movePath(sibling, path); } catch { return { rotated: false }; }
         evicted = path;
         if (!abandoned) leftover = path;
         // confirm after claiming, on both eviction arms, before anything is read or written: a writer that
@@ -185,8 +185,8 @@ export function rotateJsonl(spec, reserve) {
         try { refreshed = mine === null || statSync(claim).mtimeMs !== mine; } catch { refreshed = true; }
         if (refreshed) {
           try {
-            if (!existsSync(sibling)) renameSync(path, sibling);
-            else unlinkSync(path);
+            if (!existsSync(sibling)) movePath(path, sibling);
+            else unlinkFile(path);
           } catch { /* it vanished under us, nothing to restore */ }
           evicted = null;
           leftover = null;
@@ -204,8 +204,8 @@ export function rotateJsonl(spec, reserve) {
     }
     // the fresh record goes to a private path (exclusive create) and is renamed over the live one
     temp = `${file}.rotate.${priv}`;
-    writeFileSync(temp, spec.fresh({ carried, sealed, reserve }), { flag: 'wx' });
-    renameSync(temp, file);
+    writeFileNew(temp, spec.fresh({ carried, sealed, reserve }));
+    movePath(temp, file);
     temp = null;
     held = false;
 
@@ -229,7 +229,7 @@ export function rotateJsonl(spec, reserve) {
         const cut = delta.lastIndexOf(0x0a);
         if (cut < 0) break;
         const whole = delta.subarray(0, cut + 1);
-        try { appendFileSync(file, whole); } catch { break; }
+        try { appendFile(file, whole); } catch { break; }
         seen += whole.length;
       }
     }
@@ -260,11 +260,11 @@ export function rotateJsonl(spec, reserve) {
             const cut = delta.lastIndexOf(0x0a);
             if (cut >= 0) {
               const whole = delta.subarray(0, cut + 1);
-              if (carried === null) appendFileSync(file, whole);
+              if (carried === null) appendFile(file, whole);
               else {
                 const already = new Set(carried.split('\n'));
                 const rescue = whole.toString('utf8').split('\n').filter((l) => l && !already.has(l));
-                if (rescue.length) appendFileSync(file, `${rescue.join('\n')}\n`);
+                if (rescue.length) appendFile(file, `${rescue.join('\n')}\n`);
               }
               done = true;
             }
@@ -279,14 +279,14 @@ export function rotateJsonl(spec, reserve) {
     return { rotated: false, reason: (e && /** @type {any} */ (e).code) || 'rotate-failed' };
   } finally {
     // leave nothing behind on any arm
-    if (temp) { try { unlinkSync(temp); } catch { /* already gone */ } }
-    if (held) { try { unlinkSync(sibling); } catch { /* already released */ } }
+    if (temp) { try { unlinkFile(temp); } catch { /* already gone */ } }
+    if (held) { try { unlinkFile(sibling); } catch { /* already released */ } }
     // guarded by `held`: it goes false at the swap, and unlinking later would delete the next claimant's sidecar.
     // A completed rotation leaves its sidecar behind on purpose; it's inert and `.gitignore` keeps it out of commits.
-    if (held && dated) { try { unlinkSync(dated); } catch { /* already released */ } }
+    if (held && dated) { try { unlinkFile(dated); } catch { /* already released */ } }
     // a stamp this call never published is at a path only we can see. Always drop it, a losing append mustn't
     // refresh the shared sidecar
-    if (pending) { try { unlinkSync(pending); } catch { /* already gone */ } }
-    if (evicted) { try { unlinkSync(evicted); } catch { /* already gone */ } }
+    if (pending) { try { unlinkFile(pending); } catch { /* already gone */ } }
+    if (evicted) { try { unlinkFile(evicted); } catch { /* already gone */ } }
   }
 }

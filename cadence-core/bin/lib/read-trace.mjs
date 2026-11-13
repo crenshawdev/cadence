@@ -1,17 +1,19 @@
 // @ts-check
-// reads.jsonl writer: one line per tool call, so billing can see what a dispatch opened after it started.
+// records/reads.jsonl writer: one line per tool call, so billing can see what a dispatch opened after it started.
 // its own file, not a trace.jsonl family: that one has a single writer and a 1 MiB cap sized for tens of events
 // paths only, never payloads: a command or grep pattern can carry a secret, and a model reads this file back
 // outside the project, a path becomes ${CLAUDE_PLUGIN_ROOT}/... or `outside`, so no home directory reaches a report
 // never throws, exits 0: it runs after every tool call and a recorder that can fail one is worse than none
 'use strict';
 
-import { appendFileSync, closeSync, lstatSync, openSync, readSync, statSync } from 'node:fs';
+import { closeSync, lstatSync, openSync, readSync, statSync } from 'node:fs';
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 // reverse lookups from an agent_type stem to its role sit beside RUNG_FILES
 import { roleOfAgent } from './rung-agent.mjs';
 import { ROTATION_EVENT, rotateJsonl } from './jsonl-rotation.mjs';
+import { appendFile, recordsPath } from './planning-store.mjs';
+import { recordsReady } from './project-state.mjs';
 
 export const READS_FILE = 'reads.jsonl';
 
@@ -32,7 +34,7 @@ export const MAX_FILES_PER_CALL = 12;
 
 /** @param {string} planningRoot */
 export function readsPath(planningRoot) {
-  return join(planningRoot, READS_FILE);
+  return recordsPath(planningRoot, READS_FILE);
 }
 
 /** Spelled once so writer, .gitignore and tests agree; the `reads.` prefix lets a test catch a leaked temp. */
@@ -52,12 +54,12 @@ export const READS_EVICT_TEMP_FILE = `${ROTATED_READS_FILE}.evict`;
 
 /** @param {string} planningRoot */
 export function rotatedReadsPath(planningRoot) {
-  return join(planningRoot, ROTATED_READS_FILE);
+  return recordsPath(planningRoot, ROTATED_READS_FILE);
 }
 
 /** @param {string} planningRoot */
 export function readsClaimPath(planningRoot) {
-  return join(planningRoot, READS_CLAIM_FILE);
+  return recordsPath(planningRoot, READS_CLAIM_FILE);
 }
 
 /** The trace's `ROTATION` too, both read off jsonl-rotation.mjs: a hook shouldn't load all of trace.mjs for one name. */
@@ -370,6 +372,8 @@ export function rotateReads(planningRoot, reserve) {
 /**
  * Append one record, guarded like lib/trace.mjs: symlink check, bound enforced before the write, reason returned.
  * The size bound rotates instead of refusing; `oversized-record` is for a single line that reaches the bound alone.
+ * No valid state file is `no-valid-state` and writes nothing, as appendEvent: the hook may never touch an unconverted
+ * project.
  * @param {string} planningRoot
  * @param {any} record
  */
@@ -377,6 +381,9 @@ export function appendRead(planningRoot, record) {
   if (!record || typeof record !== 'object' || Array.isArray(record)) {
     return { written: false, reason: 'bad-record' };
   }
+  // the hook fires on every tool call, so this stays one lstat and one small file read
+  const records = recordsReady(planningRoot);
+  if (records.ok === false) return { written: false, reason: records.reason };
   const file = readsPath(planningRoot);
   // the symlink guard stays first, so a redirected record is refused whatever its size
   try {
@@ -410,7 +417,7 @@ export function appendRead(planningRoot, record) {
     if (rot.reason) return { written: false, reason: rot.reason };
   }
   try {
-    appendFileSync(file, line);
+    appendFile(file, line);
   } catch (e) {
     return { written: false, reason: (e && /** @type {any} */ (e).code) || 'append-failed' };
   }

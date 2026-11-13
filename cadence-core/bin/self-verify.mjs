@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import {
-  rungBodyIssue, rungEffortIssue, rungPrefixIssues, rungFile, effortEnumIssues,
+  agentFileText, rungBodyIssue, rungEffortIssue, rungPrefixIssues, rungFile, effortEnumIssues,
   RUNG_FILES, RUNG_ORDER,
 } from './lib/rung-agent.mjs';
 import { gateAgreementIssues } from './lib/gate-agreement.mjs';
@@ -28,6 +28,7 @@ import { globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
 import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
 import { relayIssues } from './lib/route-relay.mjs';
 import { dataRuleIssues } from './lib/data-rule.mjs';
+import { carriesSharedRule, roleTableIssues, SHARED_SKILL, CODE as SHARED_RULE_CODE } from './lib/shared-rule.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { FRONTMATTER_RE, parseSkillsField } from './lib/frontmatter.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
@@ -39,6 +40,7 @@ import { bulkOutputIssues } from './lib/bulk-output.mjs';
 import { scratchPathIssues } from './lib/scratch-path.mjs';
 import { captureWriterIssues } from './lib/capture-writers.mjs';
 import { hookEventIssues } from './lib/hook-events.mjs';
+import { writeModuleIssues } from './lib/planning-writers.mjs';
 // the flag table, its accessor and the evaluator are defined in lib/arg-contract.mjs and imported, not restated
 import { CONTRACTS, flagNames, evaluateFlag, subcommandKey } from './lib/arg-contract.mjs';
 
@@ -74,7 +76,7 @@ const REACH_DOC = join('cadence-core', 'references', 'config-reach.md');
 const WORKFLOWS_DIR = join('cadence-core', 'workflows') + sep;
 const REFERENCES_DIR = join('cadence-core', 'references') + sep;
 
-// LSP is also on the two cad-executor rungs' tools: lines, and both are needed: a token missing here is never scanned
+// LSP is on every agent file's tools: line and named by the shared skill; a token missing here is never scanned
 const KNOWN_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Grep',
   'Glob', 'Task', 'WebFetch', 'WebSearch', 'NotebookEdit', 'TodoWrite', 'LSP'];
 
@@ -766,7 +768,7 @@ function checkRungBodies(agentBodies, problems) {
 function checkRungLadder(root, isFullTree, agentFiles, problems) {
   if (isFullTree) {
     for (const role of Object.keys(RUNG_FILES)) {
-      for (const [rung, stem] of Object.entries(RUNG_FILES[role])) {
+      for (const [rung, stem] of Object.entries(RUNG_FILES[role].rungs)) {
         if (!existsSync(join(root, 'agents', `${stem}.md`))) {
           problems.push({ kind: 'missing-rung-agent',
             file: 'cadence-core/bin/lib/rung-agent.mjs',
@@ -793,6 +795,50 @@ function checkRungLadder(root, isFullTree, agentFiles, problems) {
       }
       break;
     }
+  }
+}
+
+// 8c. every table-named agent file is, byte for byte, what lib/rung-agent.mjs renders for it. Gated on isFullTree like
+// check 8's map -> disk arm: the table lives in code, so a --root fixture's own small agent set isn't drift. Table stems
+// only: a one-off agent stays legal, an absent file is missing-rung-agent's and a stray rung file is check 8's.
+function checkAgentFileRender(root, isFullTree, problems) {
+  if (!isFullTree) return;
+  for (const { rungs } of Object.values(RUNG_FILES)) {
+    for (const stem of Object.values(rungs)) {
+      let text;
+      try {
+        text = readFileSync(join(root, 'agents', `${stem}.md`), 'utf8');
+      } catch {
+        continue;
+      }
+      if (text !== agentFileText(stem)) {
+        problems.push({ kind: 'agent-file-render', file: `agents/${stem}.md`,
+          detail: 'differs from what the table in cadence-core/bin/lib/rung-agent.mjs renders - the file is generated, '
+            + 'so change the table and run `node cadence-core/bin/agent-files.mjs` to rewrite it' });
+      }
+    }
+  }
+}
+
+// 8d. the LSP-then-grep rule stays in the shared skill (lib/shared-rule.mjs), whitespace-collapsed so a rewrap is free
+function checkSharedRule(root, problems) {
+  const rel = `skills/${SHARED_SKILL}/SKILL.md`;
+  let text;
+  try {
+    text = readFileSync(join(root, rel), 'utf8');
+  } catch {
+    return;
+  }
+  if (!carriesSharedRule(text)) {
+    problems.push({ kind: SHARED_RULE_CODE, file: rel,
+      detail: 'the shared skill lacks the LSP-then-grep rule (lib/shared-rule.mjs)' });
+  }
+}
+
+// 8e. the table itself: a role that lost LSP or the shared skill renders files that match it, so 8c can't see it
+function checkRoleTable(problems) {
+  for (const { detail } of roleTableIssues(RUNG_FILES)) {
+    problems.push({ kind: 'role-lacks-shared-rule', file: 'cadence-core/bin/lib/rung-agent.mjs', detail });
   }
 }
 
@@ -946,6 +992,26 @@ function checkNulBytes(root, problems) {
   }
 }
 
+// 37. a script under cadence-core/bin calls a node:fs write only in lib/planning-store.mjs or under a register row (lib/planning-writers.mjs)
+// read through binFiles like check 15, so an unreadable file is reported once and a fixture with no bin directory passes
+function checkWriteModule(root, isFullTree, problems) {
+  const files = [];
+  for (const { file, unreadable } of binFiles(root)) {
+    const rel = relative(root, file).split(sep).join('/');
+    if (unreadable) {
+      problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
+      continue;
+    }
+    try {
+      files.push({ file: rel, text: readFileSync(file, 'utf8') });
+    } catch (e) {
+      problems.push({ kind: 'unreadable-surface', file: rel, detail: e && e.code ? e.code : String(e) });
+      files.push({ file: rel, text: null });
+    }
+  }
+  problems.push(...writeModuleIssues(files, isFullTree));
+}
+
 function checkRegisters(root, problems) {
   // 16. an @-included references/templates surface must be named in the command's eager prose (include-consumers)
   for (const issue of includeConsumerIssues(root)) problems.push(issue);
@@ -991,6 +1057,9 @@ function run(root) {
   const { agentFiles, agentBodies } = walkAgents(root, problems);
   checkRungBodies(agentBodies, problems);
   checkRungLadder(root, v.isFullTree, agentFiles, problems);
+  checkAgentFileRender(root, v.isFullTree, problems);
+  checkSharedRule(root, problems);
+  checkRoleTable(problems);
   checkSchemaRules(v.schema, problems);
   checkReach(root, v.isFullTree, v.schema, problems);
   checkGlobalOnly(v.schema, problems);
@@ -999,6 +1068,7 @@ function run(root) {
   checkContractedScripts(root, problems);
   checkNulBytes(root, problems);
   checkRegisters(root, problems);
+  checkWriteModule(root, v.isFullTree, problems);
   checkWorkflowScripts(root, problems, lintProse);
   return problems;
 }
@@ -1015,7 +1085,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations, setting-conditions, plain-words, workflow-scripts', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, agent-file-render, shared-rule, role-table, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations, setting-conditions, plain-words, workflow-scripts, write-module', problems });
 } catch (e) {
   emitCaught(e);
 }

@@ -32,6 +32,16 @@ function holder(file, now) {
 }
 
 /**
+ * Who holds the claim in `gitDir` right now, or null when nobody does. Looks only: nothing is taken or freed.
+ * @param {string} gitDir the repository's common git directory
+ * @param {number} [now]
+ * @returns {{label: string|null, id: string|null, age_seconds: number}|null}
+ */
+export function claimHolder(gitDir, now = Date.now()) {
+  return holder(join(gitDir, CLAIM_FILE), now);
+}
+
+/**
  * Take the claim in `gitDir`, or say who has it. A win returns the claim's own id, which release must present.
  * @param {string} gitDir the repository's common git directory
  * @param {string} label

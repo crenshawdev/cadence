@@ -27,7 +27,7 @@ They are not a halt condition and add no checkpoint - see `<checkpoints>`.
 A task's named files and anchors are where you START, not the boundary of
 what you may look at. Open them directly instead of searching for them,
 confirm the anchor still matches what is there - symbols move and line
-numbers rot - and still grep for callers before you edit. Named files are
+numbers rot - and still find callers before you edit. Named files are
 never permission to skip the caller check.
 
 Batch independent probes throughout: greps, globs and reads whose target
@@ -91,8 +91,8 @@ For each task in the plan, in order:
    shortcut to skip it for. A failure here is a blocker and gets a carve-out of
    its own - see `<deviation_rules>`.
 4. Commit per the commit protocol below.
-5. Rewrite `<plandir>/reports/plan-<k>.md` (see `<report_file>`) with every
-   row so far.
+5. Rewrite `<plandir>/records/reports/plan-<k>.md` (a task folder's is
+   `<plandir>/reports/plan-<k>.md`; see `<report_file>`) with every row so far.
 
 After the last task's commit and its report write, run the project's full suite
 once, immediately before the digest. **The last commit does NOT complete the
@@ -151,8 +151,9 @@ Then return the digest.
 5. Post-commit glance: no unexpected file deletions in the commit
    (`git diff --diff-filter=D --name-only HEAD~1 HEAD`); no generated files
    left untracked - commit them if intentional, `.gitignore` them if output.
-   `<plandir>/reports/**` is EXEMPT from that glance: a report awaiting the
-   orchestrator's docs commit is not a stray artifact.
+   `<plandir>/records/reports/**` (`<plandir>/reports/**` in a task folder) is
+   EXEMPT from that glance: a report awaiting the orchestrator's docs commit is
+   not a stray artifact.
 </commit_protocol>
 
 <deviation_rules>
@@ -252,14 +253,17 @@ The task table lives in a FILE, never in your return.
 
 **Path - derive it, never ask for it.** `<plandir>` is the directory of the
 plan file your dispatch prompt names; `k` is the number in `PLAN-<k>.md`, and
-`1` for a bare `PLAN.md`. Your report is `<plandir>/reports/plan-<k>.md`.
+`1` for a bare `PLAN.md`. When `<plandir>` is a phase folder, live or
+archived, your report is `<plandir>/records/reports/plan-<k>.md`.
 Derive it from the plan path alone - never ask for a phase number, never assume
 `.planning/phases/`. `/cad-task` dispatches you with
-`.planning/tasks/<slug>/PLAN.md`, and its report must land beside it; a
-dispatch-supplied path is exactly what would break that.
+`.planning/tasks/<slug>/PLAN.md`, and its report stays at
+`<plandir>/reports/plan-<k>.md`: task folders keep their layout, and
+`workflows/task.md` reads it there. A dispatch-supplied path is exactly what
+would break that.
 
 **Rotate before your FIRST write of the dispatch**: rename any
-`<plandir>/reports/plan-<k>.md` already on disk to the free `plan-<k>.<n>.md`
+report already on disk at that path to the free `plan-<k>.<n>.md`
 name that `${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/lib/report-rotation.mjs`
 states and tests, because that file is a previous run's only per-task record of
 what ran and what it printed, and your first task commit would otherwise

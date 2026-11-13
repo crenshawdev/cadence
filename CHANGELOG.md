@@ -7,6 +7,83 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-11-13
+
+This release changes where Cadence keeps a project's planning state, and it
+converts an existing project once, on the first command you run after updating.
+Read the upgrade note before you update a project that is in the middle of a
+phase. The rest cuts what a run reads in three places, makes the agent files
+generated, and fixes two reads that gave wrong answers.
+
+### Upgrading from 4.1 or earlier
+
+- **The first Cadence command you run in a project converts it.** Records move
+  under `.planning/records/` and under each phase's `records/` folder, and the
+  state file `.planning/records/state.json` is written. If you commit planning
+  documents, Cadence asks for one commit of `.planning/` afterwards. A
+  converted project is never converted again.
+- **The conversion waits when it can't be done safely.** It changes nothing
+  when the roadmap can't be read, a review workflow is running, or a plan
+  worktree is still live, and it names what to fix.
+- **Update every session that works on the project first.** A session still on
+  an earlier version doesn't know the new layout. It looks for the old paths
+  and writes its read record to the old place.
+- **There is no conversion back.** If you might return to an earlier version,
+  copy `.planning/` aside before your first command on this one.
+
+### Added
+
+- **One state file.** Phase, plan and requirement status, the cursor and
+  whether a cycle is open live in `.planning/records/state.json`, and only
+  Cadence's scripts write it. `STATE.md`, the `## Phases` list in `ROADMAP.md`
+  and the `## Traceability` table in `REQUIREMENTS.md` are generated from it,
+  so they no longer drift apart. Don't edit those three by hand; the next
+  state write overwrites them.
+- **A records folder.** What scripts and gates keep sits apart from the
+  documents you read: the run and read records, the ledgers and the deferred
+  queue under `.planning/records/`, and each phase's executor reports, reviews
+  and findings under that phase's `records/`.
+- **A state file that stops parsing can be rebuilt.** `/cad-progress` names the
+  command when it meets one:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" state-rebuild
+  ```
+
+### Changed
+
+- **`/cad-phase add` points the cursor at the phase it adds** when nothing else
+  is unfinished, so the next step reads `/cad-context N` and no longer
+  `/cad-phase add`. A paused cursor is left as you set it.
+- **A review reads less.** A review used to read five reference files whole,
+  about 98,000 bytes. Each kind of review now reads the part written for it,
+  and the largest reads about 84,000.
+- **A review workflow hands back counts.** The findings and rulings stay on
+  disk and are read from the run's journal beside the host's run file. The
+  privacy paragraph in the README and the permissions page say so.
+- **`risk-check status --plan <k>` prints only that plan's records.** The other
+  plans' rows keep their plan, run and state and no longer carry their
+  records. The verdict covers every plan, as before.
+- **Agent files are generated.** The 35 files under `agents/` are written from
+  one table, and `self-verify` fails when one differs, naming the command that
+  rewrites it. Every agent also preloads one shared skill, `cad-shared-rules`,
+  after its role contract, and every agent's tool list now includes the host's
+  `LSP` tool. Whether an agent reaches for it depends on your project and its
+  language server, so your mileage may vary. Nothing in Cadence depends on it.
+
+### Fixed
+
+- **`trace render --phase N` counts this cycle's phase N only.** Phase numbers
+  start again at 1 in each cycle, and the run record is kept across cycles, so
+  `trace render`, `trace suggest` and `trace window` added up every earlier
+  cycle's phase of the same number. A cycle now starts with a mark in the run
+  record. One limit: a project whose last cycle was closed on an earlier
+  version with an unfinished phase carried over gets its first mark at its
+  next close.
+- **The detected typecheck command runs the project's own TypeScript.** With
+  `typescript` installed and no `node_modules/.bin` link, a `tsconfig.ci.json`
+  project got the bare `tsc`, which could be a different version on the path.
+
 ## [4.1.0] - 2026-11-11
 
 Most of this release is repair and cleanup. It fixes how Cadence reads planning

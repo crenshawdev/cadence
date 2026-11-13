@@ -96,6 +96,19 @@ off the base pass silently.
 One logical change per commit: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`,
 `test:`, `perf:`, `style:`. Stage the specific files you changed, not `git add -A`. Planning docs
 commit separately from code (`docs:` prefix) when `planning.commit_docs` is true.
+The state file is a planning document: a commit that carries
+`STATE.md`, the `## Phases` list or the `## Traceability` table carries
+`.planning/records/state.json` with it.
+
+**The one migration commit.** The seam call that converts an unstamped project
+says so in its answer's `migration` field. With `commit_due: true`, stage the
+planning directory and make one `docs:` commit with Bash before the next step,
+under the guard in section 1, and push nothing. With `commit_due: false`, make
+no commit and go on. The script never commits. Staging the whole directory is
+the one exception to staging the specific files: a conversion moves many files,
+and one commit must leave the tree clean. That commit also takes in any other
+uncommitted change under the planning directory. Carried risk rulings stay out,
+because the records folder's own `.gitignore` ignores `risk-carry/`.
 
 ## What the guard sees
 

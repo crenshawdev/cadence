@@ -23,6 +23,17 @@ Nothing here reaches an agent that has not read it.
   that needs it (cad-context or cad-plan). The grammar for `<N>`, and the
   guarantee that no spelling is ever silently redirected to a DIFFERENT phase's
   directory, are stated in `references/roadmap-phases.md` and nowhere else.
+- Records folder: `.planning/records/` and `.planning/phases/<N>/records/` hold
+  what scripts and gates keep - the run and read records, the ledgers, the
+  carried queues and the code map at the top; executor reports, review,
+  adjudication and deferred files and findings in a phase. What a person reads
+  stays at the top of `.planning/` and of each phase.
+- State file: `.planning/records/state.json` holds phase, plan and requirement
+  status, the cursor and whether a cycle is open, and only scripts write it.
+  The ROADMAP `## Phases` list, the REQUIREMENTS `## Traceability` table and
+  `STATE.md` are generated from it and never edited by hand. A seam refusing
+  because the file does not parse is answered by running `/cad-progress`, never
+  by repairing the file.
 
 ## Deliberate shortcuts
 
@@ -163,7 +174,7 @@ rest. Read only the keys you need. Unknown keys are ignored, never fatal.
 - The size test, asked once per tool call a prose site PRESCRIBES: does that
   call's own measured response cross 10,000 bytes? That figure is the mean
   `Read` response on this repository - 10,323 B over 780 recorded calls,
-  `.planning/reads.jsonl`, measured 2026-08-17. If yes, then its output
+  `.planning/records/reads.jsonl`, measured 2026-08-17. If yes, then its output
   rides a file, not the transcript: redirect the call into a scratch path
   inside THIS RUN's own directory (`> "$D/<name>"`, where `D` is a directory
   this run made with `mktemp -d`) and hand the transcript a DIGEST of what the
@@ -234,7 +245,7 @@ earlier answer stay sequential.
 - `STATE.md` is a cursor of four required lines plus an optional `Plan:` line. It
   is overwritten in place, never appended.
   The only correct writer is the seam (`planning.mjs cursor set` - it derives
-  name/total from ROADMAP, validates the status, stamps the date, and writes
+  name/total from the state file, validates the status, stamps the date, and writes
   atomically); read it with `cursor get`. Never hand-edit the file. NO audit
   logs, no activity tables, no session narratives - git history is the log.
   Derive views from `git log` on demand.
@@ -248,6 +259,9 @@ earlier answer stay sequential.
   Next: <the one command to run next>
   Updated: <YYYY-MM-DD>
   ```
+
+  With no cycle open there is no `Phase:` or `Status:` line: under `# State`, a
+  sentence saying no cycle is open, then `Next:` and `Updated:`.
 
 - The `Plan:` line: `cursor set` writes it from disk on every write, with no
   flag. K is the lowest-numbered plan whose report is not `PLAN COMPLETE`, by its
@@ -264,9 +278,9 @@ earlier answer stay sequential.
   cad-pause's one-line resume pointer. The cursor gains no line for it.
 - `cad-progress` treats the cursor as a hint: if it disagrees with the derived
   state it rewrites it in this schema. Any skill that changes phase state
-  overwrites the cursor and commits it with that step's docs commit - never
-  leave it dirty. /cad-execute's per-plan and per-batch rewrites ride its `state`
-  step's docs commit.
+  overwrites the cursor and commits it, with `.planning/records/state.json`, in
+  that step's docs commit - never leave either dirty. /cad-execute's per-plan and
+  per-batch rewrites ride its `state` step's docs commit.
 
 ## Subagents and reviews
 

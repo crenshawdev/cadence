@@ -1,16 +1,16 @@
 // @ts-check
-// planning/status.mjs - `status`: where the project is, from phase artifacts, reconciled against the STATE.md cursor
+// planning/status.mjs - `status`: where the project is, from phase artifacts, reconciled against the state file's cursor
 // phaseDirGrammarDrift and AGREE live here because nothing else reads them; the grammar is in core.mjs, shared
 'use strict';
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, planPosition, read, readPlanReports, readQueue,
+  PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, read, readPlanReports, readQueue,
 } from './core.mjs';
-import { classifyPhaseList, parseRequirements } from '../lib/planning-files.mjs';
-import { parseCursor } from '../lib/state-cursor.mjs';
+import { sectionSpan } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
+import { cursorOf, loadState, phaseListOf, planPositionOf } from './state-import.mjs';
 
 /**
  * Every `phases/` entry outside `PHASE_DIR_NAME`, as one drift entry per colliding group.
@@ -95,37 +95,29 @@ function cmdStatus(dir) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
   const roadmapText = read(join(dir, 'ROADMAP.md'));
   if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`, '/cad-new-project');
-  // an empty section is a derived closed milestone, not a parse failure
-  const classified = classifyPhaseList(roadmapText);
-  if (classified.state === 'no-section') {
+  // the list is output the state renders into this heading, so the heading is all that is asked of the file
+  if (sectionSpan(roadmapText.split('\n'), '## Phases').start < 0) {
     return fail('unparseable-roadmap', 'no `## Phases` section in ROADMAP.md',
       'add a `## Phases` heading to ROADMAP.md, outside any code fence - a closed milestone'
       + ' is that heading with nothing under it, never a missing heading');
   }
-  if (classified.state === 'out-of-grammar') {
-    // emitted directly because fail has no channel for the issue list
-    const first = classified.issues[0];
-    return emit({
-      ok: false, reason: 'unparseable-roadmap',
-      detail: `line ${first.line}: ${first.text}`,
-      issues: classified.issues,
-      hint: 'rewrite each line listed in `issues` as `- [ ] **Phase <n>: <name>** - <description>`'
-        + ' under `## Phases`, or move it out of that section',
-    });
-  }
-  const closed = classified.state === 'closed';
-  const roadmap = classified.phases;
-
-  const derived = derivePhases(dir, roadmap);
+  const state = loadState(dir);
+  if (!state) return;
+  // the phases are the state's; the artifacts are only asked what they would derive, to report where the two disagree
+  const closed = state.phases.length === 0;
+  // plans too: the files a phase has and which are finished are the state's, and a report that says finished while the
+  // state does not is drift, not a change to what is answered
+  const sorted = [...state.phases].sort((a, b) => a.n - b.n);
+  const derived = derivePhases(dir, phaseListOf(state)).map((p, i) => ({
+    ...p, status: sorted[i].status, derivedStatus: p.status, held: sorted[i], plans: sorted[i].plans.map((q) => q.file),
+  }));
   const currentEntry = derived.find((p) => p.status !== 'complete') || null;
   const current = currentEntry ? currentEntry.n : null;
 
   const drift = [];
   for (const p of derived) {
-    if (p.checked && p.status !== 'complete') {
-      drift.push({ kind: 'roadmap-box', phase: p.n, detail: `box checked, derived ${p.status}` });
-    } else if (!p.checked && p.status === 'complete') {
-      drift.push({ kind: 'roadmap-box', phase: p.n, detail: 'derived complete, box unchecked' });
+    if (p.status !== p.derivedStatus) {
+      drift.push({ kind: 'roadmap-box', phase: p.n, detail: `state says ${p.status}, derived ${p.derivedStatus}` });
     }
   }
 
@@ -148,14 +140,25 @@ function cmdStatus(dir) {
     drift.push(...phaseDirNumericCollisions(surviving));
   }
 
+  for (const p of derived) {
+    const reports = readPlanReports(join(dir, 'phases', String(p.n)), p.plans);
+    p.held.plans.forEach((q, i) => {
+      if (reports[i].complete && !q.finished) {
+        drift.push({
+          kind: 'plan-report', phase: p.n, plan: reports[i].k,
+          detail: `plan ${reports[i].k} of phase ${p.n} has a report that says PLAN COMPLETE, and the state has it unfinished`,
+        });
+      }
+    });
+  }
+
   // checked in every state: a directory Cadence can't address is cheapest to rename while the cycle is open
   drift.push(...phaseDirGrammarDrift(dir));
 
-  // optional file; Deferred and unmapped rows are audit's concern, not drift
-  const reqText = read(join(dir, 'REQUIREMENTS.md'));
-  if (reqText !== null) {
+  // the state's rows against the state's phases; Deferred and unmapped rows are audit's concern, not drift
+  {
     const byN = new Map(derived.map((p) => [p.n, p.status]));
-    for (const r of parseRequirements(reqText)) {
+    for (const r of state.requirements) {
       if (r.phase === null || r.status === 'Deferred' || !byN.has(r.phase)) continue;
       const phaseDone = byN.get(r.phase) === 'complete';
       if (phaseDone && r.status !== 'Complete') {
@@ -166,9 +169,8 @@ function cmdStatus(dir) {
     }
   }
 
-  // the cursor is a hint, the derivation wins
-  const cursorText = read(join(dir, 'STATE.md'));
-  const parsed = cursorText !== null ? parseCursor(cursorText) : null;
+  // the cursor is a hint, the derivation wins; it is the state's, and STATE.md is never read
+  const parsed = cursorOf(state);
   let cursor;
   if (parsed) {
     let agrees;
@@ -191,31 +193,19 @@ function cmdStatus(dir) {
             : current === null ? 'all complete' : `phase ${current} ${currentEntry.status}`),
       });
     }
-    // a stale "of <M>" on a zero-phase roadmap is reported on its own
-    // a tagged close deletes phases/<N>/, so a cursor rewrite that never ran leaves this total as the only sign
-    if (closed && parsed.total !== 0) {
-      drift.push({
-        kind: 'cursor', phase: parsed.phase,
-        detail: `cursor totals ${parsed.total} phases; ROADMAP has none - ` +
-          'milestone close did not finish (run cursor set)',
-      });
-    }
   }
 
   // off the one derivation deferred list uses, so /cad-progress and /cad-land agree on what's queued
   // always present, so a refusal surface can tell "nothing deferred" from "seam predates the queue"
   const queue = readQueue(dir, null);
 
-  // plans a phase still owes, off the same readPlanReports replay-check dispatches from, so routing and dispatch agree
+  // plans a phase still owes, from the state the execute flow keeps through `cursor set` and `replay-check`, so routing and dispatch agree
   // a SUMMARY ends a run, not the work, so a phase with a later gap plan shows up here
   // always present, [] when empty, like deferred: an absent key would read as "seam predates the field"
-  // read here, not by spawning replay-check per phase; not a new status, which would turn older cursors into drift
-  // the dir resolves through String(p.n) as derivePhases does, so phases/1.10 reads as phases/1.1 here too
-  // each phase's reports are read here once and handed on to the plan position below
-  const reportsOf = derived.map((p) => readPlanReports(join(dir, 'phases', String(p.n)), p.plans));
+  // not a new status, which would turn older cursors into drift
   const outstanding = [];
-  derived.forEach((p, i) => {
-    const plans = reportsOf[i].filter((r) => !r.complete).map((r) => r.plan);
+  derived.forEach((p) => {
+    const plans = p.held.plans.filter((q) => !q.finished).map((q) => q.file);
     if (plans.length) outstanding.push({ phase: p.n, plans });
   });
 
@@ -225,10 +215,10 @@ function cmdStatus(dir) {
     outstanding,
     // only when closed, or current === null alone reads a closed milestone as all complete
     ...(closed ? { cycle: 'none' } : {}),
-    phases: derived.map((p, i) => ({
+    phases: derived.map((p) => ({
       n: p.n, name: p.name, status: p.status,
       // the plan to run next, from the helper cursor set writes Plan: from; absent when none or all complete
-      ...planPositionEntry(dir, p.n, reportsOf[i]),
+      ...planPositionEntry(dir, p.held),
       // plans listed only when they deviate from a single PLAN.md
       ...(p.plans.length > 1 || (p.plans.length === 1 && p.plans[0] !== 'PLAN.md')
         ? { plans: p.plans } : {}),
@@ -240,8 +230,8 @@ function cmdStatus(dir) {
 }
 
 /** `{plan: {k, j, name?}}` for a phase with an unfinished plan, else `{}`. */
-function planPositionEntry(dir, n, reports) {
-  const plan = planPosition(join(dir, 'phases', String(n)), reports);
+function planPositionEntry(dir, held) {
+  const plan = planPositionOf(dir, held);
   return plan ? { plan } : {};
 }
 

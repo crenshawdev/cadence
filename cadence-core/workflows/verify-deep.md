@@ -8,7 +8,7 @@ Dispatch cad-verifier via the spawn-agent seam, the bracket on its resolve:
 `--bracket-read ".planning/phases/<N>/PLAN*.md,.planning/phases/<N>/SUMMARY*.md,.planning/ROADMAP.md,.planning/phases/<N>/UAT.md"`
 - the same paths the dispatch instruction below hands it. Hand it the phase number, goal,
 the current UAT items, the PLAN/SUMMARY/ROADMAP paths, and the path it must
-write: `.planning/phases/<N>/verifier-findings.json`. With `testing.scope` set
+write: `.planning/phases/<N>/records/verifier-findings.json`. With `testing.scope` set
 (read in verify.md `build_or_resume`), the prompt also says "A testing policy is
 active." and hands it the suite command, resolved as the executor contract
 resolves it: `config.mjs get workflow.test_command`, or, where that is null,
@@ -40,7 +40,7 @@ transcribed, reshaped, or copied by hand:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat merge --phase <N> \
-  --payload .planning/phases/<N>/verifier-findings.json
+  --payload .planning/phases/<N>/records/verifier-findings.json
 ```
 
 An `ok:false` return goes to `fall_through`, whatever its reason.
@@ -57,7 +57,7 @@ Report the seam's one-line summary (`auto_passed`, `gaps`, `added`, `skipped`,
 
 Two files, two writers, and never the same one. The VERIFIER writes
 `verifier-findings.json` - its findings, the merge's input. The SEAM writes
-`.planning/phases/<N>/FINDINGS.json` - those same counters plus
+`.planning/phases/<N>/records/FINDINGS.json` - those same counters plus
 `rejected_entries` and `skipped_entries`, holding the entries it discarded
 verbatim, so a finding counted and then dropped survives the dispatch that
 produced it. The seam overwrites its own file on every successful merge,

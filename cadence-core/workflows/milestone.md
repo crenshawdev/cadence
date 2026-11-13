@@ -116,14 +116,14 @@ Run it for every phase this close prunes, BEFORE the prune seam call below. It
 COPIES that phase's `REVIEW-risk_surface*.md` files and every
 `ADJUDICATION-risk_surface*.json` sitting beside them - every round, filenames
 preserved, because the land gate pairs a review with its ruling BY NAME - into
-`.planning/risk-carry/<N>/`. A COPY and not the move `deferred carry` makes:
+`.planning/records/risk-carry/<N>/`. A COPY and not the move `deferred carry` makes:
 under `--mode archive` the records have to stay in `_archive-<label>/<N>/` too,
 which is the tier `/cad-why` reads. It refuses rather than overwriting a carried
 ruling that differs, so relay any `ok:false` and STOP - the prune below deletes
 what this could not carry.
 
 **TRANSIENT, never staged**, deleted by the `/cad-land` that actually MERGES
-(its step 4) and by nothing else. Commit `.planning/risk-carry/` and a ruling
+(its step 4) and by nothing else. Commit `.planning/records/risk-carry/` and a ruling
 rides onto base, where every later autonomous land reads it again and halts on
 a finding answered a milestone ago.
 
@@ -137,7 +137,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred carry --phas
 ```
 
 Run it for every phase this close prunes. It MOVES that phase's unadjudicated
-members to `.planning/deferred/<N>/`, leaves the settled ones behind to be
+members to `.planning/records/deferred/<N>/`, leaves the settled ones behind to be
 pruned with the phase, and refuses rather than overwriting - relay any
 `ok:false` and stop, because the next step deletes what it could not carry.
 
@@ -167,7 +167,7 @@ the only copy. Relay `warnings[]` (a missing detail section, an unreadable
 REQUIREMENTS.md). `action:"skip"` means no checked phase existed - an
 interrupted close or the wrong milestone; stop and look rather than continue.
 
-The seam also writes `.planning/ARCHIVE.md` BEFORE it removes anything: the
+The seam also writes `.planning/records/ARCHIVE.md` BEFORE it removes anything: the
 pruned phases' SUMMARY deviations, UAT items and CONTEXT decisions, which
 `recall` can index only while `phases/<N>/` is live. Relay `residue_rows`. `0`
 is an answer, not a failure: either nothing under those phases was indexable, or
@@ -184,8 +184,8 @@ construction - a milestone can close with deferred work that rolls to the next.
 
 Commit this as `chore: prune <label> completed phases` (label = the version on
 a release, else the milestone name), staging ROADMAP.md, REQUIREMENTS.md,
-`.planning/ARCHIVE.md` and any `_archive-<label>/` move. NOT
-`.planning/risk-carry/` - it is transient, and ARCHIVE.md is its opposite: that
+`.planning/records/state.json`, `.planning/records/ARCHIVE.md` and any `_archive-<label>/` move. NOT
+`.planning/records/risk-carry/` - it is transient, and ARCHIVE.md is its opposite: that
 directory exists to be read by the chained land and deleted by the one that
 merges, while the residue IS the recall corpus for every milestone this project
 has closed and dies with the working tree untracked.
@@ -231,17 +231,17 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
   --phase 1 --status "ready to plan" --next "/cad-phase add"
 ```
 
-On a fully pruned roadmap this needs no flags beyond those: the seam derives
-`of 0 (no active cycle)` from the empty phase list step 3 now produces.
-`/cad-phase add` is the destination because it is the only workflow that
-appends a phase line to an existing roadmap - `/cad-plan` stops with "Phase
+On a fully pruned roadmap this needs no flags beyond those, and the cursor then
+reads as no cycle open. `/cad-phase add` is the destination because it is the
+only workflow that adds a phase to an existing roadmap - `/cad-plan` stops with "Phase
 {N} is not in ROADMAP.md".
 
 (Pass `--name`/`--total` explicitly when this close DEFERRED work: step 3's
 third bullet leaves that phase's line in place, so the list is still live and
 its entries do not include phase 1 - the seam finds nothing to derive from and
 returns `cannot-derive`.)
-Commit the doc changes (`docs:`), cursor included, per references/git-guard.md -
+Commit the doc changes (`docs:`), cursor and `.planning/records/state.json`
+included, per references/git-guard.md -
 never leave the tree dirty.
 
 ## 7. Autonomous close (`git.auto_close` only)
@@ -257,7 +257,7 @@ all - stops the chain before merge (nothing is force-merged), and only because
 step 3 carried those rulings out of the phase dirs it pruned. Skip that and this
 sentence is false: the gate reads an empty set and merges.
 
-Do NOT delete `.planning/risk-carry/` here, on either arm. Step 3 already pruned
+Do NOT delete `.planning/records/risk-carry/` here, on either arm. Step 3 already pruned
 the phase dirs, so the carry is the last surviving copy of the rulings that halt
 rests on: delete it and the very next `/cad-land` globs two empty roots, is
 handed `{"findings":[]}`, and merges over the blocker this one just refused. The

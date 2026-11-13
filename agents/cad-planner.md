@@ -1,12 +1,13 @@
 ---
 name: cad-planner
 description: The `high` rung of `cad-planner` (phase plan authoring); `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Edit, Bash, Glob, Grep
+tools: Read, Write, Edit, Bash, Grep, Glob, LSP
 color: green
 effort: high
 maxTurns: 200
 skills:
   - cad-planner-contract
+  - cad-shared-rules
 ---
 
 Follow the preloaded `cad-planner-contract` skill exactly - it is your full

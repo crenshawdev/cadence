@@ -3,11 +3,11 @@
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { RISK_DIFF_MAX_BUFFER, fail, ok, resolveRange, riskRef } from './core.mjs';
 import { insideRoot } from '../lib/contained.mjs';
-import { atomicWrite } from '../lib/planning-files.mjs';
+import { atomicWrite, makeDir } from '../lib/planning-store.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import {
@@ -102,7 +102,7 @@ function cmdTaskRecord(dir, opts) {
     reason = `no planning root at ${dir}, and this command creates neither it nor tasks/`;
   } else {
     try {
-      mkdirSync(recordDir, { recursive: true });
+      makeDir(recordDir);
       // isTaskSlug refuses traversal but not tasks/<slug> already being a symlink, and git carries those
       // mkdir -p follows it, and the record would land where taskRecordsIn refuses to read it back
       // checked after the mkdir because that's when the directory exists to resolve

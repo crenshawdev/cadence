@@ -29,7 +29,7 @@ How a workflow dispatches work to a fresh-context subagent.
   a dispatch's context window may get before the record calls it a finding, and
   `cadence-core/bin/planning.mjs` compares them against the record AFTER the
   fact. The budgeted quantity is the `tokens` on a `brackets[]` row of the
-  rendered `.planning/trace.jsonl`: the terminal lifecycle event's figure, read
+  rendered `.planning/records/trace.jsonl`: the terminal lifecycle event's figure, read
   as a FINAL-WINDOW PROXY rather than as a sum across the dispatch's turns,
   because that is the one window-shaped number the host hands back on a return
   and Cadence records no other and captures none for itself. This adds no second

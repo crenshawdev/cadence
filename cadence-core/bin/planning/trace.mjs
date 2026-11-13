@@ -1,12 +1,12 @@
 // @ts-check
-// planning/trace.mjs - the `trace` family: the joined run record (.planning/trace.jsonl) and its .gitignore arm
+// planning/trace.mjs - the `trace` family: the joined run record (.planning/records/trace.jsonl) and its .gitignore arm
 // both handlers live here: cmdTrace's `ignore` arm calls cmdTraceIgnore, and a split makes it a cross-command import
 // everything else serves one of the two, and both mergeLayers callers carry the layer warnings, so no header marker
 'use strict';
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
-import { isAbsolute, join, relative } from 'node:path';
+import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import {
   ARGV, DISPATCH_WINDOW_DEFAULTS, RECORD_TOKEN, argRefusal, fail, intFlag, listPlanFiles, ok,
   phaseGuard, read, readReadsRecords, routeLadder,
@@ -15,7 +15,8 @@ import { deriveCounts, recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS, evaluateFlag } from '../lib/arg-contract.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { unfixedFromEntries } from '../lib/filing-decision.mjs';
-import { atomicWrite, planTaskTitles } from '../lib/planning-files.mjs';
+import { planTaskTitles } from '../lib/planning-files.mjs';
+import { ensureRecordsDir, ensureRecordsIgnore, makeDir, phaseRecordsDir, recordsPath } from '../lib/planning-store.mjs';
 import { planFileFor } from '../lib/phase-plans.mjs';
 import {
   READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
@@ -25,45 +26,48 @@ import { requirePhaseArg } from '../lib/require-int.mjs';
 import { RUNG_ORDER } from '../lib/rung-agent.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
-import { FAMILIES, ROTATED_TRACE_FILE, appendEvent, correlationId, renderTrace } from '../lib/trace.mjs';
+import { FAMILIES, ROTATED_TRACE_FILE, TRACE_FILE, appendEvent, correlationId, renderTrace } from '../lib/trace.mjs';
 import { windowBudget } from '../lib/window-budget.mjs';
 
 // prose writes the lifecycle and outcome events through this seam; scripts with code call lib/trace.mjs directly
 // `append` is best effort and says so: a write that didn't happen is ok:true with `written:false` and a reason
 // the trace records what a run did and may never change what it does
-// the ignore line that keeps the run record out of git, and the comment above it so the next reader knows what it is
-const TRACE_IGNORE_LINE = '.planning/trace.jsonl';
-const TRACE_IGNORE_COMMENT = "# Cadence's joined run record - local diagnostics"
-  + " only, one machine's routing/provider/worker events";
+// the ignore rules that keep the logs out of git live in the records folder's own `.gitignore`, which the write module
+// creates with the folder (lib/planning-store.mjs); this arm reports on them and writes that file when it is missing
+// `.planning` under the project root is where the rules are asked about, whatever `--dir` says, as it always was
+const PLANNING_NAME = '.planning';
 
 /**
- * The second rule: the generation a rotation at the record's size bound leaves behind.
+ * A log's path under the project root as git is asked about it, with forward slashes.
+ * Basenames come from lib/trace.mjs and lib/read-trace.mjs, so a path asked about here and a path written there can't
+ * drift; the folder's name comes from the write module.
+ * @param {string} base
+ */
+const logPath = (base) => recordsPath(PLANNING_NAME, base).split(sep).join('/');
+
+/** The live run record's path. `line` in the answer, and the pathspec `traceTracked` asks `ls-files` about. */
+const TRACE_IGNORE_LINE = logPath(TRACE_FILE);
+
+/**
+ * The generation a rotation at the record's size bound leaves behind.
  * Without it a rotation leaves up to `MAX_TRACE_BYTES` untracked for the next `git add .planning` to sweep up.
  * A second literal, not a glob: `line` is what `/cad-health` reports and `traceTracked` passes as a pathspec.
- * The basename comes from lib/trace.mjs, so the rule and the written file can't drift.
  */
-const ROTATED_IGNORE_LINE = `.planning/${ROTATED_TRACE_FILE}`;
-const ROTATED_IGNORE_COMMENT = "# ...and the generation Cadence's run record"
-  + ' leaves behind when it rotates at its size bound';
+const ROTATED_IGNORE_LINE = logPath(ROTATED_TRACE_FILE);
 
 /**
- * The reads record's six rules, in one block.
- * Six, not one glob, because each names a different thing: the live file, the prior generation, the claim sidecar,
+ * The reads record's six paths, each a different thing: the live file, the prior generation, the claim sidecar,
  * and the stamps and temps a killed rotation strands (patterns, since they carry a pid and a random suffix).
- * Basenames come from lib/read-trace.mjs, so a rule spelled here and a path spelled there can't drift.
  * The trace's own `.rotate` and `.evict` temps are left out on purpose; they're the trace's residue.
  */
 const READS_IGNORE_LINES = Object.freeze([
-  `.planning/${READS_FILE}`,
-  `.planning/${ROTATED_READS_FILE}`,
-  `.planning/${READS_CLAIM_FILE}`,
-  `.planning/${READS_CLAIM_FILE}.*`,
-  `.planning/${READS_ROTATE_TEMP_FILE}.*`,
-  `.planning/${READS_EVICT_TEMP_FILE}.*`,
+  logPath(READS_FILE),
+  logPath(ROTATED_READS_FILE),
+  logPath(READS_CLAIM_FILE),
+  `${logPath(READS_CLAIM_FILE)}.*`,
+  `${logPath(READS_ROTATE_TEMP_FILE)}.*`,
+  `${logPath(READS_EVICT_TEMP_FILE)}.*`,
 ]);
-const READS_IGNORE_COMMENT = "# ...and Cadence's per-tool-call read record, the"
-  + ' generation ITS rotation leaves behind, and that rotation\'s claim files'
-  + ' and killed-mid-rotation temps';
 
 /**
  * Does a `check-ignore -v` match source travel with the repository?
@@ -121,18 +125,24 @@ function traceTracked(root) {
 }
 
 /**
- * The literal fallback: the line as a project would write it in `<root>/.gitignore`, comments and blank lines skipped.
+ * The literal fallback: does the records folder's `.gitignore` carry the rule for `path`, or does the root one carry
+ * the path itself? Comments and blank lines skipped.
  * Used only when git couldn't answer, since it can't see a wholesale `.planning/` ignore, which is why git goes first.
  * @param {string} root
  * @param {string} path the ignore rule to look for, as a repo-relative path
  */
 function gitignoreCarriesLine(root, path) {
-  const text = read(join(root, '.gitignore'));
-  if (text === null) return false;
-  return text.split('\n').some((raw) => {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) return false;
-    return line === path || line === `/${path}`;
+  const wanted = [
+    [join(root, '.gitignore'), [path, `/${path}`]],
+    [recordsPath(join(root, PLANNING_NAME), '.gitignore'), [`/${basename(path)}`, basename(path)]],
+  ];
+  return wanted.some(([file, lines]) => {
+    const text = read(/** @type {string} */ (file));
+    if (text === null) return false;
+    return text.split('\n').some((raw) => {
+      const line = raw.trim();
+      return line && !line.startsWith('#') && /** @type {string[]} */ (lines).includes(line);
+    });
   });
 }
 
@@ -149,7 +159,8 @@ function cmdTraceIgnore(root, opts) {
       'point --root at the PROJECT root, the directory holding .gitignore - it is deliberately not'
       + ' --dir, which names .planning/');
   }
-  const file = join(root, '.gitignore');
+  const planning = join(root, PLANNING_NAME);
+  const file = recordsPath(planning, '.gitignore');
   const git = gitIgnoreState(root, TRACE_IGNORE_LINE);
   const live = git.method === 'git' ? git.travels : gitignoreCarriesLine(root, TRACE_IGNORE_LINE);
   // the sibling is asked separately; covering the record but not its rotated generation is a half-covered state
@@ -179,25 +190,18 @@ function cmdTraceIgnore(root, opts) {
   // already covered by lines that travel, which is what makes a re-run safe
   if (common.ignored) return ok({ ...common, written: false, reason: 'already-ignored' });
 
-  // only what's missing is added, so an older project upgrades on its next non-`--check` run
-  const missingTrace = [
-    ...(live ? [] : [TRACE_IGNORE_LINE]),
-    ...(rotated ? [] : [ROTATED_IGNORE_LINE]),
-  ];
-  const blocks = [
-    ...(missingTrace.length
-      ? [`${live ? ROTATED_IGNORE_COMMENT : TRACE_IGNORE_COMMENT}\n${missingTrace.join('\n')}\n`]
-      : []),
-    ...(missingReads.length ? [`${READS_IGNORE_COMMENT}\n${missingReads.join('\n')}\n`] : []),
-  ];
-  const block = blocks.join('\n');
-  // every existing byte survives; a newline is added only if the file lacks one, so brownfield lines stay intact
-  const existing = read(file);
-  const next = existing === null || existing === ''
-    ? block
-    : `${existing}${existing.endsWith('\n') ? '' : '\n'}\n${block}`;
-  atomicWrite(file, next);
-  return ok({ ...common, written: true });
+  // the records folder carries its own file, so the write is the write module's: the folder, then the file if none is
+  // there. An existing file is never edited, hand-written rules included; that is reported, not repaired
+  const had = existsSync(file);
+  makeDir(planning);
+  const records = ensureRecordsDir(planning);
+  if (!records.ok) {
+    return fail(records.reason, `the records folder could not be prepared under ${planning}`,
+      'a symlinked records folder is refused: replace it with a real directory and re-run `trace ignore`');
+  }
+  ensureRecordsIgnore(planning);
+  if (had) return ok({ ...common, written: false, reason: 'records-gitignore-kept' });
+  return ok({ ...common, written: existsSync(file) });
 }
 
 /**
@@ -371,14 +375,14 @@ function providerSpend(events) {
 
 function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
-    // --root is the PROJECT root, not --dir: .gitignore lives there while the line it carries is .planning/trace.jsonl
+    // --root is the PROJECT root, not --dir: git is asked about the project's own .planning/records/ paths
     // a --root with nothing usable is refused at the door, or it would edit the cwd's tree, not the caller's (#42/#45)
     return cmdTraceIgnore(typeof opts.root === 'string' ? opts.root : process.cwd(), opts);
   }
   // close is append minus two fields a site used to restate, so one body validates every flag
   if (sub === 'append' || sub === 'close') {
     // collision check right after the parse: append and close reach a phases/ path, so a clash recounts another phase
-    // suggest, render and window only filter trace.jsonl and resolve no directory
+    // suggest, render and window only filter the trace record and resolve no directory
     const parsedPhase = phaseGuard(`trace ${sub}`, dir, opts.phase, `trace ${sub} needs --phase <N>`,
       `pass --phase <N> for the phase this event belongs to, then re-run the ${sub} - nothing was`
       + ' appended, so exactly one event lands',
@@ -753,7 +757,7 @@ function cmdTrace(dir, sub, opts) {
  * The record a receipt settles, as an absolute path, or '' (never a throw) when none can be resolved.
  * A per-plan fire resolves by `plan-<k>`; every other fire matches the directory on trigger, round and head prefix.
  * Two candidates answer '', not a guess: a check that might read another fire's rulings refuses a correct receipt.
- * Homes by phase: `phases/<N>/`, or every `.planning/tasks/<slug>/` for a task's 0, since a receipt carries no slug.
+ * Homes by phase: `phases/<N>/records/`, or every `.planning/tasks/<slug>/` for a task's 0, since a receipt carries no slug.
  * `deferred/<N>/` is deliberately left out (see fireHome); `trigger` goes through RECORD_TOKEN before `join`.
  * @param {string} dir @param {string|number} phaseRaw
  * @param {string|undefined} trigger @param {any} plan @param {any} sha
@@ -765,7 +769,7 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
   /** @type {string[]} */
   let homes = [];
   if (String(phaseRaw) !== '0') {
-    homes = [join(dir, 'phases', String(phaseRaw))];
+    homes = [phaseRecordsDir(join(dir, 'phases', String(phaseRaw)))];
   } else {
     // lstat tasks/ first, as fireHome does: readdirSync follows a symlink and would walk outside the planning tree
     // each entry's isDirectory reads as lstat does, so a symlink to a directory is false

@@ -7,6 +7,7 @@
 // Fields are additive-only, so don't rename one
 // --dir overrides `.planning` for tests; --root names the project root for commands that read source
 // A new subcommand is a COMMANDS entry, never an if-chain
+// Before a handler runs, planning/migrate.mjs gives the project its state file (records/state.json), converting an unstamped v4.0 project into the layout once
 'use strict';
 
 import {
@@ -89,6 +90,9 @@ const COMMANDS = {
   // the adjudicated gate's Markdown review file; the other gates keep their JSON
   'review-file': async (dir, _sub, opts) =>
     (await import('./planning/review-file.mjs')).cmdReviewFile(dir, opts),
+  // makes a phase's records folder for a writer that cannot, such as the advisory reviewer's heredoc
+  'records-dir': async (dir, _sub, opts) =>
+    (await import('./planning/records-dir.mjs')).cmdRecordsDir(dir, opts),
   // a finished review-panel run, read from its run file, becomes the record's payload and the review file's input
   'workflow-run': async (dir, _sub, opts) =>
     (await import('./planning/workflow-run.mjs')).cmdWorkflowRun(dir, opts),
@@ -125,8 +129,15 @@ const COMMANDS = {
       .cmdDebtHarvest(typeof opts.root === 'string' ? opts.root : process.cwd()),
   renumber: async (dir, sub, opts) =>
     (await import('./planning/renumber.mjs')).cmdRenumber(dir, sub, opts),
+  // a phase's list entry, written to the state; the `## Phases` line is rendered from it
+  'phase-entry': async (dir, sub, opts) =>
+    (await import('./planning/phase-entry.mjs')).cmdPhaseEntry(dir, sub, opts),
+  // re-points one requirement row at a phase, or defers a Pending one; the `## Traceability` row is rendered from it
+  'req-row': async (dir, _sub, opts) => (await import('./planning/req-row.mjs')).cmdReqRow(dir, opts),
   'milestone-prune': async (dir, _sub, opts) =>
     (await import('./planning/milestone-prune.mjs')).cmdMilestonePrune(dir, opts),
+  // rebuilds a state file that is there and does not parse from the artifacts; every other call refuses until it runs
+  'state-rebuild': async (dir, _sub, _opts) => (await import('./planning/migrate.mjs')).cmdStateRebuild(dir),
 };
 
 try {
@@ -159,7 +170,30 @@ try {
       + ' rearm` or `--event deferral` instead. Nothing was written');
   }
   else if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
-  else await handler(args.values['--dir'] || '.planning', sub, opts, words.slice(1));
+  else {
+    // a project without a state file gets one here, once, before any handler reads or writes; a refusal is its own answer
+    const planningDir = args.values['--dir'] || '.planning';
+    // `trace ignore` reports what the project had before, so its stamp (which creates the records folder) waits for its answer
+    // `--check` is the read-only report cad-health runs and writes nothing, so it leaves the stamp to the next seam
+    const late = cmd === 'trace' && sub === 'ignore';
+    // a release touches only the claim file in the git dir, and the conversion refuses while a claim is held,
+    // so it skips the gate or a dead claim could never be freed; take still converts first or a workflow would block itself
+    const freeing = cmd === 'workflow-claim' && sub === 'release';
+    // a state file that does not parse refuses every call but the one that rebuilds it; an unstamped project still converts first
+    const mode = late ? 'before' : cmd === 'state-rebuild' ? 'rebuild' : 'now';
+    const { ensureState, conversionNote, holdAnswer } = await import('./planning/migrate.mjs');
+    if (freeing || ensureState(planningDir, mode)) {
+      const afterwards = late && !('check' in opts);
+      // the call that converted adds one field to its own answer, so its stdout is held until the field can join
+      const release = conversionNote() || afterwards ? holdAnswer() : null;
+      try {
+        await handler(planningDir, sub, opts, words.slice(1));
+        if (afterwards) ensureState(planningDir, 'after');
+      } finally {
+        if (release) release();
+      }
+    }
+  }
 } catch (e) {
   fail('internal', e && e.message ? e.message : String(e));
 }

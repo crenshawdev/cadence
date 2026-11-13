@@ -231,7 +231,7 @@ planning root" from `task-record` - where the run reports done with the check's
 disposition stated and its record called unrecorded, because git is the code
 record and the durable Cadence receipt is the one thing a treeless run has
 nowhere to put. `ENOENT` is the whole of that spelling on the trace side:
-`trace.jsonl` sits directly under `.planning/`, so an append that raised it
+`trace.jsonl` sits directly under `.planning/records/`, which the append makes itself, so an append that raised it
 found no planning root, and there is no second reading of it.
 
 A `written: false` for any other reason - a symlinked trace, a failed stat,

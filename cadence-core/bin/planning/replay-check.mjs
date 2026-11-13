@@ -2,11 +2,13 @@
 // planning/replay-check.mjs - `replay-check`: is this phase's work committed, and which plans still need dispatching
 // /cad-execute asked this in prose, so the only test cost an executor dispatch; a fixture directory answers it here
 // it reports; the stop and its wording stay the workflow's
+// it first folds the phase's plan files and each report's first line into the state, under the lock, and answers from the state it wrote
 'use strict';
 
 import { join } from 'node:path';
 import { fail, phaseGuard, listPlanFiles, ok, read, readPlanReports } from './core.mjs';
 import { planName } from '../lib/planning-files.mjs';
+import { changeState, foldPhase, loadState } from './state-import.mjs';
 
 function cmdReplayCheck(dir, opts) {
   const parsedPhase = phaseGuard('replay-check', dir, opts.phase, 'replay-check needs --phase <N>',
@@ -21,12 +23,23 @@ function cmdReplayCheck(dir, opts) {
   }
 
   const rerun = opts.rerun === true;
-  // readPlanReports is the one definition status reads too, so the dispatch set and the outstanding set can't disagree
+  const state = loadState(dir);
+  if (!state) return;
+  // the fold is the importer's rule and no other: finished is the report's first line, or the whole phase held complete
+  // a phase the state doesn't hold has nothing to fold into, so its reports answer for themselves
+  let finished = null;
+  if (state.phases.some((p) => p.n === parsedPhase.value)) {
+    const folded = changeState(dir, (s) => foldPhase(dir, s, parsedPhase.value), ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md']);
+    if (!folded) return;
+    finished = new Map(folded.phases.find((p) => p.n === parsedPhase.value).plans.map((q) => [q.file, q.finished]));
+  }
+  // the report files and their first lines are facts about the files, read here; `complete` is the state's
   // the phases/<raw>/ prefix stays here: it uses the caller's raw spelling, not the String(n) spelling status resolves
   const reports = readPlanReports(pdir, plans).map((r) => {
     // the name feeds /cad-execute's "plan K of J: <plan name>" line, and is left off when the heading yields none
     const name = planName(read(join(pdir, r.plan)) ?? '');
-    return { ...r, report: join('phases', parsedPhase.raw, r.report), ...(name ? { name } : {}) };
+    return { ...r, complete: finished ? finished.get(r.plan) ?? r.complete : r.complete,
+      report: join('phases', parsedPhase.raw, r.report), ...(name ? { name } : {}) };
   });
 
   ok({

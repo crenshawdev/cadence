@@ -1,11 +1,14 @@
 # cad-phase workflow
 
-CRUD the ROADMAP `## Phases` list. The renumbering ops (insert/remove) are the
-reason this is a skill: a phase number appears in FOUR places (ROADMAP list,
-`.planning/phases/<N>/` dirs, the REQUIREMENTS `Phase` column, the STATE
-cursor) and renumbering keeps them in step. One exception: insert and remove
-shift the REQUIREMENTS column only on Pending `## Traceability` rows and leave
-Complete and Deferred rows as written, since they record where work shipped. The
+CRUD the ROADMAP `## Phases` list. The list, the REQUIREMENTS `## Traceability`
+table and the STATE cursor are generated from the state file, so this workflow
+changes them through seams and never writes them by hand; the one thing it
+hand-writes is a phase's `### Phase N:` detail section. The renumbering ops
+(insert/remove) are the reason this is a skill: a phase number appears in the
+state, the `.planning/phases/<N>/` dirs and the generated views, and
+renumbering keeps them in step. One exception: insert and remove shift the
+REQUIREMENTS column only on Pending `## Traceability` rows and leave Complete
+and Deferred rows as written, since they record where work shipped. The
 mechanics live in the planning seam's `renumber` subcommand - this workflow
 gathers the judgment inputs, shows the dry-run at the confirmation gate, and
 repairs what the seam deliberately leaves to judgment.
@@ -15,15 +18,33 @@ repairs what the seam deliberately leaves to judgment.
 ### add
 Append a new phase after the last one (number = current total + 1). Get its
 name, one-line description, and success criteria (from args or the ask-user
-seam). No renumbering. Write the ROADMAP list line and detail section; update
-the cursor's total: read the current cursor first (`cursor get`), then re-write
-it via `cursor set` with that same phase/status/next (the new total is
-re-derived from ROADMAP). `cursor set` requires `--phase` and does not preserve
-the prior one, so the get is not optional.
+seam). No renumbering. Enter the list entry, then hand-write its
+`### Phase N:` detail section with the criteria:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
+```
+
+Text carrying quotes goes in a scratch file passed as `--name-file` or
+`--description-file`. When the add leaves no other unfinished phase, the seam
+points the cursor at the new phase itself, in the same write, unless the cursor
+is paused, which stays as the user left it; never run `cursor set` after it.
+When the answer carries `opened_cycle: true`, rewrite the
+ROADMAP Overview's sentence that says no cycle is open so it names the cycle
+this add opened, and the "no cycle open" sentences a milestone close wrote in
+PROJECT.md `### Active` and REQUIREMENTS.md `## Active` the same way - the
+session wrote that prose, so the session rewrites it; no script edits the
+Overview or those sections.
 
 ### edit <N>
-Change phase N's name, description, or success criteria in ROADMAP.md only. A
-plain markdown edit - no renumbering, no dir change.
+A name or description change goes through the seam, no renumbering, no dir
+change:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry edit --phase <N> [--name <name>] [--description <one line>]
+```
+
+A success-criteria change is a plain edit to the `### Phase N:` section.
 
 ### insert <N>
 1. Dry-run first - this is what the user confirms:
@@ -45,9 +66,9 @@ plain markdown edit - no renumbering, no dir change.
    only `## Traceability` rows whose Status is `Pending`; Complete and
    Deferred rows, `## Shipped` and every other REQUIREMENTS line stay
    byte-identical.
-3. The seam leaves the numbered slot empty (`slot` in its output): write the
-   new `- [ ] **Phase N: Name**` line and its detail section from the
-   gathered name/description/criteria.
+3. The seam leaves the numbered slot empty (`slot` in its output): fill it with
+   `phase-entry add --phase <N>`, the same `--at` number, and the gathered
+   name and description, then hand-write that phase's detail section.
 4. Repair any reported `in_text_refs` by hand - they need judgment (a prose
    "phase 3" may or may not mean the renumbered phase).
 
@@ -69,14 +90,20 @@ plain markdown edit - no renumbering, no dir change.
    Pending orphans' Phase cells (they surface as `no-phase` in /cad-audit -
    never silently dropped); Complete and Deferred rows, `## Shipped` and every
    other line stay byte-identical.
-4. Reassign each orphaned requirement, all Pending rows, via the ask-user seam
-   (a new phase, or Deferred), and repair reported `in_text_refs` by hand.
+4. Ask (ask-user seam) where each orphaned requirement goes, a phase the state
+   holds or Deferred, and apply the answer with
+   `req-row --id <id> --phase <N>` or `req-row --id <id> --defer`. Repair
+   reported `in_text_refs` by hand.
 
 ## Finish
-- A failed apply (`ok:false` with a `completed` list) leaves the tree partly
-  renumbered - the seam is not transactional - reconcile those ops by hand
-  before committing anything.
+- A failed apply (`ok:false`, `partial-apply`, with a `completed` list) leaves
+  the tree partly renumbered, and the state file, written last, still holds the
+  old numbering unless the detail says it was written. Reverse the completed
+  directory moves and text edits until `status` is clean, before committing
+  anything; never edit the list, the table, `STATE.md` or
+  `.planning/records/state.json` to match a half-moved tree.
 - Sanity: spot-check `planning.mjs status` runs clean.
 - Commit atomically (`chore: <op> phase N`) honoring the protected-branch
-  guard (references/git-guard.md). Cursor committed with it; never leave the tree
+  guard (references/git-guard.md). Cursor and `.planning/records/state.json`
+  committed with it; never leave the tree
   dirty.

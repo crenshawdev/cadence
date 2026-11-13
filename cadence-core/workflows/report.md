@@ -1,7 +1,7 @@
 <purpose>
 The run record already holds the story of what a phase cost and what that
 spend caught; this command tells it. Everything reported is drawn from
-`.planning/trace.jsonl` and the phase's own artifacts - no subagent runs, no
+`.planning/records/trace.jsonl` and the phase's own artifacts - no subagent runs, no
 planning file is written (the render's scratch file is the model's own temp),
 and a number that is not in the record is not in the report.
 </purpose>
@@ -11,7 +11,7 @@ and a number that is not in the record is not in the report.
 <step name="scope">
 Parse `$ARGUMENTS`: a phase number scopes to that phase; `--all` spans the
 whole record; neither means the STATE cursor's phase (`planning.mjs cursor
-get`). No `.planning/trace.jsonl` -> say so and stop: there is no record to
+get`). No `.planning/records/trace.jsonl` -> say so and stop: there is no record to
 report, which is itself the answer.
 </step>
 
@@ -63,7 +63,7 @@ rows against the per-role `workflow.max_dispatch_tokens` ceilings and
 returns `ceilings`, `problems` (each `{kind, file, detail}`), `compared`,
 `unbudgeted` and `unrecorded`; it takes the same `--phase` scope, so pass it
 whatever the render got. The second is the in-dispatch read ledger
-over `.planning/reads.jsonl` - `fileCalls`, `fileRedundancy`, `topFiles` - and
+over `.planning/records/reads.jsonl` - `fileCalls`, `fileRedundancy`, `topFiles` - and
 `--join` ties each record to the dispatch bracket that caused it: `joined`,
 `ambiguous`, `unjoined`, `floor`, `coordinator`, `unresolved`, and `inDispatch`
 (per-role `roles[]` with `ratio`, `worst` and their bracket counts, plus
@@ -73,12 +73,12 @@ path, plus `reads.rotated` naming the sibling when that record was cut.
 Then open the scoped
 phase artifacts that ground the narrative, each at most once:
 `.planning/phases/<N>/SUMMARY.md` (deviations, gate-fix commits),
-`.planning/phases/<N>/REVIEW-*.md` (persisted advisory findings),
-`.planning/phases/<N>/ADJUDICATION-*.json` (one per blocking or adjudicated
+`.planning/phases/<N>/records/REVIEW-*.md` (persisted advisory findings),
+`.planning/phases/<N>/records/ADJUDICATION-*.json` (one per blocking or adjudicated
 fire: the finding bodies and the ruling each was given - that `REVIEW-*.md` glob
 cannot match a `.json` sibling, so it is listed separately or the Gates line has
 nothing to count), and
-`.planning/phases/<N>/reports/plan-*.md` ONLY when SUMMARY is absent (an
+`.planning/phases/<N>/records/reports/plan-*.md` ONLY when SUMMARY is absent (an
 unfinished phase). Do not re-read the trace file itself - the render is the
 reader.
 
@@ -119,7 +119,7 @@ Gap terms, never a product: <dispatch count; turn count with `turns_unrecorded` 
 Cross-model reviews (what the PROVIDERS reported off the wire, a different denomination from the token line above and never added to it): <only when `provider_spend` is present: its `tokens` as a provider-reported input+output count, over its `calls` calls, with `unrecorded` beside it when present; no line at all where the scope holds no provider review call>
 Window budget (from `trace window`): <only when `problems` is non-empty: one line per crossing - the role, the dispatch it belongs to, its figure and the ceiling it crossed, both as given; then `unbudgeted` roles and `unrecorded` when either is non-zero>
 Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, rotated record (from `rotated`: the record was cut at the newest phase anchor, so everything older than the run in flight is in the sibling it names and is not in this report - a cut, not a truncation, and not the same fact as capped), coordinator residue (one RUN's, joined on `corr`, not the phase's) - each named, never silently dropped>
-Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; then per role from `inDispatch.roles`, each row whose `ratio` is non-null - the ratio as opens per distinct file inside ONE dispatch, its `worst` file with that file's count, and beside them `inDispatch.coverage` and the `inDispatch.coordinatorFiles` it excluded; then only when `reads.rotated` is present: the record was cut at its size bound, so everything older than the cut is in the sibling it names and is not in this report - a cut, not a truncation; omit the whole line when the record is empty>
+Reading (whole `.planning/records/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; then per role from `inDispatch.roles`, each row whose `ratio` is non-null - the ratio as opens per distinct file inside ONE dispatch, its `worst` file with that file's count, and beside them `inDispatch.coverage` and the `inDispatch.coordinatorFiles` it excluded; then only when `reads.rotated` is present: the record was cut at its size bound, so everything older than the cut is in the sibling it names and is not in this report - a cut, not a truncation; omit the whole line when the record is empty>
 ```
 
 Rules, all load-bearing:
@@ -224,12 +224,12 @@ Rules, all load-bearing:
   nothing to obtain it, which is what keeps README's "ships no instrumentation
   and phones nothing home" true. Name the comparator and stop; never print a
   billed number this command did not read out of the record.
-- `--phase <N>` does NOT scope a run, and the line describing the figure says
-  so. The filter reads the events' `phase` field alone and never `corr`, so a
-  phase-scoped figure can pool several cycles that used the same phase number:
-  measured on this repository, `trace render --phase 1` spans 12 distinct
-  `corr` ids. A caveat attached to a total that pooled twelve cycles would be a
-  worse claim than the one it replaced.
+- A `--phase <N>` figure counts the open cycle's phase N: the read starts after
+  the newest cycle marker in the trace and keeps the events whose `phase` is N,
+  so every run of phase N in that cycle counts, and the line describing the
+  figure says a phase, never a run. A trace with no cycle marker reads as one
+  span, so a project whose trace predates the marker still pools every cycle's
+  phase N until its next close or cycle-opening add writes one.
 - The coordinator residue is `coordinator.residue_ms` and the `steps[]` row
   carrying the most of it, reported AS GIVEN - the renderer computes it once so
   this line and `trace suggest` cannot disagree, and prose recomputing it is how
@@ -252,7 +252,7 @@ Rules, all load-bearing:
   billed to the dispatch's role, so a mismatch is a recording defect at one of
   those two prose sites, to fix THERE - never a correction to make in this
   report.
-- The reading line prices `.planning/reads.jsonl`, which carries NO phase
+- The reading line prices `.planning/records/reads.jsonl`, which carries NO phase
   scoping: `fileCalls`, `fileRedundancy` and `topFiles` span every dispatch
   still in the LIVE record, so the line says so even when the report is scoped
   to one phase - it does not price the phase. No close prunes that record; the
@@ -291,10 +291,10 @@ Rules, all load-bearing:
   only when nonzero, and never as a failed join.
 - The Gates line's survivor figure is COUNTED from the record and never narrated
   out of the event alone. Read the fire's
-  `.planning/phases/<N>/ADJUDICATION-<trigger>-<discriminator>.json`, count its
+  `.planning/phases/<N>/records/ADJUDICATION-<trigger>-<discriminator>.json`, count its
   entries by `ruling`, and compare that against the `survivors`, `downgraded`
   and `refuted` the same fire's `outcomes` event carries. Two independent
-  artifacts is the whole point: `.planning/trace.jsonl` is gitignored, so
+  artifacts is the whole point: `.planning/records/trace.jsonl` is gitignored, so
   custody rests on the committed record and the trace is the local cross-check,
   and comparing them is the only thing that makes a tampered record visible.
 - A DISAGREEMENT between the two is NAMED, never silently resolved to one side:

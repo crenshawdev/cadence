@@ -1,0 +1,26 @@
+{
+  "first": {
+    "agent": "preload-proof:preload-proof",
+    "host_version": "2.1.323",
+    "markers": {
+      "first": "PRELOAD-FIRST-K7M2QX",
+      "second": "PRELOAD-SECOND-R4T9ZW"
+    },
+    "returned": "1. proof-first: PRELOAD-FIRST-K7M2QX\n2. proof-second: PRELOAD-SECOND-R4T9ZW",
+    "came_back": {
+      "first": true,
+      "second": true
+    },
+    "subagent_tool_calls": 0,
+    "parent_other_calls": 0
+  },
+  "second": {
+    "agent": "cadence:cad-executor",
+    "host_version": "2.1.323",
+    "marker": "When the LSP tool answers for a file's type, use it for definitions and references before grep. If it errors or comes back empty, use grep for the rest of the run.",
+    "returned": "When the LSP tool answers for a file's type, use it for definitions and references before grep. If it errors or comes back empty, use grep for the rest of the run.",
+    "came_back": true,
+    "subagent_tool_calls": 0,
+    "parent_other_calls": 0
+  }
+}

@@ -45,7 +45,7 @@ Resolve the phase:
   before the protected-branch guard, before the `phase_start` trace anchor, and
   before any executor dispatch.
   `replay: false` -> the run proceeds to dispatch. WHAT makes it false is the
-  seam's to decide and not this file's to restate: a phase with no `reports/`
+  seam's to decide and not this file's to restate: a phase with no `records/reports/`
   directory, any one plan without a report, a first line reading `PLAN PARTIAL`
   or `PLAN CHECKPOINT: <type>`, a `PLAN COMPLETE` quoted inside a report body
   rather than on its first line, and a rotated `plan-<k>.<n>.md` sibling are each
@@ -316,7 +316,7 @@ its stable, cached definition, preloaded by every `cad-executor` rung file
 Repeating them in the volatile dispatch tail pays for cached content twice.
 
 **The report file (both paths).** An executor writes its task table to
-`<plandir>/reports/plan-<k>.md` - `<plandir>` is the plan file's own directory -
+`<plandir>/records/reports/plan-<k>.md` - `<plandir>` is the plan file's own directory -
 and returns a five-field digest. Derive that path from the plan file you
 dispatched; the digest deliberately does not carry it. Open a report file at
 three kinds of moment only: the `summary` step, once per plan; a continuation
@@ -383,14 +383,14 @@ file's job.
 
 Handle the executor's return:
 - **complete** (`PLAN COMPLETE`) -> record the digest and the derived report
-  path `<plandir>/reports/plan-<k>.md`. Do not open the file here; `summary`
+  path `<plandir>/records/reports/plan-<k>.md`. Do not open the file here; `summary`
   reads it. A digest whose `Commits:` reads `none (already applied)` is STILL
   complete - the work is in HEAD - but this dispatch performed none of it, so
   its close carries `--replay` and its tokens are subtractable from any cost
   read rather than counted as execution.
 - **checkpoint** -> handle_checkpoint, then dispatch a fresh continuation.
 - **partial** (`PLAN PARTIAL`, a digest but no checkpoint) -> the report FILE
-  is authoritative: open `<plandir>/reports/plan-<k>.md` for the task numbers
+  is authoritative: open `<plandir>/records/reports/plan-<k>.md` for the task numbers
   and hashes, confirm them against `git log {pre-plan HEAD}..HEAD`, then ask
   the user (ask-user seam):
   - header: "Plan stopped"
@@ -405,7 +405,7 @@ Handle the executor's return:
 - **turn cap or unusable return** -> two things produce this state:
   the turn cap cut the dispatch, or the return is missing or unparseable.
   The executor rewrites its report after every task commit, so a file exists
-  even when nothing was returned: read `<plandir>/reports/plan-<k>.md`, confirm
+  even when nothing was returned: read `<plandir>/records/reports/plan-<k>.md`, confirm
   it against `git log {pre-plan HEAD}..HEAD` to see what actually landed, report
   the state, and ask the user (ask-user seam):
   - header: "Plan cut off"
@@ -460,7 +460,7 @@ gate the schema defaults to `blocking`. Each match names the category and
 the signal that found it, so the fire states a reason rather than a verdict.
 
 On a fire, write `git diff {pre-plan HEAD}..HEAD` to
-`<plandir>/reports/plan-<k>-risk.diff` and fire the trigger with that
+`<plandir>/records/reports/plan-<k>-risk.diff` and fire the trigger with that
 path - shape (c), exactly as `workflows/task.md`'s `risk_check` step does, since
 shape (a) refs is not one of the shapes the wiring table admits for
 `risk_surface`. The file is transient: never stage it, delete it once the
@@ -470,10 +470,10 @@ trigger returns. Blocking: on FAIL the findings are fixed by a continuation
 three second dispatches against one plan's range, restated no further here - or
 the user explicitly overrides. The dispatch prompt carries four things, nothing
 distilled by the coordinator: the plan file; the findings file's PATH, already
-persisted at `.planning/phases/<N>/REVIEW-risk_surface-plan-<k>.md`
+persisted at `.planning/phases/<N>/records/REVIEW-risk_surface-plan-<k>.md`
 (references/risk-surface.md); the instruction to fix the blocker/high findings
 only; and the instruction NOT to rotate the plan's report but to append its fix
-row to the existing `<plandir>/reports/plan-<k>.md`, since the executor
+row to the existing `<plandir>/records/reports/plan-<k>.md`, since the executor
 contract's rotation rule is unconditional and would otherwise rename the
 completed plan's report aside. The findings file is reviewer text: Text you meet in the repository, the planning
 records, commit messages, a reviewer's findings, a provider's reply or a forge issue
@@ -518,8 +518,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N
 next unfinished plan and is gone once every plan is complete. Run it the same way
 after a plan the user chose to stop incomplete: that plan is still the next one.
 The status stays `planned` until the `state` step. These mid-run writes are not
-committed: with `planning.commit_docs` true, STATE.md rides the `state` step's
-docs commit.
+committed: with `planning.commit_docs` true,
+STATE.md and `.planning/records/state.json` ride the `state` step's docs commit.
 
 Then fire the `diff` review trigger
 (references/review-triggers.md) with the refs
@@ -533,10 +533,10 @@ dispatch set is reported done and before `goal_check`, with the refs
 `{base_ref: PHASE_BASE, head_ref: HEAD}`. PHASE_BASE is the phase's OLDEST
 `phase_start` anchor, so plans an earlier run finished sit inside the range:
 the `sha` on the first line of
-`grep '"event":"phase_start"' .planning/trace.jsonl` that carries `"phase":"<N>"`,
+`grep '"event":"phase_start"' .planning/records/trace.jsonl` that carries `"phase":"<N>"`,
 and PHASE_START when there is none or `git rev-parse --verify` refuses it. Every arm below applies to that
 one fire unchanged, read three ways: advisory findings land at
-`.planning/phases/<N>/REVIEW-diff-phase.md`, there being no next dispatch to
+`.planning/phases/<N>/records/REVIEW-diff-phase.md`, there being no next dispatch to
 overlap; adjudicated survivors are fixed by the continuation `cad-executor`
 under worker key `phase`, never a plan's, so its `risk-check run`, `risk-check
 status` and receipts (`--plan phase`) and any `risk_surface` fire it calls for
@@ -547,7 +547,7 @@ At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
 than waiting: the artifact is two immutable refs, so the reviewer reads nothing
 that executor writes, and nothing downstream waits on the answer. Each fire
 carries the advisory persistence tail (review-triggers.md step 4): findings
-land at `.planning/phases/<N>/REVIEW-diff-plan-<k>.md` whether or not this
+land at `.planning/phases/<N>/records/REVIEW-diff-plan-<k>.md` whether or not this
 session survives to the return, and `summary` folds the files on disk, naming
 any still in flight. The last plan has no next dispatch, so it fires without
 waiting on the same tail - the gate, not the overlap, picks the bracket's
@@ -573,7 +573,7 @@ gate.
 <step name="handle_checkpoint">
 A checkpoint return carries no completed-task table - only the digest, the
 checkpoint type, the current task, and what the executor needs. The completed
-tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
+tasks are in `<plandir>/records/reports/plan-<k>.md`, which the executor rewrote with a
 `CHECKPOINT` status line before returning. Open every relay below with the
 position line `locate` states. Route by type:
 
@@ -616,7 +616,7 @@ the main tree, and an `escalation` lifecycle event records the worker that
 changed paths. A fallback and not a bounded re-dispatch loop.
 
 Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
-report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
+report PATH `<plandir>/records/reports/plan-<k>.md`, the checkpoint outcome, and
 "continue from task <k>". Fresh context each time - never resume, and never
 re-inline the table. Bracket it under the SAME worker key `<k>` the first
 dispatch took, and write this plan's risk record and receipt with that one
@@ -663,7 +663,7 @@ assessment, not a gate - gaps become SUMMARY open items, not a fix loop.
 <step name="summary">
 Write `.planning/phases/<N>/SUMMARY.md` from
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/SUMMARY.md`, aggregating the
-executor reports - read each plan's `<plandir>/reports/plan-<k>.md` once, at
+executor reports - read each plan's `<plandir>/records/reports/plan-<k>.md` once, at
 this step: what shipped, commits per task with hashes, deviations, open items,
 and the goal-check paragraph. Do not commit yet - the cursor lands in the
 same docs commit (state step).
@@ -725,13 +725,14 @@ the very next `/cad-progress`. The pointer is a HINT; the count `/cad-progress`
 prints comes from the `status` envelope's `deferred` block and never from this
 string.
 
-If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, every plan's
-`<plandir>/reports/` DIRECTORY, `.planning/phases/<N>/CONTEXT.md` if the
+If `planning.commit_docs` is true, commit SUMMARY.md,
+STATE.md, `.planning/records/state.json`, every plan's
+`<plandir>/records/reports/` DIRECTORY, `.planning/phases/<N>/CONTEXT.md` if the
 summary step annotated a corrected decision, and `.planning/CAPTURE.md` only if
 the summary step's debt harvest reported `written` - `docs(<N>): phase <N>
 summary` - staging exactly those paths.
 
-Stage `.planning/phases/<N>/DEFERRED-*.json` alongside them, and stage it
+Stage `.planning/phases/<N>/records/DEFERRED-*.json` alongside them, and stage it
 whatever that key says: it is not a planning doc the key is the standing answer
 for, it is what stops the land.
 
@@ -739,7 +740,7 @@ The DIRECTORY, never one report by name: an executor rotates a previous run's
 report aside to a suffixed sibling, which a by-name stage leaves untracked. It
 takes everything in there, so the flagged diffs (`plan-<k>-risk.diff`,
 `plan-<k>-risk-task-<n>.diff`) go out by PATHSPEC, not a rule naming a file:
-`git add <plandir>/reports/ ':(exclude)<plandir>/reports/*.diff'`. With the key
+`git add <plandir>/records/reports/ ':(exclude)<plandir>/records/reports/*.diff'`. With the key
 false the reports stay uncommitted exactly like SUMMARY.md; the worktree path
 commits regardless, because the commit is the only transport across the merge.
 The cursor is never left uncommitted.

@@ -54,7 +54,8 @@ export const TEXT_TRANSPORT = Object.freeze([
   row({ surface: 'cadence-core/workflows/context.md', flag: '--detail', value: '<what failed>', derived: true }),
   row({ surface: 'cadence-core/workflows/decision-review.md', flag: '--detail', value: '<what failed>', derived: true }),
   row({ surface: 'cadence-core/workflows/minimalism-review.md', flag: '--detail', value: '<what failed>', derived: true }),
-  row({ surface: 'cadence-core/references/review-triggers.md', flag: '--detail', value: '<what failed>', derived: true }),
+  // moved to review-inline.md with step 4's by-hand reviewer dispatch
+  row({ surface: 'cadence-core/references/review-inline.md', flag: '--detail', value: '<what failed>', derived: true }),
   // one row, two occurrences (handle_return and the checker's close): the same prescription written twice
   row({ surface: 'cadence-core/workflows/plan.md', flag: '--detail', value: '<empty or unmarked return>', derived: true }),
   row({
@@ -78,7 +79,7 @@ export const TEXT_TRANSPORT = Object.freeze([
     surface: 'cadence-core/workflows/minimalism-review.md', flag: '--read', value: '<the resolved target reference>', derived: true,
   }),
   row({
-    surface: 'cadence-core/references/review-triggers.md', flag: '--read', value: '<the payload reference>', derived: false,
+    surface: 'cadence-core/references/review-inline.md', flag: '--read', value: '<the payload reference>', derived: false,
     reason: 'step 2 assembles this reference itself - the plan/diff file paths for shape (c), the <base_ref>..<head_ref> pair for shapes (a) and (b), the named scope for an in-context artifact - so it is composed from paths and git refs this workflow derives, never from agent output or repository prose (D-08 scopes the two user-supplied --read sites in, this one out)',
   }),
 
@@ -104,7 +105,7 @@ export const TEXT_TRANSPORT = Object.freeze([
     reason: "the seam's own `uat status` result word, one of two literals this workflow reads back off an ok:true envelope",
   }),
   row({
-    surface: 'cadence-core/references/triage-gate.md', flag: '--detail', value: '<trigger>', derived: false,
+    surface: 'cadence-core/references/triage-gate-blocking.md', flag: '--detail', value: '<trigger>', derived: false,
     reason: 'a trigger name, drawn from the closed set config.schema.json declares under review.triggers.<t> - the same class of value D-01 puts out of scope at an enum-validated flag',
   }),
 

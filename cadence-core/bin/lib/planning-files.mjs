@@ -4,7 +4,6 @@
 // a format change is one function here plus its tests, workflow prose never describes file mechanics
 'use strict';
 
-import { writeFileSync, renameSync, lstatSync } from 'node:fs';
 import { isRefusedSpelling } from './lease-grammar.mjs';
 import { fenceScanner } from './text-util.mjs';
 
@@ -1861,31 +1860,4 @@ export function cutPhaseDetail(text, n) {
   // a section running to the end leaves the line before it terminated, as slicing the text at the heading did
   if (span.end === lines.length) return span.start > 0 ? `${lines.slice(0, span.start).join('\n')}\n` : '';
   return [...lines.slice(0, span.start), ...lines.slice(span.end)].join('\n');
-}
-
-// atomic write: write a sibling temp file and rename over the target, so a crash never leaves a torn file
-// the temp name is unique per call (`<file>.<pid>.<n>.tmp`) and derived, never random
-// last-write-wins on the target: a `uat record` racing a `phase-done` loses an edit
-// a symlink at the temp path is refused with a throw: a planted `ROADMAP.md.tmp` link used to write bytes anywhere
-// only the temp path is guarded, a symlinked target is replaced, which heals a tree an attack already touched
-// cost: a planning file symlinked into a dotfiles tree is replaced on the next write
-
-/** Bumped on every atomicWrite call, so no two share a temp path. */
-let tmpSeq = 0;
-
-/**
- * @param {string} file
- * @param {string} text
- * @throws when the temp path is a symlink - writing would follow it out of the tree
- */
-export function atomicWrite(file, text) {
-  const tmp = `${file}.${process.pid}.${tmpSeq++}.tmp`;
-  // lstatSync so the link is classified, not its target. A stale temp from a crashed process is overwritten, no wedge
-  let st = null;
-  try { st = lstatSync(tmp); } catch { /* ENOENT is the ordinary case */ }
-  if (st && st.isSymbolicLink()) {
-    throw new Error(`atomicWrite refused: temp path is a symlink: ${tmp}`);
-  }
-  writeFileSync(tmp, text);
-  renameSync(tmp, file);
 }

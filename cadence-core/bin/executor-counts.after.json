@@ -1,0 +1,90 @@
+{
+  "label": "after: this cycle, phase 2, every cad-executor dispatch, 2026-11-13, run by the generated cad-executor agent file at 0598d326 with LSP in its tools and the cad-shared-rules skill preloaded",
+  "counted_by": "cadence-core/bin/executor-counts.mjs",
+  "rows": [
+    {
+      "agent_id": "a9555d08ddbb7677b",
+      "plan": "1",
+      "dispatch": "plan",
+      "language": "mjs",
+      "tool_calls": 53,
+      "lsp": 0,
+      "grep": 13,
+      "turns": 53,
+      "tokens": 81589
+    },
+    {
+      "agent_id": "a777b4c6f4ccaa6e3",
+      "plan": "2",
+      "dispatch": "plan",
+      "language": "mjs, md, json",
+      "tool_calls": 112,
+      "lsp": 0,
+      "grep": 42,
+      "turns": 112,
+      "tokens": 151828
+    },
+    {
+      "agent_id": "a4ba13bf235fdfbe3",
+      "plan": "2",
+      "dispatch": "fix continuation",
+      "language": "mjs",
+      "tool_calls": 35,
+      "lsp": 0,
+      "grep": 12,
+      "turns": 35,
+      "tokens": 66800
+    },
+    {
+      "agent_id": "ac4b143436179b3f1",
+      "plan": "3",
+      "dispatch": "plan",
+      "language": "mjs, md",
+      "tool_calls": 79,
+      "lsp": 0,
+      "grep": 29,
+      "turns": 79,
+      "tokens": 139667
+    },
+    {
+      "agent_id": "ac57fb496b6616ab0",
+      "plan": "3",
+      "dispatch": "fix continuation",
+      "language": "mjs, md",
+      "tool_calls": 45,
+      "lsp": 0,
+      "grep": 14,
+      "turns": 45,
+      "tokens": 87819
+    },
+    {
+      "agent_id": "adade7cb80d11e13d",
+      "plan": "4",
+      "dispatch": "plan",
+      "language": "md, mjs",
+      "tool_calls": 49,
+      "lsp": 0,
+      "grep": 22,
+      "turns": 49,
+      "tokens": 75609
+    },
+    {
+      "agent_id": "a710991c8211468f2",
+      "plan": "5",
+      "dispatch": "plan",
+      "language": "json",
+      "tool_calls": 21,
+      "lsp": 0,
+      "grep": 6,
+      "turns": 21,
+      "tokens": 40712
+    }
+  ],
+  "totals": {
+    "tool_calls": 394,
+    "lsp": 0,
+    "grep": 138,
+    "turns": 394,
+    "tokens": 644024
+  }
+}

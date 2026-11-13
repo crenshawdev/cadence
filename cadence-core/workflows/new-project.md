@@ -42,13 +42,14 @@ line):
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --root .
    ```
 
-   Append-if-absent: it creates `.gitignore` when there is none, and a
-   brownfield `.gitignore` keeps every line it had. A re-run adds no second
-   line (`written:false`, `reason:"already-ignored"`), and a project that
-   ignores `.planning/` wholesale is already correct and is left alone.
-   `.planning/trace.jsonl` is ONE MACHINE's routing/provider/worker record, so a
-   project must not commit it - and this seam is the only thing in Cadence that
-   writes that line.
+   Create-if-absent: the rules live in the records folder's own
+   `.planning/records/.gitignore`, so the project's `.gitignore` is never
+   edited, and a records `.gitignore` that already exists keeps every line it
+   had. A re-run writes nothing (`written:false`, `reason:"already-ignored"`),
+   and a project that ignores `.planning/` wholesale is already correct and is
+   left alone. `.planning/records/trace.jsonl` is ONE MACHINE's
+   routing/provider/worker record, so a project must not commit it - and this
+   seam is the only thing in Cadence that writes that file.
 4. If `.planning/config.json` does not exist, copy the engine template
    verbatim:
 
@@ -448,7 +449,8 @@ table left as bare headers (seeded per phase by `/cad-plan`, never here).
 
 On "Not yet", return to scoping.
 
-Commit: `docs: define requirements` with `.planning/REQUIREMENTS.md`.
+Commit: `docs: define requirements` with `.planning/REQUIREMENTS.md` and
+`.planning/records/state.json`.
 </step>
 
 <step name="testing_policy">
@@ -487,9 +489,17 @@ Derivation rules:
 6. Order by dependency; state each phase's `Depends on` explicitly.
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
-`.planning/ROADMAP.md`. Leave REQUIREMENTS.md's Traceability table as bare
+`.planning/ROADMAP.md`: the overview, an empty `## Phases` heading and every
+`### Phase N:` detail section. Leave REQUIREMENTS.md's Traceability table as bare
 headers - `/cad-plan` seeds each row when its phase is planned
 (`references/req-traceability.md`); do not hand-author a row here.
+
+Then enter each phase, in order. The list is generated from the state file, so
+a hand-written line would be overwritten:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
+```
 
 Then count what you just wrote - rule 5 above is prose until a seam counts it:
 
@@ -516,9 +526,26 @@ criteria. Name every `over` phase and its numbers in that same presentation.
   - "Change phases" - you tell me what to change, and I update the roadmap
   - "Show the whole file" - I print the roadmap file as written, then ask again
 
-On "Change phases": take the feedback, revise ROADMAP.md and the
-traceability mapping inline, re-present, loop until approved. On "Show the
-whole file": show the file, then re-ask.
+On "Change phases": take the feedback. Every change to the phase list goes
+through a seam - a name or description, a new phase, a dropped one, an inserted
+one whose slot `phase-entry add` fills:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry edit --phase <N> [--name <name>] [--description <one line>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" renumber remove --n <N>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" renumber insert --at <N>
+```
+
+The seam runs before the `### Phase N:` sections are hand-edited: a renumber
+shifts every `Phase K` heading, so a section edited first is moved or removed
+under the edit. Run `renumber insert` or `renumber remove` first, then
+`phase-entry add` into the slot an insert freed, and only then edit the
+overview, the `### Phase N:` sections, their criteria and requirement mapping
+inline.
+
+Run `criteria-size` again, re-present, loop until approved. On "Show the whole
+file": show the file, then re-ask.
 </step>
 
 <step name="state">
@@ -537,7 +564,8 @@ already present; the grammar for `<N>` is stated in
 `references/roadmap-phases.md`.
 
 Commit: `docs: create roadmap ([N] phases)` with `.planning/ROADMAP.md`,
-`.planning/STATE.md`, `.planning/REQUIREMENTS.md`, `.planning/config.json` and
+`.planning/STATE.md`, `.planning/REQUIREMENTS.md`, `.planning/records/state.json`,
+`.planning/records/.gitignore`, `.planning/config.json` and
 `.github/cadence/coverage-policy.json`.
 </step>
 

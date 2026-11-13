@@ -38,7 +38,7 @@
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { emit, emitCaught } from './lib/seam-io.mjs';
-import { atomicWrite } from './lib/planning-files.mjs';
+import { atomicWrite } from './lib/planning-store.mjs';
 // runs an ordered step list and records which steps completed
 import { runTransition } from './lib/file-transition.mjs';
 import {

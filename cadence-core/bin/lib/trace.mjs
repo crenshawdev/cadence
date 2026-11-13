@@ -1,5 +1,5 @@
 // @ts-check
-// trace.mjs - the one writer and reader of `.planning/trace.jsonl`, the record of what a run did.
+// trace.mjs - the one writer and reader of `.planning/records/trace.jsonl`, the record of what a run did.
 // The correlation id is derived from disk, never minted: producers are one-shot processes with no state.
 // Writes append, because a read-modify-write would lose events under parallel dispatch.
 // It never throws or speaks on a stream, since a record of a decision can't change the decision.
@@ -8,10 +8,11 @@
 'use strict';
 
 import {
-  appendFileSync, closeSync, lstatSync, openSync, readFileSync, readSync, statSync,
+  closeSync, lstatSync, openSync, readFileSync, readSync, statSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { appendFile, recordsPath } from './planning-store.mjs';
 import { ROTATION_EVENT, rotateJsonl } from './jsonl-rotation.mjs';
+import { recordsReady } from './project-state.mjs';
 
 export const TRACE_FILE = 'trace.jsonl';
 
@@ -93,9 +94,16 @@ export const STEP_WINDOW = 'step_window';
  */
 export const ROTATION = ROTATION_EVENT;
 
+/**
+ * A lifecycle event with no `phase` that marks a cycle boundary: a phase-scoped read and `correlationId` both start
+ * after the newest one, so this cycle's phase 1 isn't summed with the last cycle's. A record without one reads as
+ * one span.
+ */
+export const CYCLE = 'cycle_boundary';
+
 /** @param {string} planningRoot */
 export function tracePath(planningRoot) {
-  return join(planningRoot, TRACE_FILE);
+  return recordsPath(planningRoot, TRACE_FILE);
 }
 
 /**
@@ -103,7 +111,7 @@ export function tracePath(planningRoot) {
  * @param {string} planningRoot
  */
 export function rotatedTracePath(planningRoot) {
-  return join(planningRoot, ROTATED_TRACE_FILE);
+  return recordsPath(planningRoot, ROTATED_TRACE_FILE);
 }
 
 /**
@@ -111,7 +119,7 @@ export function rotatedTracePath(planningRoot) {
  * @param {string} planningRoot
  */
 export function rotationClaimPath(planningRoot) {
-  return join(planningRoot, ROTATION_CLAIM_FILE);
+  return recordsPath(planningRoot, ROTATION_CLAIM_FILE);
 }
 
 /**
@@ -154,24 +162,46 @@ function readLines(planningRoot) {
 
 /**
  * The newest `lifecycle` event called `name` that `want` accepts, and its line index, or null. Walks backwards, a line
- * that isn't a JSON object is skipped.
+ * that isn't a JSON object is skipped. A `lifecycle` event called `stop` ends the walk with null.
  * @param {string[]} lines
  * @param {string} name
  * @param {(e: any) => boolean} [want]
+ * @param {string} [stop]
  * @returns {{e: any, at: number}|null}
  */
-function newestLifecycle(lines, name, want) {
+function newestLifecycle(lines, name, want, stop) {
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
     if (!line) continue;
     let e;
     try { e = JSON.parse(line); } catch { continue; }
     if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (stop !== undefined && e.family === 'lifecycle' && e.event === stop) return null;
     if (e.family !== 'lifecycle' || e.event !== name) continue;
     if (want && !want(e)) continue;
     return { e, at: i };
   }
   return null;
+}
+
+/**
+ * True when the record's newest `CYCLE` marker has no event carrying a `phase` after it, so a cycle-opening add
+ * needs no second one. Phase-less lines after it, a close's `/cad-suggest` say, don't move the boundary.
+ * An unreadable record or one with no marker answers false.
+ * @param {string} planningRoot
+ * @returns {boolean}
+ */
+export function cycleBoundaryIsNewest(planningRoot) {
+  const lines = readLines(planningRoot);
+  if (lines === null) return false;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let e;
+    try { e = JSON.parse(lines[i]); } catch { continue; }
+    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (e.family === 'lifecycle' && e.event === CYCLE) return true;
+    if (key(e.phase) !== '') return false;
+  }
+  return false;
 }
 
 /**
@@ -188,8 +218,9 @@ export function correlationId(planningRoot, phase, ownSha) {
   if (typeof ownSha === 'string' && ownSha) return `${p}-${ownSha}`;
   const lines = readLines(planningRoot);
   if (lines === null) return p;
-  // the newest anchor wins, so a re-run of a phase gets a new id
-  const found = newestLifecycle(lines, ANCHOR, (e) => key(e.phase) === p);
+  // the newest anchor wins, so a re-run of a phase gets a new id; an anchor behind a cycle marker is the last
+  // cycle's, and readEvents drops it at the same line (D-22), or the re-arm cap misses the rearm it just wrote
+  const found = newestLifecycle(lines, ANCHOR, (e) => key(e.phase) === p, CYCLE);
   return found && typeof found.e.sha === 'string' && found.e.sha ? `${p}-${found.e.sha}` : p;
 }
 
@@ -323,7 +354,10 @@ export function rotateTrace(planningRoot, reserve) {
 /**
  * Append one event. Never throws or writes to a stream: a trace that can't be written must leave its caller's
  * envelope byte-identical.
- * A symlinked trace is refused with `reason:'symlinked-trace'`, the append would follow it out of the tree.
+ * A symlinked trace is refused with `reason:'symlinked-trace'`, the append would follow it out of the tree; a symlinked
+ * records folder with `reason:'symlinked-records'`, it would carry the record out the same way.
+ * A planning directory with no valid state file is `reason:'no-valid-state'`, and nothing is written there: a hook
+ * or route.mjs can't convert a project, and a log landing in `records/` first would block the main session's conversion.
  * Size isn't a refusal: at `MAX_TRACE_BYTES` the record rotates and the append lands. What's left is
  * `oversized-event` (a single line that reaches the bound alone) and a failed rotation's code.
  * @param {string} planningRoot
@@ -334,6 +368,9 @@ export function appendEvent(planningRoot, event) {
   if (!event || typeof event !== 'object' || Array.isArray(event)) {
     return { written: false, reason: 'bad-event' };
   }
+  // unconverted or damaged is hands off until the main session stamps it; a link is refused before anything joins it
+  const records = recordsReady(planningRoot);
+  if (records.ok === false) return { written: false, reason: records.reason };
   const file = tracePath(planningRoot);
 
   // `lstat` classifies the link itself, ahead of the size stat: a redirected trace is refused at any size
@@ -381,7 +418,7 @@ export function appendEvent(planningRoot, event) {
   }
 
   try {
-    appendFileSync(file, line);
+    appendFile(file, line);
   } catch (e) {
     return { written: false, reason: (e && e.code) || 'append-failed' };
   }
@@ -568,6 +605,14 @@ function readEvents(planningRoot, wanted, out) {
     if (!e || typeof e !== 'object' || Array.isArray(e)) { out.malformed++; continue; }
     // before the phase filter: a rotation cut every phase's events, so this describes the record, like `capped`
     if (e.family === 'lifecycle' && e.event === ROTATION) rotated = e;
+    // also before it, and only with a phase: a cycle boundary drops what the phase gathered so far, anchor included,
+    // while an unscoped read keeps the whole record and counts the marker like any lifecycle line
+    if (wanted !== null && e.family === 'lifecycle' && e.event === CYCLE) {
+      out.events = [];
+      for (const f of FAMILIES) out.counts[f] = 0;
+      anchor = null;
+      continue;
+    }
     if (wanted !== null && key(e.phase) !== wanted) continue;
     if (e.family === 'lifecycle' && e.event === ANCHOR) anchor = e;
     out.events.push(e);

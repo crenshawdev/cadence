@@ -1,7 +1,9 @@
 # STATE.md template
 
-Write to `.planning/STATE.md`. A cursor of four required lines plus an optional
-`Plan:` line, overwritten in place, never appended. No audit logs, no activity tables, no progress bars - git history
+`.planning/STATE.md` is generated from the state file by `cursor set` and the
+other seams, never written by hand. A cursor of four required lines plus an optional
+`Plan:` line, overwritten in place, never appended. With no cycle open it says
+so in words and keeps only `Next:` and `Updated:`. No audit logs, no activity tables, no progress bars - git history
 is the log. Schema and status lifecycle are pinned in references/conventions.md.
 
 <template>

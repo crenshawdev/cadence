@@ -107,7 +107,7 @@ function nameFor(paths, taken) {
 }
 
 /**
- * The entry file's name under `.planning/codemap/`, derived from the module's name by hash and never from its
+ * The entry file's name under `.planning/records/codemap/`, derived from the module's name by hash and never from its
  * characters, so it can't equal `index.json` or `.gitignore` and can't leave the directory whatever a path holds.
  * @param {string} name
  */

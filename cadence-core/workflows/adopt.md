@@ -45,11 +45,12 @@ Two stops first, before anything is written.
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" detect --dir .
    ```
 
-   The ignore line is not optional: `.planning/trace.jsonl` is ONE MACHINE's
+   The ignore rule is not optional: `.planning/records/trace.jsonl` is ONE MACHINE's
    run record, this seam is the only thing in Cadence that writes the rule, and
    /cad-health reports `ignored:false` and `tracked:true` as separate issues
-   with different remedies. Append-if-absent, so a brownfield `.gitignore` keeps
-   every line it had and a re-run adds no second line.
+   with different remedies. The rule sits in the records folder's own
+   `.planning/records/.gitignore`, created only when absent, so a brownfield
+   `.gitignore` is never edited and a re-run changes nothing.
 
    The config template is copied VERBATIM - ask no configuration questions,
    with THREE deliberate exceptions and no others. The first is item 4 below: the
@@ -322,8 +323,9 @@ first when `check` finds no gate.
 
 <step name="write_roadmap">
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
-`.planning/ROADMAP.md`. It covers REMAINING work only, derived here - there is
-no roadmapper agent.
+`.planning/ROADMAP.md`: the overview, an empty `## Phases` heading and every
+`### Phase N:` detail section. It covers REMAINING work only, derived here -
+there is no roadmapper agent.
 
 1. Every `## Phases` entry is `- [ ]`. Never reconstruct shipped work as an
    `- [x]` phase: /cad-health rule 5 flags an `- [x]` phase whose mapped
@@ -345,6 +347,13 @@ no roadmapper agent.
    the real figure. It is one of rule 2's counted phases, it maps no `## Active`
    id unless one is about this work, and its criteria are the thresholds met and
    the required jobs passing. It never lowers a threshold to make that easier.
+
+Then enter each phase, in order. The list is generated from the state file, so
+a hand-written line would be overwritten:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
+```
 
 Then count what you just wrote - rule 4 above is prose until a seam counts it:
 
@@ -369,8 +378,25 @@ phase and its numbers) and take it through the approval gate (ask-user seam):
   - "Change phases" - you tell me what to change, and I update the roadmap
   - "Show the whole file" - I print the roadmap file as written, then ask again
 
-On "Change phases", take the feedback, revise ROADMAP.md inline, re-present, and
-loop until approved. On "Show the whole file", show the file and re-ask.
+On "Change phases", take the feedback. Every change to the phase list goes
+through a seam - a name or description, a new phase, a dropped one, an inserted
+one whose slot `phase-entry add` fills:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry edit --phase <N> [--name <name>] [--description <one line>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" renumber remove --n <N>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" renumber insert --at <N>
+```
+
+The seam runs before the `### Phase N:` sections are hand-edited: a renumber
+shifts every `Phase K` heading, so a section edited first is moved or removed
+under the edit. Run `renumber insert` or `renumber remove` first, then
+`phase-entry add` into the slot an insert freed, and only then edit the
+overview, the `### Phase N:` sections and their criteria inline.
+
+Run `criteria-size` again, re-present, and loop until approved. On "Show the
+whole file", show the file and re-ask.
 </step>
 
 <step name="state">
@@ -397,8 +423,9 @@ commits at all has nothing to branch from: skip the guard and let this commit
 create the root commit on the current branch.)
 
 Then ONE commit, `docs: adopt existing project into Cadence`, staging exactly
-the six files written: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
-`.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/config.json` and
+the eight files written: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
+`.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/records/state.json`,
+`.planning/records/.gitignore`, `.planning/config.json` and
 `.github/cadence/coverage-policy.json`. One
 commit, not three - all three documents were derived in a single pass, so there
 is no intermediate state worth a separate commit.
@@ -451,7 +478,7 @@ on disk in `.planning/`.
 - [ ] `.planning/` holds PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and
       config.json, with config.json copied verbatim from the engine template and
       written only with the forge, roles and testing policy answers
-- [ ] The trace ignore line is present and `.planning/trace.jsonl` is untracked
+- [ ] The trace ignore rule is present and `.planning/records/trace.jsonl` is untracked
 - [ ] Nothing the README, the manifests, the tree or the log already answered
       was re-asked, and every question asked named the gap it was filling
 - [ ] PROJECT.md's Validated section carries what the code already does; its
@@ -464,6 +491,6 @@ on disk in `.planning/`.
 - [ ] STATE.md is a four-line cursor (no `Plan:` line) pointing at phase 1, and no `phases/` dir
       was created
 - [ ] One `docs:` commit under references/git-guard.md, respecting
-      `planning.commit_docs`, staging the six files by name and pushing nothing
+      `planning.commit_docs`, staging the eight files by name and pushing nothing
 - [ ] No subagent was dispatched
 </success_criteria>

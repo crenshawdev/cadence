@@ -1,26 +1,26 @@
 // @ts-check
 // planning/codemap.mjs - `codemap scan`: the facts layer's spine, every tracked path and its working-tree hash, no model
 // --dir names the .planning directory and the project root is its parent, so a root below the repository's top level
-// still lists consistent paths; the facts live in .planning/codemap/, which a nested .gitignore keeps out of every commit
+// still lists consistent paths; the facts live in .planning/records/codemap/, which a nested .gitignore keeps out of every commit
 'use strict';
 
-import { lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { emit } from '../lib/seam-io.mjs';
-import { INDEX_FILE, MAP_DIR, MAX_ENTRY, MAX_INDEX, dirFlag, fail, noticeTotals, ok, readCapped, readEntry, readStoredMap, storedIndex, writeBrackets } from './core.mjs';
+import { INDEX_FILE, MAP_REL, MAX_ENTRY, MAX_INDEX, dirFlag, fail, noticeTotals, ok, readCapped, readEntry, readStoredMap, storedIndex, writeBrackets } from './core.mjs';
 import { judgeEntry } from '../lib/codemap-entry.mjs';
 import { addEdges, stripEdges } from '../lib/codemap-edges.mjs';
 import { readFacts, readNested } from '../lib/codemap-facts.mjs';
 import { writeLaunch } from '../lib/codemap-launch.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
 import { ENTRY_FILE, entryFile, moduleState, partition, startsNoReader } from '../lib/codemap-partition.mjs';
-import { atomicWrite } from '../lib/planning-files.mjs';
+import { atomicWrite, codemapDir, ensureRecordsDir, makeDir, recordsDir, unlinkFile } from '../lib/planning-store.mjs';
 import { LIST_CAP, MAX_RUN_BYTES, agentBrackets, agentRows, noticeBracket, parseCompleted } from '../lib/workflow-run.mjs';
 import { isPlainObject } from '../lib/text-util.mjs';
 
 /**
- * The map's directory path, or null when it can't be trusted. A clone can track `.planning` or `.planning/codemap` as a
- * symlink, and a write through one would land outside the repository, so anything there that isn't a real directory is
+ * The map's directory path, or null when it can't be trusted. A clone can track `.planning`, its records folder or the
+ * map's own folder as a symlink, and a write through one would land outside the repository, so anything there that isn't a real directory is
  * refused. Nothing is created: the scan makes the directory once it knows it has something to write.
  * @param {string} dir the planning directory
  * @returns {string|null}
@@ -31,8 +31,8 @@ function mapDir(dir) {
   const real = (p) => {
     try { return lstatSync(p).isDirectory(); } catch (e) { return /** @type {any} */ (e).code === 'ENOENT' ? null : false; }
   };
-  if (real(dir) === false) return null;
-  const map = join(dir, MAP_DIR);
+  if (real(dir) === false || real(recordsDir(dir)) === false) return null;
+  const map = codemapDir(dir);
   return real(map) === false ? null : map;
 }
 
@@ -130,7 +130,7 @@ function indexSize(index, limit) {
  */
 function cmdStatus(dir, opts) {
   const root = dirname(resolve(dir));
-  const map = join(dir, MAP_DIR);
+  const map = codemapDir(dir);
   /** @type {string|null} */
   let outDir = null;
   if (opts['out-dir'] !== undefined) {
@@ -187,14 +187,14 @@ function cmdScan(dir) {
       'run from the project\'s repository, or pass --dir naming its .planning directory');
   }
   // a tracked path under the map is one `git add` stages whatever the nested rule says, and the sweep below would delete it
-  const mapRel = `${basename(resolve(dir))}/${MAP_DIR}/`;
+  const mapRel = `${basename(resolve(dir))}/${MAP_REL}/`;
   if (rows.some((r) => r.path.startsWith(mapRel) || r.path.startsWith(`"${mapRel}`))) {
     return fail('tracked-map', `this repository tracks files under ${mapRel}, so a scan would rewrite or delete tracked files`,
       `run \`git rm -r --cached ${mapRel.slice(0, -1)}\` and commit, then scan again; nothing was written`);
   }
   const map = mapDir(dir);
   if (!map) {
-    return fail('unsafe-dir', `${join(dir, MAP_DIR)} or ${dir} exists and is not a real directory`,
+    return fail('unsafe-dir', `${codemapDir(dir)}, ${recordsDir(dir)} or ${dir} exists and is not a real directory`,
       'remove it or replace it with a directory; nothing was written, because a write through a link would leave the repository');
   }
   const { modules, oversized } = partition(rows, storedIndex(map).index?.modules ?? null);
@@ -216,7 +216,13 @@ function cmdScan(dir) {
       }
     }
   }
-  mkdirSync(map, { recursive: true });
+  // the records folder is made by the write module, with its own .gitignore; the map's folder inside it is made here
+  makeDir(dir);
+  if (!ensureRecordsDir(dir).ok) {
+    return fail('unsafe-dir', `${recordsDir(dir)} exists and is not a real directory`,
+      'remove it or replace it with a directory; nothing was written, because a write through a link would leave the repository');
+  }
+  makeDir(map);
   const ignore = join(map, '.gitignore');
   // read only a regular file of exactly the 2 bytes it should hold; anything else, a link included, is replaced by the write
   let held = null;
@@ -230,7 +236,7 @@ function cmdScan(dir) {
   const named = new Set(listed.map((m) => m.entry));
   for (const f of readdirSync(map)) {
     if (!ENTRY_FILE.test(f) || named.has(f)) continue;
-    try { unlinkSync(join(map, f)); } catch { /* a directory wearing an entry's name is left as it is */ }
+    try { unlinkFile(join(map, f)); } catch { /* a directory wearing an entry's name is left as it is */ }
   }
   const count = (kind) => rows.filter((r) => r.kind === kind).length;
   return ok({
@@ -287,7 +293,7 @@ function cmdWrite(dir, opts) {
   let file = null;
   if (runRead.text !== null) { try { file = JSON.parse(runRead.text); } catch { /* the bracket falls back below */ } }
   const runId = isPlainObject(file) && typeof file.runId === 'string' && file.runId ? file.runId : basename(runPath, '.json');
-  const at = { phase: '0', runId, payloadRef: `${basename(resolve(dir))}/${MAP_DIR}/${INDEX_FILE}` };
+  const at = { phase: '0', runId, payloadRef: `${basename(resolve(dir))}/${MAP_REL}/${INDEX_FILE}` };
   const fromFile = agentRows(file).length > 0;
   const why = runRead.text === null ? `the run file ${runRead.why}` : (file === null ? 'the run file is not JSON' : 'the run file holds no agent rows');
   const brackets = {
@@ -310,7 +316,7 @@ function cmdWrite(dir, opts) {
 
   const map = mapDir(dir);
   if (!map) {
-    return refuse('unsafe-dir', `${join(dir, MAP_DIR)} or ${dir} exists and is not a real directory`, 'nothing was written, because a write through a link would leave the repository');
+    return refuse('unsafe-dir', `${codemapDir(dir)}, ${recordsDir(dir)} or ${dir} exists and is not a real directory`, 'nothing was written, because a write through a link would leave the repository');
   }
   const { index } = storedIndex(map);
   if (!index || !Array.isArray(index.modules)) {

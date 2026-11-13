@@ -1,16 +1,16 @@
 // @ts-check
-// planning/cursor-set.mjs - `cursor set`: the write face for .planning/STATE.md.
+// planning/cursor-set.mjs - `cursor set`: the write face for the cursor in the state file; STATE.md is rendered from it.
 // every field is validated before anything renders
+// until the phase list moves into the state (task 2 of plan 7), ROADMAP.md still says which phases exist, so a write
+// that can read it folds the list and whether a cycle is open into the state beside the cursor
 // the cursor holds the numeric phase (renumber, status, cursorPhase read it), so a raw spelling is refused, not stored
 'use strict';
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, ok, phaseSpellingRefusal, planPosition, read } from './core.mjs';
-import {
-  CLOSED_CYCLE_NAME, CURSOR_STATUSES, atomicWrite, classifyPhaseList, renderCursor,
-} from '../lib/planning-files.mjs';
-import { parseCursor } from '../lib/state-cursor.mjs';
+import { fail, ok, phaseSpellingRefusal } from './core.mjs';
+import { CLOSED_CYCLE_NAME, CURSOR_STATUSES } from '../lib/planning-files.mjs';
+import { changeState, foldPhase, loadState, planPositionOf } from './state-import.mjs';
 import { requireCursorNumber, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 
@@ -60,7 +60,7 @@ function cmdCursorSet(dir, opts) {
       + ' are the lifecycle, not free text');
   }
 
-  // name/total: explicit flag > ROADMAP derivation > existing cursor > fail.
+  // name/total: explicit flag > the state's phase list > fail. No phases at all is a closed cycle: no name and a total of 0
   let name = opts.name;
   let total;
   if ('total' in opts) {
@@ -68,50 +68,39 @@ function cmdCursorSet(dir, opts) {
     if (!parsed.ok) {
       return fail('bad-args', 'cursor set --total needs a non-negative integer',
         'send --total as the number of phases in this milestone, or drop the flag and let'
-        + " ROADMAP.md's phase list supply the count");
+        + " the project's phase list supply the count");
     }
     total = parsed.value;
   }
+  const state = loadState(dir);
+  if (!state) return;
   if (name === undefined || total === undefined) {
-    // closed fills no active cycle and 0 so a pruned roadmap succeeds; `of 0` elsewhere would erase a live total
-    const { state, phases } = classifyPhaseList(read(join(dir, 'ROADMAP.md')) || '');
-    const entry = phases.find((p) => p.n === phase);
+    const entry = state.phases.find((p) => p.n === phase);
     if (name === undefined && entry) name = entry.name;
-    if (total === undefined && phases.length) total = phases.length;
-    if (state === 'closed') {
-      // before the prior-cursor fallback: a stale total would write `Phase: 1 of 5` on a zero-phase roadmap
-      // paused is the exception: deriving 0 would erase the stale `of <M>` that marks an unfinished close
-      const prior = opts.status === 'paused'
-        ? parseCursor(read(join(dir, 'STATE.md')) || '') : null;
-      if (prior && prior.total && prior.phase === phase) {
-        if (name === undefined) name = prior.name;
-        if (total === undefined) total = prior.total;
-      }
+    if (total === undefined && state.phases.length) total = state.phases.length;
+    if (!state.phases.length) {
       if (name === undefined) name = CLOSED_CYCLE_NAME;
       if (total === undefined) total = 0;
     }
   }
   if (name === undefined || total === undefined) {
-    const prior = parseCursor(read(join(dir, 'STATE.md')) || '');
-    if (prior) {
-      if (name === undefined && prior.phase === phase) name = prior.name;
-      if (total === undefined) total = prior.total;
-    }
-  }
-  if (name === undefined || total === undefined) {
-    return fail('cannot-derive', 'phase name/total not in flags, ROADMAP.md, or the existing cursor',
-      'pass --name and --total explicitly, or add this phase to the `## Phases` list in ROADMAP.md'
+    return fail('cannot-derive', 'phase name/total not in flags or the project\'s phase list',
+      'pass --name and --total explicitly, or add this phase to the project\'s phase list'
       + ' so both can be derived from it');
   }
 
-  // the plan line is derived from disk on every write: the lowest plan not `PLAN COMPLETE`, absent if none or all done
-  const plan = planPosition(join(dir, 'phases', String(opts.phase)));
-  const cursor = {
-    phase, total, name, status: opts.status, next,
-    updated: new Date().toISOString().slice(0, 10),
-    ...(plan ? { plan } : {}),
-  };
-  atomicWrite(join(dir, 'STATE.md'), renderCursor(cursor));
+  // the plan line is derived on every write: the lowest plan of the phase not finished, absent if none or all done
+  // the phase is folded first, under the lock, so the position comes from the plan files and reports as they are now
+  const updated = new Date().toISOString().slice(0, 10);
+  /** @type {{k: number, j: number, name?: string} | null} */
+  let plan = null;
+  const done = changeState(dir, (s) => {
+    const folded = foldPhase(dir, s, phase);
+    plan = planPositionOf(dir, folded.phases.find((p) => p.n === phase));
+    return { ...folded, cursor: { phase, status: opts.status, next, updated, ...(plan ? { plan } : {}) } };
+  }, ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md']);
+  if (!done) return;
+  const cursor = { phase, total, name, status: opts.status, next, updated, ...(plan ? { plan } : {}) };
   ok({ cursor });
 }
 

@@ -45,7 +45,8 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
    only a call that consumes a prior call's output is serialized. The seam
    derives name/total from ROADMAP and stamps `Updated:` itself; hold its
    envelope for the report.
-   Commit the cursor (`docs:`), or fold it into the WIP commit if one was made.
+   Commit the cursor and `.planning/records/state.json` (`docs:`), or fold them
+   into the WIP commit if one was made.
    Never leave the tree dirty.
 
 3. **Report.** One line: "Paused at {position}, resume with /cad-progress".

@@ -7,6 +7,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PHASE_DIR_NAME, fail, intFlag, memoryBackend, ok, read } from './core.mjs';
 import { buildIndex, search } from '../lib/bm25.mjs';
+import { archivePath, filedPath } from '../lib/planning-store.mjs';
 import {
   parseArchiveRows, parseCaptureSnippets, parseFiledRows, parseTaskRecordSnippets, phaseRecallSnippets,
 } from '../lib/planning-files.mjs';
@@ -61,7 +62,7 @@ function cmdRecall(dir, query, opts) {
   }
   // ARCHIVE.md goes last so appending leaves every corpus index alone, and a tree without it emits the same bytes
   // one flat ranking with the live rows, no recency term or cap; archived rows can crowd live hits, the accepted cost
-  const archive = read(join(dir, 'ARCHIVE.md'));
+  const archive = read(archivePath(dir));
   if (archive) for (const row of parseArchiveRows(archive)) corpus.push(row);
 
   // the tasks tier: /cad-task is where most real work goes and the corpus had a hole there; last, like ARCHIVE.md
@@ -77,7 +78,7 @@ function cmdRecall(dir, query, opts) {
 
   // the filed tier keeps findings routed to the tracker reachable: pointers only, and a declined finding is never here
   // no phase key, as with tasks: a filed issue sits outside the phase spine
-  const filed = read(join(dir, 'FILED.md'));
+  const filed = read(filedPath(dir));
   if (filed) for (const row of parseFiledRows(filed)) {
     corpus.push({ text: row.text, source: row.source });
   }

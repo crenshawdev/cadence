@@ -1,12 +1,13 @@
 ---
 name: cad-executor-low
-description: The `low` rung of `cad-executor`; `bin/route.mjs` picks it, not the user.
+description: The `low` rung of `cad-executor` (plan task execution); `bin/route.mjs` picks it, not the user.
 tools: Read, Write, Edit, Bash, Grep, Glob, LSP
 color: yellow
 effort: low
 maxTurns: 200
 skills:
   - cad-executor-contract
+  - cad-shared-rules
 ---
 
 Follow the preloaded `cad-executor-contract` skill exactly - it is your full

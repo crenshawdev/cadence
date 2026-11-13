@@ -2,7 +2,7 @@
 // the mechanical half of a milestone close, as pure text transforms
 // pure and total: a section that can't be found gets reported, never invented
 
-import { escN, parseRoadmapPhases, parseRequirements, phaseDetailSpans, sectionSpan } from './planning-files.mjs';
+import { escN, parseRequirements, phaseDetailSpans, sectionSpan } from './planning-files.mjs';
 import { escapeRe } from './text-util.mjs';
 
 /**
@@ -56,6 +56,29 @@ const SHIPPED_PREAMBLE = [
 ];
 
 /**
+ * The rows a close ships: a phase in `completed` and a status that isn't `Deferred`.
+ * @template {{phase: number|null, status: string}} R
+ * @param {R[]} rows @param {number[]} completed @returns {R[]}
+ */
+export function shippedRows(rows, completed) {
+  return rows.filter((r) => r.phase !== null && completed.includes(r.phase) && r.status !== 'Deferred');
+}
+
+/** The ids already filed under `## Shipped` with this milestone label: the first cell's id, the fourth cell's label. */
+function shippedIdsFiled(/** @type {string[]} */ lines, /** @type {string} */ label) {
+  const { start, end } = sectionSpan(lines, '## Shipped');
+  const ids = new Set();
+  if (start < 0) return ids;
+  for (let i = start + 1; i < end; i++) {
+    if (!lines[i].startsWith('|')) continue;
+    const cells = lines[i].split(/(?<!\\)\|/);
+    const id = (cells[1] ?? '').trim().split(/\s/)[0];
+    if (id && (cells[4] ?? '').trim() === label) ids.add(id);
+  }
+  return ids;
+}
+
+/**
  * Move the shipped milestone's requirements under `## Shipped`. Shipped means
  * a Traceability row whose phase is in `completed` and whose status isn't
  * `Deferred`. A Deferred row keeps its Traceability row and its Active bullet,
@@ -65,16 +88,18 @@ const SHIPPED_PREAMBLE = [
  * @param {string} text
  * @param {number[]} completed
  * @param {string} label
+ * @param {{id: string, phase: number|null, status: string}[]} [rows] the requirement rows to judge, which the seam takes
+ *   from the state; the table in `text` when omitted
  * @returns {{text: string, moved: {id: string, phase: number|null}[],
  *            createdSection: boolean}}
  */
-export function archiveRequirements(text, completed, label) {
-  const rows = parseRequirements(text);
-  const shipped = rows.filter((r) => r.phase !== null && completed.includes(r.phase)
-    && r.status !== 'Deferred');
+export function archiveRequirements(text, completed, label, rows = parseRequirements(text)) {
+  let lines = text.split('\n');
+  // a re-run after a failed state write finds these rows still in the state but already under `## Shipped` for this label
+  const filed = shippedIdsFiled(lines, label);
+  const shipped = shippedRows(rows, completed).filter((r) => !filed.has(r.id));
   if (!shipped.length) return { text, moved: [], createdSection: false };
 
-  let lines = text.split('\n');
   const summaries = new Map();
 
   // pull the whole bullet span, not the lead line: bullets wrap, and the lead line alone left orphaned prose behind
@@ -151,10 +176,11 @@ export function archiveRequirements(text, completed, label) {
 }
 
 /**
- * The completed (checked) phases of a roadmap.
- * @param {string} roadmapText
+ * The phases the state holds complete, in phase order: the ones a close may prune. A checked box in ROADMAP.md says
+ * nothing here, since the list is rendered from the state.
+ * @param {{phases: {n: number, status: string}[]}} state
  * @returns {number[]}
  */
-export function completedPhases(roadmapText) {
-  return parseRoadmapPhases(roadmapText).filter((p) => p.checked).map((p) => p.n);
+export function completedPhases(state) {
+  return state.phases.filter((p) => p.status === 'complete').map((p) => p.n).sort((a, b) => a - b);
 }

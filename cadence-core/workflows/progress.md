@@ -36,7 +36,9 @@ Its one JSON line carries everything this workflow reads:
 - `drift[]` - contradictions, by kind: `cursor`, `roadmap-box`, `req-status`,
   `phase-dir` (a `phases/<N>/` dir surviving a milestone close),
   `phase-dir-grammar` (a `phases/` entry outside the directory grammar),
-  `phase-dir-collision` (two LEGAL names parsing to one number, `1.1`/`1.10`).
+  `phase-dir-collision` (two LEGAL names parsing to one number, `1.1`/`1.10`),
+  `plan-report` (a report says `PLAN COMPLETE` and the state has that plan
+  unfinished).
 - `deferred` - the unadjudicated review queue: `members[]` (each with `phase`,
   `trigger`, `discriminator`, `round`, `path` and its own `findings` count),
   the total `findings`, and `unreadable[]`. ALWAYS present, unlike `cycle` and
@@ -54,9 +56,11 @@ Its one JSON line carries everything this workflow reads:
   present, the same rule `deferred` carries: an absent key means a seam that
   predates the field, never "nothing is outstanding".
 
-On `ok:false`, relay `reason`/`hint` (e.g. `no-planning-dir` -> "No Cadence
-project here. /cad-new-project starts one from a blank page; /cad-adopt starts
-one from a repo that already has code and history.") and stop.
+On `ok:false` with `invalid-state` and a hint naming `state-rebuild`, go to
+the reconcile step's first arm. On any other `ok:false`, relay `reason`/`hint`
+(e.g. `no-planning-dir` -> "No Cadence project here. /cad-new-project starts
+one from a blank page; /cad-adopt starts one from a repo that already has code
+and history.") and stop.
 
 On `--stats`, branch straight to the stats step now - it derives its own commit
 timeline and needs nothing else; do NOT walk reconcile, which writes STATE.md,
@@ -69,7 +73,16 @@ prior call's output is serialized.
 </step>
 
 <step name="reconcile">
-- Drift kind `cursor` (or no STATE.md at all): rewrite the cursor to the
+- `invalid-state` naming `state-rebuild`: the state file does not parse. Run
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" state-rebuild
+  ```
+
+  then `status` again and go on with that answer. Never repair the file by
+  hand. A refused rebuild: relay its `reason`/`hint` and stop.
+- Drift kind `cursor`, or no `cursor` in the answer (no STATE.md, or a
+  rebuilt state that had none to keep): rewrite the cursor to the
   derivation through the seam - never by hand:
 
   ```
@@ -85,15 +98,27 @@ prior call's output is serialized.
   = the last phase). A `paused` cursor always agrees - leave it.
 - Closed milestone (`cycle` is `none`) with cursor drift: rewrite it as
   `--phase 1 --status "ready to plan" --next "/cad-phase add"` - no
-  `--name`/`--total`, the seam derives `of 0 (no active cycle)` from the
-  pruned roadmap.
+  `--name`/`--total`; the cursor then reads as no cycle open.
+- Drift kind `plan-report`: run
+  `planning.mjs replay-check --phase <N>` for the phase the entry names, which
+  folds the finished report into the state, then `status` again. Write no file
+  by hand.
 - Drift kind `phase-dir`: the prune was interrupted - route to
   `/cad-milestone` to finish it. NOT to `/cad-verify {N}`: that phase is no
   longer in ROADMAP, so the workflow would refuse it.
-- Drift kinds `roadmap-box` / `req-status`: do NOT edit those files here -
-  cad-verify is the only writer of a ROADMAP checkbox or a Traceability
-  Status beyond `Pending`. Note the drift in the report ("ROADMAP shows
-  phase N open but it is complete") and route to `/cad-verify N` to repair it.
+- Drift kinds `phase-dir-grammar` / `phase-dir-collision`: name the entries
+  in the report. Renaming a directory is the user's call, never made here.
+- Drift kind `roadmap-box` ("state says X, derived Y"), by direction:
+  - X lags Y and neither is `complete` (the artifacts are ahead): run
+    `planning.mjs replay-check --phase <N>` for the phase the entry names, then
+    `status` again, as the `plan-report` arm does. Write no file by hand.
+  - `complete` on either side, or X ahead of Y: do NOT edit ROADMAP here -
+    cad-verify is the only writer of a ROADMAP checkbox. Note the drift in the
+    report ("ROADMAP shows phase N open but it is complete") and route to
+    `/cad-verify N` to repair it.
+- Drift kind `req-status`: do NOT edit REQUIREMENTS here - cad-verify is the
+  only writer of a Traceability Status beyond `Pending`. Note the drift in the
+  report and route to `/cad-verify N` to repair it.
 </step>
 
 <step name="stats">

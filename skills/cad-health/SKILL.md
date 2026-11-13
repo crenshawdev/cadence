@@ -27,13 +27,13 @@ Check, then report - do not fix without asking.
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --root . --check`
      and report an issue when `ignored` is false or `tracked` is true. Silent when
      the record is ignored and untracked. A project scaffolded before that seam
-     existed has no line of its own; `--check` writes nothing and this step never
-     edits the user's `.gitignore`.
+     existed has no rule in the records folder's own `.gitignore`;
+     `--check` writes nothing and this step never edits it.
      The two flags are separate facts and take DIFFERENT remedies, so name the one
      that applies rather than one command for both: `ignored:false` is a missing
      rule, fixed by the same command without `--check`; `tracked:true` means the
      record is in the index ALREADY, where no ignore rule reaches it, and the fix
-     is `git rm --cached .planning/trace.jsonl`. Both can be true at once, and
+     is `git rm --cached .planning/records/trace.jsonl`. Both can be true at once, and
      then both steps are needed - adding the rule alone leaves a tracked file that
      keeps getting committed.
    - The capture queue, in two calls - a census of the file's sections, and a
@@ -70,6 +70,9 @@ Check, then report - do not fix without asking.
 
 2. **STATE cursor.** The four required lines (Phase / Status / Next / Updated -
    references/conventions.md) plus the optional `Plan:` line after `Phase:`.
+   When ROADMAP has no phases, the no cycle form passes instead: it says in
+   words that no cycle is open, carries `Next:` and `Updated:`, and has no
+   `Phase:` line.
    `Status` is one of the lifecycle values
    (`ready to plan | context gathered | planned | executed | phase complete |
    paused`). `Phase: N of M` parses with N <= M (except in the closed-milestone
@@ -86,9 +89,8 @@ Check, then report - do not fix without asking.
    or `Complete`; every `Phase` value names a phase that exists in ROADMAP.
 
 5. **Consistency.** Cursor `M` == ROADMAP phase count; cursor `N` is within
-   range. When ROADMAP has zero phases the cursor reads `of 0`, and
-   `Phase: 1 of 0 (no active cycle)` is the expected closed-milestone shape -
-   both clauses pass, and a surviving `phases/<N>/` dir there means the prune
+   range. When ROADMAP has zero phases, the no cycle form of rule 2 passes
+   both clauses, and a surviving `phases/<N>/` dir there means the prune
    was interrupted (/cad-milestone finishes it).
    `.planning/phases/<N>/` dirs correspond to real phases (a planned
    phase with no dir yet is fine; a dir with no phase is an issue). The
@@ -156,7 +158,7 @@ Check, then report - do not fix without asking.
 
 Report: **healthy** with a one-line all-clear, or a short list of issues, each
 with the file and what is wrong. For a trivial, unambiguous fix (cursor `of M`
-count off, a stale `Updated`), offer to correct it via the ask-user seam - never
-auto-edit. Anything structural (missing doc, phase-number gaps) is reported for
+count off, a stale `Updated`), offer to correct it via the ask-user seam with
+`cursor set`, never by editing STATE.md - never auto-edit. Anything structural (missing doc, phase-number gaps) is reported for
 the user to resolve, possibly via /cad-phase.
 </process>

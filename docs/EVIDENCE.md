@@ -78,7 +78,7 @@ and needs no re-pin.
 
 ## What this file does not carry
 
-No published phase-trace evidence. `.planning/trace.jsonl` is written per phase
+No published phase-trace evidence. `.planning/records/trace.jsonl` is written per phase
 by `planning.mjs trace append` and the seam scripts (`route.mjs` writes the
 routing event and, per dispatch site, the bracket's dispatch half),
 and rendered by `/cad-progress --trace`; the intent was to publish one from a

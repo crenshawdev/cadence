@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 import { fail, fireHome, fireIdentity, firePayload, fireRange, fireTargetTaken, ok } from './core.mjs';
 import { buildEntries, recordName } from '../lib/adjudication-record.mjs';
-import { atomicWrite } from '../lib/planning-files.mjs';
+import { atomicWrite, makeDir } from '../lib/planning-store.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 
 // a gate used to summarize itself and the finding bodies went nowhere, so a refutation couldn't be checked against code
@@ -136,6 +136,7 @@ function cmdAdjudication(dir, opts) {
       head_id: range.head,
     })),
   };
+  makeDir(pdir);
   atomicWrite(file, `${JSON.stringify(record, null, 2)}\n`);
 
   // counts ride the envelope, not the record: a stored count is a second place for the record to disagree with itself

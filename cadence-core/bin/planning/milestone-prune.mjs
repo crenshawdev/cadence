@@ -1,17 +1,23 @@
 // @ts-check
 // planning/milestone-prune.mjs - `milestone-prune`: the mechanical half of a milestone close, in one call
+// the phases it prunes are the ones the state holds complete; the state drops them and their shipped rows, and the list in
+// ROADMAP.md and the table in REQUIREMENTS.md are rendered from it. `## Shipped` and `## Active` stay text edits
 'use strict';
 
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
-import { join, resolve as resolvePath, sep } from 'node:path';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve as resolvePath, sep } from 'node:path';
 import { fail, notRealDirDetail, ok, read } from './core.mjs';
-import { withPlanningFileLock } from '../lib/capture-file.mjs';
-import { runTransition } from '../lib/file-transition.mjs';
-import { archiveRequirements, completedPhases, pruneRoadmap } from '../lib/milestone-prune.mjs';
 import {
-  appendArchiveRows, atomicWrite, parseArchiveRows, phaseRecallSnippets,
+  archivePath, atomicWrite, ensureRecordsDir, makeDir, movePath, removeTree, withPlanningFileLock,
+} from '../lib/planning-store.mjs';
+import { runTransition } from '../lib/file-transition.mjs';
+import { archiveRequirements, completedPhases, pruneRoadmap, shippedRows } from '../lib/milestone-prune.mjs';
+import {
+  appendArchiveRows, parseArchiveRows, phaseRecallSnippets,
 } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
+import { CYCLE, appendEvent } from '../lib/trace.mjs';
+import { changeState, loadState, withPhases } from './state-import.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 
 // three hand-surgeries once left a tree failing its own audit; the text transforms live in lib/milestone-prune.mjs
@@ -74,7 +80,9 @@ function cmdMilestonePrune(dir, opts) {
       'make ROADMAP.md readable at that path and re-run - the checked phase boxes there are what'
       + ' says which phases this close may prune, and nothing was pruned');
   }
-  const completed = completedPhases(roadmapText);
+  const state = loadState(dir);
+  if (!state) return;
+  const completed = completedPhases(state);
   if (!completed.length) {
     return ok({ action: 'skip', reason: 'no completed (checked) phases to prune' });
   }
@@ -92,10 +100,17 @@ function cmdMilestonePrune(dir, opts) {
   // the rows come from the helper cmdRecall reads, in fixed order, never a model-authored summary
   // writing ahead costs idempotence: a phase whose removal fails is read twice, so filter by this label's heading
   // one containment test keyed on the label, outside appendArchiveRows, a pure appender that can't judge a phase
-  const archiveFile = join(dir, 'ARCHIVE.md');
+  const archiveFile = archivePath(dir);
   const residue = [];
   // read, containment test and write are one critical section under the lock /cad-capture takes on CAPTURE.md
   // unserialized, two closes clobber each other's rows and the directories are gone: this loses the only copy
+  // the lock file is a sibling of the ledger, so the records folder has to be there, and real, before the lock is taken
+  const records = ensureRecordsDir(dir);
+  if (!records.ok) {
+    return fail('records-unusable', `${dirname(archiveFile)} cannot be used (${records.reason})`,
+      'make that path a real directory - a symlink there is refused because it would carry the ledgers out of the'
+      + ' tree - and re-run the close; nothing was pruned and no phase directory moved');
+  }
   const archiveGuard = withPlanningFileLock(archiveFile, () => {
   const archiveText = read(archiveFile) ?? '';
   // two properties this test must hold, or a suppressed write plus the directory removal loses data for good
@@ -129,14 +144,14 @@ function cmdMilestonePrune(dir, opts) {
   const steps = completed.map((n) => [n, () => {
     const src = join(dir, 'phases', String(n));
     if (!existsSync(src)) { dirs.missing.push(n); return; }
-    if (mode === 'delete') { rmSync(src, { recursive: true }); dirs.deleted.push(n); return; }
-    mkdirSync(archiveRoot, { recursive: true });
+    if (mode === 'delete') { removeTree(src); dirs.deleted.push(n); return; }
+    makeDir(archiveRoot);
     const dest = join(archiveRoot, String(n));
     // refuse an existing destination, don't let renameSync decide: it follows a symlink; a half-run close is evidence
     if (lstatSync(dest, { throwIfNoEntry: false })) {
       throw new Error(`${dest} already exists - a previous close left it there`);
     }
-    renameSync(src, dest);
+    movePath(src, dest);
     dirs.archived.push(n);
   }]);
   const pass = runTransition({ steps, discipline: 'continue-past-failure' });
@@ -153,12 +168,32 @@ function cmdMilestonePrune(dir, opts) {
   for (const n of pruned.missingSections) {
     warnings.push(`phase ${n}: no "### Phase ${n}:" detail section found to remove`);
   }
-  const reqResult = reqText === null ? null : archiveRequirements(reqText, applied, label);
+  // the shipped rows are the state's; the text edit moves their bullets and rows, and the table is rendered from the state
+  const reqResult = reqText === null ? null : archiveRequirements(reqText, applied, label, state.requirements);
 
-  // nothing cleared, nothing to say: skip both writes and don't rename an identical file into place
+  // nothing cleared, nothing to say: skip the writes and don't rename an identical file into place
+  // the detail sections go as text edits; the pruned phases leave the state and the list is rendered from it
   if (applied.length) {
     atomicWrite(roadmapFile, pruned.text);
     if (reqResult && reqResult.moved.length) atomicWrite(reqFile, reqResult.text);
+    const gone = new Set(applied);
+    // every row the close ships leaves the state, not only the ones this run moved: a re-run after a failed state write
+    // finds them already filed under `## Shipped`, and they still have to go
+    const shipped = new Set(shippedRows(state.requirements, applied).map((r) => r.id));
+    const landed = changeState(dir, (s) => ({
+      ...withPhases(s, s.phases.filter((p) => !gone.has(p.n))),
+      requirements: s.requirements.filter((r) => !shipped.has(r.id)),
+    }), ['STATE.md', 'ROADMAP.md', 'REQUIREMENTS.md'], {
+      onFail: (res) => emit({
+        ok: false, reason: 'state-write-failed', detail: `${res.reason} - ${res.detail}`,
+        hint: 'the phase directories and the detail sections are already pruned but the state still lists the phases; '
+          + 'fix the cause the detail names and re-run milestone-prune, which finishes the state and the list',
+      }),
+    });
+    if (!landed) return;
+    // the close is the cycle boundary a phase-scoped trace read stops at; it landed, so a log line can't fail it
+    const marker = appendEvent(dir, { family: 'lifecycle', event: CYCLE });
+    if (!marker.written) warnings.push(`the cycle boundary was not written to the trace (${marker.reason})`);
   }
 
   const envelope = {

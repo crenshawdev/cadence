@@ -9,9 +9,10 @@ import { derivePhases, fail, listPlanFiles, ok, read } from './core.mjs';
 import { activeVersion, tagCarrying, titleVersion } from '../lib/branch-decision.mjs';
 import { readTags } from '../lib/git-tags.mjs';
 import {
-  classifyActiveSection, isRequirementId, parseRequirements, parseRoadmapPhases, readFrontmatterList,
+  classifyActiveSection, isRequirementId, readFrontmatterList,
 } from '../lib/planning-files.mjs';
 import { normalizeTargetVersion } from '../lib/release-decision.mjs';
+import { loadState, phaseListOf } from './state-import.mjs';
 
 // the ship-blocking verdict stays the model's sentence; this makes it arithmetic
 // break codes: no-phase | phase-missing | no-plan | not-verified | drift | unpicked (an `## Active` id with no row)
@@ -29,7 +30,9 @@ function cmdAudit(dir) {
       'point --dir at the .planning/ directory that holds ROADMAP.md, or run /cad-new-project if'
       + ' this project has no roadmap yet');
   }
-  const roadmap = new Map(parseRoadmapPhases(roadmapText).map((p) => [p.n, p]));
+  const state = loadState(dir);
+  if (!state) return;
+  const roadmap = new Map(phaseListOf(state).map((p) => [p.n, p]));
 
   // requirement id -> the plan file that carries it, per phase dir.
   const planByReq = new Map();
@@ -49,7 +52,7 @@ function cmdAudit(dir) {
     }
   }
 
-  const rows = parseRequirements(reqText);
+  const rows = state.requirements;
   // the declared milestone scope, read once, since parseRoadmapPhases carries no id mapping
   const active = classifyActiveSection(reqText);
   const requirements = [];
@@ -109,7 +112,7 @@ function cmdAudit(dir) {
   // `blocked` is terminal, so a parked phase would pin the gate at FAIL; nothing answerable left stops holding it too
   // rolled-over work looks like work in flight on disk; only the rows differ, as the close marks them `Deferred`
   // no rows is not exempt: an empty set satisfies "every row is Deferred" vacuously, and unplanned is mid-cycle
-  // read off the `rows` parseRequirements already produced, so it's the same row set as the arithmetic above
+  // read off the `rows` the state already supplied, so it's the same row set as the arithmetic above
   const settled = (p) => p.status === 'complete'
     || (p.uat !== null && p.uat.items.length > 0 && p.uat.items.every((i) =>
       i.status === 'pass' || i.status === 'blocked'

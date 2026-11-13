@@ -20,7 +20,7 @@ Your prompt gives a repository root and the path of one item file. Open it with 
 <process>
 1. On a first build and on `refresh: whole`, read every file in `read` whole with `Read`. Never use `skim`: this codebase's invariants live in its comments, and `skim` strips them.
 2. Open the listed tests as far as your answer on tests needs.
-3. Use `Grep` and `Glob` to look outside the module for who uses it.
+3. Look outside the module for who uses it.
 4. On `refresh: diff`, start from `old_entry` and read the diff. Open every path in `added` whole. Drop every citation of a path in `removed`. Keep the evidence on unchanged paths without re-reading it. Do not open the `changed` paths wholesale: `changed` can hold a path that `read` leaves out on purpose, and you open a file only if `read` lists it.
 5. Answer the four questions through the schema you are given: what the module is for and what it owns, the invariants each with file evidence, what usually changes together with it, and which tests pin which behavior.
 </process>

@@ -16,7 +16,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phas
 
 maps the range's changed PATHS and its ADDED and REMOVED lines to
 `{checked, categories, matches, inconclusive}` and appends that answer to
-`.planning/trace.jsonl` whatever it is - so a range that matched nothing leaves
+`.planning/records/trace.jsonl` whatever it is - so a range that matched nothing leaves
 the same record a matching one does, and "the detection step was skipped" stops
 reading like "it ran and matched nothing".
 
@@ -34,7 +34,7 @@ and the record carries `staged: true`, `head_id` null because no head commit
 exists yet, and `index_id` naming the tree `git write-tree` wrote, which is the
 object the body is read from so the id and the scanned bytes are one thing.
 
-That read WITHHOLDS four filename shapes under `.planning/phases/`:
+That read WITHHOLDS four filename shapes under `.planning/phases/*/records/`:
 `ADJUDICATION-*.json`, `REVIEW-*.md`, `FINDINGS.json` and
 `verifier-findings.json`. All four store reviewer text VERBATIM by design -
 `references/review-record.md` requires a stored restatement to match the
@@ -181,7 +181,7 @@ each drop and why, so a mis-filter is visible rather than silent.
 
 `references/review-triggers.md` step 5 states WHY this write happens at every
 gate and who consumes it. This is WHERE. Write the settled survivor list to
-`.planning/phases/<N>/REVIEW-risk_surface-<discriminator>.md`. At gate
+`.planning/phases/<N>/records/REVIEW-risk_surface-<discriminator>.md`. At gate
 `adjudicated` it is the Markdown file `planning.mjs review-file` writes
 (`references/review-record.md`). At a `blocking` gate, the default, and at any
 other, it is the same JSON object every reviewer returns, whatever `review.mode`
@@ -216,7 +216,7 @@ CLEAN rather than erroring:
   `planning.mjs risk-carry --phase <N>` FIRST: this file and every record beside
   it, every round, filenames preserved - the pairing above is BY NAME, so a
   renamed carry would read as unruled and halt every close - copied to
-  `.planning/risk-carry/<N>/`. The consumer globs are BOTH roots. That carried
+  `.planning/records/risk-carry/<N>/`. The consumer globs are BOTH roots. That carried
   copy is TRANSIENT and never staged (the `/cad-land` that merges deletes it at
   its step 4, never the close that halted): committed, it would hard-halt every
   later land on an answered finding.

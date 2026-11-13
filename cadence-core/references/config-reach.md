@@ -55,7 +55,7 @@ paraphrases. The phrases in use today:
 - `the attack fires only when the plan gate is not off`
 - `executor reports under /cad-execute only, never /cad-task`
 - `/cad-execute plan completion only, never /cad-task`
-- `progress next-step suggestion only`
+- `next-step suggestion only: /cad-progress and the cursor phase-entry add writes`
 - `repo config layer only`
 - `repo config layer only for the unattended publish`
 - `user-global config layer only`
@@ -124,7 +124,7 @@ purpose test runs against the reach the author just replaced.
 | `workflow.research` | new-project research step only | `workflows/new-project.md`'s research pass; no other workflow reads it |
 | `workflow.plan_check` | universal | `workflows/plan.md` - whether the plan checker runs before code |
 | `workflow.verifier` | universal | `workflows/verify.md` - off switch for the goal-backward pass |
-| `workflow.skip_discuss` | progress next-step suggestion only | `workflows/progress.md`'s next-step table, for an unplanned current phase |
+| `workflow.skip_discuss` | next-step suggestion only: /cad-progress and the cursor phase-entry add writes | `workflows/progress.md`'s next-step table, for an unplanned current phase; `bin/planning/phase-entry.mjs`, the `Next:` step of the cursor an add writes when no other phase is unfinished |
 | `workflow.inline_plan_threshold` | universal | `workflows/plan.md` - task count at/below which a plan runs inline |
 | `workflow.max_plan_tasks` | universal | `workflows/plan.md` - the ceiling handed to cad-planner, PER PLAN; a phase needing more capacity gets more plans. `planning.mjs plan-size --max-tasks` counts the written plan against it at `check_size`, and cad-plan-checker flags compound tasks under Proportionality - the half a count cannot see |
 | `workflow.max_plan_bytes` | plan-size report only | `workflows/plan.md`'s `check_size` step is the one reader: it substitutes the resolved ceiling into `planning.mjs plan-size --max-bytes`, which sums the on-disk sizes of the paths each plan's `files:` frontmatter declares and returns a `plan-too-many-bytes` entry for a plan over it. `plan-size` itself reads no config, so the value compared is the one the caller already resolved; nothing on the dispatch path consults it and no writer refuses, so an over-ceiling plan is still planned and still executed |

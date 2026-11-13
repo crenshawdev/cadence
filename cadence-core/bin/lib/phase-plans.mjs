@@ -1,5 +1,5 @@
 // @ts-check
-// phase-plans.mjs - the disk half of the computed risk floor: the cursor phase from STATE.md, and declared paths
+// phase-plans.mjs - the disk half of the computed risk floor: the cursor phase from the state file, and declared paths
 // split from risk-diff.mjs on failure mode: that one is pure and returns matches, this one does guarded I/O
 // no category matcher here: risk-diff's `scanDeclared` decides what a path means, and two of them disagreed before
 // everything fails open and the caller closes: `found` and `clean` travel with the union so route.mjs stands the
@@ -10,7 +10,7 @@ import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { insideRoot } from './contained.mjs';
 import { readFrontmatterList } from './planning-files.mjs';
-import { parseCursor } from './state-cursor.mjs';
+import { readState } from './project-state.mjs';
 
 // byte bound for reading a plan, same as route.mjs's MAX_BODY_BYTES so a plan and a file it declares refuse together
 const MAX_PLAN_BYTES = 512 * 1024;
@@ -42,16 +42,16 @@ const ARCHIVE_DIR = /^_archive-/;
 const W = 'risk floor: ';
 
 /**
- * The phase the STATE cursor points at, or null when there's no readable cursor. Silent on every failure: a missing
- * STATE.md is the ordinary pre-project state, and warning would fire on every dispatch before `/cad-new-project`.
- * The value is parseCursor's own, a Number, decimal (`2.1`) for an inserted phase, rendered back to `phases/2.1/`.
+ * The phase the state file's cursor points at, or null when there's no readable cursor. Silent on every failure: a
+ * missing state file is the ordinary pre-project state, and warning would fire on every dispatch before `/cad-new-project`.
+ * The value is a Number, decimal (`2.1`) for an inserted phase, rendered back to `phases/2.1/`.
  * @param {string} planningRoot
  * @returns {number|null}
  */
 export function cursorPhase(planningRoot) {
   try {
-    const cursor = parseCursor(readFileSync(join(planningRoot, 'STATE.md'), 'utf8'));
-    return cursor && Number.isFinite(cursor.phase) ? cursor.phase : null;
+    const got = readState(planningRoot);
+    return got.kind === 'valid' && got.state.cursor ? got.state.cursor.phase : null;
   } catch {
     return null;
   }
