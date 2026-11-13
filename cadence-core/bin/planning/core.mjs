@@ -729,8 +729,14 @@ function fireTargetTaken(dir, file, round, kind) {
   if (!existing) return false;
   const [held, noun] = FIRE_TARGETS[kind];
   const detail = `${relative(dir, file)} already exists and holds round ${round}'s ${held} - this seam never overwrites ${noun}`;
-  const hint = 'a re-arm is a SECOND fire of the same trigger on the same plan: pass --round '
-    + `${round + 1} so it lands beside round ${round} instead of replacing it`;
+  // a range-named target ends in its two shas: --round there would mint a `-r2` name the resolver never reads
+  const rangeNamed = /-[0-9a-f]{7,40}-[0-9a-f]{7,40}\.[a-z]+$/.test(basename(file));
+  const hint = rangeNamed
+    ? 'this range was already fired, and a range-named fire is identified by its two ends, so do '
+      + 'not pass --round: a re-arm fires over its own range, named by the --base and --head it '
+      + 'passes'
+    : 'a re-arm is a SECOND fire of the same trigger on the same plan: pass --round '
+      + `${round + 1} so it lands beside round ${round} instead of replacing it`;
   if (kind === 'review') fail('review-exists', detail, hint);
   else fail('record-exists', detail, hint);
   return true;
