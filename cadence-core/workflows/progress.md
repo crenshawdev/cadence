@@ -108,10 +108,17 @@ prior call's output is serialized.
   longer in ROADMAP, so the workflow would refuse it.
 - Drift kinds `phase-dir-grammar` / `phase-dir-collision`: name the entries
   in the report. Renaming a directory is the user's call, never made here.
-- Drift kinds `roadmap-box` / `req-status`: do NOT edit those files here -
-  cad-verify is the only writer of a ROADMAP checkbox or a Traceability
-  Status beyond `Pending`. Note the drift in the report ("ROADMAP shows
-  phase N open but it is complete") and route to `/cad-verify N` to repair it.
+- Drift kind `roadmap-box` ("state says X, derived Y"), by direction:
+  - X lags Y and neither is `complete` (the artifacts are ahead): run
+    `planning.mjs replay-check --phase <N>` for the phase the entry names, then
+    `status` again, as the `plan-report` arm does. Write no file by hand.
+  - `complete` on either side, or X ahead of Y: do NOT edit ROADMAP here -
+    cad-verify is the only writer of a ROADMAP checkbox. Note the drift in the
+    report ("ROADMAP shows phase N open but it is complete") and route to
+    `/cad-verify N` to repair it.
+- Drift kind `req-status`: do NOT edit REQUIREMENTS here - cad-verify is the
+  only writer of a Traceability Status beyond `Pending`. Note the drift in the
+  report and route to `/cad-verify N` to repair it.
 </step>
 
 <step name="stats">
