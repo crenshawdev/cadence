@@ -470,8 +470,9 @@ trigger returns. Blocking: on FAIL the findings are fixed by a continuation
 three second dispatches against one plan's range, restated no further here - or
 the user explicitly overrides. The dispatch prompt carries four things, nothing
 distilled by the coordinator: the plan file; the findings file's PATH, already
-persisted at `.planning/phases/<N>/records/REVIEW-risk_surface-plan-<k>.md`
-(references/risk-surface.md); the instruction to fix the blocker/high findings
+persisted at `.planning/phases/<N>/records/REVIEW-risk_surface-<discriminator>.md`
+(references/risk-surface.md), the discriminator being that fire's range
+(references/review-triggers.md step 5); the instruction to fix the blocker/high findings
 only; and the instruction NOT to rotate the plan's report but to append its fix
 row to the existing `<plandir>/records/reports/plan-<k>.md`, since the executor
 contract's rotation rule is unconditional and would otherwise rename the
@@ -540,7 +541,7 @@ one fire unchanged, read three ways: advisory findings land at
 overlap; adjudicated survivors are fixed by the continuation `cad-executor`
 under worker key `phase`, never a plan's, so its `risk-check run`, `risk-check
 status` and receipts (`--plan phase`) and any `risk_surface` fire it calls for
-(discriminator `plan-phase`, a re-arm counted on its own) never touch a plan's;
+(named by its own range, review-triggers.md step 5, a re-arm counted on its own) never touch a plan's;
 and that fix's range gets its own `risk-check run` and `risk-check status`.
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
