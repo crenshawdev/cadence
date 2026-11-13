@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import {
-  rungBodyIssue, rungEffortIssue, rungPrefixIssues, rungFile, effortEnumIssues,
+  agentFileText, rungBodyIssue, rungEffortIssue, rungPrefixIssues, rungFile, effortEnumIssues,
   RUNG_FILES, RUNG_ORDER,
 } from './lib/rung-agent.mjs';
 import { gateAgreementIssues } from './lib/gate-agreement.mjs';
@@ -797,6 +797,28 @@ function checkRungLadder(root, isFullTree, agentFiles, problems) {
   }
 }
 
+// 8c. every table-named agent file is, byte for byte, what lib/rung-agent.mjs renders for it. Gated on isFullTree like
+// check 8's map -> disk arm: the table lives in code, so a --root fixture's own small agent set isn't drift. Table stems
+// only: a one-off agent stays legal, an absent file is missing-rung-agent's and a stray rung file is check 8's.
+function checkAgentFileRender(root, isFullTree, problems) {
+  if (!isFullTree) return;
+  for (const { rungs } of Object.values(RUNG_FILES)) {
+    for (const stem of Object.values(rungs)) {
+      let text;
+      try {
+        text = readFileSync(join(root, 'agents', `${stem}.md`), 'utf8');
+      } catch {
+        continue;
+      }
+      if (text !== agentFileText(stem)) {
+        problems.push({ kind: 'agent-file-render', file: `agents/${stem}.md`,
+          detail: 'differs from what the table in cadence-core/bin/lib/rung-agent.mjs renders - the file is generated, '
+            + 'so change the table and run `node cadence-core/bin/agent-files.mjs` to rewrite it' });
+      }
+    }
+  }
+}
+
 // each of these reads the schema and files its issues against it, in this order; the comment says what it checks
 function checkSchemaRules(schema, problems) {
   for (const issues of [
@@ -1012,6 +1034,7 @@ function run(root) {
   const { agentFiles, agentBodies } = walkAgents(root, problems);
   checkRungBodies(agentBodies, problems);
   checkRungLadder(root, v.isFullTree, agentFiles, problems);
+  checkAgentFileRender(root, v.isFullTree, problems);
   checkSchemaRules(v.schema, problems);
   checkReach(root, v.isFullTree, v.schema, problems);
   checkGlobalOnly(v.schema, problems);
@@ -1037,7 +1060,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations, setting-conditions, plain-words, workflow-scripts, write-module', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, agent-file-render, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events, directory-limits, data-rule, setting-explanations, setting-conditions, plain-words, workflow-scripts, write-module', problems });
 } catch (e) {
   emitCaught(e);
 }
