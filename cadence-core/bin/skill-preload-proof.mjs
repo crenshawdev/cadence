@@ -125,6 +125,11 @@ function textOf(content) {
     .filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
 }
 
+/** @param {any} v @returns {string[]} every scalar under v, nested fields included, its whitespace left as it is */
+function leaves(v) {
+  return v && typeof v === 'object' ? Object.values(v).flatMap(leaves) : [String(v)];
+}
+
 /** @param {any} rec @returns {any[]} the tool_use blocks of an assistant record */
 function toolUses(rec) {
   const content = rec && rec.type === 'assistant' && rec.message && rec.message.content;
@@ -136,7 +141,7 @@ function toolUses(rec) {
  * not run. The return is the subagent's own tool_result, never the parent's final text.
  * @param {string} stdout @param {string} [agentType] the agent the script asked the parent to dispatch
  * @returns {{dispatched: false} | {dispatched: true, hostVersion: string|null, dispatchInput: any, returned: string,
- *   nestedRecords: number, subagentToolCalls: number, parentOtherCalls: number}}
+ *   nestedRecords: number, subagentToolCalls: number, countSeen: boolean, parentOtherCalls: number}}
  */
 export function readStream(stdout, agentType = AGENT_TYPE) {
   /** @type {any[]} */
@@ -154,7 +159,9 @@ export function readStream(stdout, agentType = AGENT_TYPE) {
   // the subagent's own speech: forwarded assistant records; the user record under the same id is just the prompt
   const nested = recs.filter((r) => r && r.type === 'assistant' && r.parent_tool_use_id === dispatch.id);
   const notice = recs.find((r) => r && r.subtype === 'task_notification' && r.tool_use_id === dispatch.id);
-  const reported = Number((notice && notice.usage && notice.usage.tool_uses) || 0);
+  const tally = notice && notice.usage && notice.usage.tool_uses;
+  // a forwarded text record says nothing about tool calls; only the host's numeric tally makes 0 an observed 0
+  const countSeen = typeof tally === 'number' && Number.isFinite(tally);
   const init = recs.find((r) => r && r.type === 'system' && r.subtype === 'init');
   const result = handBack.tool_use_result;
   return {
@@ -165,7 +172,8 @@ export function readStream(stdout, agentType = AGENT_TYPE) {
     returned: textOf((result && result.content) || block.content),
     nestedRecords: nested.length,
     // the host's own tally too, so a host that stops forwarding tool_use blocks can't read as 0
-    subagentToolCalls: Math.max(nested.flatMap(toolUses).length, reported),
+    subagentToolCalls: Math.max(nested.flatMap(toolUses).length, countSeen ? tally : 0),
+    countSeen,
     parentOtherCalls: parentUses.length - 1,
   };
 }
@@ -216,7 +224,8 @@ const RUNS = [
     stored: (s) => ({ agent: AGENT_TYPE, host_version: s.hostVersion, markers: { ...MARKERS }, returned: s.returned,
       came_back: { first: s.returned.includes(MARKERS.first), second: s.returned.includes(MARKERS.second) },
       subagent_tool_calls: s.subagentToolCalls, parent_other_calls: s.parentOtherCalls }) },
-  { name: 'second', agentType: SECOND_AGENT_TYPE, args: () => secondHostArgs(),
+  // its agent holds real tools, so the host's tally is the only thing that shows it used none
+  { name: 'second', agentType: SECOND_AGENT_TYPE, args: () => secondHostArgs(), needsTally: true,
     judge: judgeSecond, carries: (/** @type {string} */ t) => (carriesSharedRule(t) ? [SHARED_RULE] : []),
     /** @param {Seen} s */
     stored: (s) => ({ agent: SECOND_AGENT_TYPE, host_version: s.hostVersion, marker: SHARED_RULE, returned: s.returned,
@@ -269,13 +278,18 @@ function main(argv) {
       return;
     }
     const mine = r.judge(seen);
-    const input = Object.values(seen.dispatchInput || {}).map(String).join(' ');
+    // not JSON.stringify: it turns a newline into \n, and the second run's collapsed comparison would miss the rule
+    const input = leaves(seen.dispatchInput || {}).join(' ');
     for (const m of r.carries(input)) {
       mine.push({ reason: 'dispatch-input-carries-marker', detail: `the dispatch input holds ${m}, so it proves nothing` });
     }
     if (seen.nestedRecords === 0) {
       mine.push({ reason: 'no-subagent-record',
         detail: 'the stream holds no record from inside the subagent besides its result, so its tool calls cannot be counted' });
+    }
+    if (r.needsTally && !seen.countSeen) {
+      mine.push({ reason: 'subagent-count-missing',
+        detail: 'the host\'s tool_uses tally for the dispatch is absent or not a number, so a Read inside the subagent cannot be ruled out' });
     }
     failures.push(...mine.map((f) => ({ run: r.name, ...f })));
     result[r.name] = r.stored(seen);

@@ -27,9 +27,9 @@ export function carriesSharedRule(text) {
 }
 
 /**
- * What each role of a rung table lacks: LSP in its tools, the shared skill in its skills, or the shared skill
- * after `<role>-contract`. Judges the table's contents, never a file against it. Pure and total.
- * @param {Record<string, {tools?: readonly string[], skills?: readonly string[]}>} table
+ * What each role of a rung table lacks: LSP in its tools and not denied, the shared skill in its skills, or the
+ * shared skill after `<role>-contract`. Judges the table's contents, never a file against it. Pure and total.
+ * @param {Record<string, {tools?: readonly string[], disallowedTools?: readonly string[], skills?: readonly string[]}>} table
  * @returns {{role: string, detail: string}[]}
  */
 export function roleTableIssues(table) {
@@ -37,8 +37,11 @@ export function roleTableIssues(table) {
   const out = [];
   for (const [role, row] of Object.entries(table || {})) {
     const tools = Array.isArray(row && row.tools) ? row.tools : [];
+    const denied = Array.isArray(row && row.disallowedTools) ? row.disallowedTools : [];
     const skills = Array.isArray(row && row.skills) ? row.skills : [];
     if (!tools.includes('LSP')) out.push({ role, detail: `${role} lacks LSP in its tools` });
+    // deny wins over grant, so a denied LSP is a lost one while the shared skill still says use it first
+    else if (denied.includes('LSP')) out.push({ role, detail: `${role} denies LSP in its disallowedTools` });
     const shared = skills.indexOf(SHARED_SKILL);
     const contract = skills.indexOf(`${role}-contract`);
     if (shared === -1) {
