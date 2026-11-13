@@ -13,7 +13,7 @@
 //   1. the proof agent says `tools: []` - the host reads the present-but-empty key as none; an absent key is all tools
 //   2. the parent gets `--tools Agent`, so it has no file or shell tool to read the skill and answer for the agent
 //   3. the counts come from the stream: calls inside the subagent, and the parent's calls beside the one dispatch
-// A host that could not run (missing, non-zero exit, timeout) writes nothing: a check that did not run records nothing.
+// A run that fails for any reason writes nothing, so the stored file only ever holds a passing run.
 // Stream shapes are Claude Code 2.1.323's, captured on 2026-11-13 with --verbose and --forward-subagent-text.
 'use strict';
 
@@ -214,11 +214,14 @@ function main(argv) {
       detail: 'the stream holds no record from inside the subagent besides its result, so its tool calls cannot be counted' });
   }
   const result = resultOf(seen);
+  // the file carries no failure field, so a failed run written there would read as a pass
+  if (failures.length) {
+    emit({ ok: false, reason: failures[0].reason, failures, seen: result,
+      hint: `nothing written to ${out}; seen holds what came back; do not adjust the fixture until it passes, plans built on D-02 rest on this answer` });
+    return;
+  }
   writeFile(out, JSON.stringify(result, null, 2) + '\n');
-  emit(failures.length
-    ? { ok: false, reason: failures[0].reason, failures, result: out,
-      hint: 'the result file holds what came back; do not adjust the fixture until it passes, plans built on D-02 rest on this answer' }
-    : { ok: true, result: out, host_version: result.host_version });
+  emit({ ok: true, result: out, host_version: result.host_version });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
