@@ -54,8 +54,8 @@ export const PROMPT = `Use the Agent tool exactly once, to dispatch the ${AGENT_
   + 'the line each of its preloaded skills holds, verbatim, the second-listed skill\'s line included. '
   + 'Then reply with what it returned.';
 
-// the smallest contract among the agents that hold Read, so a file read is possible and the count has teeth
-export const SECOND_AGENT = RUNG_FILES['cad-mapper'].rungs.low;
+// the executor: the rule is for it, and its contract is the biggest first skill, so a cut-short preload shows here first
+export const SECOND_AGENT = RUNG_FILES['cad-executor'].rungs.high;
 export const SECOND_AGENT_TYPE = `cadence:${SECOND_AGENT}`;
 // the parent's file and shell tools, denied so it can't read the skill and hand the rule down
 const PARENT_DENY = 'Read,Write,Edit,MultiEdit,NotebookEdit,Bash,Grep,Glob';
