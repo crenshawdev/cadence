@@ -27,8 +27,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --pha
 
 Text carrying quotes goes in a scratch file passed as `--name-file` or
 `--description-file`. When the add leaves no other unfinished phase, the seam
-points the cursor at the new phase itself, in the same write; never run
-`cursor set` after it. When the answer carries `opened_cycle: true`, rewrite the
+points the cursor at the new phase itself, in the same write, unless the cursor
+is paused, which stays as the user left it; never run `cursor set` after it.
+When the answer carries `opened_cycle: true`, rewrite the
 ROADMAP Overview's sentence that says no cycle is open so it names the cycle
 this add opened - the session wrote that prose, so the session rewrites it; no
 script edits the Overview.
