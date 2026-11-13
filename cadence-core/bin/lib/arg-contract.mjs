@@ -898,7 +898,7 @@ export const CONTRACTS = {
       '--top': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
   },
-  // skill-preload-proof.mjs takes no subcommand; --out moves the result off the stored file, which the tests need
+  // skill-preload-proof.mjs takes no subcommand; --out is the only way it writes a result, the stored file included
   'skill-preload-proof.mjs': {
     '*': {},
     '': {

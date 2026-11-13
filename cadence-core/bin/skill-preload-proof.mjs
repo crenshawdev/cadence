@@ -6,7 +6,8 @@
 // Two runs: a tool-less proof agent, then one real generated agent quoting the rule only cad-shared-rules holds.
 //
 // Usage: skill-preload-proof.mjs [--out <path>]
-//   --out   where the result goes. ABSENT means the stored skill-preload-proof.result.json beside this file.
+//   --out   where the result goes. ABSENT means judge and answer, writing no file (D-14); naming the stored
+//           skill-preload-proof.result.json beside this file is how it is refreshed.
 //
 // One headless `claude` dispatch, found on PATH. The fixture is a throwaway plugin in a fresh temp dir, never in this
 // repo: anything under agents/ or skills/ would be read as part of Cadence by self-verify, the budgets and the host.
@@ -255,7 +256,8 @@ function spawnHost(args) {
 
 /** @param {string[]} argv */
 function main(argv) {
-  const out = requireFlag(argv, '--out', CONTRACTS['skill-preload-proof.mjs']['']['--out']) || STORED_RESULT;
+  // no fallback to STORED_RESULT: a plain re-run must not leave a tracked file modified (D-14)
+  const out = requireFlag(argv, '--out', CONTRACTS['skill-preload-proof.mjs']['']['--out']);
   /** @type {Record<string, any>} */
   const result = {};
   /** @type {{run: string, reason: string, detail: string}[]} */
@@ -297,7 +299,11 @@ function main(argv) {
   // the file carries no failure field, so a failed run written there would read as a pass
   if (failures.length) {
     emit({ ok: false, run: failures[0].run, reason: failures[0].reason, failures, seen: result,
-      hint: `nothing written to ${out}; seen holds what came back; do not adjust the fixture until it passes, plans built on D-02 rest on this answer` });
+      hint: 'nothing written; seen holds what came back; do not adjust the fixture until it passes, plans built on D-02 rest on this answer' });
+    return;
+  }
+  if (!out) {
+    emit({ ok: true, host_version: result.first.host_version });
     return;
   }
   writeFile(out, JSON.stringify(result, null, 2) + '\n');
