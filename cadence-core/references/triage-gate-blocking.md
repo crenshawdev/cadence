@@ -68,8 +68,8 @@ The plan key rides as the THIRD argument beside the trigger, so the block stays
 the one line a coordinator copies and runs. Without that term a `rearm` written
 for plan 1 reads as SPENT for plan 2 on the same trigger, and plan 2's fix can
 never be reviewed at all. OMIT the argument on a fire that carries no plan
-(`/cad-debug`, `/cad-verify`, `/cad-task`'s inline path - the discriminator
-grammar in `references/review-triggers.md` names them): the append writes a
+(`/cad-debug`, `/cad-verify`, `/cad-task`'s inline path - the receipt
+paragraph in `references/triage-gate.md` names them): the append writes a
 `plan` field only when `--plan` was passed, so those events carry none, and an
 omitted key is what matches them.
 

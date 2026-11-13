@@ -244,13 +244,14 @@ object (`references/risk-surface.md`, and the `deferred` bullet of
 `references/triage-gate-deferred.md`). So each gate has one rule and the seam never
 meets a path already written.
 
-A RE-ARM PASSES `--round 2`, and the fire site is the only actor that knows
-which round it is on. A capped re-arm (`references/triage-gate.md`, ONE round)
-is a SECOND fire of the same trigger on the same plan, so it resolves to the
-same discriminator: round two lands at `...-<discriminator>-r2.json`, while an
-ordinary fire passes nothing and keeps the sibling's exact name. Omitting it on
-a re-arm is REFUSED - never merged and never overwritten - because round one's
-record is what an auditor reads to see the finding a fix was claimed to close.
+A capped re-arm (`references/triage-gate.md`, ONE round) is a SECOND fire of
+the same trigger on the same plan, and the fire site is the only actor that
+knows which round it is on. A range-named one is a fire over its OWN range: named by the `--base` and `--head` it passes, with no `--round`,
+and its settle receipt carries the same two ends. Any other passes `--round 2`:
+round two lands at `...-<discriminator>-r2.json`, while an ordinary fire passes
+nothing and keeps the sibling's exact name. A second write to a taken name is
+REFUSED - never merged and never overwritten - because round one's record is
+what an auditor reads to see the finding a fix was claimed to close.
 
 **A `risk_surface` fire PERSISTS its settled survivors, at every gate.** Unlike
 the trace append, this is not the adjudicated ARM's alone: `risk_surface`
@@ -260,13 +261,22 @@ halt has - it fires no review of its own - so skipping the write lets an
 autonomous close merge over a blocker nobody halted on. Where it is written is
 in `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md`.
 
-**The discriminator grammar, stated ONCE here** because both the record above
-and the survivor write use it: `plan-<k>` for a per-plan fire,
-`<command>-<short HEAD sha>` for every other one
+**The discriminator grammar, stated ONCE here** because every record, review
+file, queue member and survivor write uses it. A fire over a
+COMMITTED range - `diff`, `phase_diff`, and `risk_surface` from `/cad-execute`
+or `/cad-task` - is named by it: `<short base sha>-<short head sha>`, each end
+as `git rev-parse --short <ref>` prints the refs it passes as `--base` and
+`--head` (`REVIEW-risk_surface-4f1c2ab-9d03e7f.md`). A whole-phase fire is its
+own range with its own receipt, and a receipt resolves only the record with the
+same base and head. The `plan` trigger and the staged fires of `/cad-verify` and
+`/cad-debug` cover no committed range and keep `<command>-<short HEAD sha>`
 (`REVIEW-risk_surface-debug-a1b2c3d.md`). The command half is not decoration -
 `/cad-debug` and `/cad-verify` can both fire against the SAME unchanged HEAD,
 so the sha alone still collides, and two fires sharing a filename do not merge,
-they overwrite.
+they overwrite. Gate `deferred` keeps today's names, `plan-<k>` per plan and
+`<command>-<short HEAD sha>` otherwise, and `--round 2`: its queue's cap counts
+`-r<n>` suffixes on disk. Old `plan-<k>[-rN]` files are not renamed and still
+read.
 
 ### 6. Consequence (gate)
 RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before

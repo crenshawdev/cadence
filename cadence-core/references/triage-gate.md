@@ -66,12 +66,13 @@ The seam recounts the record's own rulings against them and refuses a receipt
 that disagrees, so the survivor count is recomputable rather than asserted. A
 `gate_pass` where nothing survived still carries three zeroes: `0 of 9 refuted`
 and "nobody counted" are different fires. `--round <round>` is omitted on an
-ordinary fire and carries the round on a re-armed one, since the re-arm
+ordinary fire and on a range-named re-arm, and carries the round on any other
+re-armed one, since the re-arm
 (`references/triage-gate-blocking.md`) writes its own record and a settle naming no round is checked against round
 one's stale rulings. The `rearm` and `deferral` receipts gain none of the four:
 one marks a round opening and the other a fire nobody has ruled on yet, and a
 count there would describe a fire still in flight either way. `deferral` keeps
-`--round` for the same reason every other receipt does - a re-armed fire's queue
+`--round` for the same reason a round-named receipt does - a re-armed fire's queue
 member is a second file, and a receipt naming no round points at the first.
 
 Nothing `blocker`/`high` survives - PASS, and record it, or every matched range
