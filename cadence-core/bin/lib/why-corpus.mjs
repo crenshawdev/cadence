@@ -311,7 +311,9 @@ function listRecordNames(dir, repoDir) {
       return { names: [], sub };
     }
   }
-  return { names: names.filter((n) => n.startsWith(ADJ_PREFIX) && n.endsWith(ADJ_SUFFIX)).sort(), sub };
+  // code-unit order, the default sort's, spelled out; never localeCompare, or the order follows the machine's locale
+  const byCodeUnit = (/** @type {string} */ a, /** @type {string} */ b) => (a < b ? -1 : a > b ? 1 : 0);
+  return { names: names.filter((n) => n.startsWith(ADJ_PREFIX) && n.endsWith(ADJ_SUFFIX)).sort(byCodeUnit), sub };
 }
 
 /**
