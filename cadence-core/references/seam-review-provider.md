@@ -37,8 +37,11 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
   1024-byte excerpt, always a string, never the body. On `no-key`
   the review subsystem falls back to `claude-subagent` and does not offer a
   consult; a `blocking` trigger reports the failure rather than silently pass.
-- The payload is FENCED before the cap: every string field crosses one filter -
-  URL userinfo, an `authorization` echo, a credential-shaped `name=value` - so
+- The payload is FENCED before the cap: every string field crosses one filter
+  that takes four shapes - an env assignment with a literal value whose
+  upper-case name ends like a credential (`OPENAI_API_KEY=`), URL userinfo
+  other than the SSH user `git`, an `Authorization: Bearer` value, a quoted
+  `"api_key"` pair - and leaves ordinary code byte for byte, so
   `over-cap` measures what actually leaves the machine. `redactions: <n>` on the
   envelope and on the `provider/request` event says how many spans went, written
   only when non-zero; relay it, because that reviewer read less than the caller
@@ -48,8 +51,9 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
 - What the call COST rides the `provider/request` event as two keys, written
   only when real on the same rule as `redactions: <n>`: `usage`, the normalized
   `{input, output}` pair, and `usage_raw`, the provider's own usage object.
-  `usage_raw` crosses the same fence the payload does and is dropped WHOLE - the
-  pair still rides - when the provider's object carries a credential-shaped span
+  `usage_raw` is judged by the full credential rules, wider than the payload
+  fence, and is dropped WHOLE - the pair still rides - when the provider's
+  object carries a credential-shaped span
   or overruns its size bound. A response that carried no usage writes NEITHER key - never a zero, so an event
   from before this existed reads as a cost nobody knows rather than a call that
   was free. A call that burned its budget and came back unusable records what it
