@@ -274,9 +274,9 @@ function wideTracked(t, spans) {
 }
 
 // a YAML block under a credential name (`PRIVATE_KEY: |`, `>-`): the wide rules take the `|` as the value and let the
-// block cross, so config text loses the block first
+// block cross, so config text loses the block first; any case, since `private_key: |` holds the same PEM
 const OUT_YAML_BLOCK = new RegExp(`^([+ -]?)([ \\t]*(?:-[ \\t]+)?)(?:${OUT_NAME})[ \\t]*:[ \\t]+[|>][+-]?[ \\t]*(?:#.*)?$`,
-  'gm');
+  'gim');
 
 /**
  * The block under each OUT_YAML_BLOCK key as a cut, from its first line's text to its last line's end; the key line,
