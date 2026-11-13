@@ -44,7 +44,7 @@ Otherwise end the turn.
 
 ## 3. On the notice
 
-The notice holds run totals and cuts a long result short, so the seam reads the run file whole: `workflows/<Run ID>.json` under the session directory `Transcript dir` names.
+The notice holds run totals and, per voice, whether it ran and counts of what it raised and how its checkers ruled, with no finding text. So the seam reads the run file whole, `workflows/<Run ID>.json` under the session directory `Transcript dir` names, and the findings and rulings from the run's journal beside it, `subagents/workflows/<Run ID>/journal.jsonl`, which it finds from the run file.
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --phase <N> --run-file <run file> --out-dir <the scratch directory printed in step 1> --payload-ref <the payload reference step 2 assembled> [--answers-file <path>] [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
@@ -69,7 +69,7 @@ Repeat until `unruled` is empty, then go to step 4: merge, write the review file
 
 A reviewer that returned nothing never reads as a verdict. Name each voice in `dropped` in one visible line with its reason before you go on. When none were left, the script already ran the `claude-subagent` fallback once (that voice is in `voices`). Rule each `unruled` finding by opening the code it cites, as today's path does, and answer with its ruling and all six headings, so its survivor's section is not missing from the review file.
 
-A call the seam refuses has already run and spent its agents, so today's path is not run as well. Name the reason in one line, treat the gate as one that could not be evaluated, the arm `references/triage-gate.md` states, and ask whether to run this fire once more on today's path or move on. That includes `run-no-voice`, where even the fallback returned nothing: never say adjudication killed everything.
+A call the seam refuses has already run and spent its agents, so today's path is not run as well. Name the reason in one line, treat the gate as one that could not be evaluated, the arm `references/triage-gate.md` states, and ask whether to run this fire once more on today's path or move on. That includes `run-no-voice`, where even the fallback returned nothing: never say adjudication killed everything. It includes `journal-unusable` too, where the journal is missing, unreadable, over its cap or holds no result for a voice that ran: a run with findings never reads as clean.
 
 ## 4. Merge, then the file, the record and the triage
 
