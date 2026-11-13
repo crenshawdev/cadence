@@ -16,6 +16,7 @@ import {
   appendArchiveRows, parseArchiveRows, phaseRecallSnippets,
 } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
+import { CYCLE, appendEvent } from '../lib/trace.mjs';
 import { changeState, loadState, withPhases } from './state-import.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 
@@ -190,6 +191,9 @@ function cmdMilestonePrune(dir, opts) {
       }),
     });
     if (!landed) return;
+    // the close is the cycle boundary a phase-scoped trace read stops at; it landed, so a log line can't fail it
+    const marker = appendEvent(dir, { family: 'lifecycle', event: CYCLE });
+    if (!marker.written) warnings.push(`the cycle boundary was not written to the trace (${marker.reason})`);
   }
 
   const envelope = {

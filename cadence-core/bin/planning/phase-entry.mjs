@@ -10,6 +10,7 @@ import { mergeLayers } from '../lib/config-merge.mjs';
 import { parseRoadmapPhases } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { renderPhasesList } from '../lib/state-views.mjs';
+import { CYCLE, appendEvent, cycleBoundaryIsNewest } from '../lib/trace.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { changeState } from './state-import.mjs';
 
@@ -136,6 +137,11 @@ function cmdPhaseEntry(dir, sub, opts) {
   const { refused, entry } = box;
   if (refused) return fail(refused[0], refused[1], refused[2]);
   if (!entry) return fail('internal', 'phase-entry wrote no entry and gave no reason');
+  // an upgraded project's trace has no marker, so the add that opens a cycle writes one unless a close just did
+  if (sub === 'add' && box.opened && !cycleBoundaryIsNewest(dir)) {
+    const marker = appendEvent(dir, { family: 'lifecycle', event: CYCLE });
+    if (!marker.written) box.warnings.push(`the cycle boundary was not written to the trace (${marker.reason})`);
+  }
   ok({ phase: n, name: entry.name, description: entry.description, ...(sub === 'add' && box.opened ? { opened_cycle: true } : {}),
     ...(box.warnings.length ? { warnings: box.warnings } : {}) });
 }

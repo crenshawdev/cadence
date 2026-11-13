@@ -182,6 +182,26 @@ function newestLifecycle(lines, name, want) {
 }
 
 /**
+ * True when the record's newest `CYCLE` marker has no event carrying a `phase` after it, so a cycle-opening add
+ * needs no second one. Phase-less lines after it, a close's `/cad-suggest` say, don't move the boundary.
+ * An unreadable record or one with no marker answers false.
+ * @param {string} planningRoot
+ * @returns {boolean}
+ */
+export function cycleBoundaryIsNewest(planningRoot) {
+  const lines = readLines(planningRoot);
+  if (lines === null) return false;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let e;
+    try { e = JSON.parse(lines[i]); } catch { continue; }
+    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (e.family === 'lifecycle' && e.event === CYCLE) return true;
+    if (key(e.phase) !== '') return false;
+  }
+  return false;
+}
+
+/**
  * The per-phase correlation id, derived and never stored.
  * `ownSha` lets the anchor event derive its own id, or the first `phase_start` gets the bare form and the rest
  * the sha form.
