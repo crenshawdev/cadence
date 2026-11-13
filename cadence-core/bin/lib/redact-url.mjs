@@ -111,31 +111,39 @@ export function redactCredentials(s) {
 
 // redactOutbound: the wide rules above rewrite ordinary code (`const token = getToken();`), and a reviewer reading
 // `<redacted>` mid-expression reviews the wrong code, so the outbound fence takes exactly four shapes and nothing else.
-// A value is not a literal only when it opens with a real variable (`$NAME`, `${`, `$(`) or a `<placeholder>`;
-// `$9x` is a literal, and so is anything in single quotes, which no shell or dotenv expands.
+// A value is not a literal when it opens with a real variable (`$NAME`, `${`, `$(`, `$$NAME`, a whole `$1` or `$@`)
+// or a `<placeholder>`; `$9x` is a literal, and so is anything in single quotes, which no shell or dotenv expands.
 // No cut rules: the fence never windows its input, so a host ending the text is a host, not a credential cut short.
 // Each rule starts only at a fixed literal, a line start or behind a pinned lookbehind, so a whole artifact stays linear.
 
-// what opens a non-literal value in a double-quoted or bare position
-const OUT_VAR = '\\$[A-Za-z_{(]|<';
+// what opens a non-literal value in a double-quoted or bare position; a positional or special parameter only counts whole
+const OUT_VAR = '\\$\\$?[A-Za-z_{(]|\\$[0-9@?#*!$-](?=[\\s"\'`;&|)}]|$)|<';
 
 // an upper-case name that ends like a credential; `KEY` alone isn't one
 const OUT_NAME = '(?:[A-Z][A-Z0-9_]*)?(?:TOKEN|SECRET|PASSWORD|PASSWD)|[A-Z][A-Z0-9_]*_KEY';
 
-// `NAME=` with no spaces, then a literal; a quoted value runs to its closing quote across lines, so a PEM goes whole
+// a quoted value opens on a non-space and closes on its own line, or runs across lines only to a quote that ends one,
+// so a PEM goes whole and the quote closing `'GITHUB_TOKEN=' + token;` never swallows the lines after it
+const outQuoted = (q, opener) => `${q}(?![\\s${q}]${opener})(?:[^${q}\\n]+${q}|[^${q}]+${q}(?=[ \\t\\r]*(?:\\n|$)))`;
+
+// `NAME=` with no spaces, then a literal
 const OUT_ENV = new RegExp(`(?<![A-Za-z0-9_$.])((?:${OUT_NAME})=)`
-  + `(?:"(?!${OUT_VAR}|")[^"]+"|'(?![<'])[^']+'|(?!${OUT_VAR}|["'=])[^\\s"'\`;&|<>()]+)`, 'g');
+  + `(?:${outQuoted('"', `|${OUT_VAR}`)}|${outQuoted("'", '|<')}|(?!${OUT_VAR}|["'=])[^\\s"'\`;&|<>()]+)`, 'g');
 
 // the YAML env-map spelling (`environment:`, `env:`), one entry per line, diff marker and list dash allowed.
 // The value must end the line, so a JS property (`API_TOKEN: tok,`) crosses; `|` and `>` open a block, not a value.
+// A digit-free run of letters, dots and brackets is a type or an expression (`str`, `Optional[str]`, `process.env.X`).
 const OUT_YAML_ENV = new RegExp(`^([+ -]?[ \\t]*(?:-[ \\t]+)?(?:${OUT_NAME})[ \\t]*:[ \\t]+)`
-  + `(?:"(?!${OUT_VAR}|")[^"\\n]+"|'(?![<'])[^'\\n]+'|(?!${OUT_VAR}|["'|>])\\S*[^\\s,;{(\\[])(?=[ \\t]*(?:#.*)?$)`, 'gm');
+  + `(?:"(?!${OUT_VAR}|")[^"\\n]+"|'(?![<'])[^'\\n]+'`
+  + `|(?!${OUT_VAR}|["'|>]|[A-Za-z_.[\\]]+[ \\t]*(?:#.*)?$)\\S*[^\\s,;{(\\[])(?=[ \\t]*(?:#.*)?$)`, 'gm');
 
-// URL userinfo with or without a password, every RFC 3986 userinfo character; exactly `git` is the SSH user, no secret
-const OUT_USERINFO = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)(?!git@)([A-Za-z0-9._~%!$&'()*+,;=:-]+)@/g;
+// URL userinfo with or without a password, every RFC 3986 userinfo character plus a whole `${NAME}` or `${{ ... }}`;
+// exactly `git` is the SSH user, no secret
+const OUT_USERINFO = new RegExp('(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\\/\\/)(?!git@)'
+  + "((?:\\$\\{\\{[^{}\\n]*\\}\\}|\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}|[A-Za-z0-9._~%!$&'()*+,;=:-])+)@", 'g');
 
 // a userinfo part that is a whole variable; one literal part (`$GITHUB_ACTOR:ghp_...`) and the userinfo goes
-const OUT_USERINFO_VAR = /^\$(?:[A-Za-z_][A-Za-z0-9_]*|\([^()]*\))$/;
+const OUT_USERINFO_VAR = /^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\}|\{\{[^{}]*\}\}|\([^()]*\))$/;
 
 // an `Authorization: Bearer` header, the scheme word kept so the reader still sees what the line was; backtick for JS
 const OUT_BEARER = /(authorization["'`]?[ \t]*:[ \t]*["'`]?bearer[ \t]+)(?![$<])[A-Za-z0-9._~+/=-]+/gi;
