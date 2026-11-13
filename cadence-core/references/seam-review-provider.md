@@ -38,9 +38,14 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
   the review subsystem falls back to `claude-subagent` and does not offer a
   consult; a `blocking` trigger reports the failure rather than silently pass.
 - The payload is FENCED before the cap: every string field crosses one filter
-  that takes four shapes - an env assignment with a literal value whose
-  upper-case name ends like a credential (`OPENAI_API_KEY=`, or the YAML
-  `env:` spelling `OPENAI_API_KEY: ...` and its `|` block), URL userinfo
+  that picks its rules by file. A diff is split at each `diff --git` line. A
+  config file's part (`.env*`, `*.yml`, `*.yaml`, `*.toml`, `*.ini`, `*.cfg`,
+  `*.conf`, `*.properties`, `.npmrc`, `.netrc`, `Dockerfile`, `*.sh`) loses
+  every span the full credential rules or the four shapes below take, a YAML
+  `|` block under a credential name included; a quoted value spanning lines
+  goes as one mark. Every other part, and text with no path, loses four
+  single-line shapes - an env assignment with a literal value whose
+  upper-case name ends like a credential (`OPENAI_API_KEY=`), URL userinfo
   other than the SSH user `git`, an `Authorization: Bearer` value, a quoted
   `"api_key"` pair - and leaves ordinary code byte for byte, so
   `over-cap` measures what actually leaves the machine. `redactions: <n>` on the

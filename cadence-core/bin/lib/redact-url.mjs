@@ -110,76 +110,28 @@ export function redactCredentials(s) {
 }
 
 // redactOutbound: the wide rules above rewrite ordinary code (`const token = getToken();`), and a reviewer reading
-// `<redacted>` mid-expression reviews the wrong code, so the outbound fence takes exactly four shapes and nothing else.
+// `<redacted>` mid-expression reviews the wrong code, so source text crosses a narrow fence of four single-line shapes.
+// Guessing from a value's shape whether YAML or a quoted run is code or a literal traded leaks for garbling every round,
+// so a diff is fenced per file instead: a config file's part loses what the wide or the narrow rules take, the rest
+// crosses the narrow ones.
 // A value is not a literal when it opens with a real variable (`$NAME`, `${`, `$(`, `$$NAME`, a whole `$1` or `$@`)
 // or a `<placeholder>`; `$9x` is a literal, and so is anything in single quotes, which no shell or dotenv expands.
-// No cut rules: the fence never windows its input, so a host ending the text is a host, not a credential cut short.
+// No cut rules on the narrow side: it never windows its input, so a host ending the text is a host.
 // Each rule starts only at a fixed literal, a line start or behind a pinned lookbehind, so a whole artifact stays linear.
 
 // what opens a non-literal value in a double-quoted or bare position; a positional or special parameter only counts whole
-const OUT_VAR = '\\$\\$?[A-Za-z_{(]|\\$[0-9@?#*!$-](?=[\\s"\'`;&|)}]|$)|<';
+const OUT_VAR = '\\$\\$?[A-Za-z_{(]|\\$[0-9@?#*!$-](?![A-Za-z0-9_])|<';
 
 // an upper-case name that ends like a credential; `KEY` alone isn't one
 const OUT_NAME = '(?:[A-Z][A-Z0-9_]*)?(?:TOKEN|SECRET|PASSWORD|PASSWD)|[A-Z][A-Z0-9_]*_KEY';
 
-// a quoted value opens on a non-space and closes on its own line, or runs across lines only to a quote that ends one,
-// so a PEM goes whole and the quote closing `'GITHUB_TOKEN=' + token;` never swallows the lines after it
-const outQuoted = (q, opener) => `${q}(?![\\s${q}]${opener})(?:[^${q}\\n]+${q}|[^${q}]+${q}(?=[ \\t\\r]*(?:\\n|$)))`;
+// a quoted value opens on a non-space and closes on its own line, so the quote closing `'GITHUB_TOKEN=' + token;`
+// never runs into the lines after it; a multi-line value lives in a config file, and that part gets the wide rules
+const outQuoted = (q, opener) => `${q}(?![\\s${q}]${opener})[^${q}\\n]+${q}`;
 
 // `NAME=` with no spaces, then a literal
 const OUT_ENV = new RegExp(`(?<![A-Za-z0-9_$.])((?:${OUT_NAME})=)`
   + `(?:${outQuoted('"', `|${OUT_VAR}`)}|${outQuoted("'", '|<')}|(?!${OUT_VAR}|["'=])[^\\s"'\`;&|<>()]+)`, 'g');
-
-// the YAML env-map spelling (`environment:`, `env:`), one entry per line, diff marker and list dash allowed.
-// The value must end the line, so a JS property (`API_TOKEN: tok,`) crosses; `|` and `>` open a block, not a value.
-// A digit-free run of letters, dots and brackets is a type or an expression (`str`, `Optional[str]`, `process.env.X`).
-const OUT_YAML_ENV = new RegExp(`^([+ -]?[ \\t]*(?:-[ \\t]+)?(?:${OUT_NAME})[ \\t]*:[ \\t]+)`
-  + `(?:"(?!${OUT_VAR}|")[^"\\n]+"|'(?![<'])[^'\\n]+'`
-  + `|(?!${OUT_VAR}|["'|>]|[A-Za-z_.[\\]]+[ \\t]*(?:#.*)?$)\\S*[^\\s,;{(\\[])(?=[ \\t]*(?:#.*)?$)`, 'gm');
-
-// the YAML block form of that entry (`PRIVATE_KEY: |`, `>-`): every line indented deeper than the key goes as one mark
-const OUT_YAML_BLOCK = new RegExp(`^([+ -]?)([ \\t]*(?:-[ \\t]+)?)(?:${OUT_NAME})[ \\t]*:[ \\t]+[|>][+-]?[ \\t]*(?:#.*)?$`,
-  'gm');
-
-/**
- * `text` with the block under each OUT_YAML_BLOCK key replaced by one mark line, the key line and the rest as they were.
- * @param {string} text
- * @returns {string}
- */
-function redactYamlBlocks(text) {
-  let out = '';
-  let from = 0;
-  OUT_YAML_BLOCK.lastIndex = 0;
-  for (let head = OUT_YAML_BLOCK.exec(text); head !== null; head = OUT_YAML_BLOCK.exec(text)) {
-    const headEnd = head.index + head[0].length;
-    // a diff marker on the key means one on every line under it, so the depth is measured past it
-    const marker = head[1].length;
-    const depth = head[2].length;
-    let at = headEnd;
-    let blockEnd = headEnd;
-    let lead = '';
-    while (at < text.length) {
-      let end = text.indexOf('\n', at + 1);
-      if (end === -1) end = text.length;
-      const line = text.slice(at + 1, end);
-      const body = marker && /^[+ -]/.test(line) ? line.slice(1) : line;
-      const indent = /^[ \t]*/.exec(body)?.[0].length ?? 0;
-      // blank lines belong to a block but never end one, so a trailing blank stays outside the mark
-      if (body.trim() !== '') {
-        if (indent <= depth) break;
-        if (blockEnd === headEnd) lead = line.slice(0, line.length - body.length + indent);
-        blockEnd = end;
-      }
-      at = end;
-    }
-    if (blockEnd > headEnd) {
-      out += `${text.slice(from, headEnd + 1)}${lead}${MARK}`;
-      from = blockEnd;
-      OUT_YAML_BLOCK.lastIndex = blockEnd;
-    }
-  }
-  return out + text.slice(from);
-}
 
 // URL userinfo with or without a password, every RFC 3986 userinfo character plus a whole `${NAME}` or `${{ ... }}`;
 // exactly `git` is the SSH user, no secret
@@ -197,28 +149,250 @@ const OUT_API_KEY = new RegExp(
   `((["'])[A-Za-z0-9_.-]{0,40}?api[_.-]?key\\2[ \\t]*:[ \\t]*(["']))(?!${OUT_VAR})(?:(?!\\3)[^\\n])+\\3`, 'gi');
 
 /**
- * `s` with the four outbound credential shapes replaced by `<redacted>`, every other byte as it was:
- * an upper-case credential-named env assignment's literal value (`NAME=v`, a YAML `NAME: v` entry or its `|` block),
- * URL userinfo other than `git`, an `Authorization: Bearer` value, and a quoted `api_key` pair's value.
+ * A text mid-redaction. Character i stands for `from[i]`..`to[i]` of the original: a kept character for itself, a mark
+ * character for the whole span its mark took. Null arrays mean nothing has been taken yet.
+ * @typedef {{text: string, from: Int32Array | null, to: Int32Array | null}} Tracked
+ */
+
+/**
+ * `t` with each `[a, b)` of `cuts` (flat pairs, ascending, disjoint, non-empty, in `t.text`) replaced by a mark.
+ * Each mark's span of the original goes onto `spans` as a flat pair.
+ * @param {Tracked} t
+ * @param {number[]} cuts
+ * @param {number[]} spans
+ * @returns {Tracked}
+ */
+function applyCuts(t, cuts, spans) {
+  if (cuts.length === 0) return t;
+  const old = t.text;
+  let size = old.length;
+  for (let k = 0; k < cuts.length; k += 2) size += MARK.length - (cuts[k + 1] - cuts[k]);
+  const from = new Int32Array(size);
+  const to = new Int32Array(size);
+  /** @type {(r: number, a: number, w: number) => void} */
+  const keep = (r, a, w) => {
+    if (t.from && t.to) {
+      from.set(t.from.subarray(r, a), w);
+      to.set(t.to.subarray(r, a), w);
+    } else {
+      for (let i = r; i < a; i += 1) { from[w + i - r] = i; to[w + i - r] = i + 1; }
+    }
+  };
+  const pieces = [];
+  let r = 0;
+  let w = 0;
+  for (let k = 0; k < cuts.length; k += 2) {
+    const a = cuts[k];
+    const b = cuts[k + 1];
+    keep(r, a, w);
+    w += a - r;
+    // order is kept, so the first character's start and the last one's end bound everything between
+    const s = t.from ? t.from[a] : a;
+    const e = t.to ? t.to[b - 1] : b;
+    from.fill(s, w, w + MARK.length);
+    to.fill(e, w, w + MARK.length);
+    w += MARK.length;
+    spans.push(s, e);
+    pieces.push(old.slice(r, a), MARK);
+    r = b;
+  }
+  keep(r, old.length, w);
+  pieces.push(old.slice(r));
+  return { text: pieces.join(''), from, to };
+}
+
+/**
+ * `t` after a `replace` with `re`: the same matches, and `cut` names the part of each the mark takes, `[a, b)` inside
+ * the match, or null to leave it be. With `start`, `re` sees only the text from there on, as if it were all there was.
+ * @param {Tracked} t
+ * @param {RegExp} re
+ * @param {(m: RegExpExecArray) => [number, number] | null} cut
+ * @param {number[]} spans
+ * @param {number} [start]
+ * @returns {Tracked}
+ */
+function replaceTracked(t, re, cut, spans, start = 0) {
+  const src = start === 0 ? t.text : t.text.slice(start);
+  /** @type {number[]} */
+  const cuts = [];
+  re.lastIndex = 0;
+  for (let m = re.exec(src); m !== null; m = re.global ? re.exec(src) : null) {
+    const c = cut(m);
+    if (c && c[1] > c[0]) cuts.push(start + m.index + c[0], start + m.index + c[1]);
+    // replace steps past an empty match, so this does too, or it finds the same one forever
+    if (m[0] === '') re.lastIndex += 1;
+  }
+  return applyCuts(t, cuts, spans);
+}
+
+/**
+ * The narrow fence: four single-line shapes go, every other byte stays.
+ * @param {Tracked} t
+ * @param {number[]} spans
+ * @returns {Tracked}
+ */
+function narrowTracked(t, spans) {
+  // a cheap literal check gates each rule, so a text without the literal never runs the regex
+  if (t.text.indexOf('=') !== -1) t = replaceTracked(t, OUT_ENV, (m) => [m[1].length, m[0].length], spans);
+  if (t.text.indexOf('://') !== -1 && t.text.indexOf('@') !== -1) {
+    t = replaceTracked(t, OUT_USERINFO, (m) => (
+      m[2].split(':').every((part) => part === '' || OUT_USERINFO_VAR.test(part))
+        ? null : [m[1].length, m[0].length - 1]), spans);
+  }
+  if (/authorization/i.test(t.text)) t = replaceTracked(t, OUT_BEARER, (m) => [m[1].length, m[0].length], spans);
+  if (/api[_.-]?key/i.test(t.text)) {
+    t = replaceTracked(t, OUT_API_KEY, (m) => [m[1].length, m[0].length - m[3].length], spans);
+  }
+  return t;
+}
+
+/**
+ * `redactCredentials(redactUrl(t))`, rule for rule, with each mark tracked to the original. No redactUrl rule crosses
+ * whitespace, so the whole text matches as its segments do; only the cut rules are held to the last segment.
+ * A test pins this to those two functions' own output, so a rule added there and not here fails instead of leaking.
+ * @param {Tracked} t
+ * @param {number[]} spans
+ * @returns {Tracked}
+ */
+function wideTracked(t, spans) {
+  if (t.text.indexOf('@') !== -1) {
+    if (t.text.indexOf('://') !== -1) {
+      t = replaceTracked(t, SCHEME_USERINFO, (m) => [m[1].length, m[0].length - 1], spans);
+    }
+    if (t.text.indexOf(':') !== -1) t = replaceTracked(t, BARE_USERINFO, (m) => [0, m[0].length - 1], spans);
+  }
+  let last = t.text.length;
+  while (last > 0 && !/\s/.test(t.text[last - 1])) last -= 1;
+  if (t.text.indexOf('://', last) !== -1) {
+    t = replaceTracked(t, SCHEME_USERINFO_CUT, (m) => [m[1].length, m[0].length], spans, last);
+  }
+  if (t.text.indexOf(':', last) !== -1) t = replaceTracked(t, BARE_USERINFO_CUT, (m) => [0, m[0].length], spans, last);
+  for (const re of [AUTH_SCHEME, CRED_PAIR, CRED_PAIR_CAMEL, CRED_PAIR_UPPER]) {
+    t = replaceTracked(t, re, (m) => [0, m[0].length], spans);
+  }
+  return t;
+}
+
+// a YAML block under a credential name (`PRIVATE_KEY: |`, `>-`): the wide rules take the `|` as the value and let the
+// block cross, so config text loses the block first
+const OUT_YAML_BLOCK = new RegExp(`^([+ -]?)([ \\t]*(?:-[ \\t]+)?)(?:${OUT_NAME})[ \\t]*:[ \\t]+[|>][+-]?[ \\t]*(?:#.*)?$`,
+  'gm');
+
+/**
+ * The block under each OUT_YAML_BLOCK key as a cut, from its first line's text to its last line's end; the key line,
+ * each line's marker and indent, and the blank lines before it stay.
+ * @param {string} text
+ * @returns {number[]}
+ */
+function yamlBlockCuts(text) {
+  /** @type {number[]} */
+  const cuts = [];
+  OUT_YAML_BLOCK.lastIndex = 0;
+  for (let head = OUT_YAML_BLOCK.exec(text); head !== null; head = OUT_YAML_BLOCK.exec(text)) {
+    // `$` stops before a `\r` too, so the key line runs to its own `\n` and a CRLF key line keeps both bytes
+    let headEnd = text.indexOf('\n', head.index + head[0].length);
+    if (headEnd === -1) headEnd = text.length;
+    // a diff marker on the key means one on every line under it, so the depth is measured past it
+    const marker = head[1].length;
+    const depth = head[2].length;
+    let at = headEnd;
+    let start = -1;
+    let blockEnd = headEnd;
+    while (at < text.length) {
+      let end = text.indexOf('\n', at + 1);
+      if (end === -1) end = text.length;
+      const line = text.slice(at + 1, end);
+      const body = marker && /^[+ -]/.test(line) ? line.slice(1) : line;
+      const indent = /^[ \t]*/.exec(body)?.[0].length ?? 0;
+      // blank lines belong to a block but never end one, so a trailing blank stays outside the mark
+      if (body.trim() !== '') {
+        if (indent <= depth) break;
+        if (start === -1) start = at + 1 + line.length - body.length + indent;
+        // the last line's `\r` stays outside the mark, so the mark line ends the way the block did
+        blockEnd = line.endsWith('\r') ? end - 1 : end;
+      }
+      at = end;
+    }
+    if (start !== -1) {
+      cuts.push(start, blockEnd);
+      OUT_YAML_BLOCK.lastIndex = blockEnd;
+    }
+  }
+  return cuts;
+}
+
+/**
+ * `text` with each span of `spans` (flat pairs, any order) replaced by a mark, overlapping spans sharing one.
+ * @param {string} text
+ * @param {number[]} spans
+ * @returns {string}
+ */
+function markSpans(text, spans) {
+  const order = [];
+  for (let k = 0; k < spans.length; k += 2) order.push(k);
+  order.sort((x, y) => spans[x] - spans[y] || spans[y + 1] - spans[x + 1]);
+  const pieces = [];
+  let r = 0;
+  let s = -1;
+  let e = -1;
+  for (const k of order) {
+    if (spans[k] < e) {
+      if (spans[k + 1] > e) e = spans[k + 1];
+      continue;
+    }
+    if (e !== -1) { pieces.push(text.slice(r, s), MARK); r = e; }
+    s = spans[k];
+    e = spans[k + 1];
+  }
+  if (e !== -1) { pieces.push(text.slice(r, s), MARK); r = e; }
+  pieces.push(text.slice(r));
+  return pieces.join('');
+}
+
+// the files whose literals are config, not code: they get the wide rules, the fence's rule before the narrow one existed
+const CONFIG_PATH = /(?:^|\/)(?:\.env[^/]*|\.npmrc|\.netrc|Dockerfile|[^/]*\.(?:ya?ml|toml|ini|cfg|conf|properties|sh))$/;
+
+/**
+ * Whether a `diff --git a/<A> b/<B>` part is a config file's: either side, so a rename out of `.env` still counts.
+ * @param {string} part
+ * @returns {boolean}
+ */
+function isConfigPart(part) {
+  const nl = part.indexOf('\n');
+  const head = (nl === -1 ? part : part.slice(0, nl)).replace(/\r$/, '');
+  const cut = Math.max(head.lastIndexOf(' b/'), head.lastIndexOf(' "b/'));
+  if (cut === -1) return false;
+  return [head.slice('diff --git '.length, cut), head.slice(cut + 1)]
+    .some((path) => CONFIG_PATH.test(path.replace(/^"|"$/g, '')));
+}
+
+/**
+ * `s` fenced for an outside reviewer, every byte the rules don't take as it was. A diff is split at each
+ * `diff --git` line and each file's part fenced by its path. Any file but a config file, and text with no path (an
+ * instruction, a situation, a plan, what comes before the first header), gets the narrow fence: an upper-case
+ * credential-named `NAME=v` literal, URL userinfo other than `git`, an `Authorization: Bearer` value, and a quoted
+ * `api_key` pair's value, each on one line. A config file (`.env*`, `*.yml`, `*.toml`, `*.sh`, ...) loses every span
+ * either the narrow fence or the wide rules (after its YAML credential blocks go) take, and joins lines where they do.
  * Coerces and never throws, for the same reason `redactUrl` does.
  * @param {unknown} s
  * @returns {string}
  */
 export function redactOutbound(s) {
-  let text = String(s);
-  // a cheap literal check gates each rule, so a text without the literal never runs the regex
-  if (text.indexOf('=') !== -1) text = text.replace(OUT_ENV, `$1${MARK}`);
-  if (/(?:TOKEN|SECRET|PASSWORD|PASSWD|_KEY)[ \t]*:/.test(text)) {
-    if (/:[ \t]+[|>]/.test(text)) text = redactYamlBlocks(text);
-    text = text.replace(OUT_YAML_ENV, `$1${MARK}`);
-  }
-  if (text.indexOf('://') !== -1 && text.indexOf('@') !== -1) {
-    text = text.replace(OUT_USERINFO, (whole, scheme, info) => (
-      info.split(':').every((part) => part === '' || OUT_USERINFO_VAR.test(part)) ? whole : `${scheme}${MARK}@`));
-  }
-  if (/authorization/i.test(text)) text = text.replace(OUT_BEARER, `$1${MARK}`);
-  if (/api[_.-]?key/i.test(text)) text = text.replace(OUT_API_KEY, `$1${MARK}$3`);
-  return text;
+  const text = String(s);
+  /** @type {(t: string) => string} */
+  const narrow = (t) => narrowTracked({ text: t, from: null, to: null }, []).text;
+  if (!/^diff --git /m.test(text)) return narrow(text);
+  // a header only ever starts a line, and a diff's content lines all carry a marker, so no file's text can fake one
+  return text.split(/^(?=diff --git )/m).map((part) => {
+    if (!part.startsWith('diff --git ') || !isConfigPart(part)) return narrow(part);
+    // each set reads the original, so one set's mark can't shift the quotes the other pairs; whatever either takes goes
+    /** @type {number[]} */
+    const spans = [];
+    narrowTracked({ text: part, from: null, to: null }, spans);
+    const blocks = /:[ \t]+[|>]/.test(part) ? yamlBlockCuts(part) : [];
+    wideTracked(applyCuts({ text: part, from: null, to: null }, blocks, spans), spans);
+    return markSpans(part, spans);
+  }).join('');
 }
 
 // redactAndCap: the one excerpt builder for text from outside this process, so there's one cap and one order
