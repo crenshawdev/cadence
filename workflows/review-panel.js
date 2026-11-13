@@ -116,7 +116,7 @@ const checkPrompt = (finding) => [
 // kept is what a voice carries after its wrapper launched: the envelope path and model, since the provider may have teed before the wrapper failed to answer.
 const none = (voice, reason, kept) => ({ voice, ran: false, reason, result: null, rulings: [], ...kept });
 
-// The wrapper runs one line and retypes its output, and nothing else: it holds no Read, Glob or Grep, and its rung denies the write tools.
+// The wrapper runs one line and retypes its output, and nothing else: it holds no Read, Glob, Grep or LSP, and its rung denies the write tools.
 const viaProvider = (voice) => {
   const p = a.providers && typeof a.providers === 'object' ? a.providers[voice] : null;
   const usable = p && text(p.line) && text(p.envelope) && text(p.model) && Number.isSafeInteger(p.timeout_ms) && p.timeout_ms > 0 && text(a.wrapper_agent_type);
@@ -131,7 +131,7 @@ const viaProvider = (voice) => {
   ].join('\n');
   const kept = { envelope: p.envelope, model: p.model };
   // Haiku is plenty for a copy job, and a bad copy only costs a ruling, since the envelope file wins.
-  return ask(prompt, { agentType: a.wrapper_agent_type, model: 'haiku', schema: PROVIDER_SCHEMA, label: `provider ${voice}`, disallowedTools: ['Read', 'Glob', 'Grep'] }, `provider ${voice}`)
+  return ask(prompt, { agentType: a.wrapper_agent_type, model: 'haiku', schema: PROVIDER_SCHEMA, label: `provider ${voice}`, disallowedTools: ['Read', 'Glob', 'Grep', 'LSP'] }, `provider ${voice}`)
     .then((r) => {
       if (!r) return none(voice, 'the provider wrapper returned nothing', kept);
       if (r.ok !== true) return none(voice, text(r.reason) ? `the provider reported ${r.reason}` : 'the provider reported ok:false with no reason', kept);
