@@ -3,8 +3,9 @@
 // `redactUrl` covers credentials in URL position and nothing else; callers rely on that claim, so it was never widened.
 // `redactCredentials` takes the rest: an `authorization: Bearer <v>` echo and `name=value` pairs.
 // `redactAndCap` runs both then caps at 1024 bytes.
+// `redactOutbound` is the narrow one, for text bound for an outside reviewer: four shapes, ordinary code untouched.
 // Redaction is by shape, never a token-prefix list, which only covers credentials somebody already thought of.
-// git anonymizes `https://` and `ssh://` userinfo but leaks `git://cad:tok@host/r.git`, so don't trust git to do it.
+// git anonymizes `https://` and `ssh://` userinfo but leaks a `git://` remote's user and token whole, so don't trust git.
 
 /** What replaces the userinfo and every other removed span: fixed so callers can grep it. */
 export const REDACTION_MARK = '<redacted>';
@@ -106,6 +107,42 @@ export function redactCredentials(s) {
     .replace(CRED_PAIR, MARK)
     .replace(CRED_PAIR_CAMEL, MARK)
     .replace(CRED_PAIR_UPPER, MARK);
+}
+
+// redactOutbound: the wide rules above rewrite ordinary code (`const token = getToken();`), and a reviewer reading
+// `<redacted>` mid-expression reviews the wrong code, so the outbound fence takes exactly four shapes and nothing else.
+// A value starting `$` or `<` is a variable or a placeholder, not a literal, so it crosses.
+// No cut rules: the fence never windows its input, so a host ending the text is a host, not a credential cut short.
+// Each rule starts only at a fixed literal or behind a pinned lookbehind, so a whole artifact stays linear.
+
+// an upper-case env name that ends like a credential, `=` with no spaces, then a literal; `KEY=VALUE` alone crosses
+const OUT_ENV = /(?<![A-Za-z0-9_$.])((?:[A-Z][A-Z0-9_]*)?(?:TOKEN|SECRET|PASSWORD|PASSWD)=|[A-Z][A-Z0-9_]*_KEY=)(?:"(?![$<"])[^"\n]+"|'(?![$<'])[^'\n]+'|(?![$<"'=])[^\s"'`;&|<>()]+)/g;
+
+// URL userinfo with or without a password; a userinfo of exactly `git` is the fixed SSH user, never a secret
+const OUT_USERINFO = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)(?!git@)(?![$<])[A-Za-z0-9._~%!$&*+,;=:-]+@/g;
+
+// an `Authorization: Bearer` header, the scheme word kept so the reader still sees what the line was
+const OUT_BEARER = /(authorization["']?[ \t]*:[ \t]*["']?bearer[ \t]+)(?![$<])[A-Za-z0-9._~+/=-]+/gi;
+
+// a quoted api_key pair (`"api_key": "<v>"`, `'openai-api-key': '<v>'`, `"apiKey": "<v>"`), its quotes kept
+const OUT_API_KEY = /((["'])[A-Za-z0-9_.-]{0,40}?api[_.-]?key\2[ \t]*:[ \t]*(["']))(?![$<])(?:(?!\3)[^\n])+\3/gi;
+
+/**
+ * `s` with the four outbound credential shapes replaced by `<redacted>`, every other byte as it was:
+ * an upper-case credential-named env assignment's literal value, URL userinfo other than `git`,
+ * an `Authorization: Bearer` value, and a quoted `api_key` pair's value.
+ * Coerces and never throws, for the same reason `redactUrl` does.
+ * @param {unknown} s
+ * @returns {string}
+ */
+export function redactOutbound(s) {
+  let text = String(s);
+  // a cheap literal check gates each rule, so a text without the literal never runs the regex
+  if (text.indexOf('=') !== -1) text = text.replace(OUT_ENV, `$1${MARK}`);
+  if (text.indexOf('://') !== -1 && text.indexOf('@') !== -1) text = text.replace(OUT_USERINFO, `$1${MARK}@`);
+  if (/authorization/i.test(text)) text = text.replace(OUT_BEARER, `$1${MARK}`);
+  if (/api[_.-]?key/i.test(text)) text = text.replace(OUT_API_KEY, `$1${MARK}$3`);
+  return text;
 }
 
 // redactAndCap: the one excerpt builder for text from outside this process, so there's one cap and one order
