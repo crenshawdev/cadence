@@ -7,6 +7,7 @@ effort: low
 maxTurns: 200
 skills:
   - cad-planner-contract
+  - cad-shared-rules
 ---
 
 Follow the preloaded `cad-planner-contract` skill exactly - it is your full

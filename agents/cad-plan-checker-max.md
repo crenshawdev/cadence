@@ -8,6 +8,7 @@ effort: max
 maxTurns: 200
 skills:
   - cad-plan-checker-contract
+  - cad-shared-rules
 ---
 
 Follow the preloaded `cad-plan-checker-contract` skill exactly - it is your full

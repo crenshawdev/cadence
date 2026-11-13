@@ -8,6 +8,7 @@ effort: xhigh
 maxTurns: 200
 skills:
   - cad-mapper-contract
+  - cad-shared-rules
 ---
 
 Follow the preloaded `cad-mapper-contract` skill exactly - it is your full

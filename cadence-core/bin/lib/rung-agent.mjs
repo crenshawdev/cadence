@@ -67,7 +67,7 @@ export const RUNG_FILES = Object.freeze({
     xhigh: 'cad-planner-xhigh',
     max: 'cad-planner-max',
   }, { tools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'LSP'], color: 'green',
-    gloss: 'phase plan authoring', skills: ['cad-planner-contract'] }),
+    gloss: 'phase plan authoring', skills: ['cad-planner-contract', 'cad-shared-rules'] }),
   'cad-assumptions-analyzer': roleRow({
     low: 'cad-assumptions-analyzer-low',
     medium: 'cad-assumptions-analyzer-medium',
@@ -75,7 +75,7 @@ export const RUNG_FILES = Object.freeze({
     xhigh: 'cad-assumptions-analyzer',
     max: 'cad-assumptions-analyzer-max',
   }, { ...READ_ONLY, color: 'cyan', gloss: 'codebase assumption gathering',
-    skills: ['cad-assumptions-analyzer-contract'] }),
+    skills: ['cad-assumptions-analyzer-contract', 'cad-shared-rules'] }),
   // the one deliberate exception: Write for its findings file, Edit and MultiEdit denied (self-verify check 7c)
   'cad-verifier': roleRow({
     low: 'cad-verifier-low',
@@ -84,14 +84,14 @@ export const RUNG_FILES = Object.freeze({
     xhigh: 'cad-verifier-xhigh',
     max: 'cad-verifier-max',
   }, { tools: ['Read', 'Write', 'Bash', 'Grep', 'Glob', 'LSP'], disallowedTools: ['Edit', 'MultiEdit'], color: 'green',
-    gloss: 'goal-backward phase verification', skills: ['cad-verifier-contract'] }),
+    gloss: 'goal-backward phase verification', skills: ['cad-verifier-contract', 'cad-shared-rules'] }),
   'cad-reviewer': roleRow({
     low: 'cad-reviewer-low',
     medium: 'cad-reviewer-medium',
     high: 'cad-reviewer',
     xhigh: 'cad-reviewer-xhigh',
     max: 'cad-reviewer-max',
-  }, { ...READ_ONLY, color: 'red', gloss: 'adversarial artifact review', skills: ['cad-reviewer-contract'] }),
+  }, { ...READ_ONLY, color: 'red', gloss: 'adversarial artifact review', skills: ['cad-reviewer-contract', 'cad-shared-rules'] }),
   'cad-executor': roleRow({
     low: 'cad-executor-low',
     medium: 'cad-executor-medium',
@@ -99,21 +99,21 @@ export const RUNG_FILES = Object.freeze({
     xhigh: 'cad-executor-xhigh',
     max: 'cad-executor-max',
   }, { tools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'LSP'], color: 'yellow',
-    gloss: 'plan task execution', skills: ['cad-executor-contract'] }),
+    gloss: 'plan task execution', skills: ['cad-executor-contract', 'cad-shared-rules'] }),
   'cad-plan-checker': roleRow({
     low: 'cad-plan-checker',
     medium: 'cad-plan-checker-medium',
     high: 'cad-plan-checker-high',
     xhigh: 'cad-plan-checker-xhigh',
     max: 'cad-plan-checker-max',
-  }, { ...READ_ONLY, color: 'green', gloss: 'goal-backward plan gate', skills: ['cad-plan-checker-contract'] }),
+  }, { ...READ_ONLY, color: 'green', gloss: 'goal-backward plan gate', skills: ['cad-plan-checker-contract', 'cad-shared-rules'] }),
   'cad-mapper': roleRow({
     low: 'cad-mapper-low',
     medium: 'cad-mapper-medium',
     high: 'cad-mapper',
     xhigh: 'cad-mapper-xhigh',
     max: 'cad-mapper-max',
-  }, { ...READ_ONLY, color: 'cyan', gloss: 'code map reader', skills: ['cad-mapper-contract'] }),
+  }, { ...READ_ONLY, color: 'cyan', gloss: 'code map reader', skills: ['cad-mapper-contract', 'cad-shared-rules'] }),
 });
 
 /**

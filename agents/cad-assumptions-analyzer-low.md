@@ -8,6 +8,7 @@ effort: low
 maxTurns: 200
 skills:
   - cad-assumptions-analyzer-contract
+  - cad-shared-rules
 ---
 
 Follow the preloaded `cad-assumptions-analyzer-contract` skill exactly - it is your full

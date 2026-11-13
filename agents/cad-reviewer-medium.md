@@ -8,6 +8,7 @@ effort: medium
 maxTurns: 200
 skills:
   - cad-reviewer-contract
+  - cad-shared-rules
 ---
 
 Follow the preloaded `cad-reviewer-contract` skill exactly - it is your full

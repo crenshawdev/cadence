@@ -8,6 +8,7 @@ effort: max
 maxTurns: 200
 skills:
   - cad-verifier-contract
+  - cad-shared-rules
 ---
 
 Follow the preloaded `cad-verifier-contract` skill exactly - it is your full

@@ -7,6 +7,7 @@ effort: high
 maxTurns: 200
 skills:
   - cad-executor-contract
+  - cad-shared-rules
 ---
 
 Follow the preloaded `cad-executor-contract` skill exactly - it is your full
