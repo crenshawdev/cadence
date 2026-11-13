@@ -111,26 +111,43 @@ export function redactCredentials(s) {
 
 // redactOutbound: the wide rules above rewrite ordinary code (`const token = getToken();`), and a reviewer reading
 // `<redacted>` mid-expression reviews the wrong code, so the outbound fence takes exactly four shapes and nothing else.
-// A value starting `$` or `<` is a variable or a placeholder, not a literal, so it crosses.
+// A value is not a literal only when it opens with a real variable (`$NAME`, `${`, `$(`) or a `<placeholder>`;
+// `$9x` is a literal, and so is anything in single quotes, which no shell or dotenv expands.
 // No cut rules: the fence never windows its input, so a host ending the text is a host, not a credential cut short.
-// Each rule starts only at a fixed literal or behind a pinned lookbehind, so a whole artifact stays linear.
+// Each rule starts only at a fixed literal, a line start or behind a pinned lookbehind, so a whole artifact stays linear.
 
-// an upper-case env name that ends like a credential, `=` with no spaces, then a literal; `KEY=VALUE` alone crosses
-const OUT_ENV = /(?<![A-Za-z0-9_$.])((?:[A-Z][A-Z0-9_]*)?(?:TOKEN|SECRET|PASSWORD|PASSWD)=|[A-Z][A-Z0-9_]*_KEY=)(?:"(?![$<"])[^"\n]+"|'(?![$<'])[^'\n]+'|(?![$<"'=])[^\s"'`;&|<>()]+)/g;
+// what opens a non-literal value in a double-quoted or bare position
+const OUT_VAR = '\\$[A-Za-z_{(]|<';
 
-// URL userinfo with or without a password; a userinfo of exactly `git` is the fixed SSH user, never a secret
-const OUT_USERINFO = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)(?!git@)(?![$<])[A-Za-z0-9._~%!$&*+,;=:-]+@/g;
+// an upper-case name that ends like a credential; `KEY` alone isn't one
+const OUT_NAME = '(?:[A-Z][A-Z0-9_]*)?(?:TOKEN|SECRET|PASSWORD|PASSWD)|[A-Z][A-Z0-9_]*_KEY';
 
-// an `Authorization: Bearer` header, the scheme word kept so the reader still sees what the line was
-const OUT_BEARER = /(authorization["']?[ \t]*:[ \t]*["']?bearer[ \t]+)(?![$<])[A-Za-z0-9._~+/=-]+/gi;
+// `NAME=` with no spaces, then a literal; a quoted value runs to its closing quote across lines, so a PEM goes whole
+const OUT_ENV = new RegExp(`(?<![A-Za-z0-9_$.])((?:${OUT_NAME})=)`
+  + `(?:"(?!${OUT_VAR}|")[^"]+"|'(?![<'])[^']+'|(?!${OUT_VAR}|["'=])[^\\s"'\`;&|<>()]+)`, 'g');
+
+// the YAML env-map spelling (`environment:`, `env:`), one entry per line, diff marker and list dash allowed.
+// The value must end the line, so a JS property (`API_TOKEN: tok,`) crosses; `|` and `>` open a block, not a value.
+const OUT_YAML_ENV = new RegExp(`^([+ -]?[ \\t]*(?:-[ \\t]+)?(?:${OUT_NAME})[ \\t]*:[ \\t]+)`
+  + `(?:"(?!${OUT_VAR}|")[^"\\n]+"|'(?![<'])[^'\\n]+'|(?!${OUT_VAR}|["'|>])\\S*[^\\s,;{(\\[])(?=[ \\t]*(?:#.*)?$)`, 'gm');
+
+// URL userinfo with or without a password, every RFC 3986 userinfo character; exactly `git` is the SSH user, no secret
+const OUT_USERINFO = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)(?!git@)([A-Za-z0-9._~%!$&'()*+,;=:-]+)@/g;
+
+// a userinfo part that is a whole variable; one literal part (`$GITHUB_ACTOR:ghp_...`) and the userinfo goes
+const OUT_USERINFO_VAR = /^\$(?:[A-Za-z_][A-Za-z0-9_]*|\([^()]*\))$/;
+
+// an `Authorization: Bearer` header, the scheme word kept so the reader still sees what the line was; backtick for JS
+const OUT_BEARER = /(authorization["'`]?[ \t]*:[ \t]*["'`]?bearer[ \t]+)(?![$<])[A-Za-z0-9._~+/=-]+/gi;
 
 // a quoted api_key pair (`"api_key": "<v>"`, `'openai-api-key': '<v>'`, `"apiKey": "<v>"`), its quotes kept
-const OUT_API_KEY = /((["'])[A-Za-z0-9_.-]{0,40}?api[_.-]?key\2[ \t]*:[ \t]*(["']))(?![$<])(?:(?!\3)[^\n])+\3/gi;
+const OUT_API_KEY = new RegExp(
+  `((["'])[A-Za-z0-9_.-]{0,40}?api[_.-]?key\\2[ \\t]*:[ \\t]*(["']))(?!${OUT_VAR})(?:(?!\\3)[^\\n])+\\3`, 'gi');
 
 /**
  * `s` with the four outbound credential shapes replaced by `<redacted>`, every other byte as it was:
- * an upper-case credential-named env assignment's literal value, URL userinfo other than `git`,
- * an `Authorization: Bearer` value, and a quoted `api_key` pair's value.
+ * an upper-case credential-named env assignment's literal value (`NAME=v` or a YAML `NAME: v` entry),
+ * URL userinfo other than `git`, an `Authorization: Bearer` value, and a quoted `api_key` pair's value.
  * Coerces and never throws, for the same reason `redactUrl` does.
  * @param {unknown} s
  * @returns {string}
@@ -139,7 +156,11 @@ export function redactOutbound(s) {
   let text = String(s);
   // a cheap literal check gates each rule, so a text without the literal never runs the regex
   if (text.indexOf('=') !== -1) text = text.replace(OUT_ENV, `$1${MARK}`);
-  if (text.indexOf('://') !== -1 && text.indexOf('@') !== -1) text = text.replace(OUT_USERINFO, `$1${MARK}@`);
+  if (/(?:TOKEN|SECRET|PASSWORD|PASSWD|_KEY)[ \t]*:/.test(text)) text = text.replace(OUT_YAML_ENV, `$1${MARK}`);
+  if (text.indexOf('://') !== -1 && text.indexOf('@') !== -1) {
+    text = text.replace(OUT_USERINFO, (whole, scheme, info) => (
+      info.split(':').every((part) => part === '' || OUT_USERINFO_VAR.test(part)) ? whole : `${scheme}${MARK}@`));
+  }
   if (/authorization/i.test(text)) text = text.replace(OUT_BEARER, `$1${MARK}`);
   if (/api[_.-]?key/i.test(text)) text = text.replace(OUT_API_KEY, `$1${MARK}$3`);
   return text;
