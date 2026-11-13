@@ -916,10 +916,11 @@ function flagSentence(flag, spec) {
  * @param {string} key @param {string|undefined} raw @returns {string}
  */
 function decimalRefusal(key, raw) {
-  return key.startsWith('renumber ') && typeof raw === 'string'
-    && raw.includes('.') && requirePhaseArg(raw).ok
-    ? 'renumber operates on integer phases; re-place decimal phases by hand'
-    : '';
+  if (!key.startsWith('renumber ') || typeof raw !== 'string' || !raw.includes('.') || !requirePhaseArg(raw).ok) return '';
+  // no seam removes a decimal phase, so remove names no command - only that it wrote nothing
+  return key === 'renumber insert'
+    ? 'renumber operates on integer phases; a decimal phase goes in with phase-entry add --phase N.M'
+    : 'renumber operates on integer phases; refused, nothing was written';
 }
 
 /**

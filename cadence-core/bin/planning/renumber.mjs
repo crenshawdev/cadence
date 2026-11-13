@@ -251,10 +251,10 @@ function cmdRenumber(dir, sub, opts) {
     const completeWarn = sub === 'insert'
       ? `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this ` +
         'insert moves and were left unchanged, so each may now name a different phase than the one ' +
-        'it shipped in - re-point a row by hand only if it belongs to the open milestone'
+        'it shipped in - re-point a row with req-row --id <id> --phase <N> only if it belongs to the open milestone'
       : `Complete requirement row(s) ${movedComplete.join(', ')} cite a phase this remove deletes ` +
         'or renumbers and were left unchanged, so each may now name a missing or different phase - ' +
-        're-point a row by hand only if it belongs to the open milestone';
+        're-point a row with req-row --id <id> --phase <N> only if it belongs to the open milestone';
     warn = warn ? `${warn}; ${completeWarn}` : completeWarn;
   }
 
