@@ -3,7 +3,7 @@
 // ESLINT_CONFIGS is the flat-config probe order; a blank --root is refused at planning.mjs's dispatch, not here
 'use strict';
 
-import { readdirSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, ok, read } from './core.mjs';
 import { executableIn, onPath } from '../lib/on-path.mjs';
@@ -23,6 +23,9 @@ const ESLINT_CONFIGS = ['eslint.config.js', 'eslint.config.mjs',
 // the tools a project installs itself, so the only ones looked for in node_modules/.bin
 // every other driver (npm, cargo, ruff, go, mypy) resolves off PATH, or a cloned node_modules/.bin/cargo stands in
 const PROJECT_TOOLS = new Set(['eslint', 'tsc']);
+
+/** A regular file at `p`; anything unstattable is no. @param {string} p */
+const isFile = (p) => { try { return statSync(p).isFile(); } catch { return false; } };
 
 function cmdDetectCommands(root) {
   /** @type {string[]} */
@@ -85,10 +88,16 @@ function cmdDetectCommands(root) {
   const tsScript = script('typecheck') || script('type-check');
   if (tsScript) { typecheck = `npm run ${tsScript}`; typecheckSource = 'package.json'; }
   // two exact names, never a glob: `tsc --noEmit` ignores a tsconfig*.json it is not pointed at, so a match needs -p
-  // both literals are fixed strings, so no repo content is ever interpolated into a command
+  // every literal is a fixed string, so no repo content is ever interpolated into a command
   // tsconfig.json goes first as the project's own typecheck; the CI file is for a tree with only that, like this repo
   else if (has('tsconfig.json')) { typecheck = 'tsc --noEmit'; typecheckSource = 'tsconfig.json'; }
-  else if (has('tsconfig.ci.json')) { typecheck = 'tsc -p tsconfig.ci.json'; typecheckSource = 'tsconfig.ci.json'; }
+  else if (has('tsconfig.ci.json')) {
+    // typescript installed with no .bin link would otherwise fall to whatever tsc is on PATH, not the pinned one
+    const pinned = !executableIn(join(root, 'node_modules', '.bin'), 'tsc')
+      && isFile(join(root, 'node_modules', 'typescript', 'bin', 'tsc'));
+    typecheck = pinned ? 'node node_modules/typescript/bin/tsc -p tsconfig.ci.json' : 'tsc -p tsconfig.ci.json';
+    typecheckSource = 'tsconfig.ci.json';
+  }
   else if (has('Cargo.toml')) { typecheck = 'cargo check --all-targets'; typecheckSource = 'Cargo.toml'; }
   else if (pyTable('[tool.mypy')) { typecheck = 'mypy .'; typecheckSource = 'pyproject.toml'; }
   else if (has('go.mod')) { typecheck = 'go build ./...'; typecheckSource = 'go.mod'; }
