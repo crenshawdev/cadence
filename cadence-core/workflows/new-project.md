@@ -526,10 +526,9 @@ criteria. Name every `over` phase and its numbers in that same presentation.
   - "Change phases" - you tell me what to change, and I update the roadmap
   - "Show the whole file" - I print the roadmap file as written, then ask again
 
-On "Change phases": take the feedback and edit the overview, the
-`### Phase N:` sections and their criteria and requirement mapping inline.
-Every change to the phase list goes through a seam - a name or description, a
-new phase, a dropped one, an inserted one whose slot `phase-entry add` fills:
+On "Change phases": take the feedback. Every change to the phase list goes
+through a seam - a name or description, a new phase, a dropped one, an inserted
+one whose slot `phase-entry add` fills:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry edit --phase <N> [--name <name>] [--description <one line>]
@@ -537,6 +536,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --pha
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" renumber remove --n <N>
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" renumber insert --at <N>
 ```
+
+The seam runs before the `### Phase N:` sections are hand-edited: a renumber
+shifts every `Phase K` heading, so a section edited first is moved or removed
+under the edit. Run `renumber insert` or `renumber remove` first, then
+`phase-entry add` into the slot an insert freed, and only then edit the
+overview, the `### Phase N:` sections, their criteria and requirement mapping
+inline.
 
 Run `criteria-size` again, re-present, loop until approved. On "Show the whole
 file": show the file, then re-ask.
