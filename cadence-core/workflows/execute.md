@@ -459,6 +459,18 @@ range is not a cleared one, and widening is the only safe direction on the one
 gate the schema defaults to `blocking`. Each match names the category and
 the signal that found it, so the fire states a reason rather than a verdict.
 
+Before firing, when a receipt already settles an earlier head of this plan (a
+review passed, then a follow-up commit moved HEAD), run the follow-up range with
+the same `--plan`; over a range with no match it writes the carry receipt:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --plan <k> --base {settled head} --head HEAD
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check status --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD
+```
+
+Fire only when that `status` does not answer the full range settled. Settled
+means the pass was carried and its receipt is in the trace: write none of your own.
+
 On a fire, write `git diff {pre-plan HEAD}..HEAD` to
 `<plandir>/records/reports/plan-<k>-risk.diff` and fire the trigger with that
 path - shape (c), exactly as `workflows/task.md`'s `risk_check` step does, since
