@@ -912,6 +912,14 @@ export const CONTRACTS = {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
   },
+  // executor-counts.mjs takes no subcommand and reads the two files these name; neither has a default
+  'executor-counts.mjs': {
+    '*': {},
+    '': {
+      '--transcript': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--trace': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+  },
 };
 
 // --- the conditional presence rules: script -> subcommand -> one rule --------
