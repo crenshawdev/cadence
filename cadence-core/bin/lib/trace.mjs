@@ -94,6 +94,12 @@ export const STEP_WINDOW = 'step_window';
  */
 export const ROTATION = ROTATION_EVENT;
 
+/**
+ * A lifecycle event with no `phase` that marks a cycle boundary: a phase-scoped read starts after the newest one,
+ * so this cycle's phase 1 isn't summed with the last cycle's. A record without one reads as one span.
+ */
+export const CYCLE = 'cycle_boundary';
+
 /** @param {string} planningRoot */
 export function tracePath(planningRoot) {
   return recordsPath(planningRoot, TRACE_FILE);
@@ -575,6 +581,14 @@ function readEvents(planningRoot, wanted, out) {
     if (!e || typeof e !== 'object' || Array.isArray(e)) { out.malformed++; continue; }
     // before the phase filter: a rotation cut every phase's events, so this describes the record, like `capped`
     if (e.family === 'lifecycle' && e.event === ROTATION) rotated = e;
+    // also before it, and only with a phase: a cycle boundary drops what the phase gathered so far, anchor included,
+    // while an unscoped read keeps the whole record and counts the marker like any lifecycle line
+    if (wanted !== null && e.family === 'lifecycle' && e.event === CYCLE) {
+      out.events = [];
+      for (const f of FAMILIES) out.counts[f] = 0;
+      anchor = null;
+      continue;
+    }
     if (wanted !== null && key(e.phase) !== wanted) continue;
     if (e.family === 'lifecycle' && e.event === ANCHOR) anchor = e;
     out.events.push(e);
