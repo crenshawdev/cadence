@@ -7,19 +7,15 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
-## [4.1.0] - 2026-11-11
+## [4.2.0] - 2026-11-13
 
 This release changes where Cadence keeps a project's planning state, and it
 converts an existing project once, on the first command you run after updating.
 Read the upgrade note before you update a project that is in the middle of a
-phase. The rest is repair and cleanup: fixes to how Cadence reads planning files
-that hold fenced code blocks or Windows line endings, fixes to several reads
-that failed in very large repositories, three changes that cut what a run
-reads, and one setting that moves the commit review to the end of the phase.
-Another 59 commits remove duplicated code and split long functions without
-changing what Cadence does.
+phase. The rest cuts what a run reads in three places, makes the agent files
+generated, and fixes two reads that gave wrong answers.
 
-### Upgrading from 4.0
+### Upgrading from 4.1 or earlier
 
 - **The first Cadence command you run in a project converts it.** Records move
   under `.planning/records/` and under each phase's `records/` folder, and the
@@ -30,10 +26,10 @@ changing what Cadence does.
   when the roadmap can't be read, a review workflow is running, or a plan
   worktree is still live, and it names what to fix.
 - **Update every session that works on the project first.** A session still on
-  4.0 doesn't know the new layout. It looks for the old paths and writes its
-  read record to the old place.
-- **There is no conversion back.** If you might return to 4.0, copy
-  `.planning/` aside before your first command on this version.
+  an earlier version doesn't know the new layout. It looks for the old paths
+  and writes its read record to the old place.
+- **There is no conversion back.** If you might return to an earlier version,
+  copy `.planning/` aside before your first command on this one.
 
 ### Added
 
@@ -52,16 +48,6 @@ changing what Cadence does.
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" state-rebuild
-  ```
-
-- **The commit review can run once per phase.** `review.triggers.diff.when`
-  takes `per_plan` or `phase_end`. The default is `per_plan`, the review after
-  each plan's commits, as before. With `phase_end`, `/cad-execute` skips those
-  and runs one review after the last plan, over every commit of the phase, and
-  no other setting has to be turned off for it:
-
-  ```
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set review.triggers.diff.when=phase_end
   ```
 
 ### Changed
@@ -84,6 +70,43 @@ changing what Cadence does.
   after its role contract, and every agent's tool list now includes the host's
   `LSP` tool. Whether an agent reaches for it depends on your project and its
   language server, so your mileage may vary. Nothing in Cadence depends on it.
+
+### Fixed
+
+- **`trace render --phase N` counts this cycle's phase N only.** Phase numbers
+  start again at 1 in each cycle, and the run record is kept across cycles, so
+  `trace render`, `trace suggest` and `trace window` added up every earlier
+  cycle's phase of the same number. A cycle now starts with a mark in the run
+  record. One limit: a project whose last cycle was closed on an earlier
+  version with an unfinished phase carried over gets its first mark at its
+  next close.
+- **The detected typecheck command runs the project's own TypeScript.** With
+  `typescript` installed and no `node_modules/.bin` link, a `tsconfig.ci.json`
+  project got the bare `tsc`, which could be a different version on the path.
+
+## [4.1.0] - 2026-11-11
+
+Most of this release is repair and cleanup. It fixes how Cadence reads planning
+files that hold fenced code blocks or Windows line endings, fixes several reads
+that failed in very large repositories, and adds one setting that moves the
+commit review to the end of the phase. Another 59 commits remove duplicated
+code and split long functions without changing what Cadence does. Nothing needs
+changing when you update.
+
+### Added
+
+- **The commit review can run once per phase.** `review.triggers.diff.when`
+  takes `per_plan` or `phase_end`. The default is `per_plan`, the review after
+  each plan's commits, as before. With `phase_end`, `/cad-execute` skips those
+  and runs one review after the last plan, over every commit of the phase, and
+  no other setting has to be turned off for it:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set review.triggers.diff.when=phase_end
+  ```
+
+### Changed
+
 - **Several commands do less work for the same result.** `/cad-why` joins only
   the commits it is going to show, a code map refresh batches its git reads,
   the config preview reads its layers side by side, and the risk scan checks a
@@ -93,15 +116,6 @@ changing what Cadence does.
 
 ### Fixed
 
-- **`trace render --phase N` counts this cycle's phase N only.** Phase numbers
-  start again at 1 in each cycle, and the run record is kept across cycles, so
-  `trace render`, `trace suggest` and `trace window` added up every earlier
-  cycle's phase of the same number. A cycle now starts with a mark in the run
-  record. One limit: a project whose last cycle was closed on 4.0 with an
-  unfinished phase carried over gets its first mark at its next close.
-- **The detected typecheck command runs the project's own TypeScript.** With
-  `typescript` installed and no `node_modules/.bin` link, a `tsconfig.ci.json`
-  project got the bare `tsc`, which could be a different version on the path.
 - **Markdown inside a fenced code block is no longer read as structure.** A
   fenced `## ` line cut a section short, a fenced `### 1.` became an extra UAT
   item, a fenced `### Task 1:` counted as a task, a fenced heading cut off a

@@ -20,7 +20,7 @@ A person's documents sit at the top of `.planning/` and of each phase. What scri
 
 Phase, plan and requirement status, the cursor and whether a cycle is open live in one state file, `.planning/records/state.json`, and only Cadence's scripts write it. Three things are generated from it: the `## Phases` list in `ROADMAP.md`, the `## Traceability` table in `REQUIREMENTS.md`, and `STATE.md`. Don't edit those by hand, because the next state write overwrites them. If the state file stops parsing, run `/cadence:cad-progress`, which rebuilds it from the project's files.
 
-When you upgrade from v4.0, the first Cadence command you run converts the project once. Records move under `records/`, the state file is written, and if you commit planning documents, one commit of `.planning/` follows. A converted project is never converted again. The conversion waits, changing nothing, when the roadmap can't be read, a review workflow is running, or a plan worktree is still live. Fix what it names and run the command again.
+When you upgrade from v4.1 or earlier, the first Cadence command you run converts the project once. Records move under `records/`, the state file is written, and if you commit planning documents, one commit of `.planning/` follows. A converted project is never converted again. The conversion waits, changing nothing, when the roadmap can't be read, a review workflow is running, or a plan worktree is still live. Fix what it names and run the command again.
 
 A summary says a run finished reporting. It doesn't by itself prove that the phase passed, or that a gap plan written later has been executed.
 
