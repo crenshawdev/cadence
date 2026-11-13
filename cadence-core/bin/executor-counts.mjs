@@ -55,16 +55,17 @@ function codeOnly(command) {
  */
 function substitutionEnd(text, open) {
   let depth = 1;
-  for (let j = open + 1; j < text.length; j += 1) {
+  let j = open + 1;
+  while (j < text.length) {
     const ch = text[j];
-    if (ch === '\\') j += 1;
-    else if (ch === '(') depth += 1;
+    if (ch === '\\') j += 2;
+    else if (ch === '(') { depth += 1; j += 1; }
     else if (ch === ')' && --depth === 0) return j;
     else if (ch === '\'' || ch === '"') {
       let k = j + 1;
       while (k < text.length && text[k] !== ch) k += ch === '"' && text[k] === '\\' ? 2 : 1;
-      j = k;
-    }
+      j = k + 1;
+    } else j += 1;
   }
   return text.length;
 }
@@ -77,10 +78,11 @@ function substitutionEnd(text, open) {
 function inertQuotes(text) {
   let out = '';
   const ran = [];
-  for (let i = 0; i < text.length; i += 1) {
+  let i = 0;
+  while (i < text.length) {
     const ch = text[i];
-    if (ch === '\\') { out += text.slice(i, i + 2); i += 1; continue; } // `it\'s` opens no quote
-    if (ch !== '\'' && ch !== '"') { out += ch; continue; }
+    if (ch === '\\') { out += text.slice(i, i + 2); i += 2; continue; } // `it\'s` opens no quote
+    if (ch !== '\'' && ch !== '"') { out += ch; i += 1; continue; }
     let j = i + 1;
     while (j < text.length && text[j] !== ch) {
       if (ch === '\'') j += 1;
@@ -97,7 +99,7 @@ function inertQuotes(text) {
       } else j += 1;
     }
     out += '_'; // a word still stands here: `"$BIN" grep` runs $BIN, not grep
-    i = j;
+    i = j + 1;
   }
   return ran.length ? `${out}\n${ran.join('\n')}` : out;
 }
