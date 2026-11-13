@@ -1,0 +1,14 @@
+{
+  "host_version": "2.1.323",
+  "markers": {
+    "first": "PRELOAD-FIRST-K7M2QX",
+    "second": "PRELOAD-SECOND-R4T9ZW"
+  },
+  "returned": "proof-first: PRELOAD-FIRST-K7M2QX\nproof-second: PRELOAD-SECOND-R4T9ZW",
+  "came_back": {
+    "first": true,
+    "second": true
+  },
+  "subagent_tool_calls": 0,
+  "parent_other_calls": 0
+}
