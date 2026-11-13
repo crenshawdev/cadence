@@ -31,8 +31,10 @@ points the cursor at the new phase itself, in the same write, unless the cursor
 is paused, which stays as the user left it; never run `cursor set` after it.
 When the answer carries `opened_cycle: true`, rewrite the
 ROADMAP Overview's sentence that says no cycle is open so it names the cycle
-this add opened - the session wrote that prose, so the session rewrites it; no
-script edits the Overview.
+this add opened, and the "no cycle open" sentences a milestone close wrote in
+PROJECT.md `### Active` and REQUIREMENTS.md `## Active` the same way - the
+session wrote that prose, so the session rewrites it; no script edits the
+Overview or those sections.
 
 ### edit <N>
 A name or description change goes through the seam, no renumbering, no dir
