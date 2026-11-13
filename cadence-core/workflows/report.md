@@ -224,12 +224,12 @@ Rules, all load-bearing:
   nothing to obtain it, which is what keeps README's "ships no instrumentation
   and phones nothing home" true. Name the comparator and stop; never print a
   billed number this command did not read out of the record.
-- `--phase <N>` does NOT scope a run, and the line describing the figure says
-  so. The filter reads the events' `phase` field alone and never `corr`, so a
-  phase-scoped figure can pool several cycles that used the same phase number:
-  measured on this repository, `trace render --phase 1` spans 12 distinct
-  `corr` ids. A caveat attached to a total that pooled twelve cycles would be a
-  worse claim than the one it replaced.
+- A `--phase <N>` figure counts the open cycle's phase N: the read starts after
+  the newest cycle marker in the trace and keeps the events whose `phase` is N,
+  so every run of phase N in that cycle counts, and the line describing the
+  figure says a phase, never a run. A trace with no cycle marker reads as one
+  span, so a project whose trace predates the marker still pools every cycle's
+  phase N until its next close or cycle-opening add writes one.
 - The coordinator residue is `coordinator.residue_ms` and the `steps[]` row
   carrying the most of it, reported AS GIVEN - the renderer computes it once so
   this line and `trace suggest` cannot disagree, and prose recomputing it is how
