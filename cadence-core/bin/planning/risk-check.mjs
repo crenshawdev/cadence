@@ -608,6 +608,10 @@ function cmdRiskCheckStatus(dir, opts) {
   });
 
   const offending = rows.filter((row) => row.state !== 'recorded' && row.state !== 'skipped');
+  // D-05: a --plan ask prints only its own row whole; narrowed after the verdict so a missing plan still refuses
+  const shown = wanted
+    ? rows.map((row) => ('wanted' in row ? row : { plan: row.plan, run: row.run, state: row.state }))
+    : rows;
   if (offending.length) {
     // the hint names the missing step: an unfired row has its record already; a mixed set leads with the record hint
     const unfiredOnly = offending.every((row) => row.state === 'unfired');
@@ -616,7 +620,7 @@ function cmdRiskCheckStatus(dir, opts) {
       ok: false,
       reason: unfiredOnly ? 'risk-fire-missing' : 'risk-record-missing',
       phase: n,
-      plans: rows,
+      plans: shown,
       missing: offending.map((row) => row.plan),
       // never folded into `missing`: no record can be written for these keys, so run would send the caller to a refusal
       ...(malformed.size ? { malformed: [...malformed] } : {}),
@@ -631,7 +635,7 @@ function cmdRiskCheckStatus(dir, opts) {
     });
   }
   // nothing to require isn't a failure, or a gate would block every phase's first plan; a malformed key rides the pass
-  ok({ phase: n, plans: rows, ...(malformed.size ? { malformed: [...malformed] } : {}) });
+  ok({ phase: n, plans: shown, ...(malformed.size ? { malformed: [...malformed] } : {}) });
 }
 
 function cmdRiskCheck(dir, sub, opts) {
