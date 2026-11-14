@@ -7,6 +7,71 @@ Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-11-14
+
+This release fixes how reviews run and what they're handed. An outside-model
+reviewer now reads your source code as it is in the repository, review records
+say which commits they cover, and a plan review on the workflow path gives each
+plan its own reviewer. With `planning.workflow_plans` on, more agents read a
+composed input in place of the whole phase documents. Cadence also sends a push
+notification before it stops to ask you something.
+
+### Added
+
+- **A push before every question.** A Cadence command that is about to stop and
+  ask you something first sends one `PushNotification` naming the command,
+  where it is and what it needs. Your host decides whether and how it reaches
+  you, and a host without the tool asks as before.
+- **One reviewer per plan.** With `workflow.use_workflows` on, a plan review
+  over more than one plan runs one reviewer per plan side by side, each handed
+  only its own plan, plus a cross-plan reviewer on a lower rung that reads how
+  the plans fit together. On the one run measured, on this repository, the
+  review took 7.3 minutes against 17.8 and found the same four real findings,
+  and it used 68% more tokens (806,981 against 480,293).
+- **Blocking risk reviews run on the workflow.** With `workflow.use_workflows`
+  on, a blocking `risk_surface` review takes the workflow path too, and a
+  blocker it finds still stops the run.
+
+### Changed
+
+- **Review records are named by the commits they cover.** A record is named
+  `<base>-<head>` in short hashes instead of by plan and round, so a second
+  review of one plan over new commits is judged by its own record and not the
+  first one's. Records named the old way are still read.
+- **More agents read a composed input with `planning.workflow_plans` on.** The
+  planner in all three modes, the plan checker, each plan reviewer and its
+  checkers, the `risk_surface` fix pass and the `/cad-verify --deep` verifier
+  read one input from `planning.mjs brief` in place of the full PLAN, SUMMARY,
+  CONTEXT and ROADMAP files. On measured runs tokens fell for the plan checker
+  (140,027 to 116,440), the verifier (189,949 to 134,466) and the plan review
+  (679,994 to 526,558), and rose for the planner (247,660 to 292,661). With the
+  switch off, the default, every path is as it was.
+- **Install from the Foundation marketplace.** The README and the install guide
+  now install `cadence@foundation`, and the guide gives the three commands that
+  move an install made from Cadence's own repository.
+
+### Fixed
+
+- **An outside-model reviewer reads your code as written.** Redaction used to
+  garble ordinary code that looked like a credential, so the reviewer judged
+  text that wasn't in your repository. It now picks its rules by file. A config
+  file (`.env*`, YAML, TOML, INI, `.npmrc`, `.netrc`, `Dockerfile`, shell
+  scripts and the like) still loses every credential-shaped name and value,
+  including a `|` block under a credential-named YAML key. Every other file
+  loses only four one-line shapes: a literal env assignment, a URL's userinfo,
+  an `Authorization: Bearer` header and a quoted `"api_key"` pair. A bare key in
+  a diff with nothing naming it goes out as written, so don't point a reviewer
+  at a secrets file. The permissions page has the full list.
+
+### Known issue
+
+- **A re-armed plan's receipt is checked against nothing (#400).** After a
+  `risk_surface` fix, the narrowed review's record covers only the fix's
+  commits, while `risk-check status` checks the plan's whole range. No record
+  carries those two ends, so the receipt is accepted unchecked and the plan
+  reports done, even when the fix's record holds a high finding marked
+  overridden.
+
 ## [4.2.0] - 2026-11-13
 
 This release changes where Cadence keeps a project's planning state, and it
@@ -3515,6 +3580,8 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[4.3.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.3.0
+[4.2.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.2.0
 [4.1.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.1.0
 [4.0.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.0.0
 [3.11.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.11.1
