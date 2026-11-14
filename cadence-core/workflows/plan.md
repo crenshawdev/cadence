@@ -144,6 +144,19 @@ The resolve writes the lifecycle dispatch event itself; only the CLOSE in
 handle_return stays here. Then wait - do not read, edit, or plan anything else
 while the subagent runs.
 
+With `planning.workflow_plans` read in `parse` as `true`, the planner reads one composed phase input in place of the four phase documents. With the key not `true`, this stretch runs nothing.
+
+- **Compose.** Once per run, before the resolve above goes out, make this stretch's own scratch directory and print it: `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`. Never recall's directory: recall rides the resolve's own message, so its directory does not exist yet. Keep the printed path as a literal, because each Bash call starts with `$D` empty, then run:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase {N} --role phase --out-dir <the scratch directory>
+  ```
+
+  Keep the path the answer names as a literal too: `check_gate`, the `review` step and the revision re-dispatch name that same file and compose nothing more. The transcript gets the envelope, never the input, and this session opens neither it nor the documents.
+- **Bracket.** The resolve block stays as written, and its `--bracket-read` value is `<the phase input path>`. In gaps mode it is that path plus `.planning/phases/{N}/UAT.md` and the existing PLAN* and SUMMARY* files, as the gaps sentence above appends.
+- **Prompt.** The `Read before planning:` list names that file by its absolute path in place of its four document lines, and keeps the gaps line and the source-files line. Gaps and revision modes reuse this prompt and so name the same file.
+- **A refused or unreadable answer.** Print one line with what it names, and dispatch the way this step does with the key not `true`, because the full documents lose the planner nothing.
+
 Before assembling the prompt, recall prior-project memory when the effective
 `memory.backend` read in `parse` is `builtin` (skip this entirely when `none` -
 do not issue the call). The gate precedes the call on purpose (D-03). When

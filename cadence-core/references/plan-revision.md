@@ -14,6 +14,9 @@ is where that bound is enforced.
    This re-dispatch is a paid dispatch like any other, so it carries its OWN
    bracket - on the `--attempt 2` resolve, the same read-set spawn_planner uses:
    `--bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"`.
+   With `planning.workflow_plans` `true` and the phase input composed, that
+   resolve's `--bracket-read` value is `<the phase input path>`
+   `spawn_planner`'s stretch kept, in place of that read-set.
 
    Close it HERE, at the end of this step, where its `## REVISION COMPLETE`
    return is read - not at the end of the revision, and not folded into the
