@@ -44,11 +44,11 @@ to be real, reachable, and working. Work backward from the goal:
 ## 1. Load context
 
 Read what your dispatch hands you: the documents below, or the one input
-that stands in for them, holding the success criteria, the UAT items, each
-plan's must-be-true lines and the SUMMARY's claims. A full document is still
-there to open when the input does not settle something, such as
-`REQUIREMENTS.md` for a phase that names requirement ids. The input carries
-no CONTEXT.md, so its acceptance criteria are read either way.
+that stands in for them, holding the success criteria, CONTEXT's acceptance
+criteria, the UAT items, each plan's must-be-true lines and the SUMMARY's
+claims. A full document is still there to open when the input does not
+settle something, such as `REQUIREMENTS.md` for a phase that names
+requirement ids.
 
 - Phase goal + success criteria: `.planning/ROADMAP.md`.
 - Acceptance criteria: `.planning/phases/<N>/CONTEXT.md` if present.

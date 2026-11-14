@@ -97,6 +97,7 @@ function cmdBrief(dir, opts) {
       plans: listPlanFiles(pdir).plans.map((file) => ({ file, text: read(join(pdir, file)) ?? '' })),
       roadmapText: read(join(dir, 'ROADMAP.md')),
       requirementsText: read(join(dir, 'REQUIREMENTS.md')),
+      contextText: read(join(pdir, 'CONTEXT.md')),
       uatText: read(join(pdir, 'UAT.md')),
       summaryText: read(join(pdir, 'SUMMARY.md')),
     });

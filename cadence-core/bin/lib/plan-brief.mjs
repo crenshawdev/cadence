@@ -408,28 +408,31 @@ export function composeReviewerInput({ phase, planFile, planText, roadmapText, r
 }
 
 /**
- * The verifier's input (D-02): the phase entry with its success criteria, the UAT items, each plan's heading and truths,
- * and the SUMMARY's body after its frontmatter, with that frontmatter's `status:` line, as its claims. Never a plan's Goal, Context, Tasks or Notes, nor its frontmatter: the
+ * The verifier's input (D-02): the phase entry with its success criteria, CONTEXT's acceptance criteria, the UAT items, each plan's heading and truths,
+ * and the SUMMARY's body after its frontmatter, with that frontmatter's `status:` line, as its claims. Never a CONTEXT decision, a plan's Goal, Context, Tasks or Notes, nor its frontmatter: the
  * verifier checks outcomes against the codebase, and the tasks are the route the executor took, not the bar.
- * A missing UAT.md or SUMMARY leaves its part out without a word.
+ * A missing CONTEXT.md, UAT.md or SUMMARY leaves its part out without a word.
  * @param {object} p
  * @param {string} p.phase the caller's own spelling, which is also the phase directory's name
  * @param {{file: string, text: string}[]} p.plans the phase's plan files in plan order
- * @param {string|null} p.roadmapText @param {string|null} p.requirementsText
+ * @param {string|null} p.roadmapText @param {string|null} p.requirementsText @param {string|null} p.contextText
  * @param {string|null} p.uatText @param {string|null} p.summaryText
  * @param {string|null} [p.mainRoot] the main tree's root, which makes the head's paths absolute
  * @returns {{ok: true, text: string, bytes: number} | {ok: false, detail: string, hint: string}}
  */
-export function composeVerifierInput({ phase, plans, roadmapText, requirementsText, uatText, summaryText, mainRoot = null }) {
+export function composeVerifierInput({ phase, plans, roadmapText, requirementsText, contextText, uatText, summaryText, mainRoot = null }) {
   const entry = phaseEntryLines(roadmapText, requirementsText, phase);
   if (entry === null) return noEntry(phase);
   const at = (/** @type {string} */ rel) => (mainRoot === null ? rel : `${mainRoot.replace(/\/+$/, '')}/${rel}`);
   const inPhase = (/** @type {string} */ f) => `\`${at(`.planning/phases/${phase}/${f}`)}\``;
-  const docs = [...plans.map((p) => inPhase(p.file)), inPhase('SUMMARY.md'), `\`${at('.planning/ROADMAP.md')}\``,
+  const docs = [...plans.map((p) => inPhase(p.file)), inPhase('SUMMARY.md'), inPhase('CONTEXT.md'), `\`${at('.planning/ROADMAP.md')}\``,
     `\`${at('.planning/REQUIREMENTS.md')}\``, inPhase('UAT.md')];
   const out = [`# Phase ${phase}: the verifier input`, ''];
   out.push(`This input stands in for ${docs.slice(0, -1).join(', ')} and ${docs[docs.length - 1]}. Any of these the project has are still there to open when the input doesn't settle something.`, '');
   out.push(...entry);
+  // the criteria only: the decisions are the route the planner took, and the verifier checks the outcome
+  const criteria = contextText === null ? null : sectionText(normalize(contextText).split('\n'), '## Acceptance criteria');
+  if (criteria !== null) out.push(criteria, '');
   if (uatText !== null) {
     const items = parseUat(uatText).items;
     // rendered the way UAT.md's writer lays an item out, so each reads as the file does
