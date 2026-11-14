@@ -579,6 +579,12 @@ today's path runs one reviewer over all of them.
 in the payload, as `check_gate` does. Its absence is not a resolve failure and
 must not come back as the `blocker` an unresolvable reference earns.
 
+With `planning.workflow_plans` read in `parse` as `true`, the payload is the PLAN file(s) plus the phase input in place of the three artifacts. With the key not `true`, this stretch runs nothing.
+
+- **Input.** Name the phase input `spawn_planner`'s stretch composed. When no earlier step of this run composed it, run that stretch's compose step first as it is written there, its directory and its call, and never spell the call here.
+- **Bracket.** That path rides the fire's `--read` bracket list in place of the three, beside the PLAN file(s).
+- **A refused or unreadable answer.** Print one line with what it names, and fire with the three artifacts as the paragraphs above name them.
+
 The gate comes from the routing bundle; act on it.
 The schema default is `advisory`, raised to `blocking` by the plan-time risk
 floor and beaten by any `review.triggers.plan.gate` a layer sets. A
