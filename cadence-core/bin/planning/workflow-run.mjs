@@ -6,6 +6,7 @@
 // the run's brackets go FIRST, whatever the file says: an agent that spent tokens on a killed or refused run is still billed
 // the same call twice writes no second set, because a resumed session may retry it: a bracket whose key is already there is skipped
 // --plans names an execute wave's plans, so the wave is told by the flag and not by what its file still holds: each plan is closed once
+// --plan-reads names what each per-plan reviewer was handed, so its brackets bill that and not the whole payload
 'use strict';
 
 import { lstatSync, readFileSync } from 'node:fs';
@@ -17,7 +18,7 @@ import { emit } from '../lib/seam-io.mjs';
 import { appendEvent, renderTrace, TERMINAL } from '../lib/trace.mjs';
 import {
   ANSWERS_FILE, JOURNAL_REFUSAL, MAX_ANSWERS_BYTES, MAX_JOURNAL_BYTES, MAX_RUN_BYTES, PAYLOAD_FILE, REVIEW_INPUT_FILE,
-  EXECUTOR_ROLE, agentBrackets, agentRows, isWaveRun, joinJournal, journalReturns, mapRun, mergeAnswers, noticeBracket, parseAnswers, parsePlanList, parseRun, parseWave, waveBrackets,
+  EXECUTOR_ROLE, agentBrackets, agentRows, isWaveRun, joinJournal, journalReturns, mapRun, mergeAnswers, noticeBracket, parseAnswers, parsePlanList, parsePlanReads, parseRun, parseWave, waveBrackets,
 } from '../lib/workflow-run.mjs';
 
 /** A provider's teed envelope is one JSON line, so this is generous. */
@@ -118,6 +119,13 @@ function cmdWorkflowRun(dir, opts) {
     if (listed.ok === false) return fail('bad-args', listed.detail, 'pass the wave\'s plan numbers as --plans 1,2,3 and re-run - nothing was written');
     planned = listed.plans;
   }
+  /** @type {Map<string, string[]> | undefined} */
+  let planReads;
+  if ('plan-reads' in opts) {
+    const listed = parsePlanReads(opts['plan-reads']);
+    if (listed.ok === false) return fail('bad-args', listed.detail, 'pass each plan\'s reads as --plan-reads "1=<path>,<input>;2=<path>,<input>" and re-run - nothing was written');
+    planReads = listed.reads;
+  }
   const outArg = dirFlag('out-dir', opts['out-dir']);
   if (outArg.detail !== null) {
     return fail('bad-args', outArg.detail, 'make this run\'s scratch directory first and pass it - nothing was written');
@@ -131,7 +139,7 @@ function cmdWorkflowRun(dir, opts) {
   const runId = file && typeof file.runId === 'string' && file.runId ? file.runId : basename(opts['run-file'], '.json');
 
   // the brackets first: whatever happens to the result below, these agents spent real tokens
-  const at = { phase: phase.raw, runId, payloadRef: opts['payload-ref'].trim() };
+  const at = { phase: phase.raw, runId, payloadRef: opts['payload-ref'].trim(), ...(planReads ? { planReads } : {}) };
   const rows = agentRows(file);
   const fromFile = rows.length > 0;
   const wave = planned !== null || isWaveRun(file);

@@ -16,7 +16,8 @@
 // is `cad-reviewer` by its agentType, and two labels the script sets keep their spend apart from it so that role's total
 // still means the reviewers: a label opening `checker ` is `review-checker`, one opening `provider ` is the provider
 // wrapper, `review-provider-wrapper`. No label and no rung agentType reads as `workflow-agent`. With no per-agent rows the
-// call bills the run as one `review-workflow` bracket from the notice's totals.
+// call bills the run as one `review-workflow` bracket from the notice's totals. READS: every bracket reads the payload
+// reference, except a per-plan voice `--plan-reads` maps, whose reviewer and checkers read the paths it was handed
 // A PROVIDER VOICE carries `envelope`, the path the wrapper agent teed the provider's own output to. The agent retypes that
 // envelope, which can change a byte, so the seam takes `returned` from the file and the file wins. A ruling only counts for
 // the text its checker read: an envelope finding with no identical retyped copy keeps no ruling and lands with the nulls,
@@ -532,7 +533,7 @@ export function roleOfRow(row) {
 
 /**
  * The dispatch and terminal events for one bracket, in the shapes `trace append --event dispatch` and `trace close` write.
- * @param {{phase: string, plan: string, role: string, read: string, reviewer?: string, figures: Record<string, number|string>,
+ * @param {{phase: string, plan: string, role: string, read: string[], reviewer?: string, figures: Record<string, number|string>,
  *   terminal: 'return'|'checkpoint', detail?: string}} b
  * @returns {{plan: string, dispatch: Record<string, any>, terminal: Record<string, any>}}
  */
@@ -540,15 +541,23 @@ function bracket(b) {
   const common = { phase: b.phase, family: 'lifecycle', plan: b.plan, role: b.role, ...(b.reviewer ? { reviewer: b.reviewer } : {}) };
   return {
     plan: b.plan,
-    dispatch: { ...common, event: 'dispatch', read: [b.read] },
+    dispatch: { ...common, event: 'dispatch', read: b.read },
     terminal: { ...common, event: b.terminal, ...b.figures, ...(b.detail ? { detail: b.detail } : {}) },
   };
 }
 
 /**
+ * What a bracket is told. `planReads` maps a per-plan voice to what its reviewer and checkers were handed.
+ * @typedef {{phase: string, runId: string, payloadRef: string, planReads?: Map<string, string[]>}} At
+ */
+
+/** A per-plan voice, as review-panel.js labels it. @param {string} k */
+const planVoice = (k) => `claude-subagent-plan-${k}`;
+
+/**
  * The bracket for one agent row. The worker key carries the run id, so a second run in one phase can't fold into the first.
  * An agent that did not finish is a checkpoint naming its state, and still bills what it spent.
- * @param {any} row @param {number} i @param {{phase: string, runId: string, payloadRef: string}} at
+ * @param {any} row @param {number} i @param {At} at
  */
 function agentBracket(row, i, at) {
   const id = isText(row.agentId) ? row.agentId : `agent${i + 1}`;
@@ -556,8 +565,11 @@ function agentBracket(row, i, at) {
   const label = typeof row.label === 'string' ? row.label : '';
   const state = typeof row.state === 'string' ? row.state : 'unknown';
   const figures = rowFigures(row);
+  // a mapped voice's reviewer and its checkers read what they were handed; everyone else, the payload
+  const voice = (/^reviewer (.+)$/.exec(label) || /^checker (.+) \d+$/.exec(label) || [])[1];
+  const own = voice !== undefined && at.planReads ? at.planReads.get(voice) : undefined;
   return bracket({
-    phase: at.phase, plan: `${at.runId}-${id}`, role, read: at.payloadRef, figures,
+    phase: at.phase, plan: `${at.runId}-${id}`, role, read: own || [at.payloadRef], figures,
     ...(role === 'cad-reviewer' && label.startsWith('reviewer ') ? { reviewer: label.slice('reviewer '.length) } : {}),
     terminal: state === 'done' ? 'return' : 'checkpoint',
     ...(state === 'done' ? {} : { detail: `the workflow agent was in state "${state}", not done` }),
@@ -566,7 +578,7 @@ function agentBracket(row, i, at) {
 
 /**
  * One bracket per agent row.
- * @param {any} run @param {{phase: string, runId: string, payloadRef: string}} at
+ * @param {any} run @param {At} at
  */
 export function agentBrackets(run, at) {
   return agentRows(run).map((row, i) => agentBracket(row, i, at));
@@ -691,6 +703,28 @@ export function parsePlanList(raw) {
 }
 
 /**
+ * A `--plan-reads` value, `<k>=<path>,<input>[;<k>=...]`, as each per-plan voice's read set, or what is wrong with it.
+ * @param {unknown} raw
+ * @returns {{ok: true, reads: Map<string, string[]>} | {ok: false, detail: string}}
+ */
+export function parsePlanReads(raw) {
+  const shape = 'write <k>=<that plan\'s path>,<its input>, entries joined by ;';
+  if (typeof raw !== 'string' || !raw.trim()) return { ok: false, detail: `workflow-run --plan-reads needs a value after it: ${shape}` };
+  /** @type {Map<string, string[]>} */
+  const reads = new Map();
+  for (const entry of raw.split(';')) {
+    const eq = entry.indexOf('=');
+    const k = eq < 0 ? '' : entry.slice(0, eq).trim();
+    if (!requirePlanKey(k).ok) return { ok: false, detail: `workflow-run --plan-reads holds ${JSON.stringify(entry)}, which names no plan number (${shape})` };
+    const paths = entry.slice(eq + 1).split(',').map((p) => p.trim());
+    if (paths.some((p) => !p)) return { ok: false, detail: `workflow-run --plan-reads gives plan ${k} an empty path (${shape})` };
+    if (reads.has(planVoice(k))) return { ok: false, detail: `workflow-run --plan-reads names plan ${k} twice` };
+    reads.set(planVoice(k), paths);
+  }
+  return { ok: true, reads };
+}
+
+/**
  * A wave's brackets. Each `plan <k>` row is a close under worker key `<k>` as the executor, written alone because the plan's dispatch
  * is already on the record from its own resolve. The close carries its row's agent id, which is what tells one run's close from
  * another's, so a later dispatch of the same plan bills again. A row without a plan label bills as an ordinary agent row.
@@ -748,7 +782,7 @@ export function waveBrackets(run, at) {
  */
 export function noticeBracket(at) {
   return bracket({
-    phase: at.phase, plan: `${at.runId}-notice`, role: at.role || WORKFLOW_ROLE, read: at.payloadRef, figures: totalsFigures(at.totals),
+    phase: at.phase, plan: `${at.runId}-notice`, role: at.role || WORKFLOW_ROLE, read: [at.payloadRef], figures: totalsFigures(at.totals),
     terminal: 'return',
     detail: `the run's totals from the completion notice, because ${at.why}`,
   });
