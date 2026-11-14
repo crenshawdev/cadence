@@ -132,13 +132,14 @@ than prevented.
 ### 4. Run the reviewers
 After steps 1 to 3, this fire takes the WORKFLOW path only when all three hold:
 the gate resolved `adjudicated`, or this is `/cad-verify`'s fire, which is always
-triaged as `adjudicated` and has no resolved gate; the setting
+triaged as `adjudicated` and has no resolved gate, or the trigger is
+`risk_surface` and its gate resolved `blocking`; the setting
 `workflow.use_workflows` is on in BOTH config layers, read with
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" workflow-layers`, whose
 `on` for that key is the answer, and never with `config.mjs get`, which answers
 on a committed repo value alone; an answer that cannot be read is off; and the `Workflow` tool is in this
-session's tool list. A `blocking`, `advisory` or `deferred` gate never takes it,
-so `risk_surface` at `blocking` stays here. Take the path and Read
+session's tool list. `blocking` on any other trigger, and `advisory` and
+`deferred` on every trigger, never take it. Take the path and Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-workflow.md`, which runs
 the reviewers and the checking of their findings in place of everything below.
 Otherwise start no workflow, Read
@@ -236,13 +237,15 @@ them already, and you fill only a finding a checker left. Compose them as a file
 directory, the way `references/review-record.md` composes its payload, and run
 `planning.mjs review-file` before triage; that file is
 `.planning/phases/<N>/records/REVIEW-<trigger>-<discriminator>[-rN].md`. The GATE
-decides the file's format and `review.mode` does not. Only gate `adjudicated`
-and `/cad-verify`'s fire, which is always triaged as `adjudicated`, write it.
+and the path decide the file's format, and `review.mode` does not. Gate
+`adjudicated`, `/cad-verify`'s fire, which is always triaged as `adjudicated`,
+and a `blocking` `risk_surface` fire on the workflow path write it, that last
+from the seam's `survivors.json` with the six headings its checkers filled.
 This arm is also reached by a `blocking` or `deferred` gate under
-`review.mode: adjudicated`, the schema default, and those keep their JSON
-object (`references/risk-surface.md`, and the `deferred` bullet of
-`references/triage-gate-deferred.md`). So each gate has one rule and the seam never
-meets a path already written.
+`review.mode: adjudicated`, the schema default, and on today's path those keep
+their JSON object (`references/risk-surface.md`, and the `deferred` bullet of
+`references/triage-gate-deferred.md`). So one fire writes one file under one
+name, and the seam never meets a path already written.
 
 A capped re-arm (`references/triage-gate.md`, ONE round) is a SECOND fire of
 the same trigger on the same plan, and the fire site is the only actor that
