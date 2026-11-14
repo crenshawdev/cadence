@@ -6,7 +6,7 @@
 import { join } from 'node:path';
 import { dirFlag, fail, intFlag, listPlanFiles, ok, phaseGuard, read, readStoredMap } from './core.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
-import { composeBrief, composePhaseInput } from '../lib/plan-brief.mjs';
+import { composeBrief, composePhaseInput, composeReviewerInput } from '../lib/plan-brief.mjs';
 import { planFileFor, planNumber } from '../lib/phase-plans.mjs';
 import { atomicWrite } from '../lib/planning-store.mjs';
 
@@ -32,8 +32,8 @@ function loadMap(dir) {
   }
 }
 
-// each role's input file; none can be `plan-<k>-brief.md`, so one scratch directory holds them all
-const ROLES = { phase: 'phase-input.md' };
+// the roles with an input of their own; each file is named so none is `plan-<k>-brief.md` or another's
+const ROLES = ['phase', 'reviewer'];
 
 /** Writes `text` under `outDir` when one was given; the path, or null when nothing was written. */
 function writeOut(/** @type {string|null} */ outDir, /** @type {string} */ name, /** @type {string} */ text) {
@@ -54,13 +54,14 @@ function cmdBrief(dir, opts) {
     're-run with one of the two spellings the detail names - nothing was read');
   if (!parsedPhase) return;
   const role = opts.role === undefined ? null : String(opts.role);
-  if (role !== null && !Object.hasOwn(ROLES, role)) {
-    return fail('bad-args', `brief --role takes ${Object.keys(ROLES).join(', ')}, not ${role}`,
+  if (role !== null && !ROLES.includes(role)) {
+    return fail('bad-args', `brief --role takes ${ROLES.join(', ')}, not ${role}`,
       'pass one of the roles the detail names, or no --role for the executor brief - nothing was written');
   }
-  // only the executor brief is one plan's; the door no longer holds --plan required, so its refusal lives here
-  const parsedPlan = role !== null ? null : intFlag(opts.plan, null, 'brief needs --plan <k>',
-    'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
+  // the executor brief and the reviewer's input are one plan's; the door doesn't hold --plan required, so its refusal lives here
+  const parsedPlan = role !== null && role !== 'reviewer' ? null
+    : intFlag(opts.plan, null, role === null ? 'brief needs --plan <k>' : `brief --role ${role} needs --plan <k>`,
+      'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
   if (parsedPlan !== null && !parsedPlan.ok) return;
   /** @type {Record<string, string|null>} */
   const dirs = { 'out-dir': null, 'main-root': null };
@@ -75,7 +76,7 @@ function cmdBrief(dir, opts) {
   const outDir = dirs['out-dir'];
   const pdir = join(dir, 'phases', parsedPhase.raw);
 
-  if (role !== null) {
+  if (role === 'phase') {
     const input = composePhaseInput({
       phase: parsedPhase.raw,
       mainRoot: dirs['main-root'],
@@ -85,16 +86,32 @@ function cmdBrief(dir, opts) {
       contextText: read(join(pdir, 'CONTEXT.md')),
     });
     if (input.ok === false) return fail('no-roadmap', input.detail, input.hint);
-    const path = writeOut(outDir, ROLES[role], input.text);
+    const path = writeOut(outDir, 'phase-input.md', input.text);
     return ok({ phase: parsedPhase.value, role, bytes: input.bytes, ...(path !== null ? { path } : {}) });
   }
 
-  // the refusal above returned for every other shape, so with no role the plan parsed
+  // the refusal above returned for every other shape, so a role that reaches here parsed its plan
   const k = /** @type {{ok: true, value: number}} */ (parsedPlan).value;
   const planFile = planFileFor(listPlanFiles(pdir).plans, String(k));
   const planText = planFile === undefined ? null : read(join(pdir, planFile));
   if (planFile === undefined || planText === null) {
     return fail('no-plan', `no PLAN-${k}.md or PLAN.md under ${pdir}`, `/cad-plan ${parsedPhase.raw}`);
+  }
+  if (role === 'reviewer') {
+    const input = composeReviewerInput({
+      phase: parsedPhase.raw,
+      planFile,
+      planText,
+      mainRoot: dirs['main-root'],
+      roadmapText: read(join(dir, 'ROADMAP.md')),
+      requirementsText: read(join(dir, 'REQUIREMENTS.md')),
+      contextText: read(join(pdir, 'CONTEXT.md')),
+    });
+    if (input.ok === false) {
+      return input.noEntry ? fail('no-roadmap', input.detail, input.hint) : fail('bad-plan', input.detail, input.hint);
+    }
+    const path = writeOut(outDir, `plan-${planNumber(planFile)}-review-input.md`, input.text);
+    return ok({ phase: parsedPhase.value, role, plan: planFile, bytes: input.bytes, ...(path !== null ? { path } : {}) });
   }
   const brief = composeBrief({
     planFile,

@@ -131,6 +131,35 @@ function namedField(tasks, field) {
 }
 
 /**
+ * The CONTEXT decision lines a plan's tasks name in their `**Decisions:**` fields, each once in first-named order, or the
+ * refusal naming every entry that is not an id or not in CONTEXT.md. `pointer` is set when no task names one and the
+ * phase has some, so the reader is sent to the file instead.
+ * @param {string[]} taskLines the `## Tasks` section's lines @param {string|null} contextText
+ * @param {string} planFile @param {string} contextRel
+ * @returns {{ok: true, lines: string[], pointer: boolean} | {ok: false, detail: string, hint: string}}
+ */
+function citedDecisions(taskLines, contextText, planFile, contextRel) {
+  const decisions = contextDecisions(contextText);
+  const named = namedField(taskLines, 'Decisions');
+  const bad = named.filter((n) => !DECISION_ID.test(n.entry) || !decisions.has(n.entry));
+  if (bad.length) {
+    const why = (/** @type {{entry: string}} */ n) => (DECISION_ID.test(n.entry)
+      ? `is not in ${contextRel}` : 'is not a decision id');
+    return { ok: false,
+      detail: bad.map((n) => `${planFile} Task ${n.task} names ${n.entry}, which ${why(n)}`).join('; '),
+      hint: `fix each Decisions entry in ${planFile} to a D-NN id from ${contextRel}, or drop the entry, then re-run` };
+  }
+  // each id's line once, in the order first named
+  const lines = [...new Set(named.map((n) => /** @type {string} */ (decisions.get(n.entry))))];
+  return { ok: true, lines, pointer: named.length === 0 && decisions.size > 0 };
+}
+
+/** The line that sends a reader to CONTEXT.md when no task names a decision; `contextPath` is already as the head spells it. */
+function pointerLine(/** @type {string} */ contextPath) {
+  return `No decision was carried: no task names one. \`${contextPath}\` holds this phase's decisions, so read it for any that bind the work.`;
+}
+
+/**
  * @param {object} p
  * @param {string} p.planFile the plan's file name, as the phase directory holds it
  * @param {string} p.planRel the plan's path from the repository root, in the caller's phase spelling
@@ -149,20 +178,12 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
     return { ok: false, detail: `${planFile} has no ## Tasks section, so there is nothing to brief`,
       hint: `write ${planFile}'s tasks under a ## Tasks heading, then re-run` };
   }
-  const decisions = contextDecisions(contextText);
   const phaseDir = planRel.slice(0, planRel.lastIndexOf('/'));
   const contextRel = `${phaseDir}/CONTEXT.md`;
   const at = (/** @type {string} */ rel) => (mainRoot === null ? rel : `${mainRoot.replace(/\/+$/, '')}/${rel}`);
   const taskLines = sectionSpanLines(lines, '## Tasks');
-  const named = namedField(taskLines, 'Decisions');
-  const bad = named.filter((n) => !DECISION_ID.test(n.entry) || !decisions.has(n.entry));
-  if (bad.length) {
-    const why = (/** @type {{entry: string}} */ n) => (DECISION_ID.test(n.entry)
-      ? `is not in ${contextRel}` : 'is not a decision id');
-    return { ok: false,
-      detail: bad.map((n) => `${planFile} Task ${n.task} names ${n.entry}, which ${why(n)}`).join('; '),
-      hint: `fix each Decisions entry in ${planFile} to a D-NN id from ${contextRel}, or drop the entry, then re-run` };
-  }
+  const cited = citedDecisions(taskLines, contextText, planFile, contextRel);
+  if (cited.ok === false) return cited;
   const h1 = lines.find((l) => l.startsWith('# ')) ?? `# ${planFile}`;
 
   // a Reads entry is only ever compared with the index: nothing a plan names is opened
@@ -176,9 +197,7 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
   const out = [h1, ''];
   out.push(`This brief stands in for \`${at(planRel)}\`, \`${at('.planning/PROJECT.md')}\` and \`${at(contextRel)}\`. Any of these the project has are still there to open when the brief doesn't settle something.`);
   out.push(`Where your contract speaks of the plan file your dispatch names, \`${at(planRel)}\` is the one meant: derive \`<plandir>\` and \`k\` from it. Where it says to read that file, reading this brief covers it: the plan's goal, truths, context and tasks are all below.`);
-  if (named.length === 0 && decisions.size > 0) {
-    out.push(`No decision was carried: no task names one. \`${at(contextRel)}\` holds this phase's decisions, so read it for any that bind the work.`);
-  }
+  if (cited.pointer) out.push(pointerLine(at(contextRel)));
   if (readsUnchecked) out.push(UNCHECKED);
   out.push('');
 
@@ -190,11 +209,7 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
     const s = sectionText(lines, heading);
     if (s !== null) out.push(s, '');
   }
-  if (named.length) {
-    // each id's line once, in the order first named
-    const once = [...new Set(named.map((n) => /** @type {string} */ (decisions.get(n.entry))))];
-    out.push('## Decisions the tasks name', '', ...once, '');
-  }
+  if (cited.lines.length) out.push('## Decisions the tasks name', '', ...cited.lines, '');
   const c = constraintsOf(projectText);
   if (c !== null) out.push(c, '');
   // rows come before the Reads report, so the report's count line is the last line when it is cut
@@ -328,7 +343,7 @@ function phaseEntryLines(roadmapText, requirementsText, phase) {
 
 /** The refusal for a phase the roadmap has no detail block for, so the site falls back to the full documents. */
 function noEntry(/** @type {string} */ phase) {
-  return { ok: /** @type {const} */ (false), detail: `.planning/ROADMAP.md has no ### Phase ${phase}: detail block, so there is no phase entry to stand in for it`,
+  return { ok: /** @type {const} */ (false), noEntry: true, detail: `.planning/ROADMAP.md has no ### Phase ${phase}: detail block, so there is no phase entry to stand in for it`,
     hint: `hand the agent the full documents, or write Phase ${phase}'s detail block in ROADMAP.md and re-run` };
 }
 
@@ -360,5 +375,34 @@ export function composePhaseInput({ phase, roadmapText, requirementsText, projec
   const c = constraintsOf(projectText);
   if (c !== null) out.push(c, '');
   if (contextText !== null) for (const s of everySection(contextText)) out.push(s, '');
+  return finish(out);
+}
+
+/**
+ * One plan's reviewer input (D-08): the CONTEXT decisions the plan's tasks name, read exactly as the executor brief reads
+ * them, and the phase entry the phase input carries. No section of the plan and no PROJECT.md text: the reviewer reads
+ * the plan file itself, and a decision the plan never names is the whole-phase reviewer's to weigh.
+ * @param {object} p
+ * @param {string} p.phase the caller's own spelling, which is also the phase directory's name
+ * @param {string} p.planFile @param {string} p.planText
+ * @param {string|null} p.roadmapText @param {string|null} p.requirementsText @param {string|null} p.contextText
+ * @param {string|null} [p.mainRoot] the main tree's root, which makes the head's paths absolute
+ * @returns {{ok: true, text: string, bytes: number} | {ok: false, detail: string, hint: string, noEntry?: boolean}}
+ */
+export function composeReviewerInput({ phase, planFile, planText, roadmapText, requirementsText, contextText, mainRoot = null }) {
+  const at = (/** @type {string} */ rel) => (mainRoot === null ? rel : `${mainRoot.replace(/\/+$/, '')}/${rel}`);
+  const contextRel = `.planning/phases/${phase}/CONTEXT.md`;
+  const taskLines = sectionSpanLines(splitFrontmatter(normalize(planText)).rest.split('\n'), '## Tasks');
+  const cited = citedDecisions(taskLines, contextText, planFile, contextRel);
+  if (cited.ok === false) return cited;
+  const entry = phaseEntryLines(roadmapText, requirementsText, phase);
+  if (entry === null) return noEntry(phase);
+  const out = [`# Phase ${phase}, ${planFile}: the reviewer input`, ''];
+  out.push(`This input stands in for \`${at('.planning/ROADMAP.md')}\`, \`${at('.planning/REQUIREMENTS.md')}\` and \`${at(contextRel)}\`. Any of these the project has are still there to open when the input doesn't settle something.`);
+  out.push(`The plan under review is \`${at(`.planning/phases/${phase}/${planFile}`)}\`, the plan file your dispatch names, not this file.`);
+  if (cited.pointer) out.push(pointerLine(at(contextRel)));
+  out.push('');
+  if (cited.lines.length) out.push('## Decisions the tasks name', '', ...cited.lines, '');
+  out.push(...entry);
   return finish(out);
 }
