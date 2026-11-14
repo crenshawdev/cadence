@@ -77,6 +77,8 @@ Merge duplicates and group shared root causes by editing `survivors.json`: join 
 
 Then run the review file seam on `survivors.json` and triage, as `references/review-record.md` and `references/triage-gate.md` state. Put each answer triage settles on a `blocker` or `high` into the answers file, a fix's `fix_commit` or `fix_file` or an override, and run step 3's call again with `--answers-file` until `ready` is true. Only then write the record and the receipts from `payload.json`, which the merge never touched.
 
+**A blocking `risk_surface` fire** runs steps 1 to 3 as written, then merges and writes the review file from `survivors.json` as above. Then the gate is `references/triage-gate-blocking.md`'s, not a triage: nothing is asked when no `blocker` or `high` survives, and when one does the run halts as it does today, with the fix or the user's override as the only ways on. The halt holds in two places. The seam's `needs_answer` and `ready: false` hold the record back until each such finding has a `fix_commit`, a `fix_file` or `overridden: true` in the answers file, and `risk-check status` refuses to report the plan done until the receipt is written.
+
 ## Where each site resumes
 
 The launch ends the turn at every site, and the notice resumes the site's own step 4. Triage and applying what the user named then continue there:
@@ -85,6 +87,14 @@ The launch ends the turn at every site, and the notice resumes the site's own st
 - `diff` and `phase_diff` (`/cad-execute`): the triage, then the named survivors through the executor continuation, then the next plan's dispatch.
 - `/cad-verify`'s fix diagnosis: the triage, then step 2's proposal for only what the user named.
 - `risk_surface` from `/cad-debug` and `/cad-task` at `adjudicated`: the triage, then their own step that fired it.
+
+A blocking `risk_surface` fire's notice resumes the step that fired it, at the gate. On FAIL the fix follows, then the one narrowed re-arm, a fire of its own that takes this same path, then the site's next step:
+
+- `/cad-execute`'s sequential path: the gate, the continuation fix executor on FAIL, the re-arm, then `risk-check status` and the plan reported done.
+- Step 5 of `references/execute-workflow.md`: the same per settled plan, the fix in the main tree, then each plan's `status`.
+- `/cad-task`: the gate, on FAIL the continuation fix executor on the planned path or the fix with the user on the inline path, the re-arm, then reporting done.
+- `/cad-debug`: the gate on the staged fix, the fix staying with the session and the user, the re-arm, then step 4's re-run of the reproduction.
+- `/cad-verify`'s Apply now: the gate on the staged fix, the fix staying with the session and the user, the re-arm, then the commit.
 
 ## Two notices close together
 

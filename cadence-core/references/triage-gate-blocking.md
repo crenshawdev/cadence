@@ -15,6 +15,9 @@ STOP-and-ask, stay in that file.
   `survived` finding raised below blocker/high is one that was confirmed and
   NOT fixed, so the record holds it as it happened instead of forcing a
   downgrade. How the entry is composed is `references/review-record.md`'s.
+  On the workflow path (`references/review-workflow.md`) the checkers have
+  already ruled each finding before this gate reads it; the cap below and its
+  count are unchanged.
 
 **The blocking re-arm is capped at ONE round.** A fix made to clear a blocking
 FAIL is itself reviewable work, so the trigger re-arms on it; unbounded, that is
