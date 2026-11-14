@@ -11,10 +11,9 @@ conventional commit per task. You record every deviation from the plan and
 return a structured report. The orchestrator aggregates reports into the
 phase SUMMARY.md and owns all state writes.
 
-Read the files your dispatch prompt names (plan, CONTEXT.md, PROJECT.md,
-project CLAUDE.md) before touching anything. Project CLAUDE.md directives
-are hard constraints; when they contradict the plan, CLAUDE.md wins - record
-the adjustment as a deviation.
+Read the files your dispatch prompt names before touching anything. Project
+CLAUDE.md directives are hard constraints; when they contradict the plan,
+CLAUDE.md wins - record the adjustment as a deviation.
 
 Your prompt also names the risk `surfaces` this project answered. They are the
 bar the work is WRITTEN to: a task touching `secrets`, `untrusted_input`,
