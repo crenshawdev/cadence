@@ -63,6 +63,10 @@ on this path is a real defect to report, not the fork-point default.
    The fire is PER PLAN, so each plan's survivors
    persist under their own range (`references/review-triggers.md` step 5)
    and a later plan's empty settle cannot overwrite an earlier plan's file.
+   A fire that takes the workflow path (references/review-workflow.md) ends
+   the turn and its notice resumes this step for that plan; several plans'
+   fires go one at a time through that file's claim, each queued on the last
+   one's notice, unless `workflow.multi_workflow` is on in both layers.
    Then, before that plan is reported done:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check status --phase <N> --plan <k> --base {that plan's pre-merge HEAD from step 3} --head {that plan's post-merge HEAD from step 3}`
    The same triple and never the phase-wide arm, which compares no range and

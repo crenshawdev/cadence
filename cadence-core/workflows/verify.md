@@ -398,7 +398,11 @@ For each item with `status: fail` and no recorded cause:
    the staged-diff scope, shape (b): the reviewer runs
    `git diff --cached` in the cwd it inherits; that gate is blocking and its
    re-arm is capped at ONE narrowed round by the same triage-gate.md this step
-   already re-reads. An `ok:false` answer (`no-diff`, `surfaces-unanswered`)
+   already re-reads. On the workflow path (`references/review-workflow.md`)
+   the fire is the launch ending the turn and the notice resuming this step,
+   with nothing else dispatched in between; the resumed step runs the gate on
+   the staged fix and the one narrowed re-arm if a FAIL was fixed, then the
+   commit below. An `ok:false` answer (`no-diff`, `surfaces-unanswered`)
    is not a clean one: the gate is blocking and a check that could not run
    clears nothing, so repair what the refusal's `hint` names and re-run rather
    than landing the fix on it. Then commit as an atomic conventional commit

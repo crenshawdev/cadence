@@ -300,6 +300,12 @@ contract skips `lease-check` whenever `<plandir>` is not
 no worker key for a fix to dispatch under: its `risk_surface` FAIL stays with
 the user there, the same absence that already keeps the `<guardrails>` line
 below true.
+
+On the workflow path (`references/review-workflow.md`) the fire is the launch
+ending the turn and the notice resuming this step, with nothing else dispatched
+in between. The resumed step runs the gate, then on FAIL the fix under worker
+key `1` on the `--plan` path or with the user on the inline path, the one
+narrowed re-arm, a fire of its own on the same path, then reporting done.
 </step>
 
 <step name="record">

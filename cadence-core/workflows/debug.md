@@ -132,7 +132,12 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    diff text. That gate is `blocking` and its re-arm is CAPPED at ONE narrowed
    round - RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
-   fixing a FAIL, since this workflow does not preload it. An `ok:false`
+   fixing a FAIL, since this workflow does not preload it. On the workflow
+   path (`references/review-workflow.md`) the fire is the launch ending the
+   turn and the notice resuming this step, with nothing else dispatched in
+   between; the resumed step runs the gate on the staged fix and the one
+   narrowed re-arm if a FAIL was fixed, and only then does step 4 trust the
+   fix. An `ok:false`
    answer (`no-diff`, `surfaces-unanswered`) is not a clean one: a check that
    could not run clears nothing, so repair what the refusal's `hint` names and
    re-run rather than landing the fix on it.
