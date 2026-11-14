@@ -551,7 +551,9 @@ against: `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and
 `.planning/phases/{N}/CONTEXT.md`. All four are REFERENCE PATHS the reviewer
 resolves itself - never inlined text, which would keep every byte of them
 resident here for the rest of the run - and all four ride the fire's `--read`
-bracket list (review-triggers.md step 4).
+bracket list (review-triggers.md step 4). On the workflow path a fire over more
+than one PLAN file runs one reviewer per plan and one cross-plan reviewer, and
+today's path runs one reviewer over all of them.
 
 `.planning/phases/{N}/CONTEXT.md` may be absent for a phase - name it optional
 in the payload, as `check_gate` does. Its absence is not a resolve failure and

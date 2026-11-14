@@ -42,7 +42,10 @@ this delegates to `fire(plan)`, which grounds and adjudicates once.
    reviewers only. This resolves the reviewer set
    (claude-subagent and/or a configured cross-model reviewer), runs them, and -
    for an adjudicated gate - grounds each finding against the real repo, kills
-   false positives, and merges convergent findings.
+   false positives, and merges convergent findings. On the workflow path a fire
+   over more than one PLAN file runs one reviewer per plan and one cross-plan
+   reviewer, and today's path one reviewer over all of them; a single PLAN path
+   gets one reviewer.
 
 3. **Report** the outcome: for advisory, the findings; for blocking, the
    PASS/FAIL and surviving blocker/high findings; for adjudicated, the grounded
