@@ -409,7 +409,7 @@ export function composeReviewerInput({ phase, planFile, planText, roadmapText, r
 
 /**
  * The verifier's input (D-02): the phase entry with its success criteria, the UAT items, each plan's heading and truths,
- * and the SUMMARY's sections as its claims. Never a plan's Goal, Context, Tasks or Notes, nor its frontmatter: the
+ * and the SUMMARY's body after its frontmatter, with that frontmatter's `status:` line, as its claims. Never a plan's Goal, Context, Tasks or Notes, nor its frontmatter: the
  * verifier checks outcomes against the codebase, and the tasks are the route the executor took, not the bar.
  * A missing UAT.md or SUMMARY leaves its part out without a word.
  * @param {object} p
@@ -445,9 +445,17 @@ export function composeVerifierInput({ phase, plans, roadmapText, requirementsTe
     if (truths !== null) out.push(truths, '');
   }
   if (summaryText !== null) {
-    // its own heading first, or its sections read as the last plan's
-    out.push(normalize(summaryText).split('\n').find((l) => l.startsWith('# ')) ?? '# SUMMARY.md', '');
-    for (const sec of everySection(summaryText)) out.push(sec, '');
+    const { fm, rest } = splitFrontmatter(normalize(summaryText));
+    const body = rest.split('\n');
+    const h1 = body.findIndex((l) => l.startsWith('# '));
+    // its own heading first, or its claims read as the last plan's
+    out.push(h1 < 0 ? '# SUMMARY.md' : body[h1], '');
+    // a `partial` phase is a claim too, and the lead line under the heading is the biggest one
+    const status = fm.find((l) => /^status\s*:/.test(l));
+    if (status) out.push(status, '');
+    let from = h1 + 1;
+    while (from < body.length && body[from].trim() === '') from += 1;
+    out.push(trimmedSlice(body, from, body.length), '');
   }
   return finish(out);
 }
