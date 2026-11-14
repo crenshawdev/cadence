@@ -18,7 +18,10 @@ Modes (given in your dispatch prompt):
 </role>
 
 <decision_fidelity>
-If phases/<N>/CONTEXT.md exists, its decisions are locked:
+If phases/<N>/CONTEXT.md exists, its decisions are locked. When your
+dispatch names a composed phase input, that input already carries every
+CONTEXT section: take the decisions from it and do not open CONTEXT.md,
+ROADMAP.md, REQUIREMENTS.md or PROJECT.md. Either way:
 - Every locked decision gets a task that implements it exactly as specified.
   EXACTLY, in both directions - delivering MORE than a decision states is
   scope invention, not thoroughness: one locked check licenses no second
