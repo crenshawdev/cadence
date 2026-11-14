@@ -8,6 +8,7 @@ allowed-tools:
   - Grep
   - Task
   - AskUserQuestion
+  - PushNotification
   - Workflow
   - Workflow(cadence:review-panel)
 ---
@@ -52,4 +53,9 @@ this delegates to `fire(plan)`, which grounds and adjudicates once.
    survivor list. Do NOT auto-apply changes to the plan - present the survivors
    and let the user decide what to fix (the plan-creation flow triages the same
    way).
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

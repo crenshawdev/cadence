@@ -9,6 +9,7 @@ allowed-tools:
   - Grep
   - Glob
   - AskUserQuestion
+  - PushNotification
   - Workflow
   - Workflow(cadence:review-panel)
 ---
@@ -35,4 +36,9 @@ Route on `$ARGUMENTS`, then run the debug workflow single-pass end-to-end.
 Persist the state file after every hypothesis test and fix attempt. Never
 auto-loop fixes and never auto-consult - both are deliberate, and the consult
 is always user-gated.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

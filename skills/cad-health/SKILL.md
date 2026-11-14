@@ -7,6 +7,7 @@ allowed-tools:
   - Grep
   - Glob
   - AskUserQuestion
+  - PushNotification
 ---
 
 <objective>
@@ -161,4 +162,9 @@ with the file and what is wrong. For a trivial, unambiguous fix (cursor `of M`
 count off, a stale `Updated`), offer to correct it via the ask-user seam with
 `cursor set`, never by editing STATE.md - never auto-edit. Anything structural (missing doc, phase-number gaps) is reported for
 the user to resolve, possibly via /cad-phase.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

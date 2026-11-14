@@ -6,6 +6,7 @@ allowed-tools:
   - Read
   - Task
   - AskUserQuestion
+  - PushNotification
 ---
 
 <objective>
@@ -402,6 +403,11 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    confirmed merge, so the key stays. Report it in the final state line, and
    where the repository tracks `.planning/config.json` say that file is now
    modified and rides the next docs commit: this skill never auto-commits.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>
 
 <guardrails>

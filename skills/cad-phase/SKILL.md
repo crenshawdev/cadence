@@ -9,6 +9,7 @@ allowed-tools:
   - Grep
   - Glob
   - AskUserQuestion
+  - PushNotification
 ---
 
 <objective>
@@ -31,4 +32,9 @@ workflow. For insert/remove, do the full renumber-and-repair pass - never edit
 ROADMAP alone. Commit the change atomically (protected-branch guard applies);
 never leave phase dirs and live references out of sync, and never hand-shift a
 requirement row the seam left as written.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

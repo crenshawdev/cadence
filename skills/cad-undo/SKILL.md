@@ -9,6 +9,7 @@ allowed-tools:
   - Grep
   - Glob
   - AskUserQuestion
+  - PushNotification
 ---
 
 <objective>
@@ -28,4 +29,9 @@ whether later phases exist and lets the user decide.
 Run the undo workflow end-to-end. Refuse on a dirty tree. Show the exact hashes
 and get confirmation before reverting. Reset the phase's status as part of the
 rollback (this is the one legitimate exception to cad-verify owning status).
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>
