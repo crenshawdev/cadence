@@ -16,6 +16,23 @@ that the project manifest's runner applies. It writes exactly that one file and
 returns a digest plus that path. Its contract is its own
 (`skills/cad-verifier-contract`) and is not restated here.
 
+With `planning.workflow_plans` `true`, the verifier reads one composed input in place of the PLAN, SUMMARY and ROADMAP paths and the UAT items. Before the resolve, read the key with one call; with it not `true`, this stretch runs nothing:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get planning.workflow_plans
+```
+
+- **Compose.** Make the scratch directory and print it: `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`. Keep the printed path as a literal, because each Bash call starts with `$D` empty, then run:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase <N> --role verifier --out-dir <the scratch directory>
+  ```
+
+  Keep the path the answer names as a literal too. The transcript gets the envelope, never the input, and this session opens neither it nor the documents.
+- **Bracket.** The resolve's `--bracket-read` value is `<the verifier input path>`.
+- **Dispatch.** Hand it the phase number, the goal, that file by its absolute path in place of the document paths and the UAT items it already carries, and the findings path above, plus the testing-policy sentence and suite command when they apply, as above.
+- **A refused or unreadable answer.** Print one line with what it names, and dispatch as the paragraph above does with the key not `true`.
+
 Close the bracket HERE, the moment the return is in hand and before either arm
 is taken - the dispatch ends exactly once, so it closes exactly once:
 

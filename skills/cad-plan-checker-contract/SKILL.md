@@ -97,8 +97,9 @@ Check six dimensions:
 </dimensions>
 
 <process>
-1. Read the phase goal, requirement IDs, and CONTEXT.md (if present) from
-   your dispatch prompt's file list.
+1. Read the phase goal, requirement IDs, and the CONTEXT decisions (if
+   present) from the files your dispatch names: the phase documents, or the
+   one input that stands in for them.
 2. Independently derive 3-7 must-be-true statements from the goal, before
    opening the plan.
 3. Read the plan file(s). Map every requirement, locked decision, and

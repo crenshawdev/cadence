@@ -7,6 +7,7 @@ allowed-tools:
   - Write
   - Edit
   - AskUserQuestion
+  - PushNotification
 ---
 
 <objective>
@@ -54,4 +55,9 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
    {total}: {name}" when it has no `plan` field, "Phase {phase} of {total},
    plan {K} of {J}: {plan name}" when it does, ending at "plan {K} of {J}" when
    that has no `name`. Never "plan 0 of 0".
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

@@ -570,7 +570,7 @@ function cmdTrace(dir, sub, opts) {
     // an absent record skips the check (an old fire, an advisory arm), or those fires would be unrecordable here too
     // one lookup and one parse of the fire's record, shared by both checks and made only if one of them needs it
     const loadRecord = fireRecordLoader(dir, parsedPhase.raw, {
-      trigger, plan: flags['--plan'], sha: flags['--sha'], round,
+      trigger, plan: flags['--plan'], sha: flags['--sha'], base: flags['--base'], round,
     });
     const recount = recountReceipt(loadRecord, { round, settled });
     if (!recount.ok) return fail(recount.reason, recount.detail, recount.hint);
@@ -753,18 +753,36 @@ function cmdTrace(dir, sub, opts) {
   return fail('usage', 'trace <append|close|render|suggest|window|ignore>');
 }
 
+/** A commit as a receipt or a record name spells it: lower-cased hex, 7 to 40 characters, or ''. @param {any} v */
+const commitSpelling = (v) => {
+  const s = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  return /^[0-9a-f]{7,40}$/.test(s) ? s : '';
+};
+
+/** One commit spelled short and full is still one commit, so the compare is prefix-wise from the shorter side. */
+const sameCommit = (/** @type {string} */ a, /** @type {string} */ b) => {
+  if (!a || !b) return false;
+  const [x, y] = a.length <= b.length ? [a, b] : [b, a];
+  return x.length >= 7 && y.startsWith(x);
+};
+
+/** A range-named discriminator, `<short base sha>-<short head sha>` and nothing after: a `-rN` on it names nothing. */
+const RANGE_DISCRIMINATOR = /^([0-9a-f]{7,40})-([0-9a-f]{7,40})$/;
+
 /**
  * The record a receipt settles, as an absolute path, or '' (never a throw) when none can be resolved.
- * A per-plan fire resolves by `plan-<k>`; every other fire matches the directory on trigger, round and head prefix.
+ * A receipt naming both ends first looks for the one record of its trigger named by that exact range (D-03).
+ * Finding none, it falls back to the legacy names (D-13): `plan-<k>` with its round for a per-plan fire, a head-sha
+ * tail for every other. A `plan-<k>` record storing its ids is only this receipt's when both ends agree with them.
  * Two candidates answer '', not a guess: a check that might read another fire's rulings refuses a correct receipt.
  * Homes by phase: `phases/<N>/records/`, or every `.planning/tasks/<slug>/` for a task's 0, since a receipt carries no slug.
  * `deferred/<N>/` is deliberately left out (see fireHome); `trigger` goes through RECORD_TOKEN before `join`.
  * @param {string} dir @param {string|number} phaseRaw
  * @param {string|undefined} trigger @param {any} plan @param {any} sha
- * @param {number} round
+ * @param {number} round @param {any} [base]
  * @returns {string}
  */
-function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
+function recordForFire(dir, phaseRaw, trigger, plan, sha, round, base) {
   if (typeof trigger !== 'string' || !RECORD_TOKEN.test(trigger)) return '';
   /** @type {string[]} */
   let homes = [];
@@ -788,6 +806,36 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
     const file = join(home, name);
     try { return lstatSync(file).isFile() ? file : ''; } catch { return ''; }
   };
+  /** Every `ADJUDICATION-<trigger>-<discriminator>.json` across the homes, the discriminator cut out. */
+  const prefix = `ADJUDICATION-${trigger}-`;
+  const listed = () => {
+    /** @type {{home: string, name: string, discriminator: string}[]} */
+    const out = [];
+    for (const home of homes) {
+      /** @type {string[]} */
+      let names = [];
+      // continue, never return: an unreadable home answered nothing, and the task arm still has other homes to try
+      try { names = readdirSync(home); } catch { continue; }
+      for (const name of names) {
+        if (!name.startsWith(prefix) || !name.endsWith('.json')) continue;
+        out.push({ home, name, discriminator: name.slice(prefix.length, name.length - '.json'.length) });
+      }
+    }
+    return out;
+  };
+
+  const head = commitSpelling(sha);
+  const baseEnd = commitSpelling(base);
+  const bothEnds = Boolean(head && baseEnd);
+  if (bothEnds) {
+    // the range is the identity, so the round plays no part here and B..C never answers for A..C
+    const hits = listed().filter(({ discriminator }) => {
+      const m = RANGE_DISCRIMINATOR.exec(discriminator);
+      return Boolean(m) && sameCommit(m[1], baseEnd) && sameCommit(m[2], head);
+    });
+    if (hits.length > 1) return '';
+    if (hits.length === 1) return regular(hits[0].home, hits[0].name);
+  }
 
   const planKey = plan === undefined || plan === null ? '' : String(plan).trim();
   if (planKey) {
@@ -796,31 +844,31 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
     if (!RECORD_TOKEN.test(discriminator)) return '';
     const name = recordName(trigger, discriminator, round);
     const found = homes.map((home) => regular(home, name)).filter(Boolean);
-    return found.length === 1 ? found[0] : '';
+    if (found.length !== 1) return '';
+    if (!bothEnds) return found[0];
+    // old and new names share a directory, so a second fire of plan <k> over a new range must not read the first's
+    let stored;
+    // unparseable keeps the file: the loader refuses it as bad-record, which is louder than a quiet miss
+    try { stored = JSON.parse(readFileSync(found[0], 'utf8')); } catch { return found[0]; }
+    const ids = [[stored && stored.base_id, baseEnd], [stored && stored.head_id, head]];
+    return ids.every(([id, end]) => id === undefined || id === null || sameCommit(commitSpelling(id), end))
+      ? found[0] : '';
   }
 
-  const head = typeof sha === 'string' ? sha.trim().toLowerCase() : '';
-  if (!/^[0-9a-f]{7,40}$/.test(head)) return '';
-  const prefix = `ADJUDICATION-${trigger}-`;
-  const suffix = round > 1 ? `-r${round}.json` : '.json';
+  if (!head) return '';
+  const suffix = round > 1 ? `-r${round}` : '';
   /** @type {{home: string, name: string}[]} */
   const hits = [];
-  for (const home of homes) {
-    /** @type {string[]} */
-    let names = [];
-    // continue, never return: an unreadable home answered nothing, and the task arm still has other homes to try
-    try { names = readdirSync(home); } catch { continue; }
-    for (const name of names) {
-      if (!name.startsWith(prefix) || !name.endsWith(suffix)) continue;
-      const discriminator = name.slice(prefix.length, name.length - suffix.length);
-      // at round 1 the bare .json suffix also ends every higher round's file, so a -r<n> tail is another round's record
-      if (round === 1 && /-r\d+$/.test(discriminator)) continue;
-      // the last segment is the short head sha, compared as a prefix either way: a receipt may spell it 7-char or full
-      const tail = discriminator.slice(discriminator.lastIndexOf('-') + 1).toLowerCase();
-      if (tail.length >= 7 && (head.startsWith(tail) || tail.startsWith(head))) {
-        hits.push({ home, name });
-      }
-    }
+  for (const entry of listed()) {
+    if (!entry.discriminator.endsWith(suffix)) continue;
+    const discriminator = entry.discriminator.slice(0, entry.discriminator.length - suffix.length);
+    // at round 1 the bare .json suffix also ends every higher round's file, so a -r<n> tail is another round's record
+    if (round === 1 && /-r\d+$/.test(discriminator)) continue;
+    // a range name ends in a head too, but B..C and A..C share one, so it is never answered on its head alone
+    if (RANGE_DISCRIMINATOR.test(discriminator)) continue;
+    // the last segment is the short head sha, compared as a prefix either way: a receipt may spell it 7-char or full
+    const tail = discriminator.slice(discriminator.lastIndexOf('-') + 1).toLowerCase();
+    if (tail.length >= 7 && (head.startsWith(tail) || tail.startsWith(head))) hits.push(entry);
   }
   // count names first and run regular only on a lone hit: dropping symlinks first would turn a tie into a guess
   return hits.length === 1 ? regular(hits[0].home, hits[0].name) : '';
@@ -831,7 +879,7 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
  * `null` is an absent record. An unreadable one comes back with `record: undefined` and the file's name, so each check
  * words its own refusal; the parse error isn't quoted back, since the redaction census counts echoes.
  * @param {string} dir @param {string|number} phaseRaw
- * @param {{trigger: string|undefined, plan: any, sha: any, round: number}} fire
+ * @param {{trigger: string|undefined, plan: any, sha: any, base?: any, round: number}} fire
  * @returns {() => {rel: string, record: any, readable: boolean}|null}
  */
 function fireRecordLoader(dir, phaseRaw, fire) {
@@ -839,7 +887,7 @@ function fireRecordLoader(dir, phaseRaw, fire) {
   let loaded;
   return () => {
     if (loaded !== undefined) return loaded;
-    const file = recordForFire(dir, phaseRaw, fire.trigger, fire.plan, fire.sha, fire.round);
+    const file = recordForFire(dir, phaseRaw, fire.trigger, fire.plan, fire.sha, fire.round, fire.base);
     if (!file) return (loaded = null);
     const rel = relative(dir, file);
     try {

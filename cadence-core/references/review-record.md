@@ -39,8 +39,9 @@ record seam DERIVED and returned on its envelope - never a number you counted
 by hand off the survivor list, and never folded into `--detail` either. The
 seam recounts the record's rulings against them and REFUSES a receipt that
 disagrees, which is what makes the survivor count recomputable instead of
-asserted. `--round <round>` is omitted on an ordinary fire and carries the
-round on a re-armed one, because that is the record the recount has to read:
+asserted. `--round <round>` is omitted on an ordinary fire and on a
+range-named re-arm, whose own ends name its record, and carries the round on
+any other re-armed one, because that is the record the recount has to read:
 without it a round-two settle is checked against round one's stale rulings and
 passes whenever the two counts happen to coincide. The TRIGGER travels the same way, on `--trigger`,
 and `--plan <k>` rides a per-plan fire: `risk-check status` joins a matched
@@ -71,7 +72,7 @@ carries `file`, `line`, `severity`, `voices` and the six texts `what_breaks`,
 `why_care`, `what_triggers`, `what_proves`, `what_uncertain` and
 `recommendation`, plus an optional one-line `root_cause` shared by survivors with
 one cause. A survivor missing any of the six is refused, and so is a second write
-to the same name: a re-arm passes `--round 2`.
+to the same name: a re-arm passes `--round 2` or, range-named, its own range.
 
 A suspected `blocker` or `high` the named check then re-rules is corrected in the file, so it and the record agree. Pass the fire's identity as above and `--mark <n>`, with a payload of `{ruling: refuted|proved, found}`. It puts a line ahead of survivor `n`'s headings, a refuted one stops counting as a survivor, and a number the file lacks or one already marked is refused.
 

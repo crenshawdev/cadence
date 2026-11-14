@@ -8,6 +8,7 @@ allowed-tools:
   - Grep
   - Task
   - AskUserQuestion
+  - PushNotification
   - mcp__context7__resolve-library-id
   - mcp__context7__query-docs
 ---
@@ -53,4 +54,9 @@ invoking this skill is the user's call, not a mechanical handoff.
    gives it a model, and its effort is frontmatter-frozen). Do NOT auto-apply any
    amendment - this is a review, not an edit; the user decides what to change
    and does it themselves.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

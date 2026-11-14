@@ -132,15 +132,19 @@ than prevented.
 ### 4. Run the reviewers
 After steps 1 to 3, this fire takes the WORKFLOW path only when all three hold:
 the gate resolved `adjudicated`, or this is `/cad-verify`'s fire, which is always
-triaged as `adjudicated` and has no resolved gate; the setting
+triaged as `adjudicated` and has no resolved gate, or the trigger is
+`risk_surface` and its gate resolved `blocking`; the setting
 `workflow.use_workflows` is on in BOTH config layers, read with
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" workflow-layers`, whose
 `on` for that key is the answer, and never with `config.mjs get`, which answers
 on a committed repo value alone; an answer that cannot be read is off; and the `Workflow` tool is in this
-session's tool list. A `blocking`, `advisory` or `deferred` gate never takes it,
-so `risk_surface` at `blocking` stays here. Take the path and Read
+session's tool list. `blocking` on any other trigger, and `advisory` and
+`deferred` on every trigger, never take it. Take the path and Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-workflow.md`, which runs
 the reviewers and the checking of their findings in place of everything below.
+On that path a `plan` fire over more than one plan file runs one reviewer per
+plan and one cross-plan reviewer, where today's path runs one reviewer over all
+of them.
 Otherwise start no workflow, Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-inline.md`, which
 dispatches the reviewers by hand, and keep the bullet below for any cross-model
@@ -236,21 +240,24 @@ them already, and you fill only a finding a checker left. Compose them as a file
 directory, the way `references/review-record.md` composes its payload, and run
 `planning.mjs review-file` before triage; that file is
 `.planning/phases/<N>/records/REVIEW-<trigger>-<discriminator>[-rN].md`. The GATE
-decides the file's format and `review.mode` does not. Only gate `adjudicated`
-and `/cad-verify`'s fire, which is always triaged as `adjudicated`, write it.
+and the path decide the file's format, and `review.mode` does not. Gate
+`adjudicated`, `/cad-verify`'s fire, which is always triaged as `adjudicated`,
+and a `blocking` `risk_surface` fire on the workflow path write it, that last
+from the seam's `survivors.json` with the six headings its checkers filled.
 This arm is also reached by a `blocking` or `deferred` gate under
-`review.mode: adjudicated`, the schema default, and those keep their JSON
-object (`references/risk-surface.md`, and the `deferred` bullet of
-`references/triage-gate-deferred.md`). So each gate has one rule and the seam never
-meets a path already written.
+`review.mode: adjudicated`, the schema default, and on today's path those keep
+their JSON object (`references/risk-surface.md`, and the `deferred` bullet of
+`references/triage-gate-deferred.md`). So one fire writes one file under one
+name, and the seam never meets a path already written.
 
-A RE-ARM PASSES `--round 2`, and the fire site is the only actor that knows
-which round it is on. A capped re-arm (`references/triage-gate.md`, ONE round)
-is a SECOND fire of the same trigger on the same plan, so it resolves to the
-same discriminator: round two lands at `...-<discriminator>-r2.json`, while an
-ordinary fire passes nothing and keeps the sibling's exact name. Omitting it on
-a re-arm is REFUSED - never merged and never overwritten - because round one's
-record is what an auditor reads to see the finding a fix was claimed to close.
+A capped re-arm (`references/triage-gate.md`, ONE round) is a SECOND fire of
+the same trigger on the same plan, and the fire site is the only actor that
+knows which round it is on. A range-named one is a fire over its OWN range: named by the `--base` and `--head` it passes, with no `--round`,
+and its settle receipt carries the same two ends. Any other passes `--round 2`:
+round two lands at `...-<discriminator>-r2.json`, while an ordinary fire passes
+nothing and keeps the sibling's exact name. A second write to a taken name is
+REFUSED - never merged and never overwritten - because round one's record is
+what an auditor reads to see the finding a fix was claimed to close.
 
 **A `risk_surface` fire PERSISTS its settled survivors, at every gate.** Unlike
 the trace append, this is not the adjudicated ARM's alone: `risk_surface`
@@ -260,13 +267,22 @@ halt has - it fires no review of its own - so skipping the write lets an
 autonomous close merge over a blocker nobody halted on. Where it is written is
 in `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md`.
 
-**The discriminator grammar, stated ONCE here** because both the record above
-and the survivor write use it: `plan-<k>` for a per-plan fire,
-`<command>-<short HEAD sha>` for every other one
+**The discriminator grammar, stated ONCE here** because every record, review
+file, queue member and survivor write uses it. A fire over a
+COMMITTED range - `diff`, `phase_diff`, and `risk_surface` from `/cad-execute`
+or `/cad-task` - is named by it: `<short base sha>-<short head sha>`, each end
+as `git rev-parse --short <ref>` prints the refs it passes as `--base` and
+`--head` (`REVIEW-risk_surface-4f1c2ab-9d03e7f.md`). A whole-phase fire is its
+own range with its own receipt, and a receipt resolves only the record with the
+same base and head. The `plan` trigger and the staged fires of `/cad-verify` and
+`/cad-debug` cover no committed range and keep `<command>-<short HEAD sha>`
 (`REVIEW-risk_surface-debug-a1b2c3d.md`). The command half is not decoration -
 `/cad-debug` and `/cad-verify` can both fire against the SAME unchanged HEAD,
 so the sha alone still collides, and two fires sharing a filename do not merge,
-they overwrite.
+they overwrite. Gate `deferred` keeps today's names, `plan-<k>` per plan and
+`<command>-<short HEAD sha>` otherwise, and `--round 2`: its queue's cap counts
+`-r<n>` suffixes on disk. Old `plan-<k>[-rN]` files are not renamed and still
+read.
 
 ### 6. Consequence (gate)
 RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
@@ -287,7 +303,7 @@ The gate column is each key's own schema default. A config layer writing
 
 | Trigger | Fired by | When | Payload artifact | Default gate |
 |---|---|---|---|---|
-| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s), plus `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and `.planning/phases/<N>/CONTEXT.md` (optional) - the artifacts the plan is checked AGAINST | advisory |
+| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s), plus `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and `.planning/phases/<N>/CONTEXT.md` (optional) - the artifacts the plan is checked AGAINST. On the workflow path a fire over more than one PLAN file runs one reviewer per plan and one cross-plan reviewer, and today's path one reviewer over all of them. With `planning.workflow_plans` `true` the three become one, the phase input `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase <N> --role phase --out-dir <dir>` composes, by its absolute path, the PLAN path(s) unchanged; the key comes from the calling workflow's config batch when it holds it, else one `config.mjs get planning.workflow_plans`. A site that composed that input this run names it; otherwise the fire runs the call first, `<dir>` made by `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`. A refused answer is named in one line and the fire takes the three. With the key not `true` the artifact is as above | advisory |
 | `diff` | `cad-execute` | at plan completion; once at phase end over `<PHASE_BASE>..HEAD` (the phase's oldest `phase_start` anchor) with `review.triggers.diff.when: phase_end` | (a) refs `<pre-plan HEAD>..HEAD` | off |
 | `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | on detection match, ONCE per plan/task/fix - `cad-execute`/`cad-task` on the completed commit range, never mid-plan; `cad-debug`/`cad-verify` on their single staged fix | (c) the range-diff FILE path, or (b) the staged-diff scope for a single in-tree fix | blocking |
 | `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge; with `review.triggers.diff.when: phase_end` it stands in for the `diff` fire | (a) refs `<PHASE_START>..HEAD` | off |

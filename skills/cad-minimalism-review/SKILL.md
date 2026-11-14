@@ -8,6 +8,7 @@ allowed-tools:
   - Grep
   - Task
   - AskUserQuestion
+  - PushNotification
 ---
 
 <objective>
@@ -47,4 +48,9 @@ or FAIL anything.
    clean sweep is reported as a result naming the target that was read, never as
    a bare "no findings". Do NOT delete, edit or apply any of it - the user
    decides what goes and does it themselves.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

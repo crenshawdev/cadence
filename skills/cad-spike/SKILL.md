@@ -9,6 +9,7 @@ allowed-tools:
   - Grep
   - Glob
   - AskUserQuestion
+  - PushNotification
 ---
 
 <objective>
@@ -28,4 +29,9 @@ Run the spike workflow end-to-end. Write the Given/When/Then criteria before
 building anything, order them risk-first, and stop the moment a risk-first
 criterion invalidates the approach. Never soften an invalidated result into
 "inconclusive" to save the idea - a spike that kills a bad approach is a success.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

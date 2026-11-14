@@ -40,8 +40,8 @@ Read the [testing chapter](https://crenshawdev.github.io/cadence/testing/policy.
 You'll need Claude Code with plugin support, Node.js, Git, and a signed-in forge CLI: `gh`, `glab` or `tea`. Testing-policy enforcement currently requires GitHub Actions. Cadence's own scripts have no runtime package dependencies.
 
 ```text
-/plugin marketplace add https://github.com/crenshawdev/cadence.git
-/plugin install cadence@cadence
+/plugin marketplace add https://github.com/crenshawdev/foundation.git
+/plugin install cadence@foundation
 ```
 
 In an existing repository:
@@ -58,7 +58,7 @@ For a new project:
 
 Already worked through the idea? Pass your brief with `/cadence:cad-new-project --brief <file>`. Cadence reads what's settled and asks about what's still open.
 
-Update with `/plugin update cadence@cadence`.
+Update with `/plugin update cadence@foundation`.
 
 ## The working loop
 

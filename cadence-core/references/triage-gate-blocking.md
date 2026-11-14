@@ -15,6 +15,9 @@ STOP-and-ask, stay in that file.
   `survived` finding raised below blocker/high is one that was confirmed and
   NOT fixed, so the record holds it as it happened instead of forcing a
   downgrade. How the entry is composed is `references/review-record.md`'s.
+  On the workflow path (`references/review-workflow.md`) the checkers have
+  already ruled each finding before this gate reads it; the cap below and its
+  count are unchanged.
 
 **The blocking re-arm is capped at ONE round.** A fix made to clear a blocking
 FAIL is itself reviewable work, so the trigger re-arms on it; unbounded, that is
@@ -68,8 +71,8 @@ The plan key rides as the THIRD argument beside the trigger, so the block stays
 the one line a coordinator copies and runs. Without that term a `rearm` written
 for plan 1 reads as SPENT for plan 2 on the same trigger, and plan 2's fix can
 never be reviewed at all. OMIT the argument on a fire that carries no plan
-(`/cad-debug`, `/cad-verify`, `/cad-task`'s inline path - the discriminator
-grammar in `references/review-triggers.md` names them): the append writes a
+(`/cad-debug`, `/cad-verify`, `/cad-task`'s inline path - the receipt
+paragraph in `references/triage-gate.md` names them): the append writes a
 `plan` field only when `--plan` was passed, so those events carry none, and an
 omitted key is what matches them.
 

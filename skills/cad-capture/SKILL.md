@@ -5,6 +5,7 @@ argument-hint: "[todo | seed | note] <text> [--phase N] [--cadence]"
 allowed-tools:
   - Read
   - AskUserQuestion
+  - PushNotification
 ---
 
 <objective>
@@ -95,6 +96,11 @@ else's project has to leave that project to reach Cadence:
      since a note landing in the host repo is the failure this arm exists to
      close.
    Report the one line captured and the file it landed in.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>
 
 <guardrails>

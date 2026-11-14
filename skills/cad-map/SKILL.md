@@ -6,6 +6,7 @@ allowed-tools:
   - Write
   - Workflow
   - Workflow(cadence:code-map)
+  - PushNotification
 ---
 
 <objective>
@@ -20,4 +21,9 @@ and waits for a typed yes before anything runs.
 
 <process>
 Execute end-to-end.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

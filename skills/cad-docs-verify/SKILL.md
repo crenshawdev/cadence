@@ -7,6 +7,7 @@ allowed-tools:
   - Grep
   - Glob
   - AskUserQuestion
+  - PushNotification
 ---
 
 <objective>
@@ -28,4 +29,9 @@ human (or a later edit) acts on.
 Run the verify workflow end-to-end. Only claim `stale` when the code actually
 contradicts the doc; when a claim cannot be checked mechanically, mark it
 `unverifiable` rather than guessing. Do not edit any doc.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

@@ -5,6 +5,16 @@
 How a workflow asks the human a question and blocks on the answer.
 
 **Claude Code binding:**
+- Push first: before either arm below blocks - the `AskUserQuestion` call or
+  the open-ended question that ends the turn - send one `PushNotification`,
+  loading it by name first when the host lists it as deferred. The message is
+  one line under 200 characters, no markdown, naming the command, the phase (the
+  position line where the workflow has one, as `/cad-execute` does) and what the
+  user needs to answer. One push per question, sent by the session that asks.
+  The host decides delivery, skipping it when the user is at the terminal, when
+  notifications are off or when there is nowhere to send it. A host without the
+  tool, or one that cannot load it, skips the push and asks as before: the
+  question is never held back by it.
 - Structured choice: the `AskUserQuestion` tool, at most four options per
   question, and `multiSelect: true` when more than one option may be picked. A
   set larger than the option cap splits across questions - minus any

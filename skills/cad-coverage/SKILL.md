@@ -9,6 +9,7 @@ allowed-tools:
   - Grep
   - Glob
   - AskUserQuestion
+  - PushNotification
 ---
 
 <objective>
@@ -30,4 +31,9 @@ Run the coverage workflow end-to-end. Coverage means a test that would FAIL if
 the requirement broke - not a test that merely runs the code. Get user approval
 on the gap test plan before generating (when `testing.scope` is unset), and
 verify generated tests actually run.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

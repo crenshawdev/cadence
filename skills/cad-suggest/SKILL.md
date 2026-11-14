@@ -4,6 +4,7 @@ description: "Turn the run record into evidence-backed retune suggestions - each
 argument-hint: "[phase]"
 allowed-tools:
   - SlashCommand
+  - PushNotification
 ---
 
 <objective>
@@ -23,4 +24,9 @@ argument spans the whole record; a phase number scopes it.
 
 <process>
 Execute end-to-end.
+
+Before any question to the user, send one `PushNotification` naming the
+command, the phase or position line and what is needed, in one line under 200
+characters, and skip it when the host has no such tool
+(`references/seam-ask-user.md` has the full rule).
 </process>

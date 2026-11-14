@@ -9,8 +9,8 @@ and terminal STOP-and-ask its queue's triage takes, stay in that file.
   in `references/review-triggers.md` step 5 already specifies - the settled
   `{ "findings": [...] }` object written to
   `.planning/phases/<N>/records/REVIEW-<trigger>-<discriminator>.md`, on the same
-  discriminator grammar (`plan-<k>` for a per-plan fire, `<command>-<short HEAD
-  sha>` otherwise, and no unsuffixed path). This arm's file stays JSON whatever
+  discriminator grammar (the names step 5 keeps for a fire at this gate, and no
+  unsuffixed path). This arm's file stays JSON whatever
   `review.mode` says, because `deferred record --payload` parses it; only gate
   `adjudicated` writes the Markdown review file. Then pass THAT SAME FILE as the
   queue member's payload:

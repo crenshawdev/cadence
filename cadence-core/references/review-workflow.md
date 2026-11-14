@@ -17,6 +17,7 @@ One `args` object:
 - Each provider in the set, composed before you launch. Run `references/review-cross-model.md`'s composer as written, check the run token there, and take the model, tier and effort off the step-1 line. Then pass:
   - `wrapper_agent_type`: the `agent_type` that `route.mjs agent-type --stem cad-reviewer-low` prints.
   - `providers`: `{"<name>": {"line", "envelope", "timeout_ms", "model"}}`. `line` is that file's seam call whole, with `--trigger <trigger>` on it and every path absolute, `${CLAUDE_PLUGIN_ROOT}` written out, because the variable is unset in a workflow agent. `envelope` is a new path in the scratch directory, where the wrapper tees the provider's own output. `timeout_ms` covers `review.request_timeout_ms`, at most 600000. `model` is the provider's, for the record.
+- `plans` and `cross_agent_type`, on a `plan` fire over more than one plan file only: `plans` is a list of `{"plan", "path", "input"}`, one per plan file, `plan` its number, `path` written exactly as `artifact` writes it, and `input` only with `planning.workflow_plans` `true` as the fire read it for its artifact: that plan's input, from `planning.mjs`'s `brief --phase <N> --plan <k> --role reviewer --out-dir <the printed directory>` run once per plan file before the launch, written as the absolute path the answer names. A refused answer is named in one line and that entry goes without `input`, so its reviewer reads the artifact, then the phase input. With the key not `true` an entry is `plan` and `path` alone. `cross_agent_type` is the `agent_type` that `route.mjs agent-type --stem cad-reviewer-low` prints, the call the wrapper type above uses. The script then runs one reviewer per plan, handed its own plan and the artifacts the plans are checked against, and one cross-plan reviewer that reads across them for a success criterion no plan delivers and a broken `depends_on` or tests-pin chain. A fire over one plan file passes neither and runs one reviewer. Each provider's payload is still composed once, over every plan file. Step 3's envelope then lists each under `voices` by its own name, `claude-subagent-plan-<k>` and `claude-subagent-cross-plan`.
 - `checker_artifact`: a checker holds no Bash, so it opens one file with Read. On a refs fire write the range's diff to a file in the printed directory, the way step 2's shape (c) does, and pass its path. On a staged scope write the staged diff the same way. On a path fire pass the same path as `artifact`.
 
 ## 2. Claim, then launch
@@ -47,12 +48,12 @@ Otherwise end the turn.
 The notice holds run totals and, per voice, whether it ran and counts of what it raised and how its checkers ruled, with no finding text. So the seam reads the run file whole, `workflows/<Run ID>.json` under the session directory `Transcript dir` names, and the findings and rulings from the run's journal beside it, `subagents/workflows/<Run ID>/journal.jsonl`, which it finds from the run file.
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --phase <N> --run-file <run file> --out-dir <the scratch directory printed in step 1> --payload-ref <the payload reference step 2 assembled> [--answers-file <path>] [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --phase <N> --run-file <run file> --out-dir <the scratch directory printed in step 1> --payload-ref <the payload reference step 2 assembled> [--plan-reads "<k>=<path>,<input>;..."] [--answers-file <path>] [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
 ```
 
 Release the claim right after this call returns, whether it succeeded or refused, with the `workflow-claim release` line from step 2, carrying the same `id` literal. The run is over either way, and a queued fire starts on it.
 
-The same call bills the run, before it judges anything, so a killed or refused run still pays for its agents: one bracket per agent in the run file, each with its own tokens, turns and duration. Reviewers bill under `cad-reviewer`, checkers under `review-checker` and a provider wrapper under `review-provider-wrapper`, so `cad-reviewer`'s total still means the reviewers. An agent that did not finish closes as a checkpoint. Write no bracket by hand, and calling it again is safe: a run is billed once. When the run file cannot be read or holds no agent rows, pass the notice's totals (its tokens, tool uses and duration in ms, as plain whole numbers) and it bills them as one `review-workflow` bracket.
+The same call bills the run, before it judges anything, so a killed or refused run still pays for its agents: one bracket per agent in the run file, each with its own tokens, turns and duration. Reviewers bill under `cad-reviewer`, checkers under `review-checker` and a provider wrapper under `review-provider-wrapper`, so `cad-reviewer`'s total still means the reviewers. An agent that did not finish closes as a checkpoint. Each bracket reads the payload reference. With `planning.workflow_plans` `true`, pass `--plan-reads` with one `<k>=<path>,<input>` per `plans` entry that carried `input`, joined by `;`, from that entry's `plan`, `path` and `input`, so that plan's reviewer and its checkers bill what they were handed; the cross-plan reviewer, a single reviewer, a provider and the notice bracket keep the payload reference. Leave the flag off when the key is not `true` or no `plans` entry carried `input`, as on a fire with no `plans` list or one whose every brief was refused. Write no bracket by hand, and calling it again is safe: a run is billed once. When the run file cannot be read or holds no agent rows, pass the notice's totals (its tokens, tool uses and duration in ms, as plain whole numbers) and it bills them as one `review-workflow` bracket.
 
 A provider voice runs through a wrapper agent that only runs its line and retypes the envelope, and a retyping can change a byte. So the seam judges the voice on the envelope file, which wins. A finding whose copy its checker read differs from the file, or that the agent left out, keeps no ruling and lands in `unruled` with the nulls, and a retyped finding the file does not hold is dropped. With no readable envelope the seam uses the agent's own return. `notes` names each of these, `providers` says which source each voice came from, and a provider that reports `ok:false` is in `dropped` with its reason.
 
@@ -77,6 +78,8 @@ Merge duplicates and group shared root causes by editing `survivors.json`: join 
 
 Then run the review file seam on `survivors.json` and triage, as `references/review-record.md` and `references/triage-gate.md` state. Put each answer triage settles on a `blocker` or `high` into the answers file, a fix's `fix_commit` or `fix_file` or an override, and run step 3's call again with `--answers-file` until `ready` is true. Only then write the record and the receipts from `payload.json`, which the merge never touched.
 
+**A blocking `risk_surface` fire** runs steps 1 to 3 as written, then merges and writes the review file from `survivors.json` as above. Then the gate is `references/triage-gate-blocking.md`'s, not a triage: nothing is asked when no `blocker` or `high` survives, and when one does the run halts as it does today, with the fix or the user's override as the only ways on. The halt holds in two places. The seam's `needs_answer` and `ready: false` hold the record back until each such finding has a `fix_commit`, a `fix_file` or `overridden: true` in the answers file, and `risk-check status` refuses to report the plan done until the receipt is written.
+
 ## Where each site resumes
 
 The launch ends the turn at every site, and the notice resumes the site's own step 4. Triage and applying what the user named then continue there:
@@ -85,6 +88,14 @@ The launch ends the turn at every site, and the notice resumes the site's own st
 - `diff` and `phase_diff` (`/cad-execute`): the triage, then the named survivors through the executor continuation, then the next plan's dispatch.
 - `/cad-verify`'s fix diagnosis: the triage, then step 2's proposal for only what the user named.
 - `risk_surface` from `/cad-debug` and `/cad-task` at `adjudicated`: the triage, then their own step that fired it.
+
+A blocking `risk_surface` fire's notice resumes the step that fired it, at the gate. On FAIL the fix follows, then the one narrowed re-arm, a fire of its own that takes this same path, then the site's next step:
+
+- `/cad-execute`'s sequential path: the gate, the continuation fix executor on FAIL, the re-arm, then `risk-check status` and the plan reported done.
+- Step 5 of `references/execute-workflow.md`: the same per settled plan, the fix in the main tree, then each plan's `status`.
+- `/cad-task`: the gate, on FAIL the continuation fix executor on the planned path or the fix with the user on the inline path, the re-arm, then reporting done.
+- `/cad-debug`: the gate on the staged fix, the fix staying with the session and the user, the re-arm, then step 4's re-run of the reproduction.
+- `/cad-verify`'s Apply now: the gate on the staged fix, the fix staying with the session and the user, the re-arm, then the commit.
 
 ## Two notices close together
 

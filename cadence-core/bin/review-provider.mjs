@@ -35,7 +35,7 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { measure } from './lib/surface-weight.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
-import { redactUrl, redactCredentials, redactAndCap, REDACTION_MARK } from './lib/redact-url.mjs';
+import { redactUrl, redactCredentials, redactOutbound, redactAndCap, REDACTION_MARK } from './lib/redact-url.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { isModelId } from './lib/model-id.mjs';
 
@@ -234,7 +234,9 @@ export function estimatePromptTokens(...parts) {
 }
 
 // the outbound secret fence (#167): the payload is raw repo contents bound for a third party, so all of it crosses here
-// composed, not reimplemented: a security regex copied across sites drifts, so widen the fence in redact-url, not here
+// redactOutbound, the narrow rule: four credential shapes go and ordinary code crosses as written, since the wide rules
+// rewrote `const token = getToken();` and a reviewer can't review code it was never shown
+// it lives in redact-url, not here: a security regex copied across sites drifts
 // by shape, not a prefix list, so a bare key with no name beside it isn't caught: it lowers exposure, no more
 // the count comes back with the text so the envelope and the run record can say the payload shrank
 // the count is a lower bound: a span can collapse onto an existing mark, so change is judged by comparing strings
@@ -242,7 +244,7 @@ export function estimatePromptTokens(...parts) {
  * @param {string} s @returns {{text: string, redactions: number}}
  */
 function fence(s) {
-  const text = redactCredentials(redactUrl(s));
+  const text = redactOutbound(s);
   if (text === s) return { text, redactions: 0 };
   const net = occurrences(text, REDACTION_MARK) - occurrences(s, REDACTION_MARK);
   return { text, redactions: net > 0 ? net : 1 };
@@ -583,12 +585,12 @@ function usageOf(usage, input, output) {
   let raw;
   try {
     const rendered = JSON.stringify(usage);
-    // two gates, raw rides only past both; size comes first so the fence never runs on more than MAX_USAGE_RAW_CHARS
-    // the second is the outbound fence read for its verdict: a hostile 200 carrying an api_key would otherwise land
-    // a credential in trace.jsonl, and the outbound fence only runs on what leaves
-    // dropped whole, not kept fenced: the fence leaves non-JSON text, and a credential-shaped span means it isn't usage
+    // two gates, raw rides only past both; size comes first so the wide rules never run on more than MAX_USAGE_RAW_CHARS
+    // the second is the full credential rules, not the narrow fence: a hostile 200 carrying `"secret": "v"`, a pair
+    // the fence lets through, would otherwise land a credential in trace.jsonl
+    // dropped whole, not kept redacted: a credential-shaped span means it isn't usage
     if (typeof rendered === 'string' && rendered.length <= MAX_USAGE_RAW_CHARS
-      && fence(rendered).redactions === 0) raw = usage;
+      && redactCredentials(redactUrl(rendered)) === rendered) raw = usage;
   } catch { /* unserializable (a cycle, a BigInt): the normalized pair still rides */ }
   return {
     normalized: {

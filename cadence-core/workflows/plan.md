@@ -144,6 +144,19 @@ The resolve writes the lifecycle dispatch event itself; only the CLOSE in
 handle_return stays here. Then wait - do not read, edit, or plan anything else
 while the subagent runs.
 
+With `planning.workflow_plans` read in `parse` as `true`, the planner reads one composed phase input in place of the four phase documents. With the key not `true`, this stretch runs nothing.
+
+- **Compose.** Once per run, before the resolve above goes out, make this stretch's own scratch directory and print it: `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`. Never recall's directory: recall rides the resolve's own message, so its directory does not exist yet. Keep the printed path as a literal, because each Bash call starts with `$D` empty, then run:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase {N} --role phase --out-dir <the scratch directory>
+  ```
+
+  Keep the path the answer names as a literal too: `check_gate`, the `review` step and the revision re-dispatch name that same file and compose nothing more. The transcript gets the envelope, never the input, and this session opens neither it nor the documents.
+- **Bracket.** The resolve block stays as written, and its `--bracket-read` value is `<the phase input path>`. In gaps mode it is that path plus `.planning/phases/{N}/UAT.md` and the existing PLAN* and SUMMARY* files, as the gaps sentence above appends.
+- **Prompt.** The `Read before planning:` list names that file by its absolute path in place of its four document lines, and keeps the gaps line and the source-files line. Gaps and revision modes reuse this prompt and so name the same file.
+- **A refused or unreadable answer.** Print one line with what it names, and dispatch the way this step does with the key not `true`, because the full documents lose the planner nothing.
+
 Before assembling the prompt, recall prior-project memory when the effective
 `memory.backend` read in `parse` is `builtin` (skip this entirely when `none` -
 do not issue the call). The gate precedes the call on purpose (D-03). When
@@ -492,6 +505,13 @@ the wrong phase's plans (references/seam-spawn-agent.md's Routing block). No
 `--plan` - the checker reviews every plan of the phase, so it floors on their
 union.
 
+With `planning.workflow_plans` read in `parse` as `true`, the checker reads the plan files and the phase input in place of the phase documents. With the key not `true`, this stretch runs nothing.
+
+- **Input.** Name the phase input `spawn_planner`'s stretch composed. When no earlier step of this run composed it, as on an `--inline` run, run that stretch's compose step first as it is written there, its directory and its call, and never spell the call here.
+- **Bracket.** The resolve block stays as written, and its `--bracket-read` value is `.planning/phases/{N}/PLAN*.md,<the phase input path>`.
+- **Prompt.** The `Read:` list keeps its plans line and names that file by its absolute path in place of its ROADMAP/REQUIREMENTS line and its CONTEXT line. The input carries every CONTEXT decision, so a locked decision no task implements still shows.
+- **A refused or unreadable answer.** The planner's arm: print one line with what it names, and dispatch the checker the way this step does with the key not `true`.
+
 Prompt:
 
 ```markdown
@@ -551,11 +571,19 @@ against: `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and
 `.planning/phases/{N}/CONTEXT.md`. All four are REFERENCE PATHS the reviewer
 resolves itself - never inlined text, which would keep every byte of them
 resident here for the rest of the run - and all four ride the fire's `--read`
-bracket list (review-triggers.md step 4).
+bracket list (review-triggers.md step 4). On the workflow path a fire over more
+than one PLAN file runs one reviewer per plan and one cross-plan reviewer, and
+today's path runs one reviewer over all of them.
 
 `.planning/phases/{N}/CONTEXT.md` may be absent for a phase - name it optional
 in the payload, as `check_gate` does. Its absence is not a resolve failure and
 must not come back as the `blocker` an unresolvable reference earns.
+
+With `planning.workflow_plans` read in `parse` as `true`, the payload is the PLAN file(s) plus the phase input in place of the three artifacts. With the key not `true`, this stretch runs nothing.
+
+- **Input.** Name the phase input `spawn_planner`'s stretch composed. When no earlier step of this run composed it, run that stretch's compose step first as it is written there, its directory and its call, and never spell the call here.
+- **Bracket.** That path rides the fire's `--read` bracket list in place of the three, beside the PLAN file(s).
+- **A refused or unreadable answer.** Print one line with what it names, and fire with the three artifacts as the paragraphs above name them.
 
 The gate comes from the routing bundle; act on it.
 The schema default is `advisory`, raised to `blocking` by the plan-time risk

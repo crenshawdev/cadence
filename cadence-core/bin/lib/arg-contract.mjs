@@ -322,12 +322,15 @@ export const CONTRACTS = {
       '--plan-time': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
     // --out-dir is an existing directory: with it the brief is written there, without it the brief is composed and checked only;
-    // --main-root is the main tree's root, an existing directory, which makes the head's plan, PROJECT.md and CONTEXT.md paths absolute
+    // --main-root is the main tree's root, an existing directory, which makes the head's plan, PROJECT.md and CONTEXT.md paths absolute;
+    // --role names whose narrowed input to compose instead of the executor brief (phase: the planner, plan checker and a
+    // whole-phase plan reviewer). Only the executor brief is one plan's, so --plan is not required here and the handler refuses its absence
     brief: {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
-      '--plan': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--plan': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--out-dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--main-root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -453,6 +456,9 @@ export const CONTRACTS = {
       // --plans is an execute wave's plan numbers, comma-separated (1,2,3). With it the run is a wave however its file reads, and
       // every listed plan the file has no row for is closed as a checkpoint under its own key. Without it a wave is told by its file.
       '--plans': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // --plan-reads is each per-plan reviewer's read set, `<k>=<path>,<input>` joined by `;`: that plan's reviewer and its
+      // checkers bill those paths and every other bracket the payload reference. A malformed value refuses before any write.
+      '--plan-reads': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // take/release share one row's shape: --fire is `<trigger>-<discriminator>`, and release frees only a match
     'workflow-claim take': {
