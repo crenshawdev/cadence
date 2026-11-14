@@ -16,6 +16,21 @@ plan its own reviewer. With `planning.workflow_plans` on, more agents read a
 composed input in place of the whole phase documents. Cadence also sends a push
 notification before it stops to ask you something.
 
+### Upgrading
+
+- **Update any tool of your own that reads Cadence's records.** A project hook
+  or script that finds Cadence's files by path has to follow them. Updating
+  from 4.1 or earlier, the first command converts the project and moves its
+  records: `trace.jsonl`, `reads.jsonl`, `ARCHIVE.md`, `FILED.md`,
+  `DECLINED.md` and the `deferred/`, `risk-carry/` and `codemap/` folders go
+  under `.planning/records/`, and each phase's `REVIEW-*`, `ADJUDICATION-*` and
+  `DEFERRED-*` files, `FINDINGS.json`, `verifier-findings.json` and `reports/`
+  go under that phase's `records/` folder, in `phases/` and in every
+  `_archive-*` folder. The conversion doesn't list what it moved, and a tool
+  still looking in the old place gets no warning; it just stops finding the
+  files. A review record written by 4.3.0 is also named by its commit range
+  rather than `plan-<k>`.
+
 ### Added
 
 - **A push before every question.** A Cadence command that is about to stop and
