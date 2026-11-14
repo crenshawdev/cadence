@@ -4,7 +4,7 @@
 // the plan's sections go in word for word, because a paraphrase is a second statement of what "done" means
 'use strict';
 
-import { frontmatterBounds, normalize, phaseDetailSpans, phaseRequirements, readFrontmatterList, sectionSpan } from './planning-files.mjs';
+import { frontmatterBounds, normalize, parseUat, phaseDetailSpans, phaseRequirements, readFrontmatterList, sectionSpan } from './planning-files.mjs';
 import { LIMIT } from './codemap-slice.mjs';
 import { fenceScanner } from './text-util.mjs';
 
@@ -404,5 +404,50 @@ export function composeReviewerInput({ phase, planFile, planText, roadmapText, r
   out.push('');
   if (cited.lines.length) out.push('## Decisions the tasks name', '', ...cited.lines, '');
   out.push(...entry);
+  return finish(out);
+}
+
+/**
+ * The verifier's input (D-02): the phase entry with its success criteria, the UAT items, each plan's heading and truths,
+ * and the SUMMARY's sections as its claims. Never a plan's Goal, Context, Tasks or Notes, nor its frontmatter: the
+ * verifier checks outcomes against the codebase, and the tasks are the route the executor took, not the bar.
+ * A missing UAT.md or SUMMARY leaves its part out without a word.
+ * @param {object} p
+ * @param {string} p.phase the caller's own spelling, which is also the phase directory's name
+ * @param {{file: string, text: string}[]} p.plans the phase's plan files in plan order
+ * @param {string|null} p.roadmapText @param {string|null} p.requirementsText
+ * @param {string|null} p.uatText @param {string|null} p.summaryText
+ * @param {string|null} [p.mainRoot] the main tree's root, which makes the head's paths absolute
+ * @returns {{ok: true, text: string, bytes: number} | {ok: false, detail: string, hint: string}}
+ */
+export function composeVerifierInput({ phase, plans, roadmapText, requirementsText, uatText, summaryText, mainRoot = null }) {
+  const entry = phaseEntryLines(roadmapText, requirementsText, phase);
+  if (entry === null) return noEntry(phase);
+  const at = (/** @type {string} */ rel) => (mainRoot === null ? rel : `${mainRoot.replace(/\/+$/, '')}/${rel}`);
+  const inPhase = (/** @type {string} */ f) => `\`${at(`.planning/phases/${phase}/${f}`)}\``;
+  const docs = [...plans.map((p) => inPhase(p.file)), inPhase('SUMMARY.md'), `\`${at('.planning/ROADMAP.md')}\``,
+    `\`${at('.planning/REQUIREMENTS.md')}\``, inPhase('UAT.md')];
+  const out = [`# Phase ${phase}: the verifier input`, ''];
+  out.push(`This input stands in for ${docs.slice(0, -1).join(', ')} and ${docs[docs.length - 1]}. Any of these the project has are still there to open when the input doesn't settle something.`, '');
+  out.push(...entry);
+  if (uatText !== null) {
+    const items = parseUat(uatText).items;
+    // rendered the way UAT.md's writer lays an item out, so each reads as the file does
+    if (items.length) out.push('## UAT items', '');
+    for (const { k, name, ...fields } of items) {
+      out.push(`### ${k}. ${name}`, ...Object.entries(fields).map(([key, v]) => `${key}: ${v}`), '');
+    }
+  }
+  for (const { file, text } of plans) {
+    const lines = splitFrontmatter(normalize(text)).rest.split('\n');
+    out.push(lines.find((l) => l.startsWith('# ')) ?? `# ${file}`, '');
+    const truths = sectionText(lines, '## Must be true when done');
+    if (truths !== null) out.push(truths, '');
+  }
+  if (summaryText !== null) {
+    // its own heading first, or its sections read as the last plan's
+    out.push(normalize(summaryText).split('\n').find((l) => l.startsWith('# ')) ?? '# SUMMARY.md', '');
+    for (const sec of everySection(summaryText)) out.push(sec, '');
+  }
   return finish(out);
 }

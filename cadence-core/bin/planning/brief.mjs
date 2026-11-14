@@ -6,7 +6,7 @@
 import { join } from 'node:path';
 import { dirFlag, fail, intFlag, listPlanFiles, ok, phaseGuard, read, readStoredMap } from './core.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
-import { composeBrief, composePhaseInput, composeReviewerInput } from '../lib/plan-brief.mjs';
+import { composeBrief, composePhaseInput, composeReviewerInput, composeVerifierInput } from '../lib/plan-brief.mjs';
 import { planFileFor, planNumber } from '../lib/phase-plans.mjs';
 import { atomicWrite } from '../lib/planning-store.mjs';
 
@@ -33,7 +33,7 @@ function loadMap(dir) {
 }
 
 // the roles with an input of their own; each file is named so none is `plan-<k>-brief.md` or another's
-const ROLES = ['phase', 'reviewer'];
+const ROLES = ['phase', 'reviewer', 'verifier'];
 
 /** Writes `text` under `outDir` when one was given; the path, or null when nothing was written. */
 function writeOut(/** @type {string|null} */ outDir, /** @type {string} */ name, /** @type {string} */ text) {
@@ -87,6 +87,21 @@ function cmdBrief(dir, opts) {
     });
     if (input.ok === false) return fail('no-roadmap', input.detail, input.hint);
     const path = writeOut(outDir, 'phase-input.md', input.text);
+    return ok({ phase: parsedPhase.value, role, bytes: input.bytes, ...(path !== null ? { path } : {}) });
+  }
+
+  if (role === 'verifier') {
+    const input = composeVerifierInput({
+      phase: parsedPhase.raw,
+      mainRoot: dirs['main-root'],
+      plans: listPlanFiles(pdir).plans.map((file) => ({ file, text: read(join(pdir, file)) ?? '' })),
+      roadmapText: read(join(dir, 'ROADMAP.md')),
+      requirementsText: read(join(dir, 'REQUIREMENTS.md')),
+      uatText: read(join(pdir, 'UAT.md')),
+      summaryText: read(join(pdir, 'SUMMARY.md')),
+    });
+    if (input.ok === false) return fail('no-roadmap', input.detail, input.hint);
+    const path = writeOut(outDir, 'verifier-input.md', input.text);
     return ok({ phase: parsedPhase.value, role, bytes: input.bytes, ...(path !== null ? { path } : {}) });
   }
 
