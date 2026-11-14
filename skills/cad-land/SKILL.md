@@ -199,16 +199,23 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      already ADJUDICATED. Read every `ADJUDICATION-risk_surface*.json` under
      BOTH record roots - `.planning/phases/*/records/` and `.planning/records/risk-carry/*/`,
      the copies `/cad-milestone` leaves when it prunes the phase dirs before
-     chaining this command - and union every round's `entries[]`. Every round,
-     never the highest alone: a re-arm is a second fire on the same
-     discriminator and round 2 is not the record of round 1. Do NOT read the
+     chaining this command - and union every record's `entries[]`. Every
+     record, never the highest round alone: a re-arm is a second fire, on its
+     own range or at `-r2` of the same `plan-<k>` or `<command>-<sha>`
+     discriminator, and its record is not the record of round 1. Do NOT read the
      `findings` arrays out of the `REVIEW-risk_surface*.md` files - those are
      the reviewer's raw claims, before anything was fixed, refuted, downgraded
      or overridden, and halting on them halts on work already done.
      Then name on `unruled` every `REVIEW-risk_surface*.md` nothing ruled - from
      those two roots plus a legacy `.planning/REVIEW-risk_surface-*.md` an
      interrupted pre-`risk-carry` close may have left at the `.planning/` root.
-     A review and its record never share a basename, so do not look for one:
+     A review and its record never share a basename, so do not look for one.
+     A range-named review (`<short base sha>-<short head sha>`, the grammar
+     `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` step 5
+     states) is ruled only by the record with the same trigger and the same
+     range in the same directory, with no round and no asymmetry, because each
+     round is its own range. Every other review - `plan-<k>`, `plan-<k>-rN`,
+     `<command>-<short HEAD sha>` - keeps this rule whole:
      `REVIEW-<trigger>-<discriminator>[-rN].md` is ruled by
      `ADJUDICATION-<trigger>-<discriminator>[-rN].json` in the same directory -
      same trigger, same discriminator, same round, with `REVIEW-` swapped for
@@ -217,10 +224,11 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      it: a LATER round's record does rule an earlier review, because a re-arm's
      adjudication settles the round it re-armed - v3.7.7's phase 2 shipped
      `REVIEW-risk_surface-plan-1.md` with only
-     `ADJUDICATION-risk_surface-plan-1-r2.json` beside it. So a review is
+     `ADJUDICATION-risk_surface-plan-1-r2.json` beside it. So such a review is
      `unruled` only when its `<trigger>-<discriminator>` has no record at its own
-     round and none at any later one. A fire nothing ruled says nothing about
-     what survived, so it halts by name rather than being read past.
+     round and none at any later one, and a range-named one only when its own
+     range has none. A fire nothing ruled says nothing about what survived, so
+     it halts by name rather than being read past.
      That legacy root file is the one `unruled` entry no adjudication can ever
      answer, so state its remedy in the halt instead of only its path: it is the
      pre-`risk-carry` AGGREGATE carry - one union of RAW findings under no
