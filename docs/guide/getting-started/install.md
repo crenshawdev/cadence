@@ -15,8 +15,8 @@ Sign in through your chosen CLI before setting up a project. Cadence uses that i
 Run these commands in Claude Code:
 
 ```text
-/plugin marketplace add https://github.com/crenshawdev/cadence.git
-/plugin install cadence@cadence
+/plugin marketplace add https://github.com/crenshawdev/foundation.git
+/plugin install cadence@foundation
 ```
 
 Cadence's scripts have no runtime package dependencies. Installing Cadence doesn't require an `npm install`. The project you build with it will still need its own tools and dependencies.
@@ -40,11 +40,19 @@ The [permissions and data reference](../reference/permissions.md) describes prov
 ## Update or remove
 
 ```text
-/plugin update cadence@cadence
+/plugin update cadence@foundation
 ```
 
 ```text
+/plugin uninstall cadence@foundation
+```
+
+If you installed Cadence from its own repository before it moved to the Foundation marketplace, switch over once:
+
+```text
 /plugin uninstall cadence@cadence
+/plugin marketplace add https://github.com/crenshawdev/foundation.git
+/plugin install cadence@foundation
 ```
 
 Once installed, [start or adopt a project](start.md).
