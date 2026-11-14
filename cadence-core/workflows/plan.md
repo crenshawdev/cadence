@@ -505,6 +505,13 @@ the wrong phase's plans (references/seam-spawn-agent.md's Routing block). No
 `--plan` - the checker reviews every plan of the phase, so it floors on their
 union.
 
+With `planning.workflow_plans` read in `parse` as `true`, the checker reads the plan files and the phase input in place of the phase documents. With the key not `true`, this stretch runs nothing.
+
+- **Input.** Name the phase input `spawn_planner`'s stretch composed. When no earlier step of this run composed it, as on an `--inline` run, run that stretch's compose step first as it is written there, its directory and its call, and never spell the call here.
+- **Bracket.** The resolve block stays as written, and its `--bracket-read` value is `.planning/phases/{N}/PLAN*.md,<the phase input path>`.
+- **Prompt.** The `Read:` list keeps its plans line and names that file by its absolute path in place of its ROADMAP/REQUIREMENTS line and its CONTEXT line. The input carries every CONTEXT decision, so a locked decision no task implements still shows.
+- **A refused or unreadable answer.** The planner's arm: print one line with what it names, and dispatch the checker the way this step does with the key not `true`.
+
 Prompt:
 
 ```markdown
