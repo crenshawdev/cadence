@@ -1,12 +1,12 @@
 // @ts-check
-// planning/brief.mjs - `brief`: one plan's brief, composed with no model and written to a file, never to the transcript
+// planning/brief.mjs - `brief`: one plan's brief, or one role's narrowed input, composed with no model and written to a file, never to the transcript
 // reads no config: the caller gates it on planning.workflow_plans, so a bare run composes and checks without writing
 'use strict';
 
 import { join } from 'node:path';
 import { dirFlag, fail, intFlag, listPlanFiles, ok, phaseGuard, read, readStoredMap } from './core.mjs';
 import { slice } from '../lib/codemap-slice.mjs';
-import { composeBrief } from '../lib/plan-brief.mjs';
+import { composeBrief, composePhaseInput } from '../lib/plan-brief.mjs';
 import { planFileFor, planNumber } from '../lib/phase-plans.mjs';
 import { atomicWrite } from '../lib/planning-store.mjs';
 
@@ -32,18 +32,36 @@ function loadMap(dir) {
   }
 }
 
+// each role's input file; none can be `plan-<k>-brief.md`, so one scratch directory holds them all
+const ROLES = { phase: 'phase-input.md' };
+
+/** Writes `text` under `outDir` when one was given; the path, or null when nothing was written. */
+function writeOut(/** @type {string|null} */ outDir, /** @type {string} */ name, /** @type {string} */ text) {
+  if (outDir === null) return null;
+  const path = join(outDir, name);
+  atomicWrite(path, text);
+  return path;
+}
+
 /**
  * @param {string} dir the planning directory
- * @param {any} opts `--out-dir` names an existing directory where the brief file is written; `--main-root` names the main tree's root, so the head's paths are absolute there
+ * @param {any} opts `--out-dir` names an existing directory where the brief file is written; `--main-root` names the main tree's root, so the head's paths are absolute there;
+ * `--role` names a role whose narrowed input is composed instead of the executor brief, and none is the executor brief
  */
 function cmdBrief(dir, opts) {
   const parsedPhase = phaseGuard('brief', dir, opts.phase, 'brief needs --phase <N>',
     'pass --phase <N> for the phase the plan belongs to, then re-run',
     're-run with one of the two spellings the detail names - nothing was read');
   if (!parsedPhase) return;
-  const parsedPlan = intFlag(opts.plan, null, 'brief needs --plan <k>',
+  const role = opts.role === undefined ? null : String(opts.role);
+  if (role !== null && !Object.hasOwn(ROLES, role)) {
+    return fail('bad-args', `brief --role takes ${Object.keys(ROLES).join(', ')}, not ${role}`,
+      'pass one of the roles the detail names, or no --role for the executor brief - nothing was written');
+  }
+  // only the executor brief is one plan's; the door no longer holds --plan required, so its refusal lives here
+  const parsedPlan = role !== null ? null : intFlag(opts.plan, null, 'brief needs --plan <k>',
     'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
-  if (!parsedPlan.ok) return;
+  if (parsedPlan !== null && !parsedPlan.ok) return;
   /** @type {Record<string, string|null>} */
   const dirs = { 'out-dir': null, 'main-root': null };
   for (const flag of Object.keys(dirs)) {
@@ -55,12 +73,28 @@ function cmdBrief(dir, opts) {
     dirs[flag] = dirArg.abs;
   }
   const outDir = dirs['out-dir'];
-
   const pdir = join(dir, 'phases', parsedPhase.raw);
-  const planFile = planFileFor(listPlanFiles(pdir).plans, String(parsedPlan.value));
+
+  if (role !== null) {
+    const input = composePhaseInput({
+      phase: parsedPhase.raw,
+      mainRoot: dirs['main-root'],
+      roadmapText: read(join(dir, 'ROADMAP.md')),
+      requirementsText: read(join(dir, 'REQUIREMENTS.md')),
+      projectText: read(join(dir, 'PROJECT.md')),
+      contextText: read(join(pdir, 'CONTEXT.md')),
+    });
+    if (input.ok === false) return fail('no-roadmap', input.detail, input.hint);
+    const path = writeOut(outDir, ROLES[role], input.text);
+    return ok({ phase: parsedPhase.value, role, bytes: input.bytes, ...(path !== null ? { path } : {}) });
+  }
+
+  // the refusal above returned for every other shape, so with no role the plan parsed
+  const k = /** @type {{ok: true, value: number}} */ (parsedPlan).value;
+  const planFile = planFileFor(listPlanFiles(pdir).plans, String(k));
   const planText = planFile === undefined ? null : read(join(pdir, planFile));
   if (planFile === undefined || planText === null) {
-    return fail('no-plan', `no PLAN-${parsedPlan.value}.md or PLAN.md under ${pdir}`, `/cad-plan ${parsedPhase.raw}`);
+    return fail('no-plan', `no PLAN-${k}.md or PLAN.md under ${pdir}`, `/cad-plan ${parsedPhase.raw}`);
   }
   const brief = composeBrief({
     planFile,
@@ -73,12 +107,7 @@ function cmdBrief(dir, opts) {
   });
   if (brief.ok === false) return fail('bad-plan', brief.detail, brief.hint);
 
-  /** @type {string|null} */
-  let path = null;
-  if (outDir !== null) {
-    path = join(outDir, `plan-${planNumber(planFile)}-brief.md`);
-    atomicWrite(path, brief.text);
-  }
+  const path = writeOut(outDir, `plan-${planNumber(planFile)}-brief.md`, brief.text);
   return ok({
     phase: parsedPhase.value, plan: planFile, bytes: brief.bytes, ...(path !== null ? { path } : {}),
     ...(brief.readsMissing.length ? { reads_missing: brief.readsMissing } : {}),

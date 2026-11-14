@@ -4,8 +4,9 @@
 // the plan's sections go in word for word, because a paraphrase is a second statement of what "done" means
 'use strict';
 
-import { frontmatterBounds, normalize, readFrontmatterList, sectionSpan } from './planning-files.mjs';
+import { frontmatterBounds, normalize, phaseDetailSpans, phaseRequirements, readFrontmatterList, sectionSpan } from './planning-files.mjs';
 import { LIMIT } from './codemap-slice.mjs';
+import { fenceScanner } from './text-util.mjs';
 
 // the plan sections an executor builds from, in the order the plan template writes them; `## Notes` stays out
 const SECTIONS = ['## Goal', '## Must be true when done', '## Context', '## Tasks'];
@@ -194,10 +195,8 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
     const once = [...new Set(named.map((n) => /** @type {string} */ (decisions.get(n.entry))))];
     out.push('## Decisions the tasks name', '', ...once, '');
   }
-  if (projectText !== null) {
-    const c = sectionText(normalize(projectText).split('\n'), '## Constraints');
-    if (c !== null) out.push(c, '');
-  }
+  const c = constraintsOf(projectText);
+  if (c !== null) out.push(c, '');
   // rows come before the Reads report, so the report's count line is the last line when it is cut
   const textOf = (/** @type {string[]} */ rows, /** @type {string[]} */ report) => [...out, ...rows, ...report].join('\n').replace(/\n+$/, '\n');
   const bytesOf = (/** @type {string} */ t) => Buffer.byteLength(t);
@@ -244,4 +243,122 @@ export function composeBrief({ planFile, planRel, planText, projectText, context
   bytes = bytesOf(text);
   if (bytes > CEILING) { text = textOf([], report); bytes = bytesOf(text); }
   return { ok: true, text, bytes, readsMissing, readsUnchecked };
+}
+
+/** PROJECT.md's `## Constraints` as written, or null when there is no file or no such section. */
+function constraintsOf(/** @type {string|null} */ projectText) {
+  return projectText === null ? null : sectionText(normalize(projectText).split('\n'), '## Constraints');
+}
+
+/** Lines `start` to `end` joined, trailing blank lines dropped. */
+function trimmedSlice(/** @type {string[]} */ lines, /** @type {number} */ start, /** @type {number} */ end) {
+  let stop = end;
+  while (stop > start + 1 && lines[stop - 1].trim() === '') stop -= 1;
+  return lines.slice(start, stop).join('\n');
+}
+
+/** Every `## ` section in file order, each as written; a fenced `## ` line opens none, and duplicate headings both count. */
+function everySection(/** @type {string} */ text) {
+  const lines = normalize(text).split('\n');
+  const fenced = fenceScanner();
+  /** @type {number[]} */
+  const starts = [];
+  lines.forEach((l, i) => { if (!fenced(l) && /^## /.test(l)) starts.push(i); });
+  return starts.map((s, k) => trimmedSlice(lines, s, k + 1 < starts.length ? starts[k + 1] : lines.length));
+}
+
+// the `## Active` bullet grammar planning-files.mjs reads ids with, restated because that module keeps it private
+const ACTIVE_BULLET = /^-\s+(?:\[[ xX]\]\s+)?\*\*([^*]+)\*\*/;
+
+/**
+ * Each wanted id's `## Active` bullet, with any indented lines under it, and its `## Traceability` row under the table's
+ * own header lines, all word for word. A Traceability cell may carry the requirement's text after the id, so it matches
+ * on the id followed by a space. Empty when the file is missing or holds none of them.
+ * @param {string|null} requirementsText @param {string[]} ids
+ * @returns {string[]}
+ */
+function requirementLines(requirementsText, ids) {
+  if (requirementsText === null || ids.length === 0) return [];
+  const want = new Set(ids);
+  const lines = normalize(requirementsText).split('\n');
+  /** @type {string[]} */
+  const bullets = [];
+  const active = sectionSpan(lines, '## Active');
+  const fenced = fenceScanner();
+  for (let i = 0; i < active.end; i += 1) {
+    if (fenced(lines[i]) || i <= active.start) continue;
+    const id = ACTIVE_BULLET.exec(lines[i])?.[1].trim();
+    if (id === undefined || !want.has(id)) continue;
+    let stop = i + 1;
+    while (stop < active.end && /^\s+\S/.test(lines[stop])) stop += 1;
+    bullets.push(...lines.slice(i, stop));
+  }
+  /** @type {string[]} */
+  const head = [];
+  /** @type {string[]} */
+  const rows = [];
+  const trace = sectionSpan(lines, '## Traceability');
+  for (let i = trace.start + 1; trace.start >= 0 && i < trace.end; i += 1) {
+    if (!/^\|/.test(lines[i])) continue;
+    // the header and separator are the rows parseRequirements skips
+    const cell = lines[i].split('|')[1].replace(/\*/g, '').trim();
+    if (!cell || cell === 'Requirement' || /^[-:\s]+$/.test(cell)) head.push(lines[i]);
+    else if (want.has(cell) || [...want].some((id) => cell.startsWith(`${id} `))) rows.push(lines[i]);
+  }
+  /** @type {string[]} */
+  const out = [];
+  if (bullets.length) out.push(...bullets, '');
+  if (rows.length) out.push(...head, ...rows, '');
+  return out.length ? ["## This phase's requirements", '', ...out] : [];
+}
+
+/**
+ * The phase's ROADMAP detail block and its requirement lines, the cut every narrowed role shares so no two disagree.
+ * Null when the roadmap holds no `### Phase <N>:` block: there is no entry to stand in for.
+ * @param {string|null} roadmapText @param {string|null} requirementsText @param {string} phase the caller's spelling
+ * @returns {string[]|null}
+ */
+function phaseEntryLines(roadmapText, requirementsText, phase) {
+  if (roadmapText === null) return null;
+  const lines = normalize(roadmapText).split('\n');
+  const [span] = phaseDetailSpans(lines, phase);
+  if (span === undefined) return null;
+  return [trimmedSlice(lines, span.start, span.end), '', ...requirementLines(requirementsText, phaseRequirements(roadmapText, phase).ids)];
+}
+
+/** The refusal for a phase the roadmap has no detail block for, so the site falls back to the full documents. */
+function noEntry(/** @type {string} */ phase) {
+  return { ok: /** @type {const} */ (false), detail: `.planning/ROADMAP.md has no ### Phase ${phase}: detail block, so there is no phase entry to stand in for it`,
+    hint: `hand the agent the full documents, or write Phase ${phase}'s detail block in ROADMAP.md and re-run` };
+}
+
+/** The finished text, one trailing newline, and its byte count. */
+function finish(/** @type {string[]} */ out) {
+  const text = out.join('\n').replace(/\n+$/, '\n');
+  return { ok: /** @type {const} */ (true), text, bytes: Buffer.byteLength(text) };
+}
+
+/**
+ * The phase-wide input, read by the planner, the plan checker and a plan reviewer over the whole phase (D-05): the
+ * ROADMAP entry, its requirement lines, PROJECT.md's Constraints and every CONTEXT.md section, since these roles check
+ * every locked decision and the acceptance criteria, not the ones a task happens to cite.
+ * @param {object} p
+ * @param {string} p.phase the caller's own spelling, which is also the phase directory's name
+ * @param {string|null} p.roadmapText @param {string|null} p.requirementsText
+ * @param {string|null} p.projectText @param {string|null} p.contextText
+ * @param {string|null} [p.mainRoot] the main tree's root, which makes the head's paths absolute
+ * @returns {{ok: true, text: string, bytes: number} | {ok: false, detail: string, hint: string}}
+ */
+export function composePhaseInput({ phase, roadmapText, requirementsText, projectText, contextText, mainRoot = null }) {
+  const entry = phaseEntryLines(roadmapText, requirementsText, phase);
+  if (entry === null) return noEntry(phase);
+  const at = (/** @type {string} */ rel) => (mainRoot === null ? rel : `${mainRoot.replace(/\/+$/, '')}/${rel}`);
+  const docs = ['.planning/ROADMAP.md', '.planning/REQUIREMENTS.md', '.planning/PROJECT.md'].map((d) => `\`${at(d)}\``);
+  const out = [`# Phase ${phase}: the phase input`, ''];
+  out.push(`This input stands in for ${docs.join(', ')} and \`${at(`.planning/phases/${phase}/CONTEXT.md`)}\`. Any of these the project has are still there to open when the input doesn't settle something.`, '');
+  out.push(...entry);
+  const c = constraintsOf(projectText);
+  if (c !== null) out.push(c, '');
+  if (contextText !== null) for (const s of everySection(contextText)) out.push(s, '');
+  return finish(out);
 }
