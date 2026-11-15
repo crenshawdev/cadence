@@ -2,7 +2,7 @@
 phase: {N}
 plan: 1              # only meaningful when the phase splits (PLAN-1.md, PLAN-2.md)
 requirements:        # phase requirement IDs this plan covers - never empty; quote a #-shaped id ("#41"); see references/plan-frontmatter.md
-files:               # files this plan touches; split plans must not overlap; quote a #-shaped id ("#41"); see references/plan-frontmatter.md
+files:               # files this plan touches; plans that share a file run in order; quote a #-shaped id ("#41"); see references/plan-frontmatter.md
 ---
 
 # Phase {N}: {phase name} - Plan {K}: {plan name}
@@ -30,7 +30,7 @@ existing files and patterns to follow, anything explicitly out of scope.}
 ## Tasks
 
 {Numbered, atomic: one concern each, independently verifiable, repo
-committable after each. Typical phase: 3-10 tasks.}
+committable after each.}
 
 ### Task 1: {action-oriented name}
 

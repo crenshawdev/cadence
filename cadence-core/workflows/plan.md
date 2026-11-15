@@ -121,9 +121,8 @@ that consumes a prior call's output is serialized.
 </step>
 
 <step name="spawn_planner">
-Dispatch cad-planner via the spawn-agent seam
-(references/seam-spawn-agent.md). Resolve its model + agent file and write the
-dispatch bracket in ONE call:
+Dispatch cad-planner. Resolve its model + agent file and write the dispatch
+bracket in ONE call:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-planner \
@@ -131,8 +130,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-plann
   --bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"
 ```
 
-seam-spawn-agent.md is the source for what the resolve RETURNS (the retry
-rungs, the per-role pin, the `{ok:false}` arm). Relay every `warnings[]` entry
+Dispatch the `agent_type` the resolve returns with its `model`; a `model` of
+null sends no model parameter. This step needs nothing else from
+`references/seam-spawn-agent.md`: open that file only when the resolve answers
+`ok:false` or a warning says a retired routing key was ignored. Relay every `warnings[]` entry
 the resolve returns to the user before dispatching, each distinct warning once
 per workflow run - a warning that reaches JSON and no human is a
 resolved-then-dropped value wearing a diagnostic's clothes. `--attempt 1`
@@ -200,9 +201,9 @@ Prompt:
 Phase: {N} - {name}
 Mode: {standard | gaps | revision}
 Goal: {goal line from ROADMAP.md}
-Requirements: {phase requirement IDs - every ID must appear in a plan}
+Requirements: {phase requirement IDs}
 Plan shape (from CONTEXT, directive): {one plan | multiple plans | split - deferred slice | not specified}
-Task ceiling: {workflow.max_plan_tasks} tasks PER PLAN, not per phase. A phase needing more capacity than that gets MORE PLANS, sequential if they share files - splitting is the expected move, not an escape hatch. Return `## PHASE TOO BIG` only when the phase cannot be delivered by any number of plans of that size, which is a statement about the PHASE's scope and not about task count. Reporting the overrun is not reducing scope - it is the one path that does not. This ceiling replaces any task-count target you carry: where your contract says "target 3-10 tasks", this number wins.
+Task ceiling: {workflow.max_plan_tasks} tasks per plan.
 
 Read before planning:
 - .planning/ROADMAP.md (this phase's entry and its dependencies)
@@ -212,16 +213,7 @@ Read before planning:
 - {gaps mode: .planning/phases/{N}/UAT.md plus existing PLAN* and SUMMARY* files}
 - The actual source files your tasks will touch
 
-Write .planning/phases/{N}/PLAN.md per
-${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PLAN.md. Default is ONE PLAN.md; split
-into PLAN-1.md, PLAN-2.md only for genuinely independent slices (no shared
-files, no cross-slice ordering). If a Plan shape directive is given above,
-honor it; if your file-independence analysis contradicts it (e.g. it asks
-for multiple plans but the slices share files), follow your analysis and
-record the deviation and its reason in your return marker and the PLAN
-Notes - never diverge silently.
-
-{gaps mode: write .planning/phases/{N}/{the plan filename plan-gaps.md step 3 resolved} instead - the next FREE plan number, never PLAN.md and never any file already on disk. Overwriting the phase's existing plan leaves its completed report beside it, and replay-check then answers dispatch_set: [], so nothing ever dispatches the gap work.}
+{gaps mode: write .planning/phases/{N}/{the plan filename plan-gaps.md step 3 resolved}.}
 
 <recalled_memory>{one line per recalled result: snippet - source file, phase (when present); this block is present only under memory.backend builtin with non-empty results}</recalled_memory>
 </planning_context>
@@ -269,8 +261,7 @@ Plans here can be run by a workflow. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/ref
 
 Revision mode: dispatch a FRESH cad-planner (never resume the prior run - the
 plan on disk carries the grounding). Append the checker's issues verbatim in a
-`<checker_issues>` block and instruct: fix each issue with minimal edits to the
-existing plan file(s), or rebut it explicitly; return ## REVISION COMPLETE.
+`<checker_issues>` block.
 </step>
 
 <step name="inline_plan">
@@ -491,7 +482,8 @@ CONTINUES to its next step.
 <step name="check_gate">
 Skip when workflow.plan_check is false or `--skip-check` was passed.
 
-Dispatch cad-plan-checker via the spawn-agent seam, the bracket on its resolve:
+Dispatch cad-plan-checker the way `spawn_planner` dispatches the planner, the
+bracket on its resolve:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-plan-checker \
@@ -527,9 +519,6 @@ Read:
 - .planning/phases/{N}/PLAN*.md (the plans under review)
 - .planning/ROADMAP.md and .planning/REQUIREMENTS.md
 - .planning/phases/{N}/CONTEXT.md (if present)
-
-Will these plans achieve the phase goal? Return ## VERIFICATION PASSED or
-## ISSUES FOUND (numbered; each BLOCKER or WARNING with location and fix).
 </verification_context>
 ```
 
@@ -721,8 +710,8 @@ on disk and each executor runs in a fresh context.
   reviewer outside the `plan` trigger.
 - One revision loop, hard cap. A plan that fails the checker twice goes to
   the human.
-- ONE PLAN.md is the default; accept a split only with the planner's
-  independence rationale (no shared files, no cross-slice ordering).
+- One PLAN.md is the default; more than one comes with the planner's
+  one-line reason.
 - STATE.md stays a four-line overwritten cursor plus an optional `Plan:` line. No audit entries, no roadmap
   annotations - git is the log.
 - Config keys only as named in templates/config.json - nothing invented.

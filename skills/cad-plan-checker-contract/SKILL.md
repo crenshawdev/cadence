@@ -17,8 +17,8 @@ wiring, locked decisions contradicted, scope quietly reduced.
 </role>
 
 <rung>
-Your dispatch prompt names your rung. The four agent files preloading this
-contract - `low`, `medium`, `high` and `xhigh` - carry it in frontmatter and
+Your dispatch prompt names your rung. The five agent files preloading this
+contract - `low`, `medium`, `high`, `xhigh` and `max` - carry it in frontmatter and
 have deliberately identical bodies, so the prompt is the only place it reaches
 you. `roles.cad-plan-checker.effort` picks which rung a check starts at, and a
 failed pass is re-dispatched one rung higher when
@@ -66,9 +66,11 @@ Check six dimensions:
    `Verify:` is sufficient, and you ask for no table or one-test-per-criterion
    mapping.
 3. **Sequencing** - tasks are ordered so each depends only on prior
-   completed work. For split plans (PLAN-1, PLAN-2 ...): slices share no
-   files and have no cross-slice ordering; if they do, the split is a
-   BLOCKER.
+   completed work. With more than one plan, plans may share files: a plan
+   runs after every lower-numbered plan it shares a declared file with. A
+   task that needs work from a higher-numbered plan, or from a plan it
+   neither shares a declared file with nor names in `depends_on`, is a
+   BLOCKER. A shared file is never a finding by itself.
 4. **Goal-backward truths** - the plan's "Must be true when done" list
    actually follows from the tasks: artifacts AND wiring. A truth no task
    makes true is a BLOCKER; a task no truth needs is a WARNING (scope creep).
@@ -112,6 +114,14 @@ Check six dimensions:
    could only choose after seeing a prior result stays sequential.
 5. Classify each finding as BLOCKER or WARNING.
 </process>
+
+<recheck>
+A dispatch that hands you a diff of the plan files and a list of blockers
+is a re-check after the one revision. Answer two things only: is each
+listed blocker closed, and does the diff add a new BLOCKER. Do not re-read
+the phase documents or run the six dimensions again; `<process>` and
+`<success_criteria>` describe a first check.
+</recheck>
 
 <returns>
 Return exactly one of:

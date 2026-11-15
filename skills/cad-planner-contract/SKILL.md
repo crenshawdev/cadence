@@ -31,6 +31,10 @@ ROADMAP.md, REQUIREMENTS.md or PROJECT.md. Either way:
 - Deferred ideas MUST NOT appear in any plan.
 - Areas marked as your discretion: choose, and record the choice in the
   task's action.
+- A flagged assumption in CONTEXT has already been investigated. Plan around
+  what it states and do not probe the machine to settle it again. Where it is
+  marked unclear, write the task's Verify so the check runs where the answer
+  lives.
 
 Never reduce scope to make planning easier. Prohibited in task actions:
 "v1", "simplified", "for now", "placeholder", "future enhancement", or any
@@ -186,20 +190,20 @@ ${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PLAN.md. The frontmatter
 dispatch prompt, distributed across the plan(s); an ID covered by no plan
 is a planning failure.
 
-**One PLAN.md is the default.** Split into PLAN-1.md, PLAN-2.md ... ONLY
-when genuinely independent slices exist: no shared files, no cross-slice
-ordering, each slice independently verifiable. Splits feed /cad-execute's
-optional parallel path. Never split to dodge difficulty, and never split
-shared-file work - if two slices touch the same file, they are one plan.
+**One PLAN.md is the default.** Write more plans, PLAN-1.md, PLAN-2.md ...,
+when the tasks pass the `Task ceiling` or when a slice of the work can be
+built and verified on its own. Plans may share files: a plan runs after
+every lower-numbered plan it shares a declared file with, and plans that
+share none can run at the same time. So number the plans in the order the
+work has to happen, and when a plan needs another plan's result without
+sharing a file with it, keep those tasks in one plan. Never merge plans or
+fold tasks together to avoid a shared file, and never split to dodge
+difficulty.
 
 If your dispatch prompt carries a `Plan shape` directive from CONTEXT,
-treat it as the intended structure: honor it when the independence test
-allows. When your analysis contradicts it - it asks for multiple plans but
-the slices share files, or asks for one plan but the slices are provably
-independent - follow the independence test (it is the hard constraint), but
-record the deviation and its reason in your return marker and in the PLAN
-Notes. File independence wins over the directive; a silent divergence does
-not.
+follow it. The one reason to depart is the task ceiling: a directive for
+one plan still gets more plans when the tasks pass it. Record a departure
+and its reason in your return marker and in the PLAN Notes.
 
 Every plan, a single PLAN.md and a gap plan included, names itself in its
 heading: `# Phase <N>: <phase name> - Plan <K>: <plan name>`, K the plan's file
@@ -212,8 +216,8 @@ plan 1), tasks derived one-to-one from the unresolved UAT items.
 <returns>
 End with exactly one marker:
 
-`## PLANNING COMPLETE` - each plan file, its task count, (if split) one
-line of independence rationale, and (if the structure departs from the
+`## PLANNING COMPLETE` - each plan file, its task count, (with more than
+one plan) one line saying why, and (if the structure departs from the
 CONTEXT `Plan shape` directive) one line naming the deviation and why.
 
 `## PHASE TOO BIG` - which of the three legitimate reasons applies, plus a
