@@ -65,7 +65,7 @@ flowchart TD
     nullrev -->|no| raised["Findings, each kept with the voice that raised it"]
     emptied -->|no| raised
     fallback --> raised
-    raised --> checkers["One checker per finding per raising voice, ahead of any merge, on the resolved cad-reviewer rung with tools limited"]
+    raised --> checkers["One checker per raising voice over all of its findings, ahead of any merge, on the resolved cad-reviewer rung with tools limited"]
     checkers --> nullchk{"Checker returned nothing?"}
     nullchk -->|yes| tomain["That finding goes to the main session"]
     nullchk -->|no| ruling{"Ruling"}
@@ -113,4 +113,4 @@ Triage answers stay advisory. The recommendation preselects nothing, NONE stays 
 
 ## Cost
 
-One agent per finding costs far more tokens than the main session opening the file, per `.planning/spikes/per-finding-agent-cost/SPIKE.md`. It was chosen on technical grounds: independence from the session running the work, isolation between findings, schema-enforced output and a smaller main session.
+An agent checking findings costs far more tokens than the main session opening the file, per `.planning/spikes/per-finding-agent-cost/SPIKE.md`. It was chosen on technical grounds: independence from the session running the work, schema-enforced output and a smaller main session. It began as one agent per finding, which also kept findings apart from each other. Each of those agents read the same artifact again, so one checker now takes all of a reviewer's findings and is told to judge each on its own evidence. A checker that dies leaves all of that reviewer's findings for the main session.

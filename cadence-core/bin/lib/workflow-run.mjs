@@ -6,8 +6,8 @@
 // than that. The result is the per-voice skeleton workflows/review-panel.js returns, and a test runs that script through
 // here so the two can't drift. THE FINDINGS AND RULINGS come from the run's journal alone
 // (`<session>/subagents/workflows/<run id>/journal.jsonl`): each `result` line joined on `agentId` to its `started` line's
-// label, `reviewer <voice>` or `provider <voice>` for a voice's findings and `checker <voice> <n>` for the ruling on its
-// finding n - 1. Anything the run file's result still carries of them is ignored, and a voice that ran with no result in
+// label, `reviewer <voice>` or `provider <voice>` for a voice's findings and `checker <voice>` for the rulings on them,
+// each carrying `finding`, its finding's number from 1. A journal from before that holds `checker <voice> <n>`, one per finding. Anything the run file's result still carries of them is ignored, and a voice that ran with no result in
 // the journal is a refusal, never an empty review (D-04)
 // NO RULING IS ADDED and no record key: the checker's three words map onto the record's three (D-04), and a finding the
 // record could not store is listed for the main session to rule, never stored as something it isn't (D-16)
@@ -282,8 +282,12 @@ export function joinJournal(run, returns, journal) {
     }
     const sev = findingsProblem(got.findings);
     if (sev) return refuse('run-bad-result', `${at}: "${label}" in the journal returned ${sev}`);
+    // one checker per voice returns {rulings: [{finding: n, ...}]}; a journal written before that holds one result per finding
+    const batch = returns.get(`checker ${row.voice}`);
+    const batched = isPlainObject(batch) && Array.isArray(batch.rulings) ? batch.rulings : [];
     const rulings = got.findings.map((_, index) => {
-      const r = returns.get(`checker ${row.voice} ${index + 1}`);
+      const own = returns.get(`checker ${row.voice} ${index + 1}`);
+      const r = isPlainObject(own) ? own : batched.find((x) => isPlainObject(x) && x.finding === index + 1);
       return { index, ruling: isPlainObject(r) ? r : null };
     });
     voices.push({ ...row, result: { findings: got.findings }, rulings });
@@ -566,7 +570,7 @@ function agentBracket(row, i, at) {
   const state = typeof row.state === 'string' ? row.state : 'unknown';
   const figures = rowFigures(row);
   // a mapped voice's reviewer and its checkers read what they were handed; everyone else, the payload
-  const voice = (/^reviewer (.+)$/.exec(label) || /^checker (.+) \d+$/.exec(label) || [])[1];
+  const voice = (/^reviewer (.+)$/.exec(label) || /^checker (.+) \d+$/.exec(label) || /^checker (.+)$/.exec(label) || [])[1];
   const own = voice !== undefined && at.planReads ? at.planReads.get(voice) : undefined;
   return bracket({
     phase: at.phase, plan: `${at.runId}-${id}`, role, read: own || [at.payloadRef], figures,

@@ -181,7 +181,7 @@ provider in the set.
 - `panel` - union all reviewers' findings, then dedupe exact file+line+claim
   repeats.
 - `adjudicated` - all reviewers run independently, then every finding raised is
-  checked PER RAISING VOICE: by one checker agent per finding on the workflow
+  checked PER RAISING VOICE: by one checker agent per voice on the workflow
   path, and on today's path by you, the main session, who open the cited code
   and confirm or kill each one, dropping false positives and overstatements and
   re-ranking by grounded severity.

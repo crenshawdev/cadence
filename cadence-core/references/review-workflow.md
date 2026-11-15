@@ -2,7 +2,7 @@
 
 Step 4 of `references/review-triggers.md` sends a fire here when it takes the workflow path. This file is one procedure, in order. The record's mechanics are `references/review-record.md`'s and the triage is `references/triage-gate.md`'s, and neither is restated.
 
-The reviewers and one checker per finding per raising voice run inside `workflows/review-panel.js`. Steps 1 to 3 of the fire stay with you, and so do the merge, the record and the triage. From the launch to the notice you dispatch nothing else: end the turn at the launch.
+The reviewers and one checker per raising voice, which rules on every finding that voice raised, run inside `workflows/review-panel.js`. Steps 1 to 3 of the fire stay with you, and so do the merge, the record and the triage. From the launch to the notice you dispatch nothing else: end the turn at the launch.
 
 ## 1. Compose `args`
 
