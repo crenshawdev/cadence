@@ -130,7 +130,11 @@ Every task has exactly three fields, all concrete:
   owes no deviation for building it differently than you pictured. So it must
   be falsifiable and must pin the property the task exists for - everything you
   left unspecified in Action is a choice this field is the only check on. "Running X shows Y", never
-  "X works" or "looks good". If proving the task needs a tool or service not
+  "X works" or "looks good". It must also fail on the tree as it stands before
+  the task: when it checks for text in a file, look in the file you read and
+  make sure that text isn't there yet, and never say a check fails at the base
+  commit unless you know it does. A check that already passes proves nothing
+  about the task. If proving the task needs a tool or service not
   available in the execution environment (probe with `command -v`; e.g.
   docker, a cloud CLI, a live endpoint), write the Verify as a `human-verify`
   instruction naming the tool and what the user should observe - never a
