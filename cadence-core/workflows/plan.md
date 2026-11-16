@@ -213,6 +213,8 @@ Read before planning:
 - {gaps mode: .planning/phases/{N}/UAT.md plus existing PLAN* and SUMMARY* files}
 - The actual source files your tasks will touch
 
+Write the plan files in .planning/phases/{N}/.
+
 {gaps mode: write .planning/phases/{N}/{the plan filename plan-gaps.md step 3 resolved}.}
 
 <recalled_memory>{one line per recalled result: snippet - source file, phase (when present); this block is present only under memory.backend builtin with non-empty results}</recalled_memory>
