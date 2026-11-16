@@ -365,14 +365,12 @@ a wrong result, crashes, corrupts data, or misses its goal.
 
 Under `adjudicated`, all reviewers run independently and then each finding is
 checked against the cited code: confirm or kill it, drop false positives and
-overstatements, and re-rank by grounded severity. On the default path the main
-session does that checking itself. With `workflow.use_workflows` on, one agent
-per finding does it instead, and the main session still merges what comes back,
+overstatements, and re-rank by grounded severity. One checker agent per
+reviewer does that checking, and the main session merges what comes back,
 groups findings that share a root cause, runs the triage and owns the record.
-Either way reviewers critique and something other than the reviewer grounds
-the finding, which is the claim this section makes. The workflow path costs
-more usage, is off by default, and counts only when both config layers set it.
-The single-agent path stays.
+When the `Workflow` tool isn't available, the main session does the checking
+itself. Either way reviewers critique and something other than the reviewer
+grounds the finding, which is the claim this section makes.
 
 The one signal treated as strong is convergence. A defect found independently by
 more than one reviewer is high confidence, and that is the entire justification

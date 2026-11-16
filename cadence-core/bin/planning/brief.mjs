@@ -1,6 +1,6 @@
 // @ts-check
 // planning/brief.mjs - `brief`: one plan's brief, or one role's narrowed input, composed with no model and written to a file, never to the transcript
-// reads no config: the caller gates it on planning.workflow_plans, so a bare run composes and checks without writing
+// reads no config, and a bare run composes and checks without writing
 'use strict';
 
 import { join } from 'node:path';

@@ -130,14 +130,10 @@ record is the whole enforcement, so a substitution is visible afterwards rather
 than prevented.
 
 ### 4. Run the reviewers
-After steps 1 to 3, this fire takes the WORKFLOW path only when all three hold:
+After steps 1 to 3, this fire takes the WORKFLOW path only when both hold:
 the gate resolved `adjudicated`, or this is `/cad-verify`'s fire, which is always
 triaged as `adjudicated` and has no resolved gate, or the trigger is
-`risk_surface` and its gate resolved `blocking`; the setting
-`workflow.use_workflows` is on in BOTH config layers, read with
-`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" workflow-layers`, whose
-`on` for that key is the answer, and never with `config.mjs get`, which answers
-on a committed repo value alone; an answer that cannot be read is off; and the `Workflow` tool is in this
+`risk_surface` and its gate resolved `blocking`; and the `Workflow` tool is in this
 session's tool list. `blocking` on any other trigger, and `advisory` and
 `deferred` on every trigger, never take it. Take the path and Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-workflow.md`, which runs
@@ -303,7 +299,7 @@ The gate column is each key's own schema default. A config layer writing
 
 | Trigger | Fired by | When | Payload artifact | Default gate |
 |---|---|---|---|---|
-| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s), plus `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and `.planning/phases/<N>/CONTEXT.md` (optional) - the artifacts the plan is checked AGAINST. On the workflow path a fire over more than one PLAN file runs one reviewer per plan and one cross-plan reviewer, and today's path one reviewer over all of them. With `planning.workflow_plans` `true` the three become one, the phase input `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase <N> --role phase --out-dir <dir>` composes, by its absolute path, the PLAN path(s) unchanged; the key comes from the calling workflow's config batch when it holds it, else one `config.mjs get planning.workflow_plans`. A site that composed that input this run names it; otherwise the fire runs the call first, `<dir>` made by `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`. A refused answer is named in one line and the fire takes the three. With the key not `true` the artifact is as above | advisory |
+| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s), plus `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and `.planning/phases/<N>/CONTEXT.md` (optional) - the artifacts the plan is checked AGAINST. On the workflow path a fire over more than one PLAN file runs one reviewer per plan and one cross-plan reviewer, and today's path one reviewer over all of them. The three become one, the phase input `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase <N> --role phase --out-dir <dir>` composes, by its absolute path, the PLAN path(s) unchanged. A site that composed that input this run names it; otherwise the fire runs the call first, `<dir>` made by `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`. A refused answer is named in one line and the fire takes the three. | advisory |
 | `diff` | `cad-execute` | at plan completion; once at phase end over `<PHASE_BASE>..HEAD` (the phase's oldest `phase_start` anchor) with `review.triggers.diff.when: phase_end` | (a) refs `<pre-plan HEAD>..HEAD` | off |
 | `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | on detection match, ONCE per plan/task/fix - `cad-execute`/`cad-task` on the completed commit range, never mid-plan; `cad-debug`/`cad-verify` on their single staged fix | (c) the range-diff FILE path, or (b) the staged-diff scope for a single in-tree fix | blocking |
 | `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge; with `review.triggers.diff.when: phase_end` it stands in for the `diff` fire | (a) refs `<PHASE_START>..HEAD` | off |

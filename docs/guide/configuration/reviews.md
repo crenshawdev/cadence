@@ -28,7 +28,7 @@ Store model IDs and credential-file paths in configuration, never API keys. Cred
 
 `review.mode` controls how reviewers combine; a gate set to `adjudicated` requires adjudication regardless of the mode.
 
-Under `adjudicated`, each finding is checked by the main session on the default path. With [`workflow.use_workflows`](execution.md#workflowuse_workflows) on, one checker agent per reviewer checks that reviewer's findings instead, and the reviewers run as agents of one workflow. The main session still merges the results, groups findings that share a root cause and runs your triage. The same setting runs the blocking risk review, `risk_surface` at `blocking`, as that workflow too, and a surviving blocker or high still stops the run. On that path a plan review of a phase with more than one plan gives each plan its own reviewer, plus one lighter reviewer that checks the plans fit together, while a cross-model provider is still called once over all of them. That setting is off by default, burns usage faster, and counts only when both your repository's config and your user-global config set it. With it off, or with only one layer on, the single-agent path runs as before.
+Under `adjudicated`, the reviewers run as agents of one workflow, and one checker agent per reviewer checks that reviewer's findings. The main session still merges the results, groups findings that share a root cause and runs your triage. The blocking risk review, `risk_surface` at `blocking`, runs as that workflow too, and a surviving blocker or high still stops the run. A plan review of a phase with more than one plan gives each plan its own reviewer, plus one lighter reviewer that checks the plans fit together, while a cross-model provider is still called once over all of them. A workflow burns usage faster than one session doing the same review. When Claude Code's `Workflow` tool isn't available, the main session checks each finding itself.
 
 Triage shows each survivor with what breaks, why it matters, what is still uncertain and a recommendation. Ask for any survivor and you also get what triggers it and what proves it. The review file holds all six. A finding the check could neither prove nor refute shows as suspected, with the next check that would settle it.
 
@@ -46,7 +46,7 @@ Waiving a surface's routing floor withholds those plan-time effects for that sur
 
 **Allowed values:** `"single"`, `"panel"`, `"adjudicated"`.
 
-`single` uses the first available reviewer. `panel` combines and deduplicates findings. `adjudicated` runs reviewers independently, then checks each finding against the cited code before merging survivors. The check is one main-session pass by default, or one agent per finding when `workflow.use_workflows` is on in both config layers.
+`single` uses the first available reviewer. `panel` combines and deduplicates findings. `adjudicated` runs reviewers independently, then checks each finding against the cited code before merging survivors. The check is one checker agent per reviewer, or one main-session pass when the `Workflow` tool isn't available.
 
 ### `review.reviewers`
 

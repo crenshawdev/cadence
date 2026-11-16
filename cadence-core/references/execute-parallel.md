@@ -64,9 +64,7 @@ on this path is a real defect to report, not the fork-point default.
    persist under their own range (`references/review-triggers.md` step 5)
    and a later plan's empty settle cannot overwrite an earlier plan's file.
    A fire that takes the workflow path (references/review-workflow.md) ends
-   the turn and its notice resumes this step for that plan; several plans'
-   fires go one at a time through that file's claim, each queued on the last
-   one's notice, unless `workflow.multi_workflow` is on in both layers.
+   the turn and its notice resumes this step for that plan.
    Then, before that plan is reported done:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check status --phase <N> --plan <k> --base {that plan's pre-merge HEAD from step 3} --head {that plan's post-merge HEAD from step 3}`
    The same triple and never the phase-wide arm, which compares no range and
@@ -76,11 +74,9 @@ on this path is a real defect to report, not the fork-point default.
    `diff` trigger then runs for every plan (artifact: shape (a), the refs `{base_ref: that
    plan's pre-merge HEAD from step 3, head_ref: that plan's post-merge HEAD from
    step 3}`). With `review.triggers.diff.when` at `phase_end`, as `workflows/execute.md`'s `locate` read it, none of these per-plan `diff` fires is made, and step 6 holds the one review that stands in. Otherwise the ranges are static and independent, so a fire on today's path
-   goes CONCURRENTLY in one message (seam-spawn-agent.md concurrent dispatch). A
+   goes CONCURRENTLY in one message (seam-spawn-agent.md concurrent dispatch), and a
    fire that takes the workflow path (references/review-workflow.md) goes
-   concurrently the same way only when `config.mjs workflow-layers` prints
-   `keys["workflow.multi_workflow"].on` true; otherwise they go one at a time
-   through that file's claim, each queued on the last one's notice. Step 6's
+   concurrently the same way. Step 6's
    `phase_diff` runs after them. This step runs AFTER step 3
    merged every branch, so a per-plan `diff` review never
    fires before the merge and its refs always resolve in THIS tree, which is the

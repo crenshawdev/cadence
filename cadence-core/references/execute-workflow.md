@@ -2,19 +2,11 @@
 
 Read at `<step name="execute_workflow">` in `cadence-core/workflows/execute.md`, which is the only step that reaches it. This file is one procedure, run once per wave. A wave's executors run inside `workflows/execute-wave.js`, one per plan. Every decision and every git merge stays with you. From the launch to the notice you dispatch nothing else: end the turn at the launch.
 
-Keep these as literals, since each turn starts with nothing remembered: the scratch directory, the claim `id`, the wave's label, `Transcript dir`, `Run ID`, the pre-plan HEAD, and for each plan its brief path and its resolve's `agent_type` and `model`.
+Keep these as literals, since each turn starts with nothing remembered: the scratch directory, `Transcript dir`, `Run ID`, the pre-plan HEAD, and for each plan its brief path and its resolve's `agent_type` and `model`.
 
 ## 1. Launch one wave
 
-Run this before every wave. The wave number `<j>` counts the waves launched so far in this run, from 1.
-
-**Claim first.** Take it before any resolve below, so a lost claim leaves no dispatch open:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-claim take --fire execute-<N>-wave-<j>
-```
-
-`launch: true` prints the claim's `id`, so keep it as a literal. `launch: false` names the `holder`, its `holder_id` and its `age_seconds`. When this session holds it for a fire awaiting its notice, wait for that notice and take the claim again. When another session holds it, or this session holds nothing awaiting a notice, name the holder and its age and ask through the ask-user seam: check again, or today's path. An old claim from a dead session is cleared through that ask with `workflow-claim release --fire <holder> --id <holder_id>`, or `--stale` for a holder with no id, and then you take the claim again. Today's path opened nothing: the rest of the phase runs on today's sequential path, and no further step of this file runs.
+Run this before every wave.
 
 **Read the wave again.** Ask `plan-overlap` again, never from a list held since `choose_path`, because a fix can widen a lease:
 
@@ -22,7 +14,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-claim take -
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-overlap --phase <N>
 ```
 
-Pick the wave in `choose_path`'s order. In every wave of `waves`, keep only the plans in the dispatch set `locate` defined that are not already done in this run, then drop any wave left empty. Take the first wave that remains, and the width is what it holds. When none remain there is nothing to launch: release the claim with the line below and go to the after-the-last-wave step in "Then". A plan stopped by an earlier wave holds the next wave, so no wave is launched until it is answered.
+Pick the wave in `choose_path`'s order. In every wave of `waves`, keep only the plans in the dispatch set `locate` defined that are not already done in this run, then drop any wave left empty. Take the first wave that remains, and the width is what it holds. When none remain there is nothing to launch: go to the after-the-last-wave step in "Then". A plan stopped by an earlier wave holds the next wave, so no wave is launched until it is answered.
 
 **Each plan's dispatch.** Record the pre-plan HEAD with `git rev-parse HEAD` once, for the whole wave. Make the run's scratch directory the first time it is needed, with the `mktemp` line `execute_sequential` states, and print it. For each plan in the wave:
 
@@ -50,15 +42,9 @@ Relay every `warnings[]` entry a resolve returns before the launch, each distinc
 {"plans": [{"plan": <k>, "prompt": "<that plan's prompt>", "agent_type": "<its resolve's>", "model": "<its resolve's, or null>"}], "batch_size": <parallelization.max_concurrent_agents>}
 ```
 
-**Launch** with the claim held. Use the `Workflow` tool by its named entry `cadence:execute-wave` with `args`. If the name does not resolve, launch it with `scriptPath` set to `${CLAUDE_PLUGIN_ROOT}/workflows/execute-wave.js`. The result prints `Transcript dir` and `Run ID`, so keep both, and end the turn.
+**Launch.** Use the `Workflow` tool by its named entry `cadence:execute-wave` with `args`. If the name does not resolve, launch it with `scriptPath` set to `${CLAUDE_PLUGIN_ROOT}/workflows/execute-wave.js`. The result prints `Transcript dir` and `Run ID`, so keep both, and end the turn.
 
-A launch the host refuses releases the claim at once, since no notice will come:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-claim release --fire execute-<N>-wave-<j> --id <the id take printed>
-```
-
-Then close each plan's opened bracket as an `escalation`, one call per plan:
+A launch the host refuses closes each plan's opened bracket as an `escalation`, one call per plan, since no notice will come:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event escalation --plan <k> --role cad-executor
@@ -73,8 +59,6 @@ The notice holds run totals and cuts a long result short, so the seam reads the 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" workflow-run --phase <N> --run-file <the run file> --out-dir <the scratch directory> --payload-ref <the scratch directory> --plans <the wave's plan numbers, comma-separated, as 1,2,3> [--notice-tokens <n> --notice-turns <n> --notice-duration-ms <n>]
 ```
-
-Release the claim right after this call returns, whether it answered or refused, with the `workflow-claim release` line from section 1 and the same `id`.
 
 The call bills every executor of the wave, each under its plan number and with its own figures, and no `trace close` is written for any plan. `--plans` is how it knows the wave when the run file cannot say: a plan the file has no row for, a file with no rows, one that is unreadable and one holding the script's message all still close every listed plan, as a `checkpoint` under its own plan number that says why, with the notice's totals on the first of them. Spend is billed as `cad-executor`. It writes no `<run id>-notice` bracket for a wave, and the same call twice, or the notice's totals after the rows or the rows after the notice's totals, bills the wave once.
 
@@ -92,7 +76,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` and fol
 - **Step 3, merge.** Merge each plan's branch `cadence/phase-<N>-plan-<k>` in plan order, with both HEADs recorded. A settled plan with no such branch landed nothing, so its two HEADs are one commit and step 5 takes the skip for it.
 - **The report moves after its merge.** Once a plan's branch has merged, move its report from `<the scratch directory>/reports/plan-<k>.md` into `<plandir>/records/reports/plan-<k>.md`. First rotate a report already there aside to the next free `plan-<k>.<n>.md`, as the executor contract's rotation rule does. Edit nothing in the moved file (D-06). A plan whose branch has not merged keeps its report in the scratch directory, so the main tree never holds a `PLAN COMPLETE` for unmerged work.
 - **Step 4, cleanup.** Remove a worktree only if the host kept it: look for the branch in `git worktree list --porcelain`. Delete each merged branch.
-- **Step 5, the suite and the risk sequence.** The suite runs after this wave, not once at the end, because the next wave forks from this merge. Then run the skip or `risk-check run` for every settled plan first. Then the fires: each `risk_surface` fire a `run` answer called for, and each plan's `diff` trigger. Then each plan's `status`, since `status` counts every executor the run closed, so a plan's done waits on its wave-mates' records. A `risk_surface` fix runs in the main tree under worker key `<k>`. On the workflow path (`references/review-workflow.md`) each `risk_surface` fire is the launch ending the turn and the notice resuming this step, with nothing else dispatched in between. The resumed step runs that plan's gate, the continuation fix executor on FAIL, the one narrowed re-arm, then that plan's `status`, as `execute_sequential` states them, and the plan is still not reported done while `status` refuses. Several plans' fires on that path go one at a time through its claim unless `workflow.multi_workflow` is on in both layers. Under `review.triggers.diff.when` `phase_end`, those fires leave out each plan's `diff` trigger, and the `risk_surface` fires and each plan's `status` run as above.
+- **Step 5, the suite and the risk sequence.** The suite runs after this wave, not once at the end, because the next wave forks from this merge. Then run the skip or `risk-check run` for every settled plan first. Then the fires: each `risk_surface` fire a `run` answer called for, and each plan's `diff` trigger. Then each plan's `status`, since `status` counts every executor the run closed, so a plan's done waits on its wave-mates' records. A `risk_surface` fix runs in the main tree under worker key `<k>`. On the workflow path (`references/review-workflow.md`) each `risk_surface` fire is the launch ending the turn and the notice resuming this step, with nothing else dispatched in between. The resumed step runs that plan's gate, the continuation fix executor on FAIL, the one narrowed re-arm, then that plan's `status`, as `execute_sequential` states them, and the plan is still not reported done while `status` refuses. Under `review.triggers.diff.when` `phase_end`, those fires leave out each plan's `diff` trigger, and the `risk_surface` fires and each plan's `status` run as above.
 
 The report on this path is never in a worktree and no executor commits it. The move above brings it into the main tree, and the `state` step's existing staging is its only commit.
 

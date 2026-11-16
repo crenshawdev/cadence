@@ -96,10 +96,7 @@ const COMMANDS = {
   // a finished review-panel run, read from its run file, becomes the record's payload and the review file's input
   'workflow-run': async (dir, _sub, opts) =>
     (await import('./planning/workflow-run.mjs')).cmdWorkflowRun(dir, opts),
-  // may a workflow launch now: take answers launch or names the holder, release frees only the caller's own claim
-  'workflow-claim': async (dir, sub, opts) =>
-    (await import('./planning/workflow-claim.mjs')).cmdWorkflowClaim(dir, sub, opts),
-  // the facts layer, two words like `workflow-claim`; --dir names .planning and the project root is its parent
+  // the facts layer, two words like `codemap scan`; --dir names .planning and the project root is its parent
   codemap: async (dir, sub, opts) => (await import('./planning/codemap.mjs')).cmdCodemap(dir, sub, opts),
   // moves the risk_surface rulings out of a phase directory before a milestone close deletes it
   'risk-carry': async (dir, _sub, opts) =>
@@ -176,13 +173,10 @@ try {
     // `trace ignore` reports what the project had before, so its stamp (which creates the records folder) waits for its answer
     // `--check` is the read-only report cad-health runs and writes nothing, so it leaves the stamp to the next seam
     const late = cmd === 'trace' && sub === 'ignore';
-    // a release touches only the claim file in the git dir, and the conversion refuses while a claim is held,
-    // so it skips the gate or a dead claim could never be freed; take still converts first or a workflow would block itself
-    const freeing = cmd === 'workflow-claim' && sub === 'release';
     // a state file that does not parse refuses every call but the one that rebuilds it; an unstamped project still converts first
     const mode = late ? 'before' : cmd === 'state-rebuild' ? 'rebuild' : 'now';
     const { ensureState, conversionNote, holdAnswer } = await import('./planning/migrate.mjs');
-    if (freeing || ensureState(planningDir, mode)) {
+    if (ensureState(planningDir, mode)) {
       const afterwards = late && !('check' in opts);
       // the call that converted adds one field to its own answer, so its stdout is held until the field can join
       const release = conversionNote() || afterwards ? holdAnswer() : null;

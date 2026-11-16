@@ -34,11 +34,6 @@ export const FS_WRITE_EXCEPTIONS = Object.freeze([
     writes: 'removes a stale refresh entry or diff from the code-map scratch directory (the writes there go through the module)',
     reason: 'the scratch directory is the run\'s own output directory outside .planning, and the remove is a force-remove that the module\'s unlinkFile, which throws on a missing file, does not do',
   }),
-  Object.freeze({
-    path: 'cadence-core/bin/lib/workflow-claim.mjs',
-    writes: 'the workflow claim file and its temp file in the repository\'s git directory',
-    reason: 'a claim is a lock between processes on one run, kept in .git so it is never part of the tree or of planning state',
-  }),
 ]);
 
 /** The node:fs functions that create, replace, append to, link, rename, copy, truncate or remove a path. */

@@ -2,8 +2,8 @@
 
 The complete disclosures now live in the [Cadence guide](guide/reference/permissions.md).
 
-The `Workflow` tool is listed in `allowed-tools` by the commands that fire reviews (`/cadence:cad-plan`, `/cadence:cad-plan-review`, `/cadence:cad-execute`, `/cadence:cad-verify`, `/cadence:cad-task`, `/cadence:cad-debug`). Those commands start a workflow only when `workflow.use_workflows` is true in both your repository's config and your user-global config, which is off by default.
+The `Workflow` tool is listed in `allowed-tools` by the commands that fire reviews (`/cadence:cad-plan`, `/cadence:cad-plan-review`, `/cadence:cad-execute`, `/cadence:cad-verify`, `/cadence:cad-task`, `/cadence:cad-debug`). Those commands start a workflow for every adjudicated review and every blocking risk review, whenever the tool is available in the session.
 
-`/cadence:cad-execute` can also start a workflow, `cadence:execute-wave`, whose agents are executors that edit files and commit code, each in its own worktree when a wave holds more than one plan. It runs only when `workflow.execute_workflows` is true in both your repository's config and your user-global config, which is off by default. Its run file is read the same way, to price each agent.
+`/cadence:cad-execute` can also start a workflow, `cadence:execute-wave`, whose agents are executors that edit files and commit code, each in its own worktree when a wave holds more than one plan. It runs for any wave of more than one plan, whenever the tool is available and the plans can run in their own worktrees. Its run file is read the same way, to price each agent.
 
-`/cadence:cad-map` also lists `Workflow`, to run the code map's readers. It doesn't read `workflow.use_workflows`: it runs only with `planning.code_map` on and only after you type a yes to a prompt that names the readers it would start, so a repository's committed setting alone can't start one.
+`/cadence:cad-map` also lists `Workflow`, to run the code map's readers. It runs only with `planning.code_map` on and only after you type a yes to a prompt that names the readers it would start, so a repository's committed setting alone can't start one.

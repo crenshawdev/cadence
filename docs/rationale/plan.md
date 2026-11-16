@@ -144,8 +144,8 @@ that stop nothing.
 Adjudicated waits because an applied survivor EDITS the plan files the commit
 stages.
 
-With `workflow.use_workflows` on, the adjudicated review runs as a workflow, one
-agent per reviewer and one checker per reviewer. It does not change this: the session
+The adjudicated review runs as a workflow, one agent per reviewer and one
+checker per reviewer. It does not change this: the session
 launches the workflow, ends its turn, and resumes on the completion notice, so
 the commit still waits for the survivors. The single-agent path stays, and a run
 takes one path or the other.

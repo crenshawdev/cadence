@@ -113,7 +113,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch \
-  testing.scope planning.workflow_plans review.triggers.diff.when
+  testing.scope review.triggers.diff.when
 ```
 
 `testing.scope` set means a testing policy is active. It gates the one line
@@ -186,12 +186,6 @@ path and is never a reason to pause or stop.
 
 <step name="choose_path">
 **The workflow path comes first.** Take it only when ALL of these hold:
-- `workflow.execute_workflows` is on in BOTH config layers, read with
-  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" workflow-layers`, whose
-  `keys["workflow.execute_workflows"].on` is the answer, and never with
-  `config.mjs get`, which answers on a committed repo value alone. An answer
-  that cannot be read is off.
-- `planning.workflow_plans` is true, as `locate` read it
 - the `Workflow` tool is in this session's tool list
 - the `plan-overlap` answer below is `ok:true` with no `undeclared` and no
   `frontmatter_issues` entry
@@ -207,9 +201,8 @@ wave holds more than one plan, the `worktree-base.mjs resolve` check below
 applies as written, declining its fix or its `ok:false` means today's path, and
 on accept this path goes on, not the parallel one. With every condition met, go
 to `execute_workflow` and run nothing else in this step. When a condition is
-missing, today's path below runs exactly as written, and when either layer
-sets the switch (`repo` or `global` reads `"set"` in that answer) one line names
-the missing condition. With neither layer setting it, print nothing.
+missing, today's path below runs exactly as written, and one line names the
+missing condition.
 
 Sequential (default) unless ALL of these hold:
 - `parallelization.enabled` is true
@@ -294,7 +287,7 @@ successive executors in the phase share a cached prefix: phase-level context
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."
 
-With `planning.workflow_plans` read in `locate` as `true`, a brief takes the place of the plan file and the two phase documents in what each executor reads. With the key not `true`, this stretch runs nothing.
+A brief takes the place of the plan file and the two phase documents in what each executor reads.
 
 - **Compose.** The first time a plan needs one, make the run's scratch directory and print it: `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`. Keep the printed path as a literal, because each Bash call starts with `$D` empty. Before each plan's dispatch, ahead of the resolve that carries its bracket, run this once and keep the path the answer names:
 
@@ -306,7 +299,7 @@ With `planning.workflow_plans` read in `locate` as `true`, a brief takes the pla
 - **Dispatch.** The shared files to read first are project `CLAUDE.md` alone, and the plan-specific tail names the brief file by that absolute path in place of the plan file, keeping the commit scope and the mode line. The surfaces bullet and the testing-policy line stay as they are. The executor reads that one file at that path even from a worktree. An executor that can't open it does no task and returns a `blocked` checkpoint naming the path, because the file's head is what names the plan file and the dispatch no longer does. That return owes no report file.
 - **Bracket.** The executor's resolve carries the same `--plan <k> --bracket-plan <k>`, and its `--bracket-read` value is `CLAUDE.md,<the brief path>`, so the read trace shows any later read of a full document. A batch member on the parallel path carries its own value on its own `dispatch` event, so no member's bracket names another's brief.
 - **Second dispatches.** A continuation and a re-dispatched remainder name that same brief file, unless that plan's executor came back `blocked` on it. Then that plan's next dispatch takes the arm below. After a first dispatch, where no task has run, it starts the plan fresh and names no report path. After a continuation or remainder it keeps what `handle_checkpoint` carries: the report path, the checkpoint outcome, "continue from task <k>" and the same pre-plan HEAD. A `risk_surface` fix pass names that same brief file in place of the plan file, under the same `blocked` exception, and keeps the other three things its own paragraph lists: the findings file's path, the instruction to fix the blocker and high findings only, and the instruction to append its fix row to the plan's report rather than rotate it. Its resolve carries the **Bracket** value above. When the coordinator has amended `PLAN-<k>.md`'s `files:` to cover a finding outside the lease, it runs the **Compose** call again into the same scratch directory before that dispatch, so the lease the brief shows is the one `lease-check` reads.
-- **A refused or unreadable answer.** Print one line with what it names, and dispatch that plan the way this step does with the key not `true`, because the full documents lose the executor nothing.
+- **A refused or unreadable answer.** Print one line with what it names, and dispatch that plan with the plan file and the two phase documents, as the paragraphs above list them, because the full documents lose the executor nothing.
 
 Do NOT restate the executor's standing rules (atomic commit per task,
 deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
