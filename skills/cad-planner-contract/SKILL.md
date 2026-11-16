@@ -134,7 +134,9 @@ Every task has exactly three fields, all concrete:
   the task: when it checks for text in a file, look in the file you read and
   make sure that text isn't there yet, and never say a check fails at the base
   commit unless you know it does. A check that already passes proves nothing
-  about the task. If proving the task needs a tool or service not
+  about the task. When a task claims something holds while two things run at
+  once, its Verify makes them run at once and fails when they collide; a run
+  that only ever passes says nothing about the race. If proving the task needs a tool or service not
   available in the execution environment (probe with `command -v`; e.g.
   docker, a cloud CLI, a live endpoint), write the Verify as a `human-verify`
   instruction naming the tool and what the user should observe - never a
