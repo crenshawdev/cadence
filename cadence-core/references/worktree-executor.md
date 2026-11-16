@@ -76,6 +76,11 @@ worktree may lack it:
   never delete, reset or force it, since a resumed plan's earlier work may be
   on it.
 - Lease: `lease-check` with `--dir <main tree>/.planning`.
+- One plain command per Bash call. The host checks that each command stays in
+  the worktree, and refuses one that chains a git verb with anything else,
+  writes a file through a heredoc, or names the main checkout; each refusal
+  costs a turn. Read a file outside the worktree with the Read tool, and write
+  a file, the report included, with the Write tool.
 - Staying inside: every file operation stays in the worktree, except reading
   the files the prompt and the brief name outside it, and writing your report,
   its rotated sibling and any flagged diff beside the report path the prompt
