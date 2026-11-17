@@ -88,7 +88,7 @@ needs it - a `node -e` field read, the shape `workflows/progress.md` and
 `references/triage-gate.md` already use:
 
 ```
-node -e 'const f=require("fs");const d=process.argv[1];let tok;try{tok=f.readFileSync(d+"/run-token","utf8")}catch(e){console.error("scratch-stale: no run token in "+d);process.exit(1)}if(tok!==process.argv[2]){console.error("scratch-stale: "+d+" belongs to another run");process.exit(1)}let r;try{r=JSON.parse(f.readFileSync(d+"/render.json","utf8"))}catch(e){console.error("scratch-unreadable: "+d+"/render.json: "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+d+"/render.json is not an object");process.exit(1)}if(!Array.isArray(r.brackets)){console.error("scratch-shape: brackets is not an array in "+d+"/render.json");process.exit(1)}if(!r.brackets.every((b)=>b&&typeof b==="object")){console.error("scratch-shape: brackets has a non-object entry in "+d+"/render.json");process.exit(1)}for(const b of r.brackets)console.log([b.role,b.plan,b.event,b.ms,b.tokens,b.turns,b.duration_ms].join("\t"))' "<the echoed scratch directory>" "<the echoed run token>"
+node -e 'const f=require("fs");const d=process.argv[1];let tok;try{tok=f.readFileSync(d+"/run-token","utf8")}catch(e){console.error("scratch-stale: no run token in "+d);process.exit(1)}if(tok!==process.argv[2]){console.error("scratch-stale: "+d+" belongs to another run");process.exit(1)}let r;try{r=JSON.parse(f.readFileSync(d+"/render.json","utf8"))}catch(e){console.error("scratch-unreadable: "+d+"/render.json: "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+d+"/render.json is not an object");process.exit(1)}if(!Array.isArray(r.brackets)){console.error("scratch-shape: brackets is not an array in "+d+"/render.json");process.exit(1)}if(!r.brackets.every((b)=>b&&typeof b==="object")){console.error("scratch-shape: brackets has a non-object entry in "+d+"/render.json");process.exit(1)}for(const b of r.brackets)console.log([b.role,b.rung,b.effort,b.plan,b.event,b.ms,b.tokens,b.turns,b.duration_ms].join("\t"))' "<the echoed scratch directory>" "<the echoed run token>"
 ```
 
 Its first two arguments are the two literals `read_record` printed. It refuses
@@ -191,12 +191,10 @@ Rules, all load-bearing:
   their sources named, never as one total and never as a share of each other.
   It is fed from `provider_spend` and never from a Dispatches row: that table is
   one row per bracket, and a phase whose reviews all ran cross-model has no
-  `cad-reviewer` bracket to make a row from - measured 2026-09-01,
-  `/code/verbatim` phases 5-8 hold 4, 4, 5 and 4 provider reviews against zero
-  `cad-reviewer` dispatches each. A call whose event carried no usage counts
-  under `unrecorded`, never as a zero, and a scope holding no such call at all
-  prints NO line rather than an empty one - the same silence the `coordinator`
-  block gets.
+  `cad-reviewer` bracket to make a row from. A call whose event carried no usage
+  counts under `unrecorded`, never as a zero, and a scope holding no such call at
+  all prints NO line rather than an empty one - the same silence the
+  `coordinator` block gets.
 - What `calls` COUNTS, because the label is a claim about it: review calls that
   reached a provider. The seam writes the same event for two other commands -
   `detect-models`, which lists a provider's model ids, and `consult`,
