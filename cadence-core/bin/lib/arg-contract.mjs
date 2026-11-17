@@ -849,6 +849,8 @@ export const CONTRACTS = {
       '--command': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // no flags of its own, `--root` is the '*' row's; the row is here so the prose lint knows the word
+    paths: {},
   },
   // self-verify.mjs has no subcommand, so it carries a bare row like the hooks below; the prose lint checks its flags
   'self-verify.mjs': {
