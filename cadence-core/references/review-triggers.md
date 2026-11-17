@@ -283,8 +283,10 @@ same base and head. The `plan` trigger and the staged fires of `/cad-verify` and
 so the sha alone still collides, and two fires sharing a filename do not merge,
 they overwrite. Gate `deferred` keeps today's names, `plan-<k>` per plan and
 `<command>-<short HEAD sha>` otherwise, and `--round 2`: its queue's cap counts
-`-r<n>` suffixes on disk. Old `plan-<k>[-rN]` files are not renamed and still
-read.
+`-r<n>` suffixes on disk. An `advisory` fire writes no record, so it keeps
+`REVIEW-<trigger>.md`, `-plan-<k>` per plan and `-phase` for a phase-end `diff`;
+`risk_surface` takes this grammar at every gate. Old `plan-<k>[-rN]` files are
+not renamed and still read.
 
 ### 6. Consequence (gate)
 RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
@@ -313,13 +315,8 @@ The gate column is each key's own schema default. A config layer writing
 detection match, and there is no project for which a matched risk surface is
 worth waving through.
 
-`phase_diff` is `off` because an advisory gate blocks nothing and
-its findings files were referenced by no SUMMARY and no CONTEXT - the dispatch
-bought findings that changed nothing. A user who reads them sets
-`review.triggers.<t>.gate` back on and that is what fires; that is the existing
-config-wins precedence in step 1, not new code.
-
-`plan` is `advisory` on that same measurement, which condemned the advisory gate
+`plan` is `advisory` on a measurement - advisory findings files were referenced
+by no SUMMARY and no CONTEXT - which condemned the advisory gate
 rather than the review, so the choice was a gate that changes an outcome or no
 review at all. The answer is the plan-time risk floor: it makes this gate
 `blocking` on a phase whose own declared files touch an answered surface, which

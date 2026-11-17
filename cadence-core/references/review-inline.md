@@ -65,8 +65,8 @@ reviewer set never does. Per backend:
 
   The tail carries:
   - the findings path `.planning/phases/<N>/records/REVIEW-<trigger>.md` (a per-plan
-    fire suffixes it: `REVIEW-diff-plan-<k>.md`), where the reviewer writes
-    the same JSON object it returns, and
+    fire suffixes it: `REVIEW-diff-plan-<k>.md`; a `risk_surface` fire takes its
+    discriminator), where the reviewer writes the same JSON object it returns, and
   - the return-append command above with `${CLAUDE_PLUGIN_ROOT}` already
     expanded to its absolute path (the subagent does not inherit the variable)
     and NO `--tokens` - a subagent never sees its own figure.
@@ -76,8 +76,7 @@ reviewer set never does. Per backend:
   not yet on disk is reported as "review in flight - findings land at <path>",
   never as a clean pass. The trade is stated, not hidden: advisory reviewer
   returns carry no token figure in the trace (figureless by construction) -
-  durability of findings over pricing fidelity, and the overlapped fire was
-  already losing both.
+  durability of findings over pricing fidelity.
 
   That agent is the reviewer rung `roles.cad-reviewer.effort` names -
   `cad-reviewer-medium` on the schema default, whichever of the five rungs a

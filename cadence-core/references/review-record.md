@@ -58,8 +58,9 @@ the trigger asked for.
 
 ## The review file
 
-At gate `adjudicated` and at `/cad-verify`'s fire, write the REVIEW file with
-this seam before triage (`references/review-triggers.md` step 5 says which fires).
+At gate `adjudicated`, at `/cad-verify`'s fire and on a `blocking`
+`risk_surface` fire on the workflow path, write the REVIEW file with this seam
+before triage.
 Compose its payload as a file in this run's scratch directory, as below:
 
 ```
