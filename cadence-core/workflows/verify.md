@@ -336,9 +336,10 @@ subagent. Every `uat record` here carries repository text through
 </step>
 
 <step name="route_failures">
-For each item with `status: fail` and no recorded cause:
+For each item with `status: fail`:
 
-1. **Diagnose inline** - read the relevant code, find the root cause, and
+1. **Diagnose inline**, starting from a `cause` already on the item - read the
+   relevant code, find the root cause, and
    record it: `uat record ... --result fail --fields-file <path>`, the file
    holding `{"cause": "<root cause>"}` (caller-derived text -
    references/conventions.md; a re-record of the same result adds the field;
@@ -362,8 +363,8 @@ For each item with `status: fail` and no recorded cause:
    it goes to that ask like Leave open. With no reviewer set or tier on a route line,
    it takes `claude-subagent` alone, `verify` as the record's trigger token and
    `verify-<short HEAD sha>` as its discriminator on review-triggers.md step 5's
-   grammar. It takes the workflow path when step 4's both-layer answer and the
-   tool say so (`references/review-workflow.md`), and today's path otherwise.
+   grammar. It takes the workflow path when review-triggers.md step 4 says so
+   for this fire, and today's path otherwise.
    RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
    before presenting, since this workflow does not preload it.
@@ -378,12 +379,11 @@ For each item with `status: fail` and no recorded cause:
      3. "Leave open - the item stays failed and verification moves on"
 3. **Apply now** -> make the change, then `git add` exactly the files it
    touched, and only THEN ask the seam whether it touched a risk surface
-   BEFORE the commit lands. Staging is a STEP here, not a description:
-   references/git-guard.md fires the trigger at commit time, `--staged` reads
-   the index against HEAD and that is its one machine spelling (the index has
-   no commit for a `--head` to name), so a fix still sitting in the worktree
-   is outside the scope this call reads and no sentence saying it is staged
-   puts it there.
+   BEFORE the commit lands. Staging is a STEP here, not a description: this
+   arm's `risk-check run` reads the staged fix before the commit
+   (references/git-guard.md section 4), and `--staged` reads the index against
+   HEAD (the index has no commit for a `--head` to name), so a fix still
+   sitting in the worktree is outside the scope this call reads.
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --base HEAD --staged
