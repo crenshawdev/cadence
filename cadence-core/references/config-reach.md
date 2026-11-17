@@ -59,6 +59,7 @@ paraphrases. The phrases in use today:
 - `repo config layer only`
 - `repo config layer only for the unattended publish`
 - `user-global config layer only`
+- `blocking and deferred gates only, never a blocking risk_surface fire on the workflow path`
 
 Nothing machine-checks this list against the rows, so it is a reading aid: the
 rows below are the declaration. Deliberately unenumerated - a stated count has
@@ -167,7 +168,7 @@ purpose test runs against the reach the author just replaced.
 | `testing.strong_areas` | universal | `bin/lib/config-merge.mjs` `readTestingPolicy` - the one read of the merged `testing` section; `mergeLayers` strips a hand-edited user-global `testing` section before the merge, and `config.mjs set` refuses it at the user-global layer; `references/test-policy.md` has every role under a policy read it |
 | `testing.required_jobs` | universal | `bin/lib/config-merge.mjs` `readTestingPolicy` - the one read of the merged `testing` section; `mergeLayers` strips a hand-edited user-global `testing` section before the merge, and `config.mjs set` refuses it at the user-global layer |
 | `memory.backend` | universal | `bin/planning.mjs recall` - `builtin` BM25 or `none` |
-| `review.mode` | universal | `references/review-triggers.md` step 5, how multiple reviewers combine |
+| `review.mode` | `blocking` and `deferred` gates only, never a `blocking` `risk_surface` fire on the workflow path | `references/review-triggers.md` step 5, how multiple reviewers combine; an `advisory` review reports its findings as raised |
 | `review.reviewers` | universal | `bin/route.mjs resolve` - the backend set, filtered per trigger by availability AND by the user-global layer naming each cross-model provider into the `reviewers` map beside `review` (review-triggers.md step 3 TAKES it) |
 | `review.key_file` | user-global config layer only | `bin/review-provider.mjs` - the provider env-file path, reached through the `--key-file` flag the prose sites interpolate; `bin/lib/config-merge.mjs` strips the key out of the repo layer before the merge, so no future reader of the merged config can be pointed at a repo-chosen key file (CFG-02) |
 | `review.request_timeout_ms` | universal | `bin/review-provider.mjs` - ms before a provider request aborts |

@@ -26,7 +26,7 @@ Store model IDs and credential-file paths in configuration, never API keys. Cred
 | `blocking` | Stop on surviving blocker or high findings. An unavailable review cannot silently pass. |
 | `adjudicated` | Check each finding against the cited code and present the survivors for your triage. |
 
-`review.mode` controls how reviewers combine; a gate set to `adjudicated` requires adjudication regardless of the mode.
+`review.mode` controls how reviewers combine at the `blocking` and `deferred` gates. An `advisory` review reports its findings as raised, and a gate set to `adjudicated` requires adjudication regardless of the mode. The one exception is the blocking risk review, `risk_surface` at `blocking`, when it runs as a workflow: it runs every reviewer with a checker per reviewer whatever the mode says.
 
 Under `adjudicated`, the reviewers run as agents of one workflow, and one checker agent per reviewer checks that reviewer's findings. The main session still merges the results, groups findings that share a root cause and runs your triage. The blocking risk review, `risk_surface` at `blocking`, runs as that workflow too, and a surviving blocker or high still stops the run. A plan review of a phase with more than one plan gives each plan its own reviewer, plus one lighter reviewer that checks the plans fit together, while a cross-model provider is still called once over all of them. A workflow burns usage faster than one session doing the same review. When Claude Code's `Workflow` tool isn't available, the main session checks each finding itself.
 
@@ -47,6 +47,8 @@ Waiving a surface's routing floor withholds those plan-time effects for that sur
 **Allowed values:** `"single"`, `"panel"`, `"adjudicated"`.
 
 `single` uses the first available reviewer. `panel` combines and deduplicates findings. `adjudicated` runs reviewers independently, then checks each finding against the cited code before merging survivors. The check is one checker agent per reviewer, or one main-session pass when the `Workflow` tool isn't available.
+
+The mode shapes the `blocking` and `deferred` gates. An `advisory` review reports its findings as raised, a gate set to `adjudicated` always checks each finding, and a blocking `risk_surface` review that runs as a workflow runs every reviewer with a checker per reviewer whatever the mode says.
 
 ### `review.reviewers`
 
