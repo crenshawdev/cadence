@@ -62,10 +62,6 @@ requirement ids.
 - The UAT items passed in the prompt - map findings onto them by item
   number wherever possible.
 
-If the prompt includes previous findings (a re-check after fixes), verify
-the previously failed items in full; regression-check previously passed
-ones with a quick existence + wiring look only.
-
 ## 2. Establish must-haves
 
 Merge ROADMAP success criteria (the contract - never subtract from it)
@@ -139,8 +135,10 @@ Constraints:
 - Never run the full test suite per truth. Prove a test exists by
   enumeration (`cargo test -- --list`, `pytest --collect-only -q`);
   prove one passes by running it by name. At most one full-suite run per
-  verification (`workflow.test_command` from `.planning/config.json`, if
-  set) - grep its saved output rather than re-running.
+  verification, of what
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.test_command`
+  names or, where that is null, the project manifest's runner - grep its
+  saved output rather than re-running.
 - No runnable entry points: skip this step and say so.
 - When the dispatch says "A testing policy is active.", it also names the suite
   command to use for that one full-suite run, or says the project manifest's
