@@ -19,7 +19,8 @@ MR or PR / tag / leave local) with NO preselected default.
 lets `/cad-land` complete the close unattended, asking once, before the tag push,
 landing the integration branch
 on base via a host-CLI PR/MR **merge** on the platform (`gh pr merge` /
-`glab mr merge`). That platform merge is not a `git push`. On the GitHub arm the
+`glab mr merge` / `tea pr merge`). That platform merge is not a `git push`. On
+the GitHub and Forgejo arms the
 local-only integration branch is first published by the git-publish seam - one
 sanctioned push of the current non-protected branch, run as a subprocess so the
 Bash `git push` guard never sees it and there is no prompt. The seam refuses
