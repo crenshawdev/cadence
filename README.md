@@ -95,8 +95,8 @@ Cadence adds no telemetry. Its records stay in your repository and go wherever y
 
 ## Help and attribution
 
-Questions go in **#cadence** on the [jcrenshaw.dev Discord](https://jcrenshaw.dev/discord). Bugs go to [GitHub issues](https://github.com/crenshawdev/cadence/issues). See [Contributing](./CONTRIBUTING.md) before proposing a change.
+Questions go in **#cadence** on the [jcrenshaw.dev Discord](https://jcrenshaw.dev/discord). Bugs go to [GitHub issues](https://github.com/crenshawdev/cadence/issues). See [Contributing](./.github/CONTRIBUTING.md) before proposing a change.
 
-Cadence is maintained by John Crenshaw and derives from [GSD](https://github.com/open-gsd/gsd-core) by Open GSD. It's distributed under the [MIT License](./LICENSE), with the original attribution retained in [NOTICE](./NOTICE.md). [Lineage](./LINEAGE.md) records where it came from.
+Cadence is maintained by John Crenshaw and derives from [GSD](https://github.com/open-gsd/gsd-core) by Open GSD. It's distributed under the [MIT License](./LICENSE), with the original attribution retained in [NOTICE](./NOTICE.md). [Lineage](./docs/LINEAGE.md) records where it came from.
 
 [Support Cadence on Ko-fi](https://ko-fi.com/R5Y823KUXE).

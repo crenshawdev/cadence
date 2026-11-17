@@ -1,7 +1,7 @@
 # Changelog archive
 
 Cadence's 1.x and 2.x releases, in the same Keep a Changelog format as
-[CHANGELOG.md](./CHANGELOG.md), which holds every release from 3.0.0 on.
+[CHANGELOG.md](../../CHANGELOG.md), which holds every release from 3.0.0 on.
 
 ## [2.7.0] - 2026-08-11
 

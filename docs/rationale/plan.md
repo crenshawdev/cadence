@@ -46,7 +46,7 @@ grep with a window wide enough to be the tell that the caller is guessing -
 measured at ~9 KB read to recover a 3-line command.
 
 `seam-spawn-agent.md` stays the source for what the resolve RETURNS (the retry
-rungs, the `{ok:false}` arm), and `INTERNALS.md`'s Model routing for the
+rungs, the `{ok:false}` arm), and `docs/INTERNALS.md`'s Model routing for the
 per-role pin. The workflow carries only the
 invocation. `check_gate`'s resolve is written out again for the same reason: its
 role and flags differ, and what the call returns is stated once, elsewhere.

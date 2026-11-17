@@ -6,7 +6,7 @@ labels: proposal
 assignees: ''
 ---
 
-Read the [MANIFESTO](../../MANIFESTO.md) before you open this. The default answer to "should Cadence do one more thing" is no, and it has to be. That is not a discouragement, it is the ground rule, and a good proposal argues against it on purpose.
+Read the [MANIFESTO](../../docs/MANIFESTO.md) before you open this. The default answer to "should Cadence do one more thing" is no, and it has to be. That is not a discouragement, it is the ground rule, and a good proposal argues against it on purpose.
 
 ## What you want Cadence to do
 

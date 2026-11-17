@@ -88,7 +88,7 @@ deep-verify pass runs, which `workflows/verify.md` reads). Quality is not one
 dial, and effort alone cannot express "fire a blocking cross-model review".
 
 **The plan-time risk floor.** The resolve reads it off the phase's declared PLAN
-`files:`; `INTERNALS.md`'s Model routing says what it raises and that it fails
+`files:`; `docs/INTERNALS.md`'s Model routing says what it raises and that it fails
 closed. `--phase <N>` decides which phase the floor reads, the `.planning/STATE.md`
 cursor decides it when the flag is absent, and a MALFORMED `--phase` is refused
 - the alternative is a floor off another phase's files. `--plan <k>` narrows the

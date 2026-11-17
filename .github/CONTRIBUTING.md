@@ -1,6 +1,6 @@
 # Contributing to Cadence
 
-Read the [MANIFESTO](./MANIFESTO.md) first. Cadence is one person's tool, built to say no, and that shapes what a contribution here looks like. This is not the usual open invitation to grow the thing. The whole point is that it stays small.
+Read the [MANIFESTO](../docs/MANIFESTO.md) first. Cadence is one person's tool, built to say no, and that shapes what a contribution here looks like. This is not the usual open invitation to grow the thing. The whole point is that it stays small.
 
 Here is the honest version. Bug reports are welcome and I want them. If a script throws, a hook misfires, a command does the wrong thing, or a doc claims something the code doesn't do, open an issue with the receipts and I will chase it. Doc fixes too, a typo, a broken link, a stale path the CI didn't catch, send the pull request and those land fast.
 
@@ -99,4 +99,4 @@ The failing command, what you expected, what happened instead, and enough of the
 
 ## Attribution
 
-Cadence is a derivative work of [GSD](https://github.com/open-gsd/gsd-core), used under the MIT License, and the lineage is spelled out in [`NOTICE.md`](./NOTICE.md) and [`LINEAGE.md`](./LINEAGE.md). Contributions land under the same MIT License the rest of the repo carries.
+Cadence is a derivative work of [GSD](https://github.com/open-gsd/gsd-core), used under the MIT License, and the lineage is spelled out in [`NOTICE.md`](../NOTICE.md) and [`LINEAGE.md`](../docs/LINEAGE.md). Contributions land under the same MIT License the rest of the repo carries.

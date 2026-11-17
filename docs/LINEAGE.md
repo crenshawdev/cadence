@@ -1,6 +1,6 @@
 # Lineage: Cadence vs GSD
 
-Cadence's methodology descends from [GSD ("Get Shit Done")](https://github.com/open-gsd/gsd-core), and the rest is its own. GSD had the right loop buried inside an elephant, a mouse built to government standards, over a million words of it. I kept the loop and threw out the standards. This file records the measured distance between the two, so the lineage in [`DESIGN.md`](./DESIGN.md) rests on numbers, not adjectives.
+Cadence's methodology descends from [GSD ("Get Shit Done")](https://github.com/open-gsd/gsd-core), and the rest is its own. GSD had the right loop buried inside an elephant, a mouse built to government standards, over a million words of it. I kept the loop and threw out the standards. This file records the measured distance between the two, so the lineage in [`DESIGN.md`](./history/DESIGN.md) rests on numbers, not adjectives.
 
 **Provenance.** Figures below are counted from GSD at commit `d010ea1` (2026-07-10)
 and Cadence at the same date, except the Agents and Skills rows, whose
@@ -73,6 +73,6 @@ tolerable-divergence ceiling is not merely low; it is gone. Cadence owns its sou
 the single point of truth, and upstream ideas are cherry-picked by hand, adjudicated
 one at a time.
 
-*GSD remains the origin and the debt is acknowledged in [`LICENSE`](./LICENSE) and
-[`README.md`](./README.md). This file measures the distance; it does not diminish the
+*GSD remains the origin and the debt is acknowledged in [`LICENSE`](../LICENSE) and
+[`README.md`](../README.md). This file measures the distance; it does not diminish the
 lineage.*

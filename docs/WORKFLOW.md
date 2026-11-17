@@ -206,6 +206,6 @@ There is no local-subagent consult. A second Claude is not a second opinion.
 
 ---
 
-Drawn from Cadence's own `METHOD.md`, `INTERNALS.md`, `cadence-core/config.schema.json`
+Drawn from Cadence's own `docs/METHOD.md`, `docs/INTERNALS.md`, `cadence-core/config.schema.json`
 and the workflow definitions. Some figures draw a gate or rung that is off by
 default, and several gates have no config key of their own.

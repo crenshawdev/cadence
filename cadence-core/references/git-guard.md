@@ -2,7 +2,7 @@
 
 The commit-side rails. Rail 3 (never auto-push, and what the guard
 consequently does NOT see) lives in `references/git-publish.md`. What the guard
-sees, the one grammar both rails read, is in `INTERNALS.md`'s push-guard section.
+sees, the one grammar both rails read, is in `docs/INTERNALS.md`'s push-guard section.
 
 ## 1. Protected-branch guard (before the FIRST commit of any task/phase)
 

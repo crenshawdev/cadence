@@ -6,9 +6,9 @@ The history matters because some of the current boundaries came from trying a br
 
 | Document | What it records |
 |---|---|
-| [Manifesto](https://github.com/crenshawdev/cadence/blob/main/MANIFESTO.md) | Why the tool exists and what it chooses to leave out. |
-| [Design record](https://github.com/crenshawdev/cadence/blob/main/DESIGN.md) | Decisions, changes of direction and their reasons. |
-| [Lineage](https://github.com/crenshawdev/cadence/blob/main/LINEAGE.md) | The derivation from GSD and the dated measurements behind the comparison. |
+| [Manifesto](https://github.com/crenshawdev/cadence/blob/main/docs/MANIFESTO.md) | Why the tool exists and what it chooses to leave out. |
+| [Design record](https://github.com/crenshawdev/cadence/blob/main/docs/history/DESIGN.md) | Decisions, changes of direction and their reasons. |
+| [Lineage](https://github.com/crenshawdev/cadence/blob/main/docs/LINEAGE.md) | The derivation from GSD and the dated measurements behind the comparison. |
 | [Changelog](https://github.com/crenshawdev/cadence/blob/main/CHANGELOG.md) | Shipped changes by release. |
 
 Historical counts and experiments describe the version measured at the time. For current behavior, use this guide and the implementation it describes.

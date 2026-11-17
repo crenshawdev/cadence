@@ -11,7 +11,7 @@ Nothing here reaches an agent that has not read it.
   resolved by the Claude Code plugin runtime. No host probing, no locator shim.
   Skills @-include workflows from here.
 - Project state: `.planning/` in the repo root - the SAME git repo as the code
-  it plans (see DESIGN.md canonical set: PROJECT.md, REQUIREMENTS.md,
+  it plans (canonical set: PROJECT.md, REQUIREMENTS.md,
   ROADMAP.md, STATE.md, phases/<N>/{PLAN,SUMMARY,UAT}.md). Cadence assumes one
   repo holds both plans and code: the protected-branch guard, diffs, and
   goal-check all run where `.planning/` is, so a phase whose code lives in a

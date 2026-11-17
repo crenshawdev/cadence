@@ -1,7 +1,7 @@
 # Git rails: publishing
 
 Rails 1, 2 and 4 live in `references/git-guard.md`. The grammar whose
-complement this file's silences are is in `INTERNALS.md`'s push-guard section.
+complement this file's silences are is in `docs/INTERNALS.md`'s push-guard section.
 
 ## 3. Never auto-push
 

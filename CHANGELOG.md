@@ -3,7 +3,7 @@
 All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-Releases 1.0.0 through 2.7.0 are in [CHANGELOG-v1-v2.md](./CHANGELOG-v1-v2.md).
+Releases 1.0.0 through 2.7.0 are in [docs/history/CHANGELOG-v1-v2.md](./docs/history/CHANGELOG-v1-v2.md).
 
 ## [Unreleased]
 
