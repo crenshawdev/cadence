@@ -1,7 +1,8 @@
 # Git rails: the guard
 
 The commit-side rails. Rail 3 (never auto-push, and what the guard
-consequently does NOT see) lives in `references/git-publish.md`.
+consequently does NOT see) lives in `references/git-publish.md`. What the guard
+sees, the one grammar both rails read, is in `INTERNALS.md`'s push-guard section.
 
 ## 1. Protected-branch guard (before the FIRST commit of any task/phase)
 
@@ -109,30 +110,6 @@ the one exception to staging the specific files: a conversion moves many files,
 and one commit must leave the tree clean. That commit also takes in any other
 uncommitted change under the planning directory. Carried risk rulings stay out,
 because the records folder's own `.gitignore` ignores `risk-carry/`.
-
-## What the guard sees
-
-One grammar, governing the commit rail here and the push rail in
-`references/git-publish.md`.
-
-Both rails read one function (`cadence-core/bin/lib/git-segments.mjs`), so they
-always agree on what a command IS. It is about thirty lines, and it reads one
-thing: **a segment counts only when its COMMAND WORD is `git`, and the verb is
-its first non-flag word.** Segments split on `;`, a newline, `|`, `||`, `&&` and
-`&`. The seven git global options that take a separate argument (`-C`, `-c`,
-`--git-dir`, `--work-tree`, `--namespace`, `--exec-path`, `--config-env`) are
-skipped WITH that argument, which is the only reason the scan looks past a flag
-at all. The commit rail keeps the `-C` argument: a literal path (bare, or in one
-pair of quotes) is followed as git follows it, and the commit is policed in THAT
-repository, silent when it is not a Cadence project. A value the reader cannot
-know before the shell expands it (`$`, a backtick, `~`) keeps the session
-directory and says which `-C` it could not follow. Nothing else is inferred.
-
-It is a **detection widener, not a security boundary**: being wrong here costs a
-prompt, never a bypass, and the sanctioned publish never reaches this hook at
-all (it runs through the git-publish seam as a subprocess). The reader is total
-and linear, because it runs on every Bash tool call and a guard that stalls or
-aborts is worse than one that misses.
 
 ## 4. Risk surfaces
 
