@@ -57,8 +57,8 @@ are the on-demand and standalone gates.
 
 ## Capabilities (not standalone skills)
 - **Adversarial review** - references/review-triggers.md. Fires at plan / diff /
-  risk_surface / phase_diff; claude-subagent by default, OpenAI/Gemini when
-  configured (`/cad-config --review`).
+  risk_surface / phase_diff; claude-subagent by default, OpenAI, Gemini or
+  DeepSeek via `/cad-config --review`.
 - **Consult** - references/consult.md. User-gated second-model help at dead-ends,
   offered by cad-debug, cad-execute (structural stop), cad-plan (phase too big).
 
