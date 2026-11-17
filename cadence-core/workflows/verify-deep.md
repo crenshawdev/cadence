@@ -5,10 +5,11 @@ it actually runs; return to verify.md `walk` afterward.
 
 <step name="dispatch">
 Dispatch cad-verifier via the spawn-agent seam, the bracket on its resolve:
-`--bracket-read ".planning/phases/<N>/PLAN*.md,.planning/phases/<N>/SUMMARY*.md,.planning/ROADMAP.md,.planning/phases/<N>/UAT.md"`
-- the same paths the dispatch instruction below hands it. Hand it the phase number, goal,
-the current UAT items, the PLAN/SUMMARY/ROADMAP paths, and the path it must
-write: `.planning/phases/<N>/records/verifier-findings.json`. With `testing.scope` set
+`--bracket-read "<the verifier input path>"`, the input composed below. Hand it
+the phase number, the goal, that input, and the path it must write:
+`.planning/phases/<N>/records/verifier-findings.json`. A refused compose hands
+over the PLAN, SUMMARY and ROADMAP paths, `UAT.md` and the current UAT items in
+place of that input, and brackets those paths instead. With `testing.scope` set
 (read in verify.md `build_or_resume`), the prompt also says "A testing policy is
 active." and hands it the suite command, resolved as the executor contract
 resolves it: `config.mjs get workflow.test_command`, or, where that is null,
@@ -33,14 +34,13 @@ Close the bracket HERE, the moment the return is in hand and before either arm
 is taken - the dispatch ends exactly once, so it closes exactly once:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-verifier --role cad-verifier --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-verifier --role cad-verifier --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return> --detail-file <path>
 ```
 
-Carry a detail on a failed, empty or timed-out dispatch and the seam closes a
-`checkpoint`; OMIT it on a usable return and the seam closes a `return`. What
-failed is the verifier's own words, so it goes to a scratch file and the flag
-carries the PATH (caller-derived text - references/conventions.md). OMIT
-`--tokens` on a figureless return (seam-spawn-agent.md's bracket rule).
+On a failed, empty or timed-out dispatch, what failed is the verifier's own
+words, so it goes to a scratch file and `--detail-file` carries the PATH
+(caller-derived text - references/conventions.md). The rest of this line is
+seam-spawn-agent.md's bracket rule.
 
 A failed, empty, or timed-out dispatch then goes to `fall_through`. Otherwise
 continue to `merge`. There is no verifier retry to bracket: those are the only
