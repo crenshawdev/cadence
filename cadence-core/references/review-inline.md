@@ -40,7 +40,7 @@ reviewer set never does. Per backend:
   OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 
   ```
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
   ```
 
   A dispatch that failed, returned nothing, or returned an unparseable object
@@ -65,19 +65,17 @@ reviewer set never does. Per backend:
 
   The tail carries:
   - the findings path `.planning/phases/<N>/records/REVIEW-<trigger>.md` (a per-plan
-    fire suffixes it: `REVIEW-diff-plan-<k>.md`), where the reviewer writes
-    the same JSON object it returns, and
+    fire suffixes it: `REVIEW-diff-plan-<k>.md`; a `risk_surface` fire takes its
+    discriminator), where the reviewer writes the same JSON object it returns, and
   - the return-append command above with `${CLAUDE_PLUGIN_ROOT}` already
     expanded to its absolute path (the subagent does not inherit the variable)
-    and NO `--tokens` - a subagent never sees its own figure.
+    and NO `--tokens`, `--turns`, `--duration-ms` or `--agent-id` - a subagent
+    never sees its own return.
   This site then appends NO return and no checkpoint for an advisory fire,
   even when the return does land in-session - two writers on one bracket is a
   double-close. The step that reports advisory findings reads the FILE; a path
   not yet on disk is reported as "review in flight - findings land at <path>",
-  never as a clean pass. The trade is stated, not hidden: advisory reviewer
-  returns carry no token figure in the trace (figureless by construction) -
-  durability of findings over pricing fidelity, and the overlapped fire was
-  already losing both.
+  never as a clean pass.
 
   That agent is the reviewer rung `roles.cad-reviewer.effort` names -
   `cad-reviewer-medium` on the schema default, whichever of the five rungs a

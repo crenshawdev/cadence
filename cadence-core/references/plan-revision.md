@@ -7,14 +7,15 @@ is where that bound is enforced.
 
 1. Plans came from cad-planner: re-dispatch it FRESH in revision mode with
    the issues (see `plan.md`'s `spawn_planner`) - a new spawn, never a resume of the prior
-   run; the plan on disk preserves its grounding - with `--attempt 2` so the
-   routing seam climbs the re-dispatch one rung above cad-planner's
-   configured effort, and dispatches that rung's file. Plans were
+   run; the plan on disk preserves its grounding - with `--attempt 2`, which
+   climbs one rung only with `model.escalate_on_failure` on and holds it
+   otherwise; dispatch the file the resolve returns. Plans were
    written inline: apply the fixes in the main context.
    This re-dispatch is a paid dispatch like any other, so it carries its OWN
-   bracket - on the `--attempt 2` resolve, the same read-set spawn_planner uses:
+   bracket on the `--attempt 2` resolve. A refused or unreadable compose
+   dispatches with this read-set:
    `--bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"`.
-   With `planning.workflow_plans` `true` and the phase input composed, that
+   With the phase input composed, that
    resolve's `--bracket-read` value is `<the phase input path>`
    `spawn_planner`'s stretch kept, in place of that read-set.
 
@@ -23,7 +24,7 @@ is where that bound is enforced.
    checker's close below:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
    ```
 
    ONE line, the same arms handle_return uses: an empty or unmarked return is
@@ -40,12 +41,11 @@ is where that bound is enforced.
    confirming, NOT the whole plan set again. Ask one question: is each
    blocker actually closed, and did the fix introduce anything new? A
    full re-read costs a second cold pass over ROADMAP, REQUIREMENTS,
-   CONTEXT and the sources for a plan the checker has already read once;
-   measured, that was ten minutes to convert two blockers into one. Pass
-   `--attempt 2` (the seam climbs it to the retry rung its own cell names,
-   and returns the file for it - never a rung name this prose hardcodes).
-   Name it in the prompt too - `Rung: {the effort THIS resolve returned}` -
-   since the four agent files share one body and carry no rung of their own.
+   CONTEXT and the sources for a plan the checker has already read once.
+   Pass `--attempt 2` (step 1's rung rule) and dispatch the file it returns.
+   Name its rung in the prompt - `Rung: {the effort THIS resolve returned}` -
+   since the rung files carry it in frontmatter and their identical bodies
+   leave the prompt the only place it reaches the checker.
    Note what a narrow pass gives up: it re-reads nothing, so a fix that is
    locally right and wrong against CONTEXT can survive it. `plan.md`'s own
    `review` step is the full-artifact second opinion, and it fires after this
@@ -54,7 +54,7 @@ is where that bound is enforced.
    verdict:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
    ```
 
    An empty or unmarked return goes to a scratch file and rides
@@ -63,8 +63,7 @@ is where that bound is enforced.
 
    Both re-dispatches close on their own, at their own step: the per-file
    census asserts one `trace close` per dispatch moment, so folding these two
-   into one close leaves a paid dispatch unmeasured on exactly the path this
-   record exists to measure - and reddens the suite rather than going quiet.
+   into one close leaves a paid dispatch unmeasured and reddens the suite.
 3. No BLOCKER left -> continue. Still a BLOCKER -> present the remaining
    blockers and ask (ask-user seam): proceed to execution anyway, or stop
    and revise by hand. Never loop again.

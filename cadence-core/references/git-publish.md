@@ -1,7 +1,7 @@
 # Git rails: publishing
 
-Rails 1, 2 and 4 - and the `What the guard sees` grammar whose complement
-this file's silences are - live in `references/git-guard.md`.
+Rails 1, 2 and 4 live in `references/git-guard.md`. The grammar whose
+complement this file's silences are is in `docs/INTERNALS.md`'s push-guard section.
 
 ## 3. Never auto-push
 
@@ -16,9 +16,11 @@ other publishing is a human decision made through
 MR or PR / tag / leave local) with NO preselected default.
 
 `git.auto_close` (default off) is the single sanctioned opt-in to that ask: it
-lets `/cad-land` complete the close unattended, landing the integration branch
+lets `/cad-land` complete the close unattended, asking once, before the tag push,
+landing the integration branch
 on base via a host-CLI PR/MR **merge** on the platform (`gh pr merge` /
-`glab mr merge`). That platform merge is not a `git push`. On the GitHub arm the
+`glab mr merge` / `tea pr merge`). That platform merge is not a `git push`. On
+the GitHub and Forgejo arms the
 local-only integration branch is first published by the git-publish seam - one
 sanctioned push of the current non-protected branch, run as a subprocess so the
 Bash `git push` guard never sees it and there is no prompt. The seam refuses
@@ -30,28 +32,27 @@ only by cad-land, so the never-auto-push rule and the no-preselected-default
 posture both still hold. On GitLab `glab mr create` publishes the source branch
 itself, so THAT is the mutation and no push seam sits in its path: the GitLab
 arm consults `git-publish.mjs authorized` before it creates, and creates nothing
-on `ok:false`. Both arms need `git.auto_close` true in this repository's
-`.planning/config.json` AND the user-global config: either half alone
-authorizes neither arm, and the refusal's `detail` names the missing half. A surviving blocker/high `risk_surface` finding still halts the chain
+on `ok:false`. Every arm (GitHub, Forgejo, GitLab) needs `git.auto_close` true
+in this repository's `.planning/config.json` AND the user-global config: either
+half alone authorizes none of them, and the refusal's `detail` names the missing half. A surviving blocker/high `risk_surface` finding still halts the chain
 before merge.
 
 After a land/merge actually lands on this machine, `git.on_land_cleanup`
 (default on) returns HEAD to the base, pulls, and reaps the merged integration
 branch locally - advised by the `land-cleanup.mjs cleanup` seam, which reaps
-only when `git branch --merged <base>` confirms the branch is merged, and never
-via a remote-tracking delete (that would trip the push guard).
+only a branch `git branch --merged <base>` lists, and never via a
+remote-tracking delete (that would trip the push guard). `--merged true` widens
+no reap: passed on a merge the platform confirmed - by `/cad-land` 3(b), and by
+step 1's already-merged arm when the tip matches the head the forge merged, on
+the integration branch (`cad-land` step 1 has the rest of its guard) - it
+confirms the merge, so a set `git.integration_branch_name` is unset.
 
 ### What the guard does NOT see (rail 3)
 
 v2.2.0 deleted an 840-line shell tokenizer and a 367-line model of git's option
-grammar. The bet behind them was sound in kind - a widener is safe to be wrong -
-but the price was not. The escape surface behind `bash -c`, `$(...)`, `${...}`,
-aliases and `ssh` is unbounded, so three consecutive blocking review panels each
-found new holes and each patch bought more grammar, and the reader still went
-silent on `git switch -f main`. Then the scan turned out to be O(K x N) in
-memory: 3.1GB at 224KB of input, a V8 abort at 280KB, in a hook that runs on
-every Bash call and fails OPEN. A long enough command line switched the guard
-off entirely and let the push inside it run unprompted.
+grammar. Their escape surface never closed, and their O(K x N) scan aborted V8
+in a hook that runs on every Bash call and fails OPEN, so a long enough command
+line switched the guard off.
 
 So these shapes really can run git and are now invisible. Each is a pinned test
 row in `git-segments.test.mjs` and

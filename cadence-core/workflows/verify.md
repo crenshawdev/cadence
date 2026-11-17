@@ -123,7 +123,7 @@ always skips it - it is the off switch. Otherwise run it when this is the FIRST
 UAT session for the phase AND the resolve says to:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-verifier
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-verifier --phase <N>
 ```
 
 Relay every `warnings[]` entry that resolve returns to the user before running
@@ -162,8 +162,9 @@ once, then:
   (named "Testing policy agrees with the workflow files", expected: `test-policy
   check` passes) and recorded `fail` with `--source model`, its `detail` as
   `cause` through `--fields-file`, so it reaches `route_failures`.
-- Run the project's suite once yourself, in this session's shell and never in the
-  verifier subagent, resolved the way the executor contract resolves it:
+- Run the project's suite once yourself, in this session's shell (this walk's own
+  run; the deep pass's verifier makes its own), resolved the way the executor
+  contract resolves it:
   `config.mjs get workflow.test_command`, and where that is null the project's
   manifest runner, saying which. Cite its command and result as the evidence
   for the items it settles. A red suite is appended and recorded `fail` the same
@@ -213,12 +214,11 @@ and is executed.
 The suffix-tagged item, and a `why_human` item whose reason clears that reading,
 go straight to pass 2; pass 1 never runs their commands.
 
-`blocked` is TERMINAL - nothing returns an item to the walk from it - so a bar
-applied loosely enough to run an impossible command puts the phase permanently
-out of reach of Complete. Pass 1 records `blocked` ONLY for an item that cleared the
-bar and then failed on an environmental cause the bar did not predict, and the
-results table says it needs the user's answer on the next run rather than being
-left to rot.
+`blocked` is TERMINAL for the model's own walk: pass 1 records it ONLY for an
+item that cleared the bar and then failed on an environmental cause the bar did
+not predict, and the results table says it needs the user's answer. A later run
+puts each `blocked` item to the user through the ask-user seam before pass 2,
+with three answers - pass, skip with a reason, or fail - and records the answer.
 
 **Pass 1 - execute and cite.** Read `.planning/phases/<N>/UAT.md` ONCE, at the
 top of the walk, for the pending items and their `expected` text. It has no
@@ -336,9 +336,10 @@ subagent. Every `uat record` here carries repository text through
 </step>
 
 <step name="route_failures">
-For each item with `status: fail` and no recorded cause:
+For each item with `status: fail`:
 
-1. **Diagnose inline** - read the relevant code, find the root cause, and
+1. **Diagnose inline**, starting from a `cause` already on the item - read the
+   relevant code, find the root cause, and
    record it: `uat record ... --result fail --fields-file <path>`, the file
    holding `{"cause": "<root cause>"}` (caller-derived text -
    references/conventions.md; a re-record of the same result adds the field;
@@ -362,8 +363,8 @@ For each item with `status: fail` and no recorded cause:
    it goes to that ask like Leave open. With no reviewer set or tier on a route line,
    it takes `claude-subagent` alone, `verify` as the record's trigger token and
    `verify-<short HEAD sha>` as its discriminator on review-triggers.md step 5's
-   grammar. It takes the workflow path when step 4's both-layer answer and the
-   tool say so (`references/review-workflow.md`), and today's path otherwise.
+   grammar. It takes the workflow path when review-triggers.md step 4 says so
+   for this fire, and today's path otherwise.
    RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
    before presenting, since this workflow does not preload it.
@@ -378,12 +379,11 @@ For each item with `status: fail` and no recorded cause:
      3. "Leave open - the item stays failed and verification moves on"
 3. **Apply now** -> make the change, then `git add` exactly the files it
    touched, and only THEN ask the seam whether it touched a risk surface
-   BEFORE the commit lands. Staging is a STEP here, not a description:
-   references/git-guard.md fires the trigger at commit time, `--staged` reads
-   the index against HEAD and that is its one machine spelling (the index has
-   no commit for a `--head` to name), so a fix still sitting in the worktree
-   is outside the scope this call reads and no sentence saying it is staged
-   puts it there.
+   BEFORE the commit lands. Staging is a STEP here, not a description: this
+   arm's `risk-check run` reads the staged fix before the commit
+   (references/git-guard.md section 4), and `--staged` reads the index against
+   HEAD (the index has no commit for a `--head` to name), so a fix still
+   sitting in the worktree is outside the scope this call reads.
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --base HEAD --staged

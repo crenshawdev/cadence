@@ -10,7 +10,7 @@ dispatch; none of them applies on the sequential path.
   -> HALT and return a `blocked` checkpoint naming the missing PLAN path and
   the worktree's `git rev-parse --short HEAD`; repair nothing yourself.
   Reason: the fork point comes from the host's `worktree.baseRef` setting,
-  not from Cadence (`references/seam-spawn-agent.md`), and under its
+  not from Cadence (`workflows/execute.md`'s `choose_path`), and under its
   `fresh` default a worktree branches from the remote default branch,
   missing this phase's plans and CONTEXT entirely - three phase-4 executors
   hit exactly that (`.planning/CAPTURE.md:5`). A setting the user can change
@@ -33,21 +33,17 @@ dispatch; none of them applies on the sequential path.
   only paths git already TRACKS, so an untracked report - every rotated
   `plan-<k>.<n>.md`, and a first run's `plan-<k>.md` on a path not yet in history
   - aborts the entire commit with `did not match any file(s) known to git`. The
-  pathspec keeps a guardrail intact: a `risk_surface`
-  checkpoint deliberately leaves the flagged changes STAGED, and a bare
-  `git commit` after a broad `git add` would sweep them in - turning a blocking
-  gate into a landed commit. Naming the paths commits the reports and leaves
+  pathspec keeps a guardrail intact: anything else left staged in the
+  worktree, such as a checkpointed task's unfinished work, stays out of the
+  report commit, where a bare `git commit` after a broad `git add` would sweep
+  it in. Naming the paths commits the reports and leaves
   everything else staged exactly as it was; the enclosing `<plandir>/records/reports/`
-  directory is NOT a path you may `add` or commit here, because the flagged diff
-  below lives inside it - which is why the `add` names the same exact paths the
-  commit does. Committing on the non-final branches is what makes the report
+  directory is NOT a path you may `add` or commit here: the `add` names the same
+  exact paths the commit does. Committing on the non-final branches is what makes the report
   survive at all: a partial or checkpointed
   worktree is the one most likely to be removed or abandoned before you are
   dispatched again, and an uncommitted report dies with it - the re-run hazard
-  the file exists to prevent. NEVER commit `plan-<k>-risk-task-<n>.diff`: it
-  is the flagged staged diff itself and must not reach history, but do not leave it
-  behind either - the continuation deletes it as its first act, and
-  `git worktree remove` refuses a worktree holding untracked files.
+  the file exists to prevent.
 - Never `git stash` (the stash is shared across worktrees), never
   `git clean`, never blanket `git reset --hard` or `git restore .`, and
   never `git merge`, `git rebase` or `git fetch` - reconciling a stale
@@ -76,11 +72,14 @@ worktree may lack it:
   never delete, reset or force it, since a resumed plan's earlier work may be
   on it.
 - Lease: `lease-check` with `--dir <main tree>/.planning`.
+- One plain command per Bash call. The host checks that each command stays in
+  the worktree, and refuses one that chains a git verb with anything else,
+  writes a file through a heredoc, or names the main checkout; each refusal
+  costs a turn. Read a file outside the worktree with the Read tool, and write
+  a file, the report included, with the Write tool.
 - Staying inside: every file operation stays in the worktree, except reading
-  the files the prompt and the brief name outside it, and writing your report,
-  its rotated sibling and any flagged diff beside the report path the prompt
-  names, in the run's scratch directory. Never write into the main tree; the
-  host refuses it.
+  the files the prompt and the brief name outside it, and writing your report at the report path the prompt names and, when it rotates, its `plan-<k>.<n>.md` sibling in that same folder, in the run's
+  scratch directory. Never write into the main tree; the host refuses it.
 - Report: it goes to the path the prompt names, in place of
   `<plandir>/records/reports/plan-<k>.md`, and you NEVER commit it. Write its first
   line as your contract says, `PLAN COMPLETE` included: the main session moves

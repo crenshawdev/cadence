@@ -76,18 +76,15 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    most-likely-first, but test
    risk-first when a cheap test can eliminate a whole class. Write them to
    Hypotheses. Never jump to a fix before a cause is confirmed by evidence.
-   Recall runs here because Hypothesize is the judgment moment - the point where
-   past experience should shape the candidate set. When the effective
-   `memory.backend` (read at loop entry) is `builtin`, run recall inline via Bash
-   (D-02: there is no debug subagent, the main model runs the method inline):
+   When the effective `memory.backend` (read at loop entry) is `builtin`, run
+   recall inline via Bash (D-02: there is no debug subagent, the main model runs
+   the method inline):
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the symptom / bug description>"
    ```
 
-   Skip this entirely when the backend is `none` - do not issue the call. The
-   gate precedes the call on purpose (D-03): recall's own backend-off return is
-   a backstop for a direct caller, not this workflow's gate. Read
+   Skip this entirely when the backend is `none` - do not issue the call. Read
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (one
    consult site - this step) for the result shape and how matching past
    deviations and UAT findings fold into the Hypotheses list.
@@ -138,9 +135,11 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    between; the resumed step runs the gate on the staged fix and the one
    narrowed re-arm if a FAIL was fixed, and only then does step 4 trust the
    fix. An `ok:false`
-   answer (`no-diff`, `surfaces-unanswered`) is not a clean one: a check that
-   could not run clears nothing, so repair what the refusal's `hint` names and
-   re-run rather than landing the fix on it.
+   answer is not a clean one: a check that could not run clears nothing.
+   `no-diff`: stage the fix and re-run. `surfaces-unanswered`: run
+   `detect-surfaces --root .`, put the one-time surface question to the user
+   in this run as `references/risk-surface.md` states it, save the answer, and
+   re-run the same `risk-check run --phase 0 --base HEAD --staged` line.
 4. Verify: re-run the reproduction. Symptom gone -> set Status: resolved, fill
    Resolution, done. Symptom remains -> increment Attempts, record what the
    attempt changed and did not, and return to the method loop (the failed fix
@@ -153,9 +152,8 @@ Repeat until a root cause is confirmed or a dead-end is reached:
 
 Offer a consult - user-gated, one per dead-end - when an OBSERVABLE state is hit,
 never on a feeling of being stuck. The threshold T is
-`review.consult.attempt_threshold` (default 3), read at method-loop entry
-alongside the recall backend in the one
-`config.mjs get memory.backend review.consult.attempt_threshold` call (above).
+`review.consult.attempt_threshold` (default 3), read in the one
+method-loop entry call (above).
 `memory.backend` gates the Hypothesize recall step; the threshold gates
 this consult:
 

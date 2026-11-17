@@ -5,9 +5,11 @@
 // JSON line. planning.mjs measures the .planning state; this measures what ships.
 // It uses the lib self-verify.mjs enforces the budget with, so reported and enforced weight can't diverge.
 // `resident` answers what one command carries into the main thread and one dispatch into a subagent.
+// `paths` weighs each ordinary path path-baselines.json registers, beside its report baseline; the hold is the tests'.
 // Deterministic: sorted traversal and fixed key order, so two runs on one tree are byte-identical.
 // Usage: weight.mjs [--root <repo root>]
 //        weight.mjs resident [--root <repo root>] [--command <name>] [--role <name>]
+//        weight.mjs paths [--root <repo root>]
 // A flag present with no value is `ok:false`/`missing-flag-value`, never a silent default.
 'use strict';
 
@@ -16,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { residentWeight } from './lib/resident-weight.mjs';
+import { pathWeight } from './lib/path-weight.mjs';
 // Flag rules are declared rows in lib/arg-contract.mjs, and `requireFlag` throws the refusal in the form the catch arm
 // below renders (raised bare, it surfaces as detail "[object Object]"). All three flags refuse on both axes, which is
 // the "never a silent default" above.
@@ -25,9 +28,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 try {
   const argv = process.argv.slice(2);
-  /** This script's declared rows: the bare form is the `''` row, and `--root`, legal on both arms, is under `'*'`. */
+  /** This script's declared rows: the bare form is the `''` row, and `--root`, legal on every arm, is under `'*'`. */
   const ROWS = CONTRACTS['weight.mjs'];
-  const sub = argv[0] === 'resident' ? 'resident' : '';
+  const sub = argv[0] === 'resident' || argv[0] === 'paths' ? argv[0] : '';
   /** One flag read through its declared row; the row owns the rule and this is only an adapter over argv. */
   const row = rowReader(argv, ROWS);
   const arg = (name) => row(sub, name);
@@ -56,6 +59,8 @@ try {
       zeroResident: r.zeroResident,
       zeroResidentBytes: r.zeroResidentBytes,
     });
+  } else if (sub === 'paths') {
+    emit({ ok: true, checked: 'path-weight', paths: pathWeight(root) });
   } else {
     emit({ ok: true, checked: 'surface-weight', surfaces: weighAll(root) });
   }

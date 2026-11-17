@@ -14,27 +14,6 @@ Cadence gives that work a structure. Requirements, decisions, plans and results 
 
 You decide what you're building and the constraints it needs to respect. Cadence carries those decisions through the work.
 
-## Testing needs a stopping point
-
-An agent can find a reason to write another test almost indefinitely. Each suggestion may sound reasonable on its own. Taken together, they can cost more to build and maintain than the behavior they protect.
-
-More testing has to earn its place.
-
-Cadence's testing policy sets the scope before implementation. Planning checks what the existing tests cover, chooses the smallest set of additional checks needed, and states what evidence is enough to finish. Fixtures, mocks and test infrastructure count toward that effort too.
-
-Under an accepted policy:
-
-- Required tests run unattended in **GitHub Actions**, including setup, services and cleanup.
-- Coverage starts at a recommended **85% for lines and branches**, preserving higher existing thresholds. Unsupported metrics are made explicit; Go has a separate statement threshold.
-- Existing tests are reused when they adequately cover the behavior. Bug fixes need a reproducer that fails for the defect and passes after the fix.
-- Testing stops when the agreed behavior is covered and the required checks pass. Expanding it needs a demonstrated defect, an uncovered acceptance requirement or a measured coverage shortfall.
-
-A passing coverage percentage doesn't establish that the assertions mean anything. The policy requires both meaningful checks and the accepted thresholds. You shouldn't have to approve every test to keep testing under control.
-
-Setup offers the policy, or you can accept one for an existing Cadence project with `/cadence:cad-config --testing`. It's opt-in per repository. CI-only checks stay pending until they run, and a phase is called CI-verified only for a commit whose required jobs passed.
-
-Read the [testing chapter](https://crenshawdev.github.io/cadence/testing/policy.html) for the rules, supported coverage tools and enforcement limits.
-
 ## Get started
 
 You'll need Claude Code with plugin support, Node.js, Git, and a signed-in forge CLI: `gh`, `glab` or `tea`. Testing-policy enforcement currently requires GitHub Actions. Cadence's own scripts have no runtime package dependencies.
@@ -59,6 +38,27 @@ For a new project:
 Already worked through the idea? Pass your brief with `/cadence:cad-new-project --brief <file>`. Cadence reads what's settled and asks about what's still open.
 
 Update with `/plugin update cadence@foundation`.
+
+## Testing needs a stopping point
+
+An agent can find a reason to write another test almost indefinitely. Each suggestion may sound reasonable on its own. Taken together, they can cost more to build and maintain than the behavior they protect.
+
+More testing has to earn its place.
+
+Cadence's testing policy sets the scope before implementation. Planning checks what the existing tests cover, chooses the smallest set of additional checks needed, and states what evidence is enough to finish. Fixtures, mocks and test infrastructure count toward that effort too.
+
+Under an accepted policy:
+
+- Required tests run unattended in **GitHub Actions**, including setup, services and cleanup.
+- Coverage starts at a recommended **85% for lines and branches**, preserving higher existing thresholds. Unsupported metrics are made explicit; Go has a separate statement threshold.
+- Existing tests are reused when they adequately cover the behavior. Bug fixes need a reproducer that fails for the defect and passes after the fix.
+- Testing stops when the agreed behavior is covered and the required checks pass. Expanding it needs a demonstrated defect, an uncovered acceptance requirement or a measured coverage shortfall.
+
+A passing coverage percentage doesn't establish that the assertions mean anything. The policy requires both meaningful checks and the accepted thresholds. You shouldn't have to approve every test to keep testing under control.
+
+Setup offers the policy, or you can accept one for an existing Cadence project with `/cadence:cad-config --testing`. It's opt-in per repository. CI-only checks stay pending until they run, and a phase is called CI-verified only for a commit whose required jobs passed.
+
+Read the [testing chapter](https://crenshawdev.github.io/cadence/testing/policy.html) for the rules, supported coverage tools and enforcement limits.
 
 ## The working loop
 
@@ -91,12 +91,14 @@ The record stays with the project, so you can end a session without making the n
 | [How it works](https://crenshawdev.github.io/cadence/how-it-works/roles.html) · [Controls and limits](https://crenshawdev.github.io/cadence/how-it-works/controls.html) | What the roles do and how the controls work. |
 | [Cost](https://crenshawdev.github.io/cadence/how-it-works/cost.html) | Measured runs and where the spend goes. |
 
-Cadence adds no telemetry. Its records stay in your repository and go wherever you push them. It also reads the host's run file for a workflow under the session directory, read-only, to price each agent and take the result: for a review workflow when `workflow.use_workflows` is on in both config layers, and for `/cad-map` after its typed yes. For a review workflow, the findings and rulings come from the run's journal beside that file, also read-only. The journal holds what each reviewer and checker returned, and it stays on your machine. It runs inside Claude Code, so your session is still subject to the host's data handling. Optional external reviewers receive project material only when enabled.
+Cadence adds no telemetry. Its records stay in your repository and go wherever you push them. It also reads the host's run file for a workflow under the session directory, read-only, to price each agent and take the result: for a review workflow, for each `/cad-execute` wave, and for `/cad-map` after its typed yes. For a review workflow, the findings and rulings come from the run's journal beside that file, also read-only. The journal holds what each reviewer and checker returned, and it stays on your machine. It runs inside Claude Code, so your session is still subject to the host's data handling. Optional external reviewers receive project material only when enabled.
 
 ## Help and attribution
 
-Questions go in **#cadence** on the [jcrenshaw.dev Discord](https://jcrenshaw.dev/discord). Bugs go to [GitHub issues](https://github.com/crenshawdev/cadence/issues). See [Contributing](./CONTRIBUTING.md) before proposing a change.
+Questions go in **#cadence** on the [jcrenshaw.dev Discord](https://jcrenshaw.dev/discord). Bugs go to [GitHub issues](https://github.com/crenshawdev/cadence/issues). See [Contributing](./.github/CONTRIBUTING.md) before proposing a change.
 
-Cadence is maintained by John Crenshaw and derives from [GSD](https://github.com/open-gsd/gsd-core) by Open GSD. It's distributed under the [MIT License](./LICENSE), with the original attribution retained in [NOTICE](./NOTICE.md). [Lineage](./LINEAGE.md) records where it came from.
+Cadence is maintained by John Crenshaw and derives from [GSD](https://github.com/open-gsd/gsd-core) by Open GSD. It's distributed under the [MIT License](./LICENSE), with the original attribution retained in [NOTICE](./NOTICE.md). [Lineage](./docs/LINEAGE.md) records where it came from.
 
-[Support Cadence on Ko-fi](https://ko-fi.com/R5Y823KUXE).
+## Supporting Cadence
+
+Cadence is free under the MIT License. If it's useful to you and you'd like to support the work, you can do that through [GitHub Sponsors](https://github.com/sponsors/crenshawdev) or [Ko-fi](https://ko-fi.com/jcrenshawdev).

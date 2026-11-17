@@ -62,7 +62,7 @@ scratch/
 /.claude-plugin/types/
 
 # The test suite: a clone of the cadence-tests repository at the commit
-# .github/tests-pin names (CONTRIBUTING.md)
+# .github/tests-pin names (.github/CONTRIBUTING.md)
 /tests/
 
 # The accepted coverage command writes its LCOV report to the repo root

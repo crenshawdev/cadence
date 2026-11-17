@@ -1,0 +1,157 @@
+{
+  "_comment": "Per-path register read by `weight.mjs paths`: for one command's ordinary path, the files it opens (repository-relative, POSIX, in the report's order) and that path's report BASELINE in UTF-8 bytes. A baseline is the report's own figure and is NEVER raised - a path over it is the regression the cadence-tests hold catches. Each later phase adds rows for the paths it cuts. The arm only reports; deciding over or under is the test's job. Not a measured prose surface and not a config.schema.json key - it is a manifest beside the check, like weight-budgets.json.",
+  "paths": [
+    {
+      "command": "cad-plan",
+      "variant": "ordinary",
+      "files": [
+        "skills/cad-plan/SKILL.md",
+        "cadence-core/workflows/plan.md",
+        "cadence-core/references/git-guard.md"
+      ],
+      "baseline": 49273
+    },
+    {
+      "command": "cad-execute",
+      "variant": "ordinary",
+      "files": [
+        "skills/cad-execute/SKILL.md",
+        "cadence-core/workflows/execute.md",
+        "cadence-core/references/git-guard.md",
+        "cadence-core/references/execute-workflow.md",
+        "cadence-core/references/execute-parallel.md",
+        "cadence-core/templates/SUMMARY.md"
+      ],
+      "baseline": 81273
+    },
+    {
+      "command": "cad-context",
+      "variant": "analyzer bought",
+      "files": [
+        "skills/cad-context/SKILL.md",
+        "cadence-core/workflows/context.md",
+        "cadence-core/references/seam-ask-user.md",
+        "cadence-core/references/recall.md",
+        "cadence-core/references/seam-spawn-agent.md",
+        "cadence-core/templates/CONTEXT.md",
+        "cadence-core/references/git-guard.md"
+      ],
+      "baseline": 68134
+    },
+    {
+      "command": "cad-task",
+      "variant": "inline",
+      "files": [
+        "skills/cad-task/SKILL.md",
+        "cadence-core/workflows/task.md",
+        "cadence-core/references/git-guard.md"
+      ],
+      "baseline": 31535
+    },
+    {
+      "command": "cad-verify",
+      "variant": "--deep",
+      "files": [
+        "skills/cad-verify/SKILL.md",
+        "cadence-core/workflows/verify.md",
+        "cadence-core/workflows/verify-deep.md",
+        "cadence-core/references/seam-spawn-agent.md"
+      ],
+      "baseline": 62373
+    },
+    {
+      "command": "cad-verify",
+      "variant": "apply-now fix",
+      "files": [
+        "skills/cad-verify/SKILL.md",
+        "cadence-core/workflows/verify.md",
+        "cadence-core/references/git-guard.md"
+      ],
+      "baseline": 37791
+    },
+    {
+      "command": "cad-land",
+      "variant": "ordinary",
+      "files": [
+        "skills/cad-land/SKILL.md",
+        "cadence-core/references/git-guard.md",
+        "cadence-core/references/git-publish.md"
+      ],
+      "baseline": 39475
+    },
+    {
+      "command": "cad-milestone",
+      "variant": "ordinary",
+      "files": [
+        "skills/cad-milestone/SKILL.md",
+        "cadence-core/workflows/milestone.md",
+        "cadence-core/references/git-guard.md",
+        "skills/cad-audit/SKILL.md",
+        "cadence-core/workflows/audit.md"
+      ],
+      "baseline": 42013
+    },
+    {
+      "command": "cad-config",
+      "variant": "no args or key=value",
+      "files": [
+        "skills/cad-config/SKILL.md",
+        "cadence-core/workflows/config.md"
+      ],
+      "baseline": 41900
+    },
+    {
+      "command": "cad-new-project",
+      "variant": "ordinary",
+      "files": [
+        "skills/cad-new-project/SKILL.md",
+        "cadence-core/workflows/new-project.md",
+        "cadence-core/workflows/config-roles.md",
+        "cadence-core/workflows/config-testing.md",
+        "cadence-core/references/risk-surface.md",
+        "cadence-core/references/test-policy.md",
+        "cadence-core/templates/PROJECT.md",
+        "cadence-core/templates/REQUIREMENTS.md",
+        "cadence-core/templates/ROADMAP.md",
+        "cadence-core/references/git-guard.md"
+      ],
+      "baseline": 112514
+    },
+    {
+      "command": "cad-adopt",
+      "variant": "ordinary",
+      "files": [
+        "skills/cad-adopt/SKILL.md",
+        "cadence-core/workflows/adopt.md",
+        "cadence-core/workflows/config-roles.md",
+        "cadence-core/workflows/config-testing.md",
+        "cadence-core/references/risk-surface.md",
+        "cadence-core/references/test-policy.md",
+        "cadence-core/templates/PROJECT.md",
+        "cadence-core/templates/REQUIREMENTS.md",
+        "cadence-core/templates/ROADMAP.md",
+        "cadence-core/references/git-guard.md"
+      ],
+      "baseline": 107241
+    },
+    {
+      "command": "cad-phase",
+      "variant": "ordinary",
+      "files": [
+        "skills/cad-phase/SKILL.md",
+        "cadence-core/workflows/phase.md",
+        "cadence-core/references/git-guard.md"
+      ],
+      "baseline": 15984
+    },
+    {
+      "command": "cad-pause",
+      "variant": "ordinary",
+      "files": [
+        "skills/cad-pause/SKILL.md",
+        "cadence-core/references/git-guard.md"
+      ],
+      "baseline": 11346
+    }
+  ]
+}

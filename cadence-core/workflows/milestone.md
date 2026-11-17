@@ -42,9 +42,8 @@ close as a version cut; continue at step 3. No config key decides this: a projec
 still bumps its manifest, and the key that governs the release tag is read where
 that tag is cut (/cad-land, after the merge - the tag-after-merge note below).
 
-Everything below runs only on the version you confirmed: the bump never runs
-without `--version`, so the seam's `no-target-version` refusal is unreachable
-here; an `ok:false` on a named version is a genuine failure - the halts below
+Everything below runs only on the version you confirmed: an `ok:false` on a
+named version is a genuine failure - the halts below
 STOP the close.
 
 Then, before the tag, bump the manifest + scaffold the changelog. Run, on its
@@ -56,7 +55,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/release-bump.mjs" bump --dir <root>
 ```
 
 The seam auto-detects `.claude-plugin/plugin.json` and returns `action:"skip"`
-when absent (non-plugin projects are unaffected). Otherwise it bumps the
+when absent. Otherwise it bumps the
 manifest `version` to the shipping release (and any versioned sibling),
 scaffolds the dated `## [<version>]` CHANGELOG heading + link reference, and
 PROMOTES whatever was staged under `## [Unreleased]` into that dated section.
@@ -200,7 +199,7 @@ is how a roadmap acquires phases nobody asked for.
 just shipped: its label, close date, requirement ids, phase and commit counts,
 the audit result, the manifest version, where its rows, narrative and residue now
 live, and what is still outstanding - the merge and the tag are /cad-land's. Step
-5 takes its own close-only bullet, step 6 is unchanged, and the close ends there.
+5 takes its own close-only bullet, and step 6 is unchanged.
 
 **Opening a cycle.** Bump the version/milestone and set the next cycle's goal and
 scope. Ask the user (ask-user seam) for the next milestone's intent if it is not
@@ -236,8 +235,8 @@ reads as no cycle open. `/cad-phase add` is the destination because it is the
 only workflow that adds a phase to an existing roadmap - `/cad-plan` stops with "Phase
 {N} is not in ROADMAP.md".
 
-(Pass `--name`/`--total` explicitly when this close DEFERRED work: step 3's
-third bullet leaves that phase's line in place, so the list is still live and
+(Pass `--name`/`--total` explicitly when this close DEFERRED work: step 3
+leaves unfinished phases' lines untouched, so the list is still live and
 its entries do not include phase 1 - the seam finds nothing to derive from and
 returns `cannot-derive`.)
 Commit the doc changes (`docs:`), cursor and `.planning/records/state.json`
@@ -246,14 +245,14 @@ never leave the tree dirty.
 
 ## 7. Autonomous close (`git.auto_close` only)
 When the up-front `authorized` call answered `ok:false` (the default, and the
-answer when only one layer sets `git.auto_close`), stop here: merging, tagging
-and publishing are the user's separate `/cad-land` call (step 8's note). On
-`ok:true`, chain the publish end-to-end - invoke `/cad-land`
-via the SlashCommand tool so it runs PR -> merge -> tag -> reset with no
-per-step prompts (audit -> bump already ran above). The close gate inside
+answer when only one layer sets `git.auto_close`), this step does nothing more:
+merging, tagging and publishing are the user's separate `/cad-land` call (step
+9's note), and steps 8 and 9 still run. On `ok:true`, chain the publish
+end-to-end - invoke `/cad-land` via the SlashCommand tool so it runs PR -> merge -> tag -> reset and asks
+once, before the tag push (audit -> bump already ran above). The close gate inside
 cad-land still applies: a blocker/high `risk_surface` finding from this branch's
 own fires that the rulings show genuinely unfixed - and a fire nothing ruled at
-all - stops the chain before merge (nothing is force-merged), and only because
+all - stops the chain before merge, and only because
 step 3 carried those rulings out of the phase dirs it pruned. Skip that and this
 sentence is false: the gate reads an empty set and merges.
 
@@ -264,17 +263,19 @@ handed `{"findings":[]}`, and merges over the blocker this one just refused. The
 actor that clears it is `/cad-land` step 4, on a merge it CONFIRMED landed - the
 retry once the halt is answered, or the manual land the user comes back to
 finish. So a carry still on disk means a close nobody finished, and the next
-milestone halting on it is the answer rather than the bug; clear it by hand only
-when the branch it belongs to merged outside Cadence.
+milestone halting on it is the answer rather than the bug. If the branch it
+belongs to merged outside Cadence, `/cad-land` on that branch clears it through
+its already-merged arm only on GitHub or GitLab, for a merged request whose
+head is the branch tip, on an empty deferred queue and when
+`git.integration_branch_name` names that branch; otherwise clear it by hand.
 
-Ordering note (intentional, not a latent bug): this chain runs AFTER step 4
+Ordering note: this chain runs AFTER step 4
 evolved PROJECT.md `### Active` to the NEXT version, so cad-land can no longer
 re-derive the just-shipped branch name by version. A project that sets
 `git.integration_branch_name` is reaped by that name first, and the sole merged
 branch in its namespace next. Otherwise it reaps via the `land-cleanup.mjs`
 `cadence/*`-merged fallback (resolveReapBranch): the sole `cadence/*` branch
-actually merged into base is the shipped `cadence/<this-version>`, so it is
-still reaped correctly.
+actually merged into base is the shipped `cadence/<this-version>`.
 
 ## 8. Retune check
 The record this milestone wrote prices its own configuration. Invoke
@@ -282,7 +283,7 @@ The record this milestone wrote prices its own configuration. Invoke
 spans every phase it shipped. Its rules live in
 `cadence-core/workflows/suggest.md` and are not restated here.
 
-The close's own posture, which is not a presentation rule: a failed or missing
+The close's own posture: a failed or missing
 run degrades to a one-line note, never a halt. The close does not gate on its
 own accounting.
 

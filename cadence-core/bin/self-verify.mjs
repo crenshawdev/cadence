@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // @ts-check
 // self-verify.mjs - the prose kept naming flags, keys and paths the code didn't have, so CI checks all
-// three across the live prose surfaces (workflows, references, skills, agents, templates, docs, README,
-// INTERNALS, METHOD) and the registers behind the prose rules. DESIGN, LINEAGE and CHANGELOG aren't
-// read, they name cut keys on purpose. Each check keeps its reason at its own code.
+// three across the live prose surfaces (workflows, references, skills, agents, templates, docs, README)
+// and the registers behind the prose rules. docs/history/ and CHANGELOG aren't read, they name cut keys
+// on purpose. Each check keeps its reason at its own code.
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
 'use strict';
@@ -144,9 +144,11 @@ function* mdFiles(root) {
     // docs/ holds the published pages; left off the walk, a claim stops being enforced the moment it moves there
     join(root, 'docs'),
   ];
+  // docs/history/ stays out: the historical docs name cut keys on purpose
+  const history = join(root, 'docs', 'history') + sep;
   // optimistic on a throw: a dangling symlink or a cycle still reaches the reporter instead of vanishing
   const keep = (/** @type {string} */ f) => {
-    if (!f.endsWith('.md')) return false;
+    if (!f.endsWith('.md') || f.startsWith(history)) return false;
     try {
       return statSync(f).isFile();
     } catch {
@@ -157,11 +159,9 @@ function* mdFiles(root) {
     if (!existsSync(d)) continue;
     yield* walkEntries(d, keep);
   }
-  // README, INTERNALS and METHOD are live too; the historical docs stay out because they name cut keys
-  for (const doc of ['README.md', 'INTERNALS.md', 'METHOD.md']) {
-    const p = join(root, doc);
-    if (existsSync(p)) yield { file: p };
-  }
+  // README is live too; INTERNALS and METHOD come in with the docs walk
+  const readme = join(root, 'README.md');
+  if (existsSync(readme)) yield { file: readme };
 }
 
 // --- workflow scripts (D-21) ----------------------------------------------------
@@ -497,11 +497,11 @@ function walkProse(root, problems, v, lintProse) {
 }
 
 function checkInternalsPaths(root, isFullTree, problems) {
-  // 3b. every backticked repo path in INTERNALS.md must exist; globs and non-path spans are skipped
-  const internals = join(root, 'INTERNALS.md');
+  // 3b. every backticked repo path in docs/INTERNALS.md must exist; globs and non-path spans are skipped
+  const internals = join(root, 'docs', 'INTERNALS.md');
   if (existsSync(internals)) {
     // guarded like the walkers (#49.1): a throwing read unwinds run() and the catch drops every problem found so far.
-    // Nothing is pushed on failure, mdFiles already reported INTERNALS.md and a second entry would double-count it.
+    // Nothing is pushed on failure, mdFiles already reported docs/INTERNALS.md and a second entry would double-count it.
     let internalsText = null;
     try {
       internalsText = readFileSync(internals, 'utf8');
@@ -510,11 +510,11 @@ function checkInternalsPaths(root, isFullTree, problems) {
       const tok = m[1];
       if (!/^[A-Za-z0-9_./-]+$/.test(tok) || !tok.includes('/') || tok.includes('*')) continue;
       if (!existsSync(join(root, tok))) {
-        problems.push({ kind: 'missing-internals-path', file: 'INTERNALS.md', detail: tok });
+        problems.push({ kind: 'missing-internals-path', file: 'docs/INTERNALS.md', detail: tok });
       }
     }
   } else if (isFullTree) {
-    problems.push({ kind: 'missing-input', file: 'INTERNALS.md', detail: 'always-expected input absent' });
+    problems.push({ kind: 'missing-input', file: 'docs/INTERNALS.md', detail: 'always-expected input absent' });
   }
 }
 
@@ -545,7 +545,7 @@ function checkBudgets(root, isFullTree, problems) {
   // it taxed shrinking as much as growth. A surface under its entry just got smaller.
   const budgetPath = join(root, 'cadence-core', 'bin', 'weight-budgets.json');
   if (existsSync(budgetPath)) {
-    // same guard as INTERNALS.md above: a malformed manifest used to sink the whole run
+    // same guard as docs/INTERNALS.md above: a malformed manifest used to sink the whole run
     let budgets = null;
     try {
       budgets = JSON.parse(readFileSync(budgetPath, 'utf8')).budgets || {};

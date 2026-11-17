@@ -5,16 +5,16 @@ and a second time by `references/execute-workflow.md`, which follows its steps 3
 to 5 after a wave. All worktree ceremony lives here and in that file, and
 `choose_path` has already proven `worktree.baseRef` is `head` before anything
 below runs - so an executor halting `blocked` on a missing PLAN
-on this path is a real defect to report, not the fork-point default.
+on this path is not the fork-point default, and goes to `handle_checkpoint`'s
+missing-PLAN arm.
 
 1. In batches of `parallelization.max_concurrent_agents`: dispatch one
    cad-executor per plan IN THE DISPATCH SET `locate` defined, each in its own
-   git worktree on branch `cadence/phase-<N>-plan-<k>` (spawn-agent seam,
-   worktree isolation), the whole batch issued in ONE message. Resolve the route
-   ONCE for (cad-executor, attempt 1) and reuse it for every executor in the
-   batch - identical role and attempt, so re-resolving per dispatch is wasted
-   (seam-spawn-agent.md concurrent dispatch). Same prompt as sequential except
-   the mode line:
+   git worktree on branch `cadence/phase-<N>-plan-<k>` (spawn-agent seam;
+   `choose_path` proved the fork point), the whole batch in ONE message. Each executor
+   resolves its own route carrying its `--plan <k>`, the executor exception
+   seam-spawn-agent.md's concurrent dispatch states. Same prompt as sequential
+   except the mode line:
    "Worktree executor on branch {branch} - worktree rules apply."
    Announce each plan in the batch with its own position line, under the rule
    `workflows/execute.md`'s `locate` states.
@@ -64,9 +64,7 @@ on this path is a real defect to report, not the fork-point default.
    persist under their own range (`references/review-triggers.md` step 5)
    and a later plan's empty settle cannot overwrite an earlier plan's file.
    A fire that takes the workflow path (references/review-workflow.md) ends
-   the turn and its notice resumes this step for that plan; several plans'
-   fires go one at a time through that file's claim, each queued on the last
-   one's notice, unless `workflow.multi_workflow` is on in both layers.
+   the turn and its notice resumes this step for that plan.
    Then, before that plan is reported done:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check status --phase <N> --plan <k> --base {that plan's pre-merge HEAD from step 3} --head {that plan's post-merge HEAD from step 3}`
    The same triple and never the phase-wide arm, which compares no range and
@@ -75,16 +73,13 @@ on this path is a real defect to report, not the fork-point default.
    The
    `diff` trigger then runs for every plan (artifact: shape (a), the refs `{base_ref: that
    plan's pre-merge HEAD from step 3, head_ref: that plan's post-merge HEAD from
-   step 3}`). With `review.triggers.diff.when` at `phase_end`, as `workflows/execute.md`'s `locate` read it, none of these per-plan `diff` fires is made, and step 6 holds the one review that stands in. Otherwise the ranges are static and independent, so a fire on today's path
-   goes CONCURRENTLY in one message (seam-spawn-agent.md concurrent dispatch). A
+   step 3}`, plus a checkpointed plan's continuation range below). With `review.triggers.diff.when` at `phase_end`, as `workflows/execute.md`'s `locate` read it, none of these per-plan `diff` fires is made, and step 6 holds the one review that stands in. Otherwise the ranges are static and independent, so a fire on today's path
+   goes CONCURRENTLY in one message (seam-spawn-agent.md concurrent dispatch), and a
    fire that takes the workflow path (references/review-workflow.md) goes
-   concurrently the same way only when `config.mjs workflow-layers` prints
-   `keys["workflow.multi_workflow"].on` true; otherwise they go one at a time
-   through that file's claim, each queued on the last one's notice. Step 6's
+   concurrently the same way. Step 6's
    `phase_diff` runs after them. This step runs AFTER step 3
    merged every branch, so a per-plan `diff` review never
-   fires before the merge and its refs always resolve in THIS tree, which is the
-   tree a dispatched subagent inherits. The
+   fires before the merge and its refs always resolve in THIS tree. The
    `diff` gate reports and continues as today at `advisory`; at `adjudicated`
    each plan's survivors go through the triage gate, NONE the default: RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
@@ -122,5 +117,10 @@ The lifecycle bracket `execute.md` states applies here too, per worker: one
 `checkpoint` or `escalation` after it comes back, each carrying that plan's own
 `--plan <k>`. The worktree executor writes none of them itself.
 
-Checkpoints on this path route exactly as in `handle_checkpoint`; the
-continuation executor is dispatched back into the same worktree.
+Checkpoints on this path route exactly as in `handle_checkpoint`. Steps 3 and
+4 have merged and removed that plan's worktree by then, so its continuation runs
+in the main tree under worker key `<k>`, never in a worktree. Its batch-mates
+have merged too, so `risk-check run` and `risk-check status` scan two ranges,
+both under `--plan <k>`: step 3's pair, and the continuation's own, from the
+HEAD recorded just before it is dispatched to the HEAD once it settles. The plan
+is not reported done while either `status` refuses.

@@ -19,11 +19,9 @@ PASS/FAIL verdict: FAIL if any requirement is untraced, unverified, or lost.
 This is the check that catches the quiet failure a per-phase flow can miss -
 a requirement that no phase ever picked up (an `unpicked` break counted in
 `counts.broken`, not a note beside a PASS), or one marked done while its phase
-never verified. It reads the authoritative status - the REQUIREMENTS
-traceability table (Requirement | Phase | Status) and the ROADMAP `## Phases`
-checkbox, the only persisted status. `/cad-plan` creates a table row (always
-at Pending); no writer but cad-verify ever sets a Status beyond it, and the
-ROADMAP checkbox is cad-verify's alone. It does not write status itself.
+never verified. A Status is `Pending | Complete | Deferred`: cad-verify alone
+sets Complete and `req-row` sets Deferred, and the ROADMAP checkbox is
+cad-verify's alone. It does not write status itself.
 </objective>
 
 <execution_context>

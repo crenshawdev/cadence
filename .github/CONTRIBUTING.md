@@ -1,6 +1,6 @@
 # Contributing to Cadence
 
-Read the [MANIFESTO](./MANIFESTO.md) first. Cadence is one person's tool, built to say no, and that shapes what a contribution here looks like. This is not the usual open invitation to grow the thing. The whole point is that it stays small.
+Read the [MANIFESTO](../docs/MANIFESTO.md) first. Cadence is one person's tool, built to say no, and that shapes what a contribution here looks like. This is not the usual open invitation to grow the thing. The whole point is that it stays small.
 
 Here is the honest version. Bug reports are welcome and I want them. If a script throws, a hook misfires, a command does the wrong thing, or a doc claims something the code doesn't do, open an issue with the receipts and I will chase it. Doc fixes too, a typo, a broken link, a stale path the CI didn't catch, send the pull request and those land fast.
 
@@ -34,10 +34,69 @@ Stop when the agreed behavior is covered and the suite, self-verify, the typeche
 
 If the coverage gate comes up short, measure first and report the real gap. The gate stays at 95 lines and 88 branches, and what you add has to assert behavior, not just run lines. If closing the gap would cost far more than the change planned for, say so once in the pull request instead of growing the work or lowering the gate.
 
+## Seam arguments
+
+- A flag declares a DISPOSITION, not merely a type: what the seam does when the
+  value is wrong, chosen from exactly three words - refuse, warn, fall back. All
+  three are positions this tree already holds, so a contract that made every
+  typed flag refuse would reverse two of them. `issue-check.mjs` falls back to a
+  constant on a malformed `--timeout-ms`, because that seam's whole contract is
+  that it never fails a land; `route.mjs` warns on a `--phase` outside the
+  accepted shape and still resolves, because refusing there would route the
+  phase LOWER than its own risk baseline; the `--dir` family refuses.
+- Falling back means the flag reads as ABSENT and the caller's own default
+  answers. The token after it is never consulted, which is what stopped a
+  valueless `--branch` from reading the following `--dir` as a branch name.
+- The BARE form's disposition is declared SEPARATELY from the value's, in its
+  own field, because one function body in `planning.mjs` already runs both
+  side by side. In the body shared by `trace append` and `trace close`, a bare
+  `--step`, `--reviewer`, `--trigger` or `--role` refuses, while a bare
+  `--plan`, `--sha` or `--base` is dropped. One word for both axes would
+  either start refusing every shipped close that omits `--plan`, or extend the
+  drop to the refusals written against exactly the complete-looking event that
+  defeats attribution: a bare `--role` wrote a record with no role key, and the
+  renderer then aggregated it under the empty string. The two axes differ on
+  ordinary flags too - `release-bump.mjs`'s `--version` refuses a blank value
+  and falls back on a bare one.
+- A new seam DECLARES its flags in `cadence-core/bin/lib/arg-contract.mjs`, one
+  row per flag carrying all four fields (`required`, `type`, `value`, `bare`),
+  rather than restating the rules in a parser of its own. That same table is
+  what self-verify checks documented invocations against, so a flag with no row
+  is a flag no prose may spell.
+- The contract CLASSIFIES and the CALLER owns its own `reason` string, which is
+  why one `--dir` rule surfaces under two names: `planning.mjs` reads the
+  classification back and refuses with `bad-args`, the single refusal vocabulary
+  that file publishes, while the seams that end in an `e.seam` catch arm raise
+  it and refuse with `missing-flag-value`. The module mints no reason code of
+  its own, so adopting it adds nothing to a seam's published list.
+- The DECLARATION is what refuses. An adopting bin runs its resolved row at the
+  door of its dispatch rather than restating the rule at each handler, and
+  `arg-contract-adoption.test.mjs` (cadence-tests repository) walks the whole table
+  against the shipped binaries, so a row declaring a refusal nothing carries out
+  reddens there. That census is what the gap needed: 98 rows were declared for
+  one script and two of them were read, so a valueless flag wrote the boolean
+  `true` into a cursor, a checklist's front-matter and a recorded UAT result.
+- PRESENCE is the stated exception. The shared door judges only the flags a
+  caller actually PASSED, and a flag that is genuinely ABSENT is answered by the
+  bin that owns the wording, because the diagnostic for a missing enum-valued
+  flag - which of three kinds a capture is, which of two modes a prune takes -
+  is not expressible in a declaration. So `required` records a fact for the bins
+  that choose to read it, never a rule the door enforces.
+- The contract governs VALUE grammar only, and never refuses an UNDECLARED flag
+  at runtime. Membership is the prose-side lint's job, so a flag missing from
+  the table is caught where prose spells it rather than at a caller's expense.
+
+## Authoring style (for new workflows)
+
+- Structure: `<purpose>`, `<process>` with named `<step>`s, `<guardrails>`,
+  `<success_criteria>`. Match the tone and density of cadence-core/workflows/task.md.
+- No multi-runtime branches, no CC-bug-number workaround prose, no ASCII
+  banner variants. Plain instructions.
+
 ## What a good bug report has
 
 The failing command, what you expected, what happened instead, and enough of the surrounding state to reproduce it: your Claude Code version, `node --version`, and the relevant slice of `.planning/` or config if the bug is state-shaped. A stack trace beats a paraphrase every time.
 
 ## Attribution
 
-Cadence is a derivative work of [GSD](https://github.com/open-gsd/gsd-core), used under the MIT License, and the lineage is spelled out in [`NOTICE.md`](./NOTICE.md) and [`LINEAGE.md`](./LINEAGE.md). Contributions land under the same MIT License the rest of the repo carries.
+Cadence is a derivative work of [GSD](https://github.com/open-gsd/gsd-core), used under the MIT License, and the lineage is spelled out in [`NOTICE.md`](../NOTICE.md) and [`LINEAGE.md`](../docs/LINEAGE.md). Contributions land under the same MIT License the rest of the repo carries.

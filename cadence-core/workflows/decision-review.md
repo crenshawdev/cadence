@@ -41,17 +41,16 @@ Assemble `{ instruction, artifact }`:
   or costs more than it claims to save. Do not critique wording - attack the
   decision itself."
 
-Resolve the reviewer set exactly as references/review-triggers.md step 3
-does, from `review.reviewers[]`:
+The reviewer set is `review.reviewers[]`, filtered as the two arms below state:
 - **claude-subagent** (always available): bracket this worker in the joined
   run record first. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
-  a PROJECT.md row it is the STATE cursor's phase (the rule review-triggers.md
-  step 4 already states for a milestone-scoped trigger). The read-set is the
+  a PROJECT.md row it is the STATE cursor's phase (the rule
+  references/review-inline.md states for a milestone-scoped trigger). The read-set is the
   decision doc the USER named, so write that reference to a scratch file and
   pass the path (caller-derived text - references/conventions.md):
 
   ```
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read-file <path>
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --read-file <path>
   ```
 
   Then dispatch the `agent_type` that
@@ -62,13 +61,13 @@ does, from `review.reviewers[]`:
   `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 
   ```
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
   ```
 
   A dispatch that failed or returned nothing parseable writes what failed to a
   scratch file and adds `--detail-file <path>` to that same line
-  (caller-derived text - references/conventions.md), closing as a checkpoint, so
-  the burned budget still reaches the record. This arm resolves no routing at all - it is the
+  (caller-derived text - references/conventions.md), closing as a checkpoint.
+  This arm resolves no routing at all - it is the
   base `cad-reviewer` at the session default, whatever `roles.cad-reviewer.model`
   says - and `review.decision_review.tier` and `.effort` reach the cross-model
   arm below only (D-04).
@@ -80,13 +79,17 @@ does, from `review.reviewers[]`:
   the global file, so this arm and step 3 agree -
   AND `review.providers.<name>.tiers[review.decision_review.tier]` is a
   non-null model id, read with `config.mjs get` on that key (null for a stored
-  value that is not a model id): run the call-review-provider seam
+  value that is not a model id): compose the payload file and check the run
+  token as references/review-cross-model.md does, the reviewer brief followed
+  by the `instruction` above, the `artifact` written to a file in that scratch
+  directory as its third argument, then run the call-review-provider seam
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" review \
     --provider <name> --model <resolved id> --effort <review.decision_review.effort> \
+    --payload "<the echoed scratch directory>/payload.json" \
     [--key-file <review.key_file, only if set>]
   ```
-  with `{instruction, artifact}` on stdin. Read the one JSON line; `ok:false`
+  Read the one JSON line; `ok:false`
   drops that reviewer (name the reason, same degradation rule as
   review-triggers.md step 4) and single-model continues. Relay the envelope's
   `warnings[]` to the user.
@@ -95,7 +98,7 @@ When the resolved set has more than one reviewer (claude-subagent plus a
 surviving cross-model provider, or several), dispatch them CONCURRENTLY in one
 message - they refute the same static artifact independently, so serializing
 them only adds latency (seam-spawn-agent.md concurrent dispatch;
-review-triggers.md step 4's one-message batch).
+references/review-inline.md's one-message batch).
 
 If the resolved set (after any drops) is only `claude-subagent`, this is the
 single-model default; when a cross-model provider survives, this is the
@@ -126,11 +129,9 @@ the main model grounds it before ruling:
   if the claim set has none of one kind, say so explicitly rather than
   skipping the requirement silently.
 
-**Zero objections (a clean pass).** With no findings there is nothing to
-ground, so the requirement above would lapse exactly when the result is most
-flattering. It retargets instead: ground the DECISION'S OWN load-bearing
-claims - the assertions in its statement and `Evidence:` clause which, if
-false, would invalidate it - by the same two rules. Report each `confirmed`
+**Zero objections (a clean pass).** The requirement above retargets: ground
+the DECISION'S OWN load-bearing claims - the assertions in its statement and
+`Evidence:` clause which, if false, would invalidate it - by the same two rules. Report each `confirmed`
 or `contradicted` with its citation. A `contradicted` claim is a finding the
 refutation missed: rule it `survives` and amend it like any objection. If the
 decision rests on no claim of one kind, name which and why.
@@ -145,7 +146,7 @@ Rule each objection exactly one of:
 For every `survives` or `partial` ruling, write a concrete amendment: the
 exact change to the decision (or its implementation) that would close the
 gap. `refuted` objections need no amendment - state why the grounding kills
-them so the ruling itself is falsifiable, not asserted.
+them.
 </step>
 
 <step name="report_cost">
@@ -155,8 +156,7 @@ figures, so never fabricate one):
   and model id(s), when the panel path ran)
 - the `review.decision_review.tier` and `.effort` the cross-model call used,
   and that `cad-reviewer` ran at the session default with neither applied -
-  say the second half even when no cross-model reviewer ran, which is exactly
-  when a bare tier/effort line reads as if the run had honoured one
+  say the second half even when no cross-model reviewer ran
 - the call count (one `cad-reviewer` dispatch, plus one
   `review-provider.mjs` call per surviving cross-model reviewer)
 - any reviewer that was offered but dropped (no-key, no tier assigned, not
@@ -172,8 +172,7 @@ library/API claim no documentation could check as unchecked.
 
 On a clean pass, present the grounded load-bearing claims instead, each
 `confirmed`/`contradicted` with its citation, and say no reviewer objected.
-Never report it as a bare "no findings" - that reads identically to a review
-that never ran.
+Never report it as a bare "no findings".
 
 Close with the qualitative cost line from `report_cost`. Do NOT edit the
 decision doc - this is a review, not an auto-apply; the user decides what to

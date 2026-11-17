@@ -43,7 +43,7 @@ list, because it reads exactly like a correct one.
 <step name="dispatch">
 Assemble `{ instruction, artifact }`:
 - `artifact` = the target as a REFERENCE, never its bytes
-  (references/seam-spawn-agent.md's deferred-read rule - the reviewer produces
+  (references/dispatch-shape.md's deferred-read rule - the reviewer produces
   what it needs with its own Read/Grep/Bash): the path for a file, the
   directory for a directory, the
   `<base_ref>..<head_ref>` pair for a phase range.
@@ -73,7 +73,7 @@ resolved, so write that reference to a scratch file and pass the path
 (caller-derived text - references/conventions.md):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --read-file <path>
 ```
 
 Then dispatch the `agent_type` that
@@ -88,13 +88,12 @@ Parse the returned `{findings:[...]}` and close the bracket the moment you have
 it. OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
 ```
 
 A dispatch that failed or returned nothing parseable writes what failed to a
 scratch file and adds `--detail-file <path>` to that same line (caller-derived
-text - references/conventions.md), closing as a checkpoint, so the burned budget
-still reaches the record.
+text - references/conventions.md), closing as a checkpoint.
 
 That arm reports NO LIST, never an empty one: an unusable return and a clean
 sweep are opposite results and must not read alike.
@@ -133,9 +132,7 @@ user picks what to delete and deletes it, or parks it (`/cad-capture`).
 - Reviewer resolution is not re-derived here: ONE `cad-reviewer` dispatch at the
   session default, whatever the roles block says. This pass resolves no routing
   and reads no config key, so it has no tier, no effort and no reviewer set.
-- Never runs on a target it could not resolve. Stopping is the correct outcome
-  there; a list produced over the wrong bytes is indistinguishable from a real
-  one.
+- Never runs on a target it could not resolve.
 </guardrails>
 
 <success_criteria>

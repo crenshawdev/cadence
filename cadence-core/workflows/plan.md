@@ -49,7 +49,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.max_plan_bytes \
   planning.commit_docs \
   git.protected_branches git.on_protected \
-  git.base_branch memory.backend testing.scope planning.code_map planning.workflow_plans
+  git.base_branch memory.backend testing.scope planning.code_map
 ```
 
 `testing.scope` set means the project accepted a testing policy. Then run, once:
@@ -97,7 +97,7 @@ that consumes a prior call's output is serialized.
 2. If .planning/phases/<N>/CONTEXT.md is present, extract just its `Plan shape`
    line (grep the Scope boundary). The planner reads the whole file itself, so
    the coordinator needs only that one directive line, not the bytes
-   (seam-spawn-agent.md handoff read discipline). Absent is fine - plan from
+   (dispatch-shape.md handoff read discipline). Absent is fine - plan from
    the roadmap goal alone.
 3. If PLAN*.md already exists in the phase dir (and not --gaps): ask
    (ask-user seam). Never overwrite silently.
@@ -121,18 +121,19 @@ that consumes a prior call's output is serialized.
 </step>
 
 <step name="spawn_planner">
-Dispatch cad-planner via the spawn-agent seam
-(references/seam-spawn-agent.md). Resolve its model + agent file and write the
-dispatch bracket in ONE call:
+Dispatch cad-planner. Resolve its model + agent file and write the dispatch
+bracket in ONE call:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-planner \
   --attempt 1 --phase {N} \
-  --bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"
+  --bracket-read "<the phase input path>"
 ```
 
-seam-spawn-agent.md is the source for what the resolve RETURNS (the retry
-rungs, the per-role pin, the `{ok:false}` arm). Relay every `warnings[]` entry
+Dispatch the `agent_type` the resolve returns with its `model`; a `model` of
+null sends no model parameter. This step needs nothing else from
+`references/seam-spawn-agent.md`: open that file only when the resolve answers
+`ok:false` or a warning says a retired routing key was ignored. Relay every `warnings[]` entry
 the resolve returns to the user before dispatching, each distinct warning once
 per workflow run - a warning that reaches JSON and no human is a
 resolved-then-dropped value wearing a diagnostic's clothes. `--attempt 1`
@@ -144,7 +145,7 @@ The resolve writes the lifecycle dispatch event itself; only the CLOSE in
 handle_return stays here. Then wait - do not read, edit, or plan anything else
 while the subagent runs.
 
-With `planning.workflow_plans` read in `parse` as `true`, the planner reads one composed phase input in place of the four phase documents. With the key not `true`, this stretch runs nothing.
+The planner reads one composed phase input in place of the four phase documents.
 
 - **Compose.** Once per run, before the resolve above goes out, make this stretch's own scratch directory and print it: `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`. Never recall's directory: recall rides the resolve's own message, so its directory does not exist yet. Keep the printed path as a literal, because each Bash call starts with `$D` empty, then run:
 
@@ -152,10 +153,10 @@ With `planning.workflow_plans` read in `parse` as `true`, the planner reads one 
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase {N} --role phase --out-dir <the scratch directory>
   ```
 
-  Keep the path the answer names as a literal too: `check_gate`, the `review` step and the revision re-dispatch name that same file and compose nothing more. The transcript gets the envelope, never the input, and this session opens neither it nor the documents.
-- **Bracket.** The resolve block stays as written, and its `--bracket-read` value is `<the phase input path>`. In gaps mode it is that path plus `.planning/phases/{N}/UAT.md` and the existing PLAN* and SUMMARY* files, as the gaps sentence above appends.
+  Keep the path the answer names as a literal too: `check_gate`, the `review` step and the revision re-dispatch name that same file and compose nothing more. The transcript gets the envelope, never the input. This session never opens the input, and reads the documents only where `load_phase` and an `--inline` `route` say.
+- **Bracket.** Its `--bracket-read` value is `<the phase input path>`. In gaps mode it is that path plus `.planning/phases/{N}/UAT.md` and the existing PLAN* and SUMMARY* files, as the gaps sentence above appends.
 - **Prompt.** The `Read before planning:` list names that file by its absolute path in place of its four document lines, and keeps the gaps line and the source-files line. Gaps and revision modes reuse this prompt and so name the same file.
-- **A refused or unreadable answer.** Print one line with what it names, and dispatch the way this step does with the key not `true`, because the full documents lose the planner nothing.
+- **A refused or unreadable answer.** Print one line with what it names, and dispatch with the four document lines the prompt below lists, because the full documents lose the planner nothing. The bracket names those four.
 
 Before assembling the prompt, recall prior-project memory when the effective
 `memory.backend` read in `parse` is `builtin` (skip this entirely when `none` -
@@ -200,9 +201,9 @@ Prompt:
 Phase: {N} - {name}
 Mode: {standard | gaps | revision}
 Goal: {goal line from ROADMAP.md}
-Requirements: {phase requirement IDs - every ID must appear in a plan}
+Requirements: {phase requirement IDs}
 Plan shape (from CONTEXT, directive): {one plan | multiple plans | split - deferred slice | not specified}
-Task ceiling: {workflow.max_plan_tasks} tasks PER PLAN, not per phase. A phase needing more capacity than that gets MORE PLANS, sequential if they share files - splitting is the expected move, not an escape hatch. Return `## PHASE TOO BIG` only when the phase cannot be delivered by any number of plans of that size, which is a statement about the PHASE's scope and not about task count. Reporting the overrun is not reducing scope - it is the one path that does not. This ceiling replaces any task-count target you carry: where your contract says "target 3-10 tasks", this number wins.
+Task ceiling: {workflow.max_plan_tasks} tasks per plan.
 
 Read before planning:
 - .planning/ROADMAP.md (this phase's entry and its dependencies)
@@ -212,22 +213,15 @@ Read before planning:
 - {gaps mode: .planning/phases/{N}/UAT.md plus existing PLAN* and SUMMARY* files}
 - The actual source files your tasks will touch
 
-Write .planning/phases/{N}/PLAN.md per
-${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PLAN.md. Default is ONE PLAN.md; split
-into PLAN-1.md, PLAN-2.md only for genuinely independent slices (no shared
-files, no cross-slice ordering). If a Plan shape directive is given above,
-honor it; if your file-independence analysis contradicts it (e.g. it asks
-for multiple plans but the slices share files), follow your analysis and
-record the deviation and its reason in your return marker and the PLAN
-Notes - never diverge silently.
+Write the plan files in .planning/phases/{N}/.
 
-{gaps mode: write .planning/phases/{N}/{the plan filename plan-gaps.md step 3 resolved} instead - the next FREE plan number, never PLAN.md and never any file already on disk. Overwriting the phase's existing plan leaves its completed report beside it, and replay-check then answers dispatch_set: [], so nothing ever dispatches the gap work.}
+{gaps mode: write .planning/phases/{N}/{the plan filename plan-gaps.md step 3 resolved}.}
 
 <recalled_memory>{one line per recalled result: snippet - source file, phase (when present); this block is present only under memory.backend builtin with non-empty results}</recalled_memory>
 </planning_context>
 
 (The return markers and report shape are the agent's own cached definition -
-never restate them in the dispatch tail; seam-spawn-agent.md's cache
+never restate them in the dispatch tail; dispatch-shape.md's cache
 discipline.)
 ```
 
@@ -259,7 +253,7 @@ A code map is available. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/code
 </code_map>
 ```
 
-When `planning.workflow_plans` read in `parse` is `true`, the prompt carries a plan-graph block, placed after `<testing_policy>` and `<code_map>` when those are present. Gaps and revision modes reuse this prompt and so carry the block. With the key not `true` the prompt carries none of it.
+The prompt carries a plan-graph block, placed after `<testing_policy>` and `<code_map>` when those are present. Gaps and revision modes reuse this prompt and so carry the block.
 
 ```text
 <plan_graph>
@@ -269,8 +263,7 @@ Plans here can be run by a workflow. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/ref
 
 Revision mode: dispatch a FRESH cad-planner (never resume the prior run - the
 plan on disk carries the grounding). Append the checker's issues verbatim in a
-`<checker_issues>` block and instruct: fix each issue with minimal edits to the
-existing plan file(s), or rebut it explicitly; return ## REVISION COMPLETE.
+`<checker_issues>` block.
 </step>
 
 <step name="inline_plan">
@@ -309,7 +302,7 @@ apply here too, under the same prohibition on a second spelling: with that key
 `ok:false`, or output that won't parse, print nothing about it and go on
 planning. An inline plan has no prompt, so it carries no block.
 
-With `planning.workflow_plans` `true`, read `references/plan-graph.md` once, for its task fields section only: an inline plan never splits, so `depends_on` and the width don't apply, and it carries no block.
+Read `references/plan-graph.md` once, for its task fields section only: an inline plan never splits, so `depends_on` and the width don't apply, and it carries no block.
 </step>
 
 <step name="handle_return">
@@ -317,16 +310,19 @@ The dispatch came back, so close its bracket before anything else - ONE line,
 always exactly one, or `trace render` reports a worker that never came back. On
 the empty-or-unmarked arm below, write that return to a scratch file and add
 `--detail-file <path>` (caller-derived text - references/conventions.md), and
-the seam closes it as a checkpoint instead. OMIT `--tokens` on a figureless
-return - never a `0`, which claims a measurement nobody made
-(seam-spawn-agent.md's bracket rule):
+the seam closes it as a checkpoint instead. Which figures it carries is
+seam-spawn-agent.md's bracket rule:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
 ```
 
 - `## PLANNING COMPLETE` - confirm the listed files exist on disk, continue.
 - `## PHASE TOO BIG` - rejoin at `too_big` below.
+- Empty or unmarked return - if phases/<N>/PLAN*.md exists on disk, treat
+  the files as authoritative and continue; otherwise report the failed
+  spawn and stop.
+</step>
 
 <step name="too_big">
 Reached two ways: a `phase-too-big` entry from `plan-size` at `parse` (before
@@ -347,8 +343,8 @@ What each option does:
 
 1. Re-dispatch the
    planner ONCE, instructed to write `PLAN-1.md`, `PLAN-2.md`, ... each within
-   the task ceiling. Plans that share a declared path are SEQUENTIAL: mark each
-   one so, and `/cad-execute` runs them in order.
+   the task ceiling. Plans that share a declared path run in plan-number
+   order, which `/cad-execute` follows.
 2. Stops here; you
    run `/cad-phase add`, then `/cad-plan` per phase. Independent phases can run
    concurrently (see `parallelization.max_concurrent_agents`).
@@ -363,10 +359,6 @@ sequential multi-plan phase is a shape this workflow supports.
 
 This is a consult dead-end: before that ask, run offer_consult per
 references/consult.md with the split problem as the situation.
-</step>
-- Empty or unmarked return - if phases/<N>/PLAN*.md exists on disk, treat
-  the files as authoritative and continue; otherwise report the failed
-  spawn and stop.
 </step>
 
 <step name="check_size">
@@ -401,7 +393,7 @@ arguing with them. One re-dispatch, or the user's word, then continue.
 </step>
 
 <step name="check_brief">
-With `planning.workflow_plans` `true`, check each plan's brief, after `check_size` and before `check_census`. With the key not `true`, make no call and go on.
+Check each plan's brief, after `check_size` and before `check_census`.
 
 Once per plan file the phase has, because `--plan` names one plan file:
 
@@ -413,7 +405,7 @@ In a `--gaps` run, skip a plan whose `records/reports/plan-<k>.md` opens `PLAN C
 
 With no `--out-dir` it writes nothing. An `ok:true` answer may carry `reads_missing`, the `Reads` entries the index lacks, or `reads_unchecked`: relay either in one line per plan and re-dispatch nothing for it. On `ok:false`, say what the answer names out loud, and re-dispatch ONCE:
 
-- A bad id goes to a fresh revision-mode planner, bracketed the way `check_gate`'s revision is, with the refusal in its `<checker_issues>`.
+- A bad id goes to a fresh revision-mode planner on an `--attempt 2` resolve whose `--bracket-read` value is the phase input path, or the four documents when the compose was refused, closed the way `handle_return` closes a planner's return, with the refusal in its `<checker_issues>`.
 - A brief over its ceiling gets `check_size`'s instruction: split this plan's tasks across more plans, sequential where they share files.
 
 Not a hard halt. After the one re-dispatch, or the user's word, continue: `/cad-execute` runs a plan whose brief is refused from the full documents.
@@ -491,12 +483,13 @@ CONTINUES to its next step.
 <step name="check_gate">
 Skip when workflow.plan_check is false or `--skip-check` was passed.
 
-Dispatch cad-plan-checker via the spawn-agent seam, the bracket on its resolve:
+Dispatch cad-plan-checker the way `spawn_planner` dispatches the planner, the
+bracket on its resolve:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-plan-checker \
   --phase {N} \
-  --bracket-read ".planning/phases/{N}/PLAN*.md,.planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/phases/{N}/CONTEXT.md"
+  --bracket-read ".planning/phases/{N}/PLAN*.md,<the phase input path>"
 ```
 
 `--phase {N}` is EXPLICIT here and not left to the cursor: this resolve runs
@@ -505,12 +498,12 @@ the wrong phase's plans (references/seam-spawn-agent.md's Routing block). No
 `--plan` - the checker reviews every plan of the phase, so it floors on their
 union.
 
-With `planning.workflow_plans` read in `parse` as `true`, the checker reads the plan files and the phase input in place of the phase documents. With the key not `true`, this stretch runs nothing.
+The checker reads the plan files and the phase input in place of the phase documents.
 
 - **Input.** Name the phase input `spawn_planner`'s stretch composed. When no earlier step of this run composed it, as on an `--inline` run, run that stretch's compose step first as it is written there, its directory and its call, and never spell the call here.
-- **Bracket.** The resolve block stays as written, and its `--bracket-read` value is `.planning/phases/{N}/PLAN*.md,<the phase input path>`.
+- **Bracket.** Its `--bracket-read` value is `.planning/phases/{N}/PLAN*.md,<the phase input path>`.
 - **Prompt.** The `Read:` list keeps its plans line and names that file by its absolute path in place of its ROADMAP/REQUIREMENTS line and its CONTEXT line. The input carries every CONTEXT decision, so a locked decision no task implements still shows.
-- **A refused or unreadable answer.** The planner's arm: print one line with what it names, and dispatch the checker the way this step does with the key not `true`.
+- **A refused or unreadable answer.** The planner's arm: print one line with what it names, and dispatch the checker with the documents the prompt below lists, and the bracket names them beside the plans.
 
 Prompt:
 
@@ -527,20 +520,17 @@ Read:
 - .planning/phases/{N}/PLAN*.md (the plans under review)
 - .planning/ROADMAP.md and .planning/REQUIREMENTS.md
 - .planning/phases/{N}/CONTEXT.md (if present)
-
-Will these plans achieve the phase goal? Return ## VERIFICATION PASSED or
-## ISSUES FOUND (numbered; each BLOCKER or WARNING with location and fix).
 </verification_context>
 ```
 
 Close its bracket the moment the return is in hand, before reading a single
 severity. ONE line: an empty or unmarked return is written to a scratch file and
 carried on `--detail-file <path>` (caller-derived text -
-references/conventions.md), and the seam closes it as a checkpoint.
-OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
+references/conventions.md), and the seam closes it as a checkpoint. Its
+figures follow seam-spawn-agent.md's bracket rule:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
 ```
 
 Handle the return:
@@ -566,12 +556,13 @@ Handle the return:
 
 <step name="review">
 Fire the `plan` review trigger per references/review-triggers.md, payload = the
-PLAN file(s) PLUS the three artifacts the reviewer is asked to check them
-against: `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and
-`.planning/phases/{N}/CONTEXT.md`. All four are REFERENCE PATHS the reviewer
-resolves itself - never inlined text, which would keep every byte of them
-resident here for the rest of the run - and all four ride the fire's `--read`
-bracket list (review-triggers.md step 4). On the workflow path a fire over more
+PLAN file(s) PLUS the phase input, as the stretch below says. A refused
+compose's payload is the PLAN file(s) plus the three artifacts the reviewer
+checks them against: `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and
+`.planning/phases/{N}/CONTEXT.md`. Every entry is a REFERENCE PATH the reviewer
+resolves itself - never inlined text, which would keep every byte of it
+resident here for the rest of the run - and every entry rides the fire's
+`--read` bracket list (references/review-inline.md). On the workflow path a fire over more
 than one PLAN file runs one reviewer per plan and one cross-plan reviewer, and
 today's path runs one reviewer over all of them.
 
@@ -579,7 +570,7 @@ today's path runs one reviewer over all of them.
 in the payload, as `check_gate` does. Its absence is not a resolve failure and
 must not come back as the `blocker` an unresolvable reference earns.
 
-With `planning.workflow_plans` read in `parse` as `true`, the payload is the PLAN file(s) plus the phase input in place of the three artifacts. With the key not `true`, this stretch runs nothing.
+The payload is the PLAN file(s) plus the phase input in place of the three artifacts.
 
 - **Input.** Name the phase input `spawn_planner`'s stretch composed. When no earlier step of this run composed it, run that stretch's compose step first as it is written there, its directory and its call, and never spell the call here.
 - **Bracket.** That path rides the fire's `--read` bracket list in place of the three, beside the PLAN file(s).
@@ -594,7 +585,7 @@ Review line then reports the gate as off rather than as a pass:
 
 - **advisory** (the default) -> fire in the SAME message as the
   `commit` step's seam calls rather than waiting. The dispatch carries the
-  advisory persistence tail (review-triggers.md step 4): the reviewer writes its
+  advisory persistence tail (references/review-inline.md): the reviewer writes its
   findings to `.planning/phases/<N>/records/REVIEW-plan.md` and closes its own bracket,
   so this session ending before the return lands loses nothing. `done` reads
   that file if it is on disk by then; otherwise its Review line names the path
@@ -721,11 +712,11 @@ on disk and each executor runs in a fresh context.
   reviewer outside the `plan` trigger.
 - One revision loop, hard cap. A plan that fails the checker twice goes to
   the human.
-- ONE PLAN.md is the default; accept a split only with the planner's
-  independence rationale (no shared files, no cross-slice ordering).
+- One PLAN.md is the default; more than one comes with the planner's
+  one-line reason.
 - STATE.md stays a four-line overwritten cursor plus an optional `Plan:` line. No audit entries, no roadmap
   annotations - git is the log.
-- Config keys only as named in templates/config.json - nothing invented.
+- Config keys only as named in `cadence-core/config.schema.json` - nothing invented.
 </guardrails>
 
 <success_criteria>

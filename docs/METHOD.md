@@ -76,8 +76,8 @@ Prohibited in task actions: "v1", "simplified", "for now", "placeholder",
 "future enhancement", or any phrasing that delivers less than the locked
 decision states. There are exactly three legitimate reasons to leave something
 out, and each is an explicit `## PHASE TOO BIG` return rather than a silent cut:
-the phase cannot be executed well in one pass, a required detail exists in no
-source artifact, or it depends on a phase that has not shipped.
+the phase cannot be executed well even as several plans, a required detail
+exists in no source artifact, or it depends on a phase that has not shipped.
 
 ### Decomposition has named axes
 
@@ -365,14 +365,12 @@ a wrong result, crashes, corrupts data, or misses its goal.
 
 Under `adjudicated`, all reviewers run independently and then each finding is
 checked against the cited code: confirm or kill it, drop false positives and
-overstatements, and re-rank by grounded severity. On the default path the main
-session does that checking itself. With `workflow.use_workflows` on, one agent
-per finding does it instead, and the main session still merges what comes back,
+overstatements, and re-rank by grounded severity. One checker agent per
+reviewer does that checking, and the main session merges what comes back,
 groups findings that share a root cause, runs the triage and owns the record.
-Either way reviewers critique and something other than the reviewer grounds
-the finding, which is the claim this section makes. The workflow path costs
-more usage, is off by default, and counts only when both config layers set it.
-The single-agent path stays.
+When the `Workflow` tool isn't available, the main session does the checking
+itself. Either way reviewers critique and something other than the reviewer
+grounds the finding, which is the claim this section makes.
 
 The one signal treated as strong is convergence. A defect found independently by
 more than one reviewer is high confidence, and that is the entire justification
@@ -461,15 +459,9 @@ surfaces also drive, unconditionally, is that same `risk_surface` review:
 fired once on the completed commit range, blocking unless that trigger's own
 gate key says otherwise, and out of the waiver's reach either way.
 
-A blocking panel on every `rm -rf dist/` would train you to ignore the gate, so
-there is a narrow, evidence-based pre-filter. A destructive op drops only when
-its target is provably ephemeral, requiring both `git check-ignore` to match and
-`git ls-files` to come back empty, because an ignored `dist/` holding a
-force-added tracked file is not safe to drop. A secret match drops only when the
-file is template-shaped *and* the value is a stub; either alone still fires.
-
-Drop only when the whole match is harmless, fire when unsure, and note each drop
-with its reason so a mis-filter is visible rather than silent.
+A match in the resolved `surfaces` set always fires. Nothing drops it first on a judgment that it is harmless:
+whether a gitignored build output or a placeholder in a template is safe is the
+reviewer's call, made with the diff in front of it.
 
 ### Nothing reviews itself
 
@@ -517,7 +509,6 @@ The thread connecting every subsystem above.
 - A dropped reviewer emits a visible line naming the reason and, for a missing
   key, where to set it.
 - An empty reviewer set falls back to the local subagent rather than skipping.
-- A risk pre-filter drop is noted with its reason.
 - A verification that cannot fail is not coverage.
 - An unevidenced claim in a goal check is a guess, not a verdict.
 - A clean decision review reports what it grounded, not "no findings".
@@ -610,9 +601,12 @@ Everything else is atomic: one conventional commit per task, specific files
 staged individually. Publishing flows through a single sanctioned seam, which
 exists because a command-string push whitelist was built, defeated four ways by
 adversarial review, and then deleted rather than patched. `/cad-land` asks how you
-want to publish and does exactly that, unless you opted into the end-to-end
-`git.auto_close`, which runs audit through merge with no per-step prompts and
-halts on a surviving blocker or high `risk_surface` finding.
+want to publish and does exactly that, with two ways past that ask. If you opted
+into the end-to-end `git.auto_close`, the publish chain (PR -> merge -> tag) runs
+unattended, asks once, before the tag push, and halts on a surviving blocker or
+high `risk_surface` finding; `/cad-milestone`'s own questions come before it.
+`/cad-land`'s already-merged arm finishes a request the forge already merged at
+the branch tip.
 
 ---
 

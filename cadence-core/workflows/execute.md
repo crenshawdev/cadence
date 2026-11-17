@@ -1,7 +1,7 @@
 <purpose>
 The skill's objective states the guarantees. What it does not: ALL worktree
-ceremony exists inside the two opt-in branches, the parallel one and the
-workflow one, and nowhere else.
+ceremony exists inside `choose_path`'s parallel and workflow paths, and
+nowhere else.
 
 Why each step is shaped the way it is - the measured failures, the ordering
 arguments, the rejected alternatives - is in `docs/rationale/execute.md`. It is
@@ -113,7 +113,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch \
-  testing.scope planning.workflow_plans review.triggers.diff.when
+  testing.scope review.triggers.diff.when
 ```
 
 `testing.scope` set means a testing policy is active. It gates the one line
@@ -186,12 +186,6 @@ path and is never a reason to pause or stop.
 
 <step name="choose_path">
 **The workflow path comes first.** Take it only when ALL of these hold:
-- `workflow.execute_workflows` is on in BOTH config layers, read with
-  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" workflow-layers`, whose
-  `keys["workflow.execute_workflows"].on` is the answer, and never with
-  `config.mjs get`, which answers on a committed repo value alone. An answer
-  that cannot be read is off.
-- `planning.workflow_plans` is true, as `locate` read it
 - the `Workflow` tool is in this session's tool list
 - the `plan-overlap` answer below is `ok:true` with no `undeclared` and no
   `frontmatter_issues` entry
@@ -207,9 +201,8 @@ wave holds more than one plan, the `worktree-base.mjs resolve` check below
 applies as written, declining its fix or its `ok:false` means today's path, and
 on accept this path goes on, not the parallel one. With every condition met, go
 to `execute_workflow` and run nothing else in this step. When a condition is
-missing, today's path below runs exactly as written, and when either layer
-sets the switch (`repo` or `global` reads `"set"` in that answer) one line names
-the missing condition. With neither layer setting it, print nothing.
+missing, today's path below runs exactly as written, and one line names the
+missing condition.
 
 Sequential (default) unless ALL of these hold:
 - `parallelization.enabled` is true
@@ -280,8 +273,8 @@ successive executors in the phase share a cached prefix: phase-level context
 (identical across the phase's plans) before the plan-specific tail.
 - Phase number, name, and the one-line goal.
 - Shared files to read first (identical for every plan in the phase): project
-  `CLAUDE.md` (if present), `.planning/PROJECT.md` (if present),
-  `.planning/phases/<N>/CONTEXT.md` (if present).
+  `CLAUDE.md` (if present). A refused brief adds `.planning/PROJECT.md` and
+  `.planning/phases/<N>/CONTEXT.md`, each if present.
 - The `surfaces` the executor's own `route.mjs resolve` answered, verbatim -
   the bar the work is written to, not a review that fires later. On
   `surfaces_answered: false` say that no layer answered, so ALL of the
@@ -290,11 +283,11 @@ successive executors in the phase share a cached prefix: phase-level context
   nothing at all is added. It is the same for every plan, so it sits here, and
   it rides every dispatch of a plan - continuation and re-dispatched remainder
   included - and the parallel path's prompt, which is this one.
-- Then the plan-specific tail: the plan file to read, commit scope
-  `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
+- Then the plan-specific tail: the brief to read (on a refused brief, the plan
+  file), commit scope `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."
 
-With `planning.workflow_plans` read in `locate` as `true`, a brief takes the place of the plan file and the two phase documents in what each executor reads. With the key not `true`, this stretch runs nothing.
+A brief takes the place of the plan file and the two phase documents in what each executor reads.
 
 - **Compose.** The first time a plan needs one, make the run's scratch directory and print it: `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "scratch dir: $D"`. Keep the printed path as a literal, because each Bash call starts with `$D` empty. Before each plan's dispatch, ahead of the resolve that carries its bracket, run this once and keep the path the answer names:
 
@@ -306,7 +299,7 @@ With `planning.workflow_plans` read in `locate` as `true`, a brief takes the pla
 - **Dispatch.** The shared files to read first are project `CLAUDE.md` alone, and the plan-specific tail names the brief file by that absolute path in place of the plan file, keeping the commit scope and the mode line. The surfaces bullet and the testing-policy line stay as they are. The executor reads that one file at that path even from a worktree. An executor that can't open it does no task and returns a `blocked` checkpoint naming the path, because the file's head is what names the plan file and the dispatch no longer does. That return owes no report file.
 - **Bracket.** The executor's resolve carries the same `--plan <k> --bracket-plan <k>`, and its `--bracket-read` value is `CLAUDE.md,<the brief path>`, so the read trace shows any later read of a full document. A batch member on the parallel path carries its own value on its own `dispatch` event, so no member's bracket names another's brief.
 - **Second dispatches.** A continuation and a re-dispatched remainder name that same brief file, unless that plan's executor came back `blocked` on it. Then that plan's next dispatch takes the arm below. After a first dispatch, where no task has run, it starts the plan fresh and names no report path. After a continuation or remainder it keeps what `handle_checkpoint` carries: the report path, the checkpoint outcome, "continue from task <k>" and the same pre-plan HEAD. A `risk_surface` fix pass names that same brief file in place of the plan file, under the same `blocked` exception, and keeps the other three things its own paragraph lists: the findings file's path, the instruction to fix the blocker and high findings only, and the instruction to append its fix row to the plan's report rather than rotate it. Its resolve carries the **Bracket** value above. When the coordinator has amended `PLAN-<k>.md`'s `files:` to cover a finding outside the lease, it runs the **Compose** call again into the same scratch directory before that dispatch, so the lease the brief shows is the one `lease-check` reads.
-- **A refused or unreadable answer.** Print one line with what it names, and dispatch that plan the way this step does with the key not `true`, because the full documents lose the executor nothing.
+- **A refused or unreadable answer.** Print one line with what it names, and dispatch that plan with the plan file and the two phase documents, as the paragraphs above list them, because the full documents lose the executor nothing.
 
 Do NOT restate the executor's standing rules (atomic commit per task,
 deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
@@ -332,11 +325,13 @@ run's scratch directory until its branch has merged.
 **The lifecycle bracket (both paths).** Every worker this workflow hands work to
 is bracketed in the joined run record. The DISPATCH half rides each executor's
 own resolve on the spawn-agent seam's routing step:
-`--plan <k> --bracket-plan <k> --bracket-read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"`
+`--plan <k> --bracket-plan <k> --bracket-read "CLAUDE.md,<the brief path>"`,
+and on a refused brief its `--bracket-read` value is
+`"CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"`
 - the worker key is the plan NUMBER here, not the role name, and `--read` is
-what this site causes the executor to read: the shared set every plan in the
-phase re-reads, plus that plan's own file. `--plan <k>` beside it is a different
-quantity carrying the same number: it scopes the RISK FLOOR to this plan's own
+what this site causes the executor to read: `CLAUDE.md` and that plan's brief,
+or on a refused brief `CLAUDE.md`, the plan file and the two phase documents. `--plan <k>`
+beside it is a different quantity carrying the same number: it scopes the RISK FLOOR to this plan's own
 declared files (references/seam-spawn-agent.md's Routing block states the rule).
 Once that executor comes back, append the CLOSE:
 
@@ -346,32 +341,20 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <
 
 `--replay` ONLY when the digest's `Commits:` read `none (already applied)`: the
 dispatch cost real tokens and performed no work, and without the flag its
-bracket is byte-identical in shape to a real one. Two measured replays charged
-30,588 and 24,570 tokens that a cost read over `trace.jsonl` counted as
-execution. It is a structured flag and never a `--detail` note, because the
-close arm infers `checkpoint` from a non-blank detail - a replay written there
-would bill a finished dispatch as an unusable one.
+bracket is byte-identical in shape to a real one. It is a structured flag and
+never a `--detail` note, because the close arm infers `checkpoint` from a
+non-blank detail - a replay written there would bill a finished dispatch as an
+unusable one.
 
-ONE line per executor, and the detail is the executor's own return line - write
-it to a scratch file and pass the PATH (caller-derived text -
-references/conventions.md). `--agent-id` is the host's name for the worker that
-just returned and this line is its only writer; it stops a late `SubagentStop`
-closing the NEXT executor's bracket. OMIT it when the return carried no id.
-OMIT the detail entirely for a `PLAN COMPLETE` or `PLAN PARTIAL` and the seam
-closes a `return`; carry it for any checkpoint return and the seam closes a
-`checkpoint`. A plan moved to another path or rung is an `escalation`, which the
-seam does not infer - it stays on `trace append`. All three close a bracket. A
-dispatch that gets none of them is closed by the host's `SubagentStop` hook
-instead, so `trace render` reports as `unpaired` only a worker NEITHER writer
-closed - but that hook never sees the RETURN, so a skipped close still costs
-the record this worker's tokens, turns and wall clock.
-
-`--plan`/`--bracket-plan` is the WORKER key that pairs a dispatch with its
-close; `--role` is what the per-role totals group on, and BOTH are required.
-OMIT `--tokens` on a figureless return, and `--turns` and `--duration-ms` on
-the same rule - never a `0`, which claims a measurement nobody made
-(seam-spawn-agent.md's bracket rule). A worktree executor still emits nothing of
-its own - these are the ORCHESTRATOR's lines.
+ONE line per executor, and the detail, carried only for a checkpoint return, is
+the executor's own return line - write it to a scratch file and pass the PATH
+(caller-derived text - references/conventions.md). `--plan`/`--bracket-plan` is
+the WORKER key that pairs a dispatch with its close, and `--role` is what the
+per-role totals group on. The rest of this line - when `--agent-id` is omitted,
+how the detail picks `return` or `checkpoint`, that an `escalation` is never
+inferred, the `SubagentStop` hook's close, and omitting a figure rather than
+sending `0` - is seam-spawn-agent.md's bracket rule. A worktree executor writes
+none of these lines - they are the ORCHESTRATOR's.
 
 The `phase_start` line in `git_guard` is NOT one of these. It is the
 correlation-id ANCHOR, not a worker bracket, and it takes no `--role`,
@@ -454,6 +437,13 @@ When HEAD has moved, the range is real:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD
 ```
 
+An `ok:false` with reason `surfaces-unanswered` is neither a verdict nor a skip.
+Run `detect-surfaces --root .`, put the one-time surface question to the user in
+this run as `references/risk-surface.md` states it (the envelope's `options` in
+the order they arrive, the legend beside them, through the ask-user seam), save
+the answer at the repo layer as that reference says, and re-run the same
+`risk-check run` line. The plan is not reported done before that.
+
 A non-empty `matches` OR `inconclusive: true` fires the trigger. An unjudged
 range is not a cleared one, and widening is the only safe direction on the one
 gate the schema defaults to `blocking`. Each match names the category and
@@ -464,8 +454,10 @@ On a fire, write `git diff {pre-plan HEAD}..HEAD` to
 path - shape (c), exactly as `workflows/task.md`'s `risk_check` step does, since
 shape (a) refs is not one of the shapes the wiring table admits for
 `risk_surface`. The file is transient: never stage it, delete it once the
-trigger returns. Blocking: on FAIL the findings are fixed by a continuation
-`cad-executor` dispatched through the spawn-agent seam under worker key `<k>` -
+trigger returns - on the workflow path once the fire has settled at its notice,
+never at the launch, because the reviewers and the checkers read that path after
+the launch; the narrowed re-arm fires on its own narrowed artifact. Blocking: on FAIL the findings are fixed by a
+continuation `cad-executor` dispatched through the spawn-agent seam under worker key `<k>` -
 "The worker key of a SECOND dispatch" above already names this as one of the
 three second dispatches against one plan's range, restated no further here - or
 the user explicitly overrides. The dispatch prompt carries four things, nothing
@@ -556,7 +548,7 @@ and that fix's range gets its own `risk-check run` and `risk-check status`.
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
 than waiting: the artifact is two immutable refs, so the reviewer reads nothing
 that executor writes, and nothing downstream waits on the answer. Each fire
-carries the advisory persistence tail (review-triggers.md step 4): findings
+carries the advisory persistence tail (references/review-inline.md): findings
 land at `.planning/phases/<N>/records/REVIEW-diff-plan-<k>.md` whether or not this
 session survives to the return, and `summary` folds the files on disk, naming
 any still in flight. The last plan has no next dispatch, so it fires without
@@ -609,21 +601,14 @@ position line `locate` states. Route by type:
   disk. This is the one checkpoint type whose cause is a cross-task regression
   rather than a decision, so it needs no ask - dispatch the continuation.
 
-A `blocked` halt naming a MISSING PLAN file is the one arm that also has a named
-orchestrator-side remedy, because its cause is known: the worktree forked from a
-base that does not carry this phase's plans. Reconcile that worktree from the
-main tree YOURSELF, in your own serialized turn - bring the branch up to the
-main tree's commit, or copy `.planning/phases/<N>/` in - and then re-dispatch
-that plan once. The executor contract is not touched by this and must not be:
-references/worktree-executor.md, which `<worktree_mode>` reads, forbids
-`git merge`, `rebase`, `fetch` and `stash` outright, and reconciliation is the
-orchestrator's serialized decision. Cadence still issues no `git worktree add`
-of its own - the host creates the worktree and the fork point is the user's
-`worktree.baseRef` setting.
-
-After that remedy has failed twice, the plan falls back to the SEQUENTIAL path in
-the main tree, and an `escalation` lifecycle event records the worker that
-changed paths. A fallback and not a bounded re-dispatch loop.
+**A missing PLAN on the parallel path.** A `blocked` halt naming a MISSING PLAN
+file is routed after `execute-parallel.md`'s steps 3 and 4 have merged every
+branch and removed every worktree, so nothing is left to reconcile. With
+`worktree.baseRef` proven `head`, its cause is a fork commit without this
+phase's plans, for example because they were never committed. Re-dispatch that
+plan once in the main tree, which holds them on disk, and record the path change
+as the `escalation` lifecycle event the spawn seam states. If it halts on a
+missing PLAN again, the main tree lacks the plan file: tell the user so.
 
 Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
 report PATH `<plandir>/records/reports/plan-<k>.md`, the checkpoint outcome, and
@@ -634,29 +619,29 @@ spelling.
 </step>
 
 <step name="execute_parallel">
-(Opt-in path. All worktree ceremony lives here and in `execute_workflow`'s
+(Reached from `choose_path`'s parallel path. All worktree ceremony lives here and in `execute_workflow`'s
 reference, and nowhere else. choose_path
 has already proven `worktree.baseRef` is `head`, so an executor halting
-`blocked` on a missing PLAN here is a real defect to report, not the
-fork-point default.)
+`blocked` on a missing PLAN here is not the fork-point default, and goes to
+`handle_checkpoint`'s missing-PLAN arm.)
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` (one
 consult site - this step) and follow it: the batching key, the sequential
 merge with both HEADs recorded, `workflow.test_command` at its only consumer,
-and which review triggers fire on this path alone. Only the opt-in path reaches
-this step, so a sequential run carries none of it.
+and which review triggers fire on this path alone. A sequential run carries
+none of it.
 </step>
 
 <step name="execute_workflow">
-(Opt-in path, reached only from `choose_path`'s workflow path. Its worktree
+(Reached only from `choose_path`'s workflow path. Its worktree
 ceremony lives in the reference below and in `execute_parallel`'s, and nowhere
 else.)
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-workflow.md` (one
 consult site - this step) and follow it: a launch per wave, what this session
 does at the wave's notice, and where a wave stops. The executors run inside the
-workflow; every decision and every git merge stays here. Only the opt-in path
-reaches this step, so a sequential run carries none of it.
+workflow; every decision and every git merge stays here. A sequential run
+carries none of it.
 </step>
 
 <step name="goal_check">
@@ -748,12 +733,12 @@ for, it is what stops the land.
 
 The DIRECTORY, never one report by name: an executor rotates a previous run's
 report aside to a suffixed sibling, which a by-name stage leaves untracked. It
-takes everything in there, so the flagged diffs (`plan-<k>-risk.diff`,
-`plan-<k>-risk-task-<n>.diff`) go out by PATHSPEC, not a rule naming a file:
+takes everything in there, so the flagged diff (`plan-<k>-risk.diff`) goes out
+by PATHSPEC, not a rule naming a file:
 `git add <plandir>/records/reports/ ':(exclude)<plandir>/records/reports/*.diff'`. With the key
 false the reports stay uncommitted exactly like SUMMARY.md; the worktree path
 commits regardless, because the commit is the only transport across the merge.
-The cursor is never left uncommitted.
+With the key true, a run that reaches this step leaves the cursor committed.
 </step>
 
 <step name="done">
@@ -762,8 +747,8 @@ plan has run - from the `status` envelope `locate` holds (its `total` and the
 phase entry's `name`). Then report tersely: the goal-check verdict FIRST - it is the one thing the
 reader came for - then plans executed, commits (count and range), deviations
 count, open items. One suggestion max: `/cad-verify <N>` - safe
-to `/clear` first: SUMMARY.md and the STATE cursor are committed and
-verification runs in a fresh subagent.
+to `/clear` first: SUMMARY.md and the STATE cursor are on disk, and committed
+when `planning.commit_docs` is true, and verification runs in a fresh subagent.
 </step>
 
 </process>
@@ -782,21 +767,15 @@ verification runs in a fresh subagent.
 - Deviations live in SUMMARY.md - git and SUMMARY are the record, STATE is
   not a log.
 - Read only the config keys named here; unknown keys are ignored.
-- THREE writers touch this run record's brackets and no fourth: the DISPATCH
-  half rides each site's own `route.mjs resolve` through `--bracket-read`; the
-  CLOSE half is the orchestrator's hand-written `trace close`, which alone sees
-  the return and so alone carries `--tokens`, `--turns` and `--duration-ms`, or
-  for a wave's executors `workflow-run`'s close, which bills each from the run
-  file's own rows; and
-  the host's `SubagentStop` hook (`cadence-core/bin/subagent-trace.mjs`) writes
-  a close for a dispatch whose hand-written one never ran, carrying what it
-  reads off that worker rather than the return's three figures. Executors
-  write no trace events of their own, on either path.
-- The hand-written close is a FALLBACK kept on purpose - never prune it as a
-  duplicate of the hook. Two closes of one dispatch render as ONE bracket.
+- THREE writers touch this run record's brackets and no fourth, as
+  seam-spawn-agent.md's bracket rule states them: the resolve's dispatch half,
+  the orchestrator's `trace close`, or for a wave's executors `workflow-run`'s
+  close, and the `SubagentStop` hook. Executors write no trace events of their
+  own, on either path.
 - This workflow's coordinator issues no `Edit` or `Write` against a path
-  outside `.planning/`, with the single exception of the `choose_path`
-  settings merge the user accepted through the ask-user seam.
+  outside `.planning/`, with two exceptions: the `choose_path` settings merge
+  the user accepted through the ask-user seam, and a scratch file the steps
+  write under the system temp directory.
 </guardrails>
 
 <success_criteria>

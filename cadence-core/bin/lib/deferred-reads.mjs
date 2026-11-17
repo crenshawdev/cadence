@@ -21,6 +21,15 @@ export const CODES = Object.freeze({
 });
 
 /**
+ * One frozen register row. file is left off entirely, not set undefined, when the anchors resolve against SKILL.md.
+ * @param {string} skill @param {string} reference @param {string[]} anchors
+ * @param {number} read_paragraphs @param {string} [file]
+ */
+function row(skill, reference, anchors, read_paragraphs, file) {
+  return Object.freeze({ skill, reference, anchors: Object.freeze(anchors), read_paragraphs, ...(file ? { file } : {}) });
+}
+
+/**
  * The register: one row per skill and reference a command consults but no
  * longer `@`-includes. reference is root-relative from cadence-core/.
  * anchors holds the region label (see regionLabels) of every arm that needs its own Read
@@ -30,76 +39,31 @@ export const CODES = Object.freeze({
  *   anchors: readonly string[], read_paragraphs: number, file?: string}>}
  */
 export const DEFERRED_READS = Object.freeze([
-  Object.freeze({
-    // one consult site by seams.md's count, two anchors here: deleting either arm's Read loses that arm's rails
-    skill: 'cad-land',
-    reference: 'references/git-publish.md',
-    anchors: Object.freeze(['3(a)', '3(b)']),
-    read_paragraphs: 2,
-  }),
-  Object.freeze({
-    skill: 'cad-plan-review',
-    reference: 'references/review-triggers.md',
-    anchors: Object.freeze(['2']),
-    read_paragraphs: 1,
-  }),
-  Object.freeze({
-    skill: 'cad-context',
-    reference: 'templates/CONTEXT.md',
-    anchors: Object.freeze(['write_context']),
-    read_paragraphs: 1,
-    file: 'cadence-core/workflows/context.md',
-  }),
-  Object.freeze({
-    // two rows, one reference: seams.md's rule is per command and each of these reaches recall at one step,
-    // so they're two one-site deferrals and merging them loses a command's anchor
-    skill: 'cad-context',
-    reference: 'references/recall.md',
-    // spend_gate, not analyze: recall runs before the analyzer decision and the skip arm never enters analyze
-    anchors: Object.freeze(['spend_gate']),
-    read_paragraphs: 1,
-    file: 'cadence-core/workflows/context.md',
-  }),
-  Object.freeze({
-    skill: 'cad-debug',
-    reference: 'references/recall.md',
-    anchors: Object.freeze(['The method loop/1']),
-    read_paragraphs: 1,
-    file: 'cadence-core/workflows/debug.md',
-  }),
-  Object.freeze({
-    skill: 'cad-execute',
-    reference: 'references/execute-parallel.md',
-    anchors: Object.freeze(['execute_parallel']),
-    read_paragraphs: 1,
-    file: 'cadence-core/workflows/execute.md',
-  }),
-  Object.freeze({
-    skill: 'cad-execute',
-    reference: 'references/execute-workflow.md',
-    anchors: Object.freeze(['execute_workflow']),
-    read_paragraphs: 1,
-    file: 'cadence-core/workflows/execute.md',
-  }),
-  Object.freeze({
-    skill: 'cad-executor-contract',
-    reference: 'references/worktree-executor.md',
-    anchors: Object.freeze(['worktree_mode']),
-    read_paragraphs: 1,
-  }),
-  Object.freeze({
-    skill: 'cad-executor-contract',
-    reference: 'references/lean-build.md',
-    anchors: Object.freeze(['1']),
-    read_paragraphs: 1,
-  }),
-  Object.freeze({
-    skill: 'cad-plan',
-    reference: 'references/plan-revision.md',
-    anchors: Object.freeze(['check_gate']),
-    read_paragraphs: 1,
-    file: 'cadence-core/workflows/plan.md',
-  }),
+  // one consult site by seams.md's count, two anchors here: deleting either arm's Read loses that arm's rails
+  row('cad-land', 'references/git-publish.md', ['3(a)', '3(b)'], 2),
+  row('cad-plan-review', 'references/review-triggers.md', ['2'], 1),
+  row('cad-context', 'templates/CONTEXT.md', ['write_context'], 1, 'cadence-core/workflows/context.md'),
+  // two rows, one reference: seams.md's rule is per command and each of these reaches recall at one step,
+  // so they're two one-site deferrals and merging them loses a command's anchor
+  // spend_gate, not analyze: recall runs before the analyzer decision and the skip arm never enters analyze
+  row('cad-context', 'references/recall.md', ['spend_gate'], 1, 'cadence-core/workflows/context.md'),
+  row('cad-debug', 'references/recall.md', ['The method loop/1'], 1, 'cadence-core/workflows/debug.md'),
+  row('cad-execute', 'references/execute-parallel.md', ['execute_parallel'], 1, 'cadence-core/workflows/execute.md'),
+  row('cad-execute', 'references/execute-workflow.md', ['execute_workflow'], 1, 'cadence-core/workflows/execute.md'),
+  row('cad-executor-contract', 'references/worktree-executor.md', ['worktree_mode'], 1),
+  row('cad-executor-contract', 'references/lean-build.md', ['1'], 1),
+  row('cad-plan', 'references/plan-revision.md', ['check_gate'], 1, 'cadence-core/workflows/plan.md'),
+  // one site: the route, the walk's pick and the menu are three doors into the one section
+  row('cad-config', 'workflows/config-surfaces.md', ['Risk surfaces (`--surfaces`)'], 1, 'cadence-core/workflows/config.md'),
+  row('cad-config', 'workflows/config-testing.md', ['Testing policy (`--testing`)'], 1, 'cadence-core/workflows/config.md'),
+  // the front doors Read the arm's own file, so setup never opens config.md for it
+  row('cad-new-project', 'workflows/config-testing.md', ['testing_policy'], 1, 'cadence-core/workflows/new-project.md'),
+  row('cad-adopt', 'workflows/config-testing.md', ['testing_policy'], 1, 'cadence-core/workflows/adopt.md'),
+  // two arms, one file: each arm keeps its own Read so a deleted one fails on its own
+  row('cad-config', 'workflows/config-roles.md',
+    ['Roles interview (`--roles`)', 'Stakes migration (a retired routing key is still on disk)'], 2, 'cadence-core/workflows/config.md'),
+  row('cad-new-project', 'workflows/config-roles.md', ['setup(4)'], 1, 'cadence-core/workflows/new-project.md'),
+  row('cad-adopt', 'workflows/config-roles.md', ['setup(3)'], 1, 'cadence-core/workflows/adopt.md'),
 ]);
 
 /** Sentences split on a terminator plus whitespace, a heuristic: one before markup (.** or .md) does not split. */

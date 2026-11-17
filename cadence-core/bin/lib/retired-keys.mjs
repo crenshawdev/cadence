@@ -57,6 +57,19 @@ const retiredRiskOverride = (surface) => Object.freeze({
 });
 
 /**
+ * The row the four workflow switches share. Each one's on path became the only path, so the detail says what runs now.
+ * @param {string} key
+ * @param {string} now what Cadence does in place of the switch
+ * @returns {RetiredKey}
+ */
+const retiredWorkflowSwitch = (key, now) => Object.freeze({
+  replacement: null,
+  since: 'v4.4.0',
+  detail: `its on path is now the only path, so ${now}. Nothing reads this key; `
+    + `\`config.mjs unset ${key}\` and \`config.mjs unset --global ${key}\` drop it`,
+});
+
+/**
  * Every retired config key, keyed by the exact dotted token a user writes at the CLI: `checkPairs` looks a key
  * up by that token, so the spelling here is the matched string. `since` names the milestone that retired it.
  * @type {Readonly<Record<string, RetiredKey>>}
@@ -195,6 +208,14 @@ export const RETIRED_KEYS = Object.freeze({
   'model.effort.cad-reviewer': retiredModelKey('model.effort.cad-reviewer', 'roles.cad-reviewer.effort'),
   'model.effort.cad-executor': retiredModelKey('model.effort.cad-executor', 'roles.cad-executor.effort'),
   'model.effort.cad-plan-checker': retiredModelKey('model.effort.cad-plan-checker', 'roles.cad-plan-checker.effort'),
+  'planning.workflow_plans': retiredWorkflowSwitch('planning.workflow_plans',
+    'plans always carry what a workflow needs, and each agent reads its composed input'),
+  'workflow.use_workflows': retiredWorkflowSwitch('workflow.use_workflows',
+    'an adjudicated review runs as a workflow whenever the Workflow tool is available'),
+  'workflow.multi_workflow': retiredWorkflowSwitch('workflow.multi_workflow',
+    'workflows can run at the same time, and none waits for another'),
+  'workflow.execute_workflows': retiredWorkflowSwitch('workflow.execute_workflows',
+    '/cad-execute runs a wave of more than one plan as a workflow whenever the Workflow tool is available'),
 });
 
 /**

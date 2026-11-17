@@ -460,16 +460,6 @@ export const CONTRACTS = {
       // checkers bill those paths and every other bracket the payload reference. A malformed value refuses before any write.
       '--plan-reads': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
-    // take/release share one row's shape: --fire is `<trigger>-<discriminator>`, and release frees only a match
-    'workflow-claim take': {
-      '--fire': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
-    },
-    'workflow-claim release': {
-      '--fire': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
-      // the id the winning take printed; release matches it, never the label. --stale is for a holder that has no id
-      '--id': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-      '--stale': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
-    },
     // takes no flag beyond --dir: the root is its parent, so there is no second path to name
     'codemap scan': {},
     // --out-dir is an existing directory: with it, status also writes the launch file and one item file per module to read
@@ -691,8 +681,6 @@ export const CONTRACTS = {
     keys: {
       '--walk': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // reads no flag: the repo is the cwd and the global layer is CADENCE_GLOBAL_CONFIG
-    'workflow-layers': {},
     // read-only: takes the key=value tokens `set` takes and no flag, since each key's own target decides the file
     preview: {},
     // the sentence match's read of every setting's text and value in force; no flag, the repo is the cwd
@@ -861,6 +849,8 @@ export const CONTRACTS = {
       '--command': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // no flags of its own, `--root` is the '*' row's; the row is here so the prose lint knows the word
+    paths: {},
   },
   // self-verify.mjs has no subcommand, so it carries a bare row like the hooks below; the prose lint checks its flags
   'self-verify.mjs': {

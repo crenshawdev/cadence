@@ -68,9 +68,8 @@ set up ahead of its gate, so end that line with "You can still set it now." and 
   as an array. A `hint` is shown as text.
 - A `null` on a list key is not written, because `set` refuses it.
 - `review.triggers.risk_surface.surfaces` opens **Risk surfaces** instead of being typed.
-- A value equal to the one in force writes nothing. Five keys can have a value in force that differs from what the
-  target file stores: `git.auto_close`, `workflow.use_workflows`, `workflow.multi_workflow`, `workflow.execute_workflows`
-  and `review.reviewers`.
+- A value equal to the one in force writes nothing. Two keys can have a value in force that differs from what the
+  target file stores: `git.auto_close` and `review.reviewers`.
   On those, a pick writes nothing only when it equals what the target file stores, or when that file stores
   nothing and the pick equals the value in force. So picking false over a repo true is written, and the menu can
   undo its own write. Picking true where the repo already stores true writes nothing to the repo, and **The second
@@ -95,7 +94,7 @@ with `$D` empty.
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" preview <key>="$(cat <D>/value.json)"
 ```
 
-It answers `files` (each with its `file` and `pairs`: `before` and `after` in force, `stored` on the four keys above,
+It answers `files` (each with its `file` and `pairs`: `before` and `after` in force, `stored` on the two keys above,
 and `second_file` with `stays_off` for a setting that needs both files), `resolves` (each role with its `changes`),
 `starts` and `stops` (each a key with `why`). An `ok:false` is shown as it is, with its next step, and nothing is
 written. Print it under the setting's block:
@@ -121,8 +120,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set [--global] <key>="$
 
 Echo the seam's `changed`. Take **The second file** when the preview named one, then show the list again.
 
-**The second file.** `git.auto_close`, `workflow.use_workflows`, `workflow.multi_workflow` and `workflow.execute_workflows`
-stay off until both files set them, so a repo value alone leaves the setting off. When the preview names a `second_file`, show this in a turn of its own,
+**The second file.** `git.auto_close` stays off until both files set it, so a repo value alone leaves the setting off. When the preview names a `second_file`, show this in a turn of its own,
 with `second_file.file` in place of {file}, and ask for a yes:
 
 "This setting is still off. It only turns on when your global config file, {file}, turns it on too. A value there applies

@@ -117,13 +117,19 @@ the suite the project's own manifest names - the `package.json` script, the
 
 GREEN -> rewrite the file `PLAN COMPLETE`, return the digest.
 
+RED only on tests your plan says a later plan of this phase rewrites -> that
+red is the plan working, not a regression. Rewrite the
+file `PLAN COMPLETE`, list each of those tests with the plan that rewrites it as
+an open item, and return the digest; that plan's own suite run is their check.
+Any other failure in the same run makes it RED below.
+
 RED -> ONE repair round, then a checkpoint. Fix the regression under the same
 lease and commit protocol, and re-run the suite ONCE to confirm - that second
 run is the only widening of the allowance above, and never a probe. Green now:
 `PLAN COMPLETE`, the repair a task row like any other. Still red, or the repair
 needs a file outside your lease: write `PLAN CHECKPOINT: suite-red` naming the
-failing output, and return the checkpoint digest. Never `COMPLETE` on a red
-suite - a regression you could not close in one round is the orchestrator's.
+failing output, and return the checkpoint digest. Otherwise never `COMPLETE` on
+a red suite - a regression you could not close in one round is the orchestrator's.
 
 Then return the digest.
 </process>

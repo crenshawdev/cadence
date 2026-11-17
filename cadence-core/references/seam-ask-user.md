@@ -20,7 +20,9 @@ How a workflow asks the human a question and blocks on the answer.
   set larger than the option cap splits across questions - minus any
   always-present option such as NONE, which consumes a slot - and the questions
   batch at most four per call. Two caps, not one: options per question, and
-  questions per call.
+  questions per call. Independent questions batch the same way, never one
+  blocking turn each; only a question whose wording depends on an earlier answer
+  stays sequential.
 - Open-ended question: end the turn with the question in plain prose.
 - Never fabricate or default an answer the seam was supposed to collect.
 

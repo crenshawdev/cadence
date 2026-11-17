@@ -35,13 +35,14 @@ Taking the field's presence as the answer hands the user back exactly the
 commands the walk exists to run. The bar is the predicate; the field is only
 where the reason is written down.
 
-## walk - why a loosely applied bar is unrecoverable
+## walk - why a loosely applied bar costs the user an answer
 
-`blocked` is terminal, and four separate mechanisms keep it that way: `next`
-offers only `pending`, `refresh` appends only unseen names, `route_failures`'
-reset is scoped to `status: fail`, and completion refuses it. So an item blocked
-by a bar applied loosely enough to attempt an impossible command puts the phase
-permanently out of reach of Complete.
+`blocked` is terminal for the model's own walk, and four separate mechanisms keep
+it that way: `next` offers only `pending`, `refresh` appends only unseen names,
+`route_failures`' reset is scoped to `status: fail`, and completion refuses it.
+The way out is the user's answer on the next run, so an item blocked by a bar
+applied loosely enough to attempt an impossible command holds the phase short of
+Complete until the user answers it.
 
 Pass 1 records `blocked` only for an item that cleared the bar and then failed on
 an environmental cause the bar did not predict.

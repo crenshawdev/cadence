@@ -59,12 +59,13 @@ Two stops first, before anything is written.
    is a fact about that repository and not about Cadence. So it is asked, once,
    and a repository that has answered is never asked again.
 
-   The second is what each role costs. Follow the **Roles interview** arm of
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md` (one consult site -
-   this step) right after the copy: the full thirteen questions written to the
-   user-global layer when that layer holds no `roles` key, and the shorter
-   per-project confirmation written to this repository's own file when it
-   already does. Same shape of reason as the forge - a template cannot carry a
+   The second is what each role costs. Read
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-roles.md` (one consult
+   site - this step) and follow its **Roles interview** arm once this item's
+   script has run: the full thirteen questions
+   written to the user-global layer when that layer holds no `roles` key, and
+   the shorter per-project confirmation written to this repository's own file
+   when it already does. Same shape of reason as the forge - a template cannot carry a
    default for what a model costs the person paying for it, and an adopted
    repository is exactly where a per-project answer differs from the machine's.
 
@@ -244,9 +245,8 @@ skill level (never do this - Claude builds).
 **No mechanism decides any of this.** No score, no coverage percentage, no
 threshold, no rubric, and no per-item walk of the repo's own documents against a
 list of things a project ought to state - each of those is forbidden here, and
-the reason is measured rather than stylistic: the first computed discriminator
-this tree tried ordered its fixture's phases backwards, and the standing
-requirement on this door is that it never become a scripted interview.
+the standing requirement on this door is that it never become a scripted
+interview.
 Suppression is judgment. You read the repo, so you already know what it said.
 The `testing_policy` step below reports coverage figures and thresholds and
 decides no question here.
@@ -303,12 +303,11 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/REQUIREMENTS.md` and write
 </step>
 
 <step name="testing_policy">
-Follow the **Testing policy** section of
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md` (one consult site -
-this step) here, after `survey`'s reading and before the roadmap: one
-recommendation, Accept or Adjust, written, rendered and checked. The survey
-already read the workflows, manifests and tree whose thresholds and exclusions
-it quotes.
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-testing.md` (one
+consult site - this step) and follow its **Testing policy** arm here, after
+`survey`'s reading and before the roadmap: one recommendation, Accept or
+Adjust, written, rendered and checked. The survey already read the workflows,
+manifests and tree whose thresholds and exclusions it quotes.
 
 Skip that section's publishing question. Ask nothing about publishing; say in
 one line that verification publishing is off and that `/cad-config --testing` is
@@ -459,7 +458,8 @@ on disk in `.planning/`.
   `git init`. Its inputs are code and history, and git's upward discovery would
   otherwise let a subdirectory answer from the repo above it.
 - Nothing outside the canonical `.planning/` set is created: PROJECT.md,
-  REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json - and
+  REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json, records/state.json,
+  records/.gitignore - and
   `.github/cadence/coverage-policy.json`, which the `testing_policy` step
   renders. No `phases/` dirs, no
   CLAUDE.md generation, no extra scaffolding.

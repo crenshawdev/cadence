@@ -11,7 +11,7 @@ Nothing here reaches an agent that has not read it.
   resolved by the Claude Code plugin runtime. No host probing, no locator shim.
   Skills @-include workflows from here.
 - Project state: `.planning/` in the repo root - the SAME git repo as the code
-  it plans (see DESIGN.md canonical set: PROJECT.md, REQUIREMENTS.md,
+  it plans (canonical set: PROJECT.md, REQUIREMENTS.md,
   ROADMAP.md, STATE.md, phases/<N>/{PLAN,SUMMARY,UAT}.md). Cadence assumes one
   repo holds both plans and code: the protected-branch guard, diffs, and
   goal-check all run where `.planning/` is, so a phase whose code lives in a
@@ -19,8 +19,7 @@ Nothing here reaches an agent that has not read it.
   driving a separate code repo from here is the steerer's responsibility, not
   the tool's. (execute.md guards and warns if it detects the split, but does
   not make it work.)
-- Phase directory: `.planning/phases/<N>/`, created lazily by the first skill
-  that needs it (cad-context or cad-plan). The grammar for `<N>`, and the
+- Phase directory: `.planning/phases/<N>/`. The grammar for `<N>`, and the
   guarantee that no spelling is ever silently redirected to a DIFFERENT phase's
   directory, are stated in `references/roadmap-phases.md` and nowhere else.
 - Records folder: `.planning/records/` and `.planning/phases/<N>/records/` hold
@@ -101,58 +100,6 @@ The only correct read is the seam - one call for every key the workflow uses:
 It layers repo (.planning/config.json) over the user-global file over the
 schema defaults, so a raw file read sees at most one layer and lies about the
 rest. Read only the keys you need. Unknown keys are ignored, never fatal.
-
-## Seam arguments
-
-- A flag declares a DISPOSITION, not merely a type: what the seam does when the
-  value is wrong, chosen from exactly three words - refuse, warn, fall back. All
-  three are positions this tree already holds, so a contract that made every
-  typed flag refuse would reverse two of them. `issue-check.mjs` falls back to a
-  constant on a malformed `--timeout-ms`, because that seam's whole contract is
-  that it never fails a land; `route.mjs` warns on a `--phase` outside the
-  accepted shape and still resolves, because refusing there would route the
-  phase LOWER than its own risk baseline; the `--dir` family refuses.
-- Falling back means the flag reads as ABSENT and the caller's own default
-  answers. The token after it is never consulted, which is what stopped a
-  valueless `--branch` from reading the following `--dir` as a branch name.
-- The BARE form's disposition is declared SEPARATELY from the value's, in its
-  own field, because one function body in `planning.mjs` already runs both
-  side by side. In the body shared by `trace append` and `trace close`, a bare
-  `--step`, `--reviewer`, `--trigger` or `--role` refuses, while a bare
-  `--plan`, `--sha` or `--base` is dropped. One word for both axes would
-  either start refusing every shipped close that omits `--plan`, or extend the
-  drop to the refusals written against exactly the complete-looking event that
-  defeats attribution: a bare `--role` wrote a record with no role key, and the
-  renderer then aggregated it under the empty string. The two axes differ on
-  ordinary flags too - `release-bump.mjs`'s `--version` refuses a blank value
-  and falls back on a bare one.
-- A new seam DECLARES its flags in `cadence-core/bin/lib/arg-contract.mjs`, one
-  row per flag carrying all four fields (`required`, `type`, `value`, `bare`),
-  rather than restating the rules in a parser of its own. That same table is
-  what self-verify checks documented invocations against, so a flag with no row
-  is a flag no prose may spell.
-- The contract CLASSIFIES and the CALLER owns its own `reason` string, which is
-  why one `--dir` rule surfaces under two names: `planning.mjs` reads the
-  classification back and refuses with `bad-args`, the single refusal vocabulary
-  that file publishes, while the seams that end in an `e.seam` catch arm raise
-  it and refuse with `missing-flag-value`. The module mints no reason code of
-  its own, so adopting it adds nothing to a seam's published list.
-- The DECLARATION is what refuses. An adopting bin runs its resolved row at the
-  door of its dispatch rather than restating the rule at each handler, and
-  `arg-contract-adoption.test.mjs` (cadence-tests repository) walks the whole table
-  against the shipped binaries, so a row declaring a refusal nothing carries out
-  reddens there. That census is what the gap needed: 98 rows were declared for
-  one script and two of them were read, so a valueless flag wrote the boolean
-  `true` into a cursor, a checklist's front-matter and a recorded UAT result.
-- PRESENCE is the stated exception. The shared door judges only the flags a
-  caller actually PASSED, and a flag that is genuinely ABSENT is answered by the
-  bin that owns the wording, because the diagnostic for a missing enum-valued
-  flag - which of three kinds a capture is, which of two modes a prune takes -
-  is not expressible in a declaration. So `required` records a fact for the bins
-  that choose to read it, never a rule the door enforces.
-- The contract governs VALUE grammar only, and never refuses an UNDECLARED flag
-  at runtime. Membership is the prose-side lint's job, so a flag missing from
-  the table is caught where prose spells it rather than at a caller's expense.
 
 ## Caller-derived text
 
@@ -235,11 +182,6 @@ output (a `git diff <a>..<b>` that needs hashes a SUMMARY read just produced, a
 follow-up read whose path a first call computed). A numbered list in a workflow
 is evaluation order, not a one-call-per-turn mandate.
 
-The same holds for the ask-user seam: independent questions over an independent
-set batch into `ceil(N/4)` AskUserQuestion calls (up to 4 questions per call),
-not one blocking turn per item. Only questions whose wording depends on an
-earlier answer stay sequential.
-
 ## State
 
 - `STATE.md` is a cursor of four required lines plus an optional `Plan:` line. It
@@ -302,10 +244,3 @@ earlier answer stay sequential.
 
 - Terse completion reports: what changed, commit hash(es), files touched.
 - No next-step menus unless the workflow genuinely forks. One suggestion max.
-
-## Authoring style (for new workflows)
-
-- Structure: `<purpose>`, `<process>` with named `<step>`s, `<guardrails>`,
-  `<success_criteria>`. Match the tone and density of workflows/task.md.
-- No multi-runtime branches, no CC-bug-number workaround prose, no ASCII
-  banner variants. Plain instructions.

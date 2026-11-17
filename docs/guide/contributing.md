@@ -4,7 +4,7 @@ Bug reports and documentation corrections are welcome. Tell me what you ran, wha
 
 For a feature, open an issue before writing the implementation. A useful idea doesn't automatically belong in Cadence's scope, and discussing that first saves both of us work.
 
-The repository's [contribution guide](https://github.com/crenshawdev/cadence/blob/main/CONTRIBUTING.md) has the code checks, separate test-repository workflow and contribution policy. [GitHub issues](https://github.com/crenshawdev/cadence/issues) are the place for reproducible bugs; **#cadence** on the [jcrenshaw.dev Discord](https://jcrenshaw.dev/discord) is for discussion.
+The repository's [contribution guide](https://github.com/crenshawdev/cadence/blob/main/.github/CONTRIBUTING.md) has the code checks, separate test-repository workflow and contribution policy. [GitHub issues](https://github.com/crenshawdev/cadence/issues) are the place for reproducible bugs; **#cadence** on the [jcrenshaw.dev Discord](https://jcrenshaw.dev/discord) is for discussion.
 
 ## Work on the book
 

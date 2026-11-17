@@ -18,9 +18,9 @@ Parse `$ARGUMENTS` for a phase number: it becomes `--phase <N>`. NO argument
 means the WHOLE record, on purpose - the milestone close is the caller this seam
 was built for, and a milestone's evidence spans every phase it shipped. Those
 are the only two scopes. Add no flag of any kind: `trace suggest`'s contract row
-in `cadence-core/bin/self-verify.mjs` fixes its flag set at `--phase` alone, so
-a scoping flag would be a seam contract change, and there is no correlation-id
-scoping to reach for either.
+in `cadence-core/bin/lib/arg-contract.mjs` fixes its flags at `--phase`
+alone, so a scoping flag would be a contract change, and there is no
+correlation-id scoping to reach for either.
 
 The scope is REPORTED, never narrowed. Say which record was read - the return's
 `file` names it - and what it spans: nothing prunes `.planning/records/trace.jsonl` at a

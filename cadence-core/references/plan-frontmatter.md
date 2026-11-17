@@ -1,7 +1,7 @@
 # PLAN.md frontmatter grammar
 
-The stated grammar for the `requirements:`, `files:` and `depends_on:` lists in
-a plan file's leading `---`-fenced block (`templates/PLAN.md`). Read every shipped
+The grammar for `requirements:`, `files:` and `depends_on:` lists in a plan's
+`---`-fenced block; `references/plan-graph.md` sets `depends_on`. Read every shipped
 form to exactly the ids/files declared, and report anything outside this
 grammar rather than silently over- or under-reading it. The single
 implementation is `readFrontmatterList` in

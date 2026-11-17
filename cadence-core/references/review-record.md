@@ -46,7 +46,7 @@ without it a round-two settle is checked against round one's stale rulings and
 passes whenever the two counts happen to coincide. The TRIGGER travels the same way, on `--trigger`,
 and `--plan <k>` rides a per-plan fire: `risk-check status` joins a matched
 range to its receipt on those two structured fields and never on the detail
-(`references/triage-gate.md` states the rule at all four settle points).
+(`references/triage-gate.md` states the rule at all five settle points).
 
 `<N>` is the phase in hand, or the STATE cursor's phase for a trigger whose
 range spans phases. The VOICE LIST is load-bearing, not decoration: a
@@ -58,8 +58,9 @@ the trigger asked for.
 
 ## The review file
 
-At gate `adjudicated` and at `/cad-verify`'s fire, write the REVIEW file with
-this seam before triage (`references/review-triggers.md` step 5 says which fires).
+At gate `adjudicated`, at `/cad-verify`'s fire and on a `blocking`
+`risk_surface` fire on the workflow path, write the REVIEW file with this seam
+before triage.
 Compose its payload as a file in this run's scratch directory, as below:
 
 ```

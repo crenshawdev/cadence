@@ -8,7 +8,6 @@
 //   unset [--file <path>|--global] <key> ...  removes from that one file, never the merged view
 //   get [--file <path>] [key ...]             repo > global > defaults
 //   keys [--walk]                             --walk is only keys holding a `question`
-//   workflow-layers                           the two workflow switches, each on only when both layers set it
 //   layers [--group <name> [--advanced]|--key <key>]  where each setting's value comes from, for the /cad-config menu
 //   preview <key=value> ...                   read-only: the file, before and after, and what changes if `set` ran
 // --file defaults to .planning/config.json, --global is the user-global layer.
@@ -25,7 +24,6 @@ import { DONE, emit } from './lib/seam-io.mjs';
 import { schemaPath } from './lib/test-seam.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { checkValue, checkGrammar } from './lib/config-value.mjs';
-import { workflowLayers } from './lib/workflow-layers.mjs';
 import { AUTO_CLOSE_KEY, autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { flatten, layerRows } from './lib/config-layers.mjs';
 import { dependentsOf } from './lib/setting-conditions.mjs';
@@ -289,16 +287,15 @@ function walkRead() {
   return groups;
 }
 
-// The menu's read: where each setting's value comes from. The repo is the cwd, as workflow-layers has it.
+// The menu's read: where each setting's value comes from. The repo is the cwd.
 // Bare gives the opening screen's counts. --group adds that group's shown rows and the names of its Advanced keys,
 // --group with --advanced the Advanced rows as key, label, value, winner and purpose, --key one row with the key's full text.
 function layersRead(group, advanced, key, catalog) {
   const cwd = process.cwd();
   const repoFile = join(cwd, '.planning', 'config.json');
   const { config, layers, warnings, scopeWarnings, tornLayers } = mergeLayers(repoFile);
-  const wl = workflowLayers(cwd);
   const ac = autoCloseLayers(cwd);
-  const both = { ...wl.keys, [AUTO_CLOSE_KEY]: { on: ac.authorized } };
+  const both = { [AUTO_CLOSE_KEY]: { on: ac.authorized } };
   const read = layerRows({ keys: SCHEMA, merged: { config, layers, tornLayers }, files: { repo: repoFile, global: GLOBAL_CONFIG }, both });
   const allWarnings = [...(warnings || []), ...(scopeWarnings || []), ...read.warnings];
   const head = { ok: true, unreadable: read.unreadable, ...(allWarnings.length ? { warnings: allWarnings } : {}) };
@@ -499,15 +496,7 @@ try {
     if (evaluateFlag(rest, '--walk', CONTRACTS['config.mjs'].keys['--walk']).value === true) out({ ok: true, walk: walkRead() });
     else out({ ok: true, keys: SCHEMA });
   }
-  // the repo's cwd, like every other default here; `get` would answer on a repo-only value, so deciders read this
   else if (cmd === 'preview') await previewRead(rest);
-  else if (cmd === 'workflow-layers') {
-    const r = workflowLayers(process.cwd());
-    const unreadable = [];
-    if (Object.values(r.keys).some((k) => k.repo === 'unreadable')) unreadable.push(r.repoFile);
-    if (Object.values(r.keys).some((k) => k.global === 'unreadable')) unreadable.push(r.globalFile);
-    out({ ok: true, ...r, unreadable });
-  }
   else if (cmd === 'catalog') layersRead(undefined, false, undefined, true);
   else if (cmd === 'layers') {
     const row = CONTRACTS['config.mjs'].layers;
@@ -523,7 +512,7 @@ try {
     }
     layersRead(g.value, advanced, k.value);
   }
-  else fail('usage', 'subcommand: validate | check | set | unset | get | keys | workflow-layers | layers | catalog | preview');
+  else fail('usage', 'subcommand: validate | check | set | unset | get | keys | layers | catalog | preview');
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

@@ -31,13 +31,17 @@ ROADMAP.md, REQUIREMENTS.md or PROJECT.md. Either way:
 - Deferred ideas MUST NOT appear in any plan.
 - Areas marked as your discretion: choose, and record the choice in the
   task's action.
+- A flagged assumption in CONTEXT has already been investigated. Plan around
+  what it states and do not probe the machine to settle it again. Where it is
+  marked unclear, write the task's Verify so the check runs where the answer
+  lives.
 
 Never reduce scope to make planning easier. Prohibited in task actions:
 "v1", "simplified", "for now", "placeholder", "future enhancement", or any
 phrasing that delivers less than the decision states. Only three legitimate
 reasons to leave something out, and each is a `## PHASE TOO BIG` return, not
 a silent cut:
-1. Context cost - the phase cannot be executed well in one pass.
+1. Context cost - the phase cannot be executed well even as several plans.
 2. Missing information - a required detail exists in no source artifact.
 3. Dependency - it needs a phase that has not shipped.
 </decision_fidelity>
@@ -126,7 +130,13 @@ Every task has exactly three fields, all concrete:
   owes no deviation for building it differently than you pictured. So it must
   be falsifiable and must pin the property the task exists for - everything you
   left unspecified in Action is a choice this field is the only check on. "Running X shows Y", never
-  "X works" or "looks good". If proving the task needs a tool or service not
+  "X works" or "looks good". It must also fail on the tree as it stands before
+  the task: when it checks for text in a file, look in the file you read and
+  make sure that text isn't there yet, and never say a check fails at the base
+  commit unless you know it does. A check that already passes proves nothing
+  about the task. When a task claims something holds while two things run at
+  once, its Verify makes them run at once and fails when they collide; a run
+  that only ever passes says nothing about the race. If proving the task needs a tool or service not
   available in the execution environment (probe with `command -v`; e.g.
   docker, a cloud CLI, a live endpoint), write the Verify as a `human-verify`
   instruction naming the tool and what the user should observe - never a
@@ -175,8 +185,7 @@ This is a nudge to weigh, not a hard rule: it never forces a split that does
 not earn itself. A genuinely single-concern phase stays one task, and
 combining responsibilities that share all six axes is correct, not a defect.
 This governs task/artifact-level decomposition within a plan, distinct from
-the PLAN-file split in `<plan_output>` below (parallel PLAN-1/PLAN-2 slices
-for independent execution) - the two are not the same decision.
+the PLAN-file split in `<plan_output>` below.
 </separation_of_concerns>
 
 <plan_output>
@@ -186,20 +195,20 @@ ${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PLAN.md. The frontmatter
 dispatch prompt, distributed across the plan(s); an ID covered by no plan
 is a planning failure.
 
-**One PLAN.md is the default.** Split into PLAN-1.md, PLAN-2.md ... ONLY
-when genuinely independent slices exist: no shared files, no cross-slice
-ordering, each slice independently verifiable. Splits feed /cad-execute's
-optional parallel path. Never split to dodge difficulty, and never split
-shared-file work - if two slices touch the same file, they are one plan.
+**One PLAN.md is the default.** Write more plans, PLAN-1.md, PLAN-2.md ...,
+when the tasks pass the `Task ceiling` or when a slice of the work can be
+built and verified on its own. Plans may share files: a plan runs after
+every lower-numbered plan it shares a declared file with, and plans that
+share none can run at the same time. So number the plans in the order the
+work has to happen, and when a plan needs another plan's result without
+sharing a file with it, keep those tasks in one plan. Never merge plans or
+fold tasks together to avoid a shared file, and never split to dodge
+difficulty.
 
 If your dispatch prompt carries a `Plan shape` directive from CONTEXT,
-treat it as the intended structure: honor it when the independence test
-allows. When your analysis contradicts it - it asks for multiple plans but
-the slices share files, or asks for one plan but the slices are provably
-independent - follow the independence test (it is the hard constraint), but
-record the deviation and its reason in your return marker and in the PLAN
-Notes. File independence wins over the directive; a silent divergence does
-not.
+follow it. The one reason to depart is the task ceiling: a directive for
+one plan still gets more plans when the tasks pass it. Record a departure
+and its reason in your return marker and in the PLAN Notes.
 
 Every plan, a single PLAN.md and a gap plan included, names itself in its
 heading: `# Phase <N>: <phase name> - Plan <K>: <plan name>`, K the plan's file
@@ -212,12 +221,13 @@ plan 1), tasks derived one-to-one from the unresolved UAT items.
 <returns>
 End with exactly one marker:
 
-`## PLANNING COMPLETE` - each plan file, its task count, (if split) one
-line of independence rationale, and (if the structure departs from the
+`## PLANNING COMPLETE` - each plan file, its task count, (with more than
+one plan) one line saying why, and (if the structure departs from the
 CONTEXT `Plan shape` directive) one line naming the deviation and why.
 
 `## PHASE TOO BIG` - which of the three legitimate reasons applies, plus a
-proposed split into sub-phases with their goals. Do not write plan files.
+proposed split: more plans in this phase first, sub-phases with their goals
+only when plans cannot hold the work. Do not write plan files.
 
 `## REVISION COMPLETE` (revision mode) - each checker issue and what
 changed to address it, or an explicit rebuttal for issues you judge wrong.
