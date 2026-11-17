@@ -39,19 +39,19 @@ before merge.
 After a land/merge actually lands on this machine, `git.on_land_cleanup`
 (default on) returns HEAD to the base, pulls, and reaps the merged integration
 branch locally - advised by the `land-cleanup.mjs cleanup` seam, which reaps
-only when `git branch --merged <base>` confirms the branch is merged, and never
-via a remote-tracking delete (that would trip the push guard).
+only a branch `git branch --merged <base>` lists, and never via a
+remote-tracking delete (that would trip the push guard). `--merged true` widens
+no reap: passed on a merge the platform confirmed - by `/cad-land` 3(b), and by
+step 1's already-merged arm when the tip matches the head the forge merged, on
+the integration branch (`cad-land` step 1 has the rest of its guard) - it
+confirms the merge, so a set `git.integration_branch_name` is unset.
 
 ### What the guard does NOT see (rail 3)
 
 v2.2.0 deleted an 840-line shell tokenizer and a 367-line model of git's option
-grammar. The bet behind them was sound in kind - a widener is safe to be wrong -
-but the price was not. The escape surface behind `bash -c`, `$(...)`, `${...}`,
-aliases and `ssh` is unbounded, so three consecutive blocking review panels each
-found new holes and each patch bought more grammar. Then the scan turned out to be O(K x N) in
-memory: 3.1GB at 224KB of input, a V8 abort at 280KB, in a hook that runs on
-every Bash call and fails OPEN. A long enough command line switched the guard
-off entirely and let the push inside it run unprompted.
+grammar. Their escape surface never closed, and their O(K x N) scan aborted V8
+in a hook that runs on every Bash call and fails OPEN, so a long enough command
+line switched the guard off and let the push inside it run unprompted.
 
 So these shapes really can run git and are now invisible. Each is a pinned test
 row in `git-segments.test.mjs` and
