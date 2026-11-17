@@ -32,9 +32,9 @@ only by cad-land, so the never-auto-push rule and the no-preselected-default
 posture both still hold. On GitLab `glab mr create` publishes the source branch
 itself, so THAT is the mutation and no push seam sits in its path: the GitLab
 arm consults `git-publish.mjs authorized` before it creates, and creates nothing
-on `ok:false`. Both arms need `git.auto_close` true in this repository's
-`.planning/config.json` AND the user-global config: either half alone
-authorizes neither arm, and the refusal's `detail` names the missing half. A surviving blocker/high `risk_surface` finding still halts the chain
+on `ok:false`. Every arm (GitHub, Forgejo, GitLab) needs `git.auto_close` true
+in this repository's `.planning/config.json` AND the user-global config: either
+half alone authorizes none of them, and the refusal's `detail` names the missing half. A surviving blocker/high `risk_surface` finding still halts the chain
 before merge.
 
 After a land/merge actually lands on this machine, `git.on_land_cleanup`
@@ -52,7 +52,7 @@ confirms the merge, so a set `git.integration_branch_name` is unset.
 v2.2.0 deleted an 840-line shell tokenizer and a 367-line model of git's option
 grammar. Their escape surface never closed, and their O(K x N) scan aborted V8
 in a hook that runs on every Bash call and fails OPEN, so a long enough command
-line switched the guard off and let the push inside it run unprompted.
+line switched the guard off.
 
 So these shapes really can run git and are now invisible. Each is a pinned test
 row in `git-segments.test.mjs` and
