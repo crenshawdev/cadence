@@ -1,12 +1,12 @@
 # Plans a workflow can run: what a planner adds
 
-Read once, at the step that carries the `<plan_graph>` block, and held for the whole run. An inline plan reads only `## The task fields`. These instructions add to your contract and replace nothing in it.
+Read once, at the step that carries the `<plan_graph>` block, and held for the whole run. An inline plan reads only `## The task fields`. This file replaces three contract rules: "exactly three fields", "carry that anchor onto the path" and "keep those tasks in one plan".
 
 ## The task fields
 
 Each task keeps `**Files:**`, `**Action:**` and `**Verify:**`, and `Verify` stays the executor's authority. It gains three fields:
 
-- `**Reads:**` holds comma-separated `path#symbol` entries saying where the executor should start reading. It is not a lease: the executor may open anything it needs. `Files:` holds plain paths and nothing else, so any anchor your contract would carry onto a path goes on `Reads:` instead, because a note on the `Files:` line can turn into a fake path.
+- `**Reads:**` holds comma-separated `path#symbol` entries saying where the executor starts reading. It is not a lease: the executor may open anything it needs. `Files:` holds plain paths and nothing else, so any anchor your contract would carry onto a path goes on `Reads:` instead.
 - `**Decisions:**` holds the D-NN ids in this phase's own `CONTEXT.md` that bind the task, comma-separated. A bad id is refused at plan time.
 - `**Pins:**` names the tests that pin the behavior the task changes. Take them from a code map when your prompt has one, and otherwise from what you read.
 
