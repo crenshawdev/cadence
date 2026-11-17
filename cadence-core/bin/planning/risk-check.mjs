@@ -138,7 +138,7 @@ function cmdRiskCheckRun(dir, opts) {
       return fail('surfaces-unanswered',
         'no config layer answered review.triggers.risk_surface.surfaces, so detection would run '
         + `on the ${CATEGORIES.length} categories nobody chose. Run \`detect-surfaces --root .\` `
-        + 'and put the choice to the user (references/review-triggers.md), or pass '
+        + 'and put the choice to the user (references/risk-surface.md), or pass '
         + '--surfaces <a,b,c> to state this run\'s scope explicitly',
         'do one of the two the detail names: put the question to the user and save the answer at'
         + ' review.triggers.risk_surface.surfaces, or pass --surfaces for this run alone. Answering'
