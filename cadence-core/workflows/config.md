@@ -208,9 +208,8 @@ user's settings files. It decides where a subagent worktree forks from, so the
 parallel `/cad-execute` path depends on it - under its `"fresh"` default a
 worktree branches from the remote default branch and an executor arrives
 without this phase's CONTEXT or its own PLAN file, which is why `choose_path`
-refuses to parallelize there (`references/seam-spawn-agent.md`, Worktree
-isolation; Claude Code >= 2.1.208). Inside a worktree, `"head"` means that
-worktree's own `HEAD`.
+refuses to parallelize there (`workflows/execute.md`; Claude Code >= 2.1.208).
+Inside a worktree, `"head"` means that worktree's own `HEAD`.
 
 Run this step whenever `parallelization.use_worktrees` is true in the config as
 it now stands, WITHOUT also requiring `parallelization.enabled`. Gating it on

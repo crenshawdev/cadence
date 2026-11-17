@@ -29,41 +29,6 @@ How a workflow dispatches work to a fresh-context subagent.
   is a NEW spawn that reads the prior artifact from disk - never a
   resume/continuation of a prior run, which this seam does not provide.
 
-**Worktree isolation.** The host provides the worktree for the parallel
-`/cad-execute` path (`workflows/execute.md`'s `execute_parallel` step).
-Cadence issues no `git worktree add` anywhere in `cadence-core/bin`,
-`agents/`, `skills/` or `cadence-core/workflows/`, so it never pins the fork
-point per dispatch - but the fork point IS selectable: the host's
-`worktree.baseRef` setting decides it, and subagent worktrees use the same
-base as `--worktree`. Claim holds for Claude Code >= 2.1.208 (before that a
-`fresh` worktree used whatever `origin/HEAD` was already cached locally).
-- `fresh` - the DEFAULT - branches from the repository's default branch on
-  the remote, so unpushed work is absent: a phase's CONTEXT and its PLAN
-  files, which live in commits on the integration branch, are not in the
-  worktree. A worktree has been observed 31 commits behind, missing both the
-  phase CONTEXT and its own `PLAN-2.md` (`.planning/CAPTURE.md:5`) - this
-  default is why.
-- `head` branches from the local `HEAD`, carrying the integration branch's
-  unpushed commits. Inside a worktree, `head` resolves to THAT worktree's
-  `HEAD`, not the main checkout's.
-
-`git.base_branch` stays the landing and guard base, distinct from the
-integration branch: the integration branch is what work merges back down to,
-not a claimed worktree fork point.
-
-It is a settings value, not a per-dispatch parameter, and a plugin must never
-silently write a user's settings. So Cadence reads it and refuses: the
-parallel path runs only under `head` (`workflows/execute.md`'s `choose_path`
-preflight, via `cadence-core/bin/worktree-base.mjs`), and `/cad-config`
-offers the change rather than making it.
-
-The executor's assertion stays regardless - a setting the user can change back
-is not a guarantee, and a session-level override is invisible to any script.
-The executor asserts its own plan file exists before task 1 and halts
-`blocked` when it does not (`skills/cad-executor-contract/SKILL.md`'s `<worktree_mode>`), and
-reconciling a stale worktree is the orchestrator's serialized call, never the
-executor's own merge/rebase/fetch.
-
 **Routing (the quality bundle).** Before every dispatch, resolve the role
 through the routing seam - never hardcode a model. The seam decides whether a
 model parameter is sent AT ALL: `model: null` on the envelope means send none,
@@ -122,33 +87,9 @@ dispatch, `review` (the whole trigger -> gate map, which
 deep-verify pass runs, which `workflows/verify.md` reads). Quality is not one
 dial, and effort alone cannot express "fire a blocking cross-model review".
 
-**The plan-time risk floor does exactly TWO things, and names no level.** It
-makes the plan review blocking, and it turns the deep-verify pass on. That is
-the whole list: it moves no role's model and no role's start rung, and there is
-no third effect to look for. What raises it is the phase's own declared PLAN
-`files:`, read at resolve time and scanned against the surfaces the project
-answered. `reason` names every move - the phase, the surface, the file that
-evidenced it, and the key it moved.
-
-It fails CLOSED and never `ok:false`. A scope it could not read RAISES: a plan
-file that would not parse, a declared file it could not stat, a scope naming no
-readable plan at all. Only a scope every plan of which was found and read clean
-can stand the floor down, and `reason` says which of the two happened, because
-"nothing touched a surface" and "nothing could be read" want different fixes.
-
-Withholding the raise takes a named waiver:
-`review.triggers.risk_surface.waive_routing_floor` lists the surfaces this
-project waives, and a surface named there withholds BOTH effects for that
-surface - the plan review keeps its configured gate and the deep pass stays off.
-A surface it does not name still raises, and every waiver applied is named in
-`reason`. It waives neither review: the blocking `risk_surface` review still
-fires on the actual diff, and this key cannot reach it.
-
-A gate a config layer validly SET is what fires, raised or not: when the floor
-raises a plan gate the user configured, `reason` says the gate was configured
-and the floor moved nothing rather than moving it silently.
-
-`--phase <N>` decides which phase the floor reads, the `.planning/STATE.md`
+**The plan-time risk floor.** The resolve reads it off the phase's declared PLAN
+`files:`; `INTERNALS.md`'s Model routing says what it raises and that it fails
+closed. `--phase <N>` decides which phase the floor reads, the `.planning/STATE.md`
 cursor decides it when the flag is absent, and a MALFORMED `--phase` is refused
 - the alternative is a floor off another phase's files. `--plan <k>` narrows the
 scope to ONE plan, which is what an executor floors on, so a clean plan in a
@@ -185,33 +126,6 @@ phase would give it a floor from another phase's file list.
   carries the single level that used to decide every role's model and effort,
   so the workflow opens `workflows/config.md`'s **Stakes migration** arm before
   dispatching and re-resolves after it.
-- **The roles block answers first.** `roles.<role>.model` names the model this
-  role is dispatched on and `roles.<role>.effort` names the rung it STARTS at.
-  Nothing sits above them: there is no grid, no level and no table behind the
-  answer, so what the user typed IS the routing. Unset means unset -
-  `roles.<role>.model` with no value sends NO model parameter, and
-  `roles.<role>.effort` with no value takes its own schema default, which is
-  `high` for the planner, the analyzer, the verifier, the executor and the
-  mapper, `medium`
-  for the reviewer and `low` for the plan checker.
-- **An unaccepted model omits the parameter.** The model names the host takes
-  are `opus`, `sonnet`, `haiku` and `fable`, and `roles.<role>.model` is a free
-  string, so anything else can be written into it. A string the host does not
-  accept resolves `ok:true`, dispatches with NO model parameter - the session's
-  model runs - and names the rejected string in `warnings[]`. A typo must never
-  silently redirect the spend: a roles key that is SET owns the answer for that
-  role whether or not its value is accepted. `fable` is accepted but
-  deliberately never offered by the interview: it requires 30-day data
-  retention, so a zero-data-retention org gets a hard `400` on every request;
-  its safety classifiers refuse cyber-adjacent content, and Cadence reviews its
-  own git rails and secrets handling; and its multi-minute turns press against
-  `review.request_timeout_ms` inside the host's Bash ceiling. Choosing it is the
-  user's assertion about their own org.
-- **`model_source` says which key decided.** It is always present and carries
-  `roles.<role>.model` when that key chose the model, or the string `session`
-  when no key did, a set key whose value the host rejected included. It rides
-  the `routing.resolve` trace event too. `pinned` stays in the envelope and on
-  the event, always false.
 
 **Concurrent dispatch.** Independent dispatches over disjoint payloads (the
 per-plan executors of a parallel phase, per-doc verifiers, the two reviewers of

@@ -10,8 +10,8 @@ missing-PLAN arm.
 
 1. In batches of `parallelization.max_concurrent_agents`: dispatch one
    cad-executor per plan IN THE DISPATCH SET `locate` defined, each in its own
-   git worktree on branch `cadence/phase-<N>-plan-<k>` (spawn-agent seam,
-   worktree isolation), the whole batch issued in ONE message. Each executor
+   git worktree on branch `cadence/phase-<N>-plan-<k>` (spawn-agent seam;
+   `choose_path` proved the fork point), the whole batch in ONE message. Each executor
    resolves its own route carrying its `--plan <k>`, the executor exception
    seam-spawn-agent.md's concurrent dispatch states. Same prompt as sequential
    except the mode line:
