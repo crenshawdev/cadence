@@ -94,7 +94,7 @@ with `$D` empty.
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" preview <key>="$(cat <D>/value.json)"
 ```
 
-It answers `files` (each with its `file` and `pairs`: `before` and `after` in force, `stored` on the four keys above,
+It answers `files` (each with its `file` and `pairs`: `before` and `after` in force, `stored` on the two keys above,
 and `second_file` with `stays_off` for a setting that needs both files), `resolves` (each role with its `changes`),
 `starts` and `stops` (each a key with `why`). An `ok:false` is shown as it is, with its next step, and nothing is
 written. Print it under the setting's block:

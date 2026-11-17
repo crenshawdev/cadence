@@ -252,15 +252,15 @@ changed shape. The first fire asks it once
 is the way back to it, and re-entering it must never cost the user the answer
 they already gave.
 
-1. Read the effective answer through the **Validation seam** (below):
+1. Read the effective answer through the **Validation seam** (above):
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get review.triggers.risk_surface.surfaces
    ```
 
-   Never a raw read of `.planning/config.json` for a workflow value - the lone
-   exception is the interactive menu's `(current)` label, and this is not it. A
-   `null` value means nobody has answered and all eight stand.
+   Never a raw read of `.planning/config.json` for a workflow value: this read is
+   none of the three exceptions the **Validation seam** lists. A `null` value
+   means nobody has answered and all eight stand.
 
 2. Scan the structure for what it evidences NOW:
 
