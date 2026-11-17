@@ -339,32 +339,20 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <
 
 `--replay` ONLY when the digest's `Commits:` read `none (already applied)`: the
 dispatch cost real tokens and performed no work, and without the flag its
-bracket is byte-identical in shape to a real one. Two measured replays charged
-30,588 and 24,570 tokens that a cost read over `trace.jsonl` counted as
-execution. It is a structured flag and never a `--detail` note, because the
-close arm infers `checkpoint` from a non-blank detail - a replay written there
-would bill a finished dispatch as an unusable one.
+bracket is byte-identical in shape to a real one. It is a structured flag and
+never a `--detail` note, because the close arm infers `checkpoint` from a
+non-blank detail - a replay written there would bill a finished dispatch as an
+unusable one.
 
-ONE line per executor, and the detail is the executor's own return line - write
-it to a scratch file and pass the PATH (caller-derived text -
-references/conventions.md). `--agent-id` is the host's name for the worker that
-just returned and this line is its only writer; it stops a late `SubagentStop`
-closing the NEXT executor's bracket. OMIT it when the return carried no id.
-OMIT the detail entirely for a `PLAN COMPLETE` or `PLAN PARTIAL` and the seam
-closes a `return`; carry it for any checkpoint return and the seam closes a
-`checkpoint`. A plan moved to another path or rung is an `escalation`, which the
-seam does not infer - it stays on `trace append`. All three close a bracket. A
-dispatch that gets none of them is closed by the host's `SubagentStop` hook
-instead, so `trace render` reports as `unpaired` only a worker NEITHER writer
-closed - but that hook never sees the RETURN, so a skipped close still costs
-the record this worker's tokens, turns and wall clock.
-
-`--plan`/`--bracket-plan` is the WORKER key that pairs a dispatch with its
-close; `--role` is what the per-role totals group on, and BOTH are required.
-OMIT `--tokens` on a figureless return, and `--turns` and `--duration-ms` on
-the same rule - never a `0`, which claims a measurement nobody made
-(seam-spawn-agent.md's bracket rule). A worktree executor still emits nothing of
-its own - these are the ORCHESTRATOR's lines.
+ONE line per executor, and the detail, carried only for a checkpoint return, is
+the executor's own return line - write it to a scratch file and pass the PATH
+(caller-derived text - references/conventions.md). `--plan`/`--bracket-plan` is
+the WORKER key that pairs a dispatch with its close, and `--role` is what the
+per-role totals group on. The rest of this line - when `--agent-id` is omitted,
+how the detail picks `return` or `checkpoint`, that an `escalation` is never
+inferred, the `SubagentStop` hook's close, and omitting a figure rather than
+sending `0` - is seam-spawn-agent.md's bracket rule. A worktree executor writes
+none of these lines - they are the ORCHESTRATOR's.
 
 The `phase_start` line in `git_guard` is NOT one of these. It is the
 correlation-id ANCHOR, not a worker bracket, and it takes no `--role`,
@@ -775,18 +763,11 @@ verification runs in a fresh subagent.
 - Deviations live in SUMMARY.md - git and SUMMARY are the record, STATE is
   not a log.
 - Read only the config keys named here; unknown keys are ignored.
-- THREE writers touch this run record's brackets and no fourth: the DISPATCH
-  half rides each site's own `route.mjs resolve` through `--bracket-read`; the
-  CLOSE half is the orchestrator's hand-written `trace close`, which alone sees
-  the return and so alone carries `--tokens`, `--turns` and `--duration-ms`, or
-  for a wave's executors `workflow-run`'s close, which bills each from the run
-  file's own rows; and
-  the host's `SubagentStop` hook (`cadence-core/bin/subagent-trace.mjs`) writes
-  a close for a dispatch whose hand-written one never ran, carrying what it
-  reads off that worker rather than the return's three figures. Executors
-  write no trace events of their own, on either path.
-- The hand-written close is a FALLBACK kept on purpose - never prune it as a
-  duplicate of the hook. Two closes of one dispatch render as ONE bracket.
+- THREE writers touch this run record's brackets and no fourth, as
+  seam-spawn-agent.md's bracket rule states them: the resolve's dispatch half,
+  the orchestrator's `trace close`, or for a wave's executors `workflow-run`'s
+  close, and the `SubagentStop` hook. Executors write no trace events of their
+  own, on either path.
 - This workflow's coordinator issues no `Edit` or `Write` against a path
   outside `.planning/`, with the single exception of the `choose_path`
   settings merge the user accepted through the ask-user seam.
