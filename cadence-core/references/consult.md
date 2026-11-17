@@ -4,8 +4,7 @@ The counterpart to the review subsystem (references/review-triggers.md). Review
 is scheduled critique of an artifact; consult is reactive help when the primary
 model is stuck. It reuses the same provider connections (the call-review-provider
 seam) but for a different job: `consult` returns angles to investigate, never a
-verdict on an artifact. It codifies the "phone a friend" move at the dead-ends a workflow would
-otherwise push you past without one.
+verdict on an artifact. It codifies the "phone a friend" move at a workflow's dead-ends.
 
 The hard rules (DESIGN §6), in order of importance:
 
@@ -61,7 +60,7 @@ The hard rules (DESIGN §6), in order of importance:
 | Test still red after K debug iterations | cad-debug | K iterations |
 | Exhausted hypotheses | cad-debug | the hypothesis set is empty, bug unresolved |
 | Structural-deviation stop | cad-execute | the executor returns a structural checkpoint |
-| PHASE TOO BIG | cad-plan | the plan cannot fit one pass |
+| PHASE TOO BIG | cad-plan | the phase cannot be executed well even as several plans |
 
 All rows are live: cad-debug references this file at its three dead-ends
 (Attempts >= `review.consult.attempt_threshold`, test red after that many

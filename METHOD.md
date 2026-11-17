@@ -76,8 +76,8 @@ Prohibited in task actions: "v1", "simplified", "for now", "placeholder",
 "future enhancement", or any phrasing that delivers less than the locked
 decision states. There are exactly three legitimate reasons to leave something
 out, and each is an explicit `## PHASE TOO BIG` return rather than a silent cut:
-the phase cannot be executed well in one pass, a required detail exists in no
-source artifact, or it depends on a phase that has not shipped.
+the phase cannot be executed well even as several plans, a required detail
+exists in no source artifact, or it depends on a phase that has not shipped.
 
 ### Decomposition has named axes
 
