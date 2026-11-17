@@ -3,10 +3,10 @@
 Pre-ship traceability audit. Prove every requirement was delivered and verified,
 and that no work is unmapped. Read-only: it reports and gates, it never edits
 status. The persisted status is the REQUIREMENTS traceability table
-(Requirement | Phase | Status: Pending/Complete) and the ROADMAP `## Phases`
-checkbox. `/cad-plan` creates a table row (always at Pending); no writer but
-cad-verify ever sets a Status beyond it, and the ROADMAP checkbox is
-cad-verify's alone (`references/req-traceability.md`).
+(Requirement | Phase | Status: `Pending | Complete | Deferred`) and the ROADMAP
+`## Phases` checkbox. `/cad-plan` creates a table row (always at Pending);
+cad-verify alone sets Complete and `req-row` sets Deferred, and the ROADMAP
+checkbox is cad-verify's alone (`references/req-traceability.md`).
 
 ## 1. Scope
 `$ARGUMENTS` = a milestone (audit its requirements), else all active
@@ -56,24 +56,21 @@ fields version the check ran as; quote it in the report, since a stale plugin
 cache silently downgrading this gate is what it exists to expose.
 Per phase holding both a CONTEXT.md and a UAT.md: `phases`
 (`{phase, criteria, items}`), `breaks` (`{phase, id, break:"uncovered"}` - a
-criterion that reached NO item - or `{phase, break:"fieldless-checklist", file}`,
-one per phase), `untraced` (an item with no `criterion` and no exempting
+criterion that reached NO item - `{phase, id, break:"missing-uat"}` - a declared
+criterion whose phase has CONTEXT and no UAT.md - or
+`{phase, break:"fieldless-checklist", file}`, one per phase), `untraced` (an item with no `criterion` and no exempting
 `origin`), `legacy` (`{phase, reason}` - checklists predating the fields, with
 the exemption's reason stated), `unknown_criterion`, `context_issues` (lines
 outside the criterion grammar) and `counts` (`criteria = covered + uncovered`).
 Grammar and field semantics: `references/acceptance-criteria.md`.
 
-The milestone filter above does NOT apply to `breaks`, and they need none:
-`milestone.md` step 3 removes completed phases from ROADMAP.md's live
-`## Phases` list, so `parseRoadmapPhases` only ever holds the current cycle's
-phases; and within that cycle a phase whose checkbox is unchecked contributes
-its `uncovered` count but no `uncovered` or `missing-uat` break, so unfinished
-work cannot fail a mid-cycle run on those two. `fieldless-checklist` is NOT
-box-gated and fires on an unchecked phase: `uat init` writes `fields_version`
-before it looks at an item, so no phase is ever transiently fieldless, and the
-break is a real drop rather than work in progress - do not explain it away as
-mid-cycle. Filtering by id is impossible anyway - a criterion break carries no
-requirement id.
+The milestone filter above does NOT apply to `breaks`, and they need none: the
+live `## Phases` list holds only the current cycle's phases, and a phase whose
+checkbox is unchecked contributes its `uncovered` count but no `uncovered` or
+`missing-uat` break, so unfinished work cannot fail a mid-cycle run on those
+two. `fieldless-checklist` is NOT box-gated and fires on an unchecked phase: it
+is a real drop rather than work in progress - do not explain it away as
+mid-cycle.
 
 ## 3. Interpret the breaks
 - `no-phase` / `no-plan` - a dropped requirement: nothing committed to
@@ -102,6 +99,9 @@ requirement id.
   `uat record --phase <N> --item <k> --result <its current status> --criterion AC<N>`,
   or re-run `/cad-verify <N>` if the phase never got a real checklist.
   `--origin criterion` is not a repair - it names no id.
+- `missing-uat` (coverage arm) - a checked phase declared criteria in CONTEXT
+  and has no UAT.md, so none of them was proven. One break per criterion. The
+  exit: run `/cad-verify <N>` so the phase gets its checklist.
 - `version_drift` - not a per-requirement break but a milestone-scoped signal,
   and it moves the verdict all the same (§4): the planning docs name a version
   this repo has ALREADY tagged while its cycle is still open. That is issue
@@ -126,7 +126,8 @@ filter) and coverage `breaks`:
   present. List each failing
   requirement with exactly where its chain breaks; each `uncovered` criterion BY
   ID with its phase and its next action (add the missing UAT item through
-  `/cad-verify <N>`, or correct the criterion id in CONTEXT.md); and each
+  `/cad-verify <N>`, or correct the criterion id in CONTEXT.md); each
+  `missing-uat` criterion by ID with `/cad-verify <N>`; and each
   `fieldless-checklist` break by the file it names, with the repair. This gate is
   meant to block a ship; do not soften it or mark it PASS-with-warnings.
 
@@ -145,12 +146,8 @@ every id it names also carries an `unpicked` break and is already counted.
 Either way there is no third, softened state: a broken requirement still fails
 this gate.
 
-`version_drift` is NOT additive either, and for the same reason `unseeded`
-stopped being: an additive report would change nothing here. `/cad-health`
-already reports this in prose, and the requirement's own wording is
-"mechanically, rather than only reported" - a signal that never moves a verdict
-leaves the ship gate exactly as permeable as it was. Present -> FAIL, naming the
-doc version, the tag spelling that carries it, and the cycle state. It moves no
+`version_drift` is NOT additive either. Present -> FAIL, naming the doc
+version, the tag spelling that carries it, and the cycle state. It moves no
 count: it is milestone-scoped rather than per-requirement, and
 `total = traced + broken + deferred` stays an invariant.
 
