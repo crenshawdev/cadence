@@ -7,6 +7,90 @@ Releases 1.0.0 through 2.7.0 are in [docs/history/CHANGELOG-v1-v2.md](./docs/his
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-11-17
+
+This release makes the workflow path the only path, cuts what the shared
+references hand every session, and fixes the places where Cadence's own
+instructions disagreed with each other. It also moves eight documents out of
+the repository root, so the README sits near the top of the page.
+
+### Upgrading
+
+- **Four workflow switches are retired.** `planning.workflow_plans`,
+  `workflow.use_workflows`, `workflow.multi_workflow` and
+  `workflow.execute_workflows` no longer do anything, because the path each one
+  turned on is now the only path. A config that still sets one keeps working:
+  every config read and routing resolve warns that the key was retired in
+  v4.4.0 and is ignored, says what runs now, and names the two commands that
+  drop it, `config.mjs unset <key>` and `config.mjs unset --global <key>`.
+  `config.mjs set` refuses the key with the same reason.
+- **Eight documents moved out of the root.** If you link to one, update the
+  link. `INTERNALS.md`, `LINEAGE.md`, `MANIFESTO.md` and `METHOD.md` are now in
+  `docs/`, `DESIGN.md` and `CHANGELOG-v1-v2.md` are in `docs/history/`, and
+  `CONTRIBUTING.md` and `SECURITY.md` are in `.github/`, where GitHub still
+  finds both.
+
+### Added
+
+- **`weight.mjs paths`.** `node cadence-core/bin/weight.mjs paths` weighs the
+  files each registered command reads and reports the total against that
+  command's baseline in `cadence-core/bin/path-baselines.json`.
+- **A Supporting Cadence section in the README**, with GitHub Sponsors and
+  Ko-fi.
+
+### Changed
+
+- **The workflow path is the only path.** Plans always carry what a workflow
+  needs, and each agent reads its composed input in place of the whole phase
+  documents. An adjudicated review runs as a workflow whenever the Workflow tool
+  is available, `/cad-execute` runs a wave of more than one plan as a workflow
+  whenever it is, and workflows run at the same time without waiting for each
+  other. Without the Workflow tool, reviews and waves run in the session as
+  before.
+- **One checker per reviewer.** A review workflow checks all of a reviewer's
+  findings with one checker agent, not one per finding. Each finding is still
+  judged on its own evidence and still gets the six-heading report. If that
+  checker returns nothing, every finding its reviewer raised goes to the main
+  session to rule.
+- **The shared references are smaller.** Measured at v4.3.0 and at this
+  release, `seam-spawn-agent.md` went from 27,621 bytes to 10,315, `config.md`
+  from 39,122 to 16,968, `conventions.md` from 18,653 to 14,274 and
+  `git-guard.md` from 8,541 to 6,920. The parts most runs don't need moved to
+  files read only on the arm that needs them: the seam's rationale to
+  `docs/rationale/spawn-agent.md`, its authoring rules to
+  `cadence-core/references/dispatch-shape.md`, `/cad-config`'s guided arms to
+  `config-surfaces.md`, `config-testing.md` and `config-roles.md`, the push
+  guard's internals to `docs/INTERNALS.md`, and the maintainer sections to
+  `.github/CONTRIBUTING.md`.
+- **The planner and the plan checker give one rule for shared files.** A plan
+  runs after every lower-numbered plan it shares a declared file with. A verify
+  line also has to fail before its task runs, and a task that claims two things
+  can run at once gets a verify that runs them at once and fails when they
+  collide.
+- **The executor finishes a plan whose only red tests a later plan rewrites.**
+  It reports the plan complete with each of those tests as an open item. Any
+  other failure is still a regression.
+- **In a workflow worktree the executor runs one plain command per Bash call.**
+  Claude Code refuses a worktree agent's command that chains git with anything
+  else, writes a file through a heredoc, or names the main checkout.
+
+### Fixed
+
+- **Cadence's instructions agree with themselves.** A read of every workflow,
+  reference and contract found places where two of them said opposite things,
+  and each one is fixed or declined with a reason. The ones you'll notice:
+  `/cad-land` finishes a pull or merge request GitHub or GitLab has already
+  merged, when the merged head matches the branch tip. With `git.auto_close`
+  on, the unattended close asks once, before the tag push. `review.mode` shapes
+  the blocking and deferred gates, and an advisory review reports its findings
+  as raised. A match in the resolved `risk_surface` set always fires the
+  review, and the reviewer decides whether it's harmless. A `blocked` UAT item
+  comes back to you at the next `/cad-verify`, and `/cad-audit` no longer counts
+  it as settled.
+- **The test suite cleans up after itself.** `node tests/test.mjs` hands its
+  run a private temp folder, removes every fixture when its test ends, and
+  fails the run, naming each leftover, when a test leaves anything behind.
+
 ## [4.3.0] - 2026-11-14
 
 This release fixes how reviews run and what they're handed. An outside-model
@@ -3590,6 +3674,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[4.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.0
 [4.3.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.3.0
 [4.2.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.2.0
 [4.1.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.1.0
