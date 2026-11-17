@@ -220,7 +220,9 @@ reason is not tidiness - its reviewer writes the findings file and closes its
 own bracket, and this session may end before the return lands, so nothing is
 positioned to rule. An advisory fire reads as unrecorded.
 
-Both writes settle here, and their MECHANICS - the
+On every arm but `advisory`, which opens nothing here - `blocking`,
+`adjudicated`, `/cad-verify`'s fire and the later triage of a `deferred` queue
+member - these writes settle here, and their MECHANICS - the
 `trace append --family outcome --event adjudication` line with every flag rule
 around it, and the `planning.mjs adjudication` call that writes the
 ADJUDICATION RECORD - are one Read away. Read
@@ -286,12 +288,11 @@ read.
 
 ### 6. Consequence (gate)
 RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
-acting on ANY gate - `blocking` included, not only `adjudicated`. It holds this
-step whole: all four arms
-(`advisory` / `deferred` / `blocking` / `adjudicated`), the ONE-round cap on a
-blocking re-arm, the multi-select triage the adjudicated arm asks, the `git.auto_close`
-carve-out inside `/cad-land`, and the `cad-verify`
-fix-list rule. It is a separate file because the fire sites re-read it at their
+acting on ANY gate - `blocking` included, not only `adjudicated`. It routes this
+step: it holds the `advisory` line, the `git.auto_close` carve-out inside
+`/cad-land` and the `cad-verify` fix-list rule, and sends `deferred`, `blocking`
+and `adjudicated` to their own files, which hold the ONE-round cap on a blocking
+re-arm and the adjudicated multi-select triage. It is a separate file because the fire sites re-read it at their
 gate step without loading this one - and a `blocking` site that treats the read
 as an adjudicated-only errand is exactly how an uncapped re-arm gets back in.
 
