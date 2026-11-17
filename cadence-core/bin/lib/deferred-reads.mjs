@@ -100,6 +100,14 @@ export const DEFERRED_READS = Object.freeze([
     read_paragraphs: 1,
     file: 'cadence-core/workflows/plan.md',
   }),
+  Object.freeze({
+    // one site: the route, the walk's pick and the menu are three doors into the one section
+    skill: 'cad-config',
+    reference: 'workflows/config-surfaces.md',
+    anchors: Object.freeze(['Risk surfaces (`--surfaces`)']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/config.md',
+  }),
 ]);
 
 /** Sentences split on a terminator plus whitespace, a heuristic: one before markup (.** or .md) does not split. */
