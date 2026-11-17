@@ -19,8 +19,7 @@ Nothing here reaches an agent that has not read it.
   driving a separate code repo from here is the steerer's responsibility, not
   the tool's. (execute.md guards and warns if it detects the split, but does
   not make it work.)
-- Phase directory: `.planning/phases/<N>/`, created lazily by the first skill
-  that needs it (cad-context or cad-plan). The grammar for `<N>`, and the
+- Phase directory: `.planning/phases/<N>/`. The grammar for `<N>`, and the
   guarantee that no spelling is ever silently redirected to a DIFFERENT phase's
   directory, are stated in `references/roadmap-phases.md` and nowhere else.
 - Records folder: `.planning/records/` and `.planning/phases/<N>/records/` hold
@@ -182,11 +181,6 @@ tool calls in ONE message. Serialize only a call that consumes a prior call's
 output (a `git diff <a>..<b>` that needs hashes a SUMMARY read just produced, a
 follow-up read whose path a first call computed). A numbered list in a workflow
 is evaluation order, not a one-call-per-turn mandate.
-
-The same holds for the ask-user seam: independent questions over an independent
-set batch into `ceil(N/4)` AskUserQuestion calls (up to 4 questions per call),
-not one blocking turn per item. Only questions whose wording depends on an
-earlier answer stay sequential.
 
 ## State
 
