@@ -134,20 +134,14 @@ all (it runs through the git-publish seam as a subprocess). The reader is total
 and linear, because it runs on every Bash tool call and a guard that stalls or
 aborts is worse than one that misses.
 
-The anchor is also why there is no deny gate any more. Detection used to be
-any-position, so `rg -t sh "git commit"` was read as a commit, so refusal had to
-be narrowed back to command position by a second rule with an enumerated prefix
-set. Reading only the command word makes those shapes silent up front:
-`rg -n "git push" .`, `grep git commit`, `command -v git commit` and
-`echo "git commit"` produce no decision at all, rather than a decision that then
-has to be gated back down. One rule where there were two, and nothing to
-enumerate.
-
 ## 4. Risk surfaces
 
-At commit time, if the diff matches a risk surface (list in
-references/risk-surface.md), fire the `risk_surface` review trigger before
-landing the commit. That gate is `blocking` by default and the re-arm on
+Detection is the seam's `risk-check run` (references/risk-surface.md), never a
+reading of the diff against a list at commit time. `/cad-execute` and
+`/cad-task` run it over the range a plan or task committed, after its commits.
+Two staged arms run it with `--base HEAD --staged` before theirs: `/cad-debug`'s
+fix and `/cad-verify`'s Apply-now fix. A match fires the `risk_surface` review
+trigger. That gate is `blocking` by default and the re-arm on
 the fix that clears it is CAPPED at ONE narrowed round - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before the fix
 lands. The cap lives only there, and no caller of this file preloads it.
