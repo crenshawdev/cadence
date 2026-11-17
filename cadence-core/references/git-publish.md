@@ -16,7 +16,8 @@ other publishing is a human decision made through
 MR or PR / tag / leave local) with NO preselected default.
 
 `git.auto_close` (default off) is the single sanctioned opt-in to that ask: it
-lets `/cad-land` complete the close unattended, landing the integration branch
+lets `/cad-land` complete the close unattended, asking once, before the tag push,
+landing the integration branch
 on base via a host-CLI PR/MR **merge** on the platform (`gh pr merge` /
 `glab mr merge`). That platform merge is not a `git push`. On the GitHub arm the
 local-only integration branch is first published by the git-publish seam - one
@@ -47,8 +48,7 @@ v2.2.0 deleted an 840-line shell tokenizer and a 367-line model of git's option
 grammar. The bet behind them was sound in kind - a widener is safe to be wrong -
 but the price was not. The escape surface behind `bash -c`, `$(...)`, `${...}`,
 aliases and `ssh` is unbounded, so three consecutive blocking review panels each
-found new holes and each patch bought more grammar, and the reader still went
-silent on `git switch -f main`. Then the scan turned out to be O(K x N) in
+found new holes and each patch bought more grammar. Then the scan turned out to be O(K x N) in
 memory: 3.1GB at 224KB of input, a V8 abort at 280KB, in a hook that runs on
 every Bash call and fails OPEN. A long enough command line switched the guard
 off entirely and let the push inside it run unprompted.
