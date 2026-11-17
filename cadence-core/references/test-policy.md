@@ -26,7 +26,7 @@ The scope sets how deep the tests go:
 
 ## The rules
 
-- **Unattended:** Every required test runs in GitHub Actions, including dependency setup, fixtures, required services and cleanup. Automatically provisioned test services are fine.
+- **Unattended:** The policy works with GitHub Actions only. Each required test runs there with its dependency setup, fixtures, services (auto-provisioned is fine) and cleanup.
 - **Meaningful assertions:** Tests verify supported behavior against independently determined expectations. Test doubles may replace dependencies, but not the behavior being asserted.
 - **Proportionate scope:** Tests cover supported behavior, relevant failures, documented limits and actual regressions. Deeper testing needs a concrete requirement or plausible consequential defect. Speculative extremes, redundant permutations and tests that exist only to satisfy ceremony are excluded.
 - **Planning question:** "What plausible defect in supported behavior would this catch that existing tests would miss?" It guides planning and produces no table or report.

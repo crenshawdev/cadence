@@ -327,9 +327,10 @@ site - this section). This section points at them and restates none.
      testing.strong_areas testing.required_jobs
    ```
 
-2. Read the project yourself: the workflow files under `.github/workflows/`, the
-   coverage settings in the manifests and tool configs, and any coverage report
-   it already has. No detector seam and no per-tool parser. Quote each existing
+2. Read the project yourself. The policy works with GitHub Actions only, so read
+   the workflow files under `.github/workflows/`, the coverage settings in the
+   manifests and tool configs, and any coverage report it already has. No
+   detector seam and no per-tool parser. Quote each existing
    threshold and exclusion with its file and line. Look for the packaging signals
    `test-policy.md` lists; where one is present, packaging is relevant and its
    job is named in `testing.required_jobs`, because the nine keys are fixed. A
