@@ -199,7 +199,7 @@ is how a roadmap acquires phases nobody asked for.
 just shipped: its label, close date, requirement ids, phase and commit counts,
 the audit result, the manifest version, where its rows, narrative and residue now
 live, and what is still outstanding - the merge and the tag are /cad-land's. Step
-5 takes its own close-only bullet, step 6 is unchanged, and the close ends there.
+5 takes its own close-only bullet, and step 6 is unchanged.
 
 **Opening a cycle.** Bump the version/milestone and set the next cycle's goal and
 scope. Ask the user (ask-user seam) for the next milestone's intent if it is not
@@ -235,8 +235,8 @@ reads as no cycle open. `/cad-phase add` is the destination because it is the
 only workflow that adds a phase to an existing roadmap - `/cad-plan` stops with "Phase
 {N} is not in ROADMAP.md".
 
-(Pass `--name`/`--total` explicitly when this close DEFERRED work: step 3's
-third bullet leaves that phase's line in place, so the list is still live and
+(Pass `--name`/`--total` explicitly when this close DEFERRED work: step 3
+leaves unfinished phases' lines untouched, so the list is still live and
 its entries do not include phase 1 - the seam finds nothing to derive from and
 returns `cannot-derive`.)
 Commit the doc changes (`docs:`), cursor and `.planning/records/state.json`
@@ -245,10 +245,10 @@ never leave the tree dirty.
 
 ## 7. Autonomous close (`git.auto_close` only)
 When the up-front `authorized` call answered `ok:false` (the default, and the
-answer when only one layer sets `git.auto_close`), stop here: merging, tagging
-and publishing are the user's separate `/cad-land` call (step 8's note). On
-`ok:true`, chain the publish end-to-end - invoke `/cad-land`
-via the SlashCommand tool so it runs PR -> merge -> tag -> reset and asks
+answer when only one layer sets `git.auto_close`), this step does nothing more:
+merging, tagging and publishing are the user's separate `/cad-land` call (step
+9's note), and steps 8 and 9 still run. On `ok:true`, chain the publish
+end-to-end - invoke `/cad-land` via the SlashCommand tool so it runs PR -> merge -> tag -> reset and asks
 once, before the tag push (audit -> bump already ran above). The close gate inside
 cad-land still applies: a blocker/high `risk_surface` finding from this branch's
 own fires that the rulings show genuinely unfixed - and a fire nothing ruled at
