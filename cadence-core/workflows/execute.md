@@ -273,8 +273,8 @@ successive executors in the phase share a cached prefix: phase-level context
 (identical across the phase's plans) before the plan-specific tail.
 - Phase number, name, and the one-line goal.
 - Shared files to read first (identical for every plan in the phase): project
-  `CLAUDE.md` (if present), `.planning/PROJECT.md` (if present),
-  `.planning/phases/<N>/CONTEXT.md` (if present).
+  `CLAUDE.md` (if present). A refused brief adds `.planning/PROJECT.md` and
+  `.planning/phases/<N>/CONTEXT.md`, each if present.
 - The `surfaces` the executor's own `route.mjs resolve` answered, verbatim -
   the bar the work is written to, not a review that fires later. On
   `surfaces_answered: false` say that no layer answered, so ALL of the
@@ -283,8 +283,8 @@ successive executors in the phase share a cached prefix: phase-level context
   nothing at all is added. It is the same for every plan, so it sits here, and
   it rides every dispatch of a plan - continuation and re-dispatched remainder
   included - and the parallel path's prompt, which is this one.
-- Then the plan-specific tail: the plan file to read, commit scope
-  `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
+- Then the plan-specific tail: the brief to read (on a refused brief, the plan
+  file), commit scope `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."
 
 A brief takes the place of the plan file and the two phase documents in what each executor reads.
@@ -325,11 +325,11 @@ run's scratch directory until its branch has merged.
 **The lifecycle bracket (both paths).** Every worker this workflow hands work to
 is bracketed in the joined run record. The DISPATCH half rides each executor's
 own resolve on the spawn-agent seam's routing step:
-`--plan <k> --bracket-plan <k> --bracket-read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"`
+`--plan <k> --bracket-plan <k> --bracket-read "CLAUDE.md,<the brief path>"`
 - the worker key is the plan NUMBER here, not the role name, and `--read` is
-what this site causes the executor to read: the shared set every plan in the
-phase re-reads, plus that plan's own file. `--plan <k>` beside it is a different
-quantity carrying the same number: it scopes the RISK FLOOR to this plan's own
+what this site causes the executor to read: `CLAUDE.md` and that plan's brief,
+or on a refused brief the plan file and the two phase documents. `--plan <k>`
+beside it is a different quantity carrying the same number: it scopes the RISK FLOOR to this plan's own
 declared files (references/seam-spawn-agent.md's Routing block states the rule).
 Once that executor comes back, append the CLOSE:
 
