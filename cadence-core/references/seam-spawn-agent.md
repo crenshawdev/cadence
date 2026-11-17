@@ -196,7 +196,7 @@ it is `agent_type`'s stem through the one rung table, never the payload's own
 joined to a bracket at render time on `corr` plus `agent_id` - which is
 exactly why `--agent-id` rides this caller's own line: without it there, no
 bracket in the record carries the id the fact would need to join against,
-and the same flag on the other ten close sites is what gives the fact
+and the same flag on every close that reads a subagent return gives the fact
 somewhere to land. The split is WHERE A FIGURE LIVES: `--tokens`,
 `--turns` and `--duration-ms` are rendered on a return only this caller sees,
 and the cache figures are rendered on no return at all, which is why they have

@@ -185,7 +185,7 @@ its own; the `record` step proceeds as written either way.
 When HEAD has moved, the range is real:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase 0 --base <parent of the task's first commit> --head HEAD
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase 0 --base <the echoed start sha> --head HEAD
 ```
 
 `--phase 0` because a task sits outside the phase spine while `--phase` is
@@ -213,7 +213,7 @@ A non-empty `matches` OR `inconclusive: true` fires the `risk_surface` review
 trigger per references/review-triggers.md before reporting done - an unjudged
 range is not a cleared one. The commits
 already exist, so there is no staged diff in the index: write
-`git diff <parent of the task's first commit>..HEAD` to
+`git diff <the echoed start sha>..HEAD` to
 `.planning/tasks/{slug}/risk-task-{slug}.diff` and fire with that path - shape (c), the
 flagged-diff FILE path, since shape (a) refs is not one of the shapes the wiring
 table admits for `risk_surface`. That file is transient exactly like
@@ -340,12 +340,12 @@ bracket, and every path that ends the run reaches it. A dispatched fix
 worker's bracket takes its own close, keyed to that worker:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0 --plan <the task's slug> --role cad-task --agent-id <the id on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0 --plan <the task's slug> --role cad-task
 ```
 
 On a run that ends WITHOUT reporting done - a blocking `risk_surface` FAIL that
-survived its one narrowed re-arm, a guard refusal, a stop you can still describe
-- add `--detail-file "<the echoed scratch directory>/close-detail.txt"` naming
+survived its one narrowed re-arm, the commit hook refusing this run's commit, a
+stop you can still describe - add `--detail-file "<the echoed scratch directory>/close-detail.txt"` naming
 why, and the seam closes a `checkpoint` instead of a `return`. A run that never
 reaches this line at all is reported as unpaired, which is what it is.
 

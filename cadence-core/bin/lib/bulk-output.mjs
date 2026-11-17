@@ -164,7 +164,7 @@ export const BULK_OUTPUT = Object.freeze([
   }),
   Object.freeze({
     surface: 'cadence-core/workflows/task.md',
-    shape: 'git diff', call: "git diff <parent of the task's first commit>..HEAD",
+    shape: 'git diff', call: 'git diff <the echoed start sha>..HEAD',
     bytes: 'unbounded', measured: '2026-08-17', transport: 'file',
     reason: 'the step writes it to `.planning/tasks/{slug}/risk-task-{slug}.diff` and fires with that path, exactly as execute.md does',
   }),
