@@ -54,11 +54,12 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-coverage
 `version` (`{plugin, uat_fields}`, always first) - the plugin version and UAT
 fields version the check ran as; quote it in the report, since a stale plugin
 cache silently downgrading this gate is what it exists to expose.
-Per phase holding both a CONTEXT.md and a UAT.md: `phases`
+Per phase holding a CONTEXT.md: `phases`
 (`{phase, criteria, items}`), `breaks` (`{phase, id, break:"uncovered"}` - a
 criterion that reached NO item - `{phase, id, break:"missing-uat"}` - a declared
-criterion whose phase has CONTEXT and no UAT.md - or
-`{phase, break:"fieldless-checklist", file}`, one per phase), `untraced` (an item with no `criterion` and no exempting
+criterion whose phase has CONTEXT and no UAT.md - or, one per phase,
+`{phase, break:"unreadable-context", code, file}` or
+`{phase, break:"fieldless-checklist", file}`), `untraced` (an item with no `criterion` and no exempting
 `origin`), `legacy` (`{phase, reason}` - checklists predating the fields, with
 the exemption's reason stated), `unknown_criterion`, `context_issues` (lines
 outside the criterion grammar) and `counts` (`criteria = covered + uncovered`).
@@ -102,6 +103,9 @@ mid-cycle.
 - `missing-uat` (coverage arm) - a checked phase declared criteria in CONTEXT
   and has no UAT.md, so none of them was proven. One break per criterion. The
   exit: run `/cad-verify <N>` so the phase gets its checklist.
+- `unreadable-context` (coverage arm) - the phase's CONTEXT.md exists but could
+  not be read (`code` carries the errno), so none of its criteria was checked.
+  The exit: restore read access to the file it names and re-run.
 - `version_drift` - not a per-requirement break but a milestone-scoped signal,
   and it moves the verdict all the same (§4): the planning docs name a version
   this repo has ALREADY tagged while its cycle is still open. That is issue
