@@ -244,10 +244,11 @@ path has no `risk-check status` call of its own the way `execute.md` does, so
 that flag is its whole guard, and an `ok:true` with nothing on the record for
 any other cause is exactly the state this step exists to refuse.
 
-`{slug}` is this task's own slug, and neither it nor that directory is created
-by the INLINE path - `planned_path` step 1 is the only writer of
-`.planning/tasks/{slug}/`, and it declines to create even that when `.planning/`
-is absent, because a task plan does not justify project scaffolding. So derive
+`{slug}` is this task's own slug. `planned_path` step 1 creates
+`.planning/tasks/{slug}/` for its plan, never without `.planning/`: a task plan
+does not justify project scaffolding. On both paths the `record` seam
+writes into it, creating it on the inline path, where nothing writes there
+before `record`. So derive
 the slug here when the inline path did not (kebab-case of the task description).
 A redirect into a directory nothing created fails `No such file or directory`,
 and this trigger defaults to `blocking`, so that failure is a blocking
@@ -325,8 +326,8 @@ one `git log` and the declared-files lines from one `git diff --name-only` - so
 nothing is retyped onto a flag and a re-run over an unchanged range rewrites the
 same bytes.
 
-The seam creates `.planning/tasks/{slug}/` under an EXISTING `.planning/` and
-creates NOTHING where `.planning/` is absent: there it answers `written: false`
+The seam writes into `.planning/tasks/{slug}/`, creating it on the inline path,
+under an EXISTING `.planning/` and creates NOTHING without one: there it answers `written: false`
 with a reason and writes no record at all. That reason is the absent-root one
 the `risk_check` step's completion rule already decided - the run reports done
 and calls its record unrecorded - so an inline task in a repository with no
@@ -383,7 +384,7 @@ No next-step menu.
 <guardrails>
 - Never spawn a subagent on the inline path.
 - Never use worktrees - cad-task is always sequential.
-- Never write STATE.md or any activity log for a task - git is the record.
+- Never write STATE.md for a task - git and the `record` receipt are the record.
 - If mid-task the scope grows past "planned", stop and re-route to
   /cad-phase add rather than improvising a phase inline.
 </guardrails>
