@@ -1929,8 +1929,8 @@ Claude Code, installed as a plugin. Its methodology descends from
 [GSD](https://github.com/open-gsd/gsd-core) (MIT) - the discuss/plan/execute/verify
 loop - but the codebase is an independent distillation carrying roughly 3% of GSD's
 documentary mass (measured 2026-07-10, GSD commit d010ea1). See
-[`LINEAGE.md`](./LINEAGE.md) for the measured distance and
-[`NOTICE.md`](./NOTICE.md) for the attribution.
+[`LINEAGE.md`](../LINEAGE.md) for the measured distance and
+[`NOTICE.md`](../../NOTICE.md) for the attribution.
 
 ### The loop
 
