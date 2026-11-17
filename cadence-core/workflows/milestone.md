@@ -42,9 +42,8 @@ close as a version cut; continue at step 3. No config key decides this: a projec
 still bumps its manifest, and the key that governs the release tag is read where
 that tag is cut (/cad-land, after the merge - the tag-after-merge note below).
 
-Everything below runs only on the version you confirmed: the bump never runs
-without `--version`, so the seam's `no-target-version` refusal is unreachable
-here; an `ok:false` on a named version is a genuine failure - the halts below
+Everything below runs only on the version you confirmed: an `ok:false` on a
+named version is a genuine failure - the halts below
 STOP the close.
 
 Then, before the tag, bump the manifest + scaffold the changelog. Run, on its
@@ -264,10 +263,12 @@ handed `{"findings":[]}`, and merges over the blocker this one just refused. The
 actor that clears it is `/cad-land` step 4, on a merge it CONFIRMED landed - the
 retry once the halt is answered, or the manual land the user comes back to
 finish. So a carry still on disk means a close nobody finished, and the next
-milestone halting on it is the answer rather than the bug; clear it by hand only
-when the branch it belongs to merged outside Cadence.
+milestone halting on it is the answer rather than the bug. If the branch it
+belongs to merged outside Cadence, `/cad-land` on that branch clears it through
+its already-merged arm when `git.integration_branch_name` names that branch;
+with the key unset, clear it by hand.
 
-Ordering note (intentional, not a latent bug): this chain runs AFTER step 4
+Ordering note: this chain runs AFTER step 4
 evolved PROJECT.md `### Active` to the NEXT version, so cad-land can no longer
 re-derive the just-shipped branch name by version. A project that sets
 `git.integration_branch_name` is reaped by that name first, and the sole merged
