@@ -47,5 +47,5 @@ the criteria, the observed result per criterion, the verdict, and the
 recommendation for the plan (what to do given the answer). No five-artifact
 ceremony. Discard the throwaway code or note where it is; it is not project
 source. If `planning.commit_docs` is true (`config.mjs get planning.commit_docs`),
-commit it (`docs: spike <slug>`, protected-branch guard); otherwise say in one
-line it stays on disk uncommitted.
+commit SPIKE.md (`docs: spike <slug>`, protected-branch guard); else say in
+one line it stays uncommitted.
