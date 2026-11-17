@@ -208,8 +208,9 @@ and is no reason to rewrite the cursor): "Phase {N} of {total}, plan {k} of {j}:
 {plan name}" when the entry has `plan` (ending at "plan {k} of {j}" with no
 `name`), else "Phase {N} of {total}: {name}".
 
-Under an accepted testing policy (`config.mjs get testing.scope` set, read once
-for the whole report), a phase line whose status is complete adds its CI state,
+One read serves the report and the route:
+`config.mjs get testing.scope workflow.skip_discuss`. Under an accepted testing
+policy (`testing.scope` set), a phase line whose status is complete adds its CI state,
 read once per such phase off the `ci` field of
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat status --phase <N>`:
 "CI-verified at `<sha>`" when `ci` is present, and "complete locally, not
@@ -235,7 +236,7 @@ only:
 | Lowest **planned** phase | /cad-execute {N} |
 | Lowest **executed** phase `outstanding` names | /cad-execute {N} |
 | Lowest **executed** phase | /cad-verify {N} |
-| `current` is **unplanned** | /cad-context {N}, or /cad-plan {N} when `workflow.skip_discuss` is true |
+| `current` is **unplanned** | /cad-context {N}, or /cad-plan {N} when the report's read of `workflow.skip_discuss` is true |
 | `deferred.findings` non-zero, or `deferred.unreadable` non-empty | triage the queue (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`, the `deferred` arm) - never /cad-land |
 | Drift kind `phase-dir` (interrupted prune) | /cad-milestone |
 | `cycle` is `none` (milestone closed) | /cad-phase add |
@@ -248,8 +249,7 @@ different phase than the derivation is shown as context but does not route.
 
 The `outstanding` row NARROWS the executed case, it does not invert it. A
 SUMMARY on disk says a run ended, not that the work is done: a `/cad-plan
---gaps` plan can sit beside it never dispatched, and before this row that phase
-routed to /cad-verify {N} over plans nothing had run. The
+--gaps` plan can sit beside it never dispatched. The
 `Lowest **executed** phase` row stays exactly where it is and still routes to
 /cad-verify {N}, which is what an empty outstanding set gets. Read the fact off
 the one `status` line the derive step already fetched - do NOT spawn a
