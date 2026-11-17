@@ -546,7 +546,7 @@ and that fix's range gets its own `risk-check run` and `risk-check status`.
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
 than waiting: the artifact is two immutable refs, so the reviewer reads nothing
 that executor writes, and nothing downstream waits on the answer. Each fire
-carries the advisory persistence tail (review-triggers.md step 4): findings
+carries the advisory persistence tail (references/review-inline.md): findings
 land at `.planning/phases/<N>/records/REVIEW-diff-plan-<k>.md` whether or not this
 session survives to the return, and `summary` folds the files on disk, naming
 any still in flight. The last plan has no next dispatch, so it fires without

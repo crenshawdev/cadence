@@ -44,8 +44,8 @@ Assemble `{ instruction, artifact }`:
 The reviewer set is `review.reviewers[]`, filtered as the two arms below state:
 - **claude-subagent** (always available): bracket this worker in the joined
   run record first. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
-  a PROJECT.md row it is the STATE cursor's phase (the rule review-triggers.md
-  step 4 already states for a milestone-scoped trigger). The read-set is the
+  a PROJECT.md row it is the STATE cursor's phase (the rule
+  references/review-inline.md states for a milestone-scoped trigger). The read-set is the
   decision doc the USER named, so write that reference to a scratch file and
   pass the path (caller-derived text - references/conventions.md):
 
@@ -98,7 +98,7 @@ When the resolved set has more than one reviewer (claude-subagent plus a
 surviving cross-model provider, or several), dispatch them CONCURRENTLY in one
 message - they refute the same static artifact independently, so serializing
 them only adds latency (seam-spawn-agent.md concurrent dispatch;
-review-triggers.md step 4's one-message batch).
+references/review-inline.md's one-message batch).
 
 If the resolved set (after any drops) is only `claude-subagent`, this is the
 single-model default; when a cross-model provider survives, this is the

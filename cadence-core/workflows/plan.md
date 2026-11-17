@@ -562,7 +562,7 @@ checks them against: `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and
 `.planning/phases/{N}/CONTEXT.md`. Every entry is a REFERENCE PATH the reviewer
 resolves itself - never inlined text, which would keep every byte of it
 resident here for the rest of the run - and every entry rides the fire's
-`--read` bracket list (review-triggers.md step 4). On the workflow path a fire over more
+`--read` bracket list (references/review-inline.md). On the workflow path a fire over more
 than one PLAN file runs one reviewer per plan and one cross-plan reviewer, and
 today's path runs one reviewer over all of them.
 
@@ -585,7 +585,7 @@ Review line then reports the gate as off rather than as a pass:
 
 - **advisory** (the default) -> fire in the SAME message as the
   `commit` step's seam calls rather than waiting. The dispatch carries the
-  advisory persistence tail (review-triggers.md step 4): the reviewer writes its
+  advisory persistence tail (references/review-inline.md): the reviewer writes its
   findings to `.planning/phases/<N>/records/REVIEW-plan.md` and closes its own bracket,
   so this session ending before the return lands loses nothing. `done` reads
   that file if it is on disk by then; otherwise its Review line names the path
