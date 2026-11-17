@@ -214,12 +214,11 @@ and is executed.
 The suffix-tagged item, and a `why_human` item whose reason clears that reading,
 go straight to pass 2; pass 1 never runs their commands.
 
-`blocked` is TERMINAL - nothing returns an item to the walk from it - so a bar
-applied loosely enough to run an impossible command puts the phase permanently
-out of reach of Complete. Pass 1 records `blocked` ONLY for an item that cleared the
-bar and then failed on an environmental cause the bar did not predict, and the
-results table says it needs the user's answer on the next run rather than being
-left to rot.
+`blocked` is TERMINAL for the model's own walk: pass 1 records it ONLY for an
+item that cleared the bar and then failed on an environmental cause the bar did
+not predict, and the results table says it needs the user's answer. A later run
+puts each `blocked` item to the user through the ask-user seam before pass 2,
+with three answers - pass, skip with a reason, or fail - and records the answer.
 
 **Pass 1 - execute and cite.** Read `.planning/phases/<N>/UAT.md` ONCE, at the
 top of the walk, for the pending items and their `expected` text. It has no
