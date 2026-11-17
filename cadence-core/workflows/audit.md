@@ -160,22 +160,17 @@ by someone re-deriving it:
 - A doc version NO tag carries is the ordinary mid-cycle state - the docs are
   supposed to run ahead of the last release. The key is absent, and that absence
   is not a near-miss to report.
-- A tagged doc version with no phase left OPEN is exempt: that is exactly what
-  a close interrupted between `milestone.md` step 2 (the tag) and step 4 (the
-  PROJECT.md evolve) leaves on disk, and the user is already finishing it. Open
-  means answerable, not merely un-Complete - a phase whose checklist holds only
-  passes and skipped-with-reason items has nothing left to answer. A `blocked`
+- A tagged doc version with no phase left OPEN is exempt: that is what a close
+  interrupted between `milestone.md` step 2 (the bump commit) and step 4 (the
+  PROJECT.md evolve) leaves once `/cad-land` has merged and tagged that bump
+  while the docs still name its version, and the user is already finishing it.
+  Open means answerable, not merely un-Complete - a phase whose checklist holds
+  only passes and skipped-with-reason items has nothing left to answer. A `blocked`
   item keeps its phase open: the next `/cad-verify` puts it to the user.
 - A version that merely sorts BELOW the newest tag was published by nothing. The
   test is membership in the tag list, not order.
 
-The manifest is deliberately not a comparand. `pluginVersion()` resolves
-relative to the SCRIPT while the command above invokes the seam through
-`${CLAUDE_PLUGIN_ROOT}`, so reading it here would judge a downstream project
-against CADENCE's release number; and `skills/cad-health/SKILL.md` already
-settled that tags are the publication evidence, a manifest in the checkout is
-not. A manifest test could not have caught #87 anyway - at that tag the manifest
-agreed with the docs.
+The manifest is deliberately not a comparand: tags are the publication evidence.
 
 On the coverage arm, `breaks` is the only verdict-moving key; `untraced`,
 `legacy`, `unknown_criterion` and `context_issues` are additive and change
