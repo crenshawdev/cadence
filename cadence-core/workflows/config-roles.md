@@ -89,9 +89,11 @@ refuses some security review work), not a rung on a ladder.
 
 `Other` is free-typed and goes into config exactly as typed - the key is a
 string, not an enum, so nothing rejects a name this host has never heard of.
-Echo `config.mjs set`'s `changed` array back to the user, so the exact string
-that landed is on screen at the moment it lands rather than at the first
-dispatch. A model the host does not accept still resolves `ok:true` and
+Typed text can carry `$(...)`, which runs before Node starts, so step 6 passes
+it from a JSON file as `<key>="$(cat <path>)"`, never inline. Echo
+`config.mjs set`'s `changed` array back to the user, so the exact string that
+landed is on screen at the moment it lands rather than at the first dispatch.
+A model the host does not accept still resolves `ok:true` and
 dispatches with NO model parameter, naming the string in the resolve's
 `warnings[]`.
 
@@ -158,8 +160,15 @@ no plan for the floor to read.
 
 Collect every diff and apply it in ONE `config.mjs set` (or `set --global`)
 through `workflows/config.md`'s **Validation seam** - one atomic, validated write, the
-same rule the menu walk follows. Then show the seam's `changed` array back and name the file
-it wrote to.
+same rule the menu walk follows. Each value typed through `Other` goes as JSON
+to its own file in a directory this run made, passed as `<key>="$(cat <path>)"`
+(`references/conventions.md`, Caller-derived text):
+
+```
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "$D"
+```
+
+Then show the seam's `changed` array back and name the file it wrote to.
 
 ## Stakes migration (a retired routing key is still on disk)
 
@@ -189,10 +198,6 @@ migration, then re-issue the command that produced it.
    | `shipped` | `opus` for all six except the plan checker, which is `sonnet` | planner `high`, analyzer `high`, verifier `medium`, reviewer `high`, executor `high`, plan checker `medium` |
    | `critical` | `opus` for all six | `xhigh` for all six |
 
-   That table is the last copy of the retired routing grid anywhere in this
-   repository, and it is prose this arm reads - no code reads it, and nothing
-   else in the tree hand-copies a model name.
-
 3. Show the twelve values PER LAYER before writing anything - "your machine-wide
    `solo` becomes these twelve; this repository's `critical` becomes these
    twelve" - then run them through the **Roles interview**'s questions so the
@@ -200,7 +205,8 @@ migration, then re-issue the command that produced it.
    difference is that the value in force starts at the expanded row rather than
    at the schema default.
 
-4. Write each layer's own answers through `workflows/config.md`'s **Validation seam** -
+4. Write each layer's own answers as the **Roles interview**'s step 6 does,
+   through `workflows/config.md`'s **Validation seam** -
    `config.mjs set --global …` for the user file, plain `config.mjs set …` for
    the repository file - and then remove the key from every layer that held it:
 
