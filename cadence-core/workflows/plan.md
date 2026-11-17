@@ -320,6 +320,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <
 
 - `## PLANNING COMPLETE` - confirm the listed files exist on disk, continue.
 - `## PHASE TOO BIG` - rejoin at `too_big` below.
+- Empty or unmarked return - if phases/<N>/PLAN*.md exists on disk, treat
+  the files as authoritative and continue; otherwise report the failed
+  spawn and stop.
+</step>
 
 <step name="too_big">
 Reached two ways: a `phase-too-big` entry from `plan-size` at `parse` (before
@@ -340,8 +344,8 @@ What each option does:
 
 1. Re-dispatch the
    planner ONCE, instructed to write `PLAN-1.md`, `PLAN-2.md`, ... each within
-   the task ceiling. Plans that share a declared path are SEQUENTIAL: mark each
-   one so, and `/cad-execute` runs them in order.
+   the task ceiling. Plans that share a declared path run in plan-number
+   order, which `/cad-execute` follows.
 2. Stops here; you
    run `/cad-phase add`, then `/cad-plan` per phase. Independent phases can run
    concurrently (see `parallelization.max_concurrent_agents`).
@@ -356,10 +360,6 @@ sequential multi-plan phase is a shape this workflow supports.
 
 This is a consult dead-end: before that ask, run offer_consult per
 references/consult.md with the split problem as the situation.
-</step>
-- Empty or unmarked return - if phases/<N>/PLAN*.md exists on disk, treat
-  the files as authoritative and continue; otherwise report the failed
-  spawn and stop.
 </step>
 
 <step name="check_size">
@@ -717,7 +717,7 @@ on disk and each executor runs in a fresh context.
   one-line reason.
 - STATE.md stays a four-line overwritten cursor plus an optional `Plan:` line. No audit entries, no roadmap
   annotations - git is the log.
-- Config keys only as named in templates/config.json - nothing invented.
+- Config keys only as named in `cadence-core/config.schema.json` - nothing invented.
 </guardrails>
 
 <success_criteria>
