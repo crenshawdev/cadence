@@ -325,10 +325,12 @@ run's scratch directory until its branch has merged.
 **The lifecycle bracket (both paths).** Every worker this workflow hands work to
 is bracketed in the joined run record. The DISPATCH half rides each executor's
 own resolve on the spawn-agent seam's routing step:
-`--plan <k> --bracket-plan <k> --bracket-read "CLAUDE.md,<the brief path>"`
+`--plan <k> --bracket-plan <k> --bracket-read "CLAUDE.md,<the brief path>"`,
+and on a refused brief its `--bracket-read` value is
+`"CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"`
 - the worker key is the plan NUMBER here, not the role name, and `--read` is
 what this site causes the executor to read: `CLAUDE.md` and that plan's brief,
-or on a refused brief the plan file and the two phase documents. `--plan <k>`
+or on a refused brief `CLAUDE.md`, the plan file and the two phase documents. `--plan <k>`
 beside it is a different quantity carrying the same number: it scopes the RISK FLOOR to this plan's own
 declared files (references/seam-spawn-agent.md's Routing block states the rule).
 Once that executor comes back, append the CLOSE:
@@ -734,7 +736,7 @@ takes everything in there, so the flagged diffs (`plan-<k>-risk.diff`,
 `git add <plandir>/records/reports/ ':(exclude)<plandir>/records/reports/*.diff'`. With the key
 false the reports stay uncommitted exactly like SUMMARY.md; the worktree path
 commits regardless, because the commit is the only transport across the merge.
-With the key true, the cursor is never left uncommitted.
+With the key true, a run that reaches this step leaves the cursor committed.
 </step>
 
 <step name="done">
