@@ -123,7 +123,7 @@ always skips it - it is the off switch. Otherwise run it when this is the FIRST
 UAT session for the phase AND the resolve says to:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-verifier
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-verifier --phase <N>
 ```
 
 Relay every `warnings[]` entry that resolve returns to the user before running
