@@ -7,7 +7,7 @@ Loaded from config.md's **Testing policy** arm, and opened directly by
 
 Accepts one project testing policy, once, from one recommendation. This is the
 one statement `/cad-new-project` (before its roadmap) and `/cad-adopt` (after
-the survey, before the roadmap) follow, the way they follow `workflows/config.md`'s
+the survey, before the roadmap) follow, the way they follow `workflows/config-roles.md`'s
 **Roles interview** arm; `--testing` reopens it with the answer in force beside what
 the project shows today. The rules and command shapes it recommends from are in
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` (one consult

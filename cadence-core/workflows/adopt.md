@@ -59,9 +59,10 @@ Two stops first, before anything is written.
    is a fact about that repository and not about Cadence. So it is asked, once,
    and a repository that has answered is never asked again.
 
-   The second is what each role costs. Follow the **Roles interview** arm of
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md` (one consult site -
-   this step) once this item's script has run: the full thirteen questions
+   The second is what each role costs. Read
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-roles.md` (one consult
+   site - this step) and follow its **Roles interview** arm once this item's
+   script has run: the full thirteen questions
    written to the user-global layer when that layer holds no `roles` key, and
    the shorter per-project confirmation written to this repository's own file
    when it already does. Same shape of reason as the forge - a template cannot carry a

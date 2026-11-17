@@ -100,6 +100,12 @@ export const ROUTERS = Object.freeze([
     branch: 'unfixed (a gate holding a finding it will not fix now)',
     cold: 'cadence-core/references/triage-gate-unfixed.md',
   }),
+  Object.freeze({
+    // a workflow, not a reference: the rare retired-key arm skips config.md and lands on its own file
+    router: 'cadence-core/references/seam-spawn-agent.md',
+    branch: 'an entry saying a RETIRED routing key was ignored',
+    cold: 'cadence-core/workflows/config-roles.md',
+  }),
 ]);
 
 /** A markdown fence, `` ``` `` or `~~~`, indented or not. */

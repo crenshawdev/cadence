@@ -130,6 +130,28 @@ export const DEFERRED_READS = Object.freeze([
     read_paragraphs: 1,
     file: 'cadence-core/workflows/adopt.md',
   }),
+  Object.freeze({
+    // two arms, one file: each arm keeps its own Read so a deleted one fails on its own
+    skill: 'cad-config',
+    reference: 'workflows/config-roles.md',
+    anchors: Object.freeze(['Roles interview (`--roles`)', 'Stakes migration (a retired routing key is still on disk)']),
+    read_paragraphs: 2,
+    file: 'cadence-core/workflows/config.md',
+  }),
+  Object.freeze({
+    skill: 'cad-new-project',
+    reference: 'workflows/config-roles.md',
+    anchors: Object.freeze(['setup(4)']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/new-project.md',
+  }),
+  Object.freeze({
+    skill: 'cad-adopt',
+    reference: 'workflows/config-roles.md',
+    anchors: Object.freeze(['setup(3)']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/adopt.md',
+  }),
 ]);
 
 /** Sentences split on a terminator plus whitespace, a heuristic: one before markup (.** or .md) does not split. */

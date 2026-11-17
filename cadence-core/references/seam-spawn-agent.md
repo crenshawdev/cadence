@@ -124,8 +124,9 @@ phase would give it a floor from another phase's file list.
   warnings depend on. ONE warning is not relayed and moved past: an
   entry saying a RETIRED routing key was ignored means a config layer still
   carries the single level that used to decide every role's model and effort,
-  so the workflow opens `workflows/config.md`'s **Stakes migration** arm before
-  dispatching and re-resolves after it.
+  so before dispatching the workflow must Read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-roles.md` (one consult
+  site - this bullet), run its **Stakes migration** arm and re-resolve after it.
 
 **Concurrent dispatch.** Independent dispatches over disjoint payloads (the
 per-plan executors of a parallel phase, per-doc verifiers, the two reviewers of

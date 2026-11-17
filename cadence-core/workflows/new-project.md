@@ -64,9 +64,10 @@ line):
    not about Cadence. So it is asked, once, and a repository that has answered
    is never asked again.
 
-   The second is what each role costs. Follow the **Roles interview** arm of
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md` (one consult site -
-   this step) once the items 2-5 script has run: the full thirteen questions
+   The second is what each role costs. Read
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-roles.md` (one consult
+   site - this step) and follow its **Roles interview** arm once the items 2-5
+   script has run: the full thirteen questions
    written to the user-global layer when that layer holds no `roles` key, and
    the shorter per-project confirmation written to this repository's own file
    when it already does. It is an exception for the same shape of reason the

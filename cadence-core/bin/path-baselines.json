@@ -106,7 +106,7 @@
       "files": [
         "skills/cad-new-project/SKILL.md",
         "cadence-core/workflows/new-project.md",
-        "cadence-core/workflows/config.md",
+        "cadence-core/workflows/config-roles.md",
         "cadence-core/workflows/config-testing.md",
         "cadence-core/references/risk-surface.md",
         "cadence-core/references/test-policy.md",
@@ -123,7 +123,7 @@
       "files": [
         "skills/cad-adopt/SKILL.md",
         "cadence-core/workflows/adopt.md",
-        "cadence-core/workflows/config.md",
+        "cadence-core/workflows/config-roles.md",
         "cadence-core/workflows/config-testing.md",
         "cadence-core/references/risk-surface.md",
         "cadence-core/references/test-policy.md",
