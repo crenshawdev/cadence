@@ -27,3 +27,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-overlap --phase 
 ```
 
 Its `waves` order the plans, and the width is the plan count of the widest wave. Your `## PLANNING COMPLETE` return states the width, plus one line of reason when it is 1 (`overlaps` names the files that made it so). It is information and no gate: a narrow phase is returned as written, never reshaped to look wider. A `frontmatter_issues` entry in that answer means a plan you wrote is wrong, so fix it and run it again before you return.
+
+## Brief size
+
+The executor and reviewers read a plan through its brief, which has a size ceiling, and a plan over it costs a second planner just to split it. So before you return, run this yourself for each plan file you wrote or edited, `<k>` from its name and 1 for a bare `PLAN.md`:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase <N> --plan <k>
+```
+
+It writes nothing. When its `ok:false` says the brief is over its ceiling, split that plan's tasks across more plans the way `## Plan shape` orders them, then run `plan-overlap` and this check again. Any other `ok:false` goes in your return as it stands.
