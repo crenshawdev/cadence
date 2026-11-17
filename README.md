@@ -99,4 +99,6 @@ Questions go in **#cadence** on the [jcrenshaw.dev Discord](https://jcrenshaw.de
 
 Cadence is maintained by John Crenshaw and derives from [GSD](https://github.com/open-gsd/gsd-core) by Open GSD. It's distributed under the [MIT License](./LICENSE), with the original attribution retained in [NOTICE](./NOTICE.md). [Lineage](./docs/LINEAGE.md) records where it came from.
 
-[Support Cadence on Ko-fi](https://ko-fi.com/R5Y823KUXE).
+## Supporting Cadence
+
+Cadence is free under the MIT License. If it's useful to you and you'd like to support the work, you can do that through [GitHub Sponsors](https://github.com/sponsors/crenshawdev) or [Ko-fi](https://ko-fi.com/jcrenshawdev).
