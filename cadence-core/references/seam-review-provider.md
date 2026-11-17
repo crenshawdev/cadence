@@ -3,7 +3,7 @@
 ## Seam: call-review-provider
 
 How the review subsystem reaches a cross-model reviewer. A cross-model review
-is a direct provider HTTPS call (OpenAI / Gemini), NOT a CLI subprocess: review
+is a direct provider HTTPS call (any provider with an adapter), NOT a CLI subprocess: review
 is a pure function (artifact in -> structured findings out), and the provider
 API enforces the finding schema. All provider specifics live in one bundled
 script; workflows invoke the script and never inline HTTP or provider bytes.
@@ -11,8 +11,8 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
 **Claude Code binding:**
 - Run `cadence-core/bin/review-provider.mjs` via the shell (installed at
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs`):
-  - Review: `review --provider <openai|gemini> --model <id> [--effort <level>]`,
-    the `{instruction, artifact}` payload on stdin. Stdout is one JSON object:
+  - Review: `review --provider <name> --model <id> [--effort <level>]`, the
+    `{instruction, artifact}` payload in a `--payload <file>` or on stdin. Stdout is one JSON object:
     `{ok:true, findings:[...]}` or `{ok:false, reason, detail}`.
   - Consult: `consult --provider <name> --model <id> [--effort <level>]`, the
     `{situation}` payload on stdin -> `{ok:true, angles:[...]}` (dead-end help;
@@ -31,12 +31,11 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
   any request is issued; `claude-subagent` never runs this script and is exempt
   from it, bounded instead by the spawn-agent turn cap, `maxTurns: 200`.
   `over-response` is the same bound the other way round, on the response:
-  every command destroys the request once the body passes 4 MiB, so a flooding
-  provider meets a refusal Cadence owns rather than the execution host's wrapping
-  command timeout, and an `http` failure carries `detail.body` as a sanitized
-  1024-byte excerpt, always a string, never the body. On `no-key`
-  the review subsystem falls back to `claude-subagent` and does not offer a
-  consult; a `blocking` trigger reports the failure rather than silently pass.
+  every command destroys the request once the body passes 4 MiB, and an `http`
+  failure carries `detail.body` as a sanitized 1024-byte excerpt, always a
+  string, never the body. On `no-key` the reviewer is named and dropped, falling
+  back to `claude-subagent` only when that empties the set, and no consult is
+  offered; a `blocking` trigger reports the failure rather than silently pass.
 - The payload is FENCED before the cap: every string field crosses one filter
   that picks its rules by file. A diff is split at each `diff --git` line. A
   config file's part (`.env*`, `*.yml`, `*.yaml`, `*.toml`, `*.ini`, `*.cfg`,
