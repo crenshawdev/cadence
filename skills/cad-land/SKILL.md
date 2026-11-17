@@ -30,7 +30,7 @@ below rather than re-reading per step. Step 3 asks a seam, not this read.
 
 1. **Report git state - base first.** The base = `$ARGUMENTS`, else
    `git.base_branch`, else the first `git.protected_branches` entry that
-   exists here (references/git-guard.md's fallback). It comes from an argument
+   exists here. It comes from an argument
    or a committed config, and a base shaped like `--output=<path>` is read by
    git as an option that writes that file, so ask the seam about it BEFORE any
    git command is given it - the commits-ahead count and the tracker call
