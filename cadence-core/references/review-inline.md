@@ -69,7 +69,8 @@ reviewer set never does. Per backend:
     discriminator), where the reviewer writes the same JSON object it returns, and
   - the return-append command above with `${CLAUDE_PLUGIN_ROOT}` already
     expanded to its absolute path (the subagent does not inherit the variable)
-    and NO `--tokens` or `--duration-ms` - a subagent never sees its own figures.
+    and NO `--tokens`, `--turns`, `--duration-ms` or `--agent-id` - a subagent
+    never sees its own return.
   This site then appends NO return and no checkpoint for an advisory fire,
   even when the return does land in-session - two writers on one bracket is a
   double-close. The step that reports advisory findings reads the FILE; a path

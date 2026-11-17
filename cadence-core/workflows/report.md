@@ -163,7 +163,7 @@ Rules, all load-bearing:
     and the one arm this report never stated.
   - figureless returns. A close that carried no `--tokens`, an advisory fire
     among them because its reviewer closes its own bracket without one
-    (`references/review-triggers.md`, the advisory persistence tail); they
+    (`references/review-inline.md`, the advisory persistence tail); they
     count under `unrecorded`, never as a zero.
   So the total prices recorded claude-subagent returns only, short by an
   unstated amount, and it is not what the run cost.
