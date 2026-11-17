@@ -51,7 +51,7 @@ does, from `review.reviewers[]`:
   pass the path (caller-derived text - references/conventions.md):
 
   ```
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read-file <path>
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --read-file <path>
   ```
 
   Then dispatch the `agent_type` that
@@ -62,13 +62,13 @@ does, from `review.reviewers[]`:
   `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 
   ```
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
   ```
 
   A dispatch that failed or returned nothing parseable writes what failed to a
   scratch file and adds `--detail-file <path>` to that same line
-  (caller-derived text - references/conventions.md), closing as a checkpoint, so
-  the burned budget still reaches the record. This arm resolves no routing at all - it is the
+  (caller-derived text - references/conventions.md), closing as a checkpoint.
+  This arm resolves no routing at all - it is the
   base `cad-reviewer` at the session default, whatever `roles.cad-reviewer.model`
   says - and `review.decision_review.tier` and `.effort` reach the cross-model
   arm below only (D-04).
@@ -155,8 +155,7 @@ figures, so never fabricate one):
   and model id(s), when the panel path ran)
 - the `review.decision_review.tier` and `.effort` the cross-model call used,
   and that `cad-reviewer` ran at the session default with neither applied -
-  say the second half even when no cross-model reviewer ran, which is exactly
-  when a bare tier/effort line reads as if the run had honoured one
+  say the second half even when no cross-model reviewer ran
 - the call count (one `cad-reviewer` dispatch, plus one
   `review-provider.mjs` call per surviving cross-model reviewer)
 - any reviewer that was offered but dropped (no-key, no tier assigned, not
