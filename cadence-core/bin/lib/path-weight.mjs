@@ -7,12 +7,25 @@
 'use strict';
 
 import { readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 
 const REGISTER = 'cadence-core/bin/path-baselines.json';
 const ENTRY_KEYS = ['baseline', 'command', 'files', 'variant'];
-// repository-relative POSIX only: no leading slash, no backslash, no empty, `.` or `..` segment
-const REL_PATH_RE = /^(?!.*(?:^|\/)\.{1,2}(?:\/|$))(?!.*\/\/)[^/\\][^\\]*$/;
+// repository-relative POSIX only: no leading slash, no backslash, no empty, `.` or `..` segment;
+// `s` so a lookahead's `.*` can't stop at a line break and wave a hidden `..` through
+const REL_PATH_RE = /^(?!.*(?:^|\/)\.{1,2}(?:\/|$))(?!.*\/\/)[^/\\][^\\]*$/s;
+// no control characters or line/paragraph separators in a file name at all
+const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+
+/**
+ * True when `file` joined onto `root` still lands inside it - the hold whatever shape an escape takes.
+ * @param {string} root
+ * @param {string} file
+ */
+function staysInside(root, file) {
+  const rel = relative(root, join(root, file));
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
 
 /**
  * One register refusal in the `{seam, detail}` shape weight.mjs's catch arm renders.
@@ -51,7 +64,7 @@ function readRegister(root) {
     if (!Number.isSafeInteger(p.baseline) || p.baseline < 0) throw bad('baseline is not a non-negative integer');
     if (!Array.isArray(p.files) || !p.files.length) throw bad('files is not a non-empty array');
     for (const f of p.files) {
-      if (typeof f !== 'string' || !REL_PATH_RE.test(f)) throw bad(`file ${JSON.stringify(f)} is not a repository-relative POSIX path`);
+      if (typeof f !== 'string' || CONTROL_RE.test(f) || !REL_PATH_RE.test(f) || !staysInside(root, f)) throw bad(`file ${JSON.stringify(f)} is not a repository-relative POSIX path`);
     }
   });
   return doc.paths;
