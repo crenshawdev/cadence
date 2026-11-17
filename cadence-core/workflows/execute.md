@@ -454,8 +454,10 @@ On a fire, write `git diff {pre-plan HEAD}..HEAD` to
 path - shape (c), exactly as `workflows/task.md`'s `risk_check` step does, since
 shape (a) refs is not one of the shapes the wiring table admits for
 `risk_surface`. The file is transient: never stage it, delete it once the
-trigger returns. Blocking: on FAIL the findings are fixed by a continuation
-`cad-executor` dispatched through the spawn-agent seam under worker key `<k>` -
+trigger returns - on the workflow path once the fire has settled at its notice,
+never at the launch, because the reviewers, the checkers and the narrowed re-arm
+read that path after the launch. Blocking: on FAIL the findings are fixed by a
+continuation `cad-executor` dispatched through the spawn-agent seam under worker key `<k>` -
 "The worker key of a SECOND dispatch" above already names this as one of the
 three second dispatches against one plan's range, restated no further here - or
 the user explicitly overrides. The dispatch prompt carries four things, nothing
@@ -731,8 +733,8 @@ for, it is what stops the land.
 
 The DIRECTORY, never one report by name: an executor rotates a previous run's
 report aside to a suffixed sibling, which a by-name stage leaves untracked. It
-takes everything in there, so the flagged diffs (`plan-<k>-risk.diff`,
-`plan-<k>-risk-task-<n>.diff`) go out by PATHSPEC, not a rule naming a file:
+takes everything in there, so the flagged diff (`plan-<k>-risk.diff`) goes out
+by PATHSPEC, not a rule naming a file:
 `git add <plandir>/records/reports/ ':(exclude)<plandir>/records/reports/*.diff'`. With the key
 false the reports stay uncommitted exactly like SUMMARY.md; the worktree path
 commits regardless, because the commit is the only transport across the merge.

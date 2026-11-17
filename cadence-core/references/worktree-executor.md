@@ -38,16 +38,12 @@ dispatch; none of them applies on the sequential path.
   `git commit` after a broad `git add` would sweep them in - turning a blocking
   gate into a landed commit. Naming the paths commits the reports and leaves
   everything else staged exactly as it was; the enclosing `<plandir>/records/reports/`
-  directory is NOT a path you may `add` or commit here, because the flagged diff
-  below lives inside it - which is why the `add` names the same exact paths the
-  commit does. Committing on the non-final branches is what makes the report
+  directory is NOT a path you may `add` or commit here: the `add` names the same
+  exact paths the commit does. Committing on the non-final branches is what makes the report
   survive at all: a partial or checkpointed
   worktree is the one most likely to be removed or abandoned before you are
   dispatched again, and an uncommitted report dies with it - the re-run hazard
-  the file exists to prevent. NEVER commit `plan-<k>-risk-task-<n>.diff`: it
-  is the flagged staged diff itself and must not reach history, but do not leave it
-  behind either - the continuation deletes it as its first act, and
-  `git worktree remove` refuses a worktree holding untracked files.
+  the file exists to prevent.
 - Never `git stash` (the stash is shared across worktrees), never
   `git clean`, never blanket `git reset --hard` or `git restore .`, and
   never `git merge`, `git rebase` or `git fetch` - reconciling a stale
@@ -82,8 +78,7 @@ worktree may lack it:
   costs a turn. Read a file outside the worktree with the Read tool, and write
   a file, the report included, with the Write tool.
 - Staying inside: every file operation stays in the worktree, except reading
-  the files the prompt and the brief name outside it, and writing your report,
-  its rotated sibling and any flagged diff beside the report path the prompt
+  the files the prompt and the brief name outside it, and writing your report and its rotated sibling at the report path the prompt
   names, in the run's scratch directory. Never write into the main tree; the
   host refuses it.
 - Report: it goes to the path the prompt names, in place of
