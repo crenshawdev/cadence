@@ -455,8 +455,8 @@ path - shape (c), exactly as `workflows/task.md`'s `risk_check` step does, since
 shape (a) refs is not one of the shapes the wiring table admits for
 `risk_surface`. The file is transient: never stage it, delete it once the
 trigger returns - on the workflow path once the fire has settled at its notice,
-never at the launch, because the reviewers, the checkers and the narrowed re-arm
-read that path after the launch. Blocking: on FAIL the findings are fixed by a
+never at the launch, because the reviewers and the checkers read that path after
+the launch; the narrowed re-arm fires on its own narrowed artifact. Blocking: on FAIL the findings are fixed by a
 continuation `cad-executor` dispatched through the spawn-agent seam under worker key `<k>` -
 "The worker key of a SECOND dispatch" above already names this as one of the
 three second dispatches against one plan's range, restated no further here - or

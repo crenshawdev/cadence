@@ -78,9 +78,8 @@ worktree may lack it:
   costs a turn. Read a file outside the worktree with the Read tool, and write
   a file, the report included, with the Write tool.
 - Staying inside: every file operation stays in the worktree, except reading
-  the files the prompt and the brief name outside it, and writing your report and its rotated sibling at the report path the prompt
-  names, in the run's scratch directory. Never write into the main tree; the
-  host refuses it.
+  the files the prompt and the brief name outside it, and writing your report at the report path the prompt names and, when it rotates, its `plan-<k>.<n>.md` sibling in that same folder, in the run's
+  scratch directory. Never write into the main tree; the host refuses it.
 - Report: it goes to the path the prompt names, in place of
   `<plandir>/records/reports/plan-<k>.md`, and you NEVER commit it. Write its first
   line as your contract says, `PLAN COMPLETE` included: the main session moves
