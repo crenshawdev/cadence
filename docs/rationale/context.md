@@ -69,7 +69,7 @@ used to grow with N is gone from both the contract and this record.
 
 ## write_context - why the template read is deferred
 
-Deferred on SIZE, not branch-locality (references/seam-spawn-agent.md, File
+Deferred on SIZE, not branch-locality (references/dispatch-shape.md, File
 round-trip). The step is unconditional but reached once, at the very end, so the
 read folds into the turn that writes the file, while an eager copy would ride
 every turn of the interview before it.

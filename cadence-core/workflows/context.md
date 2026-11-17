@@ -382,7 +382,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/CONTEXT.md` (one
 consult site - this step) for its shape - five sections, nothing else, with the
 fill-in guidance for each.
 
-Deferred on SIZE, not branch-locality (references/seam-spawn-agent.md, File
+Deferred on SIZE, not branch-locality (references/dispatch-shape.md, File
 round-trip): this step is unconditional but reached once, at the very end, so
 the read folds into the turn that writes the file.
 

@@ -97,7 +97,7 @@ that consumes a prior call's output is serialized.
 2. If .planning/phases/<N>/CONTEXT.md is present, extract just its `Plan shape`
    line (grep the Scope boundary). The planner reads the whole file itself, so
    the coordinator needs only that one directive line, not the bytes
-   (seam-spawn-agent.md handoff read discipline). Absent is fine - plan from
+   (dispatch-shape.md handoff read discipline). Absent is fine - plan from
    the roadmap goal alone.
 3. If PLAN*.md already exists in the phase dir (and not --gaps): ask
    (ask-user seam). Never overwrite silently.
@@ -221,7 +221,7 @@ Write the plan files in .planning/phases/{N}/.
 </planning_context>
 
 (The return markers and report shape are the agent's own cached definition -
-never restate them in the dispatch tail; seam-spawn-agent.md's cache
+never restate them in the dispatch tail; dispatch-shape.md's cache
 discipline.)
 ```
 

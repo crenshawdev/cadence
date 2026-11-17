@@ -43,7 +43,7 @@ list, because it reads exactly like a correct one.
 <step name="dispatch">
 Assemble `{ instruction, artifact }`:
 - `artifact` = the target as a REFERENCE, never its bytes
-  (references/seam-spawn-agent.md's deferred-read rule - the reviewer produces
+  (references/dispatch-shape.md's deferred-read rule - the reviewer produces
   what it needs with its own Read/Grep/Bash): the path for a file, the
   directory for a directory, the
   `<base_ref>..<head_ref>` pair for a phase range.
