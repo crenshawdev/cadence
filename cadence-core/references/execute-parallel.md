@@ -5,7 +5,8 @@ and a second time by `references/execute-workflow.md`, which follows its steps 3
 to 5 after a wave. All worktree ceremony lives here and in that file, and
 `choose_path` has already proven `worktree.baseRef` is `head` before anything
 below runs - so an executor halting `blocked` on a missing PLAN
-on this path is a real defect to report, not the fork-point default.
+on this path is not the fork-point default, and goes to `handle_checkpoint`'s
+missing-PLAN arm.
 
 1. In batches of `parallelization.max_concurrent_agents`: dispatch one
    cad-executor per plan IN THE DISPATCH SET `locate` defined, each in its own

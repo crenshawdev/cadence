@@ -602,21 +602,14 @@ position line `locate` states. Route by type:
   disk. This is the one checkpoint type whose cause is a cross-task regression
   rather than a decision, so it needs no ask - dispatch the continuation.
 
-A `blocked` halt naming a MISSING PLAN file is the one arm that also has a named
-orchestrator-side remedy, because its cause is known: the worktree forked from a
-base that does not carry this phase's plans. Reconcile that worktree from the
-main tree YOURSELF, in your own serialized turn - bring the branch up to the
-main tree's commit, or copy `.planning/phases/<N>/` in - and then re-dispatch
-that plan once. The executor contract is not touched by this and must not be:
-references/worktree-executor.md, which `<worktree_mode>` reads, forbids
-`git merge`, `rebase`, `fetch` and `stash` outright, and reconciliation is the
-orchestrator's serialized decision. Cadence still issues no `git worktree add`
-of its own - the host creates the worktree and the fork point is the user's
-`worktree.baseRef` setting.
-
-After that remedy has failed twice, the plan falls back to the SEQUENTIAL path in
-the main tree, and an `escalation` lifecycle event records the worker that
-changed paths. A fallback and not a bounded re-dispatch loop.
+**A missing PLAN on the parallel path.** A `blocked` halt naming a MISSING PLAN
+file is routed after `execute-parallel.md`'s steps 3 and 4 have merged every
+branch and removed every worktree, so nothing is left to reconcile. With
+`worktree.baseRef` proven `head`, its cause is a fork commit without this
+phase's plans, for example because they were never committed. Re-dispatch that
+plan once in the main tree, which holds them on disk, and record the path change
+as the `escalation` lifecycle event the spawn seam states. If it halts on a
+missing PLAN again, the main tree lacks the plan file: tell the user so.
 
 Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
 report PATH `<plandir>/records/reports/plan-<k>.md`, the checkpoint outcome, and
@@ -630,8 +623,8 @@ spelling.
 (Reached from `choose_path`'s parallel path. All worktree ceremony lives here and in `execute_workflow`'s
 reference, and nowhere else. choose_path
 has already proven `worktree.baseRef` is `head`, so an executor halting
-`blocked` on a missing PLAN here is a real defect to report, not the
-fork-point default.)
+`blocked` on a missing PLAN here is not the fork-point default, and goes to
+`handle_checkpoint`'s missing-PLAN arm.)
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` (one
 consult site - this step) and follow it: the batching key, the sequential
