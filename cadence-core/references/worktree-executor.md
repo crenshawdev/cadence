@@ -33,10 +33,10 @@ dispatch; none of them applies on the sequential path.
   only paths git already TRACKS, so an untracked report - every rotated
   `plan-<k>.<n>.md`, and a first run's `plan-<k>.md` on a path not yet in history
   - aborts the entire commit with `did not match any file(s) known to git`. The
-  pathspec keeps a guardrail intact: a `risk_surface`
-  checkpoint deliberately leaves the flagged changes STAGED, and a bare
-  `git commit` after a broad `git add` would sweep them in - turning a blocking
-  gate into a landed commit. Naming the paths commits the reports and leaves
+  pathspec keeps a guardrail intact: anything else left staged in the
+  worktree, such as a checkpointed task's unfinished work, stays out of the
+  report commit, where a bare `git commit` after a broad `git add` would sweep
+  it in. Naming the paths commits the reports and leaves
   everything else staged exactly as it was; the enclosing `<plandir>/records/reports/`
   directory is NOT a path you may `add` or commit here: the `add` names the same
   exact paths the commit does. Committing on the non-final branches is what makes the report
