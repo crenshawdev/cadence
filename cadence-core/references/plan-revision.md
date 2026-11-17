@@ -7,12 +7,13 @@ is where that bound is enforced.
 
 1. Plans came from cad-planner: re-dispatch it FRESH in revision mode with
    the issues (see `plan.md`'s `spawn_planner`) - a new spawn, never a resume of the prior
-   run; the plan on disk preserves its grounding - with `--attempt 2` so the
-   routing seam climbs the re-dispatch one rung above cad-planner's
-   configured effort, and dispatches that rung's file. Plans were
+   run; the plan on disk preserves its grounding - with `--attempt 2`, which
+   climbs one rung only with `model.escalate_on_failure` on and holds it
+   otherwise; dispatch the file the resolve returns. Plans were
    written inline: apply the fixes in the main context.
    This re-dispatch is a paid dispatch like any other, so it carries its OWN
-   bracket - on the `--attempt 2` resolve, the same read-set spawn_planner uses:
+   bracket on the `--attempt 2` resolve. A refused or unreadable compose
+   dispatches with this read-set:
    `--bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"`.
    With the phase input composed, that
    resolve's `--bracket-read` value is `<the phase input path>`
@@ -40,12 +41,11 @@ is where that bound is enforced.
    confirming, NOT the whole plan set again. Ask one question: is each
    blocker actually closed, and did the fix introduce anything new? A
    full re-read costs a second cold pass over ROADMAP, REQUIREMENTS,
-   CONTEXT and the sources for a plan the checker has already read once;
-   measured, that was ten minutes to convert two blockers into one. Pass
-   `--attempt 2` (the seam climbs it to the retry rung its own cell names,
-   and returns the file for it - never a rung name this prose hardcodes).
-   Name it in the prompt too - `Rung: {the effort THIS resolve returned}` -
-   since the five agent files share one body and carry no rung of their own.
+   CONTEXT and the sources for a plan the checker has already read once.
+   Pass `--attempt 2` (step 1's rung rule) and dispatch the file it returns.
+   Name its rung in the prompt - `Rung: {the effort THIS resolve returned}` -
+   since the rung files carry it in frontmatter and their identical bodies
+   leave the prompt the only place it reaches the checker.
    Note what a narrow pass gives up: it re-reads nothing, so a fix that is
    locally right and wrong against CONTEXT can survive it. `plan.md`'s own
    `review` step is the full-artifact second opinion, and it fires after this

@@ -406,7 +406,7 @@ In a `--gaps` run, skip a plan whose `records/reports/plan-<k>.md` opens `PLAN C
 
 With no `--out-dir` it writes nothing. An `ok:true` answer may carry `reads_missing`, the `Reads` entries the index lacks, or `reads_unchecked`: relay either in one line per plan and re-dispatch nothing for it. On `ok:false`, say what the answer names out loud, and re-dispatch ONCE:
 
-- A bad id goes to a fresh revision-mode planner, bracketed the way `check_gate`'s revision is, with the refusal in its `<checker_issues>`.
+- A bad id goes to a fresh revision-mode planner on an `--attempt 2` resolve whose `--bracket-read` value is the phase input path, or the four documents when the compose was refused, closed the way `handle_return` closes a planner's return, with the refusal in its `<checker_issues>`.
 - A brief over its ceiling gets `check_size`'s instruction: split this plan's tasks across more plans, sequential where they share files.
 
 Not a hard halt. After the one re-dispatch, or the user's word, continue: `/cad-execute` runs a plan whose brief is refused from the full documents.
