@@ -164,9 +164,8 @@ by someone re-deriving it:
   a close interrupted between `milestone.md` step 2 (the tag) and step 4 (the
   PROJECT.md evolve) leaves on disk, and the user is already finishing it. Open
   means answerable, not merely un-Complete - a phase whose checklist holds only
-  passes, skipped-with-reason items and `blocked` ones has nothing left the walk
-  can return to, and `blocked` is terminal, so a Complete-only test would pin
-  such a repo at FAIL with the second exit above permanently out of reach.
+  passes and skipped-with-reason items has nothing left to answer. A `blocked`
+  item keeps its phase open: the next `/cad-verify` puts it to the user.
 - A version that merely sorts BELOW the newest tag was published by nothing. The
   test is membership in the tag list, not order.
 

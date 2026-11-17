@@ -109,14 +109,13 @@ function cmdAudit(dir) {
   const publishedAs = docVersion
     ? tagCarrying(readTags(dir, dirname(dir)), normalizeTargetVersion(docVersion)) : null;
   // derived phase status, not the roadmap checkbox: "finish the close" means the artifacts say complete
-  // `blocked` is terminal, so a parked phase would pin the gate at FAIL; nothing answerable left stops holding it too
+  // open means answerable: `blocked` holds it too, since the next /cad-verify puts that item to the user
   // rolled-over work looks like work in flight on disk; only the rows differ, as the close marks them `Deferred`
   // no rows is not exempt: an empty set satisfies "every row is Deferred" vacuously, and unplanned is mid-cycle
   // read off the `rows` the state already supplied, so it's the same row set as the arithmetic above
   const settled = (p) => p.status === 'complete'
     || (p.uat !== null && p.uat.items.length > 0 && p.uat.items.every((i) =>
-      i.status === 'pass' || i.status === 'blocked'
-      || (i.status === 'skipped' && i.reason)));
+      i.status === 'pass' || (i.status === 'skipped' && i.reason)));
   const rolledOver = (p) => {
     const own = rows.filter((r) => r.phase === p.n);
     return own.length > 0 && own.every((r) => r.status === 'Deferred');
