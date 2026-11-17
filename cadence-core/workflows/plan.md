@@ -310,12 +310,11 @@ The dispatch came back, so close its bracket before anything else - ONE line,
 always exactly one, or `trace render` reports a worker that never came back. On
 the empty-or-unmarked arm below, write that return to a scratch file and add
 `--detail-file <path>` (caller-derived text - references/conventions.md), and
-the seam closes it as a checkpoint instead. OMIT `--tokens` on a figureless
-return - never a `0`, which claims a measurement nobody made
-(seam-spawn-agent.md's bracket rule):
+the seam closes it as a checkpoint instead. Which figures it carries is
+seam-spawn-agent.md's bracket rule:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
 ```
 
 - `## PLANNING COMPLETE` - confirm the listed files exist on disk, continue.
@@ -527,11 +526,11 @@ Read:
 Close its bracket the moment the return is in hand, before reading a single
 severity. ONE line: an empty or unmarked return is written to a scratch file and
 carried on `--detail-file <path>` (caller-derived text -
-references/conventions.md), and the seam closes it as a checkpoint.
-OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
+references/conventions.md), and the seam closes it as a checkpoint. Its
+figures follow seam-spawn-agent.md's bracket rule:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
 ```
 
 Handle the return:

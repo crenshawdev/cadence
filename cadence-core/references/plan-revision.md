@@ -24,7 +24,7 @@ is where that bound is enforced.
    checker's close below:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
    ```
 
    ONE line, the same arms handle_return uses: an empty or unmarked return is
@@ -54,7 +54,7 @@ is where that bound is enforced.
    verdict:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
    ```
 
    An empty or unmarked return goes to a scratch file and rides
@@ -63,8 +63,7 @@ is where that bound is enforced.
 
    Both re-dispatches close on their own, at their own step: the per-file
    census asserts one `trace close` per dispatch moment, so folding these two
-   into one close leaves a paid dispatch unmeasured on exactly the path this
-   record exists to measure - and reddens the suite rather than going quiet.
+   into one close leaves a paid dispatch unmeasured and reddens the suite.
 3. No BLOCKER left -> continue. Still a BLOCKER -> present the remaining
    blockers and ask (ask-user seam): proceed to execution anyway, or stop
    and revise by hand. Never loop again.
