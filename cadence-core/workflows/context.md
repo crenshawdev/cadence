@@ -164,12 +164,9 @@ wastes the whole pass and forces a mid-analysis interruption.
 
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seam-spawn-agent.md), the bracket on its resolve:
-`--bracket-read ".planning/ROADMAP.md"`. That read-set is what this SITE causes
-the worker to read, which is not the same as what the prompt below names: the
-prompt names no planning path at all, and the analyzer's contract
-(`skills/cad-assumptions-analyzer-contract`) is what sends it to the roadmap
-entry. Prior phases' decisions reach it as the `<prior_decisions>` summary in
-the payload, distilled from the (at most 3) files load_priors read.
+`--bracket-read ".planning/ROADMAP.md"`. Prior phases' decisions reach it as the
+`<prior_decisions>` summary in the payload, distilled from the (at most 3) files
+load_priors read.
 
 This keeps raw file contents out of the main context.
 
@@ -207,10 +204,10 @@ references/conventions.md), and the seam closes it as a `checkpoint` instead of
 a `return`:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
 ```
 
-Wait for the result. Parse:
+Parse:
 - `assumptions[]` - each with area, statement, evidence, if-wrong
   consequence, confidence (Confident / Likely / Unclear), and alternatives
   (Likely/Unclear items only)
