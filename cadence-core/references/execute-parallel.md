@@ -10,11 +10,10 @@ on this path is a real defect to report, not the fork-point default.
 1. In batches of `parallelization.max_concurrent_agents`: dispatch one
    cad-executor per plan IN THE DISPATCH SET `locate` defined, each in its own
    git worktree on branch `cadence/phase-<N>-plan-<k>` (spawn-agent seam,
-   worktree isolation), the whole batch issued in ONE message. Resolve the route
-   ONCE for (cad-executor, attempt 1) and reuse it for every executor in the
-   batch - identical role and attempt, so re-resolving per dispatch is wasted
-   (seam-spawn-agent.md concurrent dispatch). Same prompt as sequential except
-   the mode line:
+   worktree isolation), the whole batch issued in ONE message. Each executor
+   resolves its own route carrying its `--plan <k>`, the executor exception
+   seam-spawn-agent.md's concurrent dispatch states. Same prompt as sequential
+   except the mode line:
    "Worktree executor on branch {branch} - worktree rules apply."
    Announce each plan in the batch with its own position line, under the rule
    `workflows/execute.md`'s `locate` states.
@@ -118,5 +117,10 @@ The lifecycle bracket `execute.md` states applies here too, per worker: one
 `checkpoint` or `escalation` after it comes back, each carrying that plan's own
 `--plan <k>`. The worktree executor writes none of them itself.
 
-Checkpoints on this path route exactly as in `handle_checkpoint`; the
-continuation executor is dispatched back into the same worktree.
+Checkpoints on this path route exactly as in `handle_checkpoint`. Steps 3 and
+4 have merged and removed that plan's worktree by then, so its continuation runs
+in the main tree under worker key `<k>`, never in a worktree. For that plan this
+replaces step 5's `--head`: its `risk-check run` and `risk-check status` take
+`--base` its pre-merge HEAD from step 3 and `--head` the HEAD once the
+continuation settles, so the continuation's commits are in the range before the
+plan is reported done.
