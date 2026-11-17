@@ -162,8 +162,9 @@ once, then:
   (named "Testing policy agrees with the workflow files", expected: `test-policy
   check` passes) and recorded `fail` with `--source model`, its `detail` as
   `cause` through `--fields-file`, so it reaches `route_failures`.
-- Run the project's suite once yourself, in this session's shell and never in the
-  verifier subagent, resolved the way the executor contract resolves it:
+- Run the project's suite once yourself, in this session's shell (this walk's own
+  run; the deep pass's verifier makes its own), resolved the way the executor
+  contract resolves it:
   `config.mjs get workflow.test_command`, and where that is null the project's
   manifest runner, saying which. Cite its command and result as the evidence
   for the items it settles. A red suite is appended and recorded `fail` the same
