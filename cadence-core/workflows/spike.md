@@ -42,10 +42,10 @@ One of, with the evidence behind it:
   spike). Say what would decide it. Do not use this to avoid an invalidated call.
 
 ## 6. Slim wrap-up
-Complete the `.planning/spikes/<slug>/SPIKE.md` begun in step 2 (it lives there
-regardless of whether the throwaway code ran in the spike dir or a temp dir):
-the question, the criteria, the observed result per
-criterion, the verdict, and the recommendation for the plan (what to do given
-the answer). No five-artifact ceremony. Discard the throwaway code or note where
-it is; it is not project source. Commit SPIKE.md (`docs: spike <slug>`,
-protected-branch guard) so the decision record survives.
+Complete the `.planning/spikes/<slug>/SPIKE.md` begun in step 2: the question,
+the criteria, the observed result per criterion, the verdict, and the
+recommendation for the plan (what to do given the answer). No five-artifact
+ceremony. Discard the throwaway code or note where it is; it is not project
+source. If `planning.commit_docs` is true (`config.mjs get planning.commit_docs`),
+commit it (`docs: spike <slug>`, protected-branch guard); otherwise say in one
+line it stays on disk uncommitted.
