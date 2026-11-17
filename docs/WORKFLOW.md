@@ -145,13 +145,17 @@ defined in one place, and every review in the system is a call to it.
 ![The fire(trigger) pipeline: resolve the gate, build the payload, resolve the reviewer set, run every reviewer in one message, combine the findings, then apply the gate's consequence.](figures/review-pipeline.svg)
 
 *Every reviewer, the local fresh-context subagent and each cross-model
-provider, returns the same finding shape. The adjudicator rules on every finding
-per raising voice before it merges them, and the record keeps which voice raised
-which, so each reviewer's hit rate stays countable.*
+provider, returns the same finding shape. At the `blocking`, `deferred` and
+`adjudicated` gates and at `/cad-verify`'s fire, the adjudicator rules on every
+finding per raising voice before it merges them, and the record keeps which voice
+raised which, so each reviewer's hit rate stays countable. An `advisory` review,
+the `plan` gate's default, reports its findings as raised and nothing rules them.*
 
-![The review panel: one plan or diff goes to every reviewer in one message, a fresh-context Claude subagent plus any of OpenAI, Gemini and DeepSeek that review.reviewers names in both the repository's config and the user-global config and that has a model and a key, each returning the same finding shape. Under review.mode adjudicated, the default, the main session rules on each finding against the cited code and merges the survivors with convergence ranked first; an adjudicated gate then hands you a numbered multi-select whose default is none.](figures/review-panel.svg)
+![The review panel: one plan or diff goes to every reviewer in one message, a fresh-context Claude subagent plus any of OpenAI, Gemini and DeepSeek that review.reviewers names in both the repository's config and the user-global config and that has a model and a key, each returning the same finding shape. At the blocking, deferred and adjudicated gates and at /cad-verify's fire, under review.mode adjudicated, the default, the main session rules on each finding against the cited code and merges the survivors with convergence ranked first; an adjudicated gate then hands you a numbered multi-select whose default is none. An advisory review, the plan gate's default, reports its findings as raised and nothing rules them.](figures/review-panel.svg)
 
-*Under the default `review.mode`, every voice is ruled on before anything merges.
+*Under the default `review.mode`, the `blocking`, `deferred` and `adjudicated`
+gates and `/cad-verify`'s fire rule on every voice before anything merges. An
+`advisory` review, the `plan` gate's default, reports its findings as raised.
 Only an adjudicated gate asks you to pick, and nothing you did not name is applied.*
 
 ### Which trigger fires where, and what it can do to you
