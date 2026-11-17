@@ -145,6 +145,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    point at opening a PR from another branch. Pushing any other branch
    stays. With it unset, nothing here changes.
 
+   Tag a release is offered only when HEAD is the base. On any other branch it
+   is absent, with one line saying why: a pushed `v*` tag starts the release
+   workflow on the commit it names, so tag-after-merge stays step 4's.
+
    - header: "Publish"
    - question: "How do you want to publish this work?"
    - options:
@@ -240,9 +244,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      every retry re-halts on it identically. It is answered ONCE and BY HAND:
      read its findings, settle any still genuinely unfixed against this branch,
      then delete the file. That delete is the answer, and nothing in this skill
-     does it for the user - step 4 clears the carry alone - because nothing here
-     can tell an aggregate somebody read from one nobody has, and clearing it
-     unread is the merge-over-a-blocker this gate exists to stop.
+     does it for the user: step 4 clears the carry alone.
      Pipe `{"findings": [...], "unruled": [...]}` on stdin to
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate --dir <root>`,
      the same `<root>` step 3's `authorized` call read; on
@@ -288,9 +290,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      stop and surface the `detail`, which names the missing half (either half
      alone authorizes nothing). That is the same
      stop the GitHub/Forgejo arm makes on the publish seam's `ok:false`. ONE
-     consult, ahead of the whole bullet and not beside the create: the reuse
-     arm is what would otherwise reach `glab mr merge` unasked, so placed here
-     no second check is needed there.
+     consult, ahead of the whole bullet and not beside the create, so the
+     reuse arm is covered too.
      Then reuse an existing open one when
      `gh pr view <branch>` / `glab mr view <branch>` / `tea pr list --state
      open` (filtered by head branch) finds it, else create: GitHub
