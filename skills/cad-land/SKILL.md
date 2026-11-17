@@ -1,6 +1,6 @@
 ---
 name: cad-land
-description: "Land finished work - report git state, then ask how to publish (push / MR or PR / tag / leave local). With git.auto_close set in both the repository and your user-global config, it runs PR -> merge unattended and halts on a surviving blocker"
+description: "Land finished work - report git state, then ask how to publish (push / MR or PR / tag / leave local). With git.auto_close set in both config layers, it runs PR -> merge unattended, asks once before the tag push, and halts on a surviving blocker"
 argument-hint: "[base branch | defaults to git.base_branch]"
 allowed-tools:
   - Read
@@ -13,8 +13,8 @@ allowed-tools:
 Land the current branch's work. By default there is no preselected publish
 action: cad-land reports the state, asks how to publish, and executes only what
 you choose - nothing more. Two arms skip that ask: `git.auto_close`, set in both
-config layers, runs the close unattended (step 3(b)), and the already-merged
-arm finishes a merged request (step 1).
+config layers, runs the close unattended and asks once, before the tag push
+(step 3(b)), and the already-merged arm finishes a merged request (step 1).
 </objective>
 
 <execution_context>
@@ -197,11 +197,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    pushed, MR/PR URL, tag created) and nothing implied.
 
    **(b) `git.auto_close` true, set in both layers: land the integration branch
-   on base via `PR -> merge`, no prompts.** Skip the 3a ask entirely (this is the single
-   opt-in that lets the close run unattended; it never installs a default into
-   the 3a ask). The integration branch is local-only
-   (references/git-publish.md rail 3 never
-   auto-pushes).
+   on base via `PR -> merge`; it asks once, before the tag push.** Skip the 3a
+   ask entirely; it never installs a default into that ask. The integration
+   branch is local-only (references/git-publish.md rail 3 never auto-pushes).
    - **Gate the unattended merge on the RULINGS, not the raw findings.** Nobody
      is watching this arm, so a blocker/high finding still genuinely unfixed is
      a HARD halt before any merge rather than an ask. This skill fires no review
@@ -416,8 +414,8 @@ characters, and skip it when the host has no such tool
 <guardrails>
 - No preselected publish default, ever. No auto-push. No auto-commit. Two
   exceptions skip the publish ask: `git.auto_close` (default off), set true in
-  both config layers, which runs the close unattended (step 3(b)), and the
-  already-merged arm (step 1).
+  both config layers, which runs the close unattended and asks once, before the
+  tag push (step 3(b)), and the already-merged arm (step 1).
 - With `git.auto_close` off, execute only the single chosen mechanism; do not
   chain (e.g. push AND tag) unless the user chose both.
 - `/cad-land` fires no review of its own and commits no fix: it publishes what

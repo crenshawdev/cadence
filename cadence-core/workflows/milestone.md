@@ -248,11 +248,11 @@ When the up-front `authorized` call answered `ok:false` (the default, and the
 answer when only one layer sets `git.auto_close`), stop here: merging, tagging
 and publishing are the user's separate `/cad-land` call (step 8's note). On
 `ok:true`, chain the publish end-to-end - invoke `/cad-land`
-via the SlashCommand tool so it runs PR -> merge -> tag -> reset with no
-per-step prompts (audit -> bump already ran above). The close gate inside
+via the SlashCommand tool so it runs PR -> merge -> tag -> reset and asks
+once, before the tag push (audit -> bump already ran above). The close gate inside
 cad-land still applies: a blocker/high `risk_surface` finding from this branch's
 own fires that the rulings show genuinely unfixed - and a fire nothing ruled at
-all - stops the chain before merge (nothing is force-merged), and only because
+all - stops the chain before merge, and only because
 step 3 carried those rulings out of the phase dirs it pruned. Skip that and this
 sentence is false: the gate reads an empty set and merges.
 

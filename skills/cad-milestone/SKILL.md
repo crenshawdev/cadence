@@ -15,7 +15,7 @@ allowed-tools:
 ---
 
 <objective>
-Close a finished milestone and set up the next. Thin by design - it collapses
+Close a finished milestone and set up the next. It collapses
 new-milestone + complete-milestone + cleanup into one flow. It tags the
 release only when the project tags (non-release projects skip it), it never
 ships (publishing a tag is /cad-land's call), and it never cuts a milestone
@@ -31,11 +31,10 @@ that silently dropped a requirement (cad-audit gates it).
 Run the milestone workflow end-to-end. The audit gate is real - do not tag a
 milestone with a failing traceability audit unless the user explicitly
 overrides. Prune from the working tree only (git keeps the history); never
-auto-push the tag. Under `git.auto_close` (default off), chain into `/cad-land`
-to complete the close (PR -> merge -> reset), still halting on a surviving
-blocker/high `risk_surface` finding; otherwise stop at the tag and leave
-publishing to a separate
-`/cad-land`.
+auto-push the tag. Under `git.auto_close`, chain `/cad-land` to complete
+the close (PR -> merge -> reset), asking once, before the tag push, and halting
+on a surviving blocker/high `risk_surface` finding; otherwise stop at the tag
+and leave publishing to a separate `/cad-land`.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200
