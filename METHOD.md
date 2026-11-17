@@ -459,7 +459,7 @@ surfaces also drive, unconditionally, is that same `risk_surface` review:
 fired once on the completed commit range, blocking unless that trigger's own
 gate key says otherwise, and out of the waiver's reach either way.
 
-A match always fires. Nothing drops it first on a judgment that it is harmless:
+A match in the resolved `surfaces` set always fires. Nothing drops it first on a judgment that it is harmless:
 whether a gitignored build output or a placeholder in a template is safe is the
 reviewer's call, made with the diff in front of it.
 

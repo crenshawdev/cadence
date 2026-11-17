@@ -154,7 +154,7 @@ phase's declared `files:` list was the other one until v2.7.0; it judged a file
 by its NAME, floored a whole phase on one token, and is gone. `tests/ingest_concurrency.rs`
 raising six roles to their top rung is what it cost.
 
-**A match always fires.** Nothing here drops one on a judgment that it is
+**A match in the resolved `surfaces` set always fires.** Nothing here drops one on a judgment that it is
 harmless: whether a gitignored build output or a placeholder in a template is
 safe is the reviewer's call.
 

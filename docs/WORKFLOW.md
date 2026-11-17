@@ -182,7 +182,7 @@ Only an adjudicated gate asks you to pick, and nothing you did not name is appli
 > constructs in their current bodies, with a document contributing its path
 > alone.
 >
-> A match always fires. Nothing drops it first on a judgment that it is
+> A match in the resolved `surfaces` set always fires. Nothing drops it first on a judgment that it is
 > harmless: whether a gitignored build output or a placeholder in a template is
 > safe is the reviewer's call.
 
