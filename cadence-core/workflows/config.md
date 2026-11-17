@@ -595,7 +595,7 @@ migration, then re-issue the command that produced it.
 
 1. Read `.planning/config.json` and the user-global file RAW, each on its own,
    for a top-level `stakes` key. This arm is about to remove that key from those
-   files, so the raw read is the job rather than an exception to it.
+   files: this is the third raw-read exception the **Validation seam** lists.
 
 2. Expand EACH layer that holds the key independently, against its OWN value.
    The global file's level becomes the global roles block; the repository file's
