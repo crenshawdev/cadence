@@ -8,7 +8,7 @@ How a workflow dispatches work to a fresh-context subagent.
 - Dispatch via the agent/Task mechanism with `(agent_name, prompt, model?)`.
 - `model` is per-dispatch overridable; use it as the primary auto-routing lever.
 - Effort is NOT per-dispatch overridable: it is fixed in agent frontmatter per
-  FILE, so varying it means varying the file. A cell names the rung and
+  FILE, so varying it means varying the file. The roles block names the rung and
   `cadence-core/bin/lib/rung-agent.mjs` names the file that carries it
   (`cad-plan-checker` at `medium` -> `cad-plan-checker-medium`); the map is
   stated per role rather than derived, because the unsuffixed `agents/<role>.md`
@@ -25,7 +25,8 @@ How a workflow dispatches work to a fresh-context subagent.
   coordinator's recovery arm names those two rather than a wall-clock kill this
   seam cannot produce (`cadence-core/workflows/execute.md`).
 - A window CEILING that is READ, never applied. Six
-  `workflow.max_dispatch_tokens` keys - one per dispatched role - say how large
+  `workflow.max_dispatch_tokens` keys - one per dispatched role but
+  `cad-mapper`, which has none - say how large
   a dispatch's context window may get before the record calls it a finding, and
   `cadence-core/bin/planning.mjs` compares them against the record AFTER the
   fact. The budgeted quantity is the `tokens` on a `brackets[]` row of the
@@ -273,7 +274,7 @@ phase would give it a floor from another phase's file list.
 - Dispatch the returned `agent_type` with `model` - a bare name can be the user's
   own agent. `agent` is the bare stem the trace and any mismatch line name;
   `escalated`/`reason` are for logging why.
-- `{ok:false}` (unknown role, no table) → dispatch the **base** `agent_name` with
+- `{ok:false}` (unknown role) → dispatch the **base** `agent_name` with
   no `model` override (session default). Routing never blocks a spawn.
 - **Relay every `warnings[]` entry to the user before dispatching**, each
   DISTINCT warning once per workflow run - not once per dispatch. A warning
@@ -293,7 +294,8 @@ phase would give it a floor from another phase's file list.
   answer, so what the user typed IS the routing. Unset means unset -
   `roles.<role>.model` with no value sends NO model parameter, and
   `roles.<role>.effort` with no value takes its own schema default, which is
-  `high` for the planner, the analyzer, the verifier and the executor, `medium`
+  `high` for the planner, the analyzer, the verifier, the executor and the
+  mapper, `medium`
   for the reviewer and `low` for the plan checker.
 - **An unaccepted model omits the parameter.** The model names the host takes
   are `opus`, `sonnet`, `haiku` and `fable`, and `roles.<role>.model` is a free
