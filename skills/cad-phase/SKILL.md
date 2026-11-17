@@ -14,11 +14,10 @@ allowed-tools:
 
 <objective>
 Edit the phase list in ROADMAP.md safely. `add` and `edit` are near-trivial
-markdown changes; `insert` and `remove` are not - they shift phase numbers, and
-a phase number lives in four places whose live references have to follow or
-the project's references rot. Shipped requirement rows are history: insert
-and remove leave them as written. This skill keeps the live references
-consistent.
+edits; `insert` and `remove` are not - they shift phase numbers, and a number
+lives in the state, the phase dirs and the generated views, which must all
+follow or the references rot. Shipped requirement rows are history: insert and
+remove leave them as written. This skill keeps the live references consistent.
 </objective>
 
 <execution_context>

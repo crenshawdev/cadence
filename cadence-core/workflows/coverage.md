@@ -96,5 +96,4 @@ exceeds the planned effort, report that once.
 
 ## 7. Commit
 Commit the generated tests atomically, `test(phase-<N>): cover <requirements>`,
-honoring the protected-branch guard (references/git-guard.md) - if HEAD is protected,
-ask before committing. Never auto-push.
+honoring the protected-branch guard (references/git-guard.md). Never auto-push.
