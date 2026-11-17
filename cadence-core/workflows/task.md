@@ -117,18 +117,19 @@ rather than claiming a number - an invented figure would land in
 <step name="inline_path">
 (Inline scope only.)
 
-Read `testing.scope` once:
+Read the keys this run uses once, through the seam (`workflow.test_command`
+counts from the user-global layer only):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get testing.scope
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get testing.scope workflow.test_command planning.commit_docs
 ```
 
-Set means a testing policy is active: read
+`testing.scope` set means a testing policy is active: read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` once.
 
 1. Read the relevant files.
 2. Make the change.
-3. Verify: run `workflow.test_command` from config if set and relevant,
+3. Verify: run `workflow.test_command` as read above if set and relevant,
    otherwise do a direct sanity check of the changed behavior. With a policy
    active, the policy's behavior-change rule replaces that sanity check.
 4. Commit per references/git-guard.md rail 2 (specific files, conventional message).
@@ -139,8 +140,8 @@ No PLAN.md, no SUMMARY.md, no state writes.
 <step name="planned_path">
 (Planned scope only.)
 
-Read `testing.scope` once, the call `inline_path` states. With a policy active,
-read `references/test-policy.md` once.
+Read the keys once, the call `inline_path` states, and carry its values. With a
+policy active, read `references/test-policy.md` once.
 
 1. Write `.planning/tasks/{slug}/PLAN.md`: 1-3 atomic tasks, each with files,
    action, and a falsifiable verification ("running X shows Y", not "X works").
@@ -267,11 +268,9 @@ path never does:
   transient diff is deleted, accreting one per risk-surface task. So make this
   run's own directory - `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-risk-XXXXXX")"` - write
   the diff to `$D/cadence-risk-task-{slug}.diff`, and fire with THAT path -
-  still shape (c), which since `v2.6.1` admits a flagged-diff file however it
-  was produced. A fixed shared name collides between two inline runs of the
+  still shape (c), which admits a flagged-diff file however it was produced. A fixed shared name collides between two inline runs of the
   same-slugged task, and what collides is the artifact of the trigger the schema
-  defaults to BLOCKING - the shape `v2.3.0` already closed once as a stale diff
-  reaching a blocking gate. The `.diff` is still deleted once the trigger
+  defaults to BLOCKING, a stale diff reaching a blocking gate. The `.diff` is still deleted once the trigger
   returns and the run directory is left for the operating system to reap;
   neither is a `.planning/` artifact, so the success criterion holds. The same
   applies when `.planning/` does not exist at all.
@@ -310,8 +309,7 @@ narrowed re-arm, a fire of its own on the same path, then reporting done.
 </step>
 
 <step name="record">
-(Both work paths. The fast path is where the majority of real commits land, so
-the hole in the corpus is precisely there.)
+(Both work paths.)
 
 Write what shipped into this run's own directory and hand the seam the PATH -
 that prose is caller-derived text, which references/conventions.md binds to a

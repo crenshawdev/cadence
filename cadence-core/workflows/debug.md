@@ -152,9 +152,8 @@ Repeat until a root cause is confirmed or a dead-end is reached:
 
 Offer a consult - user-gated, one per dead-end - when an OBSERVABLE state is hit,
 never on a feeling of being stuck. The threshold T is
-`review.consult.attempt_threshold` (default 3), read at method-loop entry
-alongside the recall backend in the one
-`config.mjs get memory.backend review.consult.attempt_threshold` call (above).
+`review.consult.attempt_threshold` (default 3), read in the one
+method-loop entry call (above).
 `memory.backend` gates the Hypothesize recall step; the threshold gates
 this consult:
 
