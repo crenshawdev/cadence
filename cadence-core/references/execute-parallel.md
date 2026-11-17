@@ -73,14 +73,13 @@ missing-PLAN arm.
    The
    `diff` trigger then runs for every plan (artifact: shape (a), the refs `{base_ref: that
    plan's pre-merge HEAD from step 3, head_ref: that plan's post-merge HEAD from
-   step 3}`). With `review.triggers.diff.when` at `phase_end`, as `workflows/execute.md`'s `locate` read it, none of these per-plan `diff` fires is made, and step 6 holds the one review that stands in. Otherwise the ranges are static and independent, so a fire on today's path
+   step 3}`, plus a checkpointed plan's continuation range below). With `review.triggers.diff.when` at `phase_end`, as `workflows/execute.md`'s `locate` read it, none of these per-plan `diff` fires is made, and step 6 holds the one review that stands in. Otherwise the ranges are static and independent, so a fire on today's path
    goes CONCURRENTLY in one message (seam-spawn-agent.md concurrent dispatch), and a
    fire that takes the workflow path (references/review-workflow.md) goes
    concurrently the same way. Step 6's
    `phase_diff` runs after them. This step runs AFTER step 3
    merged every branch, so a per-plan `diff` review never
-   fires before the merge and its refs always resolve in THIS tree, which is the
-   tree a dispatched subagent inherits. The
+   fires before the merge and its refs always resolve in THIS tree. The
    `diff` gate reports and continues as today at `advisory`; at `adjudicated`
    each plan's survivors go through the triage gate, NONE the default: RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
@@ -120,8 +119,8 @@ The lifecycle bracket `execute.md` states applies here too, per worker: one
 
 Checkpoints on this path route exactly as in `handle_checkpoint`. Steps 3 and
 4 have merged and removed that plan's worktree by then, so its continuation runs
-in the main tree under worker key `<k>`, never in a worktree. For that plan this
-replaces step 5's `--head`: its `risk-check run` and `risk-check status` take
-`--base` its pre-merge HEAD from step 3 and `--head` the HEAD once the
-continuation settles, so the continuation's commits are in the range before the
-plan is reported done.
+in the main tree under worker key `<k>`, never in a worktree. Its batch-mates
+have merged too, so `risk-check run` and `risk-check status` scan two ranges,
+both under `--plan <k>`: step 3's pair, and the continuation's own, from the
+HEAD recorded just before it is dispatched to the HEAD once it settles. The plan
+is not reported done while either `status` refuses.
