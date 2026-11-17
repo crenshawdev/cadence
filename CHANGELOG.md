@@ -7,6 +7,19 @@ Releases 1.0.0 through 2.7.0 are in [docs/history/CHANGELOG-v1-v2.md](./docs/his
 
 ## [Unreleased]
 
+## [4.4.1] - 2026-11-17
+
+### Fixed
+
+- **The planner checks each plan's brief before it returns.** The executor and
+  reviewers read a plan through its brief, which has a 32 KB ceiling. A plan
+  over that ceiling was only caught after the planner had finished, and
+  `/cad-plan` then sent a second planner just to split it. The planner's
+  reference, `cadence-core/references/plan-graph.md`, now has it run the brief
+  check on every plan it wrote or edited and split an oversized plan before it
+  returns. `/cad-plan`'s own brief check after the planner returns stays as the
+  backstop.
+
 ## [4.4.0] - 2026-11-17
 
 This release makes the workflow path the only path, cuts what the shared
@@ -3674,6 +3687,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[4.4.1]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.1
 [4.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.0
 [4.3.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.3.0
 [4.2.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.2.0
