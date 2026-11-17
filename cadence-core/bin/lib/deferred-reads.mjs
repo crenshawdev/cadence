@@ -108,6 +108,28 @@ export const DEFERRED_READS = Object.freeze([
     read_paragraphs: 1,
     file: 'cadence-core/workflows/config.md',
   }),
+  Object.freeze({
+    skill: 'cad-config',
+    reference: 'workflows/config-testing.md',
+    anchors: Object.freeze(['Testing policy (`--testing`)']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/config.md',
+  }),
+  Object.freeze({
+    // the front doors Read the arm's own file, so setup never opens config.md for it
+    skill: 'cad-new-project',
+    reference: 'workflows/config-testing.md',
+    anchors: Object.freeze(['testing_policy']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/new-project.md',
+  }),
+  Object.freeze({
+    skill: 'cad-adopt',
+    reference: 'workflows/config-testing.md',
+    anchors: Object.freeze(['testing_policy']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/adopt.md',
+  }),
 ]);
 
 /** Sentences split on a terminator plus whitespace, a heuristic: one before markup (.** or .md) does not split. */

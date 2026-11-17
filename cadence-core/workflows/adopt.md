@@ -302,12 +302,11 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/REQUIREMENTS.md` and write
 </step>
 
 <step name="testing_policy">
-Follow the **Testing policy** section of
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md` (one consult site -
-this step) here, after `survey`'s reading and before the roadmap: one
-recommendation, Accept or Adjust, written, rendered and checked. The survey
-already read the workflows, manifests and tree whose thresholds and exclusions
-it quotes.
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-testing.md` (one
+consult site - this step) and follow its **Testing policy** arm here, after
+`survey`'s reading and before the roadmap: one recommendation, Accept or
+Adjust, written, rendered and checked. The survey already read the workflows,
+manifests and tree whose thresholds and exclusions it quotes.
 
 Skip that section's publishing question. Ask nothing about publishing; say in
 one line that verification publishing is off and that `/cad-config --testing` is

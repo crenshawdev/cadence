@@ -452,11 +452,11 @@ Commit: `docs: define requirements` with `.planning/REQUIREMENTS.md` and
 </step>
 
 <step name="testing_policy">
-Follow the **Testing policy** section of
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md` (one consult site -
-this step) here, before the roadmap: one recommendation, Accept or Adjust,
-written, rendered and checked. A blank-page project has no code to inspect, so
-it accepts from the stack PROJECT.md states and its coverage reads `unknown`.
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-testing.md` (one
+consult site - this step) and follow its **Testing policy** arm here, before
+the roadmap: one recommendation, Accept or Adjust, written, rendered and
+checked. A blank-page project has no code to inspect, so it accepts from the
+stack PROJECT.md states and its coverage reads `unknown`.
 
 Skip that section's publishing question. Ask nothing about publishing; say in
 one line that verification publishing is off and that `/cad-config --testing` is
