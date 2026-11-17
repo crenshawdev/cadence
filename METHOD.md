@@ -601,9 +601,12 @@ Everything else is atomic: one conventional commit per task, specific files
 staged individually. Publishing flows through a single sanctioned seam, which
 exists because a command-string push whitelist was built, defeated four ways by
 adversarial review, and then deleted rather than patched. `/cad-land` asks how you
-want to publish and does exactly that, unless you opted into the end-to-end
-`git.auto_close`, which runs audit through merge with no per-step prompts and
-halts on a surviving blocker or high `risk_surface` finding.
+want to publish and does exactly that, with two ways past that ask. If you opted
+into the end-to-end `git.auto_close`, the publish chain (PR -> merge -> tag) runs
+unattended, asks once, before the tag push, and halts on a surviving blocker or
+high `risk_surface` finding; `/cad-milestone`'s own questions come before it.
+`/cad-land`'s already-merged arm finishes a request the forge already merged at
+the branch tip.
 
 ---
 

@@ -55,7 +55,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/release-bump.mjs" bump --dir <root>
 ```
 
 The seam auto-detects `.claude-plugin/plugin.json` and returns `action:"skip"`
-when absent (non-plugin projects are unaffected). Otherwise it bumps the
+when absent. Otherwise it bumps the
 manifest `version` to the shipping release (and any versioned sibling),
 scaffolds the dated `## [<version>]` CHANGELOG heading + link reference, and
 PROMOTES whatever was staged under `## [Unreleased]` into that dated section.
@@ -265,8 +265,9 @@ retry once the halt is answered, or the manual land the user comes back to
 finish. So a carry still on disk means a close nobody finished, and the next
 milestone halting on it is the answer rather than the bug. If the branch it
 belongs to merged outside Cadence, `/cad-land` on that branch clears it through
-its already-merged arm when `git.integration_branch_name` names that branch;
-with the key unset, clear it by hand.
+its already-merged arm only on GitHub or GitLab, for a merged request whose
+head is the branch tip, on an empty deferred queue and when
+`git.integration_branch_name` names that branch; otherwise clear it by hand.
 
 Ordering note: this chain runs AFTER step 4
 evolved PROJECT.md `### Active` to the NEXT version, so cad-land can no longer
@@ -274,8 +275,7 @@ re-derive the just-shipped branch name by version. A project that sets
 `git.integration_branch_name` is reaped by that name first, and the sole merged
 branch in its namespace next. Otherwise it reaps via the `land-cleanup.mjs`
 `cadence/*`-merged fallback (resolveReapBranch): the sole `cadence/*` branch
-actually merged into base is the shipped `cadence/<this-version>`, so it is
-still reaped correctly.
+actually merged into base is the shipped `cadence/<this-version>`.
 
 ## 8. Retune check
 The record this milestone wrote prices its own configuration. Invoke
@@ -283,7 +283,7 @@ The record this milestone wrote prices its own configuration. Invoke
 spans every phase it shipped. Its rules live in
 `cadence-core/workflows/suggest.md` and are not restated here.
 
-The close's own posture, which is not a presentation rule: a failed or missing
+The close's own posture: a failed or missing
 run degrades to a one-line note, never a halt. The close does not gate on its
 own accounting.
 

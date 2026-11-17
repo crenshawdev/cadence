@@ -1,6 +1,6 @@
 ---
 name: cad-land
-description: "Land finished work - report git state, then ask how to publish (push / MR or PR / tag / leave local). With git.auto_close set in both config layers, it runs PR -> merge unattended, asks once before the tag push, and halts on a surviving blocker"
+description: "Land finished work - report git state, then ask how to publish (push / MR or PR / tag / leave local). With git.auto_close set in both config layers, it runs PR -> merge -> tag unattended, a chain that asks once, before the tag push, and halts on a surviving blocker"
 argument-hint: "[base branch | defaults to git.base_branch]"
 allowed-tools:
   - Read
@@ -13,8 +13,9 @@ allowed-tools:
 Land the current branch's work. By default there is no preselected publish
 action: cad-land reports the state, asks how to publish, and executes only what
 you choose - nothing more. Two arms skip that ask: `git.auto_close`, set in both
-config layers, runs the close unattended and asks once, before the tag push
-(step 3(b)), and the already-merged arm finishes a merged request (step 1).
+config layers, runs PR -> merge -> tag unattended, a chain that asks once,
+before the tag push (step 3(b)), and the already-merged arm finishes a merged
+request (step 1).
 </objective>
 
 <execution_context>
@@ -66,8 +67,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
    ONE line and carry on - never block, never retry, never ask, and never list
    an issue the seam did not read. On `off` - `git.issue_check: false`, decided
    before any forge CLI runs - say NOTHING about the tracker: not the reason,
-   not that it was skipped. The off switch is off, so this paragraph produces
-   no output at all.
+   not that it was skipped.
 
    This report never writes: landing closes no issue, and closing one stays an
    explicit ask you make at publish time.
@@ -192,8 +192,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    direct push, open MR/PR, or a tag the user chose to push, Read
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
    consult site - step 3a or 3b, never both) first: rail 3 and the
-   `git.auto_close` policy govern all three, and this skill no longer preloads
-   them.
+   `git.auto_close` policy govern all three.
 
    Then **execute exactly that, raw.** Run only the chosen action. Never push
    unless push (or push-tag) was chosen. No PR-body templating beyond a
@@ -262,8 +261,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      first bullet below that publishes anything - the GitHub seam call and
      GitLab's `glab mr create`, which publishes the source branch itself, both
      count, so this read is NOT scoped to the GitHub arm. Rail 3 and the
-     `git.auto_close` policy govern from here on and this skill no longer
-     preloads them.
+     `git.auto_close` policy govern from here on.
    - **Publish the branch (GitHub and Forgejo arms).** On GitHub, `gh pr
      create --head <branch>` will NOT push a remoteless branch
      non-interactively, and `tea pr create` never pushes at all, so on either
@@ -288,9 +286,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <root>`
      On `ok:false` do not touch the remote at all - no view, no create, no merge -
      stop and surface the `detail`, which names the missing half (either half
-     alone authorizes nothing). That is the same
-     stop the GitHub/Forgejo arm makes on the publish seam's `ok:false`. ONE
-     consult, ahead of the whole bullet and not beside the create, so the
+     alone authorizes nothing). ONE consult, ahead of the whole bullet and not
+     beside the create, so the
      reuse arm is covered too.
      Then reuse an existing open one when
      `gh pr view <branch>` / `glab mr view <branch>` / `tea pr list --state
@@ -299,7 +296,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      GitLab
      `glab mr create --source-branch <branch> --target-branch <base> --fill`,
      Forgejo `tea pr create --base <base> --head <branch>` (record the index
-     it prints - tea addresses PRs by index, not branch).
+     it prints).
    - **Under a policy, the required jobs gate the merge (GitHub arm).** With
      `testing.scope` set, once the PR exists and before the merge, run
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy check --root . --base <base>`.
@@ -334,7 +331,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
 4. **Terminal cleanup - return to base + pull + reap (`git.on_land_cleanup`,
    default on).** Run this ONLY when a merge actually landed on this machine,
    or step 1's already-merged arm sent you here (skip it after an open-PR-only
-   or leave-local land; once that request merges, a re-run takes that arm).
+   or leave-local land). Once that request merges, a re-run takes that arm only
+   on GitHub or GitLab, at the branch tip and on an empty deferred queue, and
+   clears the carry only when the branch is `git.integration_branch_name`;
+   otherwise clear the carry by hand.
    The merge
    lands on the platform, so the LOCAL base is stale - pull FIRST, but ask the
    seam about the base before git sees it:
@@ -415,10 +415,11 @@ characters, and skip it when the host has no such tool
 <guardrails>
 - No preselected publish default, ever. No auto-push. No auto-commit. Two
   exceptions skip the publish ask: `git.auto_close` (default off), set true in
-  both config layers, which runs the close unattended and asks once, before the
-  tag push (step 3(b)), and the already-merged arm (step 1).
-- With `git.auto_close` off, execute only the single chosen mechanism; do not
-  chain (e.g. push AND tag) unless the user chose both.
+  both config layers, which runs PR -> merge -> tag unattended, a chain that asks
+  once, before the tag push (step 3(b)), and the already-merged arm (step 1).
+- With `git.auto_close` off, 3(a) executes only the single chosen mechanism; do
+  not chain (e.g. push AND tag) unless the user chose both. The already-merged
+  arm runs step 4's cleanup instead.
 - `/cad-land` fires no review of its own and commits no fix: it publishes what
   was already reviewed and already triaged upstream. The unattended arm acts on
   no survivor either - it reads them only to halt or proceed.
