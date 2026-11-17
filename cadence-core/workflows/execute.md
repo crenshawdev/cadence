@@ -447,6 +447,13 @@ When HEAD has moved, the range is real:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD
 ```
 
+An `ok:false` with reason `surfaces-unanswered` is neither a verdict nor a skip.
+Run `detect-surfaces --root .`, put the one-time surface question to the user in
+this run as `references/risk-surface.md` states it (the envelope's `options` in
+the order they arrive, the legend beside them, through the ask-user seam), save
+the answer at the repo layer as that reference says, and re-run the same
+`risk-check run` line. The plan is not reported done before that.
+
 A non-empty `matches` OR `inconclusive: true` fires the trigger. An unjudged
 range is not a cleared one, and widening is the only safe direction on the one
 gate the schema defaults to `blocking`. Each match names the category and
