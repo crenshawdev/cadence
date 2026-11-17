@@ -4,6 +4,7 @@ description: "Capture a phase-linked todo, a seed idea for a future milestone, o
 argument-hint: "[todo | seed | note] <text> [--phase N] [--cadence]"
 allowed-tools:
   - Read
+  - Write
   - AskUserQuestion
   - PushNotification
 ---
@@ -50,7 +51,7 @@ else's project has to leave that project to reach Cadence:
    stamps a note's date itself, and holds a lock so a concurrent writer cannot
    erase the line. Do not compose the bullet yourself and do not reach that file
    with any other tool - a second statement of the format is how the queue's
-   writer and its reader drifted apart, and five filed items were lost to it.
+   writer and its reader drifted apart, and five items were lost.
 
    An `ok:false` return STOPS the capture: report its `reason` back with the
    user's own sentence, so nothing is lost and they can re-run it, and skip
