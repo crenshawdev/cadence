@@ -127,7 +127,7 @@ bracket in ONE call:
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-planner \
   --attempt 1 --phase {N} \
-  --bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"
+  --bracket-read "<the phase input path>"
 ```
 
 Dispatch the `agent_type` the resolve returns with its `model`; a `model` of
@@ -153,10 +153,10 @@ The planner reads one composed phase input in place of the four phase documents.
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" brief --phase {N} --role phase --out-dir <the scratch directory>
   ```
 
-  Keep the path the answer names as a literal too: `check_gate`, the `review` step and the revision re-dispatch name that same file and compose nothing more. The transcript gets the envelope, never the input, and this session opens neither it nor the documents.
-- **Bracket.** The resolve block stays as written, and its `--bracket-read` value is `<the phase input path>`. In gaps mode it is that path plus `.planning/phases/{N}/UAT.md` and the existing PLAN* and SUMMARY* files, as the gaps sentence above appends.
+  Keep the path the answer names as a literal too: `check_gate`, the `review` step and the revision re-dispatch name that same file and compose nothing more. The transcript gets the envelope, never the input. This session never opens the input, and reads the documents only where `load_phase` and an `--inline` `route` say.
+- **Bracket.** Its `--bracket-read` value is `<the phase input path>`. In gaps mode it is that path plus `.planning/phases/{N}/UAT.md` and the existing PLAN* and SUMMARY* files, as the gaps sentence above appends.
 - **Prompt.** The `Read before planning:` list names that file by its absolute path in place of its four document lines, and keeps the gaps line and the source-files line. Gaps and revision modes reuse this prompt and so name the same file.
-- **A refused or unreadable answer.** Print one line with what it names, and dispatch with the four document lines the prompt below lists, because the full documents lose the planner nothing.
+- **A refused or unreadable answer.** Print one line with what it names, and dispatch with the four document lines the prompt below lists, because the full documents lose the planner nothing. The bracket names those four.
 
 Before assembling the prompt, recall prior-project memory when the effective
 `memory.backend` read in `parse` is `builtin` (skip this entirely when `none` -
@@ -490,7 +490,7 @@ bracket on its resolve:
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-plan-checker \
   --phase {N} \
-  --bracket-read ".planning/phases/{N}/PLAN*.md,.planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/phases/{N}/CONTEXT.md"
+  --bracket-read ".planning/phases/{N}/PLAN*.md,<the phase input path>"
 ```
 
 `--phase {N}` is EXPLICIT here and not left to the cursor: this resolve runs
@@ -502,9 +502,9 @@ union.
 The checker reads the plan files and the phase input in place of the phase documents.
 
 - **Input.** Name the phase input `spawn_planner`'s stretch composed. When no earlier step of this run composed it, as on an `--inline` run, run that stretch's compose step first as it is written there, its directory and its call, and never spell the call here.
-- **Bracket.** The resolve block stays as written, and its `--bracket-read` value is `.planning/phases/{N}/PLAN*.md,<the phase input path>`.
+- **Bracket.** Its `--bracket-read` value is `.planning/phases/{N}/PLAN*.md,<the phase input path>`.
 - **Prompt.** The `Read:` list keeps its plans line and names that file by its absolute path in place of its ROADMAP/REQUIREMENTS line and its CONTEXT line. The input carries every CONTEXT decision, so a locked decision no task implements still shows.
-- **A refused or unreadable answer.** The planner's arm: print one line with what it names, and dispatch the checker with the documents the prompt below lists.
+- **A refused or unreadable answer.** The planner's arm: print one line with what it names, and dispatch the checker with the documents the prompt below lists, and the bracket names them beside the plans.
 
 Prompt:
 
@@ -557,12 +557,13 @@ Handle the return:
 
 <step name="review">
 Fire the `plan` review trigger per references/review-triggers.md, payload = the
-PLAN file(s) PLUS the three artifacts the reviewer is asked to check them
-against: `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and
-`.planning/phases/{N}/CONTEXT.md`. All four are REFERENCE PATHS the reviewer
-resolves itself - never inlined text, which would keep every byte of them
-resident here for the rest of the run - and all four ride the fire's `--read`
-bracket list (review-triggers.md step 4). On the workflow path a fire over more
+PLAN file(s) PLUS the phase input, as the stretch below says. A refused
+compose's payload is the PLAN file(s) plus the three artifacts the reviewer
+checks them against: `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and
+`.planning/phases/{N}/CONTEXT.md`. Every entry is a REFERENCE PATH the reviewer
+resolves itself - never inlined text, which would keep every byte of it
+resident here for the rest of the run - and every entry rides the fire's
+`--read` bracket list (review-triggers.md step 4). On the workflow path a fire over more
 than one PLAN file runs one reviewer per plan and one cross-plan reviewer, and
 today's path runs one reviewer over all of them.
 
