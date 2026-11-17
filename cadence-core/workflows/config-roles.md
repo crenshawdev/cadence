@@ -28,11 +28,7 @@ one HOLDS a key.
 
 - **First run** - that file has no `roles` key, or does not exist. Ask all
   thirteen. Write all twelve values plus the floor answer in ONE
-  `config.mjs set --global`, whatever the user picked. This is the one place the
-  walk's "a pick equal to the value in force writes nothing" rule is
-  deliberately suspended: a first run where the user accepted every default
-  would otherwise leave no `roles` key on disk, which is the exact state this
-  step reads as a first run, and the interview would re-ask forever.
+  `config.mjs set --global`, whatever the user picked.
 - **Any later run** - `/cad-config --roles` in a repository, or the confirmation
   the two init workflows run once the global layer is populated. Show the twelve
   values in force with their layer labels (the two-label rule of `workflows/config.md`'s walk) and write

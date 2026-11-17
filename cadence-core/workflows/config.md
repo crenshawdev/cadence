@@ -84,11 +84,7 @@ walk is the flat way.
      - the knob is NOT in the repo file -> the effective value's option is
        `(in force)`, and its `description` opens by saying the value is active
        but INHERITED, and that picking it writes it into this repo.
-     List the labelled option FIRST either way. An unlabelled option is the bug
-     this replaces: `get` returns the effective value, so the old rule dropped
-     the label to stop an inherited value being mislabelled `(current)` and
-     pinned - but dropping it entirely left the user choosing with nothing on
-     screen saying what is active. Name the layer; never hide what is set.
+     List the labelled option FIRST either way.
    - **A pick equal to the value already in force writes NOTHING**, on both
      arms: re-picking `(current)` and re-picking `(in force)` are each a no-op.
      This is what stops the walk pinning the whole global layer into the repo
@@ -127,11 +123,10 @@ walk is the flat way.
    preview and `set` each key as `<key>="$(cat <path>)"` (`references/conventions.md`,
    Caller-derived text). Run `config.mjs preview <key>="$(cat <path>)"…` once for
    the whole batch, show what it answers and ask for a yes in a turn of its own,
-   then write via the
-   **Validation seam** (`config.mjs set`) - one atomic, validated write per file.
-   The preview's `files` says which file gets what; a batch for both layers is
-   two `set` calls. The user may pick `Skip rest` on any page to stop and
-   preview and write what changed so far.
+   then write via the **Validation seam** (`config.mjs set`). The preview's
+   `files` says which file gets what; a batch for both layers is two `set` calls.
+   The user may pick `Skip rest` on any page to stop and preview and write what
+   changed so far.
 5. `review.providers` is not in the page walk - offer it as a final step
    (`Configure review providers now?`) that enters **Review provider setup**.
 6. Then run **Worktree base ref** below - a HOST setting, offered only when
@@ -212,11 +207,8 @@ refuses to parallelize there (`workflows/execute.md`; Claude Code >= 2.1.208).
 Inside a worktree, `"head"` means that worktree's own `HEAD`.
 
 Run this step whenever `parallelization.use_worktrees` is true in the config as
-it now stands, WITHOUT also requiring `parallelization.enabled`. Gating it on
-`enabled` was circular: the step is what makes `enabled` do anything, so a user
-who turned parallelization on by editing config.json directly never reached it
-and every run degraded to sequential in silence. Skip the step only when
-`use_worktrees` is false, where worktrees genuinely cannot be used.
+it now stands, WITHOUT also requiring `parallelization.enabled`. Skip the step
+only when `use_worktrees` is false, where worktrees genuinely cannot be used.
 
 1. Read the effective value:
 
