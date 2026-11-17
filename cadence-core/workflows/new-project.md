@@ -8,8 +8,8 @@ following threads here buys weeks of downstream clarity; a vague PROJECT.md
 forces every later phase to guess, and the cost compounds.
 
 One questioning spine, not a fan-out: one optional research pass (not four
-researchers), config defaults copied silently (no questionnaire), and the
-roadmap derived inline (no roadmapper/synthesizer agents).
+researchers), config defaults copied with only the forge, the roles and the
+testing policy asked, and the roadmap derived inline (no roadmapper/synthesizer agents).
 </purpose>
 
 <process>
@@ -66,7 +66,7 @@ line):
 
    The second is what each role costs. Follow the **Roles interview** arm of
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md` (one consult site -
-   this step) right here, after the template copy: the full thirteen questions
+   this step) once the items 2-5 script has run: the full thirteen questions
    written to the user-global layer when that layer holds no `roles` key, and
    the shorter per-project confirmation written to this repository's own file
    when it already does. It is an exception for the same shape of reason the
@@ -377,9 +377,7 @@ and it is excluded deliberately rather than overlooked: `maxTurns` is per-FILE
 frontmatter, this pass dispatches a generic host agent Cadence owns no file for,
 and minting a 31st rung file to bound one optional research pass would cost a
 `lib/rung-agent.mjs` map row plus both directions of self-verify's rung checks.
-It therefore has NO runaway bound at all. A wall-clock config key was named
-here as its bound until v2.7.0, when it was deleted for claiming a control
-nothing could apply. This pass is opt-in (`workflow.research`, default false)
+It therefore has NO runaway bound at all. This pass is opt-in (`workflow.research`, default false)
 and advisory, never a gate, so an unbounded optional pass was judged the
 smaller cost against minting a 31st rung file to bound it.
 
@@ -603,8 +601,8 @@ transcript need not be carried forward.
   the user wants to talk freeform, drop structured questions until they're
   done.
 - Create nothing outside the canonical .planning/ set (PROJECT.md,
-  REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json, research/ if the pass
-  ran) and `.github/cadence/coverage-policy.json`, which the testing policy
+  REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json, records/state.json,
+  records/.gitignore, research/ if the pass ran) and `.github/cadence/coverage-policy.json`, which the testing policy
   step renders. No phases/ dirs, no CLAUDE.md generation, no extra scaffolding.
 - A failed research pass is reported and skipped, never a blocker.
 - Don't rush the questioning to get to the artifacts. The artifacts are

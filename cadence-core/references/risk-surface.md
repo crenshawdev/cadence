@@ -136,9 +136,9 @@ fabricating an answer it was supposed to collect, so an unanswered project does
 not fire and does not proceed past the question. The answer then SCOPES
 detection - `risk-check run` checks the categories the project chose, not the
 eight it did not. It is asked HERE and not in
-`/cad-new-project` or `/cad-adopt` because both front doors forbid configuration
-questions in their own prose AND in their own success criteria (D-15), and it
-costs nothing on a project that never trips this trigger.
+`/cad-new-project` or `/cad-adopt` because both front doors ask only the forge,
+the roles and the testing policy, and it costs nothing on a project that never
+trips this trigger.
 
 **The resolved set scopes the fire.** A heuristic match in a category OUTSIDE
 the resolved `surfaces` set does NOT fire the trigger. That set comes from the
