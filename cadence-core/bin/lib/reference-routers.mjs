@@ -24,88 +24,49 @@ export const CODES = Object.freeze({
 });
 
 /**
+ * One router's rows, each frozen, from its [branch, cold] pairs.
+ * @param {string} router @param {Array<[string, string]>} pairs
+ */
+function routes(router, pairs) {
+  return pairs.map(([branch, cold]) => Object.freeze({ router, branch, cold }));
+}
+
+/**
  * The register: one row per cold branch of a router.
  * router and cold are root-relative POSIX paths. branch is the decision that selects the file, spelled
  * the way the router's own branch line spells it, so an issue names an arm a reader can find.
  * @type {ReadonlyArray<{router: string, branch: string, cold: string}>}
  */
 export const ROUTERS = Object.freeze([
-  Object.freeze({
-    router: 'cadence-core/references/seams.md',
-    branch: 'ask-user',
-    cold: 'cadence-core/references/seam-ask-user.md',
-  }),
-  Object.freeze({
-    router: 'cadence-core/references/seams.md',
-    branch: 'spawn-agent',
-    cold: 'cadence-core/references/seam-spawn-agent.md',
-  }),
-  Object.freeze({
-    router: 'cadence-core/references/seams.md',
-    branch: 'call-review-provider',
-    cold: 'cadence-core/references/seam-review-provider.md',
-  }),
-  Object.freeze({
-    router: 'cadence-core/references/review-triggers.md',
-    branch: 'record (step 5, a survivor list settled under a non-advisory gate)',
-    cold: 'cadence-core/references/review-record.md',
-  }),
-  Object.freeze({
-    router: 'cadence-core/references/review-triggers.md',
-    branch: "cross-model (step 3's resolved set holds a non-claude-subagent provider)",
-    cold: 'cadence-core/references/review-cross-model.md',
-  }),
-  Object.freeze({
-    router: 'cadence-core/references/review-triggers.md',
-    branch: 'risk_surface (the trigger contract, and any site running detection)',
-    cold: 'cadence-core/references/risk-surface.md',
-  }),
-  Object.freeze({
-    router: 'cadence-core/references/review-triggers.md',
-    branch: "workflow (step 4, an adjudicated gate or /cad-verify's fire, the setting on in both layers, the tool present)",
-    cold: 'cadence-core/references/review-workflow.md',
-  }),
-  Object.freeze({
-    router: 'cadence-core/references/review-triggers.md',
-    branch: 'inline (step 4, a fire that does not take the workflow path)',
-    cold: 'cadence-core/references/review-inline.md',
-  }),
-  Object.freeze({
+  ...routes('cadence-core/references/seams.md', [
+    ['ask-user', 'cadence-core/references/seam-ask-user.md'],
+    ['spawn-agent', 'cadence-core/references/seam-spawn-agent.md'],
+    ['call-review-provider', 'cadence-core/references/seam-review-provider.md'],
+  ]),
+  ...routes('cadence-core/references/review-triggers.md', [
+    ['record (step 5, a survivor list settled under a non-advisory gate)', 'cadence-core/references/review-record.md'],
+    ["cross-model (step 3's resolved set holds a non-claude-subagent provider)", 'cadence-core/references/review-cross-model.md'],
+    ['risk_surface (the trigger contract, and any site running detection)', 'cadence-core/references/risk-surface.md'],
+    ["workflow (step 4, an adjudicated gate or /cad-verify's fire, the setting on in both layers, the tool present)",
+      'cadence-core/references/review-workflow.md'],
+    ['inline (step 4, a fire that does not take the workflow path)', 'cadence-core/references/review-inline.md'],
     // not a cut a router split made: registering it makes "every gate
     // arm is one Read from the router" a checked property
     // triage-gate.md is itself a router now, and the blocking re-arm's cap sits
     // one Read below it: a deleted Read line is an uncapped re-arm with a green tree
-    router: 'cadence-core/references/review-triggers.md',
-    branch: 'triage-gate (step 6, ANY gate)',
-    cold: 'cadence-core/references/triage-gate.md',
-  }),
-  Object.freeze({
-    router: 'cadence-core/references/triage-gate.md',
-    branch: 'deferred (the gate, and the triage of a deferred queue at /cad-land)',
-    cold: 'cadence-core/references/triage-gate-deferred.md',
-  }),
-  Object.freeze({
+    ['triage-gate (step 6, ANY gate)', 'cadence-core/references/triage-gate.md'],
+  ]),
+  ...routes('cadence-core/references/triage-gate.md', [
+    ['deferred (the gate, and the triage of a deferred queue at /cad-land)', 'cadence-core/references/triage-gate-deferred.md'],
     // fire sites re-read the router for the one-round re-arm cap, and this row is what keeps it one Read away
-    router: 'cadence-core/references/triage-gate.md',
-    branch: 'blocking (the gate, and the one-round cap on its re-arm)',
-    cold: 'cadence-core/references/triage-gate-blocking.md',
-  }),
-  Object.freeze({
-    router: 'cadence-core/references/triage-gate.md',
-    branch: "adjudicated (the gate, and /cad-verify's fire)",
-    cold: 'cadence-core/references/triage-gate-adjudicated.md',
-  }),
-  Object.freeze({
-    router: 'cadence-core/references/triage-gate.md',
-    branch: 'unfixed (a gate holding a finding it will not fix now)',
-    cold: 'cadence-core/references/triage-gate-unfixed.md',
-  }),
-  Object.freeze({
-    // a workflow, not a reference: the rare retired-key arm skips config.md and lands on its own file
-    router: 'cadence-core/references/seam-spawn-agent.md',
-    branch: 'an entry saying a RETIRED routing key was ignored',
-    cold: 'cadence-core/workflows/config-roles.md',
-  }),
+    ['blocking (the gate, and the one-round cap on its re-arm)', 'cadence-core/references/triage-gate-blocking.md'],
+    ["adjudicated (the gate, and /cad-verify's fire)", 'cadence-core/references/triage-gate-adjudicated.md'],
+    ['unfixed (a gate holding a finding it will not fix now)', 'cadence-core/references/triage-gate-unfixed.md'],
+  ]),
+  // a workflow, not a reference: the rare retired-key arm skips config.md and lands on its own file
+  ...routes('cadence-core/references/seam-spawn-agent.md', [
+    ['an entry saying a RETIRED routing key was ignored', 'cadence-core/workflows/config-roles.md'],
+  ]),
 ]);
 
 /** A markdown fence, `` ``` `` or `~~~`, indented or not. */

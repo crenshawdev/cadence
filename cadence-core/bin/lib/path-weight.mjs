@@ -58,7 +58,7 @@ function readRegister(root) {
   doc.paths.forEach((p, i) => {
     const bad = (why) => refuse('path-register-malformed', `${REGISTER}: paths[${i}] ${why}`);
     if (!p || typeof p !== 'object' || Array.isArray(p)) throw bad('is not an object');
-    if (Object.keys(p).sort().join() !== ENTRY_KEYS.join()) throw bad(`must have exactly ${ENTRY_KEYS.join(', ')}`);
+    if (Object.keys(p).sort((a, b) => a.localeCompare(b)).join() !== ENTRY_KEYS.join()) throw bad(`must have exactly ${ENTRY_KEYS.join(', ')}`);
     if (typeof p.command !== 'string' || !p.command) throw bad('command is not a non-empty string');
     if (typeof p.variant !== 'string' || !p.variant) throw bad('variant is not a non-empty string');
     if (!Number.isSafeInteger(p.baseline) || p.baseline < 0) throw bad('baseline is not a non-negative integer');

@@ -70,6 +70,25 @@ export const BULK_SHAPES = Object.freeze([
 ]);
 
 /**
+ * One frozen register row. A row with no reason has no reason key at all, not one set undefined.
+ * @param {string} surface @param {string} shape @param {string} call @param {number|'unbounded'} bytes
+ * @param {string} measured @param {'redirect'|'file'|'none'} transport @param {string} [reason]
+ */
+function site(surface, shape, call, bytes, measured, transport, reason) {
+  return Object.freeze({ surface, shape, call, bytes, measured, transport, ...(reason === undefined ? {} : { reason }) });
+}
+
+// every trace render, recall and git diff figure was taken on 2026-08-17, so their builders fix the date
+/** @param {string} surface @param {string} call @param {number} bytes */
+const traceRenderSite = (surface, call, bytes) => site(surface, 'trace render', call, bytes, '2026-08-17', 'redirect');
+/** @param {string} surface @param {string} call @param {string} reason */
+const recallSite = (surface, call, reason) => site(surface, 'recall', call, 8617, '2026-08-17', 'none', reason);
+/** @param {string} surface @param {string} call @param {'redirect'|'file'|'none'} transport @param {string} [reason] */
+const gitDiffSite = (surface, call, transport, reason) => site(surface, 'git diff', call, 'unbounded', '2026-08-17', transport, reason);
+/** @param {string} surface @param {string} reason */
+const reviewerDiffSite = (surface, reason) => gitDiffSite(surface, 'git diff --cached', 'none', reason);
+
+/**
  * The register: one row per examined site. surface is a root-relative POSIX path, shape the watched shape's id, call
  * the call as written with any redirect stripped, bytes the measured response size or 'unbounded' where the range
  * sets it, measured the date of that figure.
@@ -84,145 +103,66 @@ export const BULK_OUTPUT = Object.freeze([
   // --- trace render: the three converted sites ------------------------------
   // each redirects to a scratch path and reads back only what its step prints or branches on; the
   // rows keep matching the converted call, so deleting the redirect is a reported regression
-  Object.freeze({
-    // moved with the blocking re-arm's read-back when triage-gate.md became a router
-    surface: 'cadence-core/references/triage-gate-blocking.md',
-    shape: 'trace render', call: 'trace render --phase <N>',
-    bytes: 14857, measured: '2026-08-17', transport: 'redirect',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/progress.md',
-    shape: 'trace render', call: 'trace render --phase <current>',
-    bytes: 14857, measured: '2026-08-17', transport: 'redirect',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/report.md',
-    shape: 'trace render', call: 'trace render [--phase <N>]',
-    bytes: 68044, measured: '2026-08-17', transport: 'redirect',
-  }),
+  // moved with the blocking re-arm's read-back when triage-gate.md became a router
+  traceRenderSite('cadence-core/references/triage-gate-blocking.md', 'trace render --phase <N>', 14857),
+  traceRenderSite('cadence-core/workflows/progress.md', 'trace render --phase <current>', 14857),
+  traceRenderSite('cadence-core/workflows/report.md', 'trace render [--phase <N>]', 68044),
 
   // --- recall: three consumers and the reference that documents the envelope -
-  Object.freeze({
-    surface: 'cadence-core/workflows/context.md',
-    shape: 'recall', call: 'recall "<key terms from the phase goal>"',
-    bytes: 8617, measured: '2026-08-17', transport: 'none',
-    reason: 'under the 10,000-byte threshold, and the step branches on the hits themselves - a digest of a recall result is the recall result',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/plan.md',
-    shape: 'recall', call: 'recall "<key terms from the phase goal>"',
-    bytes: 8617, measured: '2026-08-17', transport: 'none',
-    reason: 'under the threshold, same call and same reason as the context.md site',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/debug.md',
-    shape: 'recall', call: 'recall "<key terms from the symptom / bug description>"',
-    bytes: 8617, measured: '2026-08-17', transport: 'none',
-    reason: 'under the threshold, same reason as the other two consumers',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/references/recall.md',
-    shape: 'recall', call: 'recall "<terms>"',
-    bytes: 8617, measured: '2026-08-17', transport: 'none',
-    reason: 'the reference that documents the envelope rather than a step that spends it - the call is written to show what one JSON line holds, and it is under the threshold either way',
-  }),
+  recallSite('cadence-core/workflows/context.md', 'recall "<key terms from the phase goal>"',
+    'under the 10,000-byte threshold, and the step branches on the hits themselves - a digest of a recall result is the recall result'),
+  recallSite('cadence-core/workflows/plan.md', 'recall "<key terms from the phase goal>"',
+    'under the threshold, same call and same reason as the context.md site'),
+  recallSite('cadence-core/workflows/debug.md', 'recall "<key terms from the symptom / bug description>"',
+    'under the threshold, same reason as the other two consumers'),
+  recallSite('cadence-core/references/recall.md', 'recall "<terms>"',
+    'the reference that documents the envelope rather than a step that spends it - the call is written to show what one JSON line holds, and it is under the threshold either way'),
 
   // --- codemap slice: the planner's reference ---------------------------------
-  Object.freeze({
-    surface: 'cadence-core/references/code-map.md',
-    shape: 'codemap slice', call: 'codemap slice --files a.mjs,b.mjs --symbols parseThing --terms billing,retry',
-    bytes: 10000, measured: '2026-11-06', transport: 'none',
-    reason: 'the seam bounds its whole answer at or under 10,000 B and reports truncated (D-20), so the answer is never the bulk; measured with 10 callers per symbol, an oversized row sheds callers first',
-  }),
+  site('cadence-core/references/code-map.md', 'codemap slice',
+    'codemap slice --files a.mjs,b.mjs --symbols parseThing --terms billing,retry', 10000, '2026-11-06', 'none',
+    'the seam bounds its whole answer at or under 10,000 B and reports truncated (D-20), so the answer is never the bulk; measured with 10 callers per symbol, an oversized row sheds callers first'),
 
   // --- config catalog: the sentence match ------------------------------------
-  Object.freeze({
-    surface: 'cadence-core/workflows/config-menu.md',
-    shape: 'config catalog', call: 'catalog',
-    bytes: 60763, measured: '2026-11-08', transport: 'redirect',
-  }),
+  site('cadence-core/workflows/config-menu.md', 'config catalog', 'catalog', 60763, '2026-11-08', 'redirect'),
 
   // --- git diff: the four that already write to a file -----------------------
-  Object.freeze({
-    // the cross-model arm was cold-split out of review-triggers.md with its
-    // composition block; the row moved, the prescription is byte-identical
-    surface: 'cadence-core/references/review-cross-model.md',
-    shape: 'git diff', call: 'git diff <base_ref>..<head_ref>',
-    bytes: 'unbounded', measured: '2026-08-17', transport: 'redirect',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/references/review-triggers.md',
-    shape: 'git diff', call: 'git diff <pre-plan HEAD>..HEAD',
-    bytes: 'unbounded', measured: '2026-08-17', transport: 'file',
-    reason: 'shape (c) DESCRIBES what the fire site already did - the orchestrator writes the range to a file and passes that path - so the destination is in the sentence rather than on the call, and workflows/execute.md is the surface that issues it',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/execute.md',
-    shape: 'git diff', call: 'git diff {pre-plan HEAD}..HEAD',
-    bytes: 'unbounded', measured: '2026-08-17', transport: 'file',
-    reason: 'the step writes it to `<plandir>/records/reports/plan-<k>-risk.diff` and fires with that path; the destination is on the next line of the same sentence, which is why the row settles the occurrence and the scan does not',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/task.md',
-    shape: 'git diff', call: 'git diff <the echoed start sha>..HEAD',
-    bytes: 'unbounded', measured: '2026-08-17', transport: 'file',
-    reason: 'the step writes it to `.planning/tasks/{slug}/risk-task-{slug}.diff` and fires with that path, exactly as execute.md does',
-  }),
+  // the cross-model arm was cold-split out of review-triggers.md with its
+  // composition block; the row moved, the prescription is byte-identical
+  gitDiffSite('cadence-core/references/review-cross-model.md', 'git diff <base_ref>..<head_ref>', 'redirect'),
+  gitDiffSite('cadence-core/references/review-triggers.md', 'git diff <pre-plan HEAD>..HEAD', 'file',
+    'shape (c) DESCRIBES what the fire site already did - the orchestrator writes the range to a file and passes that path - so the destination is in the sentence rather than on the call, and workflows/execute.md is the surface that issues it'),
+  gitDiffSite('cadence-core/workflows/execute.md', 'git diff {pre-plan HEAD}..HEAD', 'file',
+    'the step writes it to `<plandir>/records/reports/plan-<k>-risk.diff` and fires with that path; the destination is on the next line of the same sentence, which is why the row settles the occurrence and the scan does not'),
+  gitDiffSite('cadence-core/workflows/task.md', 'git diff <the echoed start sha>..HEAD', 'file',
+    'the step writes it to `.planning/tasks/{slug}/risk-task-{slug}.diff` and fires with that path, exactly as execute.md does'),
 
   // --- git diff: the three that describe a call another agent runs -----------
   // a Task-dispatched reviewer inherits the cwd and re-runs the command in
   // its own context, so the bytes never reach this transcript
   // registered anyway, because a row outlives its occurrence and
   // re-inlining the biggest transport has to read as a regression
-  Object.freeze({
-    surface: 'cadence-core/references/review-triggers.md',
-    shape: 'git diff', call: 'git diff --cached',
-    bytes: 'unbounded', measured: '2026-08-17', transport: 'none',
-    reason: 'shape (b) names the command the REVIEWER re-runs in the cwd it inherits, so this surface issues nothing; the second occurrence moved to references/review-cross-model.md with the cold split and carries its own row there',
-  }),
-  Object.freeze({
-    // the other half of what used to be one row's two occurrences: the cold split put the sentence
-    // describing shape (b)'s redirect in review-cross-model.md and left the definition in
-    // review-triggers.md, and each file needs its own row since the key is surface, shape and call
-    surface: 'cadence-core/references/review-cross-model.md',
-    shape: 'git diff', call: 'git diff --cached',
-    bytes: 'unbounded', measured: '2026-08-17', transport: 'none',
-    reason: 'the arm names the command the REVIEWER re-runs in the cwd it inherits, and where shape (b) redirects it into the payload scratch file it is that same prescription written again, so this surface issues nothing of its own',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/debug.md',
-    shape: 'git diff', call: 'git diff --cached',
-    bytes: 'unbounded', measured: '2026-08-17', transport: 'none',
-    reason: 'a description of the command the reviewer runs in the cwd it inherits, never one this workflow issues',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/workflows/verify.md',
-    shape: 'git diff', call: 'git diff --cached',
-    bytes: 'unbounded', measured: '2026-08-17', transport: 'none',
-    reason: 'a description of the command the reviewer runs in the cwd it inherits, never one this workflow issues',
-  }),
+  reviewerDiffSite('cadence-core/references/review-triggers.md',
+    'shape (b) names the command the REVIEWER re-runs in the cwd it inherits, so this surface issues nothing; the second occurrence moved to references/review-cross-model.md with the cold split and carries its own row there'),
+  // the other half of what used to be one row's two occurrences: the cold split put the sentence
+  // describing shape (b)'s redirect in review-cross-model.md and left the definition in
+  // review-triggers.md, and each file needs its own row since the key is surface, shape and call
+  reviewerDiffSite('cadence-core/references/review-cross-model.md',
+    'the arm names the command the REVIEWER re-runs in the cwd it inherits, and where shape (b) redirects it into the payload scratch file it is that same prescription written again, so this surface issues nothing of its own'),
+  reviewerDiffSite('cadence-core/workflows/debug.md',
+    'a description of the command the reviewer runs in the cwd it inherits, never one this workflow issues'),
+  reviewerDiffSite('cadence-core/workflows/verify.md',
+    'a description of the command the reviewer runs in the cwd it inherits, never one this workflow issues'),
 
   // --- git diff: the examined sites that prescribe no bulk output ------------
-  Object.freeze({
-    surface: 'cadence-core/references/plan-revision.md',
-    shape: 'git diff', call: 'git diff -- .planning/phases/{N}/PLAN*.md',
-    bytes: 'unbounded', measured: '2026-08-17', transport: 'none',
-    reason: 'path-scoped to the plan files, so it is outside the watched forms (neither a whole range nor --cached) and its response is bounded by the paths it names - the row records that the site was examined',
-  }),
-  Object.freeze({
-    surface: 'cadence-core/references/conventions.md',
-    shape: 'git diff', call: 'git diff <a>..<b>',
-    bytes: 'unbounded', measured: '2026-08-17', transport: 'none',
-    reason: 'the parallel-work rule\'s own illustration of a call that must be serialized - it prescribes no step and issues nothing, and `git diff` carries no second token the scan could use to tell an illustration from an invocation',
-  }),
-  Object.freeze({
-    // the scan can't delimit this one, the call opens at the end of one
-    // line and its range closes on the next; this row settles it
-    surface: 'cadence-core/workflows/coverage.md',
-    shape: 'git diff', call: 'git diff <phase-start>..<phase-end>',
-    bytes: 'unbounded', measured: '2026-08-17', transport: 'none',
-    reason: 'the wrapped mention names the call the batching rule must serialize; the diff this step actually prescribes is the `--stat`-bounded one in the Implementation bullet, which cannot break the rule',
-  }),
+  gitDiffSite('cadence-core/references/plan-revision.md', 'git diff -- .planning/phases/{N}/PLAN*.md', 'none',
+    'path-scoped to the plan files, so it is outside the watched forms (neither a whole range nor --cached) and its response is bounded by the paths it names - the row records that the site was examined'),
+  gitDiffSite('cadence-core/references/conventions.md', 'git diff <a>..<b>', 'none',
+    'the parallel-work rule\'s own illustration of a call that must be serialized - it prescribes no step and issues nothing, and `git diff` carries no second token the scan could use to tell an illustration from an invocation'),
+  // the scan can't delimit this one, the call opens at the end of one
+  // line and its range closes on the next; this row settles it
+  gitDiffSite('cadence-core/workflows/coverage.md', 'git diff <phase-start>..<phase-end>', 'none',
+    'the wrapped mention names the call the batching rule must serialize; the diff this step actually prescribes is the `--stat`-bounded one in the Implementation bullet, which cannot break the rule'),
 ]);
 
 /** Whitespace, then `>` or `>>`, then something: a redirect, not a placeholder. */
