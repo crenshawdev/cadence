@@ -734,7 +734,7 @@ takes everything in there, so the flagged diffs (`plan-<k>-risk.diff`,
 `git add <plandir>/records/reports/ ':(exclude)<plandir>/records/reports/*.diff'`. With the key
 false the reports stay uncommitted exactly like SUMMARY.md; the worktree path
 commits regardless, because the commit is the only transport across the merge.
-The cursor is never left uncommitted.
+With the key true, the cursor is never left uncommitted.
 </step>
 
 <step name="done">
@@ -743,8 +743,8 @@ plan has run - from the `status` envelope `locate` holds (its `total` and the
 phase entry's `name`). Then report tersely: the goal-check verdict FIRST - it is the one thing the
 reader came for - then plans executed, commits (count and range), deviations
 count, open items. One suggestion max: `/cad-verify <N>` - safe
-to `/clear` first: SUMMARY.md and the STATE cursor are committed and
-verification runs in a fresh subagent.
+to `/clear` first: SUMMARY.md and the STATE cursor are on disk, and committed
+when `planning.commit_docs` is true, and verification runs in a fresh subagent.
 </step>
 
 </process>
@@ -769,8 +769,9 @@ verification runs in a fresh subagent.
   close, and the `SubagentStop` hook. Executors write no trace events of their
   own, on either path.
 - This workflow's coordinator issues no `Edit` or `Write` against a path
-  outside `.planning/`, with the single exception of the `choose_path`
-  settings merge the user accepted through the ask-user seam.
+  outside `.planning/`, with two exceptions: the `choose_path` settings merge
+  the user accepted through the ask-user seam, and a scratch file the steps
+  write under the system temp directory.
 </guardrails>
 
 <success_criteria>
