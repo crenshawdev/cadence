@@ -1,7 +1,7 @@
 <purpose>
 The skill's objective states the guarantees. What it does not: ALL worktree
-ceremony exists inside the two opt-in branches, the parallel one and the
-workflow one, and nowhere else.
+ceremony exists inside `choose_path`'s parallel and workflow paths, and
+nowhere else.
 
 Why each step is shaped the way it is - the measured failures, the ordering
 arguments, the rejected alternatives - is in `docs/rationale/execute.md`. It is
@@ -627,7 +627,7 @@ spelling.
 </step>
 
 <step name="execute_parallel">
-(Opt-in path. All worktree ceremony lives here and in `execute_workflow`'s
+(Reached from `choose_path`'s parallel path. All worktree ceremony lives here and in `execute_workflow`'s
 reference, and nowhere else. choose_path
 has already proven `worktree.baseRef` is `head`, so an executor halting
 `blocked` on a missing PLAN here is a real defect to report, not the
@@ -636,20 +636,20 @@ fork-point default.)
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` (one
 consult site - this step) and follow it: the batching key, the sequential
 merge with both HEADs recorded, `workflow.test_command` at its only consumer,
-and which review triggers fire on this path alone. Only the opt-in path reaches
-this step, so a sequential run carries none of it.
+and which review triggers fire on this path alone. A sequential run carries
+none of it.
 </step>
 
 <step name="execute_workflow">
-(Opt-in path, reached only from `choose_path`'s workflow path. Its worktree
+(Reached only from `choose_path`'s workflow path. Its worktree
 ceremony lives in the reference below and in `execute_parallel`'s, and nowhere
 else.)
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-workflow.md` (one
 consult site - this step) and follow it: a launch per wave, what this session
 does at the wave's notice, and where a wave stops. The executors run inside the
-workflow; every decision and every git merge stays here. Only the opt-in path
-reaches this step, so a sequential run carries none of it.
+workflow; every decision and every git merge stays here. A sequential run
+carries none of it.
 </step>
 
 <step name="goal_check">

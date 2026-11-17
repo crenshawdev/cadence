@@ -20,8 +20,8 @@ allowed-tools:
 Execute every plan in a phase with Cadence's guarantees: protected-branch
 guard before the first dispatch, one cad-executor per plan, one atomic
 conventional commit per task, deviations recorded, a slim SUMMARY.md at the
-end. Sequential by default - parallel worktree execution only when config
-opts in.
+end. Workflow path first, else parallel or sequential as `choose_path`
+decides.
 </objective>
 
 <execution_context>
