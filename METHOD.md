@@ -459,15 +459,9 @@ surfaces also drive, unconditionally, is that same `risk_surface` review:
 fired once on the completed commit range, blocking unless that trigger's own
 gate key says otherwise, and out of the waiver's reach either way.
 
-A blocking panel on every `rm -rf dist/` would train you to ignore the gate, so
-there is a narrow, evidence-based pre-filter. A destructive op drops only when
-its target is provably ephemeral, requiring both `git check-ignore` to match and
-`git ls-files` to come back empty, because an ignored `dist/` holding a
-force-added tracked file is not safe to drop. A secret match drops only when the
-file is template-shaped *and* the value is a stub; either alone still fires.
-
-Drop only when the whole match is harmless, fire when unsure, and note each drop
-with its reason so a mis-filter is visible rather than silent.
+A match always fires. Nothing drops it first on a judgment that it is harmless:
+whether a gitignored build output or a placeholder in a template is safe is the
+reviewer's call, made with the diff in front of it.
 
 ### Nothing reviews itself
 
@@ -515,7 +509,6 @@ The thread connecting every subsystem above.
 - A dropped reviewer emits a visible line naming the reason and, for a missing
   key, where to set it.
 - An empty reviewer set falls back to the local subagent rather than skipping.
-- A risk pre-filter drop is noted with its reason.
 - A verification that cannot fail is not coverage.
 - An unevidenced claim in a goal check is a guess, not a verdict.
 - A clean decision review reports what it grounded, not "no findings".

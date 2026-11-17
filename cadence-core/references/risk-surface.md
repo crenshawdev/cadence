@@ -154,28 +154,9 @@ phase's declared `files:` list was the other one until v2.7.0; it judged a file
 by its NAME, floored a whole phase on one token, and is gone. `tests/ingest_concurrency.rs`
 raising six roles to their top rung is what it cost.
 
-**Pre-filter before escalating (avoid a blocking panel on a non-risk).**
-These two drops are judgments about diff CONTENT.
-A heuristic match is dropped - it does NOT fire the trigger - when the match
-is provably harmless:
-
-- **Ephemeral / gitignored target.** A destructive op (`rm -rf`, drop, bulk
-  delete) whose only target is a gitignored or build-output path
-  (`git check-ignore <path>` matches). For a directory target, also require
-  `git ls-files -- <path>` to be empty - an ignored `dist/` that still holds
-  a force-added tracked file is not safe to drop. Deleting a truly ignored
-  `dist/` is a build clean, not data loss.
-- **Placeholder-shaped secret.** A secrets/keys match drops ONLY when BOTH
-  hold: the file is a template/sample/example (`*.env.example`, `*.sample`,
-  `*.template`, or an obvious example fixture) AND the value is a stub
-  (`<...>`, `changeme`, `your-...-here`, `xxx`, `example`, empty after `=`).
-  Either alone still fires - a real key in a `.env.example`, or a
-  placeholder-shaped value like `changeme` sitting in a runtime `.env` or
-  deploy config as an actual weak secret, both stay worth the panel.
-
-Drop only when the WHOLE match is harmless; a diff that also touches a real
-risk surface still fires. When unsure, do not drop - fire the trigger. Note
-each drop and why, so a mis-filter is visible rather than silent.
+**A match always fires.** Nothing here drops one on a judgment that it is
+harmless: whether a gitignored build output or a placeholder in a template is
+safe is the reviewer's call.
 
 ## Persisting the settled survivors
 

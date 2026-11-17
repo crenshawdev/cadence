@@ -331,9 +331,9 @@ gate and drops the loop.
 ## The `risk_surface` trigger's own contract
 
 Everything specific to this trigger - the `risk-check run` seam call, the eight
-categories, the one-time surfaces ask, the resolved-set scoping, the two
-pre-filter drops and the survivor write step 5 names - is one Read away, and no
-other branch of this file needs it.
+categories, the one-time surfaces ask, the resolved-set scoping and the
+survivor write step 5 names - is one Read away, and no other branch of this
+file needs it.
 
 TWO ways in, one file: this fire's trigger IS `risk_surface`, or this site runs
 detection without firing anything at all (`/cad-execute`'s `risk_check`,

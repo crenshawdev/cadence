@@ -182,12 +182,9 @@ Only an adjudicated gate asks you to pick, and nothing you did not name is appli
 > constructs in their current bodies, with a document contributing its path
 > alone.
 >
-> The commit-time filter drops exactly two things, and only on evidence: a
-> destructive target proven ephemeral by `git check-ignore` - and, for a
-> DIRECTORY target, an empty `git ls-files` as well - and a secret proven to
-> be a placeholder by both a
-> template-shaped file and a stub value. Either half alone still fires. When
-> unsure, it fires and says why.
+> A match always fires. Nothing drops it first on a judgment that it is
+> harmless: whether a gitignored build output or a placeholder in a template is
+> safe is the reviewer's call.
 
 ---
 
