@@ -74,11 +74,12 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
 
    **Then the already-merged arm.** Ask the forge: GitHub `gh pr view <branch>
    --json state,mergedAt,headRefOid`, GitLab `glab mr view <branch> -F json`
-   (`sha`); Forgejo's `tea pr` names no merged head, so never there. It runs
-   only when the request is MERGED and the branch tip
-   (`git rev-parse <branch>`) equals that head; a mismatch, no head or no
-   merged request skips it to step 2, publish ask included. On a match say so
-   and run step 3's deferred-queue stop, which halts here too: no pull, tag or
+   (`sha`); Forgejo's `tea pr` names none: never there. It runs
+   only if the request is MERGED and the branch tip
+   (`git rev-parse <branch>`) equals that head; a mismatch or no head says why in
+   one line, leaving the branch; that and no merged request go to step 2,
+   publish ask included. On a match say so
+   and run step 3's deferred-queue stop, halting here too: no pull, tag or
    reap. On an empty queue skip to step 4, passing `--merged true` and
    clearing the carry and the name only when `<branch>` is
    `git.integration_branch_name`, else leaving both with a one-line why (key
