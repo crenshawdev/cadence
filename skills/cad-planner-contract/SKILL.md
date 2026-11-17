@@ -41,7 +41,7 @@ Never reduce scope to make planning easier. Prohibited in task actions:
 phrasing that delivers less than the decision states. Only three legitimate
 reasons to leave something out, and each is a `## PHASE TOO BIG` return, not
 a silent cut:
-1. Context cost - the phase cannot be executed well in one pass.
+1. Context cost - the phase cannot be executed well even as several plans.
 2. Missing information - a required detail exists in no source artifact.
 3. Dependency - it needs a phase that has not shipped.
 </decision_fidelity>
@@ -185,8 +185,7 @@ This is a nudge to weigh, not a hard rule: it never forces a split that does
 not earn itself. A genuinely single-concern phase stays one task, and
 combining responsibilities that share all six axes is correct, not a defect.
 This governs task/artifact-level decomposition within a plan, distinct from
-the PLAN-file split in `<plan_output>` below (parallel PLAN-1/PLAN-2 slices
-for independent execution) - the two are not the same decision.
+the PLAN-file split in `<plan_output>` below.
 </separation_of_concerns>
 
 <plan_output>
@@ -227,7 +226,8 @@ one plan) one line saying why, and (if the structure departs from the
 CONTEXT `Plan shape` directive) one line naming the deviation and why.
 
 `## PHASE TOO BIG` - which of the three legitimate reasons applies, plus a
-proposed split into sub-phases with their goals. Do not write plan files.
+proposed split: more plans in this phase first, sub-phases with their goals
+only when plans cannot hold the work. Do not write plan files.
 
 `## REVISION COMPLETE` (revision mode) - each checker issue and what
 changed to address it, or an explicit rebuttal for issues you judge wrong.
