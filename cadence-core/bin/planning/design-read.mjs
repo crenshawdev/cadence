@@ -8,6 +8,10 @@ import { join } from 'node:path';
 import { dirFlag, fail, intFlag, ok } from './core.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { DESIGN_FILES, readDesign } from '../lib/seldon-design.mjs';
+import { unreadable } from './phase-entry.mjs';
+
+// a stand-in for the other value, so the judge's verdict on one value is about that value alone
+const PLAIN = 'plain';
 
 /**
  * One document's text, or what's wrong with it in Seldon's check's words: missing file, or cannot read and the code.
@@ -22,6 +26,29 @@ function readDocument(file) {
   } catch (err) {
     const code = /** @type {any} */ (err)?.code;
     return { text: null, problem: code === 'ENOENT' ? 'missing file' : `cannot read (${code || 'no error code'})` };
+  }
+}
+
+/**
+ * The read-back check phase-entry add runs, on every phase's name and description, here and not in lib/ so lib never
+ * imports planning/. The judge passes a balanced `**Bold**`, which reads back unchanged, so `**` is refused beside it.
+ * At most one issue per value.
+ * @param {import('../lib/seldon-design.mjs').Phase[]} phases @param {import('../lib/seldon-design.mjs').Issue[]} issues
+ */
+function judgePhases(phases, issues) {
+  for (const p of phases) {
+    const entry = { n: p.number, name: p.name, description: p.description, status: 'unplanned', plans: [] };
+    const whole = unreadable(entry) !== null;
+    const name = p.name.includes('**') || (whole && unreadable({ ...entry, description: PLAIN }) !== null);
+    const outcome = p.description.includes('**') || (whole && unreadable({ ...entry, name: PLAIN }) !== null);
+    if (name || (whole && !outcome)) {
+      issues.push({ file: 'epics.md', id: p.epic, section: 'heading',
+        problem: `the name ${JSON.stringify(p.name)} would not read back from the phase list line as written - take out the ** and any other list markup` });
+    }
+    if (outcome) {
+      issues.push({ file: 'epics.md', id: p.epic, field: 'Outcome',
+        problem: `${JSON.stringify(p.description)} would not read back from the phase list line as written - take out the ** and any other list markup` });
+    }
   }
 }
 
@@ -54,8 +81,9 @@ function cmdDesignRead(opts) {
     texts[name] = got.text;
     if (got.problem !== null) issues.push({ file: name, problem: got.problem });
   }
-  const read = readDesign(texts);
+  const read = readDesign(texts, first.value);
   issues.push(...read.issues);
+  judgePhases(read.design.phases, issues);
   if (issues.length) {
     // emitted directly because fail has no channel for the issue list
     return emit({ ok: false, reason: 'design-refused',

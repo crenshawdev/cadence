@@ -21,6 +21,12 @@ const BULLET = /^- \*\*[^*]*\*\*: (.*)$/;
 const SPINE_ID = /^(S-\d{2,}):/;
 const SPINE_HEAD = /^S-\d{2,}: (.*)$/;
 const KIND = 'Kind: ';
+const EPIC_ID = /^(E-\d{2,}):/;
+const EPIC_HEAD = /^E-\d{2,}: (.*)$/;
+const EPIC_REF = /^E-\d{2,}$/;
+const SPINE_REF = /^S-\d{2,}$/;
+const FIELDS = ['Outcome', 'Boundaries', 'Done when', 'Depends on', 'Requirements', 'Spine decisions'];
+const LABEL = new RegExp(`^\\*\\*(${FIELDS.join('|')}):\\*\\*(.*)$`);
 const QUOTE_LINE = /^\s*>(?:\s|$)/;
 const SOURCE_LINE = /^\s*\(.*\)\s*$/;
 
@@ -208,19 +214,153 @@ function readSpine(text, issues) {
 }
 
 /**
- * Every document a design folder gave, parsed. A file the caller couldn't read comes in as null, is skipped here,
- * and is the caller's issue to report.
- * @param {Record<string, string|null>} texts file name -> its text, or null
- * `decisions` is held for the phases that name them and never answered as a list of its own.
- * @returns {{issues: Issue[], decisions: Map<string, Decision>,
- *   design: {title: string, brief: Record<string, string>, requirements: Requirement[]}}}
+ * @typedef {{epic: string, number: number, name: string, description: string, goal: string, success_criteria: string[],
+ *   depends_on: string, requirements: string[], spine_decisions: Decision[]}} Phase
  */
-export function readDesign(texts) {
+
+/**
+ * An epic's fields: each label line's rest plus every line below it to the next label line, first occurrence kept.
+ * Order and text before the Outcome aren't checked.
+ * @param {string[]} body @returns {Map<string, string[]>}
+ */
+function epicFields(body) {
+  /** @type {Map<string, string[]>} */
+  const fields = new Map();
+  /** @type {string[] | null} */
+  let cur = null;
+  for (const line of body) {
+    const m = LABEL.exec(line);
+    if (m) {
+      cur = [m[2]];
+      if (!fields.has(m[1])) fields.set(m[1], cur);
+    } else if (cur) {
+      cur.push(line);
+    }
+  }
+  return fields;
+}
+
+/**
+ * The done-when items, one success criterion each: column-0 `- ` lines below the label, an indented line joined to the
+ * item above it. Text on the label line is no item.
+ * @param {string[]} value @returns {string[]}
+ */
+function criteria(value) {
+  /** @type {string[][]} */
+  const items = [];
+  for (const line of value.slice(1)) {
+    if (line.startsWith('- ')) items.push([line.slice(2)]);
+    else if (items.length && /^\s/.test(line)) items[items.length - 1].push(line);
+  }
+  return items.map(oneLine);
+}
+
+/**
+ * The epics in file order, each one phase numbered by its position from `first`, never by its E- number.
+ * A null `requirements` or `decisions` set means that document couldn't be read, so nothing is checked against it.
+ * @param {string} text @param {Issue[]} issues
+ * @param {{first: number, title: string, requirements: Set<string>|null, declared: Set<string>|null,
+ *   decisions: Map<string, Decision>}} ctx
+ * @returns {Phase[]}
+ */
+function readEpics(text, issues, ctx) {
+  const { sections } = split(text);
+  if (!sections.length) issues.push(issue('epics.md', null, { section: 'epics' }, 'no epic, so a handoff writes no phase'));
+  /** @type {Map<string, number>} */
+  const position = new Map();
+  /** @type {Phase[]} */
+  const phases = [];
+  for (const [i, { heading, body }] of sections.entries()) {
+    const number = ctx.first + i;
+    const id = EPIC_ID.exec(heading)?.[1];
+    const head = { section: 'heading' };
+    if (id && position.has(id)) {
+      issues.push(issue('epics.md', id, head, 'ID appears more than once'));
+      continue;
+    }
+    if (id) position.set(id, number);
+    const name = EPIC_HEAD.exec(heading)?.[1].trim() ?? '';
+    if (!id || name === '') {
+      issues.push(issue('epics.md', id ?? null, head, `${quote('## ' + heading)} is not a "## E-01: name" heading`));
+      continue;
+    }
+    const fields = epicFields(body);
+    /** @param {string} field @returns {string[] | null} the value, or null once its issue is out */
+    const valueOf = (field) => {
+      const value = fields.get(field);
+      if (value && !value.every(blankLine)) return value;
+      issues.push(issue('epics.md', id, { field }, value ? 'empty field' : 'missing field'));
+      return null;
+    };
+    /**
+     * An ID list split on commas; a malformed item and one the design never declares are one issue each.
+     * @param {string} field @param {(item: string) => boolean} form @param {boolean} none whether `None` is allowed
+     * @param {(item: string) => string|null} known why a well-formed item is refused, or null
+     * @param {string} what
+     */
+    const idList = (field, form, none, known, what) => {
+      const value = valueOf(field);
+      if (value === null) return [];
+      const joined = oneLine(value);
+      if (none && joined === 'None') return [];
+      /** @type {string[]} */
+      const out = [];
+      for (const item of joined.split(',').map((x) => x.trim())) {
+        const refused = !form(item) ? `${quote(item)} is not ${what}` : known(item);
+        if (refused) issues.push(issue('epics.md', id, { field }, refused));
+        else out.push(item);
+      }
+      return out;
+    };
+    const outcome = valueOf('Outcome');
+    const boundaries = valueOf('Boundaries');
+    const doneWhen = valueOf('Done when');
+    const depends = idList('Depends on', (x) => EPIC_REF.test(x), true,
+      (x) => ((position.get(x) ?? number) < number ? null : `${quote(x)} is not an epic earlier in the file`), 'an epic ID');
+    const requirements = idList('Requirements', isRequirementId, false,
+      (x) => (!ctx.requirements || ctx.requirements.has(x) ? null : `${quote(x)} is not a requirement prd.md declares`),
+      'a requirement ID');
+    const decisions = idList('Spine decisions', (x) => SPINE_REF.test(x), true,
+      (x) => (!ctx.declared || ctx.declared.has(x) ? null : `${quote(x)} is not a decision spine.md declares`),
+      'a spine ID');
+    const description = oneLine(outcome ?? []);
+    phases.push({
+      epic: id,
+      number,
+      name,
+      description,
+      goal: oneLine([description, oneLine(boundaries ?? []), `It's epic ${id} of the Seldon design "${ctx.title}".`]),
+      success_criteria: criteria(doneWhen ?? []),
+      depends_on: depends.length ? depends.map((x) => `Phase ${position.get(x)}`).join(', ') : 'Nothing',
+      requirements,
+      // repeated in full in every phase that names one; a declared decision that didn't parse already has its issue
+      spine_decisions: decisions.flatMap((x) => (ctx.decisions.has(x) ? [{ ...ctx.decisions.get(x) }] : [])),
+    });
+  }
+  return phases;
+}
+
+/**
+ * Every document a design folder gave, parsed and mapped. A file the caller couldn't read comes in as null, is
+ * skipped here, and is the caller's issue to report. A requirement no epic names is no issue: it comes back uncovered.
+ * Staleness is never checked, so a stamp that no longer matches its parent changes nothing.
+ * @param {Record<string, string|null>} texts file name -> its text, or null
+ * @param {number} [first] the number the first epic's phase takes
+ * `decisions` is held for the phases that name them and never answered as a list of its own.
+ * @returns {{issues: Issue[], decisions: Map<string, Decision>, design: {title: string, brief: Record<string, string>,
+ *   requirements: Requirement[], phases: Phase[], uncovered: string[]}}}
+ */
+export function readDesign(texts, first = 1) {
   /** @type {Issue[]} */
   const issues = [];
   const { title, brief } = texts['brief.md'] === null ? { title: '', brief: {} } : readBrief(texts['brief.md'], issues);
   const prd = texts['prd.md'] === null ? null : readPrd(texts['prd.md'], issues);
   const spine = texts['spine.md'] === null ? null : readSpine(texts['spine.md'], issues);
-  return { issues, decisions: spine ? spine.decisions : new Map(),
-    design: { title, brief, requirements: prd ? prd.requirements : [] } };
+  const decisions = spine ? spine.decisions : new Map();
+  const phases = texts['epics.md'] === null ? [] : readEpics(texts['epics.md'], issues, { first, title,
+    requirements: prd ? prd.declared : null, declared: spine ? spine.declared : null, decisions });
+  const requirements = prd ? prd.requirements : [];
+  const named = new Set(phases.flatMap((p) => p.requirements));
+  return { issues, decisions,
+    design: { title, brief, requirements, phases, uncovered: requirements.filter((q) => !named.has(q.id)).map((q) => q.id) } };
 }
