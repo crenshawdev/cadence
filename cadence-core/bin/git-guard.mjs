@@ -5,6 +5,7 @@
 // the push rail's walk climbs past a .git file (linked worktree, submodule), so a push from one under the project asks
 // git push always asks: cad-land's unattended publish is a subprocess in the git-publish seam, so never seen here
 // git commit on a protected branch follows git.on_protected: ask (default), refuse (alias "deny") or allow
+// git.guard_bypass true in both config layers turns both rails off, the first step to retiring this hook
 // an internal error exits 0, so a broken guard can't block work
 'use strict';
 
@@ -12,8 +13,11 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { gitInvocations, planningRoot } from './lib/git-segments.mjs';
 
-// the commit rail's modules load only when the command commits, since this hook runs on every Bash call
-let mergeLayers, resolveProtectedBranches, readCurrentBranch;
+// the rails' modules load only when the command pushes or commits, since this hook runs on every Bash call
+let mergeLayers, bothLayers, resolveProtectedBranches, readCurrentBranch;
+
+const BYPASS_KEY = 'git.guard_bypass';
+const bypassed = (root) => bothLayers(root, [BYPASS_KEY]).keys[BYPASS_KEY].on;
 
 // only ask and deny get written; with nothing to say it writes nothing and Claude Code's own permission flow decides
 function decide(decision, reason) {
@@ -30,6 +34,7 @@ function decide(decision, reason) {
  * @returns {{decision: string, reason: string} | null}
  */
 function commitDecision(root, cwd) {
+  if (bypassed(root)) return null;
   const repoLayer = join(root, '.planning', 'config.json');
   // mergeLayers warnings[]: acted on below; a layer that failed to parse is what decides protected_branches here
   const { config, warnings, tornLayers } = mergeLayers(repoLayer);
@@ -126,15 +131,19 @@ async function main() {
   const calls = gitInvocations(command);
   const verbs = calls.map((c) => c.verb);
 
-  // a push needs no config and always asks; hasForPush is its own lookup so a worktree counts as the project's
-  if (verbs.includes('push') && planningRoot(cwd, hasForPush)) {
-    decide('ask', 'Cadence rail: workflows never push - publishing is /cad-land\'s ' +
-      'call (references/git-publish.md rail 3). Approve only if you are deliberately publishing.');
+  // a push asks unless the bypass is on; hasForPush is its own lookup so a worktree counts as the project's
+  const pushRoot = verbs.includes('push') ? planningRoot(cwd, hasForPush) : null;
+  if (pushRoot) {
+    ({ bothLayers } = await import('./lib/config-merge.mjs'));
+    if (!bypassed(pushRoot)) {
+      decide('ask', 'Cadence rail: workflows never push - publishing is /cad-land\'s ' +
+        'call (references/git-publish.md rail 3). Approve only if you are deliberately publishing.');
+    }
     return;
   }
 
   if (!verbs.includes('commit')) return;
-  ({ mergeLayers } = await import('./lib/config-merge.mjs'));
+  ({ mergeLayers, bothLayers } = await import('./lib/config-merge.mjs'));
   ({ resolveProtectedBranches } = await import('./lib/protected-branches.mjs'));
   ({ readCurrentBranch } = await import('./lib/git-head.mjs'));
 

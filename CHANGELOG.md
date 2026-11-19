@@ -7,6 +7,22 @@ Releases 1.0.0 through 2.7.0 are in [docs/history/CHANGELOG-v1-v2.md](./docs/his
 
 ## [Unreleased]
 
+## [4.4.2] - 2026-11-18
+
+### Added
+
+- **`git.guard_bypass` turns the git-guard hook off.** It's the first step to
+  retiring the hook. It counts only when both the repository's
+  `.planning/config.json` and your user-global config set it to `true`, so a
+  value committed in a repository can't turn the hook off for whoever clones
+  it. With both halves set, the hook makes no decision on any Bash call and
+  Claude Code's own permission prompts decide. With either half unset, or a
+  config file that won't parse, the hook works as it did before. New projects
+  from `/cad-new-project` and `/cad-adopt` get the repository half from the
+  config template, so setting the user-global half, in
+  `~/.claude/cadence/config.json`, turns the hook off there. Existing projects keep the hook
+  until both halves are set.
+
 ## [4.4.1] - 2026-11-17
 
 ### Fixed
@@ -3687,6 +3703,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[4.4.2]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.2
 [4.4.1]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.1
 [4.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.0
 [4.3.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.3.0

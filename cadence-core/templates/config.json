@@ -20,6 +20,7 @@
     "on_land_cleanup": true,
     "issue_check": true,
     "auto_close": false,
+    "guard_bypass": true,
     "forge_provider": null,
     "forge_repo": null,
     "forge_host": null
