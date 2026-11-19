@@ -71,14 +71,19 @@ function split(text) {
 }
 
 /**
- * Each named section's body, checked present and not empty; a name found twice keeps its first body.
+ * Each named section's body, checked present and not empty. A heading the file doesn't name and a name found twice
+ * are issues, because what sits under either would be dropped without a word.
  * @param {string} file @param {{heading: string, body: string[]}[]} sections @param {string[]} names
  * @param {Issue[]} issues @returns {Map<string, string[]>} the sections that passed
  */
 function namedSections(file, sections, names, issues) {
   /** @type {Map<string, string[]>} */
   const found = new Map();
-  for (const s of sections) if (names.includes(s.heading) && !found.has(s.heading)) found.set(s.heading, s.body);
+  for (const s of sections) {
+    if (!names.includes(s.heading)) issues.push(issue(file, null, { section: s.heading }, `not a section ${file} has`));
+    else if (found.has(s.heading)) issues.push(issue(file, null, { section: s.heading }, 'section appears more than once'));
+    else found.set(s.heading, s.body);
+  }
   for (const name of names) {
     const body = found.get(name);
     if (!body) issues.push(issue(file, null, { section: name }, 'missing section'));
@@ -106,7 +111,7 @@ function keptBody(body) {
 }
 
 /**
- * The brief: the design's title and its eight sections by exact name. Order and extra sections aren't checked.
+ * The brief: the design's title and its eight sections by exact name. Order isn't checked.
  * @param {string} text @param {Issue[]} issues
  * @returns {{title: string, brief: Record<string, string>}}
  */
@@ -219,11 +224,11 @@ function readSpine(text, issues) {
  */
 
 /**
- * An epic's fields: each label line's rest plus every line below it to the next label line, first occurrence kept.
- * Order and text before the Outcome aren't checked.
- * @param {string[]} body @returns {Map<string, string[]>}
+ * An epic's fields: each label line's rest plus every line below it to the next label line. A label found twice goes
+ * to `again`, since its second value is never read. Order and text before the Outcome aren't checked.
+ * @param {string[]} body @param {(field: string) => void} again @returns {Map<string, string[]>}
  */
-function epicFields(body) {
+function epicFields(body, again) {
   /** @type {Map<string, string[]>} */
   const fields = new Map();
   /** @type {string[] | null} */
@@ -232,7 +237,8 @@ function epicFields(body) {
     const m = LABEL.exec(line);
     if (m) {
       cur = [m[2]];
-      if (!fields.has(m[1])) fields.set(m[1], cur);
+      if (fields.has(m[1])) again(m[1]);
+      else fields.set(m[1], cur);
     } else if (cur) {
       cur.push(line);
     }
@@ -284,7 +290,7 @@ function readEpics(text, issues, ctx) {
       issues.push(issue('epics.md', id ?? null, head, `${quote('## ' + heading)} is not a "## E-01: name" heading`));
       continue;
     }
-    const fields = epicFields(body);
+    const fields = epicFields(body, (field) => issues.push(issue('epics.md', id, { field }, 'field appears more than once')));
     /** @param {string} field @returns {string[] | null} the value, or null once its issue is out */
     const valueOf = (field) => {
       const value = fields.get(field);
