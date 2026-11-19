@@ -332,6 +332,12 @@ export const CONTRACTS = {
       '--main-root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // a Seldon design folder read and mapped onto phases, never written; --first-phase is the number its first epic's phase takes.
+    // Both are required and the handler refuses their absence, since this row only judges a value that is there
+    'design-read': {
+      '--design': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--first-phase': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
