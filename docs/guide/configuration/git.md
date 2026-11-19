@@ -104,6 +104,12 @@ The repository identity used for forge calls, such as `owner/name`; nested GitLa
 
 The confirmed Forgejo web/API hostname, optionally with a port. It is asked separately from the SSH remote. Leave it `null` for GitHub and GitLab.
 
+### `git.guard_bypass`
+
+**Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
+
+Turn the git-guard hook off, the first step to retiring it. It counts only when both the repository and user-global configuration set it to `true`; with either one unset the hook works as before. New projects get the repository half from the config template, so setting the user-global half turns the hook off there. Existing projects keep the hook until both halves are set.
+
 ### `git.auto_close`
 
 **Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
