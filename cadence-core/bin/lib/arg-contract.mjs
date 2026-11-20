@@ -282,6 +282,10 @@ export const CONTRACTS = {
     'plan-overlap': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
+    // one phase's spine decisions as the D-NN lines /cad-context locks; a reader, so --phase is its only flag
+    'spine-decisions': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
     // --rerun is the caller's override; presence is its whole grammar, so boolean plus fallback like every bare flag
     'replay-check': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },

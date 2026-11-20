@@ -51,6 +51,8 @@ const COMMANDS = {
     (await import('./planning/criteria-coverage.mjs')).cmdCriteriaCoverage(dir),
   'criteria-size': async (dir, _sub, opts) =>
     (await import('./planning/criteria-size.mjs')).cmdCriteriaSize(dir, opts),
+  'spine-decisions': async (dir, _sub, opts) =>
+    (await import('./planning/spine-decisions.mjs')).cmdSpineDecisions(dir, opts),
   'plan-overlap': async (dir, _sub, opts) =>
     (await import('./planning/plan-overlap.mjs')).cmdPlanOverlap(dir, opts),
   'replay-check': async (dir, _sub, opts) =>
