@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { dirFlag, fail, intFlag, ok } from './core.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { renderActive, renderSections } from '../lib/design-render.mjs';
-import { parseActiveIds, sectionSpan } from '../lib/planning-files.mjs';
+import { parseActiveIds, phaseRequirements, sectionSpan } from '../lib/planning-files.mjs';
 import { readState, statePath } from '../lib/project-state.mjs';
 import { DESIGN_FILES, readDesign } from '../lib/seldon-design.mjs';
 import { unreadable } from './phase-entry.mjs';
@@ -17,6 +17,9 @@ import { invalidHint } from './state-import.mjs';
 
 // a stand-in for the other value, so the judge's verdict on one value is about that value alone
 const PLAIN = 'plain';
+
+// every /m reader of ROADMAP.md ends a line at these, so one inside a design's text could forge a Requirements line
+const LINE_BREAK_G = /\r(?!\n)|[\u2028\u2029]/g;
 
 /**
  * One document's text, or what's wrong with it in Seldon's check's words: missing file, or cannot read and the code.
@@ -157,12 +160,28 @@ function cmdDesignRead(dir, opts) {
   const texts = {};
   for (const name of DESIGN_FILES) {
     const got = readDocument(join(design.abs, name));
-    texts[name] = got.text;
+    const text = got.text;
+    texts[name] = text;
     if (got.problem !== null) issues.push({ file: name, problem: got.problem });
+    const lines = text === null ? []
+      : [...new Set([...text.matchAll(LINE_BREAK_G)].map((m) => text.slice(0, m.index).split('\n').length))];
+    if (lines.length) {
+      issues.push({ file: name, problem: `a carriage return with no newline after it, or a U+2028 or U+2029 separator, on`
+        + ` line${lines.length === 1 ? '' : 's'} ${lines.join(', ')} - Cadence's readers take each as a line break, so take it out` });
+    }
   }
   const read = readDesign(texts, first);
   issues.push(...read.issues);
   judgePhases(read.design.phases, issues);
+  // judgePhases covers the phase list line; this covers the Requirements line, read back the way the planner reads it
+  const sections = renderSections(read.design.phases);
+  for (const p of read.design.phases) {
+    const back = phaseRequirements(sections, p.number).ids;
+    for (const id of p.requirements.filter((q) => !back.includes(q))) {
+      issues.push({ file: 'epics.md', id: p.epic, field: 'Requirements',
+        problem: `${JSON.stringify(id)} would not read back from phase ${p.number}'s Requirements line - Cadence reads an ID there only when it opens with a letter` });
+    }
+  }
   // every section of the project's REQUIREMENTS.md counts, shipped, deferred, tables, prose and fences alike (D-02)
   const clashes = project ? read.design.requirements.filter((q) => holdsToken(project.requirements, q.id)) : [];
   for (const q of clashes) {
@@ -179,8 +198,7 @@ function cmdDesignRead(dir, opts) {
       hint: `${steps}, then re-run; nothing was written` });
   }
   // the texts ride every accepted answer, so an add and a new project insert the same bytes from the same call
-  return ok({ ...read.design, active_text: renderActive(read.design.requirements),
-    sections_text: renderSections(read.design.phases) });
+  return ok({ ...read.design, active_text: renderActive(read.design.requirements), sections_text: sections });
 }
 
 export { cmdDesignRead };
