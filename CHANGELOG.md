@@ -7,6 +7,8 @@ Releases 1.0.0 through 2.7.0 are in [docs/history/CHANGELOG-v1-v2.md](./docs/his
 
 ## [Unreleased]
 
+## [4.4.3] - 2026-11-20
+
 ### Added
 
 - **`/cad-new-project --brief <design folder>` starts a project from a Seldon
@@ -3726,6 +3728,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[4.4.3]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.3
 [4.4.2]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.2
 [4.4.1]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.1
 [4.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.0
