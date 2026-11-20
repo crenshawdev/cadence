@@ -134,8 +134,10 @@ export const BULK_OUTPUT = Object.freeze([
   // --- config catalog: the sentence match ------------------------------------
   site('cadence-core/workflows/config-menu.md', 'config catalog', 'catalog', 60763, '2026-11-08', 'redirect'),
 
-  // --- design read: the design add's one check -------------------------------
+  // --- design read: the one check of the design add and of a new project -----
   site('cadence-core/workflows/phase-design.md', 'design read', 'design-read --add --design "<path>"', 13547, '2026-11-20', 'redirect'),
+  // the new project's check: the add's answer plus the PROJECT.md text, measured from an empty root
+  site('cadence-core/workflows/new-project-design.md', 'design read', 'design-read --design "<path>" --first-phase 1', 16443, '2026-11-20', 'redirect'),
 
   // --- git diff: the four that already write to a file -----------------------
   // the cross-model arm was cold-split out of review-triggers.md with its
