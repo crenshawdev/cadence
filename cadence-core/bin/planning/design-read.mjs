@@ -8,6 +8,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { dirFlag, fail, intFlag, ok } from './core.mjs';
 import { emit } from '../lib/seam-io.mjs';
+import { renderActive, renderSections } from '../lib/design-render.mjs';
 import { parseActiveIds, sectionSpan } from '../lib/planning-files.mjs';
 import { readState, statePath } from '../lib/project-state.mjs';
 import { DESIGN_FILES, readDesign } from '../lib/seldon-design.mjs';
@@ -177,7 +178,9 @@ function cmdDesignRead(dir, opts) {
       issues,
       hint: `${steps}, then re-run; nothing was written` });
   }
-  return ok(read.design);
+  // the texts ride every accepted answer, so an add and a new project insert the same bytes from the same call
+  return ok({ ...read.design, active_text: renderActive(read.design.requirements),
+    sections_text: renderSections(read.design.phases) });
 }
 
 export { cmdDesignRead };
