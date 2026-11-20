@@ -333,10 +333,14 @@ export const CONTRACTS = {
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // a Seldon design folder read and mapped onto phases, never written; --first-phase is the number its first epic's phase takes.
-    // Both are required and the handler refuses their absence, since this row only judges a value that is there
+    // --design is required and the handler refuses its absence, since this row only judges a value that is there.
+    // --first-phase is `required: false` because exactly one of --first-phase <N> and --add names the first phase number,
+    // an either-or the four fields can't state: --add reads it from the project's state, and the handler refuses both-or-neither.
+    // --add is boolean, so both axes are fallback
     'design-read': {
       '--design': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
-      '--first-phase': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--first-phase': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--add': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },

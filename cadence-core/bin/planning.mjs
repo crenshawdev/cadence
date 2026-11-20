@@ -8,7 +8,7 @@
 // --dir overrides `.planning` for tests; --root names the project root for commands that read source
 // A new subcommand is a COMMANDS entry, never an if-chain
 // Before a handler runs, planning/migrate.mjs gives the project its state file (records/state.json), converting an unstamped v4.0 project into the layout once
-// The one exception is design-read, which reads a design folder and writes nothing, so it runs without that step
+// The one exception is design-read, which writes nothing, accepted or refused, so it runs without that step
 'use strict';
 
 import {
@@ -69,8 +69,8 @@ const COMMANDS = {
   'lease-check': async (dir, _sub, opts) =>
     (await import('./planning/lease-check.mjs')).cmdLeaseCheck(dir, opts),
   brief: async (dir, _sub, opts) => (await import('./planning/brief.mjs')).cmdBrief(dir, opts),
-  // --design, never --dir: it reads a Seldon design folder and touches nothing under .planning
-  'design-read': async (_dir, _sub, opts) => (await import('./planning/design-read.mjs')).cmdDesignRead(opts),
+  // reads a Seldon design folder; only --add reads the project under --dir, and nothing is ever written there
+  'design-read': async (dir, _sub, opts) => (await import('./planning/design-read.mjs')).cmdDesignRead(dir, opts),
   // --root, never --dir, since it names the PROJECT root
   // a --root with nothing usable after it is refused at the door, or it answers about the cwd and not the tree named
   'detect-commands': async (_dir, _sub, opts) =>
@@ -171,7 +171,7 @@ try {
   }
   else if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
   // no state step: it writes records/state.json into a project that has none, and this reader writes nothing
-  else if (cmd === 'design-read') await handler('', sub, opts, words.slice(1));
+  else if (cmd === 'design-read') await handler(args.values['--dir'] || '.planning', sub, opts, words.slice(1));
   else {
     // a project without a state file gets one here, once, before any handler reads or writes; a refusal is its own answer
     const planningDir = args.values['--dir'] || '.planning';
