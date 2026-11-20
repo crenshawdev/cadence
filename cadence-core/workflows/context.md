@@ -51,7 +51,10 @@ On `ok:false`, show its `detail` and `hint` and stop. Nothing is written,
 CONTEXT.md included. With `count` 0, carry on exactly as below, with no
 question, section or remark. Otherwise hold its `text` for `write_context`.
 This read runs on every run, "Gather again" included. The old CONTEXT.md's
-copies of these lines never carry forward.
+copies of these lines never carry forward. Held spine decisions are locked:
+no ask this run makes is about one of them, on either `spend_gate` arm, the
+skip arm's own gray areas included. The spend and size questions stay as they
+are.
 
 Phase directory: `.planning/phases/{N}/` (match the existing directory
 naming if phase directories already exist; create it at write time).
@@ -204,6 +207,7 @@ Analyze the codebase for Phase {N}: {phase_name}.
 
 <phase_goal>{goal and description from ROADMAP.md}</phase_goal>
 <prior_decisions>{prior-decisions summary from load_priors}</prior_decisions>
+<spine_decisions>{the spine decisions' `text`, verbatim - locked by the phase's epic, not for you to raise; omit this block when the phase has none}</spine_decisions>
 <search_terms>{key terms extracted from the phase goal}</search_terms>
 <recalled_memory>{one line per recalled result: snippet - source file, phase (when present); omit this block on `none` or empty results}</recalled_memory>
 
@@ -225,6 +229,9 @@ Parse:
   consequence, confidence (Confident / Likely / Unclear), and alternatives
   (Likely/Unclear items only)
 - `needs_research[]` - topics the codebase alone could not settle (often empty)
+
+Drop an assumption that only restates a spine decision. One that goes beyond
+it stays.
 
 If the agent fails or times out, say so and continue with a plain
 conversational pass: derive 2-4 gray areas from the phase goal yourself and
@@ -282,6 +289,10 @@ selected item with 2-3 concrete alternatives, batched ceil(N/4) per
 AskUserQuestion call, up to four questions per call; only a question whose
 wording depends on an earlier answer stays sequential. Corrections override the
 original.
+
+The spine decisions are locked, so they stay out of the picture above, out of
+"Do these decisions look right to you?" and out of the "Change some"
+multiSelect.
 
 Everything confirmed or corrected becomes a numbered decision (D-01, D-02,
 ...). Anything the user explicitly leaves open ("planner's call") becomes a
@@ -486,7 +497,8 @@ context loses nothing.
 
 <success_criteria>
 - [ ] Every decision traces to a user confirmation or correction, with
-      evidence cited
+      evidence cited - except the spine decisions, which trace to the
+      phase's `**Spine decisions:**` field
 - [ ] Every acceptance criterion is pass/fail observable behavior
 - [ ] Exactly one size question and exactly one spend question were asked -
       the size outcome recorded as Plan shape, the spend arm stated plainly
