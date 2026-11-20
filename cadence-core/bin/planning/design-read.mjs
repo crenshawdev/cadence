@@ -61,6 +61,28 @@ function judgePhases(phases, issues) {
 }
 
 /**
+ * PROJECT.md read back one brief section at a time, the rest as same-length PLAIN lines: every heading must span where it
+ * does with none of the brief in, or an unclosed fence or an indented `## Constraints` loses D-18's stack and hosting.
+ * @param {string} title @param {Record<string, string>} brief
+ * @param {import('../lib/seldon-design.mjs').Phase[]} phases @param {string} date
+ * @param {import('../lib/seldon-design.mjs').Issue[]} issues
+ */
+function judgeProject(title, brief, phases, date, issues) {
+  const names = Object.keys(brief);
+  const plain = Object.fromEntries(names.map((n) => [n, brief[n].split('\n').map(() => PLAIN).join('\n')]));
+  const want = renderProject(title, plain, phases, date).split('\n');
+  const heads = want.filter((l) => /^#{2,3} /.test(l));
+  const spans = (/** @type {string[]} */ lines) => heads.map((h) => Object.values(sectionSpan(lines, h)).join(':')).join(',');
+  const expected = spans(want);
+  for (const name of names) {
+    if (spans(renderProject(title, { ...plain, [name]: brief[name] }, phases, date).split('\n')) === expected) continue;
+    issues.push({ file: 'brief.md', section: name,
+      problem: 'would not read back from PROJECT.md as written - it holds a code fence that never closes, or a line that reads'
+        + ' as one of PROJECT.md\'s own headings once trimmed; close the fence or reword that line' });
+  }
+}
+
+/**
  * Does `id` stand as a whole token in `text`? Seldon's PROJECT_ID boundaries: no letter, digit, `_` or `-` right
  * before it, no letter, digit or `_` right after. Exact strings, so CAT-4 is not CAT-04.
  * Not planning-files' REQ_ID_TOKEN, which needs a leading letter where isRequirementId admits a digit.
@@ -202,6 +224,9 @@ function cmdDesignRead(dir, opts) {
     issues.push({ file: 'spine.md', id: d.id,
       problem: `would not read back from phase ${n}'s Spine decisions line - ${causes.length ? causes.join(' and ') : 'reword its heading and Kind line'}` });
   }
+  // only a new project writes PROJECT.md, so only a call without --add reads it back
+  const date = new Date().toISOString().slice(0, 10);
+  if (!add) judgeProject(read.design.title, read.design.brief, read.design.phases, date, issues);
   // every section of the project's REQUIREMENTS.md counts, shipped, deferred, tables, prose and fences alike (D-02)
   const clashes = project ? read.design.requirements.filter((q) => holdsToken(project.requirements, q.id)) : [];
   for (const q of clashes) {
@@ -221,7 +246,6 @@ function cmdDesignRead(dir, opts) {
   // same call; project_text rides only a call without --add, since an add leaves PROJECT.md's description as it is
   const rendered = { active_text: renderActive(read.design.requirements), sections_text: sections };
   if (add) return ok({ ...read.design, ...rendered });
-  const date = new Date().toISOString().slice(0, 10);
   const { title, brief, phases } = read.design;
   return ok({ ...read.design, ...rendered, project_text: renderProject(title, brief, phases, date) });
 }
