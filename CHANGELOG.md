@@ -7,6 +7,29 @@ Releases 1.0.0 through 2.7.0 are in [docs/history/CHANGELOG-v1-v2.md](./docs/his
 
 ## [Unreleased]
 
+### Added
+
+- **`/cad-new-project --brief <design folder>` starts a project from a Seldon
+  design.** It reads the design before `git init` and before any write, then
+  writes the project from it: the project takes the design's title, every PRD
+  requirement goes under `## Active` with its ID, and each epic becomes a
+  phase in file order, with its dependencies and its spine decisions' full
+  text. It skips the questions the design answers, the scoping asks and the
+  requirements and roadmap approvals among them, and still asks the forge,
+  roles and testing-policy questions. A design folder missing a document, or
+  holding one that doesn't parse, is refused with a message naming what's
+  wrong, and nothing is created. A file after `--brief` works as before.
+- **`/cad-phase add --brief <design folder>` adds a design to an existing
+  project.** Each epic becomes a new phase after your last one, and its
+  requirements go under `## Active`. Every phase and requirement already there
+  stays as it was. A design using a requirement ID the project already has is
+  refused before any write, naming each clash.
+- **`/cad-context` locks an epic's spine decisions.** On a phase added from a
+  design, it reads that phase's spine decisions from the roadmap and writes
+  them first under `## Durable decisions`, numbered from D-01, without asking
+  about them. A spine line that doesn't parse stops it before `CONTEXT.md` is
+  written.
+
 ## [4.4.2] - 2026-11-18
 
 ### Added
