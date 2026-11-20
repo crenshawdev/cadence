@@ -31,3 +31,87 @@ Before anything is written, in this order:
    way nothing was written: no `.git`, no `.planning/`, no config.
 4. Only an accepted answer goes on, to `new-project.md`'s `setup` items 2
    to 7. Phase numbers, IDs and texts come from the printed answer only.
+
+## 2. Write, after an accepted answer only, in this order
+
+This route replaces `new-project.md`'s `questioning`, `write_project`,
+`research`, `requirements` and `roadmap` steps, and shares its `setup`,
+`testing_policy`, `state` and `done` steps. It asks only what those shared
+steps ask, and no gate of the freeform path: the design already answers them.
+Phase numbers, names and texts come from the check's printout, never retyped;
+never compare IDs or work out a number in the session.
+
+1. **Setup.** `new-project.md`'s `setup` items 2 to 7 as written: git init,
+   `.planning/`, `trace ignore`, the config copy, the config and forge reads,
+   the forge pick, the roles interview and the brownfield note. Print the note;
+   its guidance for questioning doesn't apply, because PROJECT.md comes from
+   the design.
+2. **PROJECT.md.** Copy the printed project text file to `.planning/PROJECT.md`
+   byte for byte (`cp "<project text file>" .planning/PROJECT.md`). Then
+   replace its one bracketed Core Value line with one sentence you write from
+   the brief, naming the one thing that must work. Ask nothing and change no
+   other line.
+3. **REQUIREMENTS.md**, laid out as
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/REQUIREMENTS.md`:
+   - `# Requirements: <title>`, `**Defined:**` with today's date and
+     `**Core Value:**` with the same sentence.
+   - `## Active` holding the active text unchanged: every PRD requirement, the
+     uncovered ones and any the PRD's own MVP scope defers included.
+   - `## v2 Requirements` holding no requirement.
+   - `## Out of Scope` as the template's table, one row per refusal in the
+     project text's `### Out of Scope`, its `>` lines left out. The Feature
+     cell is what it refuses and the Reason cell the reason it states; a
+     refusal stating none gets "The design gives no reason.", never an
+     invented one. A `|` in either cell is written `\|`.
+   - `## Traceability` as bare headers, and the template's footer.
+
+   No category scoping, no additions, no confirmation and no check of the Core
+   Value against the requirements.
+4. **Testing policy.** `new-project.md`'s `testing_policy` step as written. It
+   reads the stack from PROJECT.md's Constraints, which the design filled.
+5. **ROADMAP.md**, laid out as
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md`:
+   - `# Roadmap: <title>`, then `## Overview` with one paragraph you write,
+     saying the phases are the design's epics in its order.
+   - An empty `## Phases`, then `## Phase Details` holding the sections text
+     unchanged.
+
+   Then one `phase-entry add` per printed phase line, in printed order, with
+   the printed files. Never write a `## Phases` line, a phase number or a
+   `## Traceability` row; `/cad-plan` adds the rows.
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <number> --name-file <name file> --description-file <description file>
+   ```
+
+   Then count the criteria, once, and carry each `over` entry to the report.
+   Nothing is asked and there is no approval gate:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --roadmap-min 2 --roadmap-max 5
+   ```
+6. **State.** `new-project.md`'s `state` step's `cursor set` only. This
+   route's one commit below replaces that step's commit.
+7. **Commit.** With `planning.commit_docs` false there is no commit. When it
+   is true, apply `new-project.md`'s `write_project` first-commit guard, the
+   protected-branch guard of `references/git-guard.md` skipped in a repository
+   with no commits yet. Then make one `docs: start the project from the
+   design "<title>" (<N> phases)` commit naming `.planning/PROJECT.md`,
+   `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`,
+   `.planning/records/state.json`, `.planning/records/.gitignore`,
+   `.planning/config.json` and `.github/cadence/coverage-policy.json`, which
+   the `testing_policy` step wrote for this commit.
+
+A seam that fails after the first write: stop, and name what went in. There is
+no rollback.
+
+## 3. Report
+
+`new-project.md`'s `done` step, plus:
+
+- the Core Value sentence, and that the user can change it in PROJECT.md
+- every uncovered requirement ID, or none
+- each phase outside 2 to 5 criteria, with its count
+- when `--research` was typed, one line saying research was skipped because
+  this route replaces the requirements gathering it feeds. Research never runs
+  here, whatever `workflow.research` holds.
