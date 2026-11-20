@@ -14,6 +14,7 @@ gathers the judgment inputs, shows the dry-run at the confirmation gate, and
 repairs what the seam deliberately leaves to judgment.
 
 ## Route on $ARGUMENTS
+Any `$ARGUMENTS` carrying `--brief`: Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/phase-design.md` and follow it instead of the routes below.
 
 ### add
 Append a new phase after the last one (number = current total + 1). Get its
