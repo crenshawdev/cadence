@@ -1,7 +1,7 @@
 ---
 name: cad-new-project
 description: "Initialize a project through deep questioning - PROJECT.md, REQUIREMENTS.md, a phased ROADMAP.md and .planning/ state"
-argument-hint: "[--research] [--brief <file>]"
+argument-hint: "[--research] [--brief <file or design folder>]"
 allowed-tools:
   - Read
   - Write

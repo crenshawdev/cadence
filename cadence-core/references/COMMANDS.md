@@ -9,7 +9,7 @@ with progress and task alongside.
 
 | Command | What it does |
 |---|---|
-| `/cad-new-project` | Initialize a project through deep questioning - PROJECT.md, REQUIREMENTS.md, phased ROADMAP.md, `.planning/` state. |
+| `/cad-new-project` | Initialize a project through deep questioning - PROJECT.md, REQUIREMENTS.md, phased ROADMAP.md, `.planning/` state. `--brief <design folder>` starts the project from a Seldon design's requirements and epics and asks nothing the design answers. |
 | `/cad-adopt` | Initialize `.planning/` from a repo that already exists - PROJECT.md, REQUIREMENTS.md and a remaining-work ROADMAP.md derived from the code and the git history. |
 | `/cad-context [N]` | Gather a phase's context before planning - assumptions, locked decisions, falsifiable acceptance criteria. Optional. |
 | `/cad-plan [N]` | Create an executable PLAN.md (planner subagent, optional check gate, fires the plan review). |
