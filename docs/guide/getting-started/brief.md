@@ -8,6 +8,8 @@ You may have already spent an evening working through the idea. Save what you se
 
 Replace the path with your own file. Cadence reads the brief, tells you what it understands to be decided, and asks about what remains open. You can correct that reading before it becomes the project plan.
 
+A finished Seldon design works too. Put its design folder, the one holding `brief.md`, `prd.md`, `spine.md` and `epics.md`, after `--brief` in place of a file. Cadence then starts the project from the design and asks nothing the design answers.
+
 ## What to put in it
 
 A useful brief explains the problem, who has it, what you're trying to achieve and the constraints you've accepted. Include what you deliberately won't build. Those boundaries matter when the next plausible idea turns up.

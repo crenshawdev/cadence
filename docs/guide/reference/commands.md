@@ -8,7 +8,7 @@ The commands do different kinds of work. Execution, task work, fixes, pausing an
 
 | Command | Arguments | What it does |
 |---|---|---|
-| `/cadence:cad-new-project` | `[--research] [--brief <file>]` | Establish the project, requirements and roadmap. `--research` requests research; `--brief` starts from decisions already written down. |
+| `/cadence:cad-new-project` | `[--research] [--brief <file or design folder>]` | Establish the project, requirements and roadmap. `--research` requests research; `--brief` starts from decisions already written down. A Seldon design folder after `--brief` starts the project from the design. |
 | `/cadence:cad-adopt` | None | Read an existing repository and establish its project record and remaining-work roadmap. |
 | `/cadence:cad-context` | `[N]` | Settle phase decisions and acceptance criteria. Writes `CONTEXT.md`; optional before planning. |
 | `/cadence:cad-plan` | `[N] [--skip-check] [--inline] [--gaps]` | Create executable plans. `--skip-check` bypasses the optional checker, `--inline` requests the inline path, and `--gaps` plans outstanding verification gaps. Plan review is separate. |
@@ -39,7 +39,7 @@ See [plan and execute](../working/plan-execute.md) and [verify results](../worki
 
 | Command | Arguments | What it does |
 |---|---|---|
-| `/cadence:cad-phase` | `add [description]`, `insert <N>`, `remove <N>`, or `edit <N>` | Change the roadmap, maintaining phase numbering and references. |
+| `/cadence:cad-phase` | `add [description]`, `add --brief <design folder>`, `insert <N>`, `remove <N>`, or `edit <N>` | Change the roadmap, maintaining phase numbering and references. `add --brief` adds a Seldon design's requirements and phases to a project that already exists. |
 | `/cadence:cad-milestone` | `[version or next-milestone name]` | Audit and close a cycle, update the live project record and handle applicable release preparation. With unattended closing authorized, it can continue into landing. |
 | `/cadence:cad-land` | `[base branch]` | Report Git state and publish through your selected mechanism or the authorized unattended path. It can push, create a PR/MR, merge, tag and clean up, depending on that path. |
 | `/cadence:cad-undo` | `<N> [--no-commit]` | Revert the phase commits identified from its summary, after showing the scope and checking for dirty state. `--no-commit` leaves the combined revert uncommitted. |
