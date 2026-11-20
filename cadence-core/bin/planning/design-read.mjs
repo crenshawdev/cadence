@@ -8,7 +8,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { dirFlag, fail, intFlag, ok } from './core.mjs';
 import { emit } from '../lib/seam-io.mjs';
-import { renderActive, renderSections } from '../lib/design-render.mjs';
+import { renderActive, renderProject, renderSections } from '../lib/design-render.mjs';
 import { parseActiveIds, phaseRequirements, phaseSpineDecisions, sectionSpan } from '../lib/planning-files.mjs';
 import { readState, statePath } from '../lib/project-state.mjs';
 import { DESIGN_FILES, readDesign } from '../lib/seldon-design.mjs';
@@ -217,8 +217,13 @@ function cmdDesignRead(dir, opts) {
       issues,
       hint: `${steps}, then re-run; nothing was written` });
   }
-  // the texts ride every accepted answer, so an add and a new project insert the same bytes from the same call
-  return ok({ ...read.design, active_text: renderActive(read.design.requirements), sections_text: sections });
+  // active_text and sections_text ride every accepted answer, so an add and a new project insert the same bytes from the
+  // same call; project_text rides only a call without --add, since an add leaves PROJECT.md's description as it is
+  const rendered = { active_text: renderActive(read.design.requirements), sections_text: sections };
+  if (add) return ok({ ...read.design, ...rendered });
+  const date = new Date().toISOString().slice(0, 10);
+  const { title, brief, phases } = read.design;
+  return ok({ ...read.design, ...rendered, project_text: renderProject(title, brief, phases, date) });
 }
 
 export { cmdDesignRead };
