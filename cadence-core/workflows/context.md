@@ -294,8 +294,10 @@ The spine decisions are locked, so they stay out of the picture above, out of
 "Do these decisions look right to you?" and out of the "Change some"
 multiSelect.
 
-Everything confirmed or corrected becomes a numbered decision (D-01, D-02,
-...). Anything the user explicitly leaves open ("planner's call") becomes a
+Everything confirmed or corrected becomes a numbered decision, continuing
+after the spine decisions: with k of them held, the first is D-(k+1), and with
+none held, numbering starts at D-01. Durable ones come first, then phase-local
+ones, in one sequence. Anything the user explicitly leaves open ("planner's call") becomes a
 flagged assumption, not a decision.
 
 **Durability filter.** Classify each decision durable only when it passes
