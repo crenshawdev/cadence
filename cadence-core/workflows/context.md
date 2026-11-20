@@ -40,6 +40,19 @@ Anything else the person types is taken as a phase number.
 Extract the phase's name and goal from the roadmap. If the phase number is not in the roadmap, stop: "Phase {N} is not in the
 roadmap. Run /cad-phase add to put it there, then re-run this command."
 
+Read the spine decisions the phase's epic locked. The answer stays in the
+transcript:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" spine-decisions --phase {N}
+```
+
+On `ok:false`, show its `detail` and `hint` and stop. Nothing is written,
+CONTEXT.md included. With `count` 0, carry on exactly as below, with no
+question, section or remark. Otherwise hold its `text` for `write_context`.
+This read runs on every run, "Gather again" included. The old CONTEXT.md's
+copies of these lines never carry forward.
+
 Phase directory: `.planning/phases/{N}/` (match the existing directory
 naming if phase directories already exist; create it at write time).
 </step>
@@ -385,6 +398,12 @@ fill-in guidance for each.
 Deferred on SIZE, not branch-locality (references/dispatch-shape.md, File
 round-trip): this step is unconditional but reached once, at the very end, so
 the read folds into the turn that writes the file.
+
+When `resolve_phase` held spine decisions, `## Durable decisions` opens with
+that `text`, inserted unchanged and never retyped or reworded. The spine
+decisions go ahead of every other decision and skip the durability filter. A
+line tagged `[ASSUMPTION]` keeps its tag and is not repeated under
+`## Flagged assumptions`.
 
 Then count what was written against the 3-7 the `acceptance_criteria` step
 states:
