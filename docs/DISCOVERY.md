@@ -46,10 +46,11 @@ deferrals down as what they are.
 ## This is guidance, not a form
 
 There is no template here, no required headings, no schema, and no seam that
-parses a brief. That is deliberate. The discovery works BECAUSE it is freeform:
-the value of the conversation is in the threads you followed because they were
-live, and a page that turned into a question script would destroy the thing it
-is trying to document. `--brief` reads prose the way you would read it. A
+parses a brief file. That is deliberate. The discovery works BECAUSE it is
+freeform: the value of the conversation is in the threads you followed because
+they were live, and a page that turned into a question script would destroy the
+thing it is trying to document. `--brief <file>` reads prose the way you would
+read it. A
 section that decides something has decided it; a question it poses and does not
 answer has not.
 
@@ -79,7 +80,28 @@ is.
 
 ## After the brief
 
-Nothing else changes. `--brief` alters the questioning, not the artifacts: the
-run still writes PROJECT.md, REQUIREMENTS.md, a phased ROADMAP.md and the
-`.planning/` state, and still ends at the same approval gate. From there you are
-in the ordinary loop, which `docs/WORKFLOW.md` describes.
+Nothing else changes. `--brief` with a file alters the questioning, not the
+artifacts: the run still writes PROJECT.md, REQUIREMENTS.md, a phased
+ROADMAP.md and the `.planning/` state, and still ends at the same approval
+gate. From there you are in the ordinary loop, which `docs/WORKFLOW.md`
+describes.
+
+## Arriving with a Seldon design
+
+A finished Seldon design is a folder, and `--brief` takes that too:
+`/cad-new-project --brief <design folder>`. The folder holds the design's
+`brief.md`, `prd.md`, `spine.md` and `epics.md`.
+
+The run asks nothing the design answers. It writes PROJECT.md from the brief,
+every PRD requirement under its ID in REQUIREMENTS.md, and one ROADMAP.md phase
+per epic, in the epics' order, each with its dependencies and its spine
+decisions. The forge, roles and testing-policy questions remain, and there is
+no approval gate.
+
+A folder missing one of the four documents, or holding one that doesn't parse,
+is refused before anything is written: no git repository, no `.planning/` and
+no config file.
+
+A project that already exists takes a design through
+`/cad-phase add --brief <design folder>`, which adds the design's requirements
+and phases after the ones it has.

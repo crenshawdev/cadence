@@ -282,6 +282,10 @@ export const CONTRACTS = {
     'plan-overlap': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
+    // one phase's spine decisions as the D-NN lines /cad-context locks; a reader, so --phase is its only flag
+    'spine-decisions': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
     // --rerun is the caller's override; presence is its whole grammar, so boolean plus fallback like every bare flag
     'replay-check': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
@@ -331,6 +335,16 @@ export const CONTRACTS = {
       '--out-dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--main-root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    // a Seldon design folder read and mapped onto phases, never written; --first-phase is the number its first epic's phase takes.
+    // --design is required and the handler refuses its absence, since this row only judges a value that is there.
+    // --first-phase is `required: false` because exactly one of --first-phase <N> and --add names the first phase number,
+    // an either-or the four fields can't state: --add reads it from the project's state, and the handler refuses both-or-neither.
+    // --add is boolean, so both axes are fallback
+    'design-read': {
+      '--design': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--first-phase': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--add': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },

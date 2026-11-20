@@ -303,6 +303,67 @@ export function phaseCriteria(text, phase) {
   return { found: true, count: (after.match(CRITERIA_ITEM_G) || []).length };
 }
 
+// phase 2's locked line shape, groups kept as captured: a trim would eat the bytes D-09 keeps
+const SPINE_LINE = /^- \*\*(S-\d{2,}): (.+?)\*\* \(([^()]*)\): (.*)$/;
+const SPINE_LABEL = '**Spine decisions:**';
+// the design title's only home in a section: the Goal's closing sentence (D-02)
+const GOAL_EPIC_G = /It's epic E-\d{2,} of the Seldon design "/g;
+
+/**
+ * One phase's `**Spine decisions:**` field and its design title, read from the first `### Phase <N>:` span with fenced
+ * lines skipped. `found: false` is the no-field answer (D-14): no span, or no unfenced label line in it.
+ * With the field, every non-blank line after the label is a decision or a problem, so none drops silently (D-05),
+ * and the parsed ones come back beside the problems: a caller refusing on any problem and one comparing what read
+ * back both get what they need. Pure and total: no fs, no process, no throw on any text.
+ *
+ * @param {string} text the ROADMAP.md bytes
+ * @param {string|number} phase the caller's own spelling
+ * @returns {{found: boolean, title: string|null,
+ *   decisions: Array<{id: string, title: string, kind: string, text: string, line: number}>,
+ *   problems: Array<{line: number, text: string}>}}
+ */
+export function phaseSpineDecisions(text, phase) {
+  /** @type {{found: boolean, title: string|null, decisions: any[], problems: Array<{line: number, text: string}>}} */
+  const out = { found: false, title: null, decisions: [], problems: [] };
+  const lines = normalizeCrlf(String(text || '')).split('\n');
+  const [span] = phaseDetailSpans(lines, phase);
+  if (!span) return out;
+  // fence state is the whole document's, as phaseDetailSpans reads it, so the scanner starts at the top
+  const scan = fenceScanner();
+  const fenced = lines.map((l) => scan(l));
+  const live = [];
+  for (let i = span.start; i < span.end; i++) if (!fenced[i]) live.push(i);
+  const label = live.find((i) => lines[i].startsWith(SPINE_LABEL));
+  if (label === undefined) return out;
+  out.found = true;
+  // the line verbatim, not issueText's cut: a Goal runs past 120 characters and the user fixes the whole of it
+  const problem = (/** @type {number} */ i) => out.problems.push({ line: i + 1, text: lines[i] });
+
+  const goal = live.find((i) => lines[i].startsWith('**Goal:**'));
+  if (goal === undefined) problem(span.start);
+  else {
+    const g = lines[goal];
+    const opening = [...g.matchAll(GOAL_EPIC_G)].pop();
+    const from = opening && opening.index !== undefined ? opening.index + opening[0].length : -1;
+    // past the opening's own quote, so `design ".` reads as no title rather than an overlap
+    if (from >= 0 && g.endsWith('".') && g.length - 2 > from) out.title = g.slice(from, -2);
+    else problem(goal);
+  }
+
+  if (lines[label].slice(SPINE_LABEL.length).trim() !== '') problem(label);
+  const field = live.filter((i) => i > label && lines[i].trim() !== '');
+  if (!field.length) problem(label);
+  for (const i of field) {
+    const m = SPINE_LINE.exec(lines[i]);
+    if (m) out.decisions.push({ id: m[1], title: m[2], kind: m[3], text: m[4], line: i + 1 });
+    else problem(i);
+  }
+  // a line can be named twice (a label with text and nothing below, a Goal sitting under the label), once is enough
+  const named = new Map(out.problems.map((p) => [p.line, p]));
+  out.problems = [...named.values()].sort((a, b) => a.line - b.line);
+  return out;
+}
+
 /**
  * The `### Task <n>: <name>` headings in one plan's bytes, in file order.
  * Anchored to the heading level the plan template writes, so a `## Tasks` heading or a `#### ` sub-bullet isn't a task.

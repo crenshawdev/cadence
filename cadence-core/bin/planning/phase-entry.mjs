@@ -146,4 +146,4 @@ function cmdPhaseEntry(dir, sub, opts) {
     ...(box.warnings.length ? { warnings: box.warnings } : {}) });
 }
 
-export { cmdPhaseEntry };
+export { cmdPhaseEntry, unreadable };

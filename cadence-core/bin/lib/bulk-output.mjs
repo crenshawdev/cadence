@@ -52,6 +52,14 @@ export const BULK_SHAPES = Object.freeze([
     why: 'measured 60,763 B on a template repository, 2026-11-08 - every setting\'s label, text and value in force, which the sentence match reads from a file',
   }),
   Object.freeze({
+    shape: 'design read',
+    token: /\bdesign-read\b/g,
+    seam: 'planning.mjs',
+    bounded: Object.freeze([]),
+    forms: Object.freeze([]),
+    why: 'measured 13,547 B on the Seldon fixture design against a stamped project, 2026-11-20 - the requirements, phases and their spine decisions, then the same again as the rendered texts',
+  }),
+  Object.freeze({
     shape: 'codemap slice',
     token: /\bcodemap\s+slice\b/g,
     seam: 'planning.mjs',
@@ -125,6 +133,11 @@ export const BULK_OUTPUT = Object.freeze([
 
   // --- config catalog: the sentence match ------------------------------------
   site('cadence-core/workflows/config-menu.md', 'config catalog', 'catalog', 60763, '2026-11-08', 'redirect'),
+
+  // --- design read: the one check of the design add and of a new project -----
+  site('cadence-core/workflows/phase-design.md', 'design read', 'design-read --add --design "<path>"', 13547, '2026-11-20', 'redirect'),
+  // the new project's check: the add's answer plus the PROJECT.md text, measured from an empty root
+  site('cadence-core/workflows/new-project-design.md', 'design read', 'design-read --design "<path>" --first-phase 1', 16443, '2026-11-20', 'redirect'),
 
   // --- git diff: the four that already write to a file -----------------------
   // the cross-model arm was cold-split out of review-triggers.md with its

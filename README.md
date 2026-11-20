@@ -35,7 +35,7 @@ For a new project:
 /cadence:cad-new-project
 ```
 
-Already worked through the idea? Pass your brief with `/cadence:cad-new-project --brief <file>`. Cadence reads what's settled and asks about what's still open.
+Already worked through the idea? Pass your brief with `/cadence:cad-new-project --brief <file>`. Cadence reads what's settled and asks about what's still open. A Seldon design folder after `--brief` starts the project from the design and asks nothing the design answers. The forge, roles and testing-policy questions remain, and there's no approval gate.
 
 Update with `/plugin update cadence@foundation`.
 

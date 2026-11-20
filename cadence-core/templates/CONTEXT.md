@@ -15,8 +15,9 @@ Plan shape: {one plan | multiple plans | split - deferred slice above}
 
 - D-01 ({area}): {decision}. Evidence: {file paths / cited docs}.
 - D-02 ...
-{decisions that pass all three parts of the durability filter above; "None
-this phase" if every decision is phase-local}
+{first the phase's spine decisions, as /cad-context reads them from its
+roadmap section; then the decisions that pass all three parts of the
+durability filter above; "None this phase" only when there are neither}
 
 ## Decisions
 
