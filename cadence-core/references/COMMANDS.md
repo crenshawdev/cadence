@@ -40,7 +40,7 @@ are the on-demand and standalone gates.
 |---|---|
 | `/cad-land [base]` | Publish - report git state plus the tracker (which issues this branch's commits reference, which are still open; reads only, closes nothing; `git.issue_check: false` turns it off), ask the mechanism with NO default (push / MR-PR / tag / leave local), do exactly that. With `git.auto_close` true in both config layers it closes unattended instead (PR -> merge), asking once, before the tag push. Fires no review of its own. |
 | `/cad-milestone [ver]` | Version cut - audit, bump, prune completed phases, evolve PROJECT.md, refresh REQUIREMENTS. Folds in cleanup. |
-| `/cad-phase <op> [N]` | CRUD phases (`add`/`insert`/`remove`/`edit`) with consistent renumber + reference repair. |
+| `/cad-phase <op> [N]` | CRUD phases (`add`/`insert`/`remove`/`edit`) with consistent renumber + reference repair. `add --brief <design folder>` adds a Seldon design's requirements and phases to the project. |
 | `/cad-undo <N>` | Roll back a phase's commits from the SUMMARY manifest - dirty guard, `--no-commit` squash, status reset. |
 
 ## Support
