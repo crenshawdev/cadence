@@ -20,6 +20,11 @@ pass on for this run regardless of config, and optional `--brief <file>`, a
 design brief some earlier freeform conversation already produced
 (`docs/DISCOVERY.md` describes how a user arrives with one).
 
+A `--brief` path that is a directory is a Seldon design: before item 1, Read
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/new-project-design.md` and
+follow it instead of this file's steps, running only the ones it names. A file
+keeps the read below, and a path that is neither keeps its stop.
+
 With `--brief`, `Read` that file WHOLE before questioning starts - no parser,
 no schema, no seam subcommand. A brief's whole value is that it is freeform,
 and a schema would impose exactly the structure the discovery deliberately
