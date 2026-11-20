@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { dirFlag, fail, intFlag, ok } from './core.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { renderActive, renderSections } from '../lib/design-render.mjs';
-import { parseActiveIds, phaseRequirements, sectionSpan } from '../lib/planning-files.mjs';
+import { parseActiveIds, phaseRequirements, phaseSpineDecisions, sectionSpan } from '../lib/planning-files.mjs';
 import { readState, statePath } from '../lib/project-state.mjs';
 import { DESIGN_FILES, readDesign } from '../lib/seldon-design.mjs';
 import { unreadable } from './phase-entry.mjs';
@@ -181,6 +181,26 @@ function cmdDesignRead(dir, opts) {
       issues.push({ file: 'epics.md', id: p.epic, field: 'Requirements',
         problem: `${JSON.stringify(id)} would not read back from phase ${p.number}'s Requirements line - Cadence reads an ID there only when it opens with a letter` });
     }
+  }
+  // the Spine decisions lines read back the way /cad-context reads them (D-06); keyed by S- ID, so a decision three
+  // epics carry is one issue, and a line the reader names as a problem simply doesn't come back
+  /** @type {Map<string, {n: number, d: import('../lib/seldon-design.mjs').Decision}>} */
+  const unread = new Map();
+  for (const p of read.design.phases) {
+    const back = phaseSpineDecisions(sections, p.number).decisions;
+    for (const d of p.spine_decisions) {
+      const got = back.find((b) => b.id === d.id);
+      const same = got && got.title === d.title && got.kind === d.kind && got.text === d.text;
+      if (!same && !unread.has(d.id)) unread.set(d.id, { n: p.number, d });
+    }
+  }
+  for (const { n, d } of unread.values()) {
+    const causes = [
+      ...(d.title.includes('** (') ? ['its heading holds `** (`, which ends the title early'] : []),
+      ...(/[()]/.test(d.kind) ? ['its Kind line holds a parenthesis'] : []),
+    ];
+    issues.push({ file: 'spine.md', id: d.id,
+      problem: `would not read back from phase ${n}'s Spine decisions line - ${causes.length ? causes.join(' and ') : 'reword its heading and Kind line'}` });
   }
   // every section of the project's REQUIREMENTS.md counts, shipped, deferred, tables, prose and fences alike (D-02)
   const clashes = project ? read.design.requirements.filter((q) => holdsToken(project.requirements, q.id)) : [];
