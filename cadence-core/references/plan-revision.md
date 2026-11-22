@@ -2,68 +2,50 @@
 
 Read at `<step name="check_gate">` in `cadence-core/workflows/plan.md`, on the
 one arm that reaches it: the checker returned `## ISSUES FOUND` with at least
-one BLOCKER. ONE revision, maximum - there is no second loop, and step 3 below
-is where that bound is enforced.
+one BLOCKER.
 
-1. Plans came from cad-planner: re-dispatch it FRESH in revision mode with
-   the issues (see `plan.md`'s `spawn_planner`) - a new spawn, never a resume of the prior
-   run; the plan on disk preserves its grounding - with `--attempt 2`, which
-   climbs one rung only with `model.escalate_on_failure` on and holds it
-   otherwise; dispatch the file the resolve returns. Plans were
-   written inline: apply the fixes in the main context.
-   This re-dispatch is a paid dispatch like any other, so it carries its OWN
-   bracket on the `--attempt 2` resolve. A refused or unreadable compose
-   dispatches with this read-set:
+1. Plans came from cad-planner: dispatch a fresh revision-mode cad-planner
+   with the issues (`plan.md`'s `spawn_planner`; a new spawn per
+   seam-spawn-agent.md) on an `--attempt 2` resolve, which climbs one rung only
+   with `model.escalate_on_failure` on and holds it otherwise; dispatch the
+   file the resolve returns. Plans were written inline: apply the fixes in the
+   main context.
+   The re-dispatch carries its OWN bracket on that resolve.
+   With the phase input composed, that resolve's `--bracket-read` value is
+   `<the phase input path>` `spawn_planner`'s stretch kept. A refused or
+   unreadable compose dispatches with this read-set instead:
    `--bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"`.
-   With the phase input composed, that
-   resolve's `--bracket-read` value is `<the phase input path>`
-   `spawn_planner`'s stretch kept, in place of that read-set.
 
-   Close it HERE, at the end of this step, where its `## REVISION COMPLETE`
-   return is read - not at the end of the revision, and not folded into the
-   checker's close below:
+   Close it HERE, where its `## REVISION COMPLETE` return is read, not at the
+   end of the revision and not folded into the checker's close below:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
    ```
 
-   ONE line, the same arms handle_return uses: an empty or unmarked return is
-   written to a scratch file and carried on `--detail-file <path>`
-   (caller-derived text - references/conventions.md), and the seam closes it as
-   a checkpoint.
-2. Re-dispatch the checker once, NARROWED. Its bracket rides its own resolve
-   with a NARROWER read-set than check_gate's - the plan files whose diff is
-   its whole artifact: `--bracket-read ".planning/phases/{N}/PLAN*.md"`.
-
-   Its artifact is the revision's
-   own diff (`git diff -- .planning/phases/{N}/PLAN*.md`, or the before/after
-   text when the plans are uncommitted), plus the blocker list it is
-   confirming, NOT the whole plan set again. Ask one question: is each
-   blocker actually closed, and did the fix introduce anything new? A
-   full re-read costs a second cold pass over ROADMAP, REQUIREMENTS,
-   CONTEXT and the sources for a plan the checker has already read once.
+   An empty or unmarked return goes to a scratch file and rides
+   `--detail-file <path>`, per seam-spawn-agent.md's bracket rule.
+2. Re-dispatch the checker once, NARROWED: its bracket rides its own resolve
+   with the plan files alone, narrower than check_gate's:
+   `--bracket-read ".planning/phases/{N}/PLAN*.md"`.
+   Its artifact is the revision's own diff
+   (`git diff -- .planning/phases/{N}/PLAN*.md`, or the before/after text when
+   the plans are uncommitted) plus the blocker list it is confirming, NOT the
+   whole plan set again. Ask one question: is each blocker actually closed, and
+   did the fix introduce anything new? `plan.md`'s `review` step, which fires
+   after this on the revised plans, is the full-artifact second opinion.
    Pass `--attempt 2` (step 1's rung rule) and dispatch the file it returns.
-   Name its rung in the prompt - `Rung: {the effort THIS resolve returned}` -
-   since the rung files carry it in frontmatter and their identical bodies
-   leave the prompt the only place it reaches the checker.
-   Note what a narrow pass gives up: it re-reads nothing, so a fix that is
-   locally right and wrong against CONTEXT can survive it. `plan.md`'s own
-   `review` step is the full-artifact second opinion, and it fires after this
-   on the revised plans.
-   Close this one at the end of THIS step, before step 3 reads its blocker
-   verdict:
+   Name its rung in the prompt - `Rung: {the effort THIS resolve returned}`.
+   Close it at the end of THIS step, before step 3 reads its blocker verdict:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
    ```
 
    An empty or unmarked return goes to a scratch file and rides
-   `--detail-file <path>` (caller-derived text - references/conventions.md),
-   closing as a checkpoint.
+   `--detail-file <path>`, per seam-spawn-agent.md's bracket rule.
 
-   Both re-dispatches close on their own, at their own step: the per-file
-   census asserts one `trace close` per dispatch moment, so folding these two
-   into one close leaves a paid dispatch unmeasured and reddens the suite.
+   Both re-dispatches close on their own, at their own step.
 3. No BLOCKER left -> continue. Still a BLOCKER -> present the remaining
    blockers and ask (ask-user seam): proceed to execution anyway, or stop
    and revise by hand. Never loop again.
