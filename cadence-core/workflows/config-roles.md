@@ -1,30 +1,22 @@
 # cad-config roles interview and stakes migration (cold branch)
 
-Loaded from config.md's **Roles interview** and **Stakes migration** arms,
-and opened directly by `/cad-new-project` and `/cad-adopt` at setup and by the
-spawn-agent seam on a retired-key warning.
+Loaded from config.md's **Roles interview** and **Stakes migration** arms, by
+`/cad-new-project` and `/cad-adopt` at setup, and by the spawn-agent seam on a
+retired-key warning.
 
 ## Roles interview (`--roles`)
 
-Thirteen questions that decide what each of the six roles costs: a model and a
-start rung for each, then one question about the risk floor. There is no level
-and no grid behind them - `roles.<role>.model` and `roles.<role>.effort` are the
-whole answer - so the questions themselves are the documentation. Each one says
-what the role does in the phase loop and what the choice costs there.
-
-Reached four ways: `/cad-config --roles` on demand; `/cad-config --roles
---global` to re-enter the full thirteen against the user-global layer; the
-first-run pass `/cad-new-project` and `/cad-adopt` run after the template copy;
-and the **Stakes migration** arm below, which runs the same questions over an
-expanded level.
+Thirteen questions: a model and a start rung for each of the six roles, then
+one about the risk floor. `roles.<role>.model` and `roles.<role>.effort` are the
+whole answer, so the questions are the documentation.
 
 ### 1. Which layer this run writes
 
 Read the user-global file (`~/.claude/cadence/config.json`, or wherever
-`CADENCE_GLOBAL_CONFIG` points) raw, and for the PRESENCE of a `roles` key only.
-This is one of the three raw-read exceptions `workflows/config.md`'s **Validation seam**
-lists, for the reason it states: `config.mjs get` merges the layers, so it cannot say which
-one HOLDS a key.
+`CADENCE_GLOBAL_CONFIG` points) raw, for the PRESENCE of a `roles` key only -
+one of the three raw-read exceptions `workflows/config.md`'s **Validation seam**
+lists, since `config.mjs get` merges the layers and cannot say which one HOLDS a
+key.
 
 - **First run** - that file has no `roles` key, or does not exist. Ask all
   thirteen. Write all twelve values plus the floor answer in ONE
@@ -35,17 +27,15 @@ one HOLDS a key.
   ONLY the diffs, through a plain `config.mjs set`, into `.planning/config.json`.
   A pick equal to the value in force writes nothing here.
 - **`--roles --global`** - the full thirteen again, against the user-global
-  layer, with `config.mjs set --global`. This is the way back into machine-wide
-  defaults; without it they could only be revised one key at a time.
+  layer, with `config.mjs set --global`.
 
 Name the file the write landed in, by path, before the run ends.
 
 ### 2. The four calls
 
-Thirteen questions do not fit one call. The ask-user seam
-(`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/seam-ask-user.md`) takes at most
-four questions per call and at most four options per question - two caps, not
-one. Ask them in rung-map order, four calls:
+Ask through the ask-user seam
+(`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/seam-ask-user.md`), whose caps
+make this four calls, in rung-map order:
 
 1. `cad-planner` model, `cad-planner` effort, `cad-assumptions-analyzer` model,
    `cad-assumptions-analyzer` effort.
@@ -80,22 +70,17 @@ Options, in this order, up to the cap of four:
 3. `sonnet` - "in the middle; most work fits here".
 4. `haiku` - "cheapest, least capable".
 
-Never list the value in force twice: whichever of those it already is, the
-remaining options fill the slots. `fable` is a fifth name the host accepts and
-is deliberately NOT offered outright - name it in the last option's
-`description` as reachable via `Other`, with the reason: choosing it is an
-assertion about your own organisation (it needs 30-day data retention, and it
-refuses some security review work), not a rung on a ladder.
+Never list the value in force twice; the remaining options fill the slots. Do
+not offer `fable` outright: name it in the last option's `description` as
+reachable via `Other`, with the reason that choosing it asserts something about
+your own organisation (it needs 30-day data retention, and it refuses some
+security review work).
 
-`Other` is free-typed and goes into config exactly as typed - the key is a
-string, not an enum, so nothing rejects a name this host has never heard of.
-Typed text can carry `$(...)`, which runs before Node starts, so step 6 passes
-it from a JSON file as `<key>="$(cat <path>)"`, never inline. Echo
-`config.mjs set`'s `changed` array back to the user, so the exact string that
-landed is on screen at the moment it lands rather than at the first dispatch.
-A model the host does not accept still resolves `ok:true` and
-dispatches with NO model parameter, naming the string in the resolve's
-`warnings[]`.
+`Other` goes into config exactly as typed; the key is a string, so nothing
+rejects an unknown name. Pass it through step 6's file, never inline, and echo
+`config.mjs set`'s `changed` array back so the exact string is on screen as it
+lands. A model the host does not accept still resolves `ok:true` and dispatches
+with NO model parameter, naming the string in the resolve's `warnings[]`.
 
 ### 4. The effort question, per role
 
@@ -111,33 +96,30 @@ Ask the role's question, word for word:
 The rung is where the role STARTS; `model.escalate_on_failure` re-dispatches a
 failed attempt one rung higher, holding at the top.
 
-Six values - `low`, `medium`, `high`, `xhigh`, `max` and `null` - do not fit the
-four-option cap, so this takes exactly the rule `workflows/config.md`'s walk states for
-`review.triggers.<t>.gate`: show the rung in force plus the three the user is
-most likely to want, and name every omitted rung in the last option's
-`description` with the words "reachable via `Other`". A rung silently absent
-reads as a rung that does not exist. The descriptions are: `low` "light
-thinking, fastest", `medium` "moderate thinking", `high` "deep thinking",
-`xhigh` "very deep thinking, slower", `max` "the deepest thinking, slowest and
-costliest", and `null` "use the default for this role".
+The six values - `low`, `medium`, `high`, `xhigh`, `max` and `null` - take the
+rule `workflows/config.md`'s walk states for `review.triggers.<t>.gate`: show
+the rung in force plus the three the user is most likely to want, and name every
+omitted rung in the last option's `description` with the words "reachable via
+`Other`". The descriptions are: `low` "light thinking, fastest", `medium`
+"moderate thinking", `high` "deep thinking", `xhigh` "very deep thinking,
+slower", `max` "the deepest thinking, slowest and costliest", and `null` "use
+the default for this role".
 
-`null` is a real answer and means "this key does not pin the rung, so the
-schema default decides" - which is how a repo layer un-pins a global one.
+`null` means the key does not pin the rung and the schema default decides; it
+is how a repo layer un-pins a global one.
 
 ### 5. The floor question
 
-One question, and the only one that is not per role. Ask it word for word:
+One question, not per role. Ask it word for word:
 
 "Which risky areas should not make a phase's plan review blocking or turn on the deeper check? The review of the actual changes still runs."
 
-A plan Cadence could not read raises the bar too, on purpose, because a scope
-nobody read has proved nothing. No role's model or rung moves; what you just set
-is what dispatches.
+A plan Cadence could not read raises the bar too. No role's model or rung
+moves; what you just set is what dispatches.
 
 Carry the eight category definitions from
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md` as the
-question's context, exactly as `workflows/config-surfaces.md` does - this is the other arm
-where a user meets the category names.
+question's context, exactly as `workflows/config-surfaces.md` does.
 
 Options:
 
@@ -148,21 +130,18 @@ Options:
 2. **Choose areas to skip** - "The areas you pick no longer make the plan review
    blocking or turn on the deeper check. The review of the actual changes still
    runs." Writes `review.triggers.risk_surface.waive_routing_floor` with the
-   picked categories, for those categories only. It does NOT turn off the
-   `risk_surface` review itself, which still fires on the actual diff and which
-   this key cannot reach.
+   picked categories. It does NOT turn off the `risk_surface` review of the
+   diff.
 
-Two of the six roles are unaffected by this answer whatever it is: `cad-planner`
-and `cad-assumptions-analyzer` are dispatched before a plan exists, so there is
-no plan for the floor to read.
+The answer never affects `cad-planner` or `cad-assumptions-analyzer`, which
+dispatch before a plan exists.
 
 ### 6. Writing
 
 Collect every diff and apply it in ONE `config.mjs set` (or `set --global`)
-through `workflows/config.md`'s **Validation seam** - one atomic, validated write, the
-same rule the menu walk follows. Each value typed through `Other` goes as JSON
-to its own file in a directory this run made, passed as `<key>="$(cat <path>)"`
-(`references/conventions.md`, Caller-derived text):
+through `workflows/config.md`'s **Validation seam**. Each value typed through
+`Other` goes as JSON to its own file in a directory this run made, passed as
+`<key>="$(cat <path>)"` (`references/conventions.md`, Caller-derived text):
 
 ```
 D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "$D"
@@ -172,25 +151,20 @@ Then show the seam's `changed` array back and name the file it wrote to.
 
 ## Stakes migration (a retired routing key is still on disk)
 
-The single level that decided every role's model and effort is retired, nothing
-routes from it, and `config.mjs validate` refuses a file that still carries it.
-Open this arm whenever a `config.mjs get` or a `route.mjs resolve` envelope
-comes back carrying the retired-key warning that names it. That warning is the
-only trigger, so a config which never held the key never reaches this arm and
-nothing re-asks on its own. Do not relay the warning and carry on: run the
+The single `stakes` level is retired, nothing routes from it, and
+`config.mjs validate` refuses a file that still carries it. The only trigger is
+a `config.mjs get` or `route.mjs resolve` envelope carrying the retired-key
+warning that names it. Do not relay the warning and carry on: run the
 migration, then re-issue the command that produced it.
 
 1. Read `.planning/config.json` and the user-global file RAW, each on its own,
-   for a top-level `stakes` key. This arm is about to remove that key from those
-   files: this is the third raw-read exception
+   for a top-level `stakes` key - the third raw-read exception
    `workflows/config.md`'s **Validation seam** lists.
 
-2. Expand EACH layer that holds the key independently, against its OWN value.
-   The global file's level becomes the global roles block; the repository file's
-   level becomes the repository roles block. Never write one expansion to both
-   layers: a machine sitting at `solo` beside this repository at `critical`
-   would otherwise hand every other project on it critical's models and rungs.
-   A layer that does not hold the key is not written at all.
+2. Expand EACH layer that holds the key against its OWN value: the global
+   file's level becomes the global roles block, the repository file's level the
+   repository roles block. Never write one expansion to both layers, and never
+   write a layer that does not hold the key.
 
    | Was | Model, per role | Start rung, per role |
    |---|---|---|
@@ -200,30 +174,25 @@ migration, then re-issue the command that produced it.
 
 3. Show the twelve values PER LAYER before writing anything - "your machine-wide
    `solo` becomes these twelve; this repository's `critical` becomes these
-   twelve" - then run them through the **Roles interview**'s questions so the
-   user confirms or adjusts each one. Same thirteen questions; the only
-   difference is that the value in force starts at the expanded row rather than
-   at the schema default.
+   twelve" - then run the **Roles interview**'s thirteen questions so the user
+   confirms or adjusts each one, with the value in force starting at the
+   expanded row.
 
-4. Write each layer's own answers as the **Roles interview**'s step 6 does,
-   through `workflows/config.md`'s **Validation seam** -
+4. Write each layer's own answers as the **Roles interview**'s step 6 does -
    `config.mjs set --global …` for the user file, plain `config.mjs set …` for
-   the repository file - and then remove the key from every layer that held it:
+   the repository file - then remove the key from each layer step 1 found it in,
+   running only that layer's line:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset stakes
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset stakes --global
    ```
 
-   Run only the line for a layer step 1 found the key in. `unset` on a layer
-   that does not hold it is `ok:true` and changes no bytes, but what you report
-   back has to name the files that were actually edited.
+   Report the files actually edited.
 
-5. Say in ONE line what did NOT come across. The level also decided the review
-   gates, the cross-model reviewer tiers and efforts, and whether the deep
-   verify pass ran; none of those is migrated. They now come from
-   `cadence-core/config.schema.json`'s own defaults, so a project that leaned on
-   a `critical` row's gates has to state them itself - `review.triggers.<t>.gate`,
-   `review.triggers.<t>.tier` and `review.triggers.<t>.effort` are in the
-   walk, and the deep pass now runs when the risk floor raises rather than
-   when a level said so, with `workflow.verifier` still its off switch.
+5. Say in ONE line what did NOT come across: the review gates, the cross-model
+   reviewer tiers and efforts, and whether the deep verify pass ran. They now
+   come from `cadence-core/config.schema.json`'s defaults; a project that wants
+   other values sets `review.triggers.<t>.gate`, `review.triggers.<t>.tier` and
+   `review.triggers.<t>.effort` in the walk. The deep pass now runs when the
+   risk floor raises, with `workflow.verifier` still its off switch.
