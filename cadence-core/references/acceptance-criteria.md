@@ -2,12 +2,9 @@
 
 The stated grammar for the `## Acceptance criteria` section of
 `.planning/phases/<N>/CONTEXT.md`, written by `workflows/context.md`'s
-`write_context` step. It answers one question - what counts as a criterion, and
-what is its id - so that `/cad-audit` can prove a TOTAL function: every
-criterion a phase declared reached that phase's UAT checklist. Before the id,
-nothing structural connected the two: `/cad-verify` words each checklist item
-from the criteria in its own prose, so the link was model judgment at build
-time and no later pass could recover which criterion an item came from.
+`write_context` step. It answers what counts as a criterion and what its id is,
+so that `/cad-audit` can prove a TOTAL function: every criterion a phase
+declared reached that phase's UAT checklist.
 
 One function in `cadence-core/bin/lib/planning-files.mjs` implements it:
 `classifyAcceptanceCriteria(text)`, returning
@@ -29,35 +26,26 @@ that is a criterion.
 
 Trailing prose stays in `text` verbatim, `(human-verify: needs <tool/service>)`
 included: the classifier admits and ignores that suffix, and
-`workflows/verify.md` keeps its own prose read of it. Promoting it to a declared
-field is deliberately out of this grammar.
+`workflows/verify.md` keeps its own prose read of it.
 
 ## The continuation rule
 
 An INDENTED, non-blank line while a criterion is open is a continuation: it is
 appended to that criterion's `text` joined with one space, and never classified
-on its own. That is what keeps a wrapped criterion which happens to name
-another id (`... unchanged, the same shape AC3 pins`) silent instead of
-reporting. A blank line, or any non-indented line, closes the open criterion.
+on its own, so a wrapped criterion naming another id (`... unchanged, the same
+shape AC3 pins`) stays silent. A blank line, or any non-indented line, closes
+the open criterion.
 
 The one exception is an indented bullet whose content begins with an `AC<N>`
-token (a checkbox tolerated between): that is a criterion the grammar cannot
-see, so it reports `criterion-indented-bullet` rather than being swallowed as
-prose.
+token (a checkbox tolerated between): it reports `criterion-indented-bullet`
+rather than being swallowed as prose.
 
 ## Normalization
 
 The reader normalizes first: one leading `U+FEFF` byte-order mark stripped,
 every `\r\n` AND every lone `\r` to `\n` - the shared `normalize`, not the
-roadmap grammar's `normalizeCrlf`.
-
-The difference is deliberate. `normalizeCrlf` exists because ROADMAP.md has
-WRITE paths (`setPhaseBox`, `cutPhaseDetail`, `cmdRenumber`'s list filter) that
-split the raw bytes on `\n`, so a lone-CR roadmap must stay unparseable or
-those writers corrupt it. CONTEXT.md has no writer anywhere in this codebase:
-no seam creates or edits one, `parseContextDecisions` and this function only
-read. A pure reader can normalize fully, and a lone-CR CONTEXT.md therefore
-classifies exactly as its plain-LF twin does.
+roadmap grammar's `normalizeCrlf`. CONTEXT.md has no writer anywhere in this
+codebase, so a lone-CR CONTEXT.md classifies exactly as its plain-LF twin does.
 
 ## Extent
 
@@ -65,35 +53,27 @@ classifies exactly as its plain-LF twin does.
 |---|---|
 | Section | The `## Acceptance criteria` heading to the next `## ` line, or end of text |
 
-One extent, not two. Unlike the roadmap grammar there is no wider
-classification scan: CONTEXT.md has no template section that follows the
-criteria and can outlive them, so there is no interrupted-prune state to
-detect.
+One extent: there is no wider classification scan.
 
 **Both the heading scan and the section walk are FENCE-AWARE**, through the
 same scanner `parseUat`'s `sectionBound` uses. A fenced block inside the
 section is skipped whole: it declares no criterion, reports no diagnostic, does
 not bound the section, and does not close an open criterion. A `## ` line
 inside a fence is content, and a `## Acceptance criteria` line inside one is
-not the heading. Without this the illustrative `- [ ] AC1: ...` in this very
-document parses as a live criterion, minting a phantom id no UAT item can
-cover - a false FAIL out of a code block.
+not the heading.
 
 An ABSENT heading returns `{criteria: null, issues: []}` - the datum "nothing
-declared", never an out-of-grammar report. CONTEXT.md is itself an optional
-artifact, and `null` (not `[]`) is what lets a caller tell "no criteria section"
-from "a section that declared nothing".
+declared", never an out-of-grammar report. `null` (not `[]`) is what lets a
+caller tell "no criteria section" from "a section that declared nothing".
 
 A NEAR-MISS heading is not absence. A line matching
 `^#{1,6}\s*acceptance\s+criteri` case-insensitively, that is not the exact
 heading - `## Acceptance Criteria`, `## Acceptance criteria:`, `### Acceptance
 criteria` - returns `criteria: null` WITH a `criteria-heading-near-miss` issue
 on that line, reported once for the first such line since the section is
-singular. Absence means nothing was declared; a typo means everything declared
-was dropped out of the coverage domain, and the items pointing at those ids land
-in the additive `unknown_criterion` while the gate stays green. It is the
-section-level twin of the in-section near-misses below and exists for the same
-reason.
+singular. A typo drops everything declared out of the coverage domain, and the
+items pointing at those ids would otherwise land only in the additive
+`unknown_criterion`.
 
 ## Out of grammar
 
@@ -105,9 +85,9 @@ trailing `...`, the same issue shape the other three grammars use.
 
 | Code | Example line | What the classifier does | Fix |
 |---|---|---|---|
-| `criterion-unidded` | `- [ ] the tests pass` | Reports the line; the bullet declares no criterion. The CENTRAL diagnostic - the legacy shape every CONTEXT written before this grammar is in. A bullet whose PROSE names an id (`- [ ] the AC3 pin still holds`) is this, not the row below: the head position is empty | Add the phase-local id: `- [ ] AC1: the tests pass` |
-| `criterion-malformed-id` | `- [ ] **AC1**: the tests pass` | Reports the line; the head position holds an id the canonical head refused - a second space after the checkbox, emphasis around the token, a lowercase `ac`, a missing colon. Split out of `criterion-unidded`, whose remedy ("add the id") is a no-op on a line whose id is right there | Write the head exactly: one space after the checkbox, a bare uppercase `AC<N>`, then a colon |
-| `criterion-duplicate-id` | a second `- [ ] AC3: ...` | Reports the line and does NOT push it: the id keeps first-occurrence-wins, so the second bullet is dropped from the coverage domain entirely. `/cad-audit` names this even though it moves no verdict, because a dropped criterion with a green gate is the failure this grammar exists to prevent | Renumber the second bullet to the next unused id |
+| `criterion-unidded` | `- [ ] the tests pass` | Reports the line; the bullet declares no criterion. The CENTRAL diagnostic, the legacy shape. A bullet whose PROSE names an id (`- [ ] the AC3 pin still holds`) is this, not the row below: the head position is empty | Add the phase-local id: `- [ ] AC1: the tests pass` |
+| `criterion-malformed-id` | `- [ ] **AC1**: the tests pass` | Reports the line; the head position holds an id the canonical head refused - a second space after the checkbox, emphasis around the token, a lowercase `ac`, a missing colon | Write the head exactly: one space after the checkbox, a bare uppercase `AC<N>`, then a colon |
+| `criterion-duplicate-id` | a second `- [ ] AC3: ...` | Reports the line and does NOT push it: the id keeps first-occurrence-wins, so the second bullet is dropped from the coverage domain entirely. `/cad-audit` names this even though it moves no verdict | Renumber the second bullet to the next unused id |
 | `criterion-empty-text` | `- [ ] AC4:` | Reports the line AND pushes the criterion with `text: ''` - parse-then-diagnose, because the id is real and must still reach a UAT item | Write the criterion's text after the colon |
 | `criterion-unboxed-bullet` | `- AC1: the tests pass` | Reports the line; no checkbox, so it is not a criterion | Add the checkbox |
 | `criterion-nondash-bullet` | `* AC1: the tests pass` | Reports the line; legal GFM, but the grammar reads `-` only | Rewrite the marker as `-` |
@@ -136,21 +116,18 @@ grammar still reports as `criterion-unidded`. A criterion inside a fence
 declares nothing, exactly as it is no criterion. The coverage contract's legacy
 exemption is the only consumer, and it requires a provable `'none'`.
 
-**The entry-shaped codes fire regardless of how many criteria parsed.** This is
-deliberately unlike `classifyPhaseList`'s near-miss suppression and unlike
-`active-prose-line`'s conditional arm: one idded bullet beside six bare ones is
-exactly the mixed-authoring migration case this grammar exists to catch, and
-suppressing the codes once anything parsed would hide it.
+**The entry-shaped codes fire regardless of how many criteria parsed**, unlike
+`classifyPhaseList`'s near-miss suppression and `active-prose-line`'s
+conditional arm: one idded bullet beside six bare ones still reports the six.
 
 ## The coverage contract
 
 `planning.mjs criteria-coverage` walks the same `parseRoadmapPhases` map
 `audit` walks and, for each phase, reads `phases/<N>/CONTEXT.md` through this
 reader and `phases/<N>/UAT.md` through `parseUat`. It is a separate subcommand
-from `audit` on purpose: `audit`'s `counts` identity is pinned, and
-`workflows/audit.md` filters its `requirements[]` by milestone id, which a
-criterion break carries none of. `workflows/audit.md` folds both results into
-ONE verdict.
+from `audit`, whose `counts` identity is pinned and whose `requirements[]`
+`workflows/audit.md` filters by milestone id, which a criterion break carries
+none of. `workflows/audit.md` folds both results into ONE verdict.
 
 The link itself is a per-item `criterion: AC<N>` line in UAT.md, registered in
 `UAT_FIELDS` so it survives `uat refresh` and every `uat record` rewrite, and
@@ -168,9 +145,7 @@ that legitimately derives from no criterion declares `origin:` instead.
 
 The two directions are ASYMMETRIC, matching the shipped `unpicked` /
 `active_issues` split: a criterion with no item BREAKS, an item tracing to no
-criterion REPORTS. Four of four phases in the cycle that built this appended
-legitimate verifier gap items, so making the reverse direction breaking would
-make the gate unpassable.
+criterion REPORTS, since verifier gap items legitimately trace to none.
 
 **The `origin` exemption values are `verifier` and `smoke`.** `origin:
 criterion` exempts nothing: it names no id, so it proves nothing, and such an
@@ -182,41 +157,26 @@ second one.
 checklist is exempt when it has at least one item, its frontmatter carries no
 `fields_version`, none of its items carries `criterion` or `origin`, AND its
 phase's CONTEXT declares no `AC<N>` ids at all. Then it is reported in `legacy`
-as `{phase, reason}` - the reason stated, never a bare phase number, because a
-modern seam reporting green over an old file is exactly the skew the report has
-to be readable for - contributing no breaks, no `untraced` entries and nothing
-to `counts`, so an existing project does not hard-fail on upgrade.
+as `{phase, reason}` - the reason stated, never a bare phase number -
+contributing no breaks, no `untraced` entries and nothing to `counts`, so an
+existing project does not hard-fail on upgrade. Legacy is never inferred from
+field absence alone: `uat init` writes `fields_version` unconditionally, before
+it looks at a single item, so no file the seam produces presents as legacy.
 
 Satisfy the first three terms but not the fourth and it is a
 `fieldless-checklist` break instead. Both the AC-id grammar and `fields_version`
-post-date `v1.5.0`, so no CONTEXT carrying `AC<N>` ids can predate the fields:
-a marker-less checklist beside declared ids is a DROPPED LINK, not an old file.
-This repo's own v2.0.0 phase 6 is the shipped counterexample - 17 items, zero
-`criterion`, zero `origin`, no marker, beside a CONTEXT declaring `AC1`-`AC9`.
-The old four-term rule exempted it, which is how the closing audit counted 36
-criteria against 45 declared and passed.
+post-date `v1.5.0`, so a marker-less checklist beside declared ids is a DROPPED
+LINK, not an old file.
 
 **That last term is `declaresIds === 'none'`, never `criteria.length === 0`.**
-Those are different questions, and reading the second as the first is what let
-this gate pass a phase it never checked. `- [ ] AC1 the feature works`,
-`- [ ] **AC1**: x`, `- AC1: x`, `* [ ] AC1: x`, `### AC1: x`, `1. AC1: x` and an
-indented criterion bullet each parse to ZERO criteria while `context_issues`
-names the id in the SAME envelope - so a fieldless checklist beside any of them
-collected an exemption whose stated reason asserted the phase declared no ids.
-An id the grammar refused is an id the author declared. `'unknown'` is not
-`'none'` either: a near-miss heading (`## Acceptance Criteria`) returns
-`criteria: null` with a `criteria-heading-near-miss` issue, which reads as zero
-ids by length alone, and a capital-C typo must not collect an exemption whose
-reason asserts the phase declared nothing. Only a provable `'none'` exempts;
-everything else takes the break arm. Whether the grammar should ADMIT those
-shapes as criteria is a separate, deferred question - this one is about what an
-empty list is allowed to prove.
-
-**The `fieldless-checklist` break fires whatever the roadmap box says.**
-`uncovered` and `missing-uat` are box-gated because work still in flight
-legitimately passes through them. This one is not: `uat init` writes
-`fields_version` before it looks at a single item, so no phase is ever
-transiently fieldless, and finishing the work does not repair it.
+`- [ ] AC1 the feature works`, `- [ ] **AC1**: x`, `- AC1: x`, `* [ ] AC1: x`,
+`### AC1: x`, `1. AC1: x` and an indented criterion bullet each parse to ZERO
+criteria while `context_issues` names the id in the SAME envelope; an id the
+grammar refused is an id the author declared. `'unknown'` is not `'none'`
+either: a near-miss heading (`## Acceptance Criteria`) reads as zero ids by
+length alone and must not collect an exemption. Only a provable `'none'`
+exempts; everything else takes the break arm. Whether the grammar should ADMIT
+those shapes as criteria is a separate, deferred question.
 
 The repair is per item, and it is `criterion`, not `origin`:
 
@@ -225,22 +185,10 @@ uat record --phase <N> --item <k> --result <its current status> --criterion AC<N
 ```
 
 `record` has no field-only mode, so the repair is a re-record at the status the
-item already holds. `--origin criterion` is NOT a substitute: it names no id, so
-it proves nothing, and on a fieldless checklist it disqualifies the phase from
-the legacy rule and converts zero breaks into one per criterion with no seam
-able to add the link back.
-
-The marker is what makes the rule sound, and it replaced an unsound one. The
-original test was the two item fields alone - no `criterion` AND no `origin` -
-on the stated premise that every post-field checklist carries at least one
-`origin`. That premise was false the day it shipped: `.planning/phases/3/UAT.md`
-is a post-field checklist with seven `criterion` lines and zero `origin` lines,
-so a `/cad-verify` that silently stopped emitting `criterion` on a
-phase-3-shaped checklist read as an old project and the gate stayed green
-forever - precisely the regression this check exists to catch. `uat init`
-writes `fields_version` unconditionally, before it looks at a single item, so
-no file this seam produces can present as legacy however few links it carries.
-Infer legacy from field absence again and the exemption absolves the drop.
+item already holds. `--origin criterion` is NOT a substitute: it names no id,
+and on a fieldless checklist it disqualifies the phase from the legacy rule and
+converts zero breaks into one per criterion with no seam able to add the link
+back.
 
 **Every run states the versions it ran as.** `version` is the first key of the
 envelope and is always present - a statement about the run, not a finding.
@@ -249,31 +197,23 @@ SCRIPT's own location, and is `null` on any unreadable, malformed or
 version-less manifest rather than a throw. `CADENCE_PLUGIN_MANIFEST` overrides
 that path for hermetic tests only, and only alongside `CADENCE_TEST_SEAM=1`:
 BOTH are required, and with the variable alone the override is ignored and the
-shipped manifest is read silently, which is the gate's point. `version.uat_fields` is `UAT_FIELDS_VERSION`.
-Both, because neither is sufficient alone: mid-cycle the manifest names the last
-RELEASED version, so the capability number is the half that does not lag, while
-the manifest is the half that names what is installed. The skew this catches is
-a MODERN seam reporting green over an old file; the opposite skew already fails
-loudly, because a seam genuinely predating the fields has no `criteria-coverage`
-subcommand at all and returns `ok:false, reason:"usage"`.
+shipped manifest is read silently. `version.uat_fields` is `UAT_FIELDS_VERSION`.
+Both are stated because mid-cycle the manifest names the last RELEASED version,
+while the capability number does not lag. A seam predating the fields has no
+`criteria-coverage` subcommand and returns `ok:false, reason:"usage"`.
 
 An EMPTY checklist is not legacy. An empty checklist is the drop itself, so
 every criterion in that phase breaks.
 
 **An absent CONTEXT.md is nothing to prove.** The phase contributes nothing at
 all: no break, no `phases[]` entry. `workflows/milestone.md` runs this gate at
-step 1 while the prune that DELETES phase directories runs at step 3, so a
-prior milestone's phases are simply not on disk, and treating that as a break
-would make `/cad-milestone`'s own gate unpassable. The prune removes the whole
-directory, so it always takes CONTEXT.md with it - which is why absence of
-CONTEXT is the exemption and absence of UAT is not.
+step 1 while the prune that DELETES phase directories, CONTEXT.md with them,
+runs at step 3, so a prior milestone's phases are simply not on disk.
 
-**An absent UAT.md, with CONTEXT.md present, is the total drop.** A phase that
-declared criteria and never got a checklist is exactly what this gate exists to
-catch, and exempting it left the one load-bearing direction with an unnamed
-hole. Every declared criterion counts `uncovered`, and on a CHECKED box each one
-breaks as `missing-uat`. The unchecked-box rule below applies unchanged, so a
-phase still in flight is counted and never breaks.
+**An absent UAT.md, with CONTEXT.md present, is the total drop.** Every
+declared criterion counts `uncovered`, and on a CHECKED box each one breaks as
+`missing-uat`. The unchecked-box rule below applies unchanged, so a phase still
+in flight is counted and never breaks.
 
 **An unchecked roadmap box gates `uncovered` and `missing-uat`, and nothing
 else.** For those two, a phase that has not reached verification yet contributes
@@ -281,71 +221,24 @@ its `uncovered` count and its `phases[]` entry and no `breaks` entry, so a gate
 run mid-cycle does not FAIL on work still in flight. `fieldless-checklist` is
 NOT box-gated and fires on an unchecked phase exactly as it does on a checked
 one: `uat init` writes `fields_version` before it looks at an item, so no phase
-passes through the fieldless state in flight, and a mid-cycle run reporting it
-is reporting a real drop rather than unfinished work.
+passes through the fieldless state in flight, and finishing the work does not
+repair it.
 
 ## Not in this grammar
 
 - **The id is phase-local, not globally unique.** `AC1` in phase 2 and `AC1` in
   phase 5 are different criteria; every break, every link and every count is
   scoped to its phase. Nothing in Cadence resolves a bare `AC1` across phases.
-- **`AC-01` is rejected as a spelling.** It is admitted by `REQ_ID_EXACT`
-  (`lib/planning-files.mjs:275`), so a criterion id pasted into a plan's
-  `requirements:` frontmatter would read as a requirement id and mint a phantom
-  `orphans.plan_ids` entry in `audit` - fabricated breaks in the very gate this
-  grammar strengthens. The bare `AC1` is structurally disjoint from the
-  requirement-id vocabulary, which requires a hyphen.
+- **`AC-01` is rejected as a spelling.** `REQ_ID_EXACT` in
+  `lib/planning-files.mjs` admits it, so a criterion id pasted into a plan's
+  `requirements:` frontmatter would mint a phantom `orphans.plan_ids` entry in
+  `audit`. The bare `AC1` has no hyphen, so it never reads as a requirement id.
 - **`/cad-phase` renumber is a NON-EVENT here.** Its computed edits are
   ROADMAP/REQUIREMENTS/STATE only, and `shiftPhaseTokens` matches just
   `Phase N` tokens and `phases/N/` paths; phase directories move whole via
-  `gitMv` with their contents never rewritten. So an insert or a remove leaves
-  an existing phase's CONTEXT ids byte-identical, and the only way to fail the
-  renumber tests that pin this is for an id to embed the phase number - which is
-  why path-shaped and phase-prefixed ids (`P4-AC1`,
-  `phases/4/CONTEXT.md#AC3`) are rejected: they go stale on the first insert,
-  because the directory moved and the file body did not. An id that renumbers
-  under the user is worse than no id at all.
+  `gitMv` with their contents never rewritten, so an existing phase's CONTEXT
+  ids stay byte-identical. Path-shaped and phase-prefixed ids (`P4-AC1`,
+  `phases/4/CONTEXT.md#AC3`) are rejected because they go stale on the first
+  insert.
 - **The reader never reads the filesystem.** It is pure and total: no I/O, no
   throw. Coverage, absence and every count belong to `criteria-coverage`.
-
-## Rebuilding the demonstration fixture
-
-The `/cad-audit` demonstration is a disposable pair of `.planning` trees:
-
-- `/tmp/cadence-phase5-fixture/fail/.planning` - `/cad-audit` must FAIL, naming
-  `AC4` and `AC5` by id with a next action for each.
-- `/tmp/cadence-phase5-fixture/pass/.planning` - `/cad-audit` must PASS.
-
-`/tmp` is reaped, so the recipe rather than the tree is what ships here. Both
-trees are synthesized from this repo's own phase-1 pair - real prose, a
-synthetic defect:
-
-1. `mkdir -p /tmp/cadence-phase5-fixture/{fail,pass}/.planning/phases/1`.
-2. Recover the pair from history into each tree's `phases/1/`:
-   `git show v2.0.0:.planning/phases/1/CONTEXT.md` (criteria `AC1`-`AC7`) and
-   `git show v2.0.0:.planning/phases/1/UAT.md`. That checklist already carries
-   `criterion: AC1` through `AC7` on items 1-7 and `origin: verifier` on items
-   8-14. From history, not from the live paths: the v2.0.0 milestone prune
-   DELETED them, and `.planning/phases/1/` now holds a different cycle's phase,
-   so copying the live files silently builds the wrong fixture.
-3. In the `fail` tree ONLY, delete the whole `### 4.` and `### 5.` item blocks -
-   the two carrying `criterion: AC4` and `criterion: AC5` - and set the
-   `## Summary` `total:` and `passed:` to 12. The `pass` tree keeps all 14.
-4. In BOTH trees write a ROADMAP.md whose `## Phases` holds one CHECKED
-   `- [x] **Phase 1: Rungs**` entry with a matching `### Phase 1: Rungs` detail
-   section, a REQUIREMENTS.md whose `## Active` bullet and `## Traceability` row
-   both name `RNG-01` at Status `Complete`, and `phases/1/PLAN.md` whose
-   frontmatter declares `requirements:\n  - RNG-01`.
-
-Step 4's PLAN.md is not optional. `audit` builds its requirement -> plan map
-solely from the phase's plan files, so a tree with no PLAN.md returns
-`break: "no-plan"` for every row: the `pass` tree would FAIL on the requirement
-arm, and the `fail` tree's FAIL would not be attributable to coverage at all.
-Confirm `node cadence-core/bin/planning.mjs audit --dir <tree>/.planning`
-reports `counts.broken: 0` for BOTH trees before the human check is worth
-running, so the only difference between them is the coverage arm.
-
-Then the two seam calls, which are what the human check reads through
-`/cad-audit`: `criteria-coverage --dir .../fail/.planning` prints `breaks` with
-exactly `AC4` and `AC5`, and the same call against `.../pass/.planning` prints
-no `breaks` at all.
