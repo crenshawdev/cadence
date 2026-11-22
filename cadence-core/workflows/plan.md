@@ -141,7 +141,7 @@ The planner reads one composed phase input in place of the four phase documents.
 
   Keep the path the answer names as a literal too: `check_gate`, the `review` step and the revision re-dispatch name that same file and compose nothing more. The transcript gets the envelope, never the input. This session never opens the input, and reads the documents only where `load_phase` and an `--inline` `route` say.
 - **Bracket.** Its `--bracket-read` value is `<the phase input path>`. In gaps mode it is that path plus `.planning/phases/{N}/UAT.md` and the existing PLAN* and SUMMARY* files.
-- **Prompt.** The `Read before planning:` list names that file by its absolute path in place of its four document lines, and keeps the gaps line and the source-files line. Gaps and revision modes reuse this prompt and so name the same file.
+- **Prompt.** The `Read before planning:` list names that file by its absolute path and keeps the gaps line and the source-files line. Gaps and revision modes reuse this prompt and so name the same file.
 - **A refused or unreadable answer.** Print one line with what it names, and dispatch with the four document lines the prompt below lists, because the full documents lose the planner nothing. The bracket names those four.
 
 Before assembling the prompt, recall prior-project memory when the effective
@@ -187,10 +187,12 @@ Plan shape (from CONTEXT, directive): {one plan | multiple plans | split - defer
 Task ceiling: {workflow.max_plan_tasks} tasks per plan.
 
 Read before planning:
-- .planning/ROADMAP.md (this phase's entry and its dependencies)
-- .planning/REQUIREMENTS.md
-- .planning/PROJECT.md
-- .planning/phases/{N}/CONTEXT.md (locked user decisions - if present)
+- {the phase input path}
+- {refused compose, instead:
+  - .planning/ROADMAP.md (this phase's entry and its dependencies)
+  - .planning/REQUIREMENTS.md
+  - .planning/PROJECT.md
+  - .planning/phases/{N}/CONTEXT.md (locked user decisions - if present)}
 - {gaps mode: .planning/phases/{N}/UAT.md plus existing PLAN* and SUMMARY* files}
 - The actual source files your tasks will touch
 
@@ -476,7 +478,7 @@ The checker reads the plan files and the phase input in place of the phase docum
 
 - **Input.** Name the phase input `spawn_planner`'s stretch composed. When no earlier step of this run composed it, as on an `--inline` run, run that stretch's compose step first as it is written there, its directory and its call, and never spell the call here.
 - **Bracket.** Its `--bracket-read` value is `.planning/phases/{N}/PLAN*.md,<the phase input path>`.
-- **Prompt.** The `Read:` list keeps its plans line and names that file by its absolute path in place of its ROADMAP/REQUIREMENTS line and its CONTEXT line. The input carries every CONTEXT decision, so a locked decision no task implements still shows.
+- **Prompt.** The `Read:` list keeps its plans line and names that file by its absolute path. The input carries every CONTEXT decision, so a locked decision no task implements still shows.
 - **A refused or unreadable answer.** The planner's arm: print one line with what it names, and dispatch the checker with the documents the prompt below lists, and the bracket names them beside the plans.
 
 Prompt:
@@ -492,8 +494,10 @@ Rung: {the `effort` the resolve above returned} - that value, never a rung named
 
 Read:
 - .planning/phases/{N}/PLAN*.md (the plans under review)
-- .planning/ROADMAP.md and .planning/REQUIREMENTS.md
-- .planning/phases/{N}/CONTEXT.md (if present)
+- {the phase input path}
+- {refused compose, instead:
+  - .planning/ROADMAP.md and .planning/REQUIREMENTS.md
+  - .planning/phases/{N}/CONTEXT.md (if present)}
 </verification_context>
 ```
 
@@ -527,8 +531,8 @@ Handle the return:
 </step>
 
 <step name="review">
-Fire the `plan` review trigger per references/review-triggers.md, payload = the
-PLAN file(s) PLUS the phase input, as the stretch below says. A refused
+Fire the `plan` review trigger per references/review-triggers.md with the
+payload the stretch below names. A refused
 compose's payload is the PLAN file(s) plus the three artifacts the reviewer
 checks them against: `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and
 `.planning/phases/{N}/CONTEXT.md`. Every entry is a REFERENCE PATH the reviewer
