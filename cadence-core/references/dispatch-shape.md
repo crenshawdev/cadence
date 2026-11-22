@@ -41,7 +41,7 @@ outweighs that call defers anyway; `weight.mjs resident` decides which side an
 include falls on. A reference consulted at more than one distinct STEP stays
 eager whatever its size, since no single deferred read covers them all;
 mutually exclusive arms of ONE step count as one site (`cad-land` defers
-`references/git-publish.md`, step 4a or 4b, while `references/git-guard.md`
+`references/git-publish.md`, step 3a or 3b, while `references/git-guard.md`
 stays eager at steps 1, 2 and 3).
 
 Every deferral states, inline at the Read itself, the reference's consult-site
