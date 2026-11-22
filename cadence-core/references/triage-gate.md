@@ -23,11 +23,13 @@ below-blocker/high remainder, the `adjudicated` arm's non-survivors, a
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate-unfixed.md`. No gate
 reads another gate's file.
 
-**A return that is not the findings object is NEITHER outcome, at any arm.**
-Prose, a fragment or an empty return in place of the `{ "findings": [...] }`
-object `skills/cad-reviewer-contract/SKILL.md`'s `<returns>` block specifies
-means the gate could not be evaluated: say so and ask, as the `blocking` bullet
-does. Read the return's SHAPE, never a host-side stop signal.
+**A return that is not the findings object is NEITHER outcome** at the
+`blocking` and `adjudicated` arms (`/cad-verify`'s fire included) and in the
+narrowed round below. Prose, a fragment or an empty return in place of the
+`{ "findings": [...] }` object `skills/cad-reviewer-contract/SKILL.md`'s
+`<returns>` block specifies means the gate could not be evaluated: say so and
+ask, as the `blocking` bullet in `references/triage-gate-blocking.md` does.
+Read the return's SHAPE, never a host-side stop signal.
 
 **Every blocking settle leaves a JOINABLE receipt.** `planning.mjs risk-check
 status` refuses a range its detector matched until an outcome event says the
