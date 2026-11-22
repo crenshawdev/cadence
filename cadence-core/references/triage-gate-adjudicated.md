@@ -27,15 +27,10 @@ contradictory-answer re-ask are in `references/triage-gate.md`.
   again. Nothing is applied, committed, published or re-planned against a
   survivor the user did not name. When nothing survives, say the review RAN and
   adjudication killed everything, not a bare "no findings". A return that is
-  not the `{ "findings": [...] }` object
-  `skills/cad-reviewer-contract/SKILL.md`'s `<returns>` block specifies is not
-  that state: the gate could not be evaluated - say so and ask, as the
-  `blocking` bullet states, and never present it as adjudication having killed
-  everything. A workflow run that ran no voice, which the seam refuses as
-  `run-no-voice`, is that same gate. The test is the return's SHAPE, never a
-  host-side stop signal. The NON-SURVIVORS, and every survivor the user did not
-  name, are settled in the same step, by "What happens to a finding this fire
-  will not fix" in `references/triage-gate-unfixed.md`.
+  not the findings object is not that state, by the SHAPE rule in
+  `references/triage-gate.md`. The NON-SURVIVORS, and every survivor the user
+  did not name, are settled in the same step, by "What happens to a finding this
+  fire will not fix" in `references/triage-gate-unfixed.md`.
 
 **A `blocker` or `high` survivor ends settled.** NONE is the default, but
 `buildEntries` and `issue-filing unfixed` both refuse a survived `blocker` or

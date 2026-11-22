@@ -23,6 +23,12 @@ below-blocker/high remainder, the `adjudicated` arm's non-survivors, a
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate-unfixed.md`. No gate
 reads another gate's file.
 
+**A return that is not the findings object is NEITHER outcome, at any arm.**
+Prose, a fragment or an empty return in place of the `{ "findings": [...] }`
+object `skills/cad-reviewer-contract/SKILL.md`'s `<returns>` block specifies
+means the gate could not be evaluated: say so and ask, as the `blocking` bullet
+does. Read the return's SHAPE, never a host-side stop signal.
+
 **Every blocking settle leaves a JOINABLE receipt.** `planning.mjs risk-check
 status` refuses a range its detector matched until an outcome event says the
 fire happened, so all five settle points append one: `adjudication`
@@ -36,12 +42,12 @@ detail, where one spelling clears a range and another refuses it, plus
 
 **Every receipt names the RANGE it settles**, on `--base <base> --sha <head>` -
 BOTH ends, since two ranges can share a head and differ at the base.
-`risk-check status` joins a receipt to a record by head commit, and a receipt
-carrying no `--sha` settles nothing. Pass the same head the fire's own artifact
-was built from. A settle for a window the run has already moved PAST names that
-window on `--anchor <sha>`, the sha that window's own `phase_start` recorded:
-without it the receipt is stamped with the phase's NEWEST anchor and joins
-nothing the earlier window fired. An ordinary same-window receipt omits the flag.
+`risk-check status` joins on both ends, so a receipt missing either settles
+nothing. Pass the same head the fire's own artifact was built from. A settle
+for a window the run has already moved PAST names that window on `--anchor <sha>`,
+the sha that window's own `phase_start` recorded: without it the receipt is
+stamped with the phase's NEWEST anchor and joins nothing the earlier window
+fired. An ordinary same-window receipt omits the flag.
 
 **Every blocking settle also leaves the ADJUDICATION RECORD.** The receipt says
 a fire HAPPENED; the record says what was raised and how each finding was ruled,
@@ -103,12 +109,7 @@ queue's triage takes these two steps from here:
    dispatch, which it neither replaces nor licenses the coordinator to perform.
    Name the reason in the ask - "`<trigger>` re-armed once on its own fix and
    still reports N blocker/high findings" - and never fire that trigger again in
-   this loop. A return that is not the `{ "findings": [...] }` object
-   `skills/cad-reviewer-contract/SKILL.md`'s `<returns>` block specifies - prose,
-   a fragment, an empty return - is NEITHER outcome: the gate could not be
-   evaluated, so STOP and ask, as the `blocking` bullet
-   (`references/triage-gate-blocking.md`) says for a reviewer that could not
-   run. Read the return's SHAPE and never a host-side stop signal.
+   this loop. A non-findings return is neither (the SHAPE rule above).
 
 **Two caps, two different numbers.** One question carries at most four options
 and NONE occupies one of them, so N survivors become `ceil(N/3)` questions - at

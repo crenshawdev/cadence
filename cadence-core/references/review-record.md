@@ -23,11 +23,8 @@ joins nothing and leaves a fired, adjudicated range reading as never fired. Omit
 it only for a fire that is not per-plan (`/cad-debug`, `/cad-task`,
 `/cad-verify`).
 
-`--base <base> --sha <head>` name the RANGE this adjudication settled - BOTH
-ends, since two ranges can share a head and differ at the base. That is what
-lets `risk-check status` tell an adjudication of THIS range from one of an
-earlier, narrower range for the same plan. A receipt missing either end settles
-nothing.
+`--base <base> --sha <head>` name the RANGE this adjudication settled, by the
+range rule in `references/triage-gate.md`.
 
 The RAISED count travels on `--raised` and never inside `--detail`. The three
 SETTLED counts travel the same way, on `--survivors`, `--downgraded` and
