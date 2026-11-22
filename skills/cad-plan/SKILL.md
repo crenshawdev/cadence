@@ -16,11 +16,8 @@ allowed-tools:
 ---
 
 <objective>
-Turn one roadmap phase into .planning/phases/<N>/PLAN.md: numbered atomic
-tasks, each with files, action, and a falsifiable verification. Spawns
-cad-planner (fresh context), gates through cad-plan-checker when
-workflow.plan_check is true, then fires the `plan` review trigger.
-`--inline` plans small phases in the main context; `--gaps` plans closure
+Turn one roadmap phase into an executable plan under .planning/phases/<N>/.
+`--inline` plans a small phase in the main context; `--gaps` plans closure
 tasks from unresolved UAT items.
 </objective>
 
