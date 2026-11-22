@@ -1,10 +1,7 @@
 <purpose>
-The pipeline runs one step past where the skill's objective stops: read the
-phase goal (plus CONTEXT.md if /cad-context ran) -> spawn cad-planner ->
-optional cad-plan-checker gate -> fire the `plan` review trigger -> COMMIT
-DOCS.
-
-Research is /cad-context's job; second opinions belong to the review
+Read the phase goal (plus CONTEXT.md if /cad-context ran) -> spawn cad-planner
+-> optional cad-plan-checker gate -> fire the `plan` review trigger -> commit
+docs. Research is /cad-context's job; second opinions belong to the review
 subsystem.
 </purpose>
 
@@ -27,8 +24,7 @@ Parse `$ARGUMENTS`:
 
   Instead of that ask, an `ok:true` carrying `cycle: "none"` with an empty `phases[]` is a derived
   closed milestone, not a planning target: stop with "The milestone is
-  closed - no active cycle. /cad-phase add opens the next one." There is no
-  phase to plan until a roadmap entry exists.
+  closed - no active cycle. /cad-phase add opens the next one."
 - `--skip-check` - skip the plan-checker gate even when workflow.plan_check
   is true.
 - `--inline` - plan in the main context instead of spawning cad-planner.
@@ -53,29 +49,26 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy check --root .
 ```
 
-Hold `gate_found`. A project with no gate yet gets `ok:false` with
-`gate_found: false`, the answer the setup steps say to expect, so it is not a
-stop. Any other failing answer has `gate_found: null`: relay its `detail` and
+Hold `gate_found`. `ok:false` with `gate_found: false` means no gate yet and is
+not a stop. Any other failing answer has `gate_found: null`: relay its `detail` and
 plan without the CI task until it is fixed. Unset, make no call.
 
-Then size the phase, BEFORE spending a planner dispatch on it:
+Then size the phase, BEFORE any planner dispatch:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-size --phase {N} \
   --max-reqs 12 --max-tasks {workflow.max_plan_tasks}
 ```
 
-A `phase-too-big` entry in `over` means this phase names more requirements than
-one phase should carry. Present it with the offer at `too_big` below WITHOUT
-dispatching the planner. `--max-reqs 12` is a fixed rail, not a config key.
-`requirements_found: false` is NOT zero - a phase with no ROADMAP detail block
-is unmeasured, and it is never compared.
+A `phase-too-big` entry in `over` goes to `too_big` below WITHOUT dispatching
+the planner. `--max-reqs 12` is a fixed rail, not a config key.
+`requirements_found: false` is NOT zero: a phase with no ROADMAP detail block is
+unmeasured and never compared.
 </step>
 
 <step name="load_phase">
-Once N is known, steps 1-3 are independent reads/globs - fire them
-in one message and evaluate the stop/ask gates after they return. Only a call
-that consumes a prior call's output is serialized.
+Once N is known, fire steps 1-3 in one message and evaluate the stop/ask gates
+after they return.
 
 1. Read this phase's entry in .planning/ROADMAP.md: name, goal, requirement
    IDs. No entry -> stop: "Phase {N} is not in ROADMAP.md."
@@ -117,8 +110,7 @@ null sends no model parameter. This step needs nothing else from
 the resolve returns to the user before dispatching, each distinct warning once
 per workflow run (seam-spawn-agent.md's relay rule). `--bracket-read` is the read-set this site
 causes the planner to read, one comma-separated value, never a repeated flag.
-The resolve writes the lifecycle dispatch event itself; only the CLOSE in
-handle_return stays here. Then wait - do not read, edit, or plan anything else
+The resolve writes the dispatch event; handle_return writes the close. Then wait - do not read, edit, or plan anything else
 while the subagent runs.
 
 The planner reads one composed phase input in place of the four phase documents.
@@ -135,9 +127,8 @@ The planner reads one composed phase input in place of the four phase documents.
 - **A refused or unreadable answer.** Print one line with what it names, and dispatch with the four document lines the prompt below lists. The bracket names those four.
 
 Before assembling the prompt, recall prior-project memory when the effective
-`memory.backend` read in `parse` is `builtin` (skip this entirely when `none` -
-do not issue the call). When recall does run, batch it with the
-`route.mjs resolve` above in one message.
+`memory.backend` read in `parse` is `builtin`; on `none`, issue no call. Batch
+recall with the `route.mjs resolve` above in one message.
 
 ```
 D="$(mktemp -d "${TMPDIR:-/tmp}/cad-plan-XXXXXX")" \
@@ -155,12 +146,10 @@ Carry both printed values as literals at `count_planned` and `count_committed`
 (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md`'s carried-literal rule).
 
 Parse its JSON line (`{ok, results:[{score, source, phase?, snippet}]}`) and
-append a `<recalled_memory>` block at the END of the `<planning_context>` below
-(its volatile region), one line per top result carrying the `snippet`, `source`
-file, and `phase` when present (optional - phaseless CAPTURE items omit it;
-render it only when present). These snippets ride the dispatch prompt, never the
-cad-planner definition. On `none`, or when results are
-empty, omit the block.
+append a `<recalled_memory>` block at the END of the `<planning_context>` below,
+one line per top result carrying the `snippet`, `source` file and `phase` (only
+when present). These snippets ride the dispatch prompt, never the cad-planner
+definition. On `none`, or empty results, omit the block.
 
 Prompt:
 
@@ -190,32 +179,30 @@ Write the plan files in .planning/phases/{N}/.
 <recalled_memory>{one line per recalled result: snippet - source file, phase (when present); this block is present only under memory.backend builtin with non-empty results}</recalled_memory>
 </planning_context>
 
-(The return markers and report shape are the agent's own cached definition -
-never restate them in the dispatch tail; dispatch-shape.md's cache
-discipline.)
+(Never restate the return markers or report shape in the dispatch tail: they
+are the agent's own definition.)
 ```
 
-When `testing.scope` is set, the prompt carries one more block, the
-`<testing_policy>` below, placed directly before `<recalled_memory>`, or
-directly before `</planning_context>` when that block is absent. With it unset the
-prompt carries none of it. Gaps and revision modes reuse this prompt and so
-carry the block. The sentence about the CI task is added only when `gate_found`
-is `false`.
+When `testing.scope` is set, the prompt carries the `<testing_policy>` block
+below, directly before `<recalled_memory>`, or before `</planning_context>` when
+that block is absent; unset, none of it. Gaps and revision modes reuse this
+prompt and so carry the block. The CI-task sentence is added only when
+`gate_found` is `false`.
 
 ```text
 <testing_policy>
 A testing policy is active for this project. Read ${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md once and follow it.
-{gate_found false: No CI job enforces the policy yet, so this plan's first task builds or extends them as an ordinary plan task, including any required job no workflow defines yet, such as a packaging job. Take the commands, thresholds and required jobs from the values `test-policy.md` says how to read.}
+{gate_found false: No CI job enforces the policy yet, so this plan's first task builds or extends the CI jobs, including any required job no workflow defines yet, such as a packaging job, from the values `test-policy.md` says how to read.}
 </testing_policy>
 ```
 
-When `planning.code_map` read in `parse` is `true`, the prompt carries a code map block, and one local scan with no model feeds it. Before assembling the prompt, make the scan once:
+When `planning.code_map` read in `parse` is `true`, the prompt carries a code map block. Before assembling the prompt, make the scan once:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" codemap scan
 ```
 
-On a good answer, print one line with its `stale` and `unbuilt` counts and `/cad-map`: `Code map: {stale} stale, {unbuilt} unbuilt. /cad-map builds or refreshes it.` A module with no entry reads as unbuilt, so a map nobody built still prints a line that prompts the first `/cad-map`. Then place the block below where `<testing_policy>` goes, and after it when both are present. On `ok:false`, or output that won't parse, print nothing about it, leave the block out and go on planning. This step starts nothing else: a refresh is `/cad-map`'s and the user's to type. Gaps and revision modes reuse this prompt and so carry the block, with no second scan. With the key not `true` the prompt carries none of it.
+On a good answer, print one line with its `stale` and `unbuilt` counts and `/cad-map`: `Code map: {stale} stale, {unbuilt} unbuilt. /cad-map builds or refreshes it.` Then place the block below where `<testing_policy>` goes, and after it when both are present. On `ok:false`, or output that won't parse, print nothing about it, leave the block out and go on planning. This step starts nothing else: a refresh is `/cad-map`'s and the user's to type. Gaps and revision modes reuse this prompt and so carry the block, with no second scan. With the key not `true` the prompt carries none of it.
 
 ```text
 <code_map>
@@ -254,16 +241,15 @@ written - the first once this step's `PLAN.md` is on disk, the second after
 `commit` - against that same `surfaced.json` and behind that same token check.
 Do NOT restate either call here.
 
-`check_census` applies here too, under the same prohibition on a second
-spelling: run that step exactly as written once this step's `PLAN.md` is on
-disk, and do not continue while it refuses.
+`check_census` applies here too, run as written and not restated, once this
+step's `PLAN.md` is on disk; do not continue while it refuses.
 
 With `testing.scope` set, read `references/test-policy.md` once and follow it
 as spawn_planner's `<testing_policy>` block says: the testing scope in each
 task's `Verify:`, and the CI task first when `gate_found` is `false`.
 
 The scan and the printed line in spawn_planner's `planning.code_map` stretch
-apply here too, under the same prohibition on a second spelling: with that key
+apply here too, not restated: with that key
 `true`, make that scan once and print that line before planning, and on
 `ok:false`, or output that won't parse, print nothing about it and go on
 planning. An inline plan has no prompt, so it carries no block.
@@ -288,8 +274,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <
 </step>
 
 <step name="too_big">
-Reached two ways: a `phase-too-big` entry from `plan-size` at `parse` (before
-any planner ran), or a `## PHASE TOO BIG` return from the planner.
+Reached from a `phase-too-big` entry at `parse` or a `## PHASE TOO BIG` return.
 
 State the measurement first, in one line - the requirement count and the
 ceiling, or the planner's own reason - then ask (ask-user seam) with these
@@ -304,27 +289,21 @@ three options, the first marked `(recommended)`:
 
 What each option does:
 
-1. Re-dispatch the
-   planner ONCE, instructed to write `PLAN-1.md`, `PLAN-2.md`, ... each within
-   the task ceiling.
-2. Stops here; you
-   run `/cad-phase add`, then `/cad-plan` per phase. Independent phases can run
-   concurrently (see `parallelization.max_concurrent_agents`).
-3. Re-dispatch ONCE with that instruction. The
-   result is a plan over its ceiling, and `check_size` below will say so rather
-   than let it pass silently.
+1. Re-dispatch the planner ONCE to write `PLAN-1.md`, `PLAN-2.md`, ... each
+   within the task ceiling.
+2. Stop; the user runs `/cad-phase add`, then `/cad-plan` per phase.
+   Independent phases can run concurrently (`parallelization.max_concurrent_agents`).
+3. Re-dispatch ONCE with that instruction; `check_size` reports the overrun.
 
-Do NOT claim option 1 is unavailable because plans cannot share files.
-`plan-overlap` reports a shared path so the caller knows the plans are
-sequential rather than concurrent; it does not refuse the split, and a
-sequential multi-plan phase is a shape this workflow supports.
+Do NOT claim option 1 is unavailable because plans share files: `plan-overlap`
+reports a shared path as sequential plans and never refuses the split.
 
 This is a consult dead-end: before that ask, run offer_consult per
 references/consult.md with the split problem as the situation.
 </step>
 
 <step name="check_size">
-The written plan against the ceiling the planner was handed. A COUNT, run after
+The written plan against the ceiling the planner was handed, run after
 `handle_return` and before `check_gate`:
 
 ```
@@ -332,26 +311,18 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-size --phase {N}
   --max-tasks {workflow.max_plan_tasks} --max-bytes {workflow.max_plan_bytes}
 ```
 
-`plan-too-many-tasks` names the PLAN file and both numbers. It is per plan, so
-the remedy is the same one `too_big` recommends: re-dispatch ONCE instructed to
-split this plan's tasks across more plans.
-Say the numbers out loud when you do - "PLAN.md carries 8 tasks against a
-ceiling of 4" - because the point of this step is that the overrun stops being
-silent.
+`plan-too-many-tasks` names the PLAN file and both numbers. Say them out loud -
+"PLAN.md carries 8 tasks against a ceiling of 4" - and re-dispatch ONCE
+instructed to split this plan's tasks across more plans.
 
-`plan-too-many-bytes` gets exactly that treatment one question over: the BYTES
-that plan's `files:` frontmatter declares, which is the read set ONE executor
-dispatch is handed and is what the user pays for. Name the PLAN file and both
-numbers out loud - "PLAN-1.md declares 712,004 bytes against a ceiling of
-675,000" - and the remedy is the same split into more plans, because a plan's
-declared list splits with its tasks. Read the `absent` count beside the figure
-before you judge it: it is how many declared paths are not on disk yet, so a low
-byte count beside a non-zero `absent` is a plan whose files do not exist yet
-rather than a cheap dispatch.
+`plan-too-many-bytes`, the BYTES that plan's `files:` frontmatter declares, gets
+the same treatment - "PLAN-1.md declares 712,004 bytes against a ceiling of
+675,000" - and the same split. Read the `absent` count beside the figure first:
+a low byte count beside a non-zero `absent` is a plan whose declared files are
+not on disk yet, not a cheap dispatch.
 
-Not a hard halt. The user may have chosen option 3 at `too_big` and asked for
-the full scope, and a check that refused what the user just authorized would be
-arguing with them. One re-dispatch, or the user's word, then continue.
+Not a hard halt: one re-dispatch, or the user's word (option 3 at `too_big` is
+one), then continue.
 </step>
 
 <step name="check_brief">
@@ -374,10 +345,9 @@ Not a hard halt. After the one re-dispatch, or the user's word, continue: `/cad-
 </step>
 
 <step name="check_census">
-The plan's lease against the hand-maintained COUNTS this repository keeps - the
-numbers a human wrote down that the code must keep true. Run after
-`check_size`, once the plan is on disk and before any executor could be
-dispatched, and ahead of `count_planned`.
+The plan's lease against the repository's hand-maintained COUNTS. Run after
+`check_size`, once the plan is on disk, before any executor dispatch and ahead
+of `count_planned`.
 
 Once per plan file, as `check_brief` says:
 
@@ -385,35 +355,25 @@ Once per plan file, as `check_brief` says:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" lease-check --phase {N} --plan <k> --plan-time
 ```
 
-It answers `ok:true`, or it refuses one of three ways, and the remedy differs:
+It answers `ok:true` or REFUSES one of three ways, each with its own remedy. A
+refusal offers no options and asks nothing; re-run this check until it answers
+`ok:true`, and do not continue to `count_planned` or dispatch anything before.
 
-- `census-at-risk`, with a `censuses_at_risk` list. Each entry names the FILE
-  the lease is missing, what that file's count is a count of, and the site that
-  asserts it.
-- `unparsed-lease`, with a `frontmatter_issues` list naming the lines of the
-  plan's frontmatter that could not be read.
-- `empty-lease`, when the plan declared no files at all - usually a `files:`
-  key that is missing or misspelled.
-
-The last two say the `files:` list could not be READ, so nothing was measured
-and no census can be named. The remedy for those is to repair that plan's
-frontmatter, NOT to add a file.
-
-It REFUSES. This step offers no options and asks nothing.
-
-When it names files, the remedy, and the whole remedy: add each named file to
-that plan's `files:` list and re-run this check until it answers `ok:true`. Do
-not continue to `count_planned`, and do not dispatch anything, while it refuses.
-
-Say the missing files out loud, each beside the census it holds - "PLAN-2.md
-does not declare tests/trace.test.mjs (cadence-tests repository), which holds the count of the
-four refusing trace flags' sentences".
+- `census-at-risk`: each `censuses_at_risk` entry names a FILE the lease is
+  missing, what that file's count counts, and the site asserting it. Add each
+  named file to that plan's `files:` list, and say each out loud beside its
+  census - "PLAN-2.md does not declare tests/trace.test.mjs (cadence-tests
+  repository), which holds the count of the four refusing trace flags' sentences".
+- `unparsed-lease` (a `frontmatter_issues` list of the frontmatter lines that
+  could not be read) and `empty-lease` (no files declared, usually a missing or
+  misspelled `files:` key): the list could not be READ, so nothing was
+  measured. Repair that plan's frontmatter, NOT add a file.
 </step>
 
 <step name="count_planned">
-The read-back count at the first of its two points: how many of the prior
-decisions, captures and deviations `spawn_planner` surfaced does the plan the
-planner just wrote actually cite. Run after `handle_return`, before `check_gate`.
+The first read-back count: how many of the prior decisions, captures and
+deviations `spawn_planner` surfaced the new plan cites. Run after
+`handle_return`, before `check_gate`.
 
 Both `<the echoed ...>` placeholders are the LITERALS `spawn_planner` printed,
 never a fresh `mktemp` and never a `$(...)`. Check the token FIRST, in the same
@@ -424,9 +384,8 @@ invocation.
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cite-count --phase {N} --point planned --payload "<the echoed scratch directory>/surfaced.json"
 ```
 
-When the effective `memory.backend` read in `parse` is `none`, no search ran and
-no scratch directory exists: drop the token check and the `--payload` flag, and
-the seam answers with its backend-off state - a THIRD thing on the record,
+When `memory.backend` is `none`, no scratch directory exists: drop the token
+check and the `--payload` flag, and the seam answers with its backend-off state,
 distinct from a run that surfaced nothing.
 
 Read the one JSON line and hold `surfaced.count`, `cited.count` and `trace` for
@@ -488,16 +447,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <
 
 Handle the return:
 - `## VERIFICATION PASSED` -> continue.
-- `## ISSUES FOUND` -> read the severities (the checker marks each BLOCKER or
-  WARNING; WARNING means quality is degraded but execution can proceed):
+- `## ISSUES FOUND` -> read the severities, each BLOCKER or WARNING:
   - Only WARNINGs, no BLOCKER -> fold the worthwhile ones into the plan in the
     main context (or note why not) and continue. Do NOT spend the revision loop
     or a re-check on warnings alone.
   - Any BLOCKER -> ONE revision, maximum. Read
     `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/plan-revision.md` (one
-    consult site - this step) and follow it: the fresh revision-mode planner
-    spawn, the narrowed checker re-dispatch, both of their brackets, and the
-    no-BLOCKER-left / still-a-BLOCKER ask that ends the arm.
+    consult site - this step) and follow it to the ask that ends the arm.
 - Empty or unmarked return -> report it, then ask (ask-user seam):
 
   - header: "No check"
@@ -528,16 +484,15 @@ The payload is the PLAN file(s) plus the phase input in place of the three artif
 
 The gate comes from the routing bundle; act on it.
 The schema default is `advisory`, raised to `blocking` by the plan-time risk
-floor and beaten by any `review.triggers.plan.gate` a layer sets. A
-gate resolved `off` by config
-fires nothing and returns immediately (review-triggers.md step 1) - `done`'s
-Review line then reports the gate as off rather than as a pass:
+floor and beaten by any `review.triggers.plan.gate` a layer sets. A gate
+resolved `off` fires nothing (review-triggers.md step 1), and `done`'s Review
+line reports it as off, not as a pass:
 
 - **advisory** (the default) -> fire in the SAME message as the
   `commit` step's seam calls rather than waiting. The dispatch carries the
   advisory persistence tail (references/review-inline.md): the reviewer writes its
-  findings to `.planning/phases/<N>/records/REVIEW-plan.md` and closes its own bracket,
-  so this session ending before the return lands loses nothing. `done` reads
+  findings to `.planning/phases/<N>/records/REVIEW-plan.md` and closes its own
+  bracket. `done` reads
   that file if it is on disk by then; otherwise its Review line names the path
   as in flight - never a clean pass.
 - **blocking** -> fire and WAIT; halt on FAIL until findings are fixed or the
@@ -545,21 +500,19 @@ Review line then reports the gate as off rather than as a pass:
 - **adjudicated** -> fire and WAIT - triage precedes the commit.
   Triage the survivors, then apply ONLY the ones the user picked to the plan
   file(s) and leave the rest recorded in this step's report. The survivors are
-  a numbered list the user triages, NONE is the default, and only what the user
-  names is acted on - RE-READ
+  a numbered list with NONE as the default - RE-READ
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
   before presenting. On the workflow
   path (`references/review-workflow.md`) that wait is the launch ending the
   turn and the notice resuming this step, with nothing else dispatched in
   between, and the triage and the applying continue from the notice.
 
-Do not re-enter the checker loop afterward - this trigger is the second
-opinion, not another iteration.
+Do not re-enter the checker loop afterward.
 </step>
 
 <step name="commit">
-1. Seed this phase's Traceability rows and update the cursor - both through the
-   seam, right where the plan was just written, and both in ONE message:
+1. Seed this phase's Traceability rows and update the cursor through the seam,
+   both in ONE message:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" seed-reqs --phase {N}
@@ -569,19 +522,13 @@ opinion, not another iteration.
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status planned --next "/cad-execute {N}"
    ```
 
-   `cursor set` derives name/total from ROADMAP and stamps the date; hold its
-   envelope's `cursor.total` for `done`.
-   `seed-reqs` inserts `| <id> | Phase {N} | Pending |` for exactly the declared
-   `requirements:` ids that also have an `## Active` bullet in
-   REQUIREMENTS.md; idempotent, so a replan or a `--gaps` plan can never
-   duplicate a row. Report `orphan_ids` to the user - a declared id with no
-   `## Active` bullet is scope creep or a typo. `no_active_section: true` is
-   a DIFFERENT report: the milestone's `## Active` section itself is absent
-   (an old-heading project, or a close that never seeded it), so those ids
-   are not scope creep - the fix is to open the section, not to edit the
-   plan. Status is always `Pending`; cad-verify remains the only writer of
-   any other status. `ok:false` is reported to the user and the workflow
-   CONTINUES regardless - the plan is already on disk, seeding is not a gate.
+   Hold the `cursor set` envelope's `cursor.total` for `done`. `seed-reqs`
+   seeds `Pending` rows for the declared ids with an `## Active` bullet, and a
+   replan or `--gaps` plan never duplicates one. Report `orphan_ids` to the
+   user: a declared id with no `## Active` bullet is scope creep or a typo.
+   Report `no_active_section: true` apart: the milestone's `## Active` section
+   is absent, so the fix is to open it, not to edit the plan. Report `ok:false`
+   and CONTINUE: seeding is not a gate.
 
 2. If planning.commit_docs is true: apply the protected-branch guard
    (references/git-guard.md rail 1), then commit the plan file(s),
@@ -607,11 +554,9 @@ differs:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cite-count --phase {N} --point committed --payload "<the echoed scratch directory>/surfaced.json"
 ```
 
-Both counts reach `.planning/records/trace.jsonl` as their own `outcome`-family events
-under this phase's correlation id: the seam appends each one itself, so neither
-figure is retyped onto a flag, and the envelope's `trace` field is the only
-place a caller learns a record was dropped. Hold this count for `done` beside
-the first.
+The seam appends both counts to `.planning/records/trace.jsonl` itself, so
+retype neither onto a flag; the envelope's `trace` field is where a dropped
+record shows. Hold this count for `done` beside the first.
 </step>
 
 <step name="done">
