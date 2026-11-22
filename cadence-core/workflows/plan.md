@@ -228,7 +228,8 @@ with the checker's issues appended verbatim in a `<checker_issues>` block.
 Follow cad-planner's methodology yourself: goal-backward truths, read the
 files the tasks will touch, task anatomy (files / action / falsifiable
 verify). Write .planning/phases/<N>/PLAN.md from the same template. One plan
-file only - inline never splits.
+file only - inline never splits. The plan's `requirements` lists every phase
+requirement ID from load_phase.
 
 Recall applies here too, behind spawn_planner's recall gate: run its whole
 block, so the same `surfaced.json` and `run-token` land in this run's own echoed
