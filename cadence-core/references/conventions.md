@@ -1,24 +1,18 @@
 # Cadence conventions
 
-The reference a skill or workflow reads when one of these rules applies to
-what it is doing. Loaded on demand, not preloaded: cite it by path where a
-rule is relevant, or `@`-include it where a workflow needs the whole set.
-Nothing here reaches an agent that has not read it.
+Loaded on demand, never preloaded: a skill or workflow cites it by path where a
+rule applies. Nothing here reaches an agent that has not read it.
 
 ## Paths
 
-- Engine: `${CLAUDE_PLUGIN_ROOT}/cadence-core/` - the single canonical engine root,
-  resolved by the Claude Code plugin runtime. No host probing, no locator shim.
-  Skills @-include workflows from here.
-- Project state: `.planning/` in the repo root - the SAME git repo as the code
-  it plans (canonical set: PROJECT.md, REQUIREMENTS.md,
-  ROADMAP.md, STATE.md, phases/<N>/{PLAN,SUMMARY,UAT}.md). Cadence assumes one
-  repo holds both plans and code: the protected-branch guard, diffs, and
-  goal-check all run where `.planning/` is, so a phase whose code lives in a
-  different repo is NOT a supported mode. Keep `.planning/` in the code repo;
-  driving a separate code repo from here is the steerer's responsibility, not
-  the tool's. (execute.md guards and warns if it detects the split, but does
-  not make it work.)
+- Engine: `${CLAUDE_PLUGIN_ROOT}/cadence-core/`, resolved by the Claude Code
+  plugin runtime. No host probing, no locator shim. Skills @-include workflows
+  from here.
+- Project state: `.planning/` in the repo root, in the SAME git repo as the
+  code it plans (PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md,
+  phases/<N>/{PLAN,SUMMARY,UAT}.md). A phase whose code lives in a different
+  repo is NOT a supported mode; driving a separate code repo is the steerer's
+  job, and execute.md only warns when it detects the split.
 - Phase directory: `.planning/phases/<N>/`. The grammar for `<N>`, and the
   guarantee that no spelling is ever silently redirected to a DIFFERENT phase's
   directory, are stated in `references/roadmap-phases.md` and nowhere else.
@@ -36,36 +30,23 @@ Nothing here reaches an agent that has not read it.
 
 ## Deliberate shortcuts
 
-A corner cut on purpose is marked at the line it was cut, in whatever comment
-syntax the file already uses, on ONE line. The marker is the token
-`CADENCE-DEBT` followed immediately by a colon, then three fields in order,
-separated by ` | `:
+A corner cut on purpose is marked at the line it was cut, in the file's own
+comment syntax, on ONE line. The marker is the token `CADENCE-DEBT` followed
+immediately by a colon, then three fields in order, separated by ` | `:
 
 1. the one-line description of what was cut;
 2. `ceiling` and a colon, then what it does not handle;
 3. `trigger` and a colon, then what should prompt revisiting it.
 
-Both named fields are REQUIRED. A marker missing one is named by the harvest
-rather than dropped, so an incomplete marker is visible instead of silent.
+Both named fields are REQUIRED; the harvest names a marker missing one rather
+than dropping it.
 
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" debt-harvest --root .`
 collects every marker in the tracked tree into `.planning/CAPTURE.md`'s own
-`## Debt markers` section, rewritten wholesale on each run. The MARKER in
-tracked code is the durable record; that section is a regenerable view of it, so
-deleting a marker from source removes its bullet on the next run. The harvest
-does not add its section to the recall walk, so a harvested marker reaches
-`/cad-plan`'s recall only when it is promoted by hand.
-
-The token is namespaced so it cannot collide with a marker another tool or
-another contributor introduces, and it is not negotiable later: once markers are
-planted across a tree, changing the token means editing every one of them.
-Measured over this tree with `git grep -w` on 2026-08-09, `SHORTCUT`, `DEBT`,
-`CORNER`, `TRIPWIRE`, `CADENCE-DEBT` and `CAD-DEBT` all returned zero, while
-`CUT` returned 9 and `CEILING` 1 - so those two were never candidates.
-
-Documentation ABOUT this convention describes the fields in prose, as this
-section does, and never writes a literal marker line: the harvest scans tracked
-source, so a documented example would be ingested as a real marker.
+`## Debt markers` section, rewritten wholesale on each run. The marker in
+tracked code is the durable record, so deleting it from source removes its
+bullet on the next run. That section is outside the recall walk: a harvested
+marker reaches `/cad-plan`'s recall only when promoted by hand.
 
 A hand-maintained CENSUS - a count a human wrote down that the code has to keep
 true - is marked the same way, on ONE line at the site that asserts it. The
@@ -73,33 +54,20 @@ marker is the token `CADENCE-CENSUS` followed immediately by a colon, then the
 id of its row in `cadence-core/bin/lib/census-registry.mjs`, then ` | `, then
 `asserts` and a colon, then one line naming what the assertion pins. A marker
 missing its id or its `asserts` clause is named as malformed rather than
-dropped.
+dropped. A marked site whose id NO registry row names reddens the suite, so the
+row is added in the commit that plants the marker. Everything else about
+censuses is in `census-registry.mjs`.
 
-The one rule over that grammar: a marked site whose id NO registry row names
-reddens the suite. The row is added in the commit that plants the marker, and
-deleting the row alone would leave the count marked and unwatched, which is
-exactly what reddening catches.
-
-Everything else about censuses lives in `cadence-core/bin/lib/census-registry.mjs`
-and is written there once - what makes a count a census rather than a
-measurement, why the table is hand-maintained, why a row's `subjects` are
-narrower than what the census actually scans, and why the table's own length is
-never asserted. This section summarizes the marker and points there; it does not
-restate any of it.
-
-Documentation about this token describes the fields in prose, as the paragraphs
-above do, and never writes a literal marker line. The reason is not the debt
-harvest's - no walk ingests markdown for this token - it is the grammar's: the
-token followed IMMEDIATELY by a colon is what MAKES a marker, so a spelled-out
-example would be one.
+Documentation about either token describes the fields in prose, as this section
+does, and never writes a literal marker line: one would be a real marker.
 
 ## Config resolution
 
 The only correct read is the seam - one call for every key the workflow uses:
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get <key> ...`.
 It layers repo (.planning/config.json) over the user-global file over the
-schema defaults, so a raw file read sees at most one layer and lies about the
-rest. Read only the keys you need. Unknown keys are ignored, never fatal.
+schema defaults, so a raw file read sees at most one layer. Read only the keys
+you need. Unknown keys are ignored, never fatal.
 
 ## Caller-derived text
 
@@ -110,8 +78,7 @@ rest. Read only the keys you need. Unknown keys are ignored, never fatal.
   double-quoted shell word carrying `$(...)` or a backtick executes before Node
   starts, and a path cannot.
 - If no, it stays inline: a slash command, an enum word, a template the workflow
-  composed itself. The inline form also stays for a human typing at a shell,
-  where the text is the user's own to begin with.
+  composed itself, or a human typing at a shell.
 - No site decides this for itself. Every one is classified in
   `cadence-core/bin/lib/text-transport.mjs`, and self-verify reports a site the
   register does not classify - so a NEW site is registered, not argued.
@@ -119,48 +86,39 @@ rest. Read only the keys you need. Unknown keys are ignored, never fatal.
 ## Bulk tool output
 
 - The size test, asked once per tool call a prose site PRESCRIBES: does that
-  call's own measured response cross 10,000 bytes? That figure is the mean
-  `Read` response on this repository - 10,323 B over 780 recorded calls,
-  `.planning/records/reads.jsonl`, measured 2026-08-17. If yes, then its output
+  call's own measured response cross 10,000 bytes? If yes, then its output
   rides a file, not the transcript: redirect the call into a scratch path
   inside THIS RUN's own directory (`> "$D/<name>"`, where `D` is a directory
   this run made with `mktemp -d`) and hand the transcript a DIGEST of what the
-  step actually needs. A response sitting in the transcript is re-paid on every
-  later turn at the cache-read rate; a digest is paid once.
-- The directory is made for the run and never given a shared name:
+  step actually needs.
+- The directory is made for the run with this template, never a shared name:
   `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")"`, and everything the step
-  writes goes inside it. A fixed scratch filename is ONE file that two runs
-  started in two repositories both write and both read, so one run's blocking
-  gate is answered by the other's bytes. Leave the directory for the operating
-  system's tmp reaping: a step that `rm -rf`s a path it computed itself is a
-  worse failure than a stale directory. The template is explicit because the
-  argument-less spelling of that call is GNU-only.
+  writes goes inside it. The argument-less spelling is GNU-only. Leave the
+  directory for the operating system's tmp reaping; never `rm -rf` a path the
+  step computed.
 - The conversion is a shell redirect plus a targeted read-back - never a new
   seam, flag or subcommand. Read back only the fields the step prints or
-  branches on, one at a time; reading the scratch file WHOLE is the same bytes
-  on the same turn and buys nothing. The file is the model's own scratch, never
-  a phase artifact.
+  branches on, one at a time, never the scratch file WHOLE. The file is the
+  model's own scratch, never a phase artifact.
 - When the write and the read-back share ONE Bash invocation, chain both to the
-  directory-making call with `&&`: the read-back then cannot run on a write that
-  failed, and what it reads is a directory this run just created empty.
+  directory-making call with `&&`, so the read-back never runs on a failed
+  write.
 - When they are SPLIT across two fenced blocks, a shell variable cannot carry
   it - the Bash tool persists the working directory and not shell state. So the
   writing block ECHOES the directory once, and beside it a run TOKEN it also
   wrote into that directory; the later block carries both as literals, a path
-  and never a `$(...)`, which is the caller-derived-text rule above. A carried
-  path is the one arm where an EARLIER run's well-formed file still resolves, so
-  the later block compares the directory's token file against the token it was
-  handed and refuses when the two differ. Compare against an id carried
-  independently of the file: an id read out of the file itself is one that any
-  stale file answers self-consistently.
+  and never a `$(...)`, per Caller-derived text above. The later block compares
+  the directory's token file against the token it was handed and refuses when
+  they differ, since an earlier run's well-formed file still resolves. Compare
+  against an id carried independently of the file, never one read out of it.
 - A read-back REFUSES rather than answering from a file it could not trust. It
   names `scratch-unreadable` on stderr and exits non-zero when the file cannot
   be read or parsed, `scratch-shape` when the field the step needs is absent,
   and `scratch-stale` when the token does not match. No default may stand in for
   a missing value: `(r.outcomes||[]).length` answers `0` and
-  `JSON.stringify({a:r.a})` prints `{}`, and both of those read as a successful
-  answer. At a blocking gate a refusal is NEITHER verdict - the gate could not
-  be evaluated, so it goes to that gate's STOP-and-ask arm.
+  `JSON.stringify({a:r.a})` prints `{}`, and both read as an answer. At a
+  blocking gate a refusal is NEITHER verdict: it goes to that gate's
+  STOP-and-ask arm.
 - If no, the call stays inline: a response under the threshold, a form its own
   flags already bound (`--stat`, `--name-only`), a call another agent runs in
   its own context.
@@ -173,24 +131,23 @@ rest. Read only the keys you need. Unknown keys are ignored, never fatal.
 
 ## Parallel work
 
-The coordinator walks a workflow's steps in order, but ordering the STEPS does
-not mean serializing the CALLS inside them. When a step's inputs are known-path,
-read-only, and mutually independent - several file Reads, a `git` probe, a seam
-`get` whose result nothing else in the batch consumes - issue them as parallel
-tool calls in ONE message. Serialize only a call that consumes a prior call's
-output (a `git diff <a>..<b>` that needs hashes a SUMMARY read just produced, a
-follow-up read whose path a first call computed). A numbered list in a workflow
-is evaluation order, not a one-call-per-turn mandate.
+Ordering a workflow's STEPS does not serialize the CALLS inside them. When a
+step's inputs are known-path, read-only, and mutually independent - several
+file Reads, a `git` probe, a seam `get` whose result nothing else in the batch
+consumes - issue them as parallel tool calls in ONE message. Serialize only a
+call that consumes a prior call's output (a `git diff <a>..<b>` that needs
+hashes a SUMMARY read just produced, a follow-up read whose path a first call
+computed). A numbered list in a workflow is evaluation order, not a
+one-call-per-turn mandate.
 
 ## State
 
-- `STATE.md` is a cursor of four required lines plus an optional `Plan:` line. It
-  is overwritten in place, never appended.
-  The only correct writer is the seam (`planning.mjs cursor set` - it derives
-  name/total from the state file, validates the status, stamps the date, and writes
-  atomically); read it with `cursor get`. Never hand-edit the file. NO audit
-  logs, no activity tables, no session narratives - git history is the log.
-  Derive views from `git log` on demand.
+- `STATE.md` is a cursor of four required lines plus an optional `Plan:` line,
+  overwritten in place, never appended. The only writer is the seam
+  (`planning.mjs cursor set` - it derives name/total from the state file,
+  validates the status, stamps the date, and writes atomically); read it with
+  `cursor get`. Never hand-edit the file. No audit logs, activity tables or
+  session narratives - git history is the log.
 - Canonical cursor schema - every writer emits these four required lines and
   the optional `Plan:` line under a `# State` heading, in this order:
 
@@ -216,8 +173,8 @@ is evaluation order, not a one-call-per-turn mandate.
   `ready to plan` (new-project) -> `context gathered` (context) -> `planned`
   (plan) -> `executed` (execute) -> `phase complete` (verify). `paused`
   (cad-pause) is allowed at any point. Do not invent other values.
-- `paused` adds no extra lines: `Status: paused` with the `Next:` line holding
-  cad-pause's one-line resume pointer. The cursor gains no line for it.
+- `paused` adds no line: `Status: paused`, with `Next:` holding cad-pause's
+  one-line resume pointer.
 - `cad-progress` treats the cursor as a hint: if it disagrees with the derived
   state it rewrites it in this schema. Any skill that changes phase state
   overwrites the cursor and commits it, with `.planning/records/state.json`, in
@@ -239,8 +196,6 @@ is evaluation order, not a one-call-per-turn mandate.
 
 - The "safe to /clear first" closer: when a command's durable output is on
   disk (and committed where config says so), its done-report says so in one
-  line naming WHAT survives the clear. One line, per-command specifics, no
-  ceremony.
-
+  line naming WHAT survives the clear.
 - Terse completion reports: what changed, commit hash(es), files touched.
 - No next-step menus unless the workflow genuinely forks. One suggestion max.
