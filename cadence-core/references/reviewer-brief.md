@@ -1,20 +1,9 @@
 # Reviewer brief
 
-The bar every Cadence reviewer answers to, local or cross-model. It is composed
-into the `instruction` of a cross-model review payload at the fire site
-(`references/review-cross-model.md`, the arm that composes it), so an external
-reviewer is held to the
-same stance, the same severity vocabulary and the same evidence rule as the
-`cad-reviewer` subagent - and an adjudicator can merge both sides' findings
-without knowing which reviewer produced which.
-
-This file is a PAYLOAD FRAGMENT, not a prose surface the spine loads: every byte
-of it is sent verbatim to a model that has no repo access, no tools and no
-Cadence installation. So nothing here may name a path, a tool, or a file to
-write. What the local reviewer is additionally told - that it holds Read, Bash,
-Grep and Glob, and that resolving the artifact reference is step one - stays in
-`skills/cad-reviewer-contract/SKILL.md`, which is the only copy of the bar this
-file restates.
+The bar every Cadence reviewer answers to, local or cross-model, so an
+adjudicator can merge both sides' findings without knowing which reviewer
+produced which. It is sent verbatim to a model with no repository, no tools and
+no Cadence installation, so it names no path, tool or file to write.
 
 ## Stance
 
@@ -63,6 +52,5 @@ goal fails or a serious defect ships; `low` = minor.
 ## An empty result is a result
 
 Empty `findings: []` when, after a real refutation attempt, nothing survives.
-That is a complete answer and is read as one. Padding the list with observations
-that survived no falsification attempt is not - an adjudicator kills them, and
-the pass cost the same either way.
+That is a complete answer. Do not pad the list with observations that survived
+no falsification attempt - an adjudicator kills them.
