@@ -36,6 +36,8 @@ D="$(mktemp -d "${TMPDIR:-/tmp}/cad-rearm-XXXXXX")" \
   && node -e 'const f=require("fs");let r;try{r=JSON.parse(f.readFileSync(process.argv[1],"utf8"))}catch(e){console.error("scratch-unreadable: "+process.argv[1]+": "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+process.argv[1]+" is not an object");process.exit(1)}if(!Array.isArray(r.outcomes)){console.error("scratch-shape: outcomes is not an array in "+process.argv[1]);process.exit(1)}if(!r.outcomes.every((o)=>o&&typeof o==="object")){console.error("scratch-shape: outcomes has a non-object entry in "+process.argv[1]);process.exit(1)}console.log(r.outcomes.filter((o)=>o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr&&(o.plan??"")===(process.argv[3]??"")).length)' "$D/render.json" "<trigger>" "<k>"
 ```
 
+Why the guard line refuses the directory: `references/review-cross-model.md`.
+
 A NON-ZERO EXIT from that read-back is NEITHER answer. It names
 `scratch-unreadable` when the render could not be read or parsed and
 `scratch-shape` when `outcomes` is not an array, and in both cases the cap

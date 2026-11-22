@@ -117,8 +117,8 @@ provider in the set.
   call runs nothing, so this is the one backend that cannot resolve a reference
   itself. These rules bind whether or not you read the procedure below.
   **This arm gets NO lifecycle bracket, deliberately**: the seam reads the
-  provider's OWN reported usage onto the `provider/request` event. That figure
-  is a different DENOMINATION and never sums into `roles`, so under a panel
+  provider's OWN reported usage onto the `provider/request` event, in the
+  denomination `references/seam-review-provider.md` states, so under a panel
   `cad-reviewer`'s per-role total in `trace render` covers the claude-subagent
   voice ONLY. This trigger's tier and effort come off the STEP-1 LINE, and the
   tier indexes the provider's own `tiers` map, never a config read here. An
