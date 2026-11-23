@@ -464,49 +464,43 @@ The status stays `planned` until the `state` step. These mid-run writes are not
 committed: with `planning.commit_docs` true,
 STATE.md and `.planning/records/state.json` ride the `state` step's docs commit.
 
-Then fire the `diff` review trigger
-(references/review-triggers.md) with the refs
-`{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
-reviewer runs the diff itself. The schema default is `off`. The
-arms below are what a user who sets `review.triggers.diff.gate` gets.
+Then fire the `diff` review trigger (references/review-triggers.md) with the
+refs `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a).
+Its gate, `review.triggers.diff.gate`, comes from the routing bundle, and `off`
+fires nothing.
 
 With `review.triggers.diff.when` at `phase_end`, as `locate` read it, this fire
 is not made per plan. It is made once instead, after the last plan of the
 dispatch set is reported done and before `goal_check`, with the refs
 `{base_ref: PHASE_BASE, head_ref: HEAD}`. PHASE_BASE is the phase's OLDEST
-`phase_start` anchor, so plans an earlier run finished sit inside the range:
-the `sha` on the first line of
+`phase_start` anchor: the `sha` on the first line of
 `grep '"event":"phase_start"' .planning/records/trace.jsonl` that carries `"phase":"<N>"`,
-and PHASE_START when there is none or `git rev-parse --verify` refuses it. Every arm below applies to that
-one fire unchanged, read three ways: advisory findings land at
-`.planning/phases/<N>/records/REVIEW-diff-phase.md`, there being no next dispatch to
-overlap; adjudicated survivors are fixed by the continuation `cad-executor`
-under worker key `phase`, never a plan's, so its `risk-check run`, `risk-check
-status` and receipts (`--plan phase`) and any `risk_surface` fire it calls for
+and PHASE_START when there is none or `git rev-parse --verify` refuses it. The
+arms below apply to that one fire with three changes: advisory findings land at
+`.planning/phases/<N>/records/REVIEW-diff-phase.md`, with no dispatch to overlap;
+adjudicated survivors are fixed by the continuation `cad-executor` under worker
+key `phase`, never a plan's, so its `risk-check run`, `risk-check status` and
+receipts (`--plan phase`) and any `risk_surface` fire it calls for
 (named by its own range, review-triggers.md step 5, a re-arm counted on its own) never touch a plan's;
 and that fix's range gets its own `risk-check run` and `risk-check status`.
 
-At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
-than waiting. Each fire
-carries the advisory persistence tail (references/review-inline.md): findings
-land at `.planning/phases/<N>/records/REVIEW-diff-plan-<k>.md` whether or not this
+At `advisory`, fire it in the SAME message as the NEXT plan's dispatch, with the
+advisory persistence tail (references/review-inline.md): findings land at
+`.planning/phases/<N>/records/REVIEW-diff-plan-<k>.md` whether or not this
 session survives to the return, and `summary` folds the files on disk, naming
-any still in flight. The last plan has no next dispatch, so it fires without
-waiting on the same tail - the gate, not the overlap, picks the bracket's
-writer. When
-`review.triggers.diff.gate` resolves it to `adjudicated` instead, the fire
-BLOCKS before the next dispatch. On
-the workflow path (`references/review-workflow.md`) that block is the launch
-ending the turn and the notice resuming this step, with nothing else dispatched
-in between, and the triage still precedes the next plan's dispatch. The
-survivors are triaged as `references/triage-gate-adjudicated.md` states, and
-what the user picks is fixed by the same continuation `cad-executor` under
-worker key `<k>` the FAIL arm above dispatches - RE-READ
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`, which routes
-there, before presenting, since this workflow does not preload it. The
-`risk_surface` fire above is untouched by the TRIAGE rule specifically: a matched
-risk surface still blocks, and triage is not an override for it. Its re-arm
-still takes `references/triage-gate-blocking.md`'s one-round cap.
+any still in flight. The last plan fires without waiting, on the same tail - the
+gate, not the overlap, picks the bracket's writer.
+
+At `adjudicated`, the fire BLOCKS before the next dispatch. On the workflow path
+(`references/review-workflow.md`) that block is the launch ending the turn and
+the notice resuming this step, with nothing else dispatched in between, and the
+triage still precedes the next plan's dispatch. RE-READ
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`, which routes to
+`references/triage-gate-adjudicated.md`, then triage the survivors as that file
+states; what the user picks is fixed by the continuation `cad-executor` under
+worker key `<k>` the FAIL arm above dispatches. Triage is no override for the
+`risk_surface` fire above: a matched risk surface still blocks, and its re-arm
+takes `references/triage-gate-blocking.md`'s one-round cap.
 </step>
 
 <step name="handle_checkpoint">
