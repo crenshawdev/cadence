@@ -14,16 +14,13 @@ allowed-tools:
 ---
 
 <objective>
-Manually run the review subsystem's `plan` trigger against a chosen plan. The
-review capability lives entirely in the subsystem (references/review-triggers.md);
-this skill is just the on-demand entry
-point for cases the automatic review does not cover - a plan written by hand,
-imported from elsewhere, or edited after its first review. When /cad-plan
-writes a plan it already fires this trigger, so you do not need this skill in the
-normal flow.
+Run the review subsystem's `plan` trigger on demand against a chosen plan the
+automatic review does not cover: one written by hand, imported from elsewhere,
+or edited after its first review. When /cad-plan writes a plan it fires this
+trigger itself.
 
-There is no separate reviewer here and no convergence loop (cut in DESIGN §6):
-this delegates to `fire(plan)`, which grounds and adjudicates once.
+There is no separate reviewer here and no convergence loop: this delegates to
+`fire(plan)` once, and the resolved gate decides what happens to the findings.
 </objective>
 
 <process>
