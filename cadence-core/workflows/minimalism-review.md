@@ -96,7 +96,8 @@ user picks what to delete and deletes it, or parks it (`/cad-capture`).
 
 <guardrails>
 - Applies NOTHING. This pass edits, deletes, moves, stages and commits nothing -
-  no source file, no planning file, no config key.
+  no source file, no planning file, no config key - and leaves
+  `git status --short` as it found it.
 - Never auto-fires: it runs only when the user invokes `/cad-minimalism-review`
   on code they chose. It has no gate and no verdict.
 </guardrails>
