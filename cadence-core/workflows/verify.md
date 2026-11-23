@@ -341,30 +341,21 @@ For each item with `status: fail`:
 1. **Diagnose inline**, starting from a `cause` already on the item - read the
    relevant code, find the root cause, and
    record it: `uat record ... --result fail --fields-file <path>`, the file
-   holding `{"cause": "<root cause>"}` (caller-derived text -
-   references/conventions.md; a re-record of the same result adds the field;
-   first_pass is safe). When the
+   holding `{"cause": "<root cause>"}` (references/conventions.md). When the
    item was recorded by the deep pass, open
    `.planning/phases/<N>/records/verifier-findings.json` AT THIS POINT - the only
    place this workflow opens it - and read the gap's `missing` (or the human
-   check's `why_human`) before diagnosing: that is the diagnosis the verifier
-   already did, and it is why those fields ride the file. If a
+   check's `why_human`) before diagnosing. If a
    diagnosis deserves a second opinion, use the review-trigger interface
    (references/review-triggers.md) - never an embedded reviewer loop. Its
    artifact is the failed item's cited file PATHS - shape (c) - plus the
-   recorded `reported` and `cause` text, never file contents. That
-   fire names no wiring-table trigger, so it has no resolved gate and its fix
-   list is ALWAYS triaged before any of it becomes a proposed fix: the
-   survivors are a numbered list the user triages, NONE is the default, and
-   only what the user names goes on to step 2, so an unpicked finding never
-   reaches step 3's "Apply now". The record waits until every `blocker` or
-   `high` survivor is settled. One the two-option ask sends to fix goes on to
-   step 2 like a named one, and step 2's Re-plan leaves no fix in this fire, so
-   it goes to that ask like Leave open. With no reviewer set or tier on a route line,
-   it takes `claude-subagent` alone, `verify` as the record's trigger token and
+   recorded `reported` and `cause` text, never file contents.
+   review-triggers.md step 4 picks its path, and triage-gate.md states how its
+   fix list is triaged; only a finding the user names, or the two-option ask
+   sends to fix, goes on to step 2. With no reviewer set or tier on a route line, it takes
+   `claude-subagent` alone, `verify` as the record's trigger token and
    `verify-<short HEAD sha>` as its discriminator on review-triggers.md step 5's
-   grammar. It takes the workflow path when review-triggers.md step 4 says so
-   for this fire, and today's path otherwise.
+   grammar.
    RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
    before presenting, since this workflow does not preload it.
