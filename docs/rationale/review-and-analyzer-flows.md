@@ -114,3 +114,11 @@ Triage answers stay advisory. The recommendation preselects nothing, NONE stays 
 ## Cost
 
 An agent checking findings costs far more tokens than the main session opening the file, per `.planning/spikes/per-finding-agent-cost/SPIKE.md`. It was chosen on technical grounds: independence from the session running the work, schema-enforced output and a smaller main session. It began as one agent per finding, which also kept findings apart from each other. Each of those agents read the same artifact again, so one checker now takes all of a reviewer's findings and is told to judge each on its own evidence. A checker that dies leaves all of that reviewer's findings for the main session.
+
+## The minimalism review
+
+`/cad-minimalism-review` (`cadence-core/workflows/minimalism-review.md`) sends one `cad-reviewer` a minimalism instruction and reads its answer in the findings schema every reviewer shares, with `severity` carrying the rank. Two designs were rejected.
+
+A bespoke ranked-list return shape. It would lose the cross-model interchangeability the findings schema exists for, and the adjudication path that already parses these findings.
+
+A cross-model arm. A provider call needs a resolved tier, and this pass owns no tier key.
