@@ -606,8 +606,8 @@ a SECOND dispatch" states.
 (Reached from `choose_path`'s parallel path. An executor halting `blocked` on a
 missing PLAN here goes to `handle_checkpoint`'s missing-PLAN arm.)
 
-Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` (one
-consult site - this step) and follow it: the batching key, the sequential
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` and
+follow it: the batching key, the sequential
 merge with both HEADs recorded, `workflow.test_command` at its only consumer,
 and which review triggers fire on this path alone. A sequential run carries
 none of it.
