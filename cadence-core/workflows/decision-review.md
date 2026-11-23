@@ -44,10 +44,9 @@ Assemble `{ instruction, artifact }`:
 The reviewer set is `review.reviewers[]`, filtered as the two arms below state:
 - **claude-subagent** (always available): bracket this worker in the joined
   run record first. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
-  a PROJECT.md row it is the STATE cursor's phase (the rule
-  references/review-inline.md states for a milestone-scoped trigger). The read-set is the
-  decision doc the USER named, so write that reference to a scratch file and
-  pass the path (caller-derived text - references/conventions.md):
+  a PROJECT.md row it is the STATE cursor's phase (references/review-inline.md).
+  The read-set is the decision doc the USER named, so write that reference to
+  a scratch file and pass the path (caller-derived text - references/conventions.md):
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --read-file <path>
@@ -57,26 +56,24 @@ The reviewer set is `review.reviewers[]`, filtered as the two arms below state:
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" agent-type --stem cad-reviewer`
   prints (on `{ok:false}`, the bare `cad-reviewer`) through the
   spawn-agent seam with the payload above as its prompt. Parse the returned
-  `{findings:[...]}` and close the bracket the moment you have it. OMIT
-  `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
+  `{findings:[...]}`, then close under seam-spawn-agent.md's bracket rule:
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
   ```
 
-  A dispatch that failed or returned nothing parseable writes what failed to a
-  scratch file and adds `--detail-file <path>` to that same line
-  (caller-derived text - references/conventions.md), closing as a checkpoint.
-  This arm resolves no routing at all - it is the
-  base `cad-reviewer` at the session default, whatever `roles.cad-reviewer.model`
-  says - and `review.decision_review.tier` and `.effort` reach the cross-model
-  arm below only (D-04).
+  When the dispatch failed or its return can't be parsed, write what failed to
+  a scratch file and add `--detail-file <path>` to that line
+  (caller-derived text - references/conventions.md).
+  This arm resolves no routing at all: it runs at the session's model and at
+  the effort its agent file pins, and `review.decision_review.tier` and
+  `.effort` reach the cross-model arm below only.
 - **cross-model** (any provider in `review.reviewers` - `openai`, `gemini`,
   `deepseek`, ...), only when `review.reviewers` names it AND the user-global
   config names it too - the `reviewers_global` list
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-reviewer`
   returns (relay its `warnings[]`, seam-spawn-agent.md), never a raw read of
-  the global file, so this arm and step 3 agree -
+  the global file -
   AND `review.providers.<name>.tiers[review.decision_review.tier]` is a
   non-null model id, read with `config.mjs get` on that key (null for a stored
   value that is not a model id): compose the payload file and check the run
@@ -96,14 +93,8 @@ The reviewer set is `review.reviewers[]`, filtered as the two arms below state:
 
 When the resolved set has more than one reviewer (claude-subagent plus a
 surviving cross-model provider, or several), dispatch them CONCURRENTLY in one
-message - they refute the same static artifact independently, so serializing
-them only adds latency (seam-spawn-agent.md concurrent dispatch;
-references/review-inline.md's one-message batch).
-
-If the resolved set (after any drops) is only `claude-subagent`, this is the
-single-model default; when a cross-model provider survives, this is the
-panel path. Either way, every reviewer's findings feed adjudication next -
-there is no separate schema per path.
+message (seam-spawn-agent.md concurrent dispatch; references/review-inline.md's
+one-message batch).
 </step>
 
 <step name="adjudicate">
@@ -153,7 +144,7 @@ them.
 Report, qualitatively (D-09 - the runtime exposes no per-turn token/dollar
 figures, so never fabricate one):
 - which reviewers ran (`claude-subagent` always; the cross-model provider(s)
-  and model id(s), when the panel path ran)
+  and model id(s), when any ran)
 - the `review.decision_review.tier` and `.effort` the cross-model call used,
   and that `cad-reviewer` ran at the session default with neither applied -
   say the second half even when no cross-model reviewer ran
