@@ -363,17 +363,8 @@ characters, and skip it when the host has no such tool
 </process>
 
 <guardrails>
-- No preselected publish default, ever. No auto-push. No auto-commit. Two
-  exceptions skip the publish ask: `git.auto_close` (default off), set true in
-  both config layers, which runs PR -> merge -> tag unattended, a chain that asks
-  once, before the tag push (step 3(b)), and the already-merged arm (step 1).
-- With `git.auto_close` off, 3(a) executes only the single chosen mechanism and
-  chains no second; Tag a release's push question is part of that option. The
-  already-merged arm runs step 4's cleanup instead.
-- `/cad-land` fires no review of its own and commits no fix: it publishes what
-  was already reviewed and already triaged upstream. The unattended arm acts on
-  no survivor either - it reads them only to halt or proceed.
-- It publishes what was already reviewed and TRIAGED, so an unadjudicated
-  deferred finding is the one thing that stops it - on both arms, before either
-  publishes anything.
+- `/cad-land` commits no fix, and whatever step 2 commits is published with no
+  review.
+- An unadjudicated deferred finding is the one thing that stops it - on both
+  arms, before either publishes anything.
 </guardrails>
