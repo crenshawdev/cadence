@@ -43,10 +43,9 @@ list, because it reads exactly like a correct one.
 <step name="dispatch">
 Assemble `{ instruction, artifact }`:
 - `artifact` = the target as a REFERENCE, never its bytes
-  (references/dispatch-shape.md's deferred-read rule - the reviewer produces
-  what it needs with its own Read/Grep/Bash): the path for a file, the
-  directory for a directory, the
-  `<base_ref>..<head_ref>` pair for a phase range.
+  (references/dispatch-shape.md's handoff read discipline): the path for a file,
+  the directory for a directory, the `<base_ref>..<head_ref>` pair for a phase
+  range.
 - `instruction` = "Hunt code that WORKS and should not exist. Four species:
   (1) reinvented standard library or reinvented dependency - a hand-rolled
   helper the language, its stdlib, or a dependency already in this project
@@ -60,10 +59,6 @@ Assemble `{ instruction, artifact }`:
   out of scope, and 'it works' is not a defence against any of the four species.
   Rank with `severity`: `blocker` for the surface whose deletion buys the most,
   `low` for the one that barely pays."
-
-The instruction is what retargets the reviewer. `skills/cad-reviewer-contract`
-defaults to correctness and rules approach differences out of scope, so a prompt
-that does not say the subject changed gets a correctness review back.
 
 Bracket the worker in the joined run record first. `<N>` is the target phase
 when the target IS a phase, and the STATE cursor's phase
@@ -79,24 +74,20 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
 Then dispatch the `agent_type` that
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" agent-type --stem cad-reviewer`
 prints (on `{ok:false}`, the bare `cad-reviewer`) through the spawn-agent seam
-with the payload above as its prompt. This arm resolves no routing at all - it
-is the base `cad-reviewer` at the session default, whatever
-`roles.cad-reviewer.model` says. There is no cross-model arm either: a provider call needs a
-resolved tier and this pass owns no tier key.
+with the payload above as its prompt. This is one dispatch that resolves no
+routing at all: it runs at the session's model and at the effort its agent file
+pins. There is no cross-model arm.
 
-Parse the returned `{findings:[...]}` and close the bracket the moment you have
-it. OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
+Parse the returned `{findings:[...]}` and close the bracket at once, under
+seam-spawn-agent.md's bracket rule:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
 ```
 
-A dispatch that failed or returned nothing parseable writes what failed to a
-scratch file and adds `--detail-file <path>` to that same line (caller-derived
-text - references/conventions.md), closing as a checkpoint.
-
-That arm reports NO LIST, never an empty one: an unusable return and a clean
-sweep are opposite results and must not read alike.
+When the dispatch failed or its return can't be parsed, write what failed to a
+scratch file, add `--detail-file <path>` to that line (caller-derived text -
+references/conventions.md), and report NO LIST, never an empty one.
 </step>
 
 <step name="present">
