@@ -173,10 +173,8 @@ never symbol presence alone.
 One JSON file, `.planning/phases/<N>/records/verifier-findings.json`, written in a
 single `Write` call.
 
-The name is NOT `FINDINGS.json`: `uat merge` atomically overwrites
-`.planning/phases/<N>/records/FINDINGS.json` with its own counters envelope on every
-successful merge (`planning/uat.mjs:353-355`), so a verifier
-writing that name would have its input destroyed by the merge it feeds.
+The name is NOT `FINDINGS.json`, because `uat merge` overwrites that file in the
+same folder on every successful merge (`planning/uat.mjs:353-355`).
 
 ```json
 {
@@ -210,22 +208,16 @@ writing that name would have its input destroyed by the merge it feeds.
   as a new item.
 - `human_checks` - one per UNCERTAIN truth and per human-only check. Those are
   two different reasons, and `why_human` says WHICH: a truth no probe exercised
-  is not a truth the model cannot exercise. Write the real reason, because the
-  walk re-applies its own bar to that text (`workflows/verify.md` step `walk`)
-  and sends everything short of irreversibility or an out-of-reach resource
-  back to be executed rather than asked.
+  is not a truth the model cannot exercise. Write the real reason: the walk
+  runs, rather than asks, anything short of irreversibility or an out-of-reach
+  resource.
 
 When the dispatch says "A testing policy is active.", `human_checks` is `[]`
 and `status` is never `needs_human`; the rest is as above.
 
-The three list names and their fields are the `uat merge` payload's, on
-purpose: the seam consumes only `passes`, `gaps` and `human_checks` and ignores
-every other key, at the top level and inside an entry. That is what lets ONE
-file be both the phase record and the merge payload with no translation step -
-never invent a synonym the orchestrator would have to translate. `missing`
-rides its gap and `why_human` rides its human check because they are
-per-finding; `status`, `score` and `truths` are the extra top-level keys the
-seam ignores.
+The three list names and their fields are the `uat merge` payload's: use exactly
+those, never invent a synonym. The seam consumes only `passes`, `gaps` and
+`human_checks` and ignores every other key, at the top level and inside an entry.
 
 ## The message
 
