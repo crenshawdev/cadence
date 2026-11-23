@@ -119,11 +119,12 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" milestone-prune \
 `<label>` = the version on a release, else the milestone name from PROJECT.md -
 repository content either way, so write it to a scratch file and pass the PATH
 (caller-derived text - references/conventions.md). `--mode delete` on a release
-milestone (git history is the archive, with the tag /cad-land cuts when it cuts
-one); `--mode archive` on an untagged one: the dirs MOVE to `_archive-<label>/`
-rather than delete. Relay `warnings[]` (a missing detail section, an unreadable
-REQUIREMENTS.md). `action:"skip"` means no checked phase existed - an
-interrupted close or the wrong milestone; stop and look rather than continue.
+milestone that gets a tag (git history is the archive, with the tag /cad-land
+cuts); `--mode archive` on an untagged one, an untagged release included: the
+dirs MOVE to `_archive-<label>/` rather than delete. Relay `warnings[]` (a
+missing detail section, an unreadable REQUIREMENTS.md). `action:"skip"` means
+no checked phase existed - an interrupted close or the wrong milestone; stop
+and look rather than continue.
 
 The seam also writes `.planning/records/ARCHIVE.md` BEFORE it removes anything: the
 pruned phases' SUMMARY deviations, UAT items and CONTEXT decisions, which
