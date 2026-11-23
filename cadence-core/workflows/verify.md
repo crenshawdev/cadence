@@ -390,31 +390,24 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat status --phase <N
 ```
 
 `result: complete` means every item passed or was skipped with a reason;
-anything else is `partial`. Record that verdict either way - it is the phase's
-own outcome event, and a partial session is exactly the one worth having in the
-record:
+anything else is `partial`. Record that verdict either way:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event uat_verdict --detail "<complete or partial>"
 ```
 
 On **complete**, this skill is the only writer of a persisted phase status
-TRANSITION - row creation at `Pending` belongs to `/cad-plan`'s seeding step;
-this skill is the only writer of any Status beyond it. Two seam calls, then
-one commit:
+beyond `Pending`; row creation at `Pending` is `/cad-plan`'s. Two seam calls,
+then one commit:
 
 1. `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-done --n <N>` - checks the phase's
    ROADMAP box and flips its traceability rows to Complete (Deferred rows
-   exempt), reporting exactly what changed. Its `capture` field is the CLOSE
-   ASSERTION over `.planning/CAPTURE.md`, which holds the phase in flight and
-   nothing else: print each `items[]` entry - section, line and text - and say
-   what it is. **These are items this phase did not resolve.** Resolving one
-   means REMOVING it - filed on the tracker, or dropped - never annotating it
-   in place and never moving it to another heading in the same file, which
-   leaves the bytes exactly where they were. The close already happened either
-   way; this is a list for the user, not a gate. `capture.unread` means the
-   file is present and could not be opened - run `capture-check` for the
-   reason.
+   exempt), reporting exactly what changed. Its `capture` field lists what
+   `.planning/CAPTURE.md` still holds and gates nothing: print each `items[]`
+   entry - section, line and text - and say these are items this phase did not
+   resolve. Resolving one means REMOVING it, filed on the tracker or dropped,
+   never annotating it or moving it to another heading. `capture.unread` means
+   run `capture-check` for the reason.
 2. `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status "phase complete"
    --next "<next phase's /cad-context, or /cad-milestone if this was the last
    - the audit gate precedes any ship>"`
@@ -443,14 +436,13 @@ Reworked {n} (items that failed first pass, then were fixed)
 
 Omit the Reworked line when the count is zero.
 
-`{position}` is "Phase <N> of <M>: <phase name>", and "Phase <N> of <M>, plan <K>
-of <J>: <plan name>" instead when a plan field is present (ending at "plan <K>
-of <J>" with no name); once every plan has run there is none. On **complete**
-it comes from the `cursor` of step 2's `cursor set` envelope. On **partial** no
-`cursor set` ran, so run
+`{position}` is "Phase <N> of <M>: <phase name>", or with a plan field "Phase <N>
+of <M>, plan <K> of <J>: <plan name>" (ending at "plan <K> of <J>" with no name).
+On **complete** take it from the `cursor` of step 2's `cursor set` envelope. On
+**partial** run
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` once, right
-before the report, and compose it from its `total` and phase <N>'s `phases[]`
-entry (`name`, and `plan` when present).
+before the report, and use its `total` and phase <N>'s `phases[]` entry (`name`,
+and `plan` when present).
 
 One suggestion max: the resume command if partial, the next phase if
 complete. Either way, safe to `/clear` first: UAT.md and the STATE cursor
