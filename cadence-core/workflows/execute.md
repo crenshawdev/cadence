@@ -60,9 +60,7 @@ Resolve the phase:
   /cad-undo <N> first, then /cad-execute <N>. To run over that record anyway:
   /cad-execute <N> --rerun." Read the status from the `phases[]` DERIVATION and
   never from `cursor.status` - the cursor is a hint the derivation beats.
-  `complete` is refused beside `executed`. Stop HERE, before `git_guard`:
-  before the protected-branch guard, before the `phase_start` trace anchor, and
-  before any executor dispatch.
+  `complete` is refused beside `executed`. Stop where the replay arm stops.
   THE EMPTY-SET TERM IS LOAD-BEARING and this arm sits BELOW the replay call
   for it: a non-empty `dispatch_set` is the phase's OUTSTANDING work and
   dispatches whatever the derived status says. Keyed to the STATUS alone, this
@@ -235,11 +233,7 @@ Sequential (default) unless ALL of these hold:
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/worktree-base.mjs" resolve
   ```
 
-  `parallelSafe: false` -> do NOT just fall back and move on. Under
-  `baseRef: "fresh"` (the default, so an unset key counts) a worktree
-  branches from the remote default branch, so this phase's CONTEXT and its
-  PLAN files - unpushed commits on the integration branch - are not in it and
-  every executor would halt `blocked` on its own missing plan.
+  `parallelSafe: false` -> do NOT just fall back and move on.
 
   OFFER THE FIX HERE, through the ask-user seam, and do not send the user to
   another command to get it. Above the question, quote the exact JSON
@@ -258,8 +252,7 @@ Sequential (default) unless ALL of these hold:
     - "No - plans run one at a time in this session"
 
   On accept, re-run `worktree-base.mjs resolve`; `parallelSafe: true` now, so
-  continue on the PARALLEL path. `ok:false` -> sequential (the check could not
-  run; never parallelize unproven).
+  continue on the PARALLEL path. `ok:false` -> sequential.
 </step>
 
 <step name="execute_sequential">
@@ -359,10 +352,6 @@ none of these lines - they are the ORCHESTRATOR's.
 The `phase_start` line in `git_guard` is NOT one of these. It is the
 correlation-id ANCHOR, not a worker bracket, and it takes no `--role`,
 `--tokens` or `--read`.
-
-A worktree executor emits NO trace events of its own, and inner tool-level
-detail is deliberately not captured: what happened INSIDE a worker is its report
-file's job.
 
 Handle the executor's return:
 - **complete** (`PLAN COMPLETE`) -> record the digest and the derived report
@@ -614,11 +603,8 @@ a SECOND dispatch" states.
 </step>
 
 <step name="execute_parallel">
-(Reached from `choose_path`'s parallel path. All worktree ceremony lives here and in `execute_workflow`'s
-reference, and nowhere else. choose_path
-has already proven `worktree.baseRef` is `head`, so an executor halting
-`blocked` on a missing PLAN here is not the fork-point default, and goes to
-`handle_checkpoint`'s missing-PLAN arm.)
+(Reached from `choose_path`'s parallel path. An executor halting `blocked` on a
+missing PLAN here goes to `handle_checkpoint`'s missing-PLAN arm.)
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` (one
 consult site - this step) and follow it: the batching key, the sequential
@@ -628,9 +614,7 @@ none of it.
 </step>
 
 <step name="execute_workflow">
-(Reached only from `choose_path`'s workflow path. Its worktree
-ceremony lives in the reference below and in `execute_parallel`'s, and nowhere
-else.)
+(Reached only from `choose_path`'s workflow path.)
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-workflow.md` (one
 consult site - this step) and follow it: a launch per wave, what this session
@@ -765,8 +749,7 @@ when `planning.commit_docs` is true, and verification runs in a fresh subagent.
 - THREE writers touch this run record's brackets and no fourth, as
   seam-spawn-agent.md's bracket rule states them: the resolve's dispatch half,
   the orchestrator's `trace close`, or for a wave's executors `workflow-run`'s
-  close, and the `SubagentStop` hook. Executors write no trace events of their
-  own, on either path.
+  close, and the `SubagentStop` hook.
 - This workflow's coordinator issues no `Edit` or `Write` against a path
   outside `.planning/`, with two exceptions: the `choose_path` settings merge
   the user accepted through the ask-user seam, and a scratch file the steps
