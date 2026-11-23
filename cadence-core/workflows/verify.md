@@ -94,10 +94,10 @@ Item rules (the model's judgment, before the seam call):
   scratch - boots clean, migrations/seeds complete, one primary query
   returns real data." Fresh-start bugs pass against warm state and break
   in production.
-  With a policy active, this item is an automated clean-start check instead: it
-  names the required job from `testing.required_jobs` that starts the service
-  from clean state, as `(ci: <required job>)`, and stays separate from the
-  packaging job (`references/test-policy.md`).
+  With a policy active, this item instead names the required job from
+  `testing.required_jobs` that starts the service from clean state, as
+  `(ci: <required job>)`, separate from the packaging job
+  (`references/test-policy.md`).
 
 Then create the checklist in one call:
 
@@ -139,24 +139,21 @@ and follow it. Otherwise skip to `walk`.
 TWO passes: the model executes and cites everything it can, then the user is
 asked about only what is left.
 
-**Under a testing policy.** With `testing.scope` unset, skip this block: the bar
-and pass 2 below read as they always did. With it set, no required
-item is offered to a person, so this block replaces the bar and pass 2 for every
-required item. Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md`
-once, then:
+**Under a testing policy.** With `testing.scope` unset, skip this block. With it
+set, no required item is offered to a person: this block replaces the bar and
+pass 2 for every required item. Read
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` once, then:
 
 - Run `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy check --root .`
   once. A failing answer is appended once as an item through `uat refresh`
   (named "Testing policy agrees with the workflow files", expected: `test-policy
   check` passes) and recorded `fail` with `--source model`, its `detail` as
-  `cause` through `--fields-file`, so it reaches `route_failures`.
-- Run the project's suite once yourself, in this session's shell (this walk's own
-  run; the deep pass's verifier makes its own), resolved the way the executor
-  contract resolves it:
-  `config.mjs get workflow.test_command`, and where that is null the project's
-  manifest runner, saying which. Cite its command and result as the evidence
-  for the items it settles. A red suite is appended and recorded `fail` the same
-  way, as one item named for the suite.
+  `cause` through `--fields-file`.
+- Run the project's suite once yourself, in this session's shell (the deep pass's
+  verifier makes its own run): `config.mjs get workflow.test_command`, or where
+  that is null the project's manifest runner, saying which. Cite its command and
+  result as the evidence for the items it settles. A red suite is appended and
+  recorded `fail` the same way, as one item named for the suite.
 - Pass 1 runs every pending item. A check that cannot run locally, including a
   `(ci: <required job>)` criterion, is recorded `pending_ci`, never `pass`: write
   `{"job": "<required job>", "commit": "<git rev-parse HEAD>", "evidence": "<why
@@ -164,22 +161,19 @@ once, then:
   to `uat record --result pending_ci --source model`.
 - An item whose `expected` carries the `(human-verify: ...)` suffix, and a
   `why_human` item, run their automated check, or are recorded `fail` with a
-  `cause` saying no automated check exists, and go to `route_failures`. Only the
-  user's explicit decision makes one optional, and then it is `skipped` with that
-  decision as its reason (D-06). No step here turns one into `skipped` by itself.
-  `blocked` is not used: a check that cannot run for an environmental reason is
-  `pending_ci` when CI can run it, and `fail` with that cause otherwise.
-- Coverage thresholds are enforced by the required jobs and are not re-measured.
-- For an acceptance criterion, read its
-  test function, and when it asserts nothing the criterion cares about, or stubs
-  the thing it claims to test, record `fail` with a `cause` naming which. What
-  that reading may ask for is bounded by the completion rule in `test-policy.md`
-  (a demonstrated defect, an uncovered acceptance requirement or a measured
-  shortfall), never another imaginable failure.
-- Optional observations are listed under the results table and never recorded as
-  results.
+  `cause` saying no automated check exists. Only the user's explicit decision
+  makes one optional, then `skipped` with that decision as its reason; no step
+  here records `skipped` by itself. `blocked` is not used: a check an
+  environmental cause stops is `pending_ci` when CI can run it, and `fail` with
+  that cause otherwise.
+- The required jobs enforce coverage thresholds; do not re-measure them.
+- For an acceptance criterion, read its test function: when it asserts nothing
+  the criterion cares about, or stubs the thing it claims to test, record `fail`
+  with a `cause` naming which. The completion rule in `test-policy.md` bounds
+  what that reading may ask for.
+- List optional observations under the results table, never as results.
 
-Then print the one results table (below), and continue to `await_ci` (below) and
+Then print the one results table (below) and continue to `await_ci` and
 `route_failures`. Pass 2 does not run.
 
 **The bar.** An item is a HUMAN check only when the model cannot execute it -
@@ -276,38 +270,34 @@ continue to `route_failures` when `next` is null or the user stops.
 
 <step name="await_ci">
 Runs only with `testing.scope` set and at least one item `pending_ci` in the
-UAT.md the walk read or recorded; otherwise go straight to `route_failures`, so
-only such a phase waits. It runs in the main session, never in the verifier
-subagent. Every `uat record` here passes its text by `--fields-file`.
+UAT.md the walk read or recorded; otherwise go straight to `route_failures`.
+Every `uat record` here passes its text by `--fields-file`.
 
-1. Take `git rev-parse HEAD`. An item whose `commit` is not that head moves to it
-   by re-recording `pending_ci` with the new `commit` and the same `job`.
+1. Take `git rev-parse HEAD`. Re-record `pending_ci` on each such item whose
+   `commit` is not that head, with the new `commit` and the same `job`.
 2. Use the `publish_authorized` and `enforcement` fields of the walk's
    `test-policy check` answer (present on a failing answer too).
-   - `enforcement: unavailable` (another forge, or none set): say enforcement is unavailable
-     and why, from the answer's `note`. Push nothing and read nothing. The items
-     stay required and pending until they run some other automated way or the
-     user explicitly makes one optional.
+   - `enforcement: unavailable` (another forge, or none set): say so and why,
+     from the answer's `note`. Push nothing and read nothing. The items stay
+     required and pending until they run some other automated way or the user
+     explicitly makes one optional.
    - `publish_authorized` false: push nothing, and name the ways on:
      `/cad-config --testing` to authorize publishing for verification, or
-     publishing through `/cad-land`. The commit may already be on GitHub from one
-     of those, so go to step 4 and read once, without `--wait`. With no runs, the
-     items stay pending.
+     publishing through `/cad-land`. The commit may already be on GitHub, so go
+     to step 4 and read once, without `--wait`. With no runs, the items stay
+     pending.
 3. Authorized: push with
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" verify-publish`.
-   A refusal is relayed with its `reason` and `detail`, the items stay pending,
-   and there is no fall back to a raw `git push`.
-4. Read the jobs, with the bounded wait `references/test-policy.md` states and a
-   Bash timeout of 600000 so the call covers it:
+   On a refusal, relay its `reason` and `detail` and leave the items pending,
+   with no fall back to a raw `git push`.
+4. Read the jobs, with a Bash timeout of 600000:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy ci-status --commit <sha> --phase <N> --wait 540 --root .`
-   A pending answer after the wait leaves the items pending and the phase
-   `partial`; a re-run of `/cad-verify` resumes here.
+   A pending answer leaves the items pending and the phase `partial`.
 5. For each job in the answer, record every `pending_ci` item naming that job:
    `pass` with `{"evidence": "<job> concluded <conclusion> at <sha>"}`, or `fail`
    with `{"cause": "<job> concluded <conclusion> at <sha>"}`, each `--source
-   model` through `--fields-file`. A `fail` reaches `route_failures`. A job still
-   pending leaves its items as they are. On an overall pass the seam itself
-   records the commit as the phase's `ci`.
+   model`. A job still pending leaves its items as they are. On an overall pass
+   the seam itself records the commit as the phase's `ci`.
 </step>
 
 <step name="route_failures">
@@ -421,11 +411,10 @@ whichever of STATE.md, ROADMAP.md, REQUIREMENTS.md and
 `.planning/records/state.json` changed:
 `docs: phase <N> UAT - {passed} passed, {failed} failed`.
 
-Report tersely. Under a testing policy (`testing.scope` set) the report's first
-line is "CI-verified at `<sha>`" when `uat status` returned `ci`, and when it did
-not and `result` is `complete`, "complete locally, not CI-verified". A non-zero
-`counts.pending_ci` adds a "Pending CI {n}" line after the Passed line. With it
-unset, the report reads as below.
+Report tersely, as below. With `testing.scope` set, its first line is "CI-verified
+at `<sha>`" when `uat status` returned `ci`, or else "complete locally, not
+CI-verified" when `result` is `complete`, and a non-zero `counts.pending_ci` adds
+a "Pending CI {n}" line after the Passed line.
 
 ```
 UAT {complete|partial}: {position}
