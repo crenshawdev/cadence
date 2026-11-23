@@ -132,7 +132,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    branch the Push the branch option is absent, because a commit pushed straight
    onto the base cannot pass the required jobs before it lands: say so and
    point at opening a PR from another branch. Pushing any other branch
-   stays. With it unset, nothing here changes.
+   stays.
 
    Tag a release is offered only when HEAD is the base. On any other branch it
    is absent, with one line saying why: a pushed `v*` tag starts the release
@@ -146,8 +146,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      - "Tag a release - create a tag on this commit, then ask whether to send it to the remote"
      - "Leave it local - do nothing more"
 
-   What each option runs:
-   - **Push the branch** - push the current branch to its remote.
+   What the request and tag options run:
    - **Open a pull or merge request** - the detected host's mechanism (`glab mr
      create` on GitLab, `gh pr create` on GitHub, `tea pr create --base <base>
      --head <branch>` on a Forgejo/Gitea remote - `tea` does not push the source
@@ -175,13 +174,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
        - "Push the tag - send it to the remote"
        - "Keep it local - the tag stays on this machine"
 
-   - **Leave it local** - do nothing further.
-
-   **Read the publish rails before a publishing answer.** When the answer is
-   direct push, open MR/PR, or a tag the user chose to push, Read
+   **Before a direct push, an MR/PR, or a tag the user chose to push,** Read
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
-   consult site - step 3a or 3b, never both) first: rail 3 and the
-   `git.auto_close` policy govern all three.
+   consult site - step 3a or 3b, never both): rail 3 governs all three.
 
    Then **execute exactly that, raw.** Run only the chosen action. Never push
    unless push (or push-tag) was chosen. No PR-body templating beyond a
