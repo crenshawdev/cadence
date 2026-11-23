@@ -120,13 +120,11 @@ filter) and coverage `breaks`:
   counted as delivered).
 - **FAIL** - any requirement is untraced, unverified, dropped, or in drift, OR
   the coverage arm returned ANY break, whatever its code, OR `version_drift` is
-  present. List each failing
-  requirement with exactly where its chain breaks; each `uncovered` criterion BY
-  ID with its phase and its next action (add the missing UAT item through
-  `/cad-verify <N>`, or correct the criterion id in CONTEXT.md); each
-  `missing-uat` criterion by ID with `/cad-verify <N>`; and each
-  `fieldless-checklist` break by the file it names, with the repair. This gate is
-  meant to block a ship; do not soften it or mark it PASS-with-warnings.
+  present. List each failing requirement with exactly where its chain breaks;
+  each `uncovered` and `missing-uat` criterion BY ID with its phase; and each
+  `fieldless-checklist` and `unreadable-context` break by the file it names.
+  Give each coverage break its section 3 exit. This gate is meant to block a
+  ship; do not soften it or mark it PASS-with-warnings.
 
 A `frontmatter_issues` entry is additive, not itself a `break` - but a
 payload-dropping diagnostic code can still leave a requirement untraced;
@@ -136,24 +134,19 @@ payload-dropping diagnostic code can still leave a requirement untraced;
 neither until that line is rewritten as a `- **ID**: ...` bullet whose bold
 span is exactly the id. On an `active-non-id-bullet` the line may ALREADY be
 such a bullet: if the span holds nothing but the id and it is still reported,
-the id failed the admission test above (an all-digit category, no letter
-anywhere in it), and no rewrite of that line will count it - say so rather than issuing a remedy that
-does nothing. `unseeded` is NOT additive:
-every id it names also carries an `unpicked` break and is already counted.
-Either way there is no third, softened state: a broken requirement still fails
-this gate.
+the id failed section 2's admission test, and no rewrite of that line will
+count it - say so rather than issuing a remedy that does nothing. `unseeded` is
+NOT additive: every id it names also carries an `unpicked` break and is already
+counted.
 
 `version_drift` is NOT additive either. Present -> FAIL, naming the doc
 version, the tag spelling that carries it, and the cycle state. It moves no
-count: it is milestone-scoped rather than per-requirement, and
-`total = traced + broken + deferred` stays an invariant.
+count.
 
-State what is NOT drift in the same breath, so this gate is not softened later
-by someone re-deriving it:
+What is NOT drift:
 
-- A doc version NO tag carries is the ordinary mid-cycle state - the docs are
-  supposed to run ahead of the last release. The key is absent, and that absence
-  is not a near-miss to report.
+- A doc version NO tag carries is the ordinary mid-cycle state. The key is
+  absent, and that absence is not a near-miss to report.
 - A tagged doc version with no phase left OPEN is exempt: that is what a close
   interrupted between `milestone.md` step 2 (the bump commit) and step 4 (the
   PROJECT.md evolve) leaves once `/cad-land` has merged and tagged that bump
@@ -164,35 +157,28 @@ by someone re-deriving it:
 - A version that merely sorts BELOW the newest tag was published by nothing. The
   test is membership in the tag list, not order.
 
-The manifest is deliberately not a comparand: tags are the publication evidence.
-
 On the coverage arm, `breaks` is the only verdict-moving key; `untraced`,
 `legacy`, `unknown_criterion` and `context_issues` are additive and change
-neither counts nor the verdict - the same split `active_issues` and `unpicked`
-already carry. `legacy` exempts only a checklist that predates the fields on all
-five terms - items present, no `fields_version` marker, no `criterion` or
-`origin` on any item, and a CONTEXT declaring no `AC<N>` ids - and it states its
-reason, so the exemption can be checked rather than taken on trust. Miss the
-last term alone and it is a `fieldless-checklist` break: the AC-id grammar
-post-dates the fields, so a marker-less checklist beside declared ids is a
-dropped link, not an old file. DECLARED is what the CONTEXT says, not what the
+neither counts nor the verdict. `legacy` exempts only a checklist that predates
+the fields on all five terms - items present, no `fields_version` marker, no
+`criterion` or `origin` on any item, and a CONTEXT declaring no `AC<N>` ids -
+and it states its reason. Miss the last term alone and it is a
+`fieldless-checklist` break. DECLARED is what the CONTEXT says, not what the
 grammar could parse: an id written in a shape the grammar refuses
 (`- [ ] **AC1**: x`, `### AC1: x`, a missing colon) is declared and breaks, and
 a near-miss heading is unknown rather than none, so it breaks too.
 An absent CONTEXT.md is nothing to prove -
 this gate runs at `milestone.md` step 1 while the prune that deletes phase
 directories runs at step 3, so a prior milestone's phases are simply gone, and
-the prune takes CONTEXT with the directory. An absent UAT.md under a PRESENT
-CONTEXT is the opposite: on a checked box every declared criterion breaks as
-`missing-uat`, the total drop. Additive is not invisible: `context_issues` carrying
-`criterion-duplicate-id` or `criterion-unidded` on a phase NOT in `legacy` must
-be named in the report. The reader keeps first-occurrence-wins on a duplicate
-id, so a second bullet reusing one is dropped from the coverage domain
-entirely - a real criterion left unproven with the gate green, which is the
-failure this arm exists to close.
+the prune takes CONTEXT with the directory. Additive is not invisible:
+`context_issues` carrying `criterion-duplicate-id` or `criterion-unidded` on a
+phase NOT in `legacy` must be named in the report. The reader keeps
+first-occurrence-wins on a duplicate id, so a second bullet reusing one is
+dropped from the coverage domain entirely.
 
 Report: the one-line verdict, the trace table (requirement | phase | plan |
 verified), the dropped/unmapped/drift lists, the uncovered criteria by phase and
 id, and - on FAIL - the concrete next action per failing requirement (assign to a
-phase, plan it, verify it, or mark it deferred) and per uncovered criterion.
+phase, plan it, verify it, or mark it deferred) and per uncovered criterion its
+section 3 exit.
 Ends here; fixing is a separate, deliberate step.
