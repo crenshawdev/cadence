@@ -185,20 +185,18 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
 
    **(b) `git.auto_close` true, set in both layers: land the integration branch
    on base via `PR -> merge`; it asks once, before the tag push.** Skip the 3a
-   ask entirely; it never installs a default into that ask. The integration
-   branch is local-only (references/git-publish.md rail 3 never auto-pushes).
-   - **Gate the unattended merge on the RULINGS, not the raw findings.** Nobody
-     is watching this arm, so a blocker/high finding still genuinely unfixed is
-     a HARD halt before any merge rather than an ask. This skill fires no review
-     of its own: what it reads is what this branch's `risk_surface` fires
-     already ADJUDICATED. Read every `ADJUDICATION-risk_surface*.json` under
-     BOTH record roots - `.planning/phases/*/records/` and `.planning/records/risk-carry/*/`,
-     the copies `/cad-milestone` leaves when it prunes the phase dirs before
-     chaining this command - and union every record's `entries[]`. Every
-     record, never the highest round alone: a re-arm is a second fire, on its
-     own range or at `-r2` of the same `plan-<k>` or `<command>-<sha>`
-     discriminator, and its record is not the record of round 1. Do NOT read the
-     `findings` arrays out of the `REVIEW-risk_surface*.md` files.
+   ask.
+   - **Gate the unattended merge on the RULINGS, not the raw findings.** A
+     blocker/high finding still genuinely unfixed is a HARD halt before any
+     merge rather than an ask. This skill fires no review of its own: what it
+     reads is what this branch's `risk_surface` fires already ADJUDICATED. Read
+     every `ADJUDICATION-risk_surface*.json` under BOTH record roots -
+     `.planning/phases/*/records/` and `.planning/records/risk-carry/*/` -
+     and union every record's `entries[]`. Every record, never the highest round
+     alone: a re-arm is a second fire, on its own range or at `-r2` of the same
+     `plan-<k>` or `<command>-<sha>` discriminator, and its record is not the
+     record of round 1. Do NOT read the `findings` arrays out of the
+     `REVIEW-risk_surface*.md` files.
      Then name on `unruled` every `REVIEW-risk_surface*.md` nothing ruled - from
      those two roots plus a legacy `.planning/REVIEW-risk_surface-*.md` an
      interrupted pre-`risk-carry` close may have left at the `.planning/` root.
@@ -221,13 +219,11 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      range has none. A fire nothing ruled says nothing about what survived, so
      it halts by name rather than being read past.
      That legacy root file is the one `unruled` entry no adjudication can ever
-     answer, so state its remedy in the halt instead of only its path: it is the
-     pre-`risk-carry` AGGREGATE carry - one union of RAW findings under no
-     discriminator - so no `ADJUDICATION-*.json` can ever sit beside it, and
-     every retry re-halts on it identically. It is answered ONCE and BY HAND:
-     read its findings, settle any still genuinely unfixed against this branch,
-     then delete the file. That delete is the answer, and nothing in this skill
-     does it for the user: step 4 clears the carry alone.
+     answer, so state its remedy in the halt instead of only its path: it holds
+     RAW findings under no discriminator, so no `ADJUDICATION-*.json` can ever
+     sit beside it. It is answered ONCE and BY HAND: read its findings, settle
+     any still genuinely unfixed against this branch, then delete the file.
+     Nothing in this skill does that for the user.
      Pipe `{"findings": [...], "unruled": [...]}` on stdin to
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate --dir <root>`,
      the same `<root>` step 3's `authorized` call read; on
@@ -235,10 +231,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      merging over them, and surface a non-empty `overridden` with them.
      When neither root holds a record or a review, pipe an explicit
      `{"findings":[]}` - that is the only spelling of "nothing survived", and
-     `action:"halt"` also fires when the payload could not be read at all
-     (empty stdin, malformed JSON, or a valid envelope carrying no findings
-     list), since the gate never reports "no surviving finding" about input it
-     never parsed.
+     `action:"halt"` also fires when the payload could not be read at all,
+     since the gate never reports "no surviving finding" about input it never
+     parsed.
    - **Read the publish rails first.** Read
      `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
      consult site - step 3a or 3b, never both) before the
