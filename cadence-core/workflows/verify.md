@@ -9,10 +9,8 @@ user result, counts recomputed every write).
 `--sweep` folds the cross-phase audit in (cold branch: verify-sweep.md).
 `--deep` adds a goal-backward codebase pass (cold branch: verify-deep.md).
 
-Why each step is shaped the way it is - the measured failures, the ordering
-arguments, the rejected alternatives - is in `docs/rationale/verify.md`. It is
-not read at runtime. Read it before EDITING this file, so a step is not removed
-for looking redundant.
+Each step's reasons and rejected designs live in `docs/rationale/verify.md`:
+read it before editing this file.
 </purpose>
 
 <process>
@@ -67,8 +65,7 @@ acceptance criteria, in this source order:
 Also read `SUMMARY.md` if present for user-observable deliverables the
 criteria miss - each becomes an item too. Read the applicable source docs in
 ONE batch - CONTEXT.md + SUMMARY.md, or the PLAN.md + ROADMAP.md + SUMMARY.md
-fallback - not both branches; they are known independent paths, and only a read
-whose path a prior call computed would be serialized.
+fallback - not both branches.
 
 Item rules (the model's judgment, before the seam call):
 - One item per observable behavior: name + expected (what the user should
@@ -115,8 +112,8 @@ Continue to `deep_check`.
 <step name="deep_check">
 Run the goal-backward cad-verifier pass when `--deep` was passed or the user
 asks for it. `workflow.verifier: false` (`config.mjs get workflow.verifier`)
-always skips it - it is the off switch. Otherwise run it when this is the FIRST
-UAT session for the phase AND the resolve says to:
+always skips it. Otherwise run it when this is the FIRST UAT session for the
+phase AND the resolve says to:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-verifier --phase <N>
@@ -126,14 +123,9 @@ Relay every `warnings[]` entry that resolve returns to the user before running
 the pass, each distinct warning once per run
 (`references/seam-spawn-agent.md`).
 
-`verify` on that line is `on` or `off`. This step holds no role and the seam
-refuses a resolve without one, so it resolves as `cad-verifier` - the role it is
-deciding whether to dispatch. Both terms are load-bearing: keep the
-first-session term, which is what holds the pass to once per phase.
-
-`verify` is `on` exactly when the plan-time risk floor raised - the phase's
-plans declare a file touching an answered risk surface, or a declared scope
-could not be read - and `off` otherwise. No config key sets it directly.
+`verify` on that line is `on` or `off`: `on` exactly when the plan-time risk
+floor raised - the phase's plans declare a file touching an answered risk
+surface, or a declared scope could not be read. No config key sets it directly.
 
 When `verify` is `off`, say so in one line - "no risk surface in this phase's
 plans, so the deep verify pass is off; run `/cad-verify --deep` to force it" -
@@ -200,18 +192,16 @@ not re-litigated, and it goes straight to pass 2 without pass 1 running it:
   `(human-verify: needs <tool/service>)` suffix, written precisely when that
   tool is known absent on THIS machine.
 
-A `why_human` item is NOT that kind, and the field is not the predicate - the
-deep pass writes it for every UNCERTAIN truth as well as every human-only check.
-So READ the reason and apply the bar to it: it goes straight to pass 2, unrun,
-only when it names irreversibility against real data or a resource outside the
-model's reach. Anything else - "no probe ran", "not exercised by a named test" -
-goes to pass 1 and is executed.
+A `why_human` item is NOT that kind: READ its reason and apply the bar to it.
+It goes straight to pass 2, unrun, only when the reason names irreversibility
+against real data or a resource outside the model's reach. Anything else - "no
+probe ran", "not exercised by a named test" - goes to pass 1 and is executed.
 
-`blocked` is TERMINAL for the model's own walk: pass 1 records it ONLY for an
-item that cleared the bar and then failed on an environmental cause the bar did
-not predict, and the results table says it needs the user's answer. A later run
-puts each `blocked` item to the user through the ask-user seam before pass 2,
-with three answers - pass, skip with a reason, or fail - and records the answer.
+Pass 1 records `blocked` ONLY for an item that cleared the bar and then failed
+on an environmental cause the bar did not predict, and the results table says it
+needs the user's answer. A later run puts each `blocked` item to the user
+through the ask-user seam before pass 2, with three answers - pass, skip with a
+reason, or fail - and records the answer.
 
 **Pass 1 - execute and cite.** Read `.planning/phases/<N>/UAT.md` ONCE, before
 the chain starts, for the pending items and their `expected` text.
