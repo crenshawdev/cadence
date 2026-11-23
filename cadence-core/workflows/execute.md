@@ -464,11 +464,8 @@ When a finding names a path outside the plan's
 declared `files:` lease, the coordinator AMENDS `PLAN-<k>.md`'s `files:` to
 cover that path BEFORE dispatching, so `lease-check` still runs and still
 answers on the fix commit's staged set - `PLAN-<k>.md` is inside `.planning/`,
-which is what the guardrail above permits with no exception clause. Rejected:
-a `lease-check`-exempt flag for the fix dispatch, which deletes the one gate
-that catches an unlicensed path; and routing the refusal back through the
-ask-user seam, which consults exactly the seam the fix dispatch exists to keep
-out of the loop. It returns on the existing complete arm,
+which is what the guardrail above permits with no exception clause. It returns
+on the existing complete arm,
 `PLAN COMPLETE` with `Tasks: 1 of 1`, and is bracketed exactly as "The
 lifecycle bracket (both paths)" above states, with no bracket half restated
 here. The re-arm on that fix takes `references/triage-gate-blocking.md`'s
@@ -693,9 +690,7 @@ The pointer names the queue and its count beside the next action
 (`/cad-verify <N> - 2 deferred findings queued, triage before landing`). A file
 and not the inline flag because caller-derived text rides a path at every seam
 flag that carries it (`references/conventions.md`).
-Keep `--status executed` exactly as it is: a new status value would land outside
-`planning.mjs`'s `AGREE` map, be reported as `cursor` drift and be rewritten by
-the very next `/cad-progress`. The pointer is a HINT; the count `/cad-progress`
+Keep `--status executed` exactly as it is. The pointer is a HINT; the count `/cad-progress`
 prints comes from the `status` envelope's `deferred` block and never from this
 string.
 

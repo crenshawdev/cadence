@@ -131,6 +131,15 @@ new risk surface, and the next halt. The range is committed and complete when
 this reads it, so the reviewer judges what the plan actually built instead of a
 half-finished staged index.
 
+## execute_sequential - why a fix finding outside the lease amends the plan
+
+A finding naming a path outside the plan's `files:` lease is covered by amending
+`PLAN-<k>.md`'s `files:` before the fix dispatch, so `lease-check` still runs on
+the fix commit. Rejected: a `lease-check`-exempt flag for the fix dispatch, which
+deletes the one gate that catches an unlicensed path; and routing the refusal
+back through the ask-user seam, which consults exactly the seam the fix dispatch
+exists to keep out of the loop.
+
 ## execute_sequential - why the diff trigger defaults off
 
 An advisory review gates nothing, and the LAST plan of a phase has no next
@@ -161,6 +170,12 @@ the same item twice.
 
 Routing it to CAPTURE is also the durable write that makes the queue accumulate,
 since an open item is by definition what did not finish inside the phase.
+
+## state - why a deferring run keeps `--status executed`
+
+A new status value would land outside `planning.mjs`'s `AGREE` map, be reported
+as `cursor` drift and be rewritten by the very next `/cad-progress`. The deferral
+rides the `--next-file` pointer instead.
 
 ## state - why DEFERRED-*.json is staged regardless of commit_docs
 
