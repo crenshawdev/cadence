@@ -3,29 +3,21 @@
 Close a finished milestone and set up the next one. A thin close-out: audit,
 bump (release projects only), prune, evolve or record, refresh. Git is the archive -
 pruning removes completed work from the LIVE planning docs, not from history.
-The release tag is NOT cut here: /cad-land cuts it on the pulled base after
-the merge confirms (tag-after-merge).
 
-This close asks ONE question up front, reused at step 7 rather than re-asked:
-`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <root>`,
-which answers `ok:true` only when this repository's config and the user-global
-config both set `git.auto_close`. Step 2 decides release mode from evidence - a
-confirmed version and the tags this project has published - and from no key at
-all. Independent probes here share one message; only a call that consumes a
-prior call's output is serialized.
+This close makes one script call up front and reuses its answer at step 7:
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <root>`.
+Independent probes here share one message; only a call that consumes a prior
+call's output is serialized.
 
 ## 1. Scope + audit gate
 Identify the milestone being closed (from PROJECT.md's current version/
 milestone). Invoke `/cad-audit <milestone>` via the SlashCommand tool (the
-requirement->phase->plan->verified FAIL gate), mirroring step 7's chained
-/cad-land, rather than re-deriving the break-codes inline. On FAIL - a requirement untraced, unverified, or dropped -
-report it and STOP, unless the user explicitly overrides (a milestone must not
-ship with silent gaps). On PASS, continue.
+requirement->phase->plan->verified FAIL gate). On FAIL, for any cause
+audit.md section 4 gives, report it and STOP, unless the user explicitly
+overrides. On PASS, continue.
 
 ## 2. Version bump (release projects only)
-First probe what this project has published, naming the project ROOT - the
-read is bounded to the repository at that path, so a project inside an
-unrelated repository does not read its releases as its own:
+First probe what this project has published, naming the project ROOT:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-branch.mjs" tags --dir <root>
@@ -38,39 +30,32 @@ for.
 
 NO CONFIRMED VERSION - declined, or never proposed - is the skip rule: skip the
 remainder, note "no version bump (non-release milestone)", never frame the
-close as a version cut; continue at step 3. No config key decides this: a project that tags by hand
-still bumps its manifest, and the key that governs the release tag is read where
-that tag is cut (/cad-land, after the merge - the tag-after-merge note below).
+close as a version cut; continue at step 3. No config key decides this.
 
 Everything below runs only on the version you confirmed: an `ok:false` on a
-named version is a genuine failure - the halts below
-STOP the close.
+named version is a genuine failure - the halts below STOP the close.
 
-Then, before the tag, bump the manifest + scaffold the changelog. Run, on its
-own line, naming the version you just confirmed - `--version` is REQUIRED, the
-seam derives no number of its own and refuses without it:
+Then bump the manifest + scaffold the changelog. Run, on its own line, naming
+the version you just confirmed - `--version` is REQUIRED, the seam derives no
+number of its own and refuses without it:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/release-bump.mjs" bump --dir <root> --version <version>
 ```
 
 The seam auto-detects `.claude-plugin/plugin.json` and returns `action:"skip"`
-when absent. Otherwise it bumps the
-manifest `version` to the shipping release (and any versioned sibling),
-scaffolds the dated `## [<version>]` CHANGELOG heading + link reference, and
-PROMOTES whatever was staged under `## [Unreleased]` into that dated section.
-Then YOU author bullet prose only for what the promotion did NOT already move -
-re-authoring what it moved lists one change twice. The seam owns the
-deterministic scaffold, prose owns the judgment.
+when absent. Otherwise it bumps the manifest `version` to the shipping release
+(and any versioned sibling), scaffolds the dated `## [<version>]` CHANGELOG
+heading + link reference, and PROMOTES whatever was staged under
+`## [Unreleased]` into that dated section. Then YOU author bullet prose only
+for what the promotion did NOT already move.
 
 Four halts, each before the bump commit:
 
 - `ok:false` with `action:"refuse"` (exit 1). The seam wrote NOTHING and named a
   `reason`: `no-target-version`, `unparseable-version`, `no-version-field`,
   `unreadable-manifest`, `unreadable-sibling-manifest`, `unreadable-changelog`,
-  `downgrade`, `not-an-upgrade` or `bad-date`. Report it and STOP. A close
-  continued past a refused bump ships a manifest still carrying the previous
-  version.
+  `downgrade`, `not-an-upgrade` or `bad-date`. Report it and STOP.
 - `ok:false` with `action:"partial"` and `reason:"partial-bump"` (exit 1). The
   write set was decided and a step failed part way, so the seam DID write:
   `manifest.bumped`, each `siblings[]` row's `bumped` and `changelog.changed`
@@ -82,22 +67,16 @@ Four halts, each before the bump commit:
   and it still ships the old version. Name the file and STOP. A sibling that
   cannot be READ is not this case: it refuses the whole run under
   `unreadable-sibling-manifest` above, with nothing written.
-- `changelog.section_empty: true`, or `changelog.state: "absent"`. Either ships
-  a release with no notes: the dated heading has no body at all, or there is no
-  `CHANGELOG.md` to scaffold in the first place - a state the envelope NAMES, so
-  it is no longer read as a clean changelog. Author the notes before the bump
-  commit; on `absent` STOP and say so unless the user confirms this project
-  keeps none.
+- `changelog.section_empty: true`, or `changelog.state: "absent"`: the dated
+  heading has no body at all, or there is no `CHANGELOG.md` to scaffold. Author
+  the notes before the bump commit; on `absent` STOP and say so unless the user
+  confirms this project keeps none.
 
 Commit the manifest + changelog as
-`chore: bump manifest to <version> + changelog`, so the merge - and the tag
-cut after it - carries the bumped manifest.
+`chore: bump manifest to <version> + changelog`.
 
-**No tag is cut here - tag-after-merge.** A tag cut at close names a pre-merge
-commit on the integration branch, and any non-fast-forward land leaves that
-commit off base entirely: the release tag then points at history main does not
-contain. `/cad-land` cuts the tag in its cleanup step, on the pulled base,
-after the merge is confirmed - this close's job ends at the bump commit.
+**No tag is cut here - tag-after-merge.** `/cad-land` cuts it on the pulled
+base after the merge confirms.
 
 ## 3. Prune completed phases + cleanup
 
