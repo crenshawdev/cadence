@@ -3,10 +3,8 @@ The skill's objective states the guarantees. What it does not: ALL worktree
 ceremony exists inside `choose_path`'s parallel and workflow paths, and
 nowhere else.
 
-Why each step is shaped the way it is - the measured failures, the ordering
-arguments, the rejected alternatives - is in `docs/rationale/execute.md`. It is
-not read at runtime. Read it before EDITING this file, so a step is not removed
-for looking redundant.
+Each step's reasons and rejected designs live in `docs/rationale/execute.md`:
+read it before editing this file.
 </purpose>
 
 <process>
@@ -44,14 +42,7 @@ Resolve the phase:
   record anyway: /cad-execute <N> --rerun." Stop HERE, before `git_guard`:
   before the protected-branch guard, before the `phase_start` trace anchor, and
   before any executor dispatch.
-  `replay: false` -> the run proceeds to dispatch. WHAT makes it false is the
-  seam's to decide and not this file's to restate: a phase with no `records/reports/`
-  directory, any one plan without a report, a first line reading `PLAN PARTIAL`
-  or `PLAN CHECKPOINT: <type>`, a `PLAN COMPLETE` quoted inside a report body
-  rather than on its first line, and a rotated `plan-<k>.<n>.md` sibling are each
-  a case `planning-replay-check.test.mjs` (cadence-tests repository) pins against a real
-  fixture directory. Restating the rule here is how the two come to disagree, and
-  only one of them is tested.
+  `replay: false` -> the run proceeds to dispatch.
   `ok:false` -> relay its `reason` and `hint` and stop.
 - DERIVED status `executed` or `complete`, no `--rerun`, AND an EMPTY
   `dispatch_set` on the envelope above -> stop: "Phase <N> is already <status>
@@ -61,14 +52,6 @@ Resolve the phase:
   /cad-execute <N> --rerun." Read the status from the `phases[]` DERIVATION and
   never from `cursor.status` - the cursor is a hint the derivation beats.
   `complete` is refused beside `executed`. Stop where the replay arm stops.
-  THE EMPTY-SET TERM IS LOAD-BEARING and this arm sits BELOW the replay call
-  for it: a non-empty `dispatch_set` is the phase's OUTSTANDING work and
-  dispatches whatever the derived status says. Keyed to the STATUS alone, this
-  refusal made `/cad-plan --gaps` unreachable end to end (GH-179) - a gap plan
-  closes unresolved UAT items, UAT exists only after a phase has run, so every
-  gap plan lands on a phase deriving at least `executed` - and the one
-  documented way past it made the damage worse, since `--rerun` widens the set
-  back over the committed plans this arm exists to protect.
 
 **The dispatch set.** The `dispatch_set` on that same envelope - the phase's
 plan files minus every plan already reporting complete, and every plan the phase
@@ -162,12 +145,6 @@ Never stash, unstage or commit the user's staged work without asking - the seam
 asks, the user chooses. Run the same check in a cross-repo phase's code repo,
 beside its protected-branch guard.
 
-**What this does NOT prove.** The check reads the INDEX, so the guarantee is "no
-staged work at phase start", not a clean worktree, and the executor's commits
-are only as attributable as the worktree was. When it matters that a phase's
-commits contain nothing but the phase's own work, start it from a clean worktree
-(`git status --porcelain` empty), not merely a clean index.
-
 Record `git rev-parse --short HEAD` as PHASE_START for later diffs, then anchor
 this phase's joined run record with the same sha:
 
@@ -175,11 +152,9 @@ this phase's joined run record with the same sha:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event phase_start --sha <PHASE_START>
 ```
 
-That sha is what the phase's correlation id is DERIVED from, so every routing,
-provider, lifecycle and outcome event this phase writes joins on it. The whole
-trace is BEST EFFORT: an append that comes back `written:false` (the record hit
-its size cap, the planning root is unwritable) changes nothing about the execute
-path and is never a reason to pause or stop.
+An append that comes back `written:false` never pauses or stops the run, with
+one exception: the risk-check record and the `risk_check_skipped` append hold
+the plan's done report, as the `risk-check status` call and the skip arm say.
 </step>
 
 <step name="choose_path">
@@ -296,10 +271,7 @@ A brief takes the place of the plan file and the two phase documents in what eac
 
 Do NOT restate the executor's standing rules (atomic commit per task,
 deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
-report format) - `skills/cad-executor-contract/SKILL.md` already carries them as
-its stable, cached definition, preloaded by every `cad-executor` rung file
-(`agents/cad-executor.md` is a stub naming the rung and that contract).
-Repeating them in the volatile dispatch tail pays for cached content twice.
+report format) - `skills/cad-executor-contract/SKILL.md` already carries them.
 
 **The report file (both paths).** An executor writes its task table to
 `<plandir>/records/reports/plan-<k>.md` - `<plandir>` is the plan file's own directory -
@@ -332,12 +304,8 @@ Once that executor comes back, append the CLOSE:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on that same return> --detail-file <path> [--replay]
 ```
 
-`--replay` ONLY when the digest's `Commits:` read `none (already applied)`: the
-dispatch cost real tokens and performed no work, and without the flag its
-bracket is byte-identical in shape to a real one. It is a structured flag and
-never a `--detail` note, because the close arm infers `checkpoint` from a
-non-blank detail - a replay written there would bill a finished dispatch as an
-unusable one.
+`--replay` ONLY when the digest's `Commits:` read `none (already applied)`, and
+as the flag, never a `--detail` note.
 
 ONE line per executor, and the detail, carried only for a checkpoint return, is
 the executor's own return line - write it to a scratch file and pass the PATH
@@ -391,13 +359,10 @@ Handle the executor's return:
 **The worker key of a SECOND dispatch.** Three of those arms dispatch again, and
 the key is `<k>` - the plan number the first dispatch took, never a coined
 `1-fix`. A continuation, a re-dispatched remainder and a `risk_surface` fix pass
-are second dispatches against the SAME plan's range, and a minted key splits one
-range across two identities in the run record. Whatever key a dispatch carries,
-this plan's `risk-check run --plan` record and its fire receipt's
+are second dispatches against the SAME plan's range. Whatever key a dispatch
+carries, this plan's `risk-check run --plan` record and its fire receipt's
 `trace append --plan` (references/triage-gate.md) must be written with that ONE
-spelling, or the receipt settles nothing and the gate refuses a range that was
-checked. The seam does not require a NUMBER - `--plan` takes the worker key - so
-keeping one spelling is the coordinator's job, not the seam's.
+spelling.
 
 After each plan completes, ASK THE SEAM whether the plan's committed range
 touched a risk surface - never by reading the diff against a prose list.
@@ -413,10 +378,7 @@ run the `status` call that gates it done below either - that call would refuse
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event risk_check_skipped --plan <k> --sha {pre-plan HEAD}
 ```
 
-The event NAME is the record that nothing was checked because nothing landed.
-Asking the seam over that pair instead writes `checked: true, empty: true` - a
-completed clean check over a range that could not have matched - and that row is
-what this arm exists to keep out of the record. Report the plan done on that
+Report the plan done on that
 append's `written: true`, held exactly as the run's own record is below.
 Everything after this point proceeds as written.
 
@@ -433,9 +395,7 @@ the order they arrive, the legend beside them, through the ask-user seam), save
 the answer at the repo layer as that reference says, and re-run the same
 `risk-check run` line. The plan is not reported done before that.
 
-A non-empty `matches` OR `inconclusive: true` fires the trigger. An unjudged
-range is not a cleared one, and widening is the only safe direction on the one
-gate the schema defaults to `blocking`. Each match names the category and
+A non-empty `matches` OR `inconclusive: true` fires the trigger. Each match names the category and
 the signal that found it, so the fire states a reason rather than a verdict.
 
 On a fire, write `git diff {pre-plan HEAD}..HEAD` to
@@ -485,10 +445,7 @@ Then, before the plan is reported done:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check status --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD
 ```
 
-The plan is NOT reported done while that call refuses. It re-reads the record,
-so it also catches the run that answered `ok:true` while its append came back
-`written: false` - a check whose answer never reached the record is a check the
-next reader cannot see.
+The plan is NOT reported done while that call refuses.
 
 Fire ONCE here, on the committed range, never per risky commit and never
 mid-plan.
@@ -530,8 +487,7 @@ status` and receipts (`--plan phase`) and any `risk_surface` fire it calls for
 and that fix's range gets its own `risk-check run` and `risk-check status`.
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
-than waiting: the artifact is two immutable refs, so the reviewer reads nothing
-that executor writes, and nothing downstream waits on the answer. Each fire
+than waiting. Each fire
 carries the advisory persistence tail (references/review-inline.md): findings
 land at `.planning/phases/<N>/records/REVIEW-diff-plan-<k>.md` whether or not this
 session survives to the return, and `summary` folds the files on disk, naming
@@ -539,8 +495,7 @@ any still in flight. The last plan has no next dispatch, so it fires without
 waiting on the same tail - the gate, not the overlap, picks the bracket's
 writer. When
 `review.triggers.diff.gate` resolves it to `adjudicated` instead, the fire
-BLOCKS before the next dispatch - triage can change what ships, and answering
-about plan 1 while plan 2 commits is answering about a tree that is gone. On
+BLOCKS before the next dispatch. On
 the workflow path (`references/review-workflow.md`) that block is the launch
 ending the turn and the notice resuming this step, with nothing else dispatched
 in between, and the triage still precedes the next plan's dispatch. The
@@ -642,26 +597,13 @@ same docs commit (state step).
 A deviation that REFUTES a numbered context decision - it cites a D-NN and
 shows that decision's claim false against ground truth - also corrects the
 record it refuted: append ` [corrected by plan-<k> deviation: <the true fact,
-one clause>]` to that decision's line in `.planning/phases/<N>/CONTEXT.md`.
-Later phases receive prior decisions as a summary drawn from these files, so a
-falsified claim left standing is inherited by every planner after this one. A
+one clause>]` to that decision's line in `.planning/phases/<N>/CONTEXT.md`. A
 deviation that merely adjusts scope or adds work touches nothing here; only a
 refuted D-NN does.
 
 An open item lives in `.planning/phases/<N>/SUMMARY.md`'s `## Open items`,
-written by this step, and NOWHERE else. It is not filed into
-`.planning/CAPTURE.md`: `parseSummarySnippets`
-(`cadence-core/bin/lib/planning-files.mjs`) already indexes `## Deviations` and
-`## Open items` bullets into the recall corpus, so the item is already reachable
-by `/cad-plan` and the CAPTURE copy is a second, lower-scoring row for the same
-sentence. CAPTURE holds the phase IN FLIGHT; an open item is by definition
-what did not finish inside the phase.
-
-An item that must outlive the phase is the CLOSE's business, not this step's:
-`planning.mjs phase-done`'s `capture` field names whatever is still in the queue
-and `workflows/verify.md` prints it, so the disposition - filed on the tracker,
-or dropped - is the user's own. Nothing is filed onward from here: no ask, no
-forge call.
+written by this step, and NOWHERE else. Nothing is filed onward from here: no
+ask, no forge call.
 
 Then run
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" debt-harvest --root .`
@@ -702,17 +644,14 @@ the summary step's debt harvest reported `written` - `docs(<N>): phase <N>
 summary` - staging exactly those paths.
 
 Stage `.planning/phases/<N>/records/DEFERRED-*.json` alongside them, and stage it
-whatever that key says: it is not a planning doc the key is the standing answer
-for, it is what stops the land.
+whatever that key says.
 
-The DIRECTORY, never one report by name: an executor rotates a previous run's
-report aside to a suffixed sibling, which a by-name stage leaves untracked. It
-takes everything in there, so the flagged diff (`plan-<k>-risk.diff`) goes out
-by PATHSPEC, not a rule naming a file:
+The DIRECTORY, never one report by name, with the flagged diff
+(`plan-<k>-risk.diff`) left out by PATHSPEC:
 `git add <plandir>/records/reports/ ':(exclude)<plandir>/records/reports/*.diff'`. With the key
 false the reports stay uncommitted exactly like SUMMARY.md; the worktree path
-commits regardless, because the commit is the only transport across the merge.
-With the key true, a run that reaches this step leaves the cursor committed.
+commits regardless. With the key true, a run that reaches this step leaves the
+cursor committed.
 </step>
 
 <step name="done">
