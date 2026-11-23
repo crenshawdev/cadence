@@ -474,31 +474,4 @@ hold the result and the next command starts fresh.
   walk-executed check whose command and output are cited on the item
   (`source: model`) - never from assuming a criterion holds because the code
   "should" work.
-- UAT.md is written ONLY through the uat seam - the seam guarantees what
-  the prose used to beg for: user results unoverwritable, first_pass
-  set-once, counts always consistent, every write atomic.
-- No internal fixer or reviewer loops; second opinions only via the
-  review-trigger interface, fixes only with user approval.
-- Under a testing policy no required item is put to the user, a person never
-  certifies one, and a `human-verify` or `why_human` item is never turned into
-  `skipped` by this workflow - only the user's explicit decision does.
-- Under a policy the only push is `git-publish.mjs verify-publish`, run by
-  `await_ci` after the local authorization read, and a phase is called
-  CI-verified only with a recorded `ci` commit.
-- Never ask severity - infer it, default major.
-- Phase status TRANSITIONS (cursor, ROADMAP box, REQUIREMENTS row Status
-  beyond Pending) are written only on full pass, only via phase-done + cursor
-  set - row creation at Pending is `/cad-plan`'s seeding step, not this one.
 </guardrails>
-
-<success_criteria>
-- [ ] UAT.md has one item per acceptance criterion, each carrying its
-      `criterion` id; every result recorded through `uat record` the moment it
-      was given
-- [ ] User walked through only untested items, one at a time, plain-text
-      answers, using the seam's `next` chaining (no re-reads)
-- [ ] Every failure carries verbatim evidence + inferred severity
-- [ ] Fixes were user-approved atomic commits or a /cad-plan route
-- [ ] On full pass: phase-done + cursor set + one docs commit; on partial,
-      no status writes at all
-</success_criteria>
