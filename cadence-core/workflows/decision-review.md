@@ -3,25 +3,18 @@ An on-demand refute-then-adjudicate pass over ONE load-bearing decision - a
 `- D-NN (...)` line in a CONTEXT.md `## Durable decisions` / `## Decisions`
 section, or a row in PROJECT.md's Key Decisions table. It reuses the review
 subsystem (references/review-triggers.md): `cad-reviewer` (and, when
-configured, a cross-model provider) refutes the decision; the main model
-grounds each objection against the real codebase, and against Context7 when
-its tools are available, then rules it `survives | partial | refuted` and
-lists concrete amendments.
-
-This workflow never auto-fires (no entry in references/review-triggers.md's
-wiring table). It runs only when a human invokes `/cad-decision-review
-<path>` on a decision they chose to stress-test - durability (cad-context's
-`## Durable decisions` filter) names candidates; picking one for this deeper
-pass is the human's call, not a mechanical handoff.
+configured, a cross-model provider) refutes the decision, then the main model
+grounds and rules each objection.
 </purpose>
 
 <process>
 
 <step name="resolve_target">
 Parse `$ARGUMENTS` for a path (from the invoking skill's `$ARGUMENTS`, a path
-to an existing decision doc - a CONTEXT.md or PROJECT.md). If missing, ask
-(ask-user seam): "Which decision? (path to a CONTEXT.md or PROJECT.md, plus
-which D-NN or Key Decisions row)". Read the file and isolate:
+to an existing decision doc - a CONTEXT.md or PROJECT.md). If the path or the
+decision is missing or unclear, ask (ask-user seam): "Which decision? (path to
+a CONTEXT.md or PROJECT.md, plus which D-NN or Key Decisions row)". Read the
+file and isolate:
 - a CONTEXT.md: the named `- D-NN (area): decision. Evidence: ...` line
   under `## Durable decisions` or `## Decisions`.
 - a PROJECT.md: the named row of the `## Key Decisions` table.
@@ -169,39 +162,7 @@ decides what to amend and does it themselves (or via a follow-up
 </process>
 
 <guardrails>
-- Never auto-fires: this workflow runs only when a skill dispatches it with a
-  resolved path argument. It has no entry in references/review-triggers.md's
-  wiring table and no trigger condition of its own (D-11).
-- Never edits the target decision doc, PROJECT.md, or any source file -
-  read-only grounding, prose output only.
-- The `survives|partial|refuted` ruling and amendment list are this
-  workflow's own prose output. review-provider.mjs's FINDING_SCHEMA and
-  self-verify's CONTRACTS table are unchanged (D-07) - step `refute` still
-  returns the shared `{findings:[...]}` shape; only step `adjudicate` adds
-  the ruling on top of it, here in prose.
-- Cost reporting is qualitative only - never a token count or dollar figure
-  the runtime cannot actually measure (D-09).
+- Never auto-fires: it runs only when the user invokes `/cad-decision-review`
+  on a decision they chose. It has no entry in references/review-triggers.md's
+  wiring table.
 </guardrails>
-
-<success_criteria>
-- [ ] Every objection from `refute` receives exactly one ruling
-      (survives | partial | refuted) and, for survives/partial, a concrete
-      amendment
-- [ ] On zero objections, the decision's own load-bearing claims were
-      grounded instead - never a bare "no findings"
-- [ ] At least one library/API claim was checked against documentation -
-      Context7 when its tools were available, else the installed source,
-      lockfile or vendored docs - and at least one factual claim against the
-      codebase, on whichever claim set applied, or that set was noted to
-      contain none of that kind
-- [ ] Every library/API claim no documentation could check is listed as
-      unchecked, never ruled from training data
-- [ ] The report names which reviewers ran and the tier/effort that reached
-      the cross-model arm, qualitatively, never presented as applying to
-      `cad-reviewer` - no fabricated token/dollar figures
-- [ ] Single-model (`cad-reviewer`, no model resolved) ran when no cross-model
-      provider was configured; the panel ran through the review seam, resolving
-      the cross-model call's model and effort from
-      `review.decision_review.{tier,effort}`, when one was
-- [ ] No file was edited - the target decision doc is untouched
-</success_criteria>
