@@ -19,14 +19,7 @@ Every Bash `git push` the guard sees asks, with no per-push exemption; only
 
 ### What the guard does NOT see (rail 3)
 
-v2.2.0 deleted an 840-line shell tokenizer and a 367-line model of git's option
-grammar. Their escape surface never closed, and their O(K x N) scan aborted V8
-in a hook that runs on every Bash call and fails OPEN, so a long enough command
-line switched the guard off.
-
-So these shapes really can run git and are now invisible. Each is a pinned test
-row in `git-segments.test.mjs` and
-`git-guard.test.mjs` (cadence-tests repository), not an absence:
+These shapes can run git and the guard doesn't see them:
 
 | Shape | Why it is silent |
 |---|---|
@@ -38,9 +31,3 @@ row in `git-segments.test.mjs` and
 | Line continuation (`git \` + newline + `push origin main`) | The newline is a separator; neither half is a `git` segment with a verb. |
 | Remote execution (`ssh host "git push origin main"`) | The command word is `ssh`, and it pushes from another machine anyway, which is outside what a local rail can see. |
 | Heredocs, herestrings, `${...}` expansion, brace expansion, `$'...'` escapes, aliases and shell functions, variable indirection (`CMD="git push"; $CMD`) | Nothing is expanded and no body is read as commands. These were out of grammar for the tokenizer too. |
-
-The trade, stated plainly: the guard now catches the shapes a model actually
-writes when it is doing its job, and misses the shapes it would have to be
-deliberately routing around. The adversary here is the model issuing the
-command, not an attacker, and a rail that costs a prompt when it fires is not
-worth an unbounded parser to make exhaustive.
