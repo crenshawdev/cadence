@@ -370,33 +370,25 @@ For each item with `status: fail`:
      3. "Leave open - the item stays failed and verification moves on"
 3. **Apply now** -> make the change, then `git add` exactly the files it
    touched, and only THEN ask the seam whether it touched a risk surface
-   BEFORE the commit lands. Staging is a STEP here, not a description: this
-   arm's `risk-check run` reads the staged fix before the commit
-   (references/git-guard.md section 4), and `--staged` reads the index against
-   HEAD (the index has no commit for a `--head` to name), so a fix still
-   sitting in the worktree is outside the scope this call reads.
+   BEFORE the commit lands (references/git-guard.md section 4).
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --base HEAD --staged
    ```
 
    `<N>` is the phase under verification. `empty: true` on this arm is NOT a
-   pass: it says the read found no scannable change between HEAD and the
-   index, which is exactly what an unstaged fix looks like - the seam returns
-   `ok: true, checked: true, matches: []` over nothing at all. Stage the fix
-   and re-run; never commit on that answer. A non-empty `matches` or an
+   pass: it is what an unstaged fix returns. Stage the fix and re-run; never
+   commit on that answer. A non-empty `matches` or an
    `inconclusive: true` fires the `risk_surface` trigger and the fire carries
    the staged-diff scope, shape (b): the reviewer runs
-   `git diff --cached` in the cwd it inherits; that gate is blocking and its
-   re-arm is capped at ONE narrowed round by the same triage-gate.md this step
-   already re-reads. On the workflow path (`references/review-workflow.md`)
-   the fire is the launch ending the turn and the notice resuming this step,
-   with nothing else dispatched in between; the resumed step runs the gate on
-   the staged fix and the one narrowed re-arm if a FAIL was fixed, then the
-   commit below. An `ok:false` answer (`no-diff`, `surfaces-unanswered`)
-   is not a clean one: the gate is blocking and a check that could not run
-   clears nothing, so repair what the refusal's `hint` names and re-run rather
-   than landing the fix on it. Then commit as an atomic conventional commit
+   `git diff --cached` in the cwd it inherits; that gate is blocking, and
+   triage-gate.md's blocking arm caps its re-arm. On the workflow path
+   (`references/review-workflow.md`) the fire is the launch ending the turn and
+   the notice resuming this step, with nothing else dispatched in between; the
+   resumed step runs the gate on the staged fix and the narrowed re-arm if a
+   FAIL was fixed, then the commit below. On an `ok:false` answer (`no-diff`,
+   `surfaces-unanswered`), repair what its `hint` names and re-run; never land
+   the fix on it. Then commit as an atomic conventional commit
    per references/git-guard.md (protected-branch guard, specific files) and
    set the item back to pending for retest:
    `uat record --item <k> --result pending --fix "{hash}, retest"` and ask
