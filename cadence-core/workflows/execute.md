@@ -457,9 +457,7 @@ shape (a) refs is not one of the shapes the wiring table admits for
 trigger returns - on the workflow path once the fire has settled at its notice,
 never at the launch, because the reviewers and the checkers read that path after
 the launch; the narrowed re-arm fires on its own narrowed artifact. Blocking: on FAIL the findings are fixed by a
-continuation `cad-executor` dispatched through the spawn-agent seam under worker key `<k>` -
-"The worker key of a SECOND dispatch" above already names this as one of the
-three second dispatches against one plan's range, restated no further here - or
+continuation `cad-executor` dispatched through the spawn-agent seam under worker key `<k>`, or
 the user explicitly overrides. The dispatch prompt carries four things, nothing
 distilled by the coordinator: the plan file; the findings file's PATH, already
 persisted at `.planning/phases/<N>/records/REVIEW-risk_surface-<discriminator>.md`
@@ -484,16 +482,16 @@ ask-user seam, which consults exactly the seam the fix dispatch exists to keep
 out of the loop. It returns on the existing complete arm,
 `PLAN COMPLETE` with `Tasks: 1 of 1`, and is bracketed exactly as "The
 lifecycle bracket (both paths)" above states, with no bracket half restated
-here. The re-arm on that fix is CAPPED at ONE narrowed round per
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
-before the fix lands, since this workflow does not preload it.
+here. The re-arm on that fix takes `references/triage-gate-blocking.md`'s
+one-round cap - RE-READ
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`, which routes
+there, before the fix lands, since this workflow does not preload it.
 
 On the workflow path (`references/review-workflow.md`) the fire is the launch
 ending the turn and the notice resuming this step, with nothing else dispatched
 in between. The resumed step runs the gate, the continuation fix executor on
 FAIL as above, the one narrowed re-arm, a fire of its own on the same path,
-then `risk-check status` below, and the plan is still not reported done while
-that call refuses.
+then `risk-check status` below.
 
 Then, before the plan is reported done:
 
@@ -560,16 +558,14 @@ about plan 1 while plan 2 commits is answering about a tree that is gone. On
 the workflow path (`references/review-workflow.md`) that block is the launch
 ending the turn and the notice resuming this step, with nothing else dispatched
 in between, and the triage still precedes the next plan's dispatch. The
-survivors are a numbered list the user triages, NONE is the default, and only
-what the user names is acted on - by the same continuation `cad-executor`
-under worker key `<k>` the FAIL arm above dispatches, restated no further
-here - RE-READ
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
-before presenting, since this workflow does not preload it. The
+survivors are triaged as `references/triage-gate-adjudicated.md` states, and
+what the user picks is fixed by the same continuation `cad-executor` under
+worker key `<k>` the FAIL arm above dispatches - RE-READ
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`, which routes
+there, before presenting, since this workflow does not preload it. The
 `risk_surface` fire above is untouched by the TRIAGE rule specifically: a matched
-risk surface still blocks, and triage is not an override for it. It is NOT
-exempt from the same file's ONE-round re-arm cap, which binds every blocking
-gate.
+risk surface still blocks, and triage is not an override for it. Its re-arm
+still takes `references/triage-gate-blocking.md`'s one-round cap.
 </step>
 
 <step name="handle_checkpoint">
@@ -613,9 +609,8 @@ missing PLAN again, the main tree lacks the plan file: tell the user so.
 Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
 report PATH `<plandir>/records/reports/plan-<k>.md`, the checkpoint outcome, and
 "continue from task <k>". Fresh context each time - never resume, and never
-re-inline the table. Bracket it under the SAME worker key `<k>` the first
-dispatch took, and write this plan's risk record and receipt with that one
-spelling.
+re-inline the table. Bracket it under worker key `<k>`, as "The worker key of
+a SECOND dispatch" states.
 </step>
 
 <step name="execute_parallel">
