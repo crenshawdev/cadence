@@ -237,37 +237,24 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    - **Read the publish rails first.** Read
      `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
      consult site - step 3a or 3b, never both) before the
-     first bullet below that publishes anything - the GitHub seam call and
-     GitLab's `glab mr create`, which publishes the source branch itself, both
-     count, so this read is NOT scoped to the GitHub arm. Rail 3 and the
-     `git.auto_close` policy govern from here on.
-   - **Publish the branch (GitHub and Forgejo arms).** On GitHub, `gh pr
-     create --head <branch>` will NOT push a remoteless branch
-     non-interactively, and `tea pr create` never pushes at all, so on either
-     host publish the branch first through the git-publish seam. Run it on its
-     own physical line:
+     first bullet below that publishes anything, GitLab's `glab mr create`
+     included: rail 3 governs from here on.
+   - **Publish the branch (GitHub and Forgejo arms).** On either host publish
+     the branch first through the git-publish seam. Run it on its own physical
+     line:
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" publish --dir <root>`
-     It does ONE sanctioned `git push` of the current non-protected branch as a
-     subprocess (execFileSync argv) that git-guard's Bash push hook never sees,
-     and refuses with `ok:false` unless both layers set `git.auto_close` and HEAD
-     is a non-protected branch. On `ok:true` proceed to open the PR; on `ok:false`
-     stop and surface the reason - do NOT fall back to a raw `git push`, which
-     would hit the guard's unconditional ask. Relay the envelope's `warnings[]`
-     to the user rather than dropping them: `reason:"config-parse-failed"` means
-     a config layer that could carry `protected_branches` did not parse, so the
-     branch was checked against the DEFAULT list - fix the file, never retry
-     past it.
-   - **Open (or reuse) the PR/MR.**
-     On GitLab EVERY arm of this bullet mutates the remote: `glab mr create`
-     pushes the source branch itself, and the reuse arm hands an already-open
-     MR straight to the merge below with no create at all. So the GitLab arm
-     asks BEFORE it probes, on its own physical line:
+     On `ok:true` proceed to open the PR; on `ok:false` stop and surface the
+     reason - do NOT fall back to a raw `git push`. Relay the envelope's
+     `warnings[]` to the user rather than dropping them:
+     `reason:"config-parse-failed"` means a config layer that could carry
+     `protected_branches` did not parse, so the branch was checked against the
+     DEFAULT list - fix the file, never retry past it.
+   - **Open (or reuse) the PR/MR.** The GitLab arm asks BEFORE it probes, on
+     its own physical line:
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <root>`
      On `ok:false` do not touch the remote at all - no view, no create, no merge -
-     stop and surface the `detail`, which names the missing half (either half
-     alone authorizes nothing). ONE consult, ahead of the whole bullet and not
-     beside the create, so the
-     reuse arm is covered too.
+     stop and surface the `detail`, which names the missing half. ONE consult,
+     ahead of the whole bullet and not beside the create.
      Then reuse an existing open one when
      `gh pr view <branch>` / `glab mr view <branch>` / `tea pr list --state
      open` (filtered by head branch) finds it, else create: GitHub
@@ -288,18 +275,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      `git rev-parse <branch>` and use that same sha for the read and the merge:
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy ci-status --commit <sha> --wait 540 --root .`
      Only `answer:"pass"` reaches `gh pr merge`, and that merge adds
-     `--match-head-commit <sha>`, so a commit pushed to the PR branch after the
-     read is refused rather than landed unchecked. `fail` stops and names each
-     failing job. `pending` after the wait stops with nothing landed, and a
-     re-run resumes here. With it unset, this bullet does not apply.
+     `--match-head-commit <sha>`. `fail` stops and names each failing job.
+     `pending` after the wait stops with nothing landed, and a re-run resumes
+     here.
    - **Merge on the platform.** GitHub `gh pr merge <branch> --merge
-     --delete-branch` (an explicit merge strategy is required or gh
-     errors/prompts; `--delete-branch` removes the remote+local source). GitLab
-     `glab mr merge <branch> --yes --remove-source-branch --auto-merge=false`
-     (`--yes` skips the confirm prompt; `--auto-merge=false` merges immediately
-     rather than deferring behind a running pipeline). Forgejo
-     `tea pr merge --style merge <index>` (tea deletes no local branch; the
-     reap in step 4 owns that).
+     --delete-branch`, GitLab
+     `glab mr merge <branch> --yes --remove-source-branch --auto-merge=false`,
+     Forgejo `tea pr merge --style merge <index>`.
    - **Confirm it landed before any cleanup.** `gh pr view <branch> --json
      state,mergedAt` must show MERGED, `glab mr view <branch>` must show
      merged, or `tea pr <index>` must show state merged. A non-zero exit
