@@ -5,15 +5,15 @@ it actually runs; return to verify.md `walk` afterward.
 
 <step name="dispatch">
 Dispatch cad-verifier on the input composed below, via the spawn-agent seam with
-`--bracket-read "<the verifier input path>"` on its resolve. Hand it the phase
-number, the goal and the path it must write:
-`.planning/phases/<N>/records/verifier-findings.json`. A refused compose hands
-over the PLAN, SUMMARY and ROADMAP paths, `UAT.md` and the current UAT items,
-and brackets those paths instead. With `testing.scope` set (read in verify.md
-`build_or_resume`), the prompt also says "A testing policy is active." and hands
-over the suite command, resolved as verify.md `walk` states. The verifier writes
-exactly that one file and returns a digest plus that path. Its contract is its
-own (`skills/cad-verifier-contract`) and is not restated here.
+`--bracket-read "<the verifier input path>"` on its resolve. A refused compose
+hands over the phase number, the goal, the PLAN, SUMMARY and ROADMAP paths,
+`UAT.md` and the current UAT items, and brackets those paths instead. With
+`testing.scope` set (read in verify.md `build_or_resume`), the prompt also says
+"A testing policy is active." and hands over the suite command, resolved as
+verify.md `walk` states. The verifier writes exactly one file,
+`.planning/phases/<N>/records/verifier-findings.json`, and returns a digest plus
+that path. Its contract is its own (`skills/cad-verifier-contract`) and is not
+restated here.
 
 The verifier reads one composed input in place of the PLAN, SUMMARY and ROADMAP paths and the UAT items.
 
