@@ -17,11 +17,9 @@ allowed-tools:
 ---
 
 <objective>
-Execute every plan in a phase with Cadence's guarantees: protected-branch
-guard before the first dispatch, one cad-executor per plan, one atomic
-conventional commit per task, deviations recorded, a slim SUMMARY.md at the
-end. Workflow path first, else parallel or sequential as `choose_path`
-decides.
+Execute a phase's plans with Cadence's guarantees: protected-branch guard
+before the first dispatch, one cad-executor per plan, one atomic conventional
+commit per task, deviations recorded, a SUMMARY.md at the end.
 </objective>
 
 <execution_context>
