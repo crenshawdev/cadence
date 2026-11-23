@@ -6,8 +6,8 @@ completed: YYYY-MM-DD
 
 # Phase <N>: <name> - Summary
 
-<one substantive line: what this phase delivered, named concretely.
-Good: "JWT auth with refresh rotation using jose". Bad: "Auth implemented".>
+<one line naming what this phase delivered: "JWT auth with refresh rotation
+using jose", not "Auth implemented".>
 
 ## What shipped
 
@@ -33,9 +33,8 @@ Good: "JWT auth with refresh rotation using jose". Bad: "Auth implemented".>
 
 ## Goal check
 
-<one paragraph: does the sum of the commits above plausibly deliver the
-phase goal? Anything missing, named honestly.>
+<one paragraph: do the commits above deliver the phase goal? Name anything
+missing.>
 
-<under an accepted testing policy (`testing.scope` set), end with the line
-"complete locally, not CI-verified": this is written before any CI result
-exists, so a SUMMARY never claims one.>
+<when `testing.scope` is set, end with the line
+"complete locally, not CI-verified".>
