@@ -1,6 +1,5 @@
 <purpose>
-The user tests, Claude records. Plain-text answers. Severity is inferred,
-never asked.
+The user tests, Claude records. Plain-text answers.
 
 All checklist persistence goes through the planning seam's `uat` subcommands
 - the model extracts and words items and infers results; the seam owns the
@@ -54,9 +53,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat refresh --phase <
    stdin: [{"name":"...","expected":"...","criterion":"AC3"}]
 ```
 
-Refresh appends only genuinely new names - recorded results are never
-touched, and an item whose source criterion no longer exists stays in place
-(tell the user so they can skip it deliberately). Continue to `deep_check`.
+Refresh appends only new names; an item whose source criterion no longer
+exists stays in place (tell the user so they can skip it deliberately). Continue to `deep_check`.
 
 **If it does not exist** (`no-uat`): extract the items from the phase's
 acceptance criteria, in this source order:
@@ -220,15 +218,11 @@ not predict, and the results table says it needs the user's answer. A later run
 puts each `blocked` item to the user through the ask-user seam before pass 2,
 with three answers - pass, skip with a reason, or fail - and records the answer.
 
-**Pass 1 - execute and cite.** Read `.planning/phases/<N>/UAT.md` ONCE, at the
-top of the walk, for the pending items and their `expected` text. It has no
-substitute - `uat status` returns no item list and no `expected` string. ONE
-read BEFORE the chain starts, so the "no UAT.md re-reads between items" rule is
-unchanged and still governs pass 2.
+**Pass 1 - execute and cite.** Read `.planning/phases/<N>/UAT.md` ONCE, before
+the chain starts, for the pending items and their `expected` text.
 
 Then, before offering ANY item, run the check for every pending item that
-clears the bar and record each the moment it is settled. The evidence is
-composed from what the check printed, so write
+clears the bar and record each the moment it is settled. Write
 `{"evidence": "<the command and the output that settles it>"}` to a scratch
 file and pass its PATH (caller-derived text - references/conventions.md); the
 enum flags stay inline on the same call:
@@ -282,12 +276,9 @@ Severity inference (default major): crash/error/unusable -> blocker;
 doesn't work/wrong/missing -> major; slow/weird/small -> minor;
 color/spacing/visual -> cosmetic.
 
-Record each reply through the seam - it updates the item, the counts, the
-timestamp, and first_pass (set once, structurally) in one atomic write. The
-reply and the reason are the user's own words, so both ride ONE scratch file -
-`{"reported": "<verbatim reply>", "reason": "<why>"}`, either key left out when
-there is nothing to record - and the call carries its PATH (caller-derived text
-- references/conventions.md):
+Record each reply through the seam. The reply and the reason ride ONE scratch
+file - `{"reported": "<verbatim reply>", "reason": "<why>"}`, either key left
+out when there is nothing to record - and the call carries its PATH:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat record --phase <N> --item <k> --result <r> \
@@ -302,8 +293,7 @@ continue to `route_failures` when `next` is null or the user stops.
 Runs only with `testing.scope` set and at least one item `pending_ci` in the
 UAT.md the walk read or recorded; otherwise go straight to `route_failures`, so
 only such a phase waits. It runs in the main session, never in the verifier
-subagent. Every `uat record` here carries repository text through
-`--fields-file`, as the walk does.
+subagent. Every `uat record` here passes its text by `--fields-file`.
 
 1. Take `git rev-parse HEAD`. An item whose `commit` is not that head moves to it
    by re-recording `pending_ci` with the new `commit` and the same `job`.
