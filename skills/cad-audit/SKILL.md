@@ -11,17 +11,8 @@ allowed-tools:
 ---
 
 <objective>
-Before a milestone ships, prove that nothing was silently dropped. Cross-
-reference every requirement against the phases, plans, and verifications that
-were supposed to deliver it, and detect orphans in both directions. Produce a
-PASS/FAIL verdict: FAIL if any requirement is untraced, unverified, or lost.
-
-This is the check that catches the quiet failure a per-phase flow can miss -
-a requirement that no phase ever picked up (an `unpicked` break counted in
-`counts.broken`, not a note beside a PASS), or one marked done while its phase
-never verified. A Status is `Pending | Complete | Deferred`: cad-verify alone
-sets Complete and `req-row` sets Deferred, and the ROADMAP checkbox is
-cad-verify's alone. It does not write status itself.
+Prove that nothing was silently dropped before a milestone ships, and return
+PASS or FAIL.
 </objective>
 
 <execution_context>
@@ -29,10 +20,8 @@ cad-verify's alone. It does not write status itself.
 </execution_context>
 
 <process>
-Run the audit workflow end-to-end and return a clear PASS or FAIL with the
-evidence. A FAIL is a real gate - report exactly which requirements are untraced,
-unverified, or orphaned; do not soften it. Read-only: never edit status to make
-the audit pass.
+Run the audit workflow end-to-end and return PASS or FAIL with the evidence its
+section 4 asks for.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200
