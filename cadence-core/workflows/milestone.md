@@ -80,11 +80,7 @@ base after the merge confirms.
 
 ## 3. Prune completed phases + cleanup
 
-**Carry the `risk_surface` RULINGS forward FIRST.** The prune below removes
-`.planning/phases/<N>/`, which holds the only producer `/cad-land`'s unattended
-halt has, and step 7 chains `/cad-land` AFTER this - so pruning first leaves
-that gate globbing empty, which reads as "nothing survived" and merges over a
-held blocker.
+**Carry the `risk_surface` RULINGS forward FIRST.**
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-carry --phase <N>
@@ -93,22 +89,11 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-carry --phase <N
 Run it for every phase this close prunes, BEFORE the prune seam call below. It
 COPIES that phase's `REVIEW-risk_surface*.md` files and every
 `ADJUDICATION-risk_surface*.json` sitting beside them - every round, filenames
-preserved, because the land gate pairs a review with its ruling BY NAME - into
-`.planning/records/risk-carry/<N>/`. A COPY and not the move `deferred carry` makes:
-under `--mode archive` the records have to stay in `_archive-<label>/<N>/` too,
-which is the tier `/cad-why` reads. It refuses rather than overwriting a carried
-ruling that differs, so relay any `ok:false` and STOP - the prune below deletes
-what this could not carry.
-
-**TRANSIENT, never staged**, deleted by the `/cad-land` that actually MERGES
-(its step 4) and by nothing else. Commit `.planning/records/risk-carry/` and a ruling
-rides onto base, where every later autonomous land reads it again and halts on
-a finding answered a milestone ago.
+preserved - into `.planning/records/risk-carry/<N>/`. It refuses rather than
+overwriting a carried ruling that differs, so relay any `ok:false` and STOP.
 
 **Then carry the DEFERRED queue out of each pruned phase, per phase, before the
-seam call below.** Same reason one paragraph up and a different artifact: a
-queue member is what `/cad-land`'s deferred refusal reads, and the prune deletes
-the directory holding it.
+prune seam call below.**
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred carry --phase <N>
@@ -117,19 +102,14 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred carry --phas
 Run it for every phase this close prunes. It MOVES that phase's unadjudicated
 members to `.planning/records/deferred/<N>/`, leaves the settled ones behind to be
 pruned with the phase, and refuses rather than overwriting - relay any
-`ok:false` and stop, because the next step deletes what it could not carry.
-
-The difference from the `risk_surface` carry above, stated once: that carry is
-TRANSIENT and the land that merges deletes it, while the carried queue is
-COMMITTED and stays until it is adjudicated. Deleting either one at step 7 would
-delete the only thing stopping the chained land.
+`ok:false` and stop. The moved members are committed with the prune and stay
+until they are adjudicated; the close never deletes them.
 
 One seam call does the mechanical half of the close - checked phases leave
-ROADMAP.md (their `- [x]` line AND their `### Phase N:` detail section, since
-a surviving detail section is the signature of an INTERRUPTED close per
-`references/roadmap-phases.md`), their `.planning/phases/<N>/` directories
-leave the live tree, and their requirements move from `## Active` and
-`## Traceability` into `## Shipped` rows carrying the label:
+ROADMAP.md (their `- [x]` line AND their `### Phase N:` detail section), their
+`.planning/phases/<N>/` directories leave the live tree, and their requirements
+move from `## Active` and `## Traceability` into `## Shipped` rows carrying the
+label:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" milestone-prune \
@@ -138,10 +118,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" milestone-prune \
 
 `<label>` = the version on a release, else the milestone name from PROJECT.md -
 repository content either way, so write it to a scratch file and pass the PATH
-(caller-derived text - references/conventions.md). `--mode delete` on a release milestone (the tag cut at land is their archive);
-`--mode archive` on an untagged one - there is no tag to name them by, so the
-dirs MOVE to `_archive-<label>/` rather than delete, and git history is not
-the only copy. Relay `warnings[]` (a missing detail section, an unreadable
+(caller-derived text - references/conventions.md). `--mode delete` on a release
+milestone (git history is the archive, with the tag /cad-land cuts when it cuts
+one); `--mode archive` on an untagged one: the dirs MOVE to `_archive-<label>/`
+rather than delete. Relay `warnings[]` (a missing detail section, an unreadable
 REQUIREMENTS.md). `action:"skip"` means no checked phase existed - an
 interrupted close or the wrong milestone; stop and look rather than continue.
 
@@ -162,11 +142,9 @@ construction - a milestone can close with deferred work that rolls to the next.
 
 Commit this as `chore: prune <label> completed phases` (label = the version on
 a release, else the milestone name), staging ROADMAP.md, REQUIREMENTS.md,
-`.planning/records/state.json`, `.planning/records/ARCHIVE.md` and any `_archive-<label>/` move. NOT
-`.planning/records/risk-carry/` - it is transient, and ARCHIVE.md is its opposite: that
-directory exists to be read by the chained land and deleted by the one that
-merges, while the residue IS the recall corpus for every milestone this project
-has closed and dies with the working tree untracked.
+`.planning/records/state.json`, `.planning/records/ARCHIVE.md`, the removed
+`.planning/phases/<N>/` folders, any `.planning/records/deferred/` members and
+any `_archive-<label>/` move, and NOT `.planning/records/risk-carry/`.
 
 ## 4. Evolve PROJECT.md - or close only
 First the arm, asked through the ask-user seam with no preselected default: does
