@@ -4,18 +4,16 @@ The goal-backward cad-verifier pass. Loaded from verify.md `deep_check` when
 it actually runs; return to verify.md `walk` afterward.
 
 <step name="dispatch">
-Dispatch cad-verifier via the spawn-agent seam, the bracket on its resolve:
-`--bracket-read "<the verifier input path>"`, the input composed below. Hand it
-the phase number, the goal, that input, and the path it must write:
+Dispatch cad-verifier on the input composed below, via the spawn-agent seam with
+`--bracket-read "<the verifier input path>"` on its resolve. Hand it the phase
+number, the goal and the path it must write:
 `.planning/phases/<N>/records/verifier-findings.json`. A refused compose hands
-over the PLAN, SUMMARY and ROADMAP paths, `UAT.md` and the current UAT items in
-place of that input, and brackets those paths instead. With `testing.scope` set
-(read in verify.md `build_or_resume`), the prompt also says "A testing policy is
-active." and hands it the suite command, resolved as the executor contract
-resolves it: `config.mjs get workflow.test_command`, or, where that is null,
-that the project manifest's runner applies. It writes exactly that one file and
-returns a digest plus that path. Its contract is its own
-(`skills/cad-verifier-contract`) and is not restated here.
+over the PLAN, SUMMARY and ROADMAP paths, `UAT.md` and the current UAT items,
+and brackets those paths instead. With `testing.scope` set (read in verify.md
+`build_or_resume`), the prompt also says "A testing policy is active." and hands
+over the suite command, resolved as verify.md `walk` states. The verifier writes
+exactly that one file and returns a digest plus that path. Its contract is its
+own (`skills/cad-verifier-contract`) and is not restated here.
 
 The verifier reads one composed input in place of the PLAN, SUMMARY and ROADMAP paths and the UAT items.
 
