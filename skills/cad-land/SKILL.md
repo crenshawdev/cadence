@@ -93,9 +93,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
 
 3. **Publish - branch on the `git.auto_close` authorization.**
 
-   **First the deferred queue, on BOTH arms and ahead of the branch below.** A
-   gate resolved `deferred` ran its reviewer and let the run continue, so the
-   finding stops the LAND. Ask what is still queued:
+   **First the deferred queue, on BOTH arms and ahead of the branch below.** Ask
+   what is still queued:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
@@ -109,9 +108,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
    `deferred` arm says how to clear one - triage the member's findings and
    record the rulings with `planning.mjs adjudication` for the same trigger,
    discriminator and round, which supersedes it. A non-empty `unreadable`
-   arrives as `ok:false` and refuses exactly as a member does: the queue could
-   not be PROVEN empty, and this gate never reports "nothing deferred" about
-   input it could not read.
+   arrives as `ok:false` and refuses exactly as a member does: this gate never
+   reports "nothing deferred" about input it could not read.
 
    It is NOT `land-cleanup.mjs gate`.
 
@@ -124,8 +122,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    `ok:true` takes 3(b), `ok:false` takes 3(a). It is true only when this
    repository's config and your user-global config BOTH set `git.auto_close`;
    either alone authorizes nothing. When the refusal's `requested` is true,
-   print its `detail` as one line first, so a user who set one half learns why
-   the ask came back.
+   print its `detail` as one line first.
 
    **(a) `git.auto_close` false, or not set in both layers (default): ask the
    mechanism (ask-user seam, NO preselected default).** With `testing.scope`
