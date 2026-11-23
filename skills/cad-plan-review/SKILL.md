@@ -35,21 +35,12 @@ There is no separate reviewer here and no convergence loop: this delegates to
 
 2. **Fire the `plan` trigger** with the resolved PLAN file(s) as the artifact -
    Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` here,
-   not preloaded (one site). Honor `review.triggers.plan.gate`
-   (default advisory) always; its `tier` and `effort` reach cross-model
-   reviewers only. This resolves the reviewer set
-   (claude-subagent and/or a configured cross-model reviewer), runs them, and -
-   for an adjudicated gate - grounds each finding against the real repo, kills
-   false positives, and merges convergent findings. On the workflow path a fire
-   over more than one PLAN file runs one reviewer per plan and one cross-plan
-   reviewer, and today's path one reviewer over all of them; a single PLAN path
-   gets one reviewer.
+   not preloaded (one site), and run the fire as it says.
 
 3. **Report** the outcome: for advisory, the findings; for blocking, the
    PASS/FAIL and surviving blocker/high findings; for adjudicated, the grounded
    survivor list. Do NOT auto-apply changes to the plan - present the survivors
-   and let the user decide what to fix (the plan-creation flow triages the same
-   way).
+   and let the user decide what to fix.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200
