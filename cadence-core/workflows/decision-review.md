@@ -108,10 +108,7 @@ the main model grounds it before ruling:
   `mcp__context7__query-docs`), verify it live through them. When they are
   not, ground it against what the repo carries: the installed package
   source, the lockfile's resolved version, or vendored docs. A claim no
-  documentation could check is named in the report as unchecked, never ruled
-  from training data. Context7, when available, is declared on THIS skill's
-  main-model surface (D-08) - the read-only `cad-reviewer` subagent has no
-  MCP tools, so this verification step only happens here, in adjudication.
+  documentation could check is never ruled from training data.
 - **Factual/codebase claims** - when an objection cites what the code
   currently does or does not do, verify it with Read/Grep/Bash against the
   real repo, not the objection's paraphrase.
@@ -141,13 +138,13 @@ them.
 </step>
 
 <step name="report_cost">
-Report, qualitatively (D-09 - the runtime exposes no per-turn token/dollar
-figures, so never fabricate one):
+Report, qualitatively, with no token or dollar figure:
 - which reviewers ran (`claude-subagent` always; the cross-model provider(s)
   and model id(s), when any ran)
 - the `review.decision_review.tier` and `.effort` the cross-model call used,
-  and that `cad-reviewer` ran at the session default with neither applied -
-  say the second half even when no cross-model reviewer ran
+  and that `cad-reviewer` ran at the session's model and its agent file's
+  effort with neither key applied - say the second half even when no
+  cross-model reviewer ran
 - the call count (one `cad-reviewer` dispatch, plus one
   `review-provider.mjs` call per surviving cross-model reviewer)
 - any reviewer that was offered but dropped (no-key, no tier assigned, not
@@ -155,10 +152,8 @@ figures, so never fabricate one):
 </step>
 
 <step name="present">
-Present, per objection: the ruling (`survives | partial | refuted`), the
-grounding that produced it (the Context7 doc when its tools were available,
-else the installed source, lockfile or vendored doc, or the codebase
-citation), and the amendment (when ruled `survives`/`partial`). List every
+Present, per objection: the ruling, the grounding that produced it with its
+citation, and the amendment (when ruled `survives`/`partial`). List every
 library/API claim no documentation could check as unchecked.
 
 On a clean pass, present the grounded load-bearing claims instead, each
@@ -166,9 +161,9 @@ On a clean pass, present the grounded load-bearing claims instead, each
 Never report it as a bare "no findings".
 
 Close with the qualitative cost line from `report_cost`. Do NOT edit the
-decision doc - this is a review, not an auto-apply; the user decides what to
-amend and does it themselves (or via a follow-up `/cad-context` correction,
-`/cad-task`, etc).
+decision doc or any other file - this is a review, not an auto-apply; the user
+decides what to amend and does it themselves (or via a follow-up
+`/cad-context` correction, `/cad-task`, etc).
 </step>
 
 </process>
