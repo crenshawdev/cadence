@@ -292,18 +292,14 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
 4. **Terminal cleanup - return to base + pull + reap (`git.on_land_cleanup`,
    default on).** Run this ONLY when a merge actually landed on this machine,
    or step 1's already-merged arm sent you here (skip it after an open-PR-only
-   or leave-local land). Once that request merges, a re-run takes that arm only
-   on GitHub or GitLab, at the branch tip and on an empty deferred queue, and
-   clears the carry only when the branch is `git.integration_branch_name`;
-   otherwise clear the carry by hand.
-   The merge
-   lands on the platform, so the LOCAL base is stale - pull FIRST, but ask the
-   seam about the base before git sees it:
+   or leave-local land). Once that request merges, step 1's already-merged arm
+   is the way back; where that arm doesn't run or doesn't clear the carry, clear
+   the carry by hand.
+   Pull FIRST, but ask the seam about the base before git sees it:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" cleanup --base <base>`
    with the base step 1 resolved, plus `--merged true` in the auto_close path
    and on the already-merged arm within its limit.
-   `--base` is required: without it the seam resolves its own base, which can
-   differ from this land's. On `action:"skip"` or `returnToBase:false` run no
+   `--base` is required. On `action:"skip"` or `returnToBase:false` run no
    checkout, no pull, no tag and no reap: leave HEAD and the branch in place and
    report the envelope's reason. Otherwise run `git checkout` on the `base` the
    envelope names, then `git pull`.
@@ -332,40 +328,33 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    In the auto_close path, and on the already-merged arm within its limit,
    append `--merged true`: it confirms the merge for the name unset below,
    while the reap still needs `git branch --merged <base>` to list the branch.
-   A manual land omits it. Relay its
-   `warnings[]`: a layer that did not parse means `on_land_cleanup` and `base`
-   came from DEFAULTS, so `base` may name a branch this repo does not have. When the
-   seam returns `reap:true`, reap through the git-publish seam - never a Bash
-   git call, never a remote-tracking delete (that trips the push guard):
+   A manual land omits it. Relay its `warnings[]`: a layer that did not parse
+   means `on_land_cleanup` and `base` came from DEFAULTS. When the seam returns
+   `reap:true`, reap through the git-publish seam - never a Bash git call, never
+   a remote-tracking delete:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" reap --dir <root> --branch <decision.branch>`.
-   It deletes by subprocess argv and refuses an unsafe, protected or
-   checked-out branch. Relay its `warnings[]` too, and treat
-   `reason:"config-parse-failed"` as a stop and not a retry: the seam refuses to
-   delete anything while the protected list is unprovable. When either seam returns `action:"skip"` - the branch
-   was already removed, or `git.on_land_cleanup` is off - leave HEAD and the
-   branch in place. Report the final state: HEAD on `<base>`, pulled, branch
-   reaped (or left).
+   It refuses an unsafe, protected or checked-out branch. Relay its `warnings[]`
+   too, and treat `reason:"config-parse-failed"` as a stop and not a retry. When
+   either seam returns `action:"skip"` - the branch was already removed, or
+   `git.on_land_cleanup` is off - leave HEAD and the branch in place. Report the
+   final state: HEAD on `<base>`, pulled, branch reaped (or left).
 
-   **Then clear the carried rulings.** Delete `.planning/records/risk-carry/` - the
-   transient copies `/cad-milestone` made of this cycle's `risk_surface` reviews
-   and records before it pruned the phase dirs. This step is the ONLY actor that
-   clears them, and a confirmed merge is the only event proving the 3(b) halt
-   they exist for was answered: a close that HALTED leaves them in place on
-   purpose, so a retry still reads the blocker it stopped on. Do it whatever the
-   reap seam answered - an `action:"skip"` is about the branch, not about the
-   records - but on the already-merged arm only when the merged branch is
-   `git.integration_branch_name`. Untracked by construction, so this stages nothing.
+   **Then clear the carried rulings.** Delete `.planning/records/risk-carry/`.
+   This step is the ONLY actor that clears them, and only on a confirmed merge.
+   Do it whatever the reap seam answered, an `action:"skip"` included, but on the
+   already-merged arm only when the merged branch is
+   `git.integration_branch_name`. This stages nothing.
 
    **Then stop the branch name applying.** When either cleanup envelope says
    `clearIntegrationName:true` (the branch name setting is set and the merge is
    confirmed), and on the already-merged arm only within that same limit
    whatever the envelope says, run
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" unset --file .planning/config.json git.integration_branch_name`
-   so the next cycle can't reuse the name. Do it whatever the reap seam
-   answered, and with `git.on_land_cleanup` off too. An open-PR-only land has no
-   confirmed merge, so the key stays. Report it in the final state line, and
-   where the repository tracks `.planning/config.json` say that file is now
-   modified and rides the next docs commit: this skill never auto-commits.
+   Do it whatever the reap seam answered, and with `git.on_land_cleanup` off too.
+   An open-PR-only land has no confirmed merge, so the key stays. Report it in
+   the final state line, and where the repository tracks `.planning/config.json`
+   say that file is now modified and rides the next docs commit: this skill never
+   auto-commits.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200
