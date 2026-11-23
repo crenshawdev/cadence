@@ -40,8 +40,7 @@ On a failed, empty or timed-out dispatch, what failed goes to a scratch file and
 bracket rule.
 
 A failed, empty, or timed-out dispatch then goes to `fall_through`. Otherwise
-continue to `merge`. There is no verifier retry to bracket: those are the only
-two arms, and `fall_through` is the single terminal failure one both share.
+continue to `merge`.
 </step>
 
 <step name="merge">
@@ -55,36 +54,16 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat merge --phase <N>
 
 An `ok:false` return goes to `fall_through`, whatever its reason.
 
-The seam enforces the merge rules structurally: verifier results only fill
-`pending` items (a user-recorded result is never overwritten - a conflicting
-finding is skipped and counted), unmatched gaps append as new failed items,
-human checks append as pending. An entry resolving to no usable item name is
-rejected and counted, never appended as a nameless item. Failed items route
-through verify.md `route_failures` exactly like user-reported failures.
+Unmatched gaps append as failed items and human checks as pending. A finding on
+an item already recorded is skipped, and an entry with no usable item name is
+rejected. Failed items route through verify.md `route_failures` exactly like
+user-reported failures.
 
 Report the seam's one-line summary (`auto_passed`, `gaps`, `added`, `skipped`,
 `rejected`), then return to verify.md `walk`.
-
-Two files, two writers, and never the same one. The VERIFIER writes
-`verifier-findings.json` - its findings, the merge's input. The SEAM writes
-`.planning/phases/<N>/records/FINDINGS.json` - those same counters plus
-`rejected_entries` and `skipped_entries`, holding the entries it discarded
-verbatim, so a finding counted and then dropped survives the dispatch that
-produced it. The seam overwrites its own file on every successful merge,
-which is precisely why the verifier's may not carry that name.
 </step>
 
 <step name="fall_through">
-The one terminal failure arm, shared by both branches above so neither can
-grow a private error path.
-
-The bracket is ALREADY closed - `dispatch` closes it the moment the return is
-in hand, whichever arm follows, which is why this step has no close of its own
-and why a merge that fails after a usable return cannot close a second time.
-
-Say in ONE line what failed, write nothing else, and return to verify.md `walk`
-with the checklist as-is. The deep pass is an accelerator, never a gate on
-the human walk - a broken dispatch or a refused merge costs speed and the
-auto-verified items, and nothing else. The phase is still verified by the
-walk.
+The bracket is already closed. Say in ONE line what failed, write nothing else,
+and return to verify.md `walk` with the checklist as-is.
 </step>
