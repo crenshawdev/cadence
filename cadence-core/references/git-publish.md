@@ -5,47 +5,17 @@ complement this file's silences are is in `docs/INTERNALS.md`'s push-guard secti
 
 ## 3. Never auto-push
 
-No workflow pushes, ever, with one case: under an accepted testing policy
-`/cad-verify` pushes a non-protected branch so CI can run on it, through
+No workflow pushes on its own, with two cases. One: under an accepted testing
+policy `/cad-verify` pushes a non-protected branch so CI can run on it, through
 `git-publish.mjs verify-publish`, and only when this repository's own
 `.git/config` holds `cadence.publishForVerification` as true
 (set by `/cad-config --testing` on an explicit yes). Nothing else authorizes it:
-not the user-global config, `.planning/config.json` or `git.auto_close`. Any
-other publishing is a human decision made through
-`/cad-land`, which reports git state and asks the mechanism (direct push /
-MR or PR / tag / leave local) with NO preselected default.
+not the user-global config, `.planning/config.json` or `git.auto_close`. The
+other: under `git.auto_close`, `/cad-land` 3(b) publishes the branch. Any other
+publishing is a human decision made through `/cad-land`.
 
-`git.auto_close` (default off) is the single sanctioned opt-in to that ask: it
-lets `/cad-land` complete the close unattended, asking once, before the tag push,
-landing the integration branch
-on base via a host-CLI PR/MR **merge** on the platform (`gh pr merge` /
-`glab mr merge` / `tea pr merge`). That platform merge is not a `git push`. On
-the GitHub and Forgejo arms the
-local-only integration branch is first published by the git-publish seam - one
-sanctioned push of the current non-protected branch, run as a subprocess so the
-Bash `git push` guard never sees it and there is no prompt. The seam refuses
-unless `git.auto_close` is true in both layers and HEAD is a non-protected branch, and it
-pushes exactly that branch to a configured bare-name remote. Every Bash
-`git push` the guard sees still asks unconditionally (git-guard now carries NO
-push exemption); the git-publish seam is the one code-guarded exception, invoked
-only by cad-land, so the never-auto-push rule and the no-preselected-default
-posture both still hold. On GitLab `glab mr create` publishes the source branch
-itself, so THAT is the mutation and no push seam sits in its path: the GitLab
-arm consults `git-publish.mjs authorized` before it creates, and creates nothing
-on `ok:false`. Every arm (GitHub, Forgejo, GitLab) needs `git.auto_close` true
-in this repository's `.planning/config.json` AND the user-global config: either
-half alone authorizes none of them, and the refusal's `detail` names the missing half. A surviving blocker/high `risk_surface` finding still halts the chain
-before merge.
-
-After a land/merge actually lands on this machine, `git.on_land_cleanup`
-(default on) returns HEAD to the base, pulls, and reaps the merged integration
-branch locally - advised by the `land-cleanup.mjs cleanup` seam, which reaps
-only a branch `git branch --merged <base>` lists, and never via a
-remote-tracking delete (that would trip the push guard). `--merged true` widens
-no reap: passed on a merge the platform confirmed - by `/cad-land` 3(b), and by
-step 1's already-merged arm when the tip matches the head the forge merged, on
-the integration branch (`cad-land` step 1 has the rest of its guard) - it
-confirms the merge, so a set `git.integration_branch_name` is unset.
+Every Bash `git push` the guard sees asks, with no per-push exemption; only
+`git.guard_bypass` true in both config layers turns the rail off.
 
 ### What the guard does NOT see (rail 3)
 
