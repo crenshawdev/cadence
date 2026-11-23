@@ -27,12 +27,12 @@ creep, weigh lighter
 than a dropped requirement), `frontmatter_issues` (a plan file whose
 `requirements:` frontmatter fell outside the stated grammar -
 `references/plan-frontmatter.md`), `unseeded` (the `## Active` ids with no
-Traceability row, at any row count - each also carries an `unpicked` break;
-only ids whose category is 2-8 characters of `[A-Z0-9]` HOLDING AT LEAST ONE
-LETTER, anywhere in it, or `#N`, are admitted here - `2FA-01` is admitted, an
-all-digit category like `14-01` or `2026-08` is not and appears in neither
-`unseeded` nor `counts`, being reported only in `active_issues` - do not read
-an empty `unseeded` as proof the section is covered),
+Traceability row, at any row count; only ids whose category is 2-8 characters of
+`[A-Z0-9]` HOLDING AT LEAST ONE LETTER, anywhere in it, or `#N`, are admitted
+here - `2FA-01` is admitted, an all-digit category like `14-01` or `2026-08` is
+not and appears in neither `unseeded` nor `counts`, being reported only in
+`active_issues` - do not read an empty `unseeded` as proof the section is
+covered),
 `active_issues` (a line inside `## Active` outside the stated bullet grammar -
 `references/req-traceability.md`), `nonconforming_plans` (a `PLAN*.md`
 filename no seam and no executor reads, e.g. `PLAN-gaps.md`), `deferred` (rows
@@ -52,8 +52,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-coverage
 ```
 
 `version` (`{plugin, uat_fields}`, always first) - the plugin version and UAT
-fields version the check ran as; quote it in the report, since a stale plugin
-cache silently downgrading this gate is what it exists to expose.
+fields version the check ran as; quote it in the report.
 Per phase holding a CONTEXT.md: `phases`
 (`{phase, criteria, items}`), `breaks` (`{phase, id, break:"uncovered"}` - a
 criterion that reached NO item - `{phase, id, break:"missing-uat"}` - a declared
@@ -65,30 +64,27 @@ the exemption's reason stated), `unknown_criterion`, `context_issues` (lines
 outside the criterion grammar) and `counts` (`criteria = covered + uncovered`).
 Grammar and field semantics: `references/acceptance-criteria.md`.
 
-The milestone filter above does NOT apply to `breaks`, and they need none: the
-live `## Phases` list holds only the current cycle's phases, and a phase whose
-checkbox is unchecked contributes its `uncovered` count but no `uncovered` or
-`missing-uat` break, so unfinished work cannot fail a mid-cycle run on those
-two. `fieldless-checklist` is NOT box-gated and fires on an unchecked phase: it
-is a real drop rather than work in progress - do not explain it away as
-mid-cycle.
+The milestone filter above does NOT apply to `breaks`. A phase whose checkbox is
+unchecked contributes its `uncovered` count but no `uncovered` or `missing-uat`
+break, so unfinished work cannot fail a mid-cycle run on those two.
+`fieldless-checklist` is NOT box-gated and fires on an unchecked phase: it is a
+real drop rather than work in progress - do not explain it away as mid-cycle.
 
 ## 3. Interpret the breaks
 - `no-phase` / `no-plan` - a dropped requirement: nothing committed to
-  deliver it. This is the silent-drop this audit exists to catch.
+  deliver it.
 - `phase-missing` - the table points at a phase that is not in ROADMAP.md.
 - `not-verified` - planned but not yet Complete + checked. Expected mid-cycle;
   a defect at ship time.
 - `drift` - the two status sources contradict (row Complete vs box, either
   direction). The status cannot be trusted until reconciled (cad-verify
   re-run, or the discrepancy explained).
-- `unpicked` - an `## Active` requirement no phase picked up: the same silent
-  drop one step earlier, before the requirement ever reached the table (so the
-  entry carries no `phase`). Two exits: plan it into a phase (`/cad-plan` seeds
-  the row), or move the bullet out of `## Active` into the deferred section
-  below it (`## v2 Requirements` in the shipped template). A row with an
-  em-dash Phase cell is `no-phase`, not an exit. Expected mid-cycle exactly
-  like `not-verified`, a defect at ship time.
+- `unpicked` - an `## Active` requirement no phase picked up, dropped before it
+  ever reached the table (so the entry carries no `phase`). Two exits: plan it
+  into a phase (`/cad-plan` seeds the row), or move the bullet out of `##
+  Active` into the deferred section below it (`## v2 Requirements` in the
+  shipped template). A row with an em-dash Phase cell is `no-phase`, not an
+  exit. Expected mid-cycle exactly like `not-verified`, a defect at ship time.
 - `uncovered` (coverage arm) - an acceptance criterion that reached no UAT
   item: the phase was verified against a checklist missing that criterion, so
   the criterion was never proven and nothing said so. Two exits: add the item
@@ -106,17 +102,14 @@ mid-cycle.
 - `unreadable-context` (coverage arm) - the phase's CONTEXT.md exists but could
   not be read (`code` carries the errno), so none of its criteria was checked.
   The exit: restore read access to the file it names and re-run.
-- `version_drift` - not a per-requirement break but a milestone-scoped signal,
-  and it moves the verdict all the same (§4): the planning docs name a version
-  this repo has ALREADY tagged while its cycle is still open. That is issue
-  #87's failure mode - a cycle planned, branched and worked under a number that
-  already shipped - and it is invisible to every other key here. `published_as`
-  is the tag spelling that carries it. Three exits: open the NEXT version in
-  `PROJECT.md ### Active` (and the ROADMAP title, if it names one) - the exit
-  that always exists, and the right one when the tag is already cut - or, if the
-  cycle really is finished, complete the close so no phase is left open - or
-  roll the work forward, which the seam honours once every Traceability row
-  naming that phase is `Deferred`.
+- `version_drift` - not a per-requirement break but a milestone-scoped signal:
+  the planning docs name a version this repo has ALREADY tagged while its cycle
+  is still open. `published_as` is the tag spelling that carries it. Three
+  exits: open the NEXT version in `PROJECT.md ### Active` (and the ROADMAP
+  title, if it names one) - the exit that always exists, and the right one when
+  the tag is already cut - or, if the cycle really is finished, complete the
+  close so no phase is left open - or roll the work forward, which the seam
+  honours once every Traceability row naming that phase is `Deferred`.
 
 ## 4. Verdict
 Arithmetic over both seam calls - in-scope `counts.broken` (after any milestone
