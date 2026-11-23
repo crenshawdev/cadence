@@ -89,10 +89,8 @@ Item rules (the model's judgment, before the seam call):
   at all. Those items report as `untraced`, which is additive.
 - Deduplicate: a PLAN verification restating a ROADMAP criterion is one
   item, worded as the ROADMAP criterion (the contract).
-- A criterion tagged `(human-verify: needs <tool/service>)` in CONTEXT
-  becomes an item the deep verifier does not attempt as a machine check -
-  it is presented in the walk as a human check, since the tool that would
-  settle it is known to be absent here.
+- A criterion tagged `(human-verify: needs <tool/service>)` in CONTEXT keeps
+  that suffix in its item's `expected`.
 - Cold-start smoke test: if the phase touched server/service entry
   points, database/migration/seed files, or startup/container config,
   PREPEND an item: "Stop everything, clear ephemeral state, start from
@@ -195,8 +193,8 @@ Then print the one results table (below), and continue to `await_ci` (below) and
 **The bar.** An item is a HUMAN check only when the model cannot execute it -
 it is irreversible against real data, or it is outside the model's reach
 (credentials it does not hold, a GUI, hardware, another machine). Everything
-else the model runs. ONE kind of item is ALREADY judged; its reason stands and
-is not re-litigated:
+else the model runs. ONE kind of item is ALREADY judged; its reason stands, is
+not re-litigated, and it goes straight to pass 2 without pass 1 running it:
 
 - an item whose `expected` carries the CONTEXT-time
   `(human-verify: needs <tool/service>)` suffix, written precisely when that
@@ -204,13 +202,10 @@ is not re-litigated:
 
 A `why_human` item is NOT that kind, and the field is not the predicate - the
 deep pass writes it for every UNCERTAIN truth as well as every human-only check.
-So READ the reason and apply the bar to it: it goes to pass 2 only when it names
-irreversibility against real data or a resource outside the model's reach.
-Anything else - "no probe ran", "not exercised by a named test" - goes to pass 1
-and is executed.
-
-The suffix-tagged item, and a `why_human` item whose reason clears that reading,
-go straight to pass 2; pass 1 never runs their commands.
+So READ the reason and apply the bar to it: it goes straight to pass 2, unrun,
+only when it names irreversibility against real data or a resource outside the
+model's reach. Anything else - "no probe ran", "not exercised by a named test" -
+goes to pass 1 and is executed.
 
 `blocked` is TERMINAL for the model's own walk: pass 1 records it ONLY for an
 item that cleared the bar and then failed on an environmental cause the bar did
