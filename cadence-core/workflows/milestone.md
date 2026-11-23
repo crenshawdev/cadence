@@ -149,8 +149,7 @@ any `_archive-<label>/` move, and NOT `.planning/records/risk-carry/`.
 ## 4. Evolve PROJECT.md - or close only
 First the arm, asked through the ask-user seam with no preselected default: does
 this close OPEN the next cycle, or close only? A close is sanctioned to open
-none - the next theme may not exist yet, and inventing one to satisfy this step
-is how a roadmap acquires phases nobody asked for.
+none.
 
 **Close only.** `### Active` opens `No cycle open.` and then RECORDS the cycle
 just shipped: its label, close date, requirement ids, phase and commit counts,
@@ -160,13 +159,11 @@ live, and what is still outstanding - the merge and the tag are /cad-land's. Ste
 
 **Opening a cycle.** Bump the version/milestone and set the next cycle's goal and
 scope. Ask the user (ask-user seam) for the next milestone's intent if it is not
-obvious from deferred work. Keep it to what changed - PROJECT.md is the north
-star, not a changelog.
+obvious from deferred work. Keep it to what changed.
 
 ## 5. Refresh REQUIREMENTS
-The shipped rows already moved under `## Shipped` (step 3's seam call - that
-archival is what keeps /cad-audit able to trace shipped scope after the phase
-dirs are pruned). What remains is judgment, not surgery:
+The shipped rows already moved under `## Shipped` (step 3's seam call). What
+remains is judgment, not surgery:
 - **Close only** (step 4's arm): `## Active` opens `No cycle open.` too, points
   at `## Shipped` for the shipped ids, and names `/cad-phase add` as what opens
   the next cycle. Deferred ids keep their reasons and nothing is promoted to fill
@@ -188,66 +185,43 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
 ```
 
 On a fully pruned roadmap this needs no flags beyond those, and the cursor then
-reads as no cycle open. `/cad-phase add` is the destination because it is the
-only workflow that adds a phase to an existing roadmap - `/cad-plan` stops with "Phase
-{N} is not in ROADMAP.md".
+reads as no cycle open.
 
 (Pass `--name`/`--total` explicitly when this close DEFERRED work: step 3
 leaves unfinished phases' lines untouched, so the list is still live and
 its entries do not include phase 1 - the seam finds nothing to derive from and
 returns `cannot-derive`.)
 Commit the doc changes (`docs:`), cursor and `.planning/records/state.json`
-included, per references/git-guard.md -
-never leave the tree dirty.
+included, per references/git-guard.md - never leave the tree dirty.
 
 ## 7. Autonomous close (`git.auto_close` only)
-When the up-front `authorized` call answered `ok:false` (the default, and the
-answer when only one layer sets `git.auto_close`), this step does nothing more:
-merging, tagging and publishing are the user's separate `/cad-land` call (step
-9's note), and steps 8 and 9 still run. On `ok:true`, chain the publish
-end-to-end - invoke `/cad-land` via the SlashCommand tool so it runs PR -> merge -> tag -> reset and asks
-once, before the tag push (audit -> bump already ran above). The close gate inside
-cad-land still applies: a blocker/high `risk_surface` finding from this branch's
-own fires that the rulings show genuinely unfixed - and a fire nothing ruled at
-all - stops the chain before merge, and only because
-step 3 carried those rulings out of the phase dirs it pruned. Skip that and this
-sentence is false: the gate reads an empty set and merges.
+When the up-front `authorized` call answered `ok:false`, this step does nothing
+more: merging, tagging and publishing are the user's separate `/cad-land` call
+(step 9's note), and steps 8 and 9 still run. On `ok:true`, invoke `/cad-land`
+via the SlashCommand tool so it runs PR -> merge -> tag -> reset and asks once,
+before the tag push. Its own gate, over the rulings step 3 carried, can still
+halt the chain before the merge.
 
-Do NOT delete `.planning/records/risk-carry/` here, on either arm. Step 3 already pruned
-the phase dirs, so the carry is the last surviving copy of the rulings that halt
-rests on: delete it and the very next `/cad-land` globs two empty roots, is
-handed `{"findings":[]}`, and merges over the blocker this one just refused. The
-actor that clears it is `/cad-land` step 4, on a merge it CONFIRMED landed - the
-retry once the halt is answered, or the manual land the user comes back to
-finish. So a carry still on disk means a close nobody finished, and the next
-milestone halting on it is the answer rather than the bug. If the branch it
-belongs to merged outside Cadence, `/cad-land` on that branch clears it through
-its already-merged arm only on GitHub or GitLab, for a merged request whose
-head is the branch tip, on an empty deferred queue and when
-`git.integration_branch_name` names that branch; otherwise clear it by hand.
+Do NOT delete `.planning/records/risk-carry/` here, on either arm. Step 3
+already pruned the phase dirs, so the carry is the last surviving copy of the
+rulings that halt rests on. The actor that clears it is `/cad-land` step 4, on
+a merge it CONFIRMED landed. If the branch it belongs to merged outside
+Cadence, see cad-land step 1's already-merged arm and its step 4's clear by
+hand.
 
-Ordering note: this chain runs AFTER step 4
-evolved PROJECT.md `### Active` to the NEXT version, so cad-land can no longer
-re-derive the just-shipped branch name by version. A project that sets
-`git.integration_branch_name` is reaped by that name first, and the sole merged
-branch in its namespace next. Otherwise it reaps via the `land-cleanup.mjs`
-`cadence/*`-merged fallback (resolveReapBranch): the sole `cadence/*` branch
-actually merged into base is the shipped `cadence/<this-version>`.
+Ordering note: on the opening arm step 4 above has already moved PROJECT.md
+`### Active` to the next version, so the land finds the shipped branch by
+`git.integration_branch_name` or its `cadence/*` fallback; on the close-only
+arm it has not.
 
 ## 8. Retune check
-The record this milestone wrote prices its own configuration. Invoke
-`/cad-suggest` via the SlashCommand tool, unscoped - the milestone's evidence
-spans every phase it shipped. Its rules live in
-`cadence-core/workflows/suggest.md` and are not restated here.
-
-The close's own posture: a failed or missing
-run degrades to a one-line note, never a halt. The close does not gate on its
-own accounting.
+Invoke `/cad-suggest` via the SlashCommand tool, unscoped. Its rules live in
+`cadence-core/workflows/suggest.md`. A failed or missing run degrades to a
+one-line note, never a halt.
 
 ## 9. Report
 Version bumped and committed - or "no version bump (non-release)" - phases
 pruned, PROJECT/REQUIREMENTS refreshed, cursor reset. One line on the next
 action: with the roadmap pruned empty that action is `/cad-phase add`, which
 opens the next cycle's first phase entry. Note that the merge AND the release
-tag are /cad-land's - the tag is cut there on the pulled base after the merge
-confirms (already chained when `git.auto_close` is on).
+tag are /cad-land's (already chained when step 7 ran it).
