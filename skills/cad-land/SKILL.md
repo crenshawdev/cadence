@@ -10,12 +10,7 @@ allowed-tools:
 ---
 
 <objective>
-Land the current branch's work. By default there is no preselected publish
-action: cad-land reports the state, asks how to publish, and executes only what
-you choose - nothing more. Two arms skip that ask: `git.auto_close`, set in both
-config layers, runs PR -> merge -> tag unattended, a chain that asks once,
-before the tag push (step 3(b)), and the already-merged arm finishes a merged
-request (step 1).
+Land the current branch's work: report the state, then publish as step 3 says.
 </objective>
 
 <execution_context>
@@ -30,11 +25,8 @@ below rather than re-reading per step. Step 3 asks a seam, not this read.
 
 1. **Report git state - base first.** The base = `$ARGUMENTS`, else
    `git.base_branch`, else the first `git.protected_branches` entry that
-   exists here. It comes from an argument
-   or a committed config, and a base shaped like `--output=<path>` is read by
-   git as an option that writes that file, so ask the seam about it BEFORE any
-   git command is given it - the commits-ahead count and the tracker call
-   below included:
+   exists here. Ask the seam about it BEFORE any git command is given it - the
+   commits-ahead count and the tracker call below included:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" cleanup --base <base>`
    On `baseRefused:true` the base is refused: run NO git command that takes it,
    print the envelope's `reason` as the base line, and skip the commits-ahead
@@ -83,9 +75,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
    reap. On an empty queue skip to step 4, passing `--merged true` and
    clearing the carry and the name only when `<branch>` is
    `git.integration_branch_name`, else leaving both with a one-line why (key
-   unset: nothing tells whose carry it is). The flag unsets the name, so the
-   tip match keeps a branch with later work from ending its cycle; the branch
-   is deleted only when `git branch --merged <base>` lists it.
+   unset: nothing tells whose carry it is). The branch is deleted only when
+   `git branch --merged <base>` lists it.
 
 2. **Uncommitted changes.** If the tree is dirty, do NOT auto-commit. Ask
    (ask-user seam):
