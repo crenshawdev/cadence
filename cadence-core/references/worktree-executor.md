@@ -1,57 +1,38 @@
 # Worktree-mode rules for a plan executor
 
 Read at `<worktree_mode>` in `skills/cad-executor-contract`, and only when the
-dispatch prompt says worktree mode. Every rule below is in force for the whole
-dispatch; none of them applies on the sequential path.
+dispatch prompt says worktree mode. Every rule below holds for the whole
+dispatch; none applies on the sequential path.
 
-- Before task 1 - before any implementation, and certainly before any commit -
-  confirm your own `PLAN.md` / `PLAN-<k>.md`, the plan file named in your
-  dispatch prompt, exists at that path relative to the worktree cwd. Missing
-  -> HALT and return a `blocked` checkpoint naming the missing PLAN path and
-  the worktree's `git rev-parse --short HEAD`; repair nothing yourself.
-  Reason: the fork point comes from the host's `worktree.baseRef` setting,
-  not from Cadence (`workflows/execute.md`'s `choose_path`), and under its
-  `fresh` default a worktree branches from the remote default branch,
-  missing this phase's plans and CONTEXT entirely - three phase-4 executors
-  hit exactly that (`.planning/CAPTURE.md:5`). A setting the user can change
-  back is not a guarantee: assert anyway.
+- Before task 1, before any implementation or commit, confirm the plan file
+  your dispatch prompt names (`PLAN.md` / `PLAN-<k>.md`) exists at that path
+  relative to the worktree cwd. Missing -> HALT and return a `blocked`
+  checkpoint naming the missing PLAN path and the worktree's
+  `git rev-parse --short HEAD`; repair nothing yourself. The fork point is the
+  host's `worktree.baseRef`, whose `fresh` value branches from the remote
+  default branch without this phase's plans, and the user can change it back:
+  assert anyway.
 - Before EVERY commit, verify `git branch --show-current` is your assigned
   branch and not a protected one. Mismatch -> HALT and return a `blocked`
   checkpoint. Never repair refs yourself.
 - Stay inside the worktree path; keep every file operation within it.
-- Commit the report file on EVERY return that ends your turn - `PLAN COMPLETE`,
-  `PLAN PARTIAL` and any CHECKPOINT, not only after the last task. Write it
-  first, then STAGE those exact paths and commit them by PATHSPEC, naming the
-  rotated report too whenever your first write rotated a previous run's aside -
-  unnamed it stays untracked, never reaches the branch, and dies with the
-  worktree, which is the evidence the rotation exists to keep:
+- On EVERY return that ends your turn - `PLAN COMPLETE`, `PLAN PARTIAL` and any
+  CHECKPOINT - write the report file, then commit it, since an uncommitted
+  report dies with the worktree. `add` and commit the same exact paths, naming
+  the rotated report too whenever your first write rotated a previous run's
+  aside:
   `git add <plandir>/records/reports/plan-<k>.md [<plandir>/records/reports/plan-<k>.<n>.md]`
   then
   `git commit -- <plandir>/records/reports/plan-<k>.md [<plandir>/records/reports/plan-<k>.<n>.md]`
-  with message `docs({phase}-{plan}): plan {k} executor report`. All three parts
-  are load-bearing. The `add` is not optional: `git commit -- <pathspec>` commits
-  only paths git already TRACKS, so an untracked report - every rotated
-  `plan-<k>.<n>.md`, and a first run's `plan-<k>.md` on a path not yet in history
-  - aborts the entire commit with `did not match any file(s) known to git`. The
-  pathspec keeps a guardrail intact: anything else left staged in the
-  worktree, such as a checkpointed task's unfinished work, stays out of the
-  report commit, where a bare `git commit` after a broad `git add` would sweep
-  it in. Naming the paths commits the reports and leaves
-  everything else staged exactly as it was; the enclosing `<plandir>/records/reports/`
-  directory is NOT a path you may `add` or commit here: the `add` names the same
-  exact paths the commit does. Committing on the non-final branches is what makes the report
-  survive at all: a partial or checkpointed
-  worktree is the one most likely to be removed or abandoned before you are
-  dispatched again, and an uncommitted report dies with it - the re-run hazard
-  the file exists to prevent.
+  with message `docs({phase}-{plan}): plan {k} executor report`. Never skip the
+  `add`: `git commit -- <pathspec>` aborts on an untracked path. Never `add` or
+  commit the enclosing `<plandir>/records/reports/` directory, so anything else
+  staged stays out of the report commit.
 - Never `git stash` (the stash is shared across worktrees), never
   `git clean`, never blanket `git reset --hard` or `git restore .`, and
   never `git merge`, `git rebase` or `git fetch` - reconciling a stale
-  worktree is the orchestrator's serialized decision (the merge step of
-  `references/execute-parallel.md` merges one at a time with a user stop on
-  conflict), and N executors merging concurrently on their own has no
-  conflict policy at all. To discard one file you changed:
-  `git checkout -- path/to/file`.
+  worktree is the orchestrator's serialized merge. To discard one file you
+  changed: `git checkout -- path/to/file`.
 
 ## Workflow arm
 
@@ -59,8 +40,8 @@ Only when the mode line reads exactly "Workflow worktree executor on branch
 `cadence/phase-<N>-plan-<k>` - worktree mode, workflow rules apply." (today's
 line is "Worktree executor on branch {branch} - worktree rules apply."). The
 branch and git-verb bullets above stand. These replace the plan check,
-stay-inside and report bullets, because `.planning/` may be ignored, so the
-worktree may lack it:
+stay-inside and report bullets, since the worktree may lack an ignored
+`.planning/`:
 
 - Plan check: confirm the brief and the plan file it names at their ABSOLUTE
   paths outside the worktree, never relative to it. Missing -> HALT `blocked`
@@ -72,15 +53,17 @@ worktree may lack it:
   never delete, reset or force it, since a resumed plan's earlier work may be
   on it.
 - Lease: `lease-check` with `--dir <main tree>/.planning`.
-- One plain command per Bash call. The host checks that each command stays in
-  the worktree, and refuses one that chains a git verb with anything else,
-  writes a file through a heredoc, or names the main checkout; each refusal
-  costs a turn. Read a file outside the worktree with the Read tool, and write
-  a file, the report included, with the Write tool.
+- One plain command per Bash call. The host refuses a command that leaves the
+  worktree, chains a git verb with anything else, writes a file through a
+  heredoc, or names the main checkout, and each refusal costs a turn. Read a
+  file outside the worktree with the Read tool, and write a file, the report
+  included, with the Write tool.
 - Staying inside: every file operation stays in the worktree, except reading
-  the files the prompt and the brief name outside it, and writing your report at the report path the prompt names and, when it rotates, its `plan-<k>.<n>.md` sibling in that same folder, in the run's
-  scratch directory. Never write into the main tree; the host refuses it.
+  the files the prompt and the brief name outside it, and writing your report
+  at the path the prompt names, and its `plan-<k>.<n>.md` sibling when it
+  rotates, in the run's scratch directory. Never write into the main tree; the
+  host refuses it.
 - Report: it goes to the path the prompt names, in place of
-  `<plandir>/records/reports/plan-<k>.md`, and you NEVER commit it. Write its first
-  line as your contract says, `PLAN COMPLETE` included: the main session moves
-  it into the main tree only after it has merged your branch.
+  `<plandir>/records/reports/plan-<k>.md`, and you NEVER commit it. Write its
+  first line as your contract says, `PLAN COMPLETE` included: the main session
+  moves it into the main tree only after it has merged your branch.
