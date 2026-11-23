@@ -81,8 +81,8 @@ real drop rather than work in progress - do not explain it away as mid-cycle.
   re-run, or the discrepancy explained).
 - `unpicked` - an `## Active` requirement no phase picked up, dropped before it
   ever reached the table (so the entry carries no `phase`). Two exits: plan it
-  into a phase (`/cad-plan` seeds the row), or move the bullet out of `##
-  Active` into the deferred section below it (`## v2 Requirements` in the
+  into a phase (`/cad-plan` seeds the row), or move the bullet out of
+  `## Active` into the deferred section below it (`## v2 Requirements` in the
   shipped template). A row with an em-dash Phase cell is `no-phase`, not an
   exit. Expected mid-cycle exactly like `not-verified`, a defect at ship time.
 - `uncovered` (coverage arm) - an acceptance criterion that reached no UAT
