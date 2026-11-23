@@ -14,22 +14,8 @@ allowed-tools:
 ---
 
 <objective>
-Stress-test ONE decision the user names, rather than take it on faith. The
-review capability lives entirely in cadence-core/workflows/decision-review.md:
-`cad-reviewer` (and, when configured, a cross-model provider) refutes the
-decision through the review subsystem's reviewer resolution; the main model
-then grounds each objection against documentation (library/API claims:
-Context7 when its tools are available, else the installed source, lockfile
-or vendored docs, with any claim none could check listed as unchecked) and
-the real codebase (factual claims) and rules it `survives | partial | refuted`
-with a concrete amendment where the decision needs one. When refutation
-returns nothing, the grounding retargets onto the decision's own load-bearing
-claims rather than lapsing, so a clean pass still rests on checked facts.
-
-This is a manual, on-demand entry point only - it never auto-fires and there
-is no review-trigger wiring for it. Durability (cad-context's `## Durable
-decisions` filter) names candidates worth this deeper pass; picking one and
-invoking this skill is the user's call, not a mechanical handoff.
+Stress-test ONE decision the user names: reviewers try to refute it, then the
+main model checks each objection, rules on it and proposes amendments.
 </objective>
 
 <execution_context>
@@ -37,23 +23,7 @@ invoking this skill is the user's call, not a mechanical handoff.
 </execution_context>
 
 <process>
-1. **Resolve the target** from `$ARGUMENTS` - a path to a CONTEXT.md (naming
-   which `- D-NN (...)` line) or a PROJECT.md (naming which Key Decisions
-   row). If `$ARGUMENTS` is empty or ambiguous, ask (ask-user seam) for the
-   path and the specific decision.
-
-2. **Run the workflow** end-to-end: refute (the review subsystem's reviewer
-   resolution), then adjudicate (docs grounding through Context7 when its
-   tools are available, else installed source, lockfile or vendored docs,
-   plus codebase grounding, per-objection ruling and amendments), then the qualitative cost report.
-
-3. **Present** the per-objection rulings, groundings, and amendments - or, on
-   a clean pass, the grounded load-bearing claims, never a bare "no findings"
-   - plus which reviewers ran, and the tier/effort that reached the
-   cross-model arm (the `cad-reviewer` arm resolves neither: no routing cell
-   gives it a model, and its effort is frontmatter-frozen). Do NOT auto-apply any
-   amendment - this is a review, not an edit; the user decides what to change
-   and does it themselves.
+Run decision-review.md end to end with `$ARGUMENTS`.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200
