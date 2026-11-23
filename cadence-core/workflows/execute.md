@@ -667,18 +667,12 @@ when `planning.commit_docs` is true, and verification runs in a fresh subagent.
 </process>
 
 <guardrails>
-- The protected-branch guard runs up front, before the first dispatch (in the
-  planning repo, and in a separate code repo when a phase edits one) - never
-  inside an executor.
-- The sequential path never touches worktrees.
 - Executors never write STATE.md, ROADMAP.md, or SUMMARY.md. This workflow
   is the only STATE writer, and only as the cursor overwrite: four required
   lines plus the optional `Plan:` line `cursor set` derives, written after each
   plan or batch and at `state`.
-- Second opinions only via review triggers; the goal check stays inline
-  prose, never an agent.
-- Deviations live in SUMMARY.md - git and SUMMARY are the record, STATE is
-  not a log.
+- Second opinions only via review triggers.
+- STATE is not a log: git and SUMMARY.md are the record.
 - Read only the config keys named here; unknown keys are ignored.
 - THREE writers touch this run record's brackets and no fourth, as
   seam-spawn-agent.md's bracket rule states them: the resolve's dispatch half,
@@ -689,16 +683,3 @@ when `planning.commit_docs` is true, and verification runs in a fresh subagent.
   the user accepted through the ask-user seam, and a scratch file the steps
   write under the system temp directory.
 </guardrails>
-
-<success_criteria>
-- [ ] Guard applied before the first executor dispatch
-- [ ] One cad-executor per plan; sequential unless every parallel condition held
-- [ ] Each task is one conventional commit of specific files
-- [ ] `diff` trigger per plan - `off` by default, overlapped at
-      `advisory`, blocking at `adjudicated`; `risk_surface` fired ONCE per plan
-      on the committed range, never mid-plan
-- [ ] SUMMARY.md written: what shipped, commits, deviations, open items, goal check
-- [ ] STATE.md is exactly the cursor, overwritten: four required lines plus the
-      optional `Plan:` line, naming the next unfinished plan after each plan or
-      batch and absent once `executed`
-</success_criteria>
