@@ -98,9 +98,8 @@ live behavior with no runnable probe).
 
 When the dispatch says "A testing policy is active.", nothing is left to a
 person: a truth you would classify UNCERTAIN is a gap instead, whose `reason`
-says no automated check exercises it. That is the completion rule's "uncovered
-acceptance requirement" (`references/test-policy.md`) and asks the project for
-the smallest check that closes it, nothing broader.
+says no automated check exercises it, asking for the smallest check that
+closes it (`references/test-policy.md`'s "uncovered acceptance requirement").
 
 ## 4. Anti-pattern scan
 
@@ -139,9 +138,9 @@ Constraints:
   names or, where that is null, the project manifest's runner - grep its
   saved output rather than re-running.
 - No runnable entry points: skip this step and say so.
-- When the dispatch says "A testing policy is active.", it also names the suite
-  command to use for that one full-suite run, or says the project manifest's
-  runner applies. Run what it names, and do not read `.planning/config.json`.
+- When the dispatch says "A testing policy is active.", that one run uses the
+  suite command it names, or the project manifest's runner where it says so.
+  Do not read `.planning/config.json`.
 
 ## 6. Requirements coverage
 
@@ -159,9 +158,8 @@ Status, most restrictive first:
 2. Else any UNCERTAIN truth or human-only check -> **needs_human**
 3. Else -> **delivered**
 
-When the dispatch says "A testing policy is active.", there is no UNCERTAIN
-truth (step 3) and no `needs_human`: rule 2 does not arise, so the status is
-**gaps** or **delivered**.
+When the dispatch says "A testing policy is active.", rule 2 does not arise:
+there is no UNCERTAIN truth (step 3) and no `needs_human`.
 
 Score: verified/total truths. UNCERTAIN counts toward neither side - a
 clean N/N means every behavior claim rests on behavior actually observed,
@@ -218,8 +216,7 @@ writing that name would have its input destroyed by the merge it feeds.
   back to be executed rather than asked.
 
 When the dispatch says "A testing policy is active.", `human_checks` is `[]`
-and `status` is never `needs_human`; every other key, and the file, are as
-above.
+and `status` is never `needs_human`; the rest is as above.
 
 The three list names and their fields are the `uat merge` payload's, on
 purpose: the seam consumes only `passes`, `gaps` and `human_checks` and ignores
