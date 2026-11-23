@@ -35,10 +35,9 @@ is taken - the dispatch ends exactly once, so it closes exactly once:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-verifier --role cad-verifier --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return> --detail-file <path>
 ```
 
-On a failed, empty or timed-out dispatch, what failed is the verifier's own
-words, so it goes to a scratch file and `--detail-file` carries the PATH
-(caller-derived text - references/conventions.md). The rest of this line is
-seam-spawn-agent.md's bracket rule.
+On a failed, empty or timed-out dispatch, what failed goes to a scratch file and
+`--detail-file` carries its PATH. The rest of this line is seam-spawn-agent.md's
+bracket rule.
 
 A failed, empty, or timed-out dispatch then goes to `fall_through`. Otherwise
 continue to `merge`. There is no verifier retry to bracket: those are the only
