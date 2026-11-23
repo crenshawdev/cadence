@@ -1,21 +1,9 @@
 <purpose>
-An on-demand delete-hunting pass over code the user names. It asks the one
-question an adversarial correctness review structurally cannot: does this code
-need to exist at all? A correctness reviewer refutes an artifact against its
-goal, so a hand-rolled helper the platform already ships, a base class with one
-subclass, a hook nothing calls and a key nothing reads all pass it - nothing
-they do is WRONG. This pass hunts exactly those four species and returns a
-ranked delete-list.
-
-It reuses the review subsystem's own reviewer (references/review-triggers.md's
-`claude-subagent` backend): the base `cad-reviewer` is dispatched with a
-minimalism instruction that RETARGETS its subject, and the list comes back in
-the findings schema every reviewer in the subsystem shares.
-
-This workflow never auto-fires - no entry in references/review-triggers.md's
-wiring table, no `review.triggers` key, no gate and no verdict. It runs only
-when a human invokes `/cad-minimalism-review <target>` on code they chose to
-question, and it applies NOTHING (see `<guardrails>`).
+An on-demand delete-hunting pass over code the user names. It asks whether that
+code needs to exist at all, and returns a ranked delete-list. It uses the review
+subsystem's own reviewer (references/review-triggers.md's `claude-subagent`
+backend): the base `cad-reviewer`, dispatched with a minimalism instruction that
+RETARGETS its subject off correctness.
 </purpose>
 
 <process>
@@ -36,8 +24,7 @@ round of questions.
 When the named target does not resolve - a path or directory that is not there,
 a phase with no SUMMARY.md, a range whose refs this tree does not carry - say
 which one failed and STOP. Do not widen the target to its parent and do not
-guess which file was meant: a delete-list over the wrong code is worse than no
-list, because it reads exactly like a correct one.
+guess which file was meant.
 </step>
 
 <step name="dispatch">
@@ -99,7 +86,7 @@ reviewer's answer and not yours to rewrite.
 
 Zero findings is a RESULT with its own line - "the pass read `<target>` and
 found nothing to delete" - naming the target that was read. Never a bare "no
-findings": that reads identically to a pass that never ran.
+findings".
 
 Close in one line with what happens next: this is a list, not a change. The
 user picks what to delete and deletes it, or parks it (`/cad-capture`).
@@ -109,35 +96,7 @@ user picks what to delete and deletes it, or parks it (`/cad-capture`).
 
 <guardrails>
 - Applies NOTHING. This pass edits, deletes, moves, stages and commits nothing -
-  no source file, no planning file, no config key - so `git status --short` is
-  byte-identical before and after a run. The delete-list is input to the user's
-  decision exactly as references/triage-gate.md treats review findings, and this
-  pass carries no fix arm at all.
-- Never auto-fires: no wiring-table entry, no `review.triggers` key, no gate. It
-  has no verdict, because a delete-list cannot PASS or FAIL anything.
-- The return shape is the subsystem's, unchanged -
-  `{findings:[{file,line,severity,claim,failure_scenario}]}`, with `severity`
-  carrying the rank. A bespoke ranked-list shape would lose the cross-model
-  interchangeability the schema exists for and the adjudication path that
-  already parses these findings.
-- Reviewer resolution is not re-derived here: ONE `cad-reviewer` dispatch at the
-  session default, whatever the roles block says. This pass resolves no routing
-  and reads no config key, so it has no tier, no effort and no reviewer set.
-- Never runs on a target it could not resolve.
+  no source file, no planning file, no config key.
+- Never auto-fires: it runs only when the user invokes `/cad-minimalism-review`
+  on code they chose. It has no gate and no verdict.
 </guardrails>
-
-<success_criteria>
-- [ ] The resolved target is NAMED in the output, or the run stopped because it
-      did not resolve
-- [ ] Exactly one `cad-reviewer` dispatch ran, bracketed in the run record, and
-      its bracket is closed - `return`, or `checkpoint` when it came back
-      unusable
-- [ ] The list came back in the shared findings schema, ranked by `severity`,
-      every entry's `file`, `line`, `claim` and `failure_scenario` presented as
-      the reviewer returned them
-- [ ] A zero-finding pass was reported as a result naming the target, and an
-      unusable dispatch was reported as no list at all - never either as the
-      other
-- [ ] Nothing was edited, deleted or committed: `git status --short` is
-      unchanged
-</success_criteria>
