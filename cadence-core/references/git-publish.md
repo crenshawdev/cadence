@@ -11,8 +11,9 @@ policy `/cad-verify` pushes a non-protected branch so CI can run on it, through
 `.git/config` holds `cadence.publishForVerification` as true
 (set by `/cad-config --testing` on an explicit yes). Nothing else authorizes it:
 not the user-global config, `.planning/config.json` or `git.auto_close`. The
-other: under `git.auto_close`, `/cad-land` 3(b) publishes the branch. Any other
-publishing is a human decision made through `/cad-land`.
+other: under `git.auto_close`, `/cad-land` 3(b) publishes the branch and opens
+and merges its request. Any other publishing is a human decision made through
+`/cad-land`.
 
 Every Bash `git push` the guard sees asks, with no per-push exemption; only
 `git.guard_bypass` true in both config layers turns the rail off.
@@ -30,4 +31,4 @@ These shapes can run git and the guard doesn't see them:
 | A quoted path with a space (`git -C "my repo" push origin main`) | Quoting is not tracked, so `-C` consumes `"my` and the verb reads as `repo"`. |
 | Line continuation (`git \` + newline + `push origin main`) | The newline is a separator; neither half is a `git` segment with a verb. |
 | Remote execution (`ssh host "git push origin main"`) | The command word is `ssh`, and it pushes from another machine anyway, which is outside what a local rail can see. |
-| Heredocs, herestrings, `${...}` expansion, brace expansion, `$'...'` escapes, aliases and shell functions, variable indirection (`CMD="git push"; $CMD`) | Nothing is expanded and no body is read as commands. These were out of grammar for the tokenizer too. |
+| Heredocs, herestrings, `${...}` expansion, brace expansion, `$'...'` escapes, aliases and shell functions, variable indirection (`CMD="git push"; $CMD`) | Nothing is expanded and no body is read as commands. |
