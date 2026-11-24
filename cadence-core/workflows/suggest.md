@@ -118,29 +118,21 @@ are two lines to choose between and they are not interchangeable:
 
 - `events_read: 0` - the record holds no events in the scope read. Say that.
 - `events_read` non-zero, `suggestions` empty - say how many events were read and
-  that none of them cleared the evidence floors the rules require. The
-  configuration earned its keep, which is worth its own line.
+  that none of them cleared the evidence floors the rules require.
 
 Never report "no trace" for a record that merely sits below the floors, and never
-state a floor figure: the envelope returns none, and this is the one command
-whose whole posture is that it invents no number. `ok: false`, or a return
-showing the subcommand is not there, degrades to one line as well - what failed,
-and that there is no retune to read. Never a halt, never a guess.
+state a floor figure. `ok: false`, or a return showing the subcommand is not
+there, degrades to one line as well - what failed, and that there is no retune
+to read. Never a halt, never a guess.
 </step>
 
 </process>
 
 <guardrails>
-- This command writes nothing itself: no config file - not
-  `.planning/config.json`, not the global Cadence layer - and no planning file,
-  trace line or `.planning/` artifact either. It ends by ASKING whether to route
-  the priced tweaks to `/cad-config`; on a yes the write is `/cad-config`'s,
-  made from the tokens the offer named. Changing anything is still the user's
-  call, and a question is not a change.
+- This command writes nothing itself: no config file in either layer, no
+  planning file, trace line or `.planning/` artifact.
 - No subagent is dispatched. There is no reviewer, no adjudication, no verdict:
   a suggestion cannot PASS or FAIL anything.
-- No fabricated figures. Every count, share and duration is the seam's own; a
-  figure the record does not carry is reported absent, never filled in.
 - Name no config key that `cadence-core/config.schema.json` does not carry. In
   practice name none at all: each suggestion states its own key at runtime, and
   that is where the key belongs.
