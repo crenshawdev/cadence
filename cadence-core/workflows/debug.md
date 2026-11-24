@@ -1,8 +1,8 @@
 # cad-debug workflow
 
 Scientific-method debugging, single pass, with the investigation persisted so a
-`/clear` never loses it. No session-manager layer and no specialist dispatch - the main model runs the
-method inline and writes state after every step.
+`/clear` never loses it: the main model runs the method inline and writes state
+after every step.
 
 ## State file: `.planning/debug/<slug>.md`
 
@@ -33,8 +33,8 @@ Attempts: <count of applied fixes that did not resolve it>
 - `list` -> pull the symptom + status from every session in one pass
   (`grep -H '^# debug:\|^Status:' .planning/debug/*.md`), filter to those whose
   `Status:` is not resolved in the coordinator, and print one line each (slug +
-  symptom) - one pass, not a Read per file. Independent read-only calls go out
-  in one message; only a call that consumes a prior call's output is serialized.
+  symptom). Independent read-only calls go out in one message; only a call that
+  consumes a prior call's output is serialized.
 - `status <slug>` -> print that state file verbatim. Stop.
 - `continue <slug>` -> load that state file and resume at the method loop below,
   trusting the recorded hypothesis/observation state.
@@ -56,13 +56,10 @@ On every route into this loop - a new symptom AND a `continue <slug>` resume -
 first read the config seam once:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend review.consult.attempt_threshold testing.scope
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend review.consult.enabled review.consult.attempt_threshold testing.scope
 ```
 
-`memory.backend` gates the Hypothesize recall step (step 1); `review.consult.attempt_threshold`
-(T) gates the dead-end consult (see Consult). The `continue <slug>` resume enters here
-directly, bypassing the New session steps, so anchoring the read to loop entry keeps both
-gates fed on resume. `testing.scope` set means a testing policy is active: read
+`testing.scope` set means a testing policy is active: read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` once, for Resolve
 step 4.
 
@@ -77,8 +74,7 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    risk-first when a cheap test can eliminate a whole class. Write them to
    Hypotheses. Never jump to a fix before a cause is confirmed by evidence.
    When the effective `memory.backend` (read at loop entry) is `builtin`, run
-   recall inline via Bash (D-02: there is no debug subagent, the main model runs
-   the method inline):
+   recall inline via Bash:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the symptom / bug description>"
