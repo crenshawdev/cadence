@@ -1,19 +1,9 @@
 # Bug patterns
 
-Read before the first hypothesis, never after. `/cad-debug` step 1 (Hypothesize)
-consults this list so the candidate set starts from what actually breaks rather
-than from the first plausible story about the symptom in hand.
-
-Ordered by observed frequency, most common first. Each entry is one pattern, the
-SIGNATURE that suggests it, and the CHEAPEST check that discriminates it - the
-check is the point: it either rules the pattern in or out in one step, and a
-pattern you cannot cheaply discriminate does not belong at the top of a
-hypothesis list.
-
-Use it as a filter, not a script: a pattern whose signature matches the symptom
-enters Hypotheses with its check already named. Matching nothing here is
-information too - it means the bug is specific to this code, and the hypotheses
-should come from reading it.
+Each entry is one pattern, the SIGNATURE that suggests it, and the CHEAPEST check
+that rules it in or out in one step. A pattern you cannot cheaply discriminate
+does not belong at the top of a hypothesis list. Matching nothing here means the
+bug is specific to this code, and the hypotheses come from reading it.
 
 1. **The code that ran is not the code you are reading.** Stale build, an older
    process still up, a cached module, an installed copy shadowing the repo, the
