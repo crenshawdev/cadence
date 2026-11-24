@@ -1,8 +1,6 @@
 <purpose>
 Tell what a phase cost and what that spend caught, from
-`.planning/records/trace.jsonl` and the phase's own artifacts - no subagent
-runs, no planning file is written (the render's scratch file is the model's own
-temp).
+`.planning/records/trace.jsonl` and the phase's own artifacts.
 </purpose>
 
 <process>
@@ -173,27 +171,16 @@ Rules:
   span, so a project whose trace predates the marker still pools every cycle's
   phase N until its next close or cycle-opening add writes one.
 - The coordinator residue is `coordinator.residue_ms` and the `steps[]` row
-  carrying the most of it, reported AS GIVEN - the renderer computes it once so
-  this line and `trace suggest` cannot disagree, and prose recomputing it is how
-  they start to. No `coordinator` block means say nothing about residue at all:
-  not a zero, not an absence.
+  carrying the most of it, reported AS GIVEN. No `coordinator` block means say
+  nothing about residue at all: not a zero, not an absence.
 - The residue is the ONE figure here that is scoped to a run rather than to a
-  phase - the exception to the bullet above, so say a run and never a phase when
-  describing it. It is joined on `corr`, so each run's last marker closes at
-  that run's own last event; a re-run under the same phase number contributes
-  its own windows beside the first run's, and no window ever spans the clock
-  between two runs. A marker that is its run's last event closes at itself and
-  contributes nothing.
-- That residue is TIME the coordinator spent between worker brackets, never
-  tokens. A marker carries no token figure, because a figure is read off a
-  subagent's return metadata and the coordinator has no such return.
+  phase, so say a run and never a phase when describing it. It is TIME the
+  coordinator spent between worker brackets, never tokens.
 - A `mismatched` entry is a bracket whose terminal named a role its dispatch did
   not. Name the worker it belongs to - its `corr`/`phase`/`plan`, at the
   terminal's `ts` - with BOTH roles: `dispatched`, the role the dispatch opened,
-  and `closed`, the role its terminal named. The tokens stay
-  billed to the dispatch's role, so a mismatch is a recording defect at one of
-  those two prose sites, to fix THERE - never a correction to make in this
-  report.
+  and `closed`, the role its terminal named. It is never a correction to make in
+  this report.
 - The reading line prices `.planning/records/reads.jsonl`, which carries NO phase
   scoping: `fileCalls`, `fileRedundancy` and `topFiles` span every dispatch
   still in the LIVE record, so the line says so even when the report is scoped
@@ -204,25 +191,17 @@ Rules:
   DISPATCH - `roles[].ratio` is opens per distinct file INSIDE one bracket and
   `roles[].worst` names the file that bracket opened most - so it answers a
   different question from `fileRedundancy` and the two are never averaged,
-  compared or presented as one figure. Three dispositions, and the third is the
-  live one:
+  compared or presented as one figure. Three dispositions:
   - `calls: 0`, or the `no reads recorded yet` note: say nothing about reading
-    at all - the same silence the `coordinator` block gets, because zeros from
-    an absent record read as a run that opened no files.
+    at all.
   - `calls > 0` with a NULL `ratio` on a role: say nothing about in-dispatch
-    re-reading for that role, and never narrate the null as `0`. Every record
-    written before the `files` field existed folds to a null, so this is the
-    ordinary live case rather than a broken one, and `0` is the reading that
-    says the worker opened each file exactly once.
-  - a ratio present: state it with BOTH limits the seam returns beside it,
-    because either one missing lets the figure read as a total.
+    re-reading for that role, and never narrate the null as `0`.
+  - a ratio present: state it with BOTH limits the seam returns beside it.
     `inDispatch.coverage` is the share of the joined reads in scope that
     recorded file paths, which is the denominator the ratio was actually
     computed over; `inDispatch.coordinatorFiles` is the count of file-carrying
-    `coordinator` reads it EXCLUDED, and they are excluded because a coordinator
-    read has no worker bracket by construction - the main thread's own
-    re-reading cannot be attributed to a dispatch and is outside what this
-    figure can measure or cut.
+    `coordinator` reads it EXCLUDED, because a coordinator read has no worker
+    bracket by construction.
 - What the join attributes, and what it never will. `joined` is a read tied to
   the bracket that caused it; `ambiguous` is a read inside two overlapping
   same-role brackets, which the seam refuses to guess between rather than
@@ -235,25 +214,14 @@ Rules:
   out of the event alone. Read the fire's
   `.planning/phases/<N>/records/ADJUDICATION-<trigger>-<discriminator>.json`, count its
   entries by `ruling`, and compare that against the `survivors`, `downgraded`
-  and `refuted` the same fire's `outcomes` event carries. Two independent
-  artifacts is the whole point: `.planning/records/trace.jsonl` is gitignored, so
-  custody rests on the committed record and the trace is the local cross-check,
-  and comparing them is the only thing that makes a tampered record visible.
+  and `refuted` the same fire's `outcomes` event carries.
 - A DISAGREEMENT between the two is NAMED, never silently resolved to one side:
   print both figures and the record's path and say which artifact said which.
-  Preferring either one quietly is how the report would launder exactly the
-  defect the comparison exists to surface.
 - A fire with NO record reads as `unrecorded`. Synthesize no entry and narrate
-  no count that cannot be recomputed: earlier phases kept counters rather than
-  finding bodies, and the advisory arm writes no record at all
-  (`references/review-triggers.md` states why), so a fire predating the format
-  has nothing faithful to reconstruct from and says so - the same voice this
-  command already uses for an absent `coordinator` block, and not a zero.
-- The record is read for the ONE count the line needs, exactly as `read_record`'s
-  read-back bound requires of the render: it is a phase artifact opened at most
-  once, never dumped whole into the transcript. The Refuted line below reads
-  SUMMARY deviations and nothing from here - it consumes a deviation that
-  corrected a D-NN, which has nothing to do with a gate's findings.
+  no count that cannot be recomputed.
+- The record is read for the ONE count the line needs: it is a phase artifact
+  opened at most once, never dumped whole into the transcript. The Refuted line
+  reads SUMMARY deviations and nothing from here.
 - An advisory fire whose findings file is absent AND whose return is missing
   reports as `lost before persistence shipped` when the dispatch predates the
   findings-file convention, else as `in flight`.
@@ -272,6 +240,5 @@ name it, do not run it unasked.
 
 <guardrails>
 - Read-only. No planning file, trace line, or config key is written, and no
-  subagent is dispatched - this command prices work, it never performs any.
-- No fabricated figures: a number absent from the record is reported absent.
+  subagent is dispatched.
 </guardrails>
