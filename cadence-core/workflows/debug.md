@@ -101,45 +101,38 @@ Repeat until a root cause is confirmed or a dead-end is reached:
 2. If diagnose-only: write the Root Cause Report into Resolution and stop
    (no fix applied).
 3. Else propose the minimal fix and apply it ONLY with user approval (ask-user
-   seam). Then `git add` exactly the files the fix touched - staging is a STEP
-   here, not a description - and only THEN ask the seam. Whether the fix
-   touched a risk surface is the SEAM's answer over the index, never a reading
-   of the diff, and `--staged` is that scope's one machine spelling (the index
-   has no commit for a `--head` to name), so a fix still sitting in the
-   worktree is outside what this call reads:
+   seam). Rewrite the state file every time a fix is applied, then `git add`
+   exactly the files the fix touched, and only THEN ask the seam. Whether the
+   fix touched a risk surface is the SEAM's answer over the index, never a
+   reading of the diff, and `--staged` is that scope's one machine spelling:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase 0 --base HEAD --staged
    ```
 
-   `--phase 0` for the reason task.md gives: 0 is the one number no roadmap
-   phase carries, and a debug session sits outside the phase spine.
-   `empty: true` on this arm is NOT a pass: it says the read found no
-   scannable change between HEAD and the index, which is exactly what an
-   unstaged fix looks like - the seam returns `ok: true, checked: true,
-   matches: []` over nothing at all. Stage the fix and re-run rather than
-   trusting it. A non-empty `matches` or an `inconclusive: true` fires the
-   `risk_surface` review trigger (references/review-triggers.md) before the
-   fix is trusted, and the artifact is the staged-diff scope - shape (b):
-   the reviewer runs `git diff --cached` in the cwd it inherits, never the
-   diff text. That gate is `blocking` and its re-arm is CAPPED at ONE narrowed
-   round - RE-READ
+   `--phase 0` because 0 is the one number no roadmap phase carries, and a debug
+   session sits outside the phase spine. `empty: true` on this arm is NOT a
+   pass: stage the fix and re-run rather than trusting it. A non-empty `matches`
+   or an `inconclusive: true` fires the `risk_surface` review trigger
+   (references/review-triggers.md) before the fix is trusted, and the artifact
+   is the staged-diff scope - shape (b): the reviewer runs `git diff --cached`
+   in the cwd it inherits, never the diff text. That gate is `blocking`; RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
    fixing a FAIL, since this workflow does not preload it. On the workflow
    path (`references/review-workflow.md`) the fire is the launch ending the
    turn and the notice resuming this step, with nothing else dispatched in
    between; the resumed step runs the gate on the staged fix and the one
    narrowed re-arm if a FAIL was fixed, and only then does step 4 trust the
-   fix. An `ok:false`
-   answer is not a clean one: a check that could not run clears nothing.
-   `no-diff`: stage the fix and re-run. `surfaces-unanswered`: run
-   `detect-surfaces --root .`, put the one-time surface question to the user
-   in this run as `references/risk-surface.md` states it, save the answer, and
-   re-run the same `risk-check run --phase 0 --base HEAD --staged` line.
+   fix. An `ok:false` answer is not a clean one. `no-diff`: stage the fix and
+   re-run. `surfaces-unanswered`: run `detect-surfaces --root .`, put the
+   one-time surface question to the user in this run as
+   `references/risk-surface.md` states it, save the answer, and re-run the same
+   `risk-check run --phase 0 --base HEAD --staged` line.
 4. Verify: re-run the reproduction. Symptom gone -> set Status: resolved, fill
    Resolution, done. Symptom remains -> increment Attempts, record what the
    attempt changed and did not, and return to the method loop (the failed fix
-   is itself an observation). With a policy active, also apply the policy's
+   is itself an observation). A fix is never retried automatically: each attempt
+   goes through step 3's approval. With a policy active, also apply the policy's
    bug-fix rule: ask whether an existing reproducer gives adequate regression
    coverage, confirm it fails for the defect and passes after the fix, and add a
    test only where the completion rule says to.
