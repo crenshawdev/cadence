@@ -429,14 +429,13 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
 headers - `/cad-plan` seeds each row when its phase is planned
 (`references/req-traceability.md`); do not hand-author a row here.
 
-Then enter each phase, in order. The list is generated from the state file, so
-a hand-written line would be overwritten:
+Then enter each phase, in order, one add each and no hand-written line:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
 ```
 
-Then count what you just wrote - rule 5 above is prose until a seam counts it:
+Then count what you just wrote:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --roadmap-min 2 --roadmap-max 5
@@ -445,8 +444,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --roadm
 No `--phase`: one call walks every phase the roadmap declares. Each `over` entry
 names the phase, its measured count and the bound it broke. `roadmap_found:
 false` is not zero criteria - that phase's block declares none at all, so write
-them rather than report it as under the floor. A REPORT, not a gate, exactly as
-`plan-size`'s `phase-too-big` is: present it and let the approval gate decide.
+them rather than report it as under the floor. A REPORT, not a gate: present it
+and let the approval gate decide.
 
 **Present the roadmap** inline: a table (phase, goal, REQ-IDs, and the criteria
 count the seam just reported), then per-phase details with their success
@@ -484,8 +483,7 @@ file": show the file, then re-ask.
 </step>
 
 <step name="state">
-Write the initial cursor through the seam (ROADMAP.md exists now, so
-name/total derive automatically):
+Write the initial cursor through the seam:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
@@ -518,8 +516,7 @@ Next: /cad-context 1
 ```
 
 One suggestion, no menu. A `/clear` before it is safe - everything is on disk
-in `.planning/` and `/cad-context` runs a fresh analyzer, so the interview
-transcript need not be carried forward.
+in `.planning/`.
 </step>
 
 </process>
