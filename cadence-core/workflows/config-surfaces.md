@@ -25,7 +25,7 @@ re-entering it must never cost the user the answer they already gave.
    ```
 
    `--answered` carries step 1's answered set, comma-separated. DROP the flag
-   entirely when step 1 returned `null`.
+   entirely when step 1 returned `null` or an empty list.
 
 3. Show the two SIDE BY SIDE before asking anything - the answered set, and each
    category the envelope's `evidenced` names with its `signal` string - and call

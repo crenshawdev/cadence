@@ -100,9 +100,10 @@ site - this section).
 5. Publishing is a separate question, asked ONLY when this arm was reached by
    `--testing`. Setup never asks it. Read the state from `check`'s
    `publish_authorized`, and say what it authorizes: `/cad-verify` pushes the
-   current non-protected branch to its configured remote with nobody present. Ask
-   through the ask-user seam, the current state first. On an explicit yes, write
-   it into this repository's own `.git/config` and nowhere else:
+   current non-protected branch to its configured remote with nobody present, so
+   CI can run on the commit it records as pending. Ask through the ask-user seam,
+   the current state first. On an explicit yes, write it into this repository's
+   own `.git/config` and nowhere else:
 
    ```
    env -u GIT_DIR -u GIT_COMMON_DIR git config --local cadence.publishForVerification true
