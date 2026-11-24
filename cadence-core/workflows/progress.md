@@ -240,4 +240,5 @@ workflow. cad-progress never does the work itself.
 <guardrails>
 - Report and route only - never plan, execute, verify, or fix anything here.
 - Never invoke a spine skill without the user accepting the offer.
+- Store no analytics or progress artifacts.
 </guardrails>

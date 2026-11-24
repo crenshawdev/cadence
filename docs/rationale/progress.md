@@ -17,6 +17,9 @@ The other order would offer a new phase on top of unfinished work.
 
 The `deferred` row sits below every recovery and work row (a paused cursor, a
 planned phase, an executed one), because those are where the work that clears
-the queue happens. It sits above the three rows that end a cycle because each
-of them leads to a land: `/cad-milestone` chains `/cad-land` after its prune,
-and `/cad-land` refuses on this same queue.
+the queue happens. It sits above the three rows below it because of where they
+route. Two go to `/cad-milestone`, whose land `/cad-land` refuses on this same
+queue: the close chains `/cad-land` only where `git.auto_close` authorizes it
+(`milestone.md` step 7), and otherwise the land is the user's own call. The
+third, `cycle` is `none`, goes to `/cad-phase add`, which would open a new cycle
+over a queue a close carried out untriaged (`milestone.md` step 3).
