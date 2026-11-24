@@ -1,21 +1,12 @@
 <purpose>
-Gather everything /cad-plan needs to plan a phase without guessing: locked
-implementation decisions, falsifiable acceptance criteria, flagged
-assumptions, and explicit scope boundaries - in ONE conversational pass.
-
-The flow is codebase-first. A cad-assumptions-analyzer subagent reads the
-relevant source off the main context and returns evidence-cited assumptions;
-questioning is adaptive and covers only what the analyzer could not resolve.
-The exit condition is judged, not scored: decisions closed, acceptance
-criteria falsifiable.
+Gather what /cad-plan needs to plan a phase without guessing: locked
+implementation decisions, falsifiable acceptance criteria, flagged assumptions
+and explicit scope boundaries, in ONE conversational pass. The pass ends when
+decisions are closed and the acceptance criteria are falsifiable, which is
+judged, not scored.
 
 Output: `.planning/phases/{N}/CONTEXT.md` - an OPTIONAL phase artifact.
 /cad-plan reads it when present and plans without it when not.
-
-Why each step is shaped the way it is - the measured failures, the ordering
-arguments, the rejected alternatives - is in `docs/rationale/context.md`. It is
-not read at runtime. Read it before EDITING this file, so a step is not removed
-for looking redundant.
 </purpose>
 
 <process>
@@ -79,17 +70,12 @@ Read what already constrains this phase - never re-ask a settled question:
 - up to 3 most recent prior `phases/*/CONTEXT.md` files (locked decisions
   that carry forward)
 - the `## Deviations` bullets of up to 3 most recent prior
-  `phases/*/SUMMARY.md` files - bounded most-recent-first exactly as the
-  CONTEXT reads above are, so this read set cannot grow with N. Those
-  deviations are the evidence the spend gate's "already grounded by a prior
-  phase" arm turns on.
+  `phases/*/SUMMARY.md` files, most recent first like the CONTEXT reads
 
 Priors are subordinate to current scope: `REQUIREMENTS.md` and `ROADMAP.md`
-carry the latest decisions, while a prior CONTEXT can be stale - a scope change
-often updates requirements without touching an older phase's CONTEXT file. When
-a carried-forward decision contradicts current REQUIREMENTS/ROADMAP, treat the
-current docs as authoritative: drop or re-open that decision rather than
-feeding it forward as settled.
+carry the latest decisions. When a carried-forward decision contradicts current
+REQUIREMENTS/ROADMAP, treat the current docs as authoritative: drop or re-open
+that decision rather than feeding it forward as settled.
 
 Missing files are fine - continue without. Build an internal prior-decisions
 summary - what earlier phases locked, plus what their deviations later
