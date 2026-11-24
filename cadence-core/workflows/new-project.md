@@ -151,23 +151,16 @@ for item 4's one line):
      empty string would read back as an answered question.
 
      **Then offer to CREATE it, when there is nothing to create it beside.**
-     Only on the arm where `git remote get-url origin` names nothing - a
-     directory just `git init`ed has no origin, and a repository that already
-     has one already exists on a forge. Ask through the ask-user seam as a plain
-     confirm, so no option carries `(recommended)`, and put all four facts in
-     the question itself:
+     Only on the arm where `git remote get-url origin` names nothing. Ask
+     through the ask-user seam as a plain confirm, so no option carries
+     `(recommended)`, and put all four facts in the question itself:
 
        - header: "Create repo"
        - question: "Create <owner>/<name> on <provider> now? It will be created as a private repository."
        - options: "Create it - the repository is made on <provider> and set as this project's origin" / "Not now - setup carries on and nothing is created"
 
-     Those four - the provider, the owner, the repository name and the
-     visibility - are the confirmation, and nothing else in this run states them
-     together. Visibility is not a question and is never asked: every repository
-     Cadence creates is private, because `gh` with no visibility flag drops to
-     an interactive prompt that would hang, `glab` silently defaults to
-     `internal`, and three different defaults are not a choice worth putting to
-     a user.
+     Visibility is not a question and is never asked: every repository Cadence
+     creates is private.
 
      Only on "Create it", and never ahead of one:
 
@@ -177,20 +170,16 @@ for item 4's one line):
        --remote-url <url> --dir .
      ```
 
-     `--confirmed` is what the user's answer buys. The seam cannot ask - it
-     would hang blocking on stdin inside a Bash call - so the flag is this
-     step's assertion that the question was put and answered, and passing it
-     ahead of the answer is the one thing that would make the whole gate a
-     formality.
+     `--confirmed` says the user was asked and answered "Create it": pass it only
+     on that answer.
 
      `--remote-url` is passed on `forgejo` and `github` and OMITTED on `gitlab`.
      Those two providers' create commands wire no git remote, so the seam adds
-     `origin` itself and needs the URL to point it at; `glab` wires its own. It
-     is not a fourth question and neither host is guessed: on `forgejo` build it
-     from the `git.forge_host` just confirmed above - WHOLE, port and all, since
-     the seam refuses a URL whose port the configured instance does not serve -
-     and on `github` from the fixed `github.com`, each with the answered slug -
-     `https://<host>/<owner>/<name>.git`.
+     `origin` itself and needs the URL to point it at; `glab` wires its own. On
+     `forgejo` build it from the `git.forge_host` just confirmed above - WHOLE,
+     port and all, since the seam refuses a URL whose port the configured
+     instance does not serve - and on `github` from the fixed `github.com`, each
+     with the answered slug - `https://<host>/<owner>/<name>.git`.
 
      On an `ok:false`, print the envelope's `reason` and `hint`, one line each,
      and stop the forge step. Do not continue as though a repository exists, and
