@@ -1,9 +1,7 @@
 # cad-docs-verify workflow
 
 Verify the checkable claims in the target docs against the live code. Report
-only; never rewrite (the writer is cut - DESIGN §2). The value is honest drift
-detection for a distributed project, so precision matters: a false "stale" is
-worse than an "unverifiable".
+only; never rewrite. A false "stale" is worse than an "unverifiable".
 
 ## 1. Resolve targets
 `$ARGUMENTS` = a path or glob, else the default set: `README.md` plus `docs/**`
