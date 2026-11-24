@@ -351,8 +351,8 @@ Batch the category questions ceil(N/4) per AskUserQuestion call (up to 4
 categories at once), not one blocking turn per category; only a question whose
 wording depends on an earlier answer stays sequential.
 
-Track the outcome: selected features are v1; unselected table stakes go to
-v2; unselected differentiators go to Out of Scope.
+Selected features are v1; unselected table stakes go to v2; unselected
+differentiators go to Out of Scope.
 
 **Catch gaps** (ask-user seam):
 
@@ -374,7 +374,7 @@ user-centric, and atomic. Push vague ones until they pass:
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/REQUIREMENTS.md` and write
 `.planning/REQUIREMENTS.md`: v1 requirements as `## Active` bullets by
 category with REQ-IDs, v2 deferred, Out of Scope with reasons, Traceability
-table left as bare headers (seeded per phase by `/cad-plan`, never here).
+table left as bare headers.
 
 **Present the full v1 list** (every requirement, not counts) and confirm (ask-user seam):
 
@@ -399,11 +399,11 @@ Skip that section's publishing question. Ask nothing about publishing; say in
 one line that verification publishing is off and that `/cad-config --testing` is
 where to authorize it.
 
-The step leaves `testing.*` in `.planning/config.json` and writes
-`.github/cadence/coverage-policy.json`. Both ride the `state` step's commit when
-`planning.commit_docs` is true. When it is false they stay uncommitted, and the
-first CI plan task commits the policy file, since `/cad-plan` puts that task
-first when `check` finds no gate.
+This step is the only place `testing.*` is written. It leaves `testing.*` in
+`.planning/config.json` and writes `.github/cadence/coverage-policy.json`. Both
+ride the `state` step's commit when `planning.commit_docs` is true. When it is
+false they stay uncommitted, and the first CI plan task commits the policy file,
+since `/cad-plan` puts that task first when `check` finds no gate.
 </step>
 
 <step name="roadmap">
