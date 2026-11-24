@@ -62,15 +62,11 @@ Two stops first, before anything is written.
    /cad-config changes any of it, and /cad-config --roles re-opens those
    thirteen questions."
 
-4. **Pick a forge**, from the `forge.mjs detect` line in that same script - it
-   rides the existing script rather than taking a turn of its own, because it
-   reads a config and PATH and this item is prose over what it already printed.
-   Branch on `action` alone, the way /cad-land step 1 branches on
-   `issue-check`'s:
+4. **Pick a forge**, from the `forge.mjs detect` line in that same script.
+   Branch on `action` alone:
 
    - `configured` - this repository has already answered. Say NOTHING and ask
-     nothing. This is what makes a second run of /cad-adopt silent on the
-     subject.
+     nothing.
    - `refuse` - print the envelope's `reason` and its `hint`, one line each, and
      stop the forge step here. A forge is a precondition (FRG-02): do not invent
      a no-tracker mode, and do not fall through to the questions below.
@@ -81,14 +77,9 @@ Two stops first, before anything is written.
         entries - one option per entry, naming the provider and the binary that
         drives it. When `defaults.provider` names one of those providers, put
         that option FIRST and label it `(recommended)`; when it is null, offer
-        them in the order the envelope lists and label NOTHING. That is the
-        seam's own rule that a recommendation must fall out of analysis the step
-        already did, and no analysis here recommends a forge for a host the
-        origin URL cannot classify. Always offer one more option than there are
-        providers - **None of these**, last in the list. The ask-user seam
-        states that an always-present option consumes one of the four slots a
-        question has, and three providers plus NONE is exactly four, so this
-        question never splits however many resolved.
+        them in the order the envelope lists and label NOTHING. Always offer one
+        more option than there are providers - **None of these**, last in the
+        list.
 
         - header: "Code host"
         - question: "Which service hosts this project's repository?"
@@ -107,16 +98,13 @@ Two stops first, before anything is written.
 
      c. **Which Forgejo instance** - asked ONLY when the chosen provider is
         `forgejo` and the envelope's `host` is null. Open-ended per the ask-user
-        seam, because the value is typed rather than picked from a set, and with
-        NO default offered. Ask for the instance the user reaches in a BROWSER -
-        `forge.example.com` - and NOT the SSH endpoint the remote URL carries,
-        which is often a different name (`ssh.example.com`); that split is a
-        normal deployment rather than a misconfiguration, this repository is one,
-        and only the browser host resolves a `tea` login. Say that the answer may
-        carry a PORT when the instance is not on the default one, spelled
-        `host:port` - `forge.example.com:3001` - and that it is the port the
-        BROWSER reaches, never the SSH port. `github` and `gitlab`
-        are never asked this; their hosts are fixed.
+        seam, with NO default offered. Ask for the instance the user reaches in
+        a BROWSER - `forge.example.com` - and NOT the SSH endpoint the remote
+        URL carries, which is often a different name (`ssh.example.com`). Say
+        that the answer may carry a PORT when the instance is not on the default
+        one, spelled `host:port` - `forge.example.com:3001` - and that it is the
+        port the BROWSER reaches, never the SSH port. `github` and `gitlab` are
+        never asked this; their hosts are fixed.
 
         - header: "Instance"
         - question: "What address do you use in a browser to reach your Forgejo instance? Type just the host name, with no https:// and no path, and add the port as host:port only if it isn't the default one. This is the address you browse to, not the one git uses over SSH."
@@ -134,11 +122,7 @@ Two stops first, before anything is written.
 
      Do not re-ask inside this run and do not invent a no-forge mode: a forge is
      a precondition (FRG-02), and the fix is to re-run this entry point once a
-     provider is picked. This arm has to be written down because a declined
-     question has no answer at all - `references/seam-ask-user.md` forbids
-     fabricating or defaulting an answer the seam was supposed to collect - so
-     prose that does not say what happens next lets setup run on past a
-     question it never got.
+     provider is picked.
 
      Persist the answers in ONE call, against this repository's own
      `.planning/config.json` (the default target - no `--file`, no `--global`):
@@ -151,9 +135,7 @@ Two stops first, before anything is written.
      On the forgejo arm that same call carries `git.forge_host=<host>` as a
      third pair. On `github` and `gitlab` the pair is OMITTED entirely rather
      than written empty: null there means "fixed host, nothing to name", and an
-     empty string would read back as an answered question. There is no new
-     writer here on purpose, so `checkPairs`, `retiredKeyError` and the
-     repo-layer-only refusal on `git.forge_repo` all still apply to this write.
+     empty string would read back as an answered question.
 </step>
 
 <step name="survey">
