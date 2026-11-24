@@ -43,8 +43,9 @@ resolves no other spelling, ships no second legal form, and migrates nothing.
 
 `2.0` is NOT a legal spelling of phase 2: the fraction is the sub-phase ORDINAL,
 and there is no sub-phase zero. The same no-padding rule makes `1.01` a padded
-spelling of `1.1` rather than a directory of its own, while `1.10` is legal:
-sub-phase ten, whose `phases/1.10/` every command can address.
+spelling of `1.1` rather than a directory of its own, while `1.10` is a legal
+directory name, sub-phase ten, but a lossy spelling, because it parses to the
+number 1.1.
 
 The guarantee is that no spelling is ever silently redirected to a DIFFERENT
 phase's directory. Every seam builds its path from the string the caller typed,
@@ -52,8 +53,9 @@ so `--phase 08` addresses `phases/08` literally, reading it when it exists and
 reporting a not-found naming it when it does not. Where the caller's spelling
 would normalize onto a phase directory that ALSO exists on that tree, the
 command refuses `bad-args` and names both fixes - retype the flag, or rename
-the directory - rather than picking one. `cursor set` and `seed-reqs`, which
-WRITE a phase identity, refuse a lossy spelling whatever is on disk.
+the directory - rather than picking one. `cursor set`, `seed-reqs`,
+`phase-entry` and `req-row`, which WRITE a phase identity, refuse a lossy
+spelling whatever is on disk.
 
 A directory outside the grammar is unsupported and REPORTED, never migrated:
 `planning.mjs status` returns it as a `phase-dir-grammar` drift entry naming
@@ -62,10 +64,10 @@ an issue, and renaming it is the user's call, never an auto-fix.
 
 Two names that are both LEGAL can still parse to one number: `Number` maps
 `1.1` and `1.10` onto the same value. Neither is preferable and neither is
-refusable, so `status` reports the pair as `phase-dir-collision` drift, its own
-kind. A `phase-dir` entry carries the directory NAME in `dir` beside the parsed
-`phase`, and a `recall` result carries it in `source`: that says which of the
-two a record describes.
+refusable, so once the milestone is closed `status` reports the pair as
+`phase-dir-collision` drift, its own kind. A `phase-dir` entry carries the
+directory NAME in `dir` beside the parsed `phase`, and a `recall` result carries
+it in `source`: that says which of the two a record describes.
 
 ## The four states
 
