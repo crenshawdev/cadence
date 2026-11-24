@@ -194,15 +194,14 @@ for item 4's one line):
 </step>
 
 <step name="questioning">
-This is dream extraction, not requirements gathering. You are a thinking
-partner helping the user sharpen a fuzzy idea, not an interviewer filling
-out a form. Don't follow a script; follow the thread.
+You are a thinking partner helping the user sharpen a fuzzy idea, not an
+interviewer filling out a form. Don't follow a script; follow the thread.
 
 **Open freeform** (plain prose, NOT AskUserQuestion):
 
 "What do you want to build?"
 
-Wait for the response. It gives you the material for every question after.
+Wait for the response.
 
 **With `--brief`, that opening question is already answered.** Everything the
 brief SETTLES is answered material, not a topic to re-open. Replace the opening
@@ -214,13 +213,11 @@ Then question only what the brief leaves OPEN.
 What is open is what the brief SAYS, read the way you read any prose: a section
 that decides something has decided it, a question it poses and does not answer
 has not, and an item it parks as pending, deferred or a hypothesis is still
-live. Never key this off a marker convention. A brief that happens not to write
-`**OPEN**` anywhere would then read as settled throughout and the run would skip
-the questioning entirely - the exact failure this flag exists to prevent, turned
-inside out. No score, no coverage gate, no walking the brief section by section.
+live. Never key this off a marker convention. No score, no coverage gate, no
+walking the brief section by section.
 
-The background checklist below is where a brief lands: the items it settles are
-ticked already, and the ones it leaves open are the thread to follow.
+On the background checklist below, the items the brief settles are ticked
+already, and the ones it leaves open are the thread to follow.
 
 **Follow the thread.** Each answer opens new threads; pick the live one.
 Techniques:
@@ -244,9 +241,8 @@ answers is open.
 
 **Freeform rule:** the moment the user signals they want to explain in their
 own words ("let me describe it", an open-ended reply, picking the escape
-option), STOP structured questions. Ask the follow-up as plain text, let
-them type, and only resume structured questions after processing what they
-said.
+option), STOP structured questions. Ask the follow-up as plain text, let them
+type, and resume structured questions only after processing what they said.
 
 **Background checklist** (mental, never a conversation structure):
 
