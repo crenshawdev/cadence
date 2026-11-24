@@ -43,21 +43,13 @@ ordered this way.]
 </template>
 
 Notes:
-- Phase count follows config `granularity`: coarse 3-5, standard 5-8,
-  fine 8-12. When in doubt, fewer phases.
-- Prefer vertical slices: each phase delivers something a user can exercise
-  end to end, not a horizontal layer to be wired up later.
-- Success criteria are what /cad-verify checks: 2-5 per phase, each a
-  statement that could be shown false. "X works" is not a criterion.
 - Integer phases are planned work. Decimal phases (2.1, 2.2) are urgent
   insertions added later via /cad-phase; execution follows numeric order.
-- Every v1 REQ-ID appears in exactly one phase. Do not hand-author
-  REQUIREMENTS.md's Traceability table to match - `/cad-plan` seeds each row
-  when its phase is planned (`references/req-traceability.md`).
 - Phase status is held in the state file and shown as the `## Phases`
   checkbox: `- [ ]` open, `- [x]` complete. /cad-verify completes a phase when
-  its UAT fully passes; /cad-progress reconciles it if it ever drifts. There is no separate
-  progress table - live status is derived by /cad-progress from phase
-  artifacts (git is the log, not a hand-maintained mirror).
+  its UAT fully passes. A status that drifts is reported by /cad-progress, which
+  edits neither file (this one or REQUIREMENTS.md) and routes to /cad-verify
+  where the drift involves completion. There is no separate progress table -
+  /cad-progress derives live status from phase artifacts.
 - No time estimates, no plan sub-lists - plans live in
   .planning/phases/<N>/PLAN.md, created by /cad-plan when a phase starts.
