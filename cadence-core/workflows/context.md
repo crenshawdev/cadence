@@ -304,46 +304,39 @@ phase goal plus the locked decisions. Rules:
 - Pass/fail only - a stranger could check each box without judgment calls.
 - Observed behavior, not implementation: "running X shows Y", not "X is
   implemented" or "X works well".
-- 3-7 criteria. Fewer means the goal is vague; more means the phase is
-  probably too big (feeds the next step).
+- 3-7 criteria.
 - No subjective words: "clean", "reasonable", "robust" are banned.
 - Each criterion carries a phase-local `AC<N>` id at the head of its bullet,
   numbered from 1 in presentation order - never phase-prefixed, never
-  renumbered afterwards. `/cad-verify` carries that id onto the UAT item it
-  builds, and `/cad-audit` FAILs on a criterion that reached none
-  (`references/acceptance-criteria.md`).
+  renumbered afterwards.
 
 Present the draft list and ask (ask-user seam, structured):
 - header: "Acceptance"
 - question: "Do these criteria describe what finished looks like for this phase?"
 - options: "Keep them - the phase is checked against these criteria at the end" / "Change them - tell me what to change, and I show the list again once"
 
-On "Change them", take the user's changes in prose and re-present once. These
-criteria are what /cad-verify will check - do not lock anything untestable.
+On "Change them", take the user's changes in prose and re-present once. Do not
+lock anything untestable.
 
 **Tool-availability tag.** For each criterion, judge whether proving it
 needs an external tool or service (docker, a cloud CLI like doctl, a browser
 driver, a live endpoint). Probe the machine ones with `command -v <tool>`.
 Tag a criterion `(human-verify: needs <tool/service>)` when the tool is
-absent here or the check is inherently live/external - so /cad-verify routes
-it to a human check from the start and the executor never discovers
-mid-task that it cannot self-verify (which is how a deferred check
-masquerades as a pass). A criterion whose tool is present stays a normal
-machine-checkable box.
+absent here or the check is inherently live/external. A criterion whose tool
+is present stays a normal machine-checkable box.
 
 When `testing.scope` is set, a criterion whose tool is absent here is not
 tagged `human-verify`. It gets a CI check instead: a job from
 `testing.required_jobs` that proves it, recorded as a `(ci: <required job>)`
 suffix beside where the tag would sit. Where no automated check seems possible,
 ask the user once (ask-user seam) what to do about that criterion. The answer
-is in the person's own words, because the workflow fixes no set of answers:
+is in the person's own words:
 
 - header: "No check"
 - question: "Criterion {AC id} has no automated check that could prove it: {criterion}. What do you want to do about it?"
 - options: none, the person answers in their own words
 
-Never
-rewrite a criterion and never make one optional yourself: only the user's
+Never rewrite a criterion and never make one optional yourself: only the user's
 explicit decision does. A `human-verify` criterion already written stays as it
 is. With `testing.scope` unset, the paragraph above is the whole rule.
 </step>
