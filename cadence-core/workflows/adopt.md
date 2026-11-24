@@ -19,7 +19,8 @@ Two stops first, before anything is written.
    - It succeeds but names a DIFFERENT directory -> stop, naming that root:
      "This is a subdirectory of {root}. Run /cad-adopt in {root}."
    `git rev-parse --git-dir` is NOT this check and must never be substituted for
-   it: it succeeds in any subdirectory of an enclosing repo.
+   it: it succeeds in any subdirectory of an enclosing repo. Adopt itself never
+   runs `git init`.
 3. Scaffold and read config as ONE Bash step, not four turns - `mkdir -p`, the
    ignore line, the config copy if absent, and the config read chained in a
    single script that echoes a marker when it wrote the config, so you
@@ -55,12 +56,12 @@ Two stops first, before anything is written.
    The third is the testing policy, asked once as the `testing_policy` step
    between `write_requirements` and `write_roadmap`.
 
-   Every other key keeps the template's value. Say in one line what was written
-   and where: "Config written with defaults (standard granularity, research and
-   plan check off, verifier on) in `.planning/config.json`, and the per-role
-   models and start rungs you just chose in <the file the interview named>.
-   /cad-config changes any of it, and /cad-config --roles re-opens those
-   thirteen questions."
+   Every other config key comes only from the template and keeps its value: never
+   invent one. Say in one line what was written and where: "Config written with
+   defaults (standard granularity, research and plan check off, verifier on) in
+   `.planning/config.json`, and the per-role models and start rungs you just
+   chose in <the file the interview named>. /cad-config changes any of it, and
+   /cad-config --roles re-opens those thirteen questions."
 
 4. **Pick a forge**, from the `forge.mjs detect` line in that same script.
    Branch on `action` alone:
@@ -366,11 +367,11 @@ before this commit - it is the first commit of the cycle. (A repo with no
 commits at all has nothing to branch from: skip the guard and let this commit
 create the root commit on the current branch.)
 
-Then ONE commit, `docs: adopt existing project into Cadence`, staging exactly
-the eight files written: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
-`.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/records/state.json`,
-`.planning/records/.gitignore`, `.planning/config.json` and
-`.github/cadence/coverage-policy.json`.
+Then ONE commit, `docs: adopt existing project into Cadence`, pushing nothing
+and staging exactly the eight files written: `.planning/PROJECT.md`,
+`.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`,
+`.planning/records/state.json`, `.planning/records/.gitignore`,
+`.planning/config.json` and `.github/cadence/coverage-policy.json`.
 </step>
 
 <step name="done">
@@ -394,46 +395,12 @@ in `.planning/`.
 </process>
 
 <guardrails>
-- No subagent, ever. This workflow dispatches nothing: the brownfield read is
-  paid in this context, which is what keeps the front door's most expensive step
-  visible instead of hidden behind an unpriced dispatch.
-- Adopt REFUSES a directory that is not a git repo root; it never runs
-  `git init`. Its inputs are code and history, and git's upward discovery would
-  otherwise let a subdirectory answer from the repo above it.
+- No subagent, ever. This workflow dispatches nothing.
+- Never fabricate an answer the ask-user seam was supposed to collect.
 - Nothing outside the canonical `.planning/` set is created: PROJECT.md,
   REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json, records/state.json,
   records/.gitignore - and
   `.github/cadence/coverage-policy.json`, which the `testing_policy` step
   renders. No `phases/` dirs, no
   CLAUDE.md generation, no extra scaffolding.
-- Config keys come from the engine config template only; never invent keys and
-  never ask config questions beyond the forge, the roles interview and the
-  `testing_policy` step, which is the only place `testing.*` is written and
-  never asks about publishing.
-- Never fabricate an answer the ask-user seam was supposed to collect.
-- STATE.md is a four-line overwritten cursor plus an optional `Plan:` line: no audit log, no narrative.
-- Nothing already shipped is written as an open requirement or an `- [x]` phase.
 </guardrails>
-
-<success_criteria>
-- [ ] Refused unless `git rev-parse --show-toplevel` succeeded AND equalled the
-      working directory; refused if `.planning/PROJECT.md` already existed
-- [ ] `.planning/` holds PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and
-      config.json, with config.json copied verbatim from the engine template and
-      written only with the forge, roles and testing policy answers
-- [ ] The trace ignore rule is present and `.planning/records/trace.jsonl` is untracked
-- [ ] Nothing the README, the manifests, the tree or the log already answered
-      was re-asked, and every question asked named the gap it was filling
-- [ ] PROJECT.md's Validated section carries what the code already does; its
-      `### Active` milestone version is not a member of `git tag --list`
-- [ ] REQUIREMENTS.md `## Active` uses the `- **[CAT]-01**:` grammar and
-      `## Traceability` is bare headers with zero rows
-- [ ] ROADMAP.md is remaining work: no `- [x]` entry, phase count follows
-      `granularity`, 2-5 falsifiable criteria per phase, every `## Active` id
-      mapped to exactly one phase, user approved it
-- [ ] STATE.md is a four-line cursor (no `Plan:` line) pointing at phase 1, and no `phases/` dir
-      was created
-- [ ] One `docs:` commit under references/git-guard.md, respecting
-      `planning.commit_docs`, staging the eight files by name and pushing nothing
-- [ ] No subagent was dispatched
-</success_criteria>
