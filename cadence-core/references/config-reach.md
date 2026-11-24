@@ -203,4 +203,4 @@ purpose test runs against the reach the author just replaced.
 | `review.consult.effort` | universal | `references/consult.md` - `--effort` on the consult call |
 | `review.consult.attempt_threshold` | universal | `references/consult.md` - failed attempts before cad-debug offers a consult |
 | `review.decision_review.tier` | cross-model reviewers only | `workflows/decision-review.md` refute step - the cross-model model id; its cad-reviewer arm resolves no model at all |
-| `review.decision_review.effort` | cross-model reviewers only | `workflows/decision-review.md` refute step - `--effort` on the cross-model call; cad-reviewer runs at the session default |
+| `review.decision_review.effort` | cross-model reviewers only | `workflows/decision-review.md` refute step - `--effort` on the cross-model call; cad-reviewer runs at the session's model and its agent file's effort |

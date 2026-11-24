@@ -7,6 +7,36 @@ Releases 1.0.0 through 2.7.0 are in [docs/history/CHANGELOG-v1-v2.md](./docs/his
 
 ## [Unreleased]
 
+## [4.4.4] - 2026-11-24
+
+Cadence hands the model less text before it starts work. This release changes
+words only: no script, agent file, hook or setting differs from 4.4.3.
+
+### Changed
+
+- **The commands read 13 to 26 percent less.** `weight.mjs paths` weighs the
+  instruction files 12 of the commands read. Between v4.4.3 and this release,
+  `/cad-execute` went from 79,132 bytes to 63,533, `/cad-plan` from 47,826 to
+  37,729, `/cad-context` from 50,935 to 41,607, `/cad-verify --deep` from
+  44,982 to 35,522, `/cad-task` from 29,913 to 22,162 and `/cad-new-project`
+  from 90,693 to 71,244. Those are bytes of instructions. Tokens, time and cost
+  weren't measured.
+- **Duplicated rules on the lines cut have one copy.** The other copies point
+  to it or are gone. Reasons for rejected designs that had no other home moved
+  to `docs/rationale/`.
+
+### Fixed
+
+- **`/cad-health` accepts a `Deferred` requirement.** It allowed only `Pending`
+  and `Complete`. A `Deferred` row is now legal, and its phase and
+  status-drift checks are skipped.
+- **`/cad-milestone` stages everything its prune touched.** The prune commit
+  now takes the removed phase folders and any carried deferred findings along
+  with the planning documents.
+- **`/cad-audit` reports every coverage break.** A FAIL now names the file
+  behind an `unreadable-context` break, and each coverage break comes with its
+  next action.
+
 ## [4.4.3] - 2026-11-20
 
 ### Added
@@ -3728,6 +3758,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[4.4.4]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.4
 [4.4.3]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.3
 [4.4.2]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.2
 [4.4.1]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.1

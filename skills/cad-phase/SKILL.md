@@ -13,11 +13,7 @@ allowed-tools:
 ---
 
 <objective>
-Edit the phase list in ROADMAP.md safely. `add` and `edit` are near-trivial
-edits; `insert` and `remove` are not - they shift phase numbers, and a number
-lives in the state, the phase dirs and the generated views, which must all
-follow or the references rot. Shipped requirement rows are history: insert and
-remove leave them as written. This skill keeps the live references consistent.
+Edit the phase list in ROADMAP.md: add, insert, remove or edit a phase.
 </objective>
 
 <execution_context>
@@ -28,9 +24,7 @@ remove leave them as written. This skill keeps the live references consistent.
 <process>
 Route on `$ARGUMENTS` (add | insert N | remove N | edit N) and run the phase
 workflow. For insert/remove, do the full renumber-and-repair pass - never edit
-ROADMAP alone. Commit the change atomically (protected-branch guard applies);
-never leave phase dirs and live references out of sync, and never hand-shift a
-requirement row the seam left as written.
+ROADMAP alone, and never hand-shift a requirement row the seam left as written.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200

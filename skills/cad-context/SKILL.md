@@ -14,13 +14,10 @@ allowed-tools:
 ---
 
 <objective>
-Run the single pre-plan gate for a phase: spawn the assumptions analyzer
-against the codebase when this phase buys that pass, close the gray areas it
-surfaces with a few targeted questions, and lock falsifiable acceptance
+Close a phase's gray areas before planning and lock falsifiable acceptance
 criteria. Two asks, never merged into one: one spend question (is the analyzer
 pass worth buying here?) before it runs, and one size question (too big for one
-plan?) after the criteria. Writes `.planning/phases/<N>/CONTEXT.md` for
-/cad-plan to read. Optional - /cad-plan runs without it.
+plan?) after the criteria. Writes `.planning/phases/<N>/CONTEXT.md`.
 </objective>
 
 <execution_context>

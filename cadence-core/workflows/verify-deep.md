@@ -4,18 +4,16 @@ The goal-backward cad-verifier pass. Loaded from verify.md `deep_check` when
 it actually runs; return to verify.md `walk` afterward.
 
 <step name="dispatch">
-Dispatch cad-verifier via the spawn-agent seam, the bracket on its resolve:
-`--bracket-read "<the verifier input path>"`, the input composed below. Hand it
-the phase number, the goal, that input, and the path it must write:
-`.planning/phases/<N>/records/verifier-findings.json`. A refused compose hands
-over the PLAN, SUMMARY and ROADMAP paths, `UAT.md` and the current UAT items in
-place of that input, and brackets those paths instead. With `testing.scope` set
-(read in verify.md `build_or_resume`), the prompt also says "A testing policy is
-active." and hands it the suite command, resolved as the executor contract
-resolves it: `config.mjs get workflow.test_command`, or, where that is null,
-that the project manifest's runner applies. It writes exactly that one file and
-returns a digest plus that path. Its contract is its own
-(`skills/cad-verifier-contract`) and is not restated here.
+Dispatch cad-verifier on the input composed below, via the spawn-agent seam with
+`--bracket-read "<the verifier input path>"` on its resolve. A refused compose
+hands over the phase number, the goal, the PLAN, SUMMARY and ROADMAP paths,
+`UAT.md` and the current UAT items, and brackets those paths instead. With
+`testing.scope` set (read in verify.md `build_or_resume`), the prompt also says
+"A testing policy is active." and hands over the suite command, resolved as
+verify.md `walk` states. The verifier writes exactly one file,
+`.planning/phases/<N>/records/verifier-findings.json`, and returns a digest plus
+that path. Its contract is its own (`skills/cad-verifier-contract`) and is not
+restated here.
 
 The verifier reads one composed input in place of the PLAN, SUMMARY and ROADMAP paths and the UAT items.
 
@@ -37,14 +35,12 @@ is taken - the dispatch ends exactly once, so it closes exactly once:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-verifier --role cad-verifier --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return> --detail-file <path>
 ```
 
-On a failed, empty or timed-out dispatch, what failed is the verifier's own
-words, so it goes to a scratch file and `--detail-file` carries the PATH
-(caller-derived text - references/conventions.md). The rest of this line is
-seam-spawn-agent.md's bracket rule.
+On a failed, empty or timed-out dispatch, what failed goes to a scratch file and
+`--detail-file` carries its PATH. The rest of this line is seam-spawn-agent.md's
+bracket rule.
 
 A failed, empty, or timed-out dispatch then goes to `fall_through`. Otherwise
-continue to `merge`. There is no verifier retry to bracket: those are the only
-two arms, and `fall_through` is the single terminal failure one both share.
+continue to `merge`.
 </step>
 
 <step name="merge">
@@ -58,36 +54,16 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat merge --phase <N>
 
 An `ok:false` return goes to `fall_through`, whatever its reason.
 
-The seam enforces the merge rules structurally: verifier results only fill
-`pending` items (a user-recorded result is never overwritten - a conflicting
-finding is skipped and counted), unmatched gaps append as new failed items,
-human checks append as pending. An entry resolving to no usable item name is
-rejected and counted, never appended as a nameless item. Failed items route
-through verify.md `route_failures` exactly like user-reported failures.
+Unmatched gaps append as failed items and human checks as pending. A finding on
+an item already recorded is skipped, and an entry with no usable item name is
+rejected. Failed items route through verify.md `route_failures` exactly like
+user-reported failures.
 
 Report the seam's one-line summary (`auto_passed`, `gaps`, `added`, `skipped`,
 `rejected`), then return to verify.md `walk`.
-
-Two files, two writers, and never the same one. The VERIFIER writes
-`verifier-findings.json` - its findings, the merge's input. The SEAM writes
-`.planning/phases/<N>/records/FINDINGS.json` - those same counters plus
-`rejected_entries` and `skipped_entries`, holding the entries it discarded
-verbatim, so a finding counted and then dropped survives the dispatch that
-produced it. The seam overwrites its own file on every successful merge,
-which is precisely why the verifier's may not carry that name.
 </step>
 
 <step name="fall_through">
-The one terminal failure arm, shared by both branches above so neither can
-grow a private error path.
-
-The bracket is ALREADY closed - `dispatch` closes it the moment the return is
-in hand, whichever arm follows, which is why this step has no close of its own
-and why a merge that fails after a usable return cannot close a second time.
-
-Say in ONE line what failed, write nothing else, and return to verify.md `walk`
-with the checklist as-is. The deep pass is an accelerator, never a gate on
-the human walk - a broken dispatch or a refused merge costs speed and the
-auto-verified items, and nothing else. The phase is still verified by the
-walk.
+The bracket is already closed. Say in ONE line what failed, write nothing else,
+and return to verify.md `walk` with the checklist as-is.
 </step>

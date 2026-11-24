@@ -18,6 +18,22 @@ dropping it re-dispatches cad-verifier on every later UAT session; the resolved
 entirely. `verify` has no config key - it is `on` exactly when the plan-time
 floor raised, and `--deep` is the manual override beside it.
 
+## verify-deep.md dispatch, fall_through - no retry, one failure arm, one close
+
+Three rejected designs, all in `cadence-core/workflows/verify-deep.md`.
+
+A verifier retry. The pass is an accelerator, never a gate on the human walk: a
+broken dispatch or a refused merge costs speed and the auto-verified items, and
+the walk still verifies the phase. So a dispatch has two arms only, `merge` and
+`fall_through`.
+
+A failure path per branch. A failed dispatch and an `ok:false` merge both land
+in `fall_through`, so neither can grow a private error path.
+
+A close in `fall_through`. `dispatch` closes the bracket the moment the return
+is in hand, whichever arm follows, so a second close there would close it twice
+when a merge fails after a usable return.
+
 ## walk - the defect the two-pass split exists to prevent
 
 Interrogating the user with a command the model can run itself. Pass 1 exists so

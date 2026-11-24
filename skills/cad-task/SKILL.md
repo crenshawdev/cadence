@@ -16,10 +16,9 @@ allowed-tools:
 ---
 
 <objective>
-Do a small task now, outside the roadmap, keeping Cadence's guarantees:
-protected-branch guard and atomic conventional commits. Inline by default -
-no subagents, no plan files. `--plan` writes a short PLAN.md first for
-multi-step work. Feature-sized requests get re-routed to /cad-phase add.
+Do a small task now, outside the roadmap, with the protected-branch guard and
+atomic conventional commits. Inline by default; `--plan` writes a short PLAN.md
+first. Feature-sized work stops with the commands that fit the repository.
 </objective>
 
 <execution_context>

@@ -58,30 +58,17 @@ planned (`references/req-traceability.md`).
 
 Notes:
 - REQ-ID format: `[CATEGORY]-[NUMBER]` with a 3-5 letter category code
-  (AUTH-01, CLI-02, SYNC-03). IDs are stable; never renumber. The audit's
-  admission test is wider than this advice - 2-8 characters carrying a letter
-  somewhere, not necessarily at the head - so a bolded `2FA-01` IS counted by
-  `/cad-audit`. Unbolded, `2FA-01` is invisible to the prose scan as well, so
-  a bullet that forgets the bold declares nothing and gets no diagnostic at
-  all (`references/req-traceability.md`).
-- A good requirement is specific and testable ("User can reset password via
-  email link", not "Handle password reset"), user-centric ("User can X", not
-  "System does Y"), and atomic (one capability each).
+  (AUTH-01, CLI-02, SYNC-03). IDs are stable; never renumber.
+- A requirement reads "User can X", not "System does Y", and is atomic
+  (one capability each).
 - `## Active` bullet form: `- **[CAT]-01**: [requirement]`, one bullet per
   committed requirement (the checkbox shown above is optional and tolerated,
   never required). An unbolded bullet declares no id - see
   `references/req-traceability.md` for the full stated grammar.
-- The Traceability table stays bare headers here; `/cad-plan` seeds the row
-  `| [CAT]-01 | Phase [N] | Pending |` for each requirement when its phase is
-  planned, bounded to ids that have an `## Active` bullet.
 - Status values: Pending / Complete / Deferred. /cad-verify flips a phase's
   requirements to Complete when that phase's UAT fully passes (Complete means
-  implemented AND verified, never just written); /cad-progress reconciles if
-  it drifts. `Deferred` is the ONE pinned marker for a requirement explicitly
-  postponed with the user's consent - /cad-audit lists deferred rows
-  separately and never counts them as delivered; no other deferral notation
-  is recognized.
-  This column and the ROADMAP phase checkbox show the status the state file
-  holds - everything else is derived.
-- Unmapped v1 requirements are a roadmap gap - coverage must reach 100%
-  before the roadmap is approved.
+  implemented AND verified, never just written). `Deferred` is the ONE marker
+  for a requirement explicitly postponed with the user's consent; no other
+  deferral notation is recognized. A status that drifts is reported by
+  /cad-progress, which edits neither file (this one or ROADMAP.md) and routes
+  to /cad-verify where the drift involves completion.

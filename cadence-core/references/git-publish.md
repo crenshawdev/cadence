@@ -5,58 +5,22 @@ complement this file's silences are is in `docs/INTERNALS.md`'s push-guard secti
 
 ## 3. Never auto-push
 
-No workflow pushes, ever, with one case: under an accepted testing policy
-`/cad-verify` pushes a non-protected branch so CI can run on it, through
+No workflow pushes on its own, with two cases. One: under an accepted testing
+policy `/cad-verify` pushes a non-protected branch so CI can run on it, through
 `git-publish.mjs verify-publish`, and only when this repository's own
 `.git/config` holds `cadence.publishForVerification` as true
 (set by `/cad-config --testing` on an explicit yes). Nothing else authorizes it:
-not the user-global config, `.planning/config.json` or `git.auto_close`. Any
-other publishing is a human decision made through
-`/cad-land`, which reports git state and asks the mechanism (direct push /
-MR or PR / tag / leave local) with NO preselected default.
+not the user-global config, `.planning/config.json` or `git.auto_close`. The
+other: under `git.auto_close`, `/cad-land` 3(b) publishes the branch and opens
+and merges its request. Any other publishing is a human decision made through
+`/cad-land`.
 
-`git.auto_close` (default off) is the single sanctioned opt-in to that ask: it
-lets `/cad-land` complete the close unattended, asking once, before the tag push,
-landing the integration branch
-on base via a host-CLI PR/MR **merge** on the platform (`gh pr merge` /
-`glab mr merge` / `tea pr merge`). That platform merge is not a `git push`. On
-the GitHub and Forgejo arms the
-local-only integration branch is first published by the git-publish seam - one
-sanctioned push of the current non-protected branch, run as a subprocess so the
-Bash `git push` guard never sees it and there is no prompt. The seam refuses
-unless `git.auto_close` is true in both layers and HEAD is a non-protected branch, and it
-pushes exactly that branch to a configured bare-name remote. Every Bash
-`git push` the guard sees still asks unconditionally (git-guard now carries NO
-push exemption); the git-publish seam is the one code-guarded exception, invoked
-only by cad-land, so the never-auto-push rule and the no-preselected-default
-posture both still hold. On GitLab `glab mr create` publishes the source branch
-itself, so THAT is the mutation and no push seam sits in its path: the GitLab
-arm consults `git-publish.mjs authorized` before it creates, and creates nothing
-on `ok:false`. Every arm (GitHub, Forgejo, GitLab) needs `git.auto_close` true
-in this repository's `.planning/config.json` AND the user-global config: either
-half alone authorizes none of them, and the refusal's `detail` names the missing half. A surviving blocker/high `risk_surface` finding still halts the chain
-before merge.
-
-After a land/merge actually lands on this machine, `git.on_land_cleanup`
-(default on) returns HEAD to the base, pulls, and reaps the merged integration
-branch locally - advised by the `land-cleanup.mjs cleanup` seam, which reaps
-only a branch `git branch --merged <base>` lists, and never via a
-remote-tracking delete (that would trip the push guard). `--merged true` widens
-no reap: passed on a merge the platform confirmed - by `/cad-land` 3(b), and by
-step 1's already-merged arm when the tip matches the head the forge merged, on
-the integration branch (`cad-land` step 1 has the rest of its guard) - it
-confirms the merge, so a set `git.integration_branch_name` is unset.
+Every Bash `git push` the guard sees asks, with no per-push exemption; only
+`git.guard_bypass` true in both config layers turns the rail off.
 
 ### What the guard does NOT see (rail 3)
 
-v2.2.0 deleted an 840-line shell tokenizer and a 367-line model of git's option
-grammar. Their escape surface never closed, and their O(K x N) scan aborted V8
-in a hook that runs on every Bash call and fails OPEN, so a long enough command
-line switched the guard off.
-
-So these shapes really can run git and are now invisible. Each is a pinned test
-row in `git-segments.test.mjs` and
-`git-guard.test.mjs` (cadence-tests repository), not an absence:
+These shapes can run git and the guard doesn't see them:
 
 | Shape | Why it is silent |
 |---|---|
@@ -67,10 +31,4 @@ row in `git-segments.test.mjs` and
 | A quoted path with a space (`git -C "my repo" push origin main`) | Quoting is not tracked, so `-C` consumes `"my` and the verb reads as `repo"`. |
 | Line continuation (`git \` + newline + `push origin main`) | The newline is a separator; neither half is a `git` segment with a verb. |
 | Remote execution (`ssh host "git push origin main"`) | The command word is `ssh`, and it pushes from another machine anyway, which is outside what a local rail can see. |
-| Heredocs, herestrings, `${...}` expansion, brace expansion, `$'...'` escapes, aliases and shell functions, variable indirection (`CMD="git push"; $CMD`) | Nothing is expanded and no body is read as commands. These were out of grammar for the tokenizer too. |
-
-The trade, stated plainly: the guard now catches the shapes a model actually
-writes when it is doing its job, and misses the shapes it would have to be
-deliberately routing around. The adversary here is the model issuing the
-command, not an attacker, and a rail that costs a prompt when it fires is not
-worth an unbounded parser to make exhaustive.
+| Heredocs, herestrings, `${...}` expansion, brace expansion, `$'...'` escapes, aliases and shell functions, variable indirection (`CMD="git push"; $CMD`) | Nothing is expanded and no body is read as commands. |

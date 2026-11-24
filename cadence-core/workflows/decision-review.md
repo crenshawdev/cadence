@@ -3,25 +3,18 @@ An on-demand refute-then-adjudicate pass over ONE load-bearing decision - a
 `- D-NN (...)` line in a CONTEXT.md `## Durable decisions` / `## Decisions`
 section, or a row in PROJECT.md's Key Decisions table. It reuses the review
 subsystem (references/review-triggers.md): `cad-reviewer` (and, when
-configured, a cross-model provider) refutes the decision; the main model
-grounds each objection against the real codebase, and against Context7 when
-its tools are available, then rules it `survives | partial | refuted` and
-lists concrete amendments.
-
-This workflow never auto-fires (no entry in references/review-triggers.md's
-wiring table). It runs only when a human invokes `/cad-decision-review
-<path>` on a decision they chose to stress-test - durability (cad-context's
-`## Durable decisions` filter) names candidates; picking one for this deeper
-pass is the human's call, not a mechanical handoff.
+configured, a cross-model provider) refutes the decision, then the main model
+grounds and rules each objection.
 </purpose>
 
 <process>
 
 <step name="resolve_target">
 Parse `$ARGUMENTS` for a path (from the invoking skill's `$ARGUMENTS`, a path
-to an existing decision doc - a CONTEXT.md or PROJECT.md). If missing, ask
-(ask-user seam): "Which decision? (path to a CONTEXT.md or PROJECT.md, plus
-which D-NN or Key Decisions row)". Read the file and isolate:
+to an existing decision doc - a CONTEXT.md or PROJECT.md). If the path or the
+decision is missing or unclear, ask (ask-user seam): "Which decision? (path to
+a CONTEXT.md or PROJECT.md, plus which D-NN or Key Decisions row)". Read the
+file and isolate:
 - a CONTEXT.md: the named `- D-NN (area): decision. Evidence: ...` line
   under `## Durable decisions` or `## Decisions`.
 - a PROJECT.md: the named row of the `## Key Decisions` table.
@@ -44,10 +37,9 @@ Assemble `{ instruction, artifact }`:
 The reviewer set is `review.reviewers[]`, filtered as the two arms below state:
 - **claude-subagent** (always available): bracket this worker in the joined
   run record first. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
-  a PROJECT.md row it is the STATE cursor's phase (the rule
-  references/review-inline.md states for a milestone-scoped trigger). The read-set is the
-  decision doc the USER named, so write that reference to a scratch file and
-  pass the path (caller-derived text - references/conventions.md):
+  a PROJECT.md row it is the STATE cursor's phase (references/review-inline.md).
+  The read-set is the decision doc the USER named, so write that reference to
+  a scratch file and pass the path (caller-derived text - references/conventions.md):
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --read-file <path>
@@ -57,26 +49,24 @@ The reviewer set is `review.reviewers[]`, filtered as the two arms below state:
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" agent-type --stem cad-reviewer`
   prints (on `{ok:false}`, the bare `cad-reviewer`) through the
   spawn-agent seam with the payload above as its prompt. Parse the returned
-  `{findings:[...]}` and close the bracket the moment you have it. OMIT
-  `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
+  `{findings:[...]}`, then close under seam-spawn-agent.md's bracket rule:
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
   ```
 
-  A dispatch that failed or returned nothing parseable writes what failed to a
-  scratch file and adds `--detail-file <path>` to that same line
-  (caller-derived text - references/conventions.md), closing as a checkpoint.
-  This arm resolves no routing at all - it is the
-  base `cad-reviewer` at the session default, whatever `roles.cad-reviewer.model`
-  says - and `review.decision_review.tier` and `.effort` reach the cross-model
-  arm below only (D-04).
+  When the dispatch failed or its return can't be parsed, write what failed to
+  a scratch file and add `--detail-file <path>` to that line
+  (caller-derived text - references/conventions.md).
+  This arm resolves no routing at all: it runs at the session's model and at
+  the effort its agent file pins, and `review.decision_review.tier` and
+  `.effort` reach the cross-model arm below only.
 - **cross-model** (any provider in `review.reviewers` - `openai`, `gemini`,
   `deepseek`, ...), only when `review.reviewers` names it AND the user-global
   config names it too - the `reviewers_global` list
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-reviewer`
   returns (relay its `warnings[]`, seam-spawn-agent.md), never a raw read of
-  the global file, so this arm and step 3 agree -
+  the global file -
   AND `review.providers.<name>.tiers[review.decision_review.tier]` is a
   non-null model id, read with `config.mjs get` on that key (null for a stored
   value that is not a model id): compose the payload file and check the run
@@ -96,14 +86,8 @@ The reviewer set is `review.reviewers[]`, filtered as the two arms below state:
 
 When the resolved set has more than one reviewer (claude-subagent plus a
 surviving cross-model provider, or several), dispatch them CONCURRENTLY in one
-message - they refute the same static artifact independently, so serializing
-them only adds latency (seam-spawn-agent.md concurrent dispatch;
-references/review-inline.md's one-message batch).
-
-If the resolved set (after any drops) is only `claude-subagent`, this is the
-single-model default; when a cross-model provider survives, this is the
-panel path. Either way, every reviewer's findings feed adjudication next -
-there is no separate schema per path.
+message (seam-spawn-agent.md concurrent dispatch; references/review-inline.md's
+one-message batch).
 </step>
 
 <step name="adjudicate">
@@ -117,10 +101,7 @@ the main model grounds it before ruling:
   `mcp__context7__query-docs`), verify it live through them. When they are
   not, ground it against what the repo carries: the installed package
   source, the lockfile's resolved version, or vendored docs. A claim no
-  documentation could check is named in the report as unchecked, never ruled
-  from training data. Context7, when available, is declared on THIS skill's
-  main-model surface (D-08) - the read-only `cad-reviewer` subagent has no
-  MCP tools, so this verification step only happens here, in adjudication.
+  documentation could check is never ruled from training data.
 - **Factual/codebase claims** - when an objection cites what the code
   currently does or does not do, verify it with Read/Grep/Bash against the
   real repo, not the objection's paraphrase.
@@ -150,13 +131,13 @@ them.
 </step>
 
 <step name="report_cost">
-Report, qualitatively (D-09 - the runtime exposes no per-turn token/dollar
-figures, so never fabricate one):
+Report, qualitatively, with no token or dollar figure:
 - which reviewers ran (`claude-subagent` always; the cross-model provider(s)
-  and model id(s), when the panel path ran)
+  and model id(s), when any ran)
 - the `review.decision_review.tier` and `.effort` the cross-model call used,
-  and that `cad-reviewer` ran at the session default with neither applied -
-  say the second half even when no cross-model reviewer ran
+  and that `cad-reviewer` ran at the session's model and its agent file's
+  effort with neither key applied - say the second half even when no
+  cross-model reviewer ran
 - the call count (one `cad-reviewer` dispatch, plus one
   `review-provider.mjs` call per surviving cross-model reviewer)
 - any reviewer that was offered but dropped (no-key, no tier assigned, not
@@ -164,10 +145,8 @@ figures, so never fabricate one):
 </step>
 
 <step name="present">
-Present, per objection: the ruling (`survives | partial | refuted`), the
-grounding that produced it (the Context7 doc when its tools were available,
-else the installed source, lockfile or vendored doc, or the codebase
-citation), and the amendment (when ruled `survives`/`partial`). List every
+Present, per objection: the ruling, the grounding that produced it with its
+citation, and the amendment (when ruled `survives`/`partial`). List every
 library/API claim no documentation could check as unchecked.
 
 On a clean pass, present the grounded load-bearing claims instead, each
@@ -175,47 +154,15 @@ On a clean pass, present the grounded load-bearing claims instead, each
 Never report it as a bare "no findings".
 
 Close with the qualitative cost line from `report_cost`. Do NOT edit the
-decision doc - this is a review, not an auto-apply; the user decides what to
-amend and does it themselves (or via a follow-up `/cad-context` correction,
-`/cad-task`, etc).
+decision doc or any other file - this is a review, not an auto-apply; the user
+decides what to amend and does it themselves (or via a follow-up
+`/cad-context` correction, `/cad-task`, etc).
 </step>
 
 </process>
 
 <guardrails>
-- Never auto-fires: this workflow runs only when a skill dispatches it with a
-  resolved path argument. It has no entry in references/review-triggers.md's
-  wiring table and no trigger condition of its own (D-11).
-- Never edits the target decision doc, PROJECT.md, or any source file -
-  read-only grounding, prose output only.
-- The `survives|partial|refuted` ruling and amendment list are this
-  workflow's own prose output. review-provider.mjs's FINDING_SCHEMA and
-  self-verify's CONTRACTS table are unchanged (D-07) - step `refute` still
-  returns the shared `{findings:[...]}` shape; only step `adjudicate` adds
-  the ruling on top of it, here in prose.
-- Cost reporting is qualitative only - never a token count or dollar figure
-  the runtime cannot actually measure (D-09).
+- Never auto-fires: it runs only when the user invokes `/cad-decision-review`
+  on a decision they chose. It has no entry in references/review-triggers.md's
+  wiring table.
 </guardrails>
-
-<success_criteria>
-- [ ] Every objection from `refute` receives exactly one ruling
-      (survives | partial | refuted) and, for survives/partial, a concrete
-      amendment
-- [ ] On zero objections, the decision's own load-bearing claims were
-      grounded instead - never a bare "no findings"
-- [ ] At least one library/API claim was checked against documentation -
-      Context7 when its tools were available, else the installed source,
-      lockfile or vendored docs - and at least one factual claim against the
-      codebase, on whichever claim set applied, or that set was noted to
-      contain none of that kind
-- [ ] Every library/API claim no documentation could check is listed as
-      unchecked, never ruled from training data
-- [ ] The report names which reviewers ran and the tier/effort that reached
-      the cross-model arm, qualitatively, never presented as applying to
-      `cad-reviewer` - no fabricated token/dollar figures
-- [ ] Single-model (`cad-reviewer`, no model resolved) ran when no cross-model
-      provider was configured; the panel ran through the review seam, resolving
-      the cross-model call's model and effort from
-      `review.decision_review.{tier,effort}`, when one was
-- [ ] No file was edited - the target decision doc is untouched
-</success_criteria>

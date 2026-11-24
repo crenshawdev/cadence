@@ -14,16 +14,13 @@ allowed-tools:
 ---
 
 <objective>
-Manually run the review subsystem's `plan` trigger against a chosen plan. The
-review capability lives entirely in the subsystem (references/review-triggers.md);
-this skill is just the on-demand entry
-point for cases the automatic review does not cover - a plan written by hand,
-imported from elsewhere, or edited after its first review. When /cad-plan
-writes a plan it already fires this trigger, so you do not need this skill in the
-normal flow.
+Run the review subsystem's `plan` trigger on demand against a chosen plan the
+automatic review does not cover: one written by hand, imported from elsewhere,
+or edited after its first review. When /cad-plan writes a plan it fires this
+trigger itself.
 
-There is no separate reviewer here and no convergence loop (cut in DESIGN §6):
-this delegates to `fire(plan)`, which grounds and adjudicates once.
+There is no separate reviewer here and no convergence loop: this delegates to
+`fire(plan)` once, and the resolved gate decides what happens to the findings.
 </objective>
 
 <process>
@@ -38,21 +35,12 @@ this delegates to `fire(plan)`, which grounds and adjudicates once.
 
 2. **Fire the `plan` trigger** with the resolved PLAN file(s) as the artifact -
    Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` here,
-   not preloaded (one site). Honor `review.triggers.plan.gate`
-   (default advisory) always; its `tier` and `effort` reach cross-model
-   reviewers only. This resolves the reviewer set
-   (claude-subagent and/or a configured cross-model reviewer), runs them, and -
-   for an adjudicated gate - grounds each finding against the real repo, kills
-   false positives, and merges convergent findings. On the workflow path a fire
-   over more than one PLAN file runs one reviewer per plan and one cross-plan
-   reviewer, and today's path one reviewer over all of them; a single PLAN path
-   gets one reviewer.
+   not preloaded (one site), and run the fire as it says.
 
 3. **Report** the outcome: for advisory, the findings; for blocking, the
    PASS/FAIL and surviving blocker/high findings; for adjudicated, the grounded
    survivor list. Do NOT auto-apply changes to the plan - present the survivors
-   and let the user decide what to fix (the plan-creation flow triages the same
-   way).
+   and let the user decide what to fix.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200

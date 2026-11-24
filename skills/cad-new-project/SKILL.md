@@ -14,13 +14,9 @@ allowed-tools:
 ---
 
 <objective>
-Start a project properly: question deeply until the idea is concrete, then
-write PROJECT.md and REQUIREMENTS.md, derive a phased ROADMAP.md with
-falsifiable per-phase success criteria, and initialize .planning/ (config
-copied from the engine template, STATE.md cursor). Research is off by
-default; `--research` or config `workflow.research` enables a single
-research pass. `--brief <file>` reads a design brief an earlier conversation
-produced and questions only what it leaves open.
+Start a project: question until the idea is concrete, then leave PROJECT.md,
+REQUIREMENTS.md, a phased ROADMAP.md, STATE.md and config.json in `.planning/`.
+new-project.md takes `--research` and `--brief`.
 </objective>
 
 <execution_context>

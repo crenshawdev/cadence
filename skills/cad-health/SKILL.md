@@ -11,14 +11,14 @@ allowed-tools:
 ---
 
 <objective>
-A fast structural pulse on `.planning/` - can the spine even read its own state?
-It checks presence, parseability, and internal consistency, nothing deeper. It
-does NOT judge whether requirements were delivered (that is /cad-audit's job);
-it judges whether the files are well-formed enough for the other skills to trust.
+A fast structural pulse on `.planning/`: presence, parseability and internal
+consistency, nothing deeper. It does NOT judge whether requirements were
+delivered (that is /cad-audit's job); it judges whether the files are
+well-formed enough for the other skills to trust.
 </objective>
 
 <process>
-Check, then report - do not fix without asking.
+Check, then report.
 
 1. **Presence.** `.planning/` exists with PROJECT.md, REQUIREMENTS.md,
    ROADMAP.md, STATE.md. A missing core doc is an issue (if the dir itself is
@@ -27,16 +27,15 @@ Check, then report - do not fix without asking.
    - The run record stays out of git. Run
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --root . --check`
      and report an issue when `ignored` is false or `tracked` is true. Silent when
-     the record is ignored and untracked. A project scaffolded before that seam
-     existed has no rule in the records folder's own `.gitignore`;
-     `--check` writes nothing and this step never edits it.
+     the record is ignored and untracked.
+     `--check` writes nothing and this step never edits the records folder's
+     `.gitignore`.
      The two flags are separate facts and take DIFFERENT remedies, so name the one
      that applies rather than one command for both: `ignored:false` is a missing
      rule, fixed by the same command without `--check`; `tracked:true` means the
      record is in the index ALREADY, where no ignore rule reaches it, and the fix
      is `git rm --cached .planning/records/trace.jsonl`. Both can be true at once, and
-     then both steps are needed - adding the rule alone leaves a tracked file that
-     keeps getting committed.
+     then both steps are needed.
    - The capture queue, in two calls - a census of the file's sections, and a
      verdict on the walked queue itself:
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture-sections`
@@ -45,29 +44,16 @@ Check, then report - do not fix without asking.
      false, naming its heading and its bullet count, then what the number MEANS
      in one clause: those bullets are invisible to /cad-plan's recall. Silent
      when `exists` is false or every section is in the walk. It is a NAMED NOTE,
-     not an issue, the way step 7's manifest clause is a distinct lower note:
-     `## Debt markers` is written wholesale by `debt-harvest` and is not a
-     queue, so calling every out-of-walk section an issue trains the user to
-     skim past exactly the line this is here to make readable. What is worth
-     their attention is a count that MOVED, which they can only see because the
-     steady-state number is printed too.
+     not an issue.
      From `capture-check`, print three things, and these ARE issues.
      `.planning/CAPTURE.md` holds the phase in flight and nothing else, so each
      one says that stopped being true:
      - `substantive` against `bound`, naming the crossing when `over_bound` is
-       true. A crossed bound means a filing path stopped filing - the queue is
-       carrying work that belongs on the tracker.
-     - every `annotations[]` entry with its section, line and text. An
-       annotation is an item adjudicated the WRONG WAY: an item is resolved by
-       REMOVAL, so re-verifying one in place made the bullet longer instead of
-       making it leave.
+       true.
+     - every `annotations[]` entry with its section, line and text.
      - `archive.heading` with `archive.bullets` when `archive.present` is true.
-       That heading has LEFT this file's contract - moving settled items to a
-       section of the same document changes nothing about the bytes.
      Print both readings EVERY run, never filtered against a list of sections or
-     items you expect. That allowlist is precisely what would have hidden the
-     incident this check exists for - all five lost bullets sat under
-     `## Archive`, the section any allowlist would have named first.
+     items you expect.
 
 2. **STATE cursor.** The four required lines (Phase / Status / Next / Updated -
    references/conventions.md) plus the optional `Plan:` line after `Phase:`.
@@ -86,8 +72,9 @@ Check, then report - do not fix without asking.
    numbered 1..M with no gaps or dupes. An EMPTY `## Phases` is a legitimately
    closed milestone, not a numbering gap - do not flag it.
 
-4. **REQUIREMENTS.** The traceability table parses; every `Status` is `Pending`
-   or `Complete`; every `Phase` value names a phase that exists in ROADMAP.
+4. **REQUIREMENTS.** The traceability table parses; every `Status` is `Pending`,
+   `Complete` or `Deferred`; every `Phase` value on a row that isn't `Deferred`
+   names a phase that exists in ROADMAP.
 
 5. **Consistency.** Cursor `M` == ROADMAP phase count; cursor `N` is within
    range. When ROADMAP has zero phases, the no cycle form of rule 2 passes
@@ -102,15 +89,12 @@ Check, then report - do not fix without asking.
    renaming them is the user's call and never an auto-fix. Report a
    `phase-dir-collision` entry too, but say the other thing: both names are
    LEGAL and parse to one number, so no spelling is wrong - only ambiguous. A phase
-   marked `- [x]` in ROADMAP whose mapped REQUIREMENTS rows are not all
-   `Complete` (or a `Complete` requirement whose phase is still `- [ ]`) is a
-   status-drift issue - flag it. This is the cheap structural check that a
-   phase closed clean; whether the requirement was actually *delivered* is
-   /cad-audit's job, not this one.
+   marked `- [x]` in ROADMAP with a mapped REQUIREMENTS row that isn't
+   `Deferred` and isn't `Complete` (or a `Complete` requirement whose phase is
+   still `- [ ]`) is a status-drift issue - flag it. `Deferred` rows are exempt.
 
-6. **Inert config.** A setting that is ON and cannot take effect is worse than
-   one that is off: the user believes they have the behaviour and never sees it
-   missing. Check the known cases and report each as an issue naming the fix.
+6. **Inert config.** A setting that is ON and cannot take effect. Check the
+   known cases and report each as an issue naming the fix.
    - `parallelization.enabled` true while
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/worktree-base.mjs" resolve`
      returns `parallelSafe: false` -> every /cad-execute run has been sequential
@@ -133,8 +117,7 @@ Check, then report - do not fix without asking.
      fix (the `hint`), and `enforcement:"unavailable"` is a note quoting the
      answer's `note`, not an issue. Always print whether verification
      publishing is authorized here, read off the same answer's
-     `publish_authorized` and never off `.git/config` a second way: it sits
-     outside `config.schema.json`, so no other report shows it. `false` is a
+     `publish_authorized` and never off `.git/config` a second way. `false` is a
      state - "publishing for verification not authorized; `/cad-config
      --testing` can authorize it" - and never an issue.
 
@@ -144,18 +127,10 @@ Check, then report - do not fix without asking.
    Report it naming both numbers. No tags, or a version that parses as neither
    semver, is clean: an unprovable comparison is not drift.
 
-   Tags are the publication evidence; a manifest in the checkout is NOT. The
-   manifest bumps during the close, before the merge and before the tag, so
-   between those points the manifest legitimately names the version still being
-   shipped. Reading it as proof would fire on every close in progress. When the
-   manifest equals the Active version and no tag does, report it as a
-   distinct, lower note - "the manifest already names the active milestone;
-   expected mid-close, stale otherwise" - never as drift.
-
-   Sort order refuses strictly more: an untagged maintenance milestone
-   like `v1.9.1` in a repo tagged `v1.9.0` and `v2.0.0` is a legitimate open
-   version the guard allows, and a health check calling it drift would push the
-   user to renumber or abandon a valid patch release.
+   Tags are the publication evidence; a manifest in the checkout is NOT: it
+   bumps before the tag. When the manifest equals the Active version and no tag
+   does, report it as a distinct, lower note - "the manifest already names the
+   active milestone; expected mid-close, stale otherwise" - never as drift.
 
 Report: **healthy** with a one-line all-clear, or a short list of issues, each
 with the file and what is wrong. For a trivial, unambiguous fix (cursor `of M`

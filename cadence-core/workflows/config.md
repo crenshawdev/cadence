@@ -1,18 +1,15 @@
 # cad-config workflow
 
-Configure `.planning/config.json`. Canonical shape and validation live in
-`cadence-core/config.schema.json` (the source of truth), enforced by the
-`bin/config.mjs` seam; `cadence-core/templates/config.json` is the scaffolded
-default. One interactive skill; the substantive part is review-provider model
-assignment, which is the only config knob that needs live detection rather than
-a plain edit.
+Configure `.planning/config.json`. `cadence-core/config.schema.json` is the
+source of truth for its shape and validation, and the `bin/config.mjs` seam
+enforces it.
 
 ## 0. Locate config
 
 Read `.planning/config.json`. If it is absent, this project has no config yet
 (`cad-new-project` writes one for a blank page, `cad-adopt` for a repo that
-already has code and history). Offer to copy the template into place; stop if
-the user declines.
+already has code and history). Offer to copy
+`cadence-core/templates/config.json` into place; stop if the user declines.
 
 ## 1. Route
 
@@ -27,7 +24,7 @@ Parse `$ARGUMENTS`:
 - Starts with `--roles`: go to **Roles interview** - the thirteen questions
   that say what each of the six roles costs. A trailing `--global` re-enters
   the full thirteen against the user-global layer instead of writing repo diffs.
-- `--walk`: go to **Interactive menu (no args)** - the full walk of every knob.
+- `--walk`: go to **Interactive menu (no args)**.
 - Starts with a `<key>=` token (a dotted key name, then `=`): go to **Direct set**.
   A value runs to the next `<key>=` token or the end, so it may hold spaces
   (`git.protected_branches=["main", "develop"]`). An `=` further into the text
@@ -60,10 +57,7 @@ Reached with `--walk`, or with no arguments while `workflow.config_menu` is off.
 selectable lists, the twelve `roles.<role>.model` and `.effort` keys included. Two sets stay out:
 `review.providers.*`, which needs live detection, so the menu routes it to
 **Review provider setup** rather than free-typing model ids; and
-`review.decision_review`'s two keys, which belong to an on-demand command
-rather than the phase loop. The **Roles interview** below is the guided way
-into the roles keys, one question per value with what it costs beside it; this
-walk is the flat way.
+`review.decision_review`'s two keys, which belong to an on-demand command.
 
 ### The walk
 
@@ -71,8 +65,7 @@ walk is the flat way.
 2. Read the walk's rows with
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys --walk`
    (sections in walk order).
-   Walk them **in order, 4 knobs per `AskUserQuestion` call** (the ask-user seam;
-   its 4-option cap is why we page). For each knob:
+   Walk them **in order, 4 knobs per `AskUserQuestion` call** (the ask-user seam). For each knob:
    - one question; its text = the knob's `question`, options = the first item of
      each `explain` entry (`[value, text?]`),
    - **each option carries the entry's second item, `text`, as its
@@ -83,13 +76,10 @@ walk is the flat way.
      - the knob IS in the repo file -> that option is `(current)`.
      - the knob is NOT in the repo file -> the effective value's option is
        `(in force)`, and its `description` opens by saying the value is active
-       but INHERITED, and that picking it writes it into this repo.
+       but INHERITED.
      List the labelled option FIRST either way.
    - **A pick equal to the value already in force writes NOTHING**, on both
      arms: re-picking `(current)` and re-picking `(in force)` are each a no-op.
-     This is what stops the walk pinning the whole global layer into the repo
-     file page by page - a user who agrees with an inherited value is
-     agreeing, not choosing to override it.
    - **A key with more than four options does not fit the seam.** The cap is 4
      options and `Other` is the free-type entry, so show the value in force plus
      the three the user is most likely to want, and name every omitted value in
@@ -111,14 +101,11 @@ walk is the flat way.
    - Picking `review.triggers.risk_surface.surfaces` opens **Risk surfaces**
      (`/cad-config --surfaces`), which scans the project first and offers
      answers from what it finds.
-3. A page whose knobs the user leaves unchanged is a no-op, and so is a page
-   where every pick matched the value already in force (step 2's no-op rule).
-   Only a value that DIFFERS from what is in force is a diff, and only diffs are
-   applied.
+3. A page whose knobs the user leaves unchanged is a no-op (step 2's no-op
+   rule); only diffs are applied.
 4. After the last page, show the changed keys as a diff. A value typed through
-   `Other` can carry `$(...)`, which runs before Node starts, and the preview
-   comes before the yes, so write each changed value as JSON to its own file in
-   a directory this run made
+   `Other` can carry `$(...)`, so write each changed value as JSON to its own
+   file in a directory this run made
    (`D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "$D"`) and pass the
    preview and `set` each key as `<key>="$(cat <path>)"` (`references/conventions.md`,
    Caller-derived text). Run `config.mjs preview <key>="$(cat <path>)"…` once for
@@ -134,8 +121,7 @@ walk is the flat way.
 
 ### Validation seam
 
-`bin/config.mjs` is the enforcement point - the schema, not this doc, decides what
-is valid. Never write config JSON by hand; go through the seam:
+Never write config JSON by hand; go through the seam:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" validate            # whole file ok?
@@ -148,32 +134,26 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys --walk         # t
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" preview <key=value>…  # read-only: the file, before and after, what changes
 ```
 
-`get` is how every workflow reads config - the only read that sees the global
-layer. Never read a config file raw for a VALUE. There are exactly three
-exceptions, and every one of them asks which LAYER holds a key rather than what
-the key says, which is the one question a merged read cannot answer: the walk's
-layer labels (step 2); the **Roles interview**'s first-run test, which reads the
-user-global file for the PRESENCE of a `roles` key; and the **Stakes
+Never read a config file raw for a VALUE. There are exactly three exceptions:
+the walk's layer labels (step 2); the **Roles interview**'s first-run test, which
+reads the user-global file for the PRESENCE of a `roles` key; and the **Stakes
 migration**, which reads both files for a key it is about to remove from them.
 
 Each prints one JSON line (`{ok, …}`); `--file <path>` overrides the default
 `.planning/config.json`, and `--global` targets the user-global layer at
 `~/.claude/cadence/config.json` (`CADENCE_GLOBAL_CONFIG` relocates it), which
 `set` auto-creates. Collect the menu's diffs and apply them with one `set` call
-per file, so each write is one atomic, validated operation.
+per file.
 
-**Config layering.** At read time `bin/route.mjs` deep-merges global under repo
-(precedence **repo > global > built-in defaults**); nested objects merge, arrays
-replace wholesale. Each file is still validated on its own - every layer must be
-independently valid. Use `--global` for machine-wide defaults - the model and
-the start rung each role runs at, which is exactly what the **Roles interview**
-writes there on a first run - and the per-repo file to override per project.
+**Config layering.** Precedence is **repo > global > built-in defaults**: nested
+objects merge, arrays replace wholesale, and every layer must be independently
+valid. Use `--global` for machine-wide defaults and the per-repo file to override
+per project.
 
 ## Direct set
 
-A `worktree.baseRef=…` pair is not a Cadence key and the seam would reject it
-as unknown: route it to **Worktree base ref** instead, and say it is a Claude
-Code setting the user's own settings file owns.
+Route a `worktree.baseRef=…` pair to **Worktree base ref** instead, and say it
+is a Claude Code setting the user's own settings file owns.
 
 For each `key=value` (dotted paths allowed, e.g. `workflow.plan_check=false`):
 - Validate and write in one shot through the **Validation seam**:
@@ -184,31 +164,26 @@ For each `key=value` (dotted paths allowed, e.g. `workflow.plan_check=false`):
   pair is valid - and echoes `{ok:true, changed:[…]}` on success.
 - `check` dry-runs the same pairs and speaks the same contract - `{ok:true}`,
   or `{ok:false, reason:"invalid", detail:[…]}` - without writing anything, and
-  a key retired by a release carries a `detail` naming the key that replaced it,
-  so that remediation needs no `keys` lookup.
+  a key retired by a release carries a `detail` naming the key that replaced it.
 - On rejection, surface the seam's `detail` (the invalid keys and why). For a
-  per-key detail, look up the allowed values via `config.mjs keys`; for a
-  `(root)` detail, that lookup returns nothing - the remediation instead is
-  that the target file's top level is not a JSON object (repair or replace the
-  file). A `cannot set through "…"` detail carries its own remediation: that
-  container holds an array or a scalar and must be removed or replaced first -
-  the seam will not overwrite it, because doing so would discard its contents.
-  Do not retry with a malformed config.
+  per-key detail, look up the allowed values via `config.mjs keys`. A `(root)`
+  detail means the target file's top level is not a JSON object: repair or
+  replace the file. A `cannot set through "…"` detail means that container holds
+  an array or a scalar and must be removed or replaced first - the seam will not
+  overwrite it. Do not retry with a malformed config.
 
 ## Worktree base ref (a HOST setting - offered, never written silently)
 
 `worktree.baseRef` is a Claude Code setting, not a Cadence key: it is absent
 from `config.schema.json`, never goes through `config.mjs`, and lives in the
 user's settings files. It decides where a subagent worktree forks from, so the
-parallel `/cad-execute` path depends on it - under its `"fresh"` default a
-worktree branches from the remote default branch and an executor arrives
-without this phase's CONTEXT or its own PLAN file, which is why `choose_path`
-refuses to parallelize there (`workflows/execute.md`; Claude Code >= 2.1.208).
-Inside a worktree, `"head"` means that worktree's own `HEAD`.
+parallel `/cad-execute` path depends on it: its `"fresh"` default is the remote
+default branch, and `choose_path` refuses to parallelize there. Inside a
+worktree, `"head"` means that worktree's own `HEAD`.
 
 Run this step whenever `parallelization.use_worktrees` is true in the config as
 it now stands, WITHOUT also requiring `parallelization.enabled`. Skip the step
-only when `use_worktrees` is false, where worktrees genuinely cannot be used.
+only when `use_worktrees` is false.
 
 1. Read the effective value:
 
@@ -224,14 +199,13 @@ only when `use_worktrees` is false, where worktrees genuinely cannot be used.
    with the repo, so every clone's parallel runs behave the same) /
    `~/.claude/settings.json` (all projects) / leave it (parallel execution
    keeps falling back to sequential). Declining is a valid answer and ends the
-   step - a plugin does not overrule a user's settings.
+   step.
 4. On accept: READ the target file first and show the user its current
    `worktree` block (or that there is none), then merge the one key in,
    preserving every other setting byte-for-byte, and write it back. Never
    replace a settings file wholesale, never write one whose contents you did
-   not read, and never touch a managed-policy file - a higher layer keeps
-   winning, so the write would be a lie. Re-run the seam and report the value
-   it now resolves to and the file it came from.
+   not read, and never touch a managed-policy file. Re-run the seam and report
+   the value it now resolves to and the file it came from.
 
 ## Risk surfaces (`--surfaces`)
 
@@ -272,8 +246,7 @@ rejoins here at **Wrap-up**.
 Summarize the final tier map per provider and note which triggers now have a
 cross-model reviewer (a trigger whose `tier` resolves to a non-null id on a
 reviewer that both this repository's and the user-global `review.reviewers`
-name). Remind the user this is re-runnable (`/cad-config
---review`).
+name). Remind the user this is re-runnable (`/cad-config --review`).
 
 **Flag dangling enrollment, user-global half included.** If `review.reviewers`
 names a cross-model provider (`openai`, `gemini` or `deepseek`) but one or more `review.triggers.<t>.tier`
@@ -282,9 +255,7 @@ explicitly: the trigger silently falls back to `claude-subagent`, so the
 cross-model setup is inert for it. Name the trigger and the empty tier and
 offer to assign it or drop the provider from `reviewers`. Flag too a provider
 this repository's `review.reviewers` names but the user-global config's does
-not: the user-global config must name it too, or every trigger drops it. A
-config that enrolls a reviewer it cannot actually reach should never look
-configured.
+not: the user-global config must name it too, or every trigger drops it.
 
 ## Degradation contract
 

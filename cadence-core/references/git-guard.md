@@ -1,8 +1,8 @@
 # Git rails: the guard
 
-The commit-side rails. Rail 3 (never auto-push, and what the guard
-consequently does NOT see) lives in `references/git-publish.md`. What the guard
-sees, the one grammar both rails read, is in `docs/INTERNALS.md`'s push-guard section.
+The commit-side rails. Rail 3 (never auto-push, and what the guard does NOT
+see) is in `references/git-publish.md`. The one grammar both rails read is in
+`docs/INTERNALS.md`'s push-guard section.
 
 ## 1. Protected-branch guard (before the FIRST commit of any task/phase)
 
@@ -10,9 +10,8 @@ Read `git.protected_branches` and `git.on_protected` from config
 (defaults: `["main", "master"]`, `ask`). If `git branch --show-current` is in
 the protected list:
 
-- `ask` (default) -> ask the user (ask-user seam), no preselected default.
-  Fill in the branch it names, and suggest a name for the first option from the
-  task/phase slug:
+- `ask` (default) -> ask the user (ask-user seam), no preselected default,
+  filling in the branch and a suggested name from the task/phase slug:
 
   - header: "Branch"
   - question: "You're on {branch}, a protected branch. Cadence won't commit there unless you say so. What do you want to do?"
@@ -26,99 +25,90 @@ the protected list:
 Never auto-create a branch without asking. Never commit to a protected branch
 unless the user chose to.
 
-**Base integrity (same check, before the first commit).** The guard above
-stops you committing *on* a protected branch; this stops work drifting away
-from one. Let `base` = `git.base_branch` if set, else the first name in
-`git.protected_branches` that resolves as a local branch
-(`git rev-parse --verify refs/heads/<name>` - verify the branch ref, since a
-bare name would also match a tag):
+**Base integrity (same check, before the first commit).** This stops work
+drifting away from a protected branch. Let `base` = `git.base_branch` if set,
+else the first name in `git.protected_branches` that resolves as a local branch
+(`git rev-parse --verify refs/heads/<name>`, since a bare name also matches a
+tag):
 
 - `git branch --show-current` is empty (detached HEAD) -> ask (ask-user
   seam) before committing, regardless of the rest.
 - `git.base_branch` is set but does not resolve as a branch -> surface a
   base-branch configuration problem and ask; never fall back silently.
-- `base` resolves but shares NO history with HEAD (`git merge-base <base>
-  HEAD` is empty) -> the branch is on an unrelated line, the no-main drift
-  this guards against. Ask before committing; do not proceed silently.
-  (Emptiness, not `--is-ancestor`: a normal branch whose `base` has simply
-  moved ahead still shares a merge-base and must pass.)
-- No configured or protected base resolves at all -> treat the base as
-  unknown: note the possible no-main drift and ask whether to set
-  `git.base_branch` / `git.protected_branches` or continue.
-  `/cad-new-project` on a fresh repo is the expected exception, and so is
-  `/cad-adopt`: it commits its scaffolding under this same guard, so a repo
-  whose base does not resolve reaches this clause the same way.
+- `base` resolves but `git merge-base <base> HEAD` is empty -> the branch is
+  on an unrelated line (no-main drift). Ask before committing. Test emptiness,
+  not `--is-ancestor`: a branch whose `base` moved ahead still shares a
+  merge-base and passes.
+- No configured or protected base resolves -> the base is unknown: note the
+  possible no-main drift and ask whether to set `git.base_branch` /
+  `git.protected_branches` or continue. `/cad-new-project` on a fresh repo and
+  `/cad-adopt`, which commits its scaffolding under this guard, are the
+  expected exceptions.
 
 A `base` that resolves and shares a merge-base with HEAD -> silent pass.
 
 **Integration branch (before the first commit, once per cycle).** After the
-guards above pass, decide whether this cycle runs on a per-milestone
-integration branch. Ask the seam - it only advises, it never checks out:
+guards above pass, ask the seam whether this cycle runs on a per-milestone
+integration branch. It only advises, it never checks out:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-branch.mjs" decide
 ```
 
-Relay the envelope's `warnings[]` to the user before acting on the advice: the
-mode, the `auto_branch` policy and the protected list all come off one config
-merge, so a layer that did not parse means this decision was computed from
-DEFAULTS rather than from the user's settings.
+Relay the envelope's `warnings[]` to the user before acting: a config layer
+that did not parse means the advice came from DEFAULTS, not the user's settings.
 
 Act on its `action`:
 
 - `create` -> `git checkout -b <branch>` and continue on it. `<branch>` is the
-  seam's `branch` field: the name `git.integration_branch_name` sets (e.g.
-  `seldon/hardin`), else `cadence/<version>` (e.g. `cadence/v1.1.0-rc.2`),
-  derived from `PROJECT.md`'s `### Active` milestone and falling back to the
-  `ROADMAP.md` title. A configured name that fails its grammar comes back as a
-  naming-problem `ask`, never a `create`. Guard: never run `checkout -b` with an
-  empty/null `branch` - the seam already downgrades an unnameable branch to
-  `ask`, so treat any `create` with a null `branch` as a naming problem too.
-- `ask` -> prompt once via the ask-user seam, no preselected default. When
-  `branch` is named: create the named integration branch / stay on the base /
-  abort. When `branch` is null (no version derivable - the seam's
-  naming-problem `ask`): tell the user no milestone version was found in
-  `PROJECT.md`'s `### Active` or the `ROADMAP.md` title, and offer to set the
-  version / stay on the base / abort - never invent a name.
-- `stay` -> do nothing (already off the base, or the mode says not to).
+  seam's `branch` field: `git.integration_branch_name` if set (e.g.
+  `seldon/hardin`), else `cadence/<version>` (e.g. `cadence/v1.1.0-rc.2`) from
+  `PROJECT.md`'s `### Active` milestone, falling back to the `ROADMAP.md`
+  title. A configured name that fails its grammar comes back as `ask`, never
+  `create`. Never run `checkout -b` with an empty/null `branch`: treat a
+  `create` with a null `branch` as a naming problem too.
+- `ask` -> prompt once via the ask-user seam, no preselected default. With
+  `branch` named: create it / stay on the base / abort. With `branch` null:
+  tell the user no milestone version was found in `PROJECT.md`'s `### Active`
+  or the `ROADMAP.md` title, and offer to set the version / stay on the base /
+  abort - never invent a name.
+- `stay` -> do nothing.
 
 `git.integration_branch` picks the model. `milestone` creates the integration
-branch: the integration branch is what parallel worktree branches merge back
-into; where they fork FROM is the host's `worktree.baseRef`. It keeps
-merge churn off `main`. `trunk` creates nothing - commits land on the base,
-still governed by `git.on_protected` (`git-guard.mjs` unchanged). `git.auto_branch`
-picks how it is created at cycle start: `ask` prompts once, `auto` creates and
-switches silently, `off` stays put. Creation is lazy and once per cycle - the
-seam infers it from HEAD sitting on a protected base, so later phases already
-off the base pass silently.
+branch, which parallel worktree branches merge back into (they fork FROM the
+host's `worktree.baseRef`), keeping merge churn off `main`. `trunk` creates
+nothing: commits land on the base, still under `git.on_protected`
+(`git-guard.mjs`). `git.auto_branch` picks how it is created: `ask` prompts
+once, `auto` creates and switches silently, `off` stays put. The seam creates
+lazily, once per cycle, from HEAD sitting on a protected base, so later phases
+already off the base pass silently.
 
 ## 2. Atomic conventional commits
 
 One logical change per commit: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`,
-`test:`, `perf:`, `style:`. Stage the specific files you changed, not `git add -A`. Planning docs
-commit separately from code (`docs:` prefix) when `planning.commit_docs` is true.
-The state file is a planning document: a commit that carries
-`STATE.md`, the `## Phases` list or the `## Traceability` table carries
+`test:`, `perf:`, `style:`. Stage the specific files you changed, not `git add -A`.
+Planning docs commit separately from code (`docs:` prefix) when
+`planning.commit_docs` is true. A commit that carries `STATE.md`, the
+`## Phases` list or the `## Traceability` table carries
 `.planning/records/state.json` with it.
 
-**The one migration commit.** The seam call that converts an unstamped project
-says so in its answer's `migration` field. With `commit_due: true`, stage the
-planning directory and make one `docs:` commit with Bash before the next step,
-under the guard in section 1, and push nothing. With `commit_due: false`, make
-no commit and go on. The script never commits. Staging the whole directory is
-the one exception to staging the specific files: a conversion moves many files,
-and one commit must leave the tree clean. That commit also takes in any other
-uncommitted change under the planning directory. Carried risk rulings stay out,
-because the records folder's own `.gitignore` ignores `risk-carry/`.
+**The one migration commit.** When the seam call that converts an unstamped
+project answers `migration` with `commit_due: true`, stage the planning
+directory and make one `docs:` commit with Bash before the next step, under the
+guard in section 1, and push nothing. With `commit_due: false`, make no commit.
+The script never commits. Staging the whole directory is the one exception to
+staging specific files, so the commit leaves the tree clean and takes in any
+other uncommitted change under the planning directory. Carried risk rulings stay
+out, because the records folder's own `.gitignore` ignores `risk-carry/`.
 
 ## 4. Risk surfaces
 
 Detection is the seam's `risk-check run` (references/risk-surface.md), never a
 reading of the diff against a list at commit time. `/cad-execute` and
 `/cad-task` run it over the range a plan or task committed, after its commits.
-Two staged arms run it with `--base HEAD --staged` before theirs: `/cad-debug`'s
-fix and `/cad-verify`'s Apply-now fix. A match fires the `risk_surface` review
-trigger. That gate is `blocking` by default and the re-arm on
-the fix that clears it is CAPPED at ONE narrowed round - RE-READ
+`/cad-debug`'s fix and `/cad-verify`'s Apply-now fix run it with
+`--base HEAD --staged` before theirs. A match fires the `risk_surface` review
+trigger, `blocking` by default. RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before the fix
-lands. The cap lives only there, and no caller of this file preloads it.
+that clears it lands: its re-arm rule lives only there, and no caller of this
+file preloads it.

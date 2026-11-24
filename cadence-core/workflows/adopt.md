@@ -1,14 +1,7 @@
 <purpose>
-The second front door. A repo that already exists - code, history, usually a
-README that already says what it is - enters Cadence without being interviewed
-as though it were nothing yet. Read the code and the history, derive PROJECT.md,
-REQUIREMENTS.md and a REMAINING-work ROADMAP.md from them, and write the same
-`.planning/` shape /cad-new-project writes: same files, same STATE cursor, same
-config, so every downstream command works unchanged.
-
-Everything is derived INLINE in this context. No subagent is dispatched, no
-detector seam is added, and no scoring mechanism decides what the repo said -
-the brownfield read is a reading, paid here, and judged here.
+The second front door, for a repo that already has code and history. Read both,
+derive PROJECT.md, REQUIREMENTS.md and a REMAINING-work ROADMAP.md from them,
+and write the same `.planning/` shape /cad-new-project writes.
 </purpose>
 
 <process>
@@ -26,14 +19,12 @@ Two stops first, before anything is written.
    - It succeeds but names a DIFFERENT directory -> stop, naming that root:
      "This is a subdirectory of {root}. Run /cad-adopt in {root}."
    `git rev-parse --git-dir` is NOT this check and must never be substituted for
-   it: it succeeds in any subdirectory of an enclosing repo. Adopt's inputs are
-   the code AND the history, and git discovers a repo UPWARD from the working
-   directory, so from `/repo/sub` that check would answer this whole workflow
-   out of `/repo`'s log and tags while writing `.planning/` into `sub`.
+   it: it succeeds in any subdirectory of an enclosing repo. Adopt itself never
+   runs `git init`.
 3. Scaffold and read config as ONE Bash step, not four turns - `mkdir -p`, the
    ignore line, the config copy if absent, and the config read chained in a
-   single script that echoes a marker when it wrote the config, so this
-   coordinator knows whether to print the "Config written with defaults" line:
+   single script that echoes a marker when it wrote the config, so you
+   know whether to print this item's one line:
 
    ```bash
    mkdir -p .planning
@@ -45,19 +36,14 @@ Two stops first, before anything is written.
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" detect --dir .
    ```
 
-   The ignore rule is not optional: `.planning/records/trace.jsonl` is ONE MACHINE's
-   run record, this seam is the only thing in Cadence that writes the rule, and
-   /cad-health reports `ignored:false` and `tracked:true` as separate issues
-   with different remedies. The rule sits in the records folder's own
-   `.planning/records/.gitignore`, created only when absent, so a brownfield
+   The ignore rule sits in the records folder's own
+   `.planning/records/.gitignore`, created only when absent: the project's own
    `.gitignore` is never edited and a re-run changes nothing.
 
    The config template is copied VERBATIM - ask no configuration questions,
    with THREE deliberate exceptions and no others. The first is item 4 below: the
-   forge. A forge is a PRECONDITION rather than an option (FRG-02), and no
-   template can carry a default for it, because which forge hosts a repository
-   is a fact about that repository and not about Cadence. So it is asked, once,
-   and a repository that has answered is never asked again.
+   forge. It is asked once, and a repository that has answered is never asked
+   again.
 
    The second is what each role costs. Read
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-roles.md` (one consult
@@ -65,31 +51,23 @@ Two stops first, before anything is written.
    script has run: the full thirteen questions
    written to the user-global layer when that layer holds no `roles` key, and
    the shorter per-project confirmation written to this repository's own file
-   when it already does. Same shape of reason as the forge - a template cannot carry a
-   default for what a model costs the person paying for it, and an adopted
-   repository is exactly where a per-project answer differs from the machine's.
+   when it already does.
 
    The third is the testing policy, asked once as the `testing_policy` step
-   between `write_requirements` and `write_roadmap`. Same shape of reason as the
-   forge - no template can carry a default for what a project's tests must
-   prove, and the roadmap's first phase may be planned against the answer.
+   between `write_requirements` and `write_roadmap`.
 
-   Every other key keeps the template's value. Say in one line what was written
-   and where: "Config written with defaults (standard granularity, research and
-   plan check off, verifier on) in `.planning/config.json`, and the per-role
-   models and start rungs you just chose in <the file the interview named>.
-   /cad-config changes any of it, and /cad-config --roles re-opens those
-   thirteen questions."
+   Every other config key comes only from the template and keeps its value: never
+   invent one. Say in one line what was written and where: "Config written with
+   defaults (standard granularity, research and plan check off, verifier on) in
+   `.planning/config.json`, and the per-role models and start rungs you just
+   chose in <the file the interview named>. /cad-config changes any of it, and
+   /cad-config --roles re-opens those thirteen questions."
 
-4. **Pick a forge**, from the `forge.mjs detect` line in that same script - it
-   rides the existing script rather than taking a turn of its own, because it
-   reads a config and PATH and this item is prose over what it already printed.
-   Branch on `action` alone, the way /cad-land step 1 branches on
-   `issue-check`'s:
+4. **Pick a forge**, from the `forge.mjs detect` line in that same script.
+   Branch on `action` alone:
 
    - `configured` - this repository has already answered. Say NOTHING and ask
-     nothing. This is what makes a second run of /cad-adopt silent on the
-     subject.
+     nothing.
    - `refuse` - print the envelope's `reason` and its `hint`, one line each, and
      stop the forge step here. A forge is a precondition (FRG-02): do not invent
      a no-tracker mode, and do not fall through to the questions below.
@@ -100,14 +78,9 @@ Two stops first, before anything is written.
         entries - one option per entry, naming the provider and the binary that
         drives it. When `defaults.provider` names one of those providers, put
         that option FIRST and label it `(recommended)`; when it is null, offer
-        them in the order the envelope lists and label NOTHING. That is the
-        seam's own rule that a recommendation must fall out of analysis the step
-        already did, and no analysis here recommends a forge for a host the
-        origin URL cannot classify. Always offer one more option than there are
-        providers - **None of these**, last in the list. The ask-user seam
-        states that an always-present option consumes one of the four slots a
-        question has, and three providers plus NONE is exactly four, so this
-        question never splits however many resolved.
+        them in the order the envelope lists and label NOTHING. Always offer one
+        more option than there are providers - **None of these**, last in the
+        list.
 
         - header: "Code host"
         - question: "Which service hosts this project's repository?"
@@ -126,16 +99,13 @@ Two stops first, before anything is written.
 
      c. **Which Forgejo instance** - asked ONLY when the chosen provider is
         `forgejo` and the envelope's `host` is null. Open-ended per the ask-user
-        seam, because the value is typed rather than picked from a set, and with
-        NO default offered. Ask for the instance the user reaches in a BROWSER -
-        `forge.example.com` - and NOT the SSH endpoint the remote URL carries,
-        which is often a different name (`ssh.example.com`); that split is a
-        normal deployment rather than a misconfiguration, this repository is one,
-        and only the browser host resolves a `tea` login. Say that the answer may
-        carry a PORT when the instance is not on the default one, spelled
-        `host:port` - `forge.example.com:3001` - and that it is the port the
-        BROWSER reaches, never the SSH port. `github` and `gitlab`
-        are never asked this; their hosts are fixed.
+        seam, with NO default offered. Ask for the instance the user reaches in
+        a BROWSER - `forge.example.com` - and NOT the SSH endpoint the remote
+        URL carries, which is often a different name (`ssh.example.com`). Say
+        that the answer may carry a PORT when the instance is not on the default
+        one, spelled `host:port` - `forge.example.com:3001` - and that it is the
+        port the BROWSER reaches, never the SSH port. `github` and `gitlab` are
+        never asked this; their hosts are fixed.
 
         - header: "Instance"
         - question: "What address do you use in a browser to reach your Forgejo instance? Type just the host name, with no https:// and no path, and add the port as host:port only if it isn't the default one. This is the address you browse to, not the one git uses over SSH."
@@ -153,11 +123,7 @@ Two stops first, before anything is written.
 
      Do not re-ask inside this run and do not invent a no-forge mode: a forge is
      a precondition (FRG-02), and the fix is to re-run this entry point once a
-     provider is picked. This arm has to be written down because a declined
-     question has no answer at all - `references/seam-ask-user.md` forbids
-     fabricating or defaulting an answer the seam was supposed to collect - so
-     prose that does not say what happens next lets setup run on past a
-     question it never got.
+     provider is picked.
 
      Persist the answers in ONE call, against this repository's own
      `.planning/config.json` (the default target - no `--file`, no `--global`):
@@ -170,9 +136,7 @@ Two stops first, before anything is written.
      On the forgejo arm that same call carries `git.forge_host=<host>` as a
      third pair. On `github` and `gitlab` the pair is OMITTED entirely rather
      than written empty: null there means "fixed host, nothing to name", and an
-     empty string would read back as an answered question. There is no new
-     writer here on purpose, so `checkPairs`, `retiredKeyError` and the
-     repo-layer-only refusal on `git.forge_repo` all still apply to this write.
+     empty string would read back as an answered question.
 </step>
 
 <step name="survey">
@@ -194,35 +158,30 @@ What to read:
   version.
 
 Then state what you found in a few lines - shape, stack, apparent purpose,
-release state. This is the input to every step below; it is not a report, so do
-not narrate the reading.
+release state. This is the input to every step below, not a report: do not
+narrate the reading.
 </step>
 
 <step name="questioning">
 Adopt asks only what the repo cannot answer. Whatever the survey READ is
 ANSWERED: the goal a README states, the stack and the build commands a manifest
-states, the shape the tree states, the direction the log states. Re-asking any
-of it is the blank-page interview this door exists to avoid, and it tells the
-user their project was not read.
+states, the shape the tree states, the direction the log states.
 
-So a question is legitimate only when it names something the repo does not
-state, and asking it that way out loud is the test: "the README says what this
+A question is legitimate only when it names something the repo does not state,
+and asking it that way out loud is the test: "the README says what this
 does but never who it is for"; "the log stops at the parser - what comes after
 it?" A question that cannot name its gap is one the survey already answered.
 
-**Background checklist** (mental, never a conversation structure), the same four
-items /cad-new-project carries:
+**Background checklist** (mental, never a conversation structure):
 
 - [ ] What this is (concrete enough to explain to a stranger)
 - [ ] Why it needs to exist (the problem or desire driving it)
 - [ ] Who it is for (even if just themselves)
 - [ ] What "done" looks like (observable outcomes)
 
-A repo with history usually answers the first two by itself and rarely answers
-the last two. Weave in what is left naturally; do not switch to checklist mode.
-And the REMAINING work - what the user wants next - is the one thing no repo
-states, so it is where the questioning belongs: it is what ROADMAP.md is about
-to be made of.
+Weave in what is left naturally; do not switch to checklist mode. The REMAINING
+work - what the user wants next - is the one thing no repo states and what
+ROADMAP.md will be made of, so the questioning belongs there.
 
 **Structured questions** go through the ask-user seam
 (references/seam-ask-user.md):
@@ -244,12 +203,9 @@ skill level (never do this - Claude builds).
 
 **No mechanism decides any of this.** No score, no coverage percentage, no
 threshold, no rubric, and no per-item walk of the repo's own documents against a
-list of things a project ought to state - each of those is forbidden here, and
-the standing requirement on this door is that it never become a scripted
-interview.
-Suppression is judgment. You read the repo, so you already know what it said.
-The `testing_policy` step below reports coverage figures and thresholds and
-decides no question here.
+list of things a project ought to state - each of those is forbidden here. The
+coverage figures and thresholds the `testing_policy` step reports decide no
+question here either.
 </step>
 
 <step name="write_project">
@@ -257,8 +213,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PROJECT.md` and write
 `.planning/PROJECT.md` from the survey.
 
 - `### Validated` carries the SHIPPED capability - what the existing code
-  already does, one line each. This is the brownfield rule the template itself
-  states, and it is where reconstructed history belongs.
+  already does, one line each.
 - `## Context` carries the current state of the code: stack, layout, known
   rough edges, anything a later phase has to work around.
 - `### Active` is REMAINING work only, framed as hypotheses until shipped.
@@ -269,11 +224,10 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PROJECT.md` and write
 
 The `### Active` milestone version is a PROPOSED NEXT version, confirmed with
 the user through the ask-user seam (references/seam-ask-user.md), and never the
-repo's current tag: /cad-health rule 7 reports drift when the Active version is
-a member of `git tag --list`, so naming the version already shipped fails the
-first health check the user runs. Propose the next one from the tag list
-(`v1.4.0` shipped -> `v1.5.0` proposed), and offer the alternatives rather than
-deciding alone:
+repo's current tag: /cad-health rule 7 reports an Active version in
+`git tag --list` as drift. Propose the next one from the tag list (`v1.4.0`
+shipped -> `v1.5.0` proposed), and offer the alternatives rather than deciding
+alone:
 
 - header: "Next version"
 - question: "Which version should the next release of this project be? The latest one already released is {latest tag}."
@@ -290,34 +244,30 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/REQUIREMENTS.md` and write
   `- **[CAT]-01**: [requirement]`, with a 3-5 letter category code that starts
   with a letter. What the code already does is Validated in PROJECT.md, not a
   requirement to deliver a second time.
-- Each one specific, testable, user-centric and atomic - the same bar
-  /cad-new-project holds: "User can X", never "System does Y", never "Handle Z".
+- Each one specific, testable, user-centric and atomic: "User can X", never
+  "System does Y", never "Handle Z".
 - `## v2 Requirements` and `## Out of Scope` take what the repo or the user
   deferred, exclusions carrying their reason.
 - `## Traceability` is left as BARE HEADERS. `/cad-plan` seeds each row when its
-  phase is planned (`references/req-traceability.md`); `planning.mjs seed-reqs`
-  reads `.planning/phases/<N>/PLAN*.md` and returns `no-phase-dir` / `no-plans`
-  before any plan exists, so adopt structurally cannot seed a row, and a
-  hand-authored one would make the mismatched arm the normal case on every
-  adopted repo.
+  phase is planned (`references/req-traceability.md`), and no row can be seeded
+  before a plan exists.
 </step>
 
 <step name="testing_policy">
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-testing.md` (one
 consult site - this step) and follow its **Testing policy** arm here, after
 `survey`'s reading and before the roadmap: one recommendation, Accept or
-Adjust, written, rendered and checked. The survey already read the workflows,
-manifests and tree whose thresholds and exclusions it quotes.
+Adjust, written, rendered and checked.
 
 Skip that section's publishing question. Ask nothing about publishing; say in
 one line that verification publishing is off and that `/cad-config --testing` is
 where to authorize it.
 
-The step leaves `testing.*` in `.planning/config.json` and writes
-`.github/cadence/coverage-policy.json`. Both are staged by the `commit` step
-when `planning.commit_docs` is true. When it is false they stay uncommitted, and
-the first CI plan task commits the policy file, since `/cad-plan` puts that task
-first when `check` finds no gate.
+This step is the only place `testing.*` is written. It leaves `testing.*` in
+`.planning/config.json` and writes `.github/cadence/coverage-policy.json`. Both
+are staged by the `commit` step when `planning.commit_docs` is true. When it is
+false they stay uncommitted, and the first CI plan task commits the policy file,
+since `/cad-plan` puts that task first when `check` finds no gate.
 </step>
 
 <step name="write_roadmap">
@@ -327,10 +277,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
 there is no roadmapper agent.
 
 1. Every `## Phases` entry is `- [ ]`. Never reconstruct shipped work as an
-   `- [x]` phase: /cad-health rule 5 flags an `- [x]` phase whose mapped
-   REQUIREMENTS rows are not all `Complete`, and seeded rows are always
-   `Pending`, so a reconstructed history becomes a status-drift issue on the
-   first /cad-plan. Shipped work is PROJECT.md's Validated section.
+   `- [x]` phase: seeded rows are `Pending`, which /cad-health rule 5 flags under
+   an `- [x]` phase. Shipped work is PROJECT.md's Validated section.
 2. Phase count follows the `granularity` read in setup: coarse 3-5, standard
    5-8, fine 8-12. When in doubt, fewer.
 3. Prefer vertical slices - each phase delivers something the user can exercise
@@ -347,14 +295,13 @@ there is no roadmapper agent.
    id unless one is about this work, and its criteria are the thresholds met and
    the required jobs passing. It never lowers a threshold to make that easier.
 
-Then enter each phase, in order. The list is generated from the state file, so
-a hand-written line would be overwritten:
+Then enter each phase, in order, one add each and no hand-written line:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
 ```
 
-Then count what you just wrote - rule 4 above is prose until a seam counts it:
+Then count what you just wrote:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --roadmap-min 2 --roadmap-max 5
@@ -363,8 +310,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --roadm
 No `--phase`: one call walks every phase the roadmap declares. Each `over` entry
 names the phase, its measured count and the bound it broke. `roadmap_found:
 false` is not zero criteria - that phase's block declares none at all, so write
-them rather than report it as under the floor. A REPORT, not a gate, exactly as
-`plan-size`'s `phase-too-big` is: present it and let the approval gate decide.
+them rather than report it as under the floor. A REPORT, not a gate: present it
+and let the approval gate decide.
 
 Present the roadmap inline (a table of phase, goal, REQ-IDs and the criteria
 count the seam just reported, then the per-phase criteria, naming every `over`
@@ -399,8 +346,7 @@ whole file", show the file and re-ask.
 </step>
 
 <step name="state">
-Write the initial cursor through the seam - ROADMAP.md exists now, so name and
-total derive automatically:
+Write the initial cursor through the seam:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
@@ -421,13 +367,11 @@ before this commit - it is the first commit of the cycle. (A repo with no
 commits at all has nothing to branch from: skip the guard and let this commit
 create the root commit on the current branch.)
 
-Then ONE commit, `docs: adopt existing project into Cadence`, staging exactly
-the eight files written: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
-`.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/records/state.json`,
-`.planning/records/.gitignore`, `.planning/config.json` and
-`.github/cadence/coverage-policy.json`. One
-commit, not three - all three documents were derived in a single pass, so there
-is no intermediate state worth a separate commit.
+Then ONE commit, `docs: adopt existing project into Cadence`, pushing nothing
+and staging exactly the eight files written: `.planning/PROJECT.md`,
+`.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`,
+`.planning/records/state.json`, `.planning/records/.gitignore`,
+`.planning/config.json` and `.github/cadence/coverage-policy.json`.
 </step>
 
 <step name="done">
@@ -444,53 +388,19 @@ Commit: {hash, or "none - commit_docs is false"}
 Next: /cad-context 1
 ```
 
-One suggestion, no menu. A `/clear` before it is safe - everything gathered is
-on disk in `.planning/`.
+One suggestion, no menu. A `/clear` before it is safe - everything is on disk
+in `.planning/`.
 </step>
 
 </process>
 
 <guardrails>
-- No subagent, ever. This workflow dispatches nothing: the brownfield read is
-  paid in this context, which is what keeps the front door's most expensive step
-  visible instead of hidden behind an unpriced dispatch.
-- Adopt REFUSES a directory that is not a git repo root; it never runs
-  `git init`. Its inputs are code and history, and git's upward discovery would
-  otherwise let a subdirectory answer from the repo above it.
+- No subagent, ever. This workflow dispatches nothing.
+- Never fabricate an answer the ask-user seam was supposed to collect.
 - Nothing outside the canonical `.planning/` set is created: PROJECT.md,
   REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json, records/state.json,
   records/.gitignore - and
   `.github/cadence/coverage-policy.json`, which the `testing_policy` step
   renders. No `phases/` dirs, no
   CLAUDE.md generation, no extra scaffolding.
-- Config keys come from the engine config template only; never invent keys and
-  never ask config questions beyond the forge, the roles interview and the
-  `testing_policy` step, which is the only place `testing.*` is written and
-  never asks about publishing.
-- Never fabricate an answer the ask-user seam was supposed to collect.
-- STATE.md is a four-line overwritten cursor plus an optional `Plan:` line: no audit log, no narrative.
-- Nothing already shipped is written as an open requirement or an `- [x]` phase.
 </guardrails>
-
-<success_criteria>
-- [ ] Refused unless `git rev-parse --show-toplevel` succeeded AND equalled the
-      working directory; refused if `.planning/PROJECT.md` already existed
-- [ ] `.planning/` holds PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and
-      config.json, with config.json copied verbatim from the engine template and
-      written only with the forge, roles and testing policy answers
-- [ ] The trace ignore rule is present and `.planning/records/trace.jsonl` is untracked
-- [ ] Nothing the README, the manifests, the tree or the log already answered
-      was re-asked, and every question asked named the gap it was filling
-- [ ] PROJECT.md's Validated section carries what the code already does; its
-      `### Active` milestone version is not a member of `git tag --list`
-- [ ] REQUIREMENTS.md `## Active` uses the `- **[CAT]-01**:` grammar and
-      `## Traceability` is bare headers with zero rows
-- [ ] ROADMAP.md is remaining work: no `- [x]` entry, phase count follows
-      `granularity`, 2-5 falsifiable criteria per phase, every `## Active` id
-      mapped to exactly one phase, user approved it
-- [ ] STATE.md is a four-line cursor (no `Plan:` line) pointing at phase 1, and no `phases/` dir
-      was created
-- [ ] One `docs:` commit under references/git-guard.md, respecting
-      `planning.commit_docs`, staging the eight files by name and pushing nothing
-- [ ] No subagent was dispatched
-</success_criteria>

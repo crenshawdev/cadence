@@ -13,13 +13,7 @@ allowed-tools:
 ---
 
 <objective>
-Close the test-coverage gaps for a completed phase. One question drives it:
-which phase requirements have NO test that would fail if that requirement
-regressed? Those are the gaps. Audit them, then generate real tests to cover
-them, in the project's own test framework.
-
-Audit and generate in one un-duplicated flow. No fixed stack, no Playwright/E2E
-default - the test kind and runner follow the code and `workflow.test_command`.
+Close the test-coverage gaps for a completed phase.
 </objective>
 
 <execution_context>
@@ -27,10 +21,7 @@ default - the test kind and runner follow the code and `workflow.test_command`.
 </execution_context>
 
 <process>
-Run the coverage workflow end-to-end. Coverage means a test that would FAIL if
-the requirement broke - not a test that merely runs the code. Get user approval
-on the gap test plan before generating (when `testing.scope` is unset), and
-verify generated tests actually run.
+Run the coverage workflow end-to-end.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200

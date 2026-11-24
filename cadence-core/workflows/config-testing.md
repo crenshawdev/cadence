@@ -5,13 +5,11 @@ Loaded from config.md's **Testing policy** arm, and opened directly by
 
 ## Testing policy (`--testing`)
 
-Accepts one project testing policy, once, from one recommendation. This is the
-one statement `/cad-new-project` (before its roadmap) and `/cad-adopt` (after
-the survey, before the roadmap) follow, the way they follow `workflows/config-roles.md`'s
-**Roles interview** arm; `--testing` reopens it with the answer in force beside what
-the project shows today. The rules and command shapes it recommends from are in
+Accepts one project testing policy, once, from one recommendation; `--testing`
+reopens it with the answer in force beside what the project shows today. The
+rules and command shapes it recommends from are in
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` (one consult
-site - this section). This section points at them and restates none.
+site - this section).
 
 1. Read the answer in force. `testing.scope` `null` means nothing was accepted:
 
@@ -28,16 +26,15 @@ site - this section). This section points at them and restates none.
    detector seam and no per-tool parser. Quote each existing
    threshold and exclusion with its file and line. Look for the packaging signals
    `test-policy.md` lists; where one is present, packaging is relevant and its
-   job is named in `testing.required_jobs`, because the nine keys are fixed. A
+   job is named in `testing.required_jobs`. A
    blank-page project has no code to inspect: it accepts from the stated stack
    and every coverage figure reads `unknown`.
 
-   On the `--testing` route only, resolve the forge too, because enforcement
-   reads it and setup has not run here. Run
+   On the `--testing` route only, resolve the forge too. Run
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" detect --dir .` and
    follow the **Pick a forge** item of
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/adopt.md`. A refusal or a declined
-   answer leaves it unset: say so and carry on, because `check` in step 4 names it.
+   answer leaves it unset: say so and carry on.
 
 3. Present ONE recommendation through the ask-user seam
    (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/seam-ask-user.md`) with two
@@ -70,10 +67,10 @@ site - this section). This section points at them and restates none.
    metrics as disabled. On Adjust, take the changes in prose, re-present, and
    loop until Accept.
 
-4. On Accept, write the policy in ONE `config.mjs set`. The list values hold
-   text derived from the repository, so each is written as JSON to a scratch
-   file with the Write tool inside a directory this run made, and passed as
-   `<key>="$(cat <path>)"` (`references/conventions.md`, Caller-derived text):
+4. On Accept, write the policy in ONE `config.mjs set`. Each list value is
+   written as JSON to a scratch file with the Write tool inside a directory this
+   run made, and passed as `<key>="$(cat <path>)"` (`references/conventions.md`,
+   Caller-derived text):
 
    ```
    D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "$D"
@@ -101,13 +98,12 @@ site - this section). This section points at them and restates none.
    that task commits the file.
 
 5. Publishing is a separate question, asked ONLY when this arm was reached by
-   `--testing`. Setup never asks it: it says verification publishing is off and
-   that `/cad-config --testing` is where to authorize it. Read the state from
-   `check`'s `publish_authorized`, and say what it authorizes: `/cad-verify`
-   pushes the current non-protected branch to its configured remote with nobody
-   present, so CI can run on the commit it records as pending. Ask through the
-   ask-user seam, the current state first. On an explicit yes, write it into this
-   repository's own `.git/config` and nowhere else:
+   `--testing`. Setup never asks it. Read the state from `check`'s
+   `publish_authorized`, and say what it authorizes: `/cad-verify` pushes the
+   current non-protected branch to its configured remote with nobody present, so
+   CI can run on the commit it records as pending. Ask through the ask-user seam,
+   the current state first. On an explicit yes, write it into this repository's
+   own `.git/config` and nowhere else:
 
    ```
    env -u GIT_DIR -u GIT_COMMON_DIR git config --local cadence.publishForVerification true

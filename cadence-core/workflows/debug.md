@@ -1,8 +1,8 @@
 # cad-debug workflow
 
 Scientific-method debugging, single pass, with the investigation persisted so a
-`/clear` never loses it. No session-manager layer and no specialist dispatch - the main model runs the
-method inline and writes state after every step.
+`/clear` never loses it: the main model runs the method inline and writes state
+after every step.
 
 ## State file: `.planning/debug/<slug>.md`
 
@@ -33,8 +33,8 @@ Attempts: <count of applied fixes that did not resolve it>
 - `list` -> pull the symptom + status from every session in one pass
   (`grep -H '^# debug:\|^Status:' .planning/debug/*.md`), filter to those whose
   `Status:` is not resolved in the coordinator, and print one line each (slug +
-  symptom) - one pass, not a Read per file. Independent read-only calls go out
-  in one message; only a call that consumes a prior call's output is serialized.
+  symptom). Independent read-only calls go out in one message; only a call that
+  consumes a prior call's output is serialized.
 - `status <slug>` -> print that state file verbatim. Stop.
 - `continue <slug>` -> load that state file and resume at the method loop below,
   trusting the recorded hypothesis/observation state.
@@ -56,13 +56,10 @@ On every route into this loop - a new symptom AND a `continue <slug>` resume -
 first read the config seam once:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend review.consult.attempt_threshold testing.scope
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend review.consult.enabled review.consult.attempt_threshold testing.scope
 ```
 
-`memory.backend` gates the Hypothesize recall step (step 1); `review.consult.attempt_threshold`
-(T) gates the dead-end consult (see Consult). The `continue <slug>` resume enters here
-directly, bypassing the New session steps, so anchoring the read to loop entry keeps both
-gates fed on resume. `testing.scope` set means a testing policy is active: read
+`testing.scope` set means a testing policy is active: read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md` once, for Resolve
 step 4.
 
@@ -77,8 +74,7 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    risk-first when a cheap test can eliminate a whole class. Write them to
    Hypotheses. Never jump to a fix before a cause is confirmed by evidence.
    When the effective `memory.backend` (read at loop entry) is `builtin`, run
-   recall inline via Bash (D-02: there is no debug subagent, the main model runs
-   the method inline):
+   recall inline via Bash:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the symptom / bug description>"
@@ -105,71 +101,56 @@ Repeat until a root cause is confirmed or a dead-end is reached:
 2. If diagnose-only: write the Root Cause Report into Resolution and stop
    (no fix applied).
 3. Else propose the minimal fix and apply it ONLY with user approval (ask-user
-   seam). Then `git add` exactly the files the fix touched - staging is a STEP
-   here, not a description - and only THEN ask the seam. Whether the fix
-   touched a risk surface is the SEAM's answer over the index, never a reading
-   of the diff, and `--staged` is that scope's one machine spelling (the index
-   has no commit for a `--head` to name), so a fix still sitting in the
-   worktree is outside what this call reads:
+   seam). Rewrite the state file every time a fix is applied, then `git add`
+   exactly the files the fix touched, and only THEN ask the seam. Whether the
+   fix touched a risk surface is the SEAM's answer over the index, never a
+   reading of the diff, and `--staged` is that scope's one machine spelling:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase 0 --base HEAD --staged
    ```
 
-   `--phase 0` for the reason task.md gives: 0 is the one number no roadmap
-   phase carries, and a debug session sits outside the phase spine.
-   `empty: true` on this arm is NOT a pass: it says the read found no
-   scannable change between HEAD and the index, which is exactly what an
-   unstaged fix looks like - the seam returns `ok: true, checked: true,
-   matches: []` over nothing at all. Stage the fix and re-run rather than
-   trusting it. A non-empty `matches` or an `inconclusive: true` fires the
-   `risk_surface` review trigger (references/review-triggers.md) before the
-   fix is trusted, and the artifact is the staged-diff scope - shape (b):
-   the reviewer runs `git diff --cached` in the cwd it inherits, never the
-   diff text. That gate is `blocking` and its re-arm is CAPPED at ONE narrowed
-   round - RE-READ
+   `--phase 0` because 0 is the one number no roadmap phase carries, and a debug
+   session sits outside the phase spine. `empty: true` on this arm is NOT a
+   pass: stage the fix and re-run rather than trusting it. A non-empty `matches`
+   or an `inconclusive: true` fires the `risk_surface` review trigger
+   (references/review-triggers.md) before the fix is trusted, and the artifact
+   is the staged-diff scope - shape (b): the reviewer runs `git diff --cached`
+   in the cwd it inherits, never the diff text. That gate is `blocking`; RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
    fixing a FAIL, since this workflow does not preload it. On the workflow
    path (`references/review-workflow.md`) the fire is the launch ending the
    turn and the notice resuming this step, with nothing else dispatched in
    between; the resumed step runs the gate on the staged fix and the one
    narrowed re-arm if a FAIL was fixed, and only then does step 4 trust the
-   fix. An `ok:false`
-   answer is not a clean one: a check that could not run clears nothing.
-   `no-diff`: stage the fix and re-run. `surfaces-unanswered`: run
-   `detect-surfaces --root .`, put the one-time surface question to the user
-   in this run as `references/risk-surface.md` states it, save the answer, and
-   re-run the same `risk-check run --phase 0 --base HEAD --staged` line.
+   fix. An `ok:false` answer is not a clean one. `no-diff`: stage the fix and
+   re-run. `surfaces-unanswered`: run `detect-surfaces --root .`, put the
+   one-time surface question to the user in this run as
+   `references/risk-surface.md` states it, save the answer, and re-run the same
+   `risk-check run --phase 0 --base HEAD --staged` line.
 4. Verify: re-run the reproduction. Symptom gone -> set Status: resolved, fill
    Resolution, done. Symptom remains -> increment Attempts, record what the
    attempt changed and did not, and return to the method loop (the failed fix
-   is itself an observation). With a policy active, also apply the policy's
+   is itself an observation). A fix is never retried automatically: each attempt
+   goes through step 3's approval. With a policy active, also apply the policy's
    bug-fix rule: ask whether an existing reproducer gives adequate regression
    coverage, confirm it fails for the defect and passes after the fix, and add a
    test only where the completion rule says to.
 
 ## Consult at dead-ends (references/consult.md)
 
-Offer a consult - user-gated, one per dead-end - when an OBSERVABLE state is hit,
-never on a feeling of being stuck. The threshold T is
-`review.consult.attempt_threshold` (default 3), read in the one
-method-loop entry call (above).
-`memory.backend` gates the Hypothesize recall step; the threshold gates
-this consult:
+With `review.consult.enabled` false, make no offer and leave consult.md unread.
+Otherwise offer a consult only when one of these OBSERVABLE states is hit, T
+being `review.consult.attempt_threshold` (default 3):
 
 - **Attempts >= T** on the same bug (T applied fixes, still failing).
 - **Test still red after T** method-loop iterations.
 - **Exhausted hypotheses** - the set is empty and the bug is unresolved.
 
-Run `offer_consult` with the situation = the symptom, the confirmed/refuted
-hypotheses, and what the fixes changed. Ground each returned angle against the
-real code, present the survivors, and let the user pick the next move. The
-consult never decides; it reopens the hypothesis space. Bounded: do not
-re-offer for the same dead-end unless a new observation has appeared since.
-
-## Discipline
-
-- One variable per test; no shotgun fixes.
-- Persist the state file after every test and every fix attempt.
-- Single pass: no automatic retry loops. Each fix attempt and each consult is a
-  deliberate, recorded step.
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/consult.md` for the bound and
+run its `offer_consult` with the situation = the symptom, the confirmed/refuted
+hypotheses, and what the fixes changed. An offer waits for an explicit yes, and
+one that is declined, or whose call fails, is not repeated for the same dead-end
+unless a new observation has appeared since. Check each returned angle against
+the real code, present the survivors, and let the user pick the next move: the
+consult never decides. Write every consult taken to the state file.

@@ -11,34 +11,9 @@ allowed-tools:
 ---
 
 <objective>
-Manage `.planning/config.json` (template in
-`cadence-core/templates/config.json`). One skill for the whole config; its
-substantive part is review-provider model assignment, which needs live
-detection (call the provider models endpoint, classify, assign per tier).
-
-Routing:
-- **--review [redetect]**: run the cross-model review-provider setup - detect
-  each provider's accessible models and assign them to the flagship/balanced/
-  cheap tiers.
-- **--surfaces**: re-open the one-time risk-surface question - the answered set
-  beside what the structure evidences now, re-answerable or declinable.
-- **--testing**: accept or reopen the one project testing policy from a single
-  recommendation, then ask separately whether `/cad-verify` may publish a branch
-  for CI.
-- **--roles [--global]**: the thirteen questions that say what each of the six
-  roles costs - a model and a start rung per role, then the risk floor. Writes
-  repo-layer diffs by default; `--global` re-enters the full thirteen against
-  the user-global layer.
-- **`<key>=<value>` ...**: set config keys directly (validated against the config schema).
-- **--walk**: walk every knob as a selectable list (batched pages), each
-  preselected to its current value.
-- **a sentence** (menu on): find the settings it means, show each one's current value,
-  new value and file with a preview, and write only after a yes.
-- **default** (no args): while `workflow.config_menu` is true, open on six groups
-  with what this repo and your global config set; a number lists that group's
-  settings, and a sentence is read as above. The menu is opt-in and off by
-  default: with it off, no args opens the walk, and a sentence is answered with
-  the command that turns it on, `/cad-config workflow.config_menu=true`.
+Manage `.planning/config.json`. config.md's Route picks the arm from the argument.
+`workflow.config_menu` is off by default; `/cad-config workflow.config_menu=true`
+turns the menu on.
 </objective>
 
 <execution_context>
@@ -47,8 +22,7 @@ Routing:
 
 <process>
 Parse `$ARGUMENTS`, then execute the matching branch of the config workflow
-end-to-end. Never write an invalid config; never block the spine on a network
-call (detection degrades to claude-subagent).
+end-to-end.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200

@@ -15,9 +15,8 @@ alone judges a missing path and a file.
 
 ## 2. Check
 
-One call checks the design and the project together and writes nothing. Its
-answer is too big for the transcript, so it goes to a file in a directory this
-run makes, and one read-back prints what the next steps need:
+One call checks the design and the project together and writes nothing. One
+read-back prints what the next steps need:
 
 ```
 D="$(mktemp -d "${TMPDIR:-/tmp}/cad-design-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac \
@@ -51,8 +50,7 @@ the answer only; never compare IDs or work out a number in the session.
 4. When the first add opened a cycle, the no-cycle-open rewrite in `phase.md`'s
    `### add`, PROJECT.md's `### Active` sentence included.
 
-No other existing line is edited, and the design is written nowhere else, so
-PROJECT.md's description stays as it is.
+No other existing line is edited, and the design is written nowhere else.
 
 ## 4. A failure after the first write
 

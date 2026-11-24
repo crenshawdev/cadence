@@ -18,50 +18,38 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
 ```
 
 `--plan <k>` is required whenever the fire was per-plan: `risk-check status`
-joins a receipt to a record on the run AND the plan, so a receipt written
-without it keys to no plan and joins nothing, leaving a range that WAS fired and
-adjudicated reading as never fired. Omit it only for a fire that is not per-plan
-(`/cad-debug`, `/cad-task`, `/cad-verify`).
+joins a receipt to a record on the run AND the plan, so a receipt without it
+joins nothing and leaves a fired, adjudicated range reading as never fired. Omit
+it only for a fire that is not per-plan (`/cad-debug`, `/cad-task`,
+`/cad-verify`).
 
-`--base <base> --sha <head>` name the RANGE this adjudication settled - BOTH
-ends, since two ranges can share a head and differ at the base and are then
-different diffs over different surfaces. That is what lets `risk-check status`
-tell an adjudication of THIS range from one of an earlier, narrower range for
-the same plan. A receipt missing either end settles nothing, so omitting one
-leaves a matched range reading as never fired.
+`--base <base> --sha <head>` name the RANGE this adjudication settled, by the
+range rule in `references/triage-gate.md`.
 
-The RAISED count travels on the `--raised` FLAG and never inside `--detail`: a
-figure parsed back out of that free-text slot would be exactly as trustworthy
-as the voice-list substitution the slot is already condemned for, so do not
-helpfully fold it back in. The three SETTLED counts travel the same way, on
-`--survivors`, `--downgraded` and `--refuted`, and they are the figures the
-record seam DERIVED and returned on its envelope - never a number you counted
-by hand off the survivor list, and never folded into `--detail` either. The
-seam recounts the record's rulings against them and REFUSES a receipt that
-disagrees, which is what makes the survivor count recomputable instead of
-asserted. `--round <round>` is omitted on an ordinary fire and on a
-range-named re-arm, whose own ends name its record, and carries the round on
-any other re-armed one, because that is the record the recount has to read:
-without it a round-two settle is checked against round one's stale rulings and
-passes whenever the two counts happen to coincide. The TRIGGER travels the same way, on `--trigger`,
-and `--plan <k>` rides a per-plan fire: `risk-check status` joins a matched
-range to its receipt on those two structured fields and never on the detail
+The RAISED count travels on `--raised` and never inside `--detail`. The three
+SETTLED counts travel the same way, on `--survivors`, `--downgraded` and
+`--refuted`, and they are the figures the record seam DERIVED and returned on
+its envelope - never a number you counted by hand off the survivor list, and
+never folded into `--detail`. The seam recounts the record's rulings against
+them and REFUSES a receipt that disagrees. `--round <round>` is omitted on an
+ordinary fire and on a range-named re-arm, whose own ends name its record, and
+carries the round on any other re-armed one: without it a round-two settle is
+checked against round one's rulings. The TRIGGER travels on `--trigger`, and
+`--plan <k>` rides a per-plan fire: `risk-check status` joins a matched range to
+its receipt on those two fields and never on the detail
 (`references/triage-gate.md` states the rule at all five settle points).
 
 `<N>` is the phase in hand, or the STATE cursor's phase for a trigger whose
-range spans phases. The VOICE LIST is load-bearing, not decoration: a
-`claude-subagent` voice never passes through `review-provider.mjs`, so it has no
-provider event of its own, and the survivor count alone cannot show a panel
-silently reduced to one voice while the gate reports clean - the dropped
-cross-model reviewer is only half of it. Name the set that RAN, never the set
-the trigger asked for.
+range spans phases. The VOICE LIST is load-bearing: a `claude-subagent` voice
+never passes through `review-provider.mjs`, so it has no provider event of its
+own, and the survivor count alone cannot show a panel silently reduced to one
+voice. Name the set that RAN, never the set the trigger asked for.
 
 ## The review file
 
 At gate `adjudicated`, at `/cad-verify`'s fire and on a `blocking`
 `risk_surface` fire on the workflow path, write the REVIEW file with this seam
-before triage.
-Compose its payload as a file in this run's scratch directory, as below:
+before triage. Compose its payload as a file in this run's scratch directory:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" review-file --phase <N> --trigger <trigger> --discriminator <discriminator> --base <base> --head <head> --payload <path> [--round <round>] [--task <slug>]
@@ -82,22 +70,14 @@ A suspected `blocker` or `high` the named check then re-rules is corrected in th
 When a fire holding a `blocker` or `high` survivor writes this record is `references/review-triggers.md` step 5's order.
 
 Then WRITE THE ADJUDICATION RECORD: the rulings themselves, not a count of them.
-An adjudicated-only rule would record nothing at all on most projects -
-`route.mjs resolve` returns `risk_surface: blocking` on the shipped default,
-and `plan: blocking` on any phase the risk floor raised - and would exclude the
-sharpest case there is, a gate that passed with everything killed.
 
 YOU compose the payload, because you are the only actor holding both the raised
-finding bodies and the ruling: `review-provider.mjs` returns `findings` on
-stdout and never persists them, its own record carries provider, model, effort,
-tier, duration and outcome with no finding field, and
-`skills/cad-reviewer-contract/SKILL.md` specifies a return shape only. Compose
-it as a FILE in THIS RUN's own scratch directory, the way
+finding bodies and the ruling: `review-provider.mjs` never persists findings.
+Compose it as a FILE in THIS RUN's own scratch directory, the way
 `references/review-cross-model.md` composes the provider payload, and NEVER
-hand-assemble that JSON with `echo` or a heredoc:
-the record's whole content is verbatim reviewer text with arbitrary quoting, so
-one unescaped quote makes the payload unparseable after the adjudication is
-already done and cannot be redone.
+hand-assemble that JSON with `echo` or a heredoc: it is verbatim reviewer text
+with arbitrary quoting, and one unescaped quote makes it unparseable after the
+adjudication is done.
 
 The payload carries, PER VOICE, the reviewer's returned findings object
 VERBATIM, that voice's model, and one ruling per returned finding -
@@ -105,63 +85,47 @@ VERBATIM, that voice's model, and one ruling per returned finding -
 RAISED per raising voice. A `ruling` is `survived`, `downgraded` or `refuted`
 and there is no fourth value. Each ruling RESTATES the claim and the failure
 scenario it rules on, and the seam REFUSES the payload when a restatement
-differs from the returned text by one byte: the entry is stored from the
-reviewer's own words, so a paraphrase is refused rather than recorded. A
-`refuted` ruling names the contradicting code in its counter-evidence.
+differs from the returned text by one byte. A `refuted` ruling names the
+contradicting code in its counter-evidence.
 
 A `survived` ruling is severity-gated, and this is the sentence to follow when
 the gate will not fix a finding. A `survived` finding RAISED at `blocker` or
 `high` names its fix commit in `fix_commit` - an auditor runs `git show` on that
 value, so it has to be a real one. A `survived` finding raised BELOW them is one
 that was confirmed and NOT fixed - reported, moved past - and carries no commit
-id because none exists: leave `fix_commit` off the ruling entirely. Do not
-downgrade a finding to make it storable and do not invent a SHA to fill the
-field; both are false statements about what happened, and the record accepts the
-true one.
+id: leave `fix_commit` off the ruling entirely. Do not downgrade a finding to
+make it storable and do not invent a SHA to fill the field.
 
-A fix that leaves no commit, because it edits a file git does not track, carries `fix_file` instead: that file's repo-relative path. It is neither a downgrade nor an override. So a survived `blocker` or `high` settles one of three ways: `fix_commit`, `fix_file` or `overridden: true`. The seam refuses `fix_file` beside `fix_commit`, an absolute path or one with a `..` segment, and a file git tracks, since that fix has a commit to name. `fix_file` is weaker evidence than a commit: it names a file, and nobody can `git show` the fix.
+A fix that leaves no commit, because it edits a file git does not track, carries `fix_file` instead: that file's repo-relative path. It is neither a downgrade nor an override. So a survived `blocker` or `high` settles one of three ways: `fix_commit`, `fix_file` or `overridden: true`. The seam refuses `fix_file` beside `fix_commit`, an absolute path or one with a `..` segment, and a file git tracks, since that fix has a commit to name.
 
 A `blocker` or `high` the USER OVERRODE carries `overridden: true` instead of a
-commit - the one survived-at-a-halting-severity case where no fix is coming, so
-no SHA exists to name. The marker is the fact ALONE: the user's own reason rides
-the `override` receipt's `--detail-file` (see `references/triage-gate.md`) and a
-second copy on the entry is a second statement that can drift. Only the boolean
-`true` is accepted, and `false` is refused because absence already says the
-finding was not overridden.
+commit. The marker is the fact ALONE: the user's reason rides the `override`
+receipt's `--detail-file` (see `references/triage-gate.md`). Only the boolean
+`true` is accepted, and `false` is refused.
 
 `fix_commit` IS CHECKED WHEREVER THE KEY IS SET, on ANY ruling. A `downgraded`
-or a `refuted` ruling MAY carry one - a fix that landed while the finding was
-being argued down is a real thing to record - and the value is held to the same
-bar there as anywhere else: an auditor runs `git show` on it, so a blank, a
-`null` or a junk string is REFUSED rather than quietly dropped from the stored
-entry. The key is VALIDATED on those rulings, never forbidden on them, and the
-refusal names both the field and the ruling it was set on.
+or a `refuted` ruling MAY carry one, held to the same bar: a blank, a `null` or
+a junk string is REFUSED rather than dropped, and the refusal names both the
+field and the ruling it was set on.
 
 A suspected finding (`references/review-triggers.md` step 5) is a `survived` ruling with no new value or key: it shows as suspected in the review file's heading text alone. At `blocker` or `high` it is never downgraded, and the record refuses it with none of a fix commit, a fix file or `overridden: true`.
 
-Neither case is a fourth `ruling` value. The vocabulary is still `survived`,
-`downgraded`, `refuted`, and what varies is what a `survived` entry carries
-beside the ruling.
+None of these is a fourth `ruling` value: what varies is what a `survived`
+entry carries beside the ruling.
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" adjudication --phase <N> --trigger <trigger> --discriminator <discriminator> --base <base> --head <head> --payload <path> [--task <slug>]
 ```
 
 `--task <slug>` on a `/cad-task` fire ONLY, and required there: that workflow
-fires with `--phase 0` deliberately - 0 is the one number no roadmap phase
-carries - and keeps its artifacts under `.planning/tasks/<slug>/`, so the record
-goes beside the sibling REVIEW file there rather than in a `phases/0/` that does
-not exist. Without it `--phase 0` is refused outright, and the hand-append that
-refusal used to force is a receipt no guard can see. A phase fire passes nothing.
-`deferred record` does NOT take it: the queue enumeration reads the two phase
-homes only, so a member under a slug would be created and never found - and a
-task's only gate is `risk_surface`, whose `blocking` schema default never
-resolves `deferred`.
+fires with `--phase 0` and keeps its artifacts under `.planning/tasks/<slug>/`,
+so the record goes beside the sibling REVIEW file there. Without it `--phase 0`
+is refused. A phase fire passes nothing. `deferred record` does NOT take it:
+the queue enumeration reads the two phase homes only, so a member under a slug
+would never be found.
 
 It lands at `.planning/phases/<N>/records/ADJUDICATION-<trigger>-<discriminator>.json`,
-beside the sibling `REVIEW-<trigger>-<discriminator>.md` and on the same
-discriminator grammar, which `references/review-triggers.md` step 5 states
-once. It does NOT go
-inside `<plandir>/records/reports/`: the lease check
-exempts exactly one path under that directory by byte equality, so anything else
-staged from there answers `undeclared-files`.
+beside the sibling `REVIEW-<trigger>-<discriminator>.md`, on the discriminator
+grammar `references/review-triggers.md` step 5 states. It does NOT go inside
+`<plandir>/records/reports/`: the lease check exempts exactly one path there,
+so anything else staged from there answers `undeclared-files`.

@@ -10,17 +10,14 @@ allowed-tools:
 ---
 
 <objective>
-Get a thought out of your head and into the right place without derailing. Three
-kinds, landing in `.planning/CAPTURE.md` - or, with `--cadence`, in Cadence's own
-queue (step 4), because friction with CADENCE noticed while working on somebody
-else's project has to leave that project to reach Cadence:
+Three kinds, landing in `.planning/CAPTURE.md` - or, with `--cadence`, in
+Cadence's own queue (step 4):
 - **todo** - an actionable item, tagged to a phase, so it resurfaces where it
-  matters. This is the phase-linked queue mem-* lacks and the reason this exists.
+  matters.
 - **seed** - an idea for a future phase or milestone, parked in the backlog.
 - **note** - a free note; lands in the file like the rest. With
-  `memory.backend: builtin` (the default) the note becomes recallable - it is
-  still written here, `builtin` only reads `.planning/` back, never relocates
-  the write.
+  `memory.backend: builtin` (the default) the note becomes recallable: `builtin`
+  only reads `.planning/` back, never relocates the write.
 </objective>
 
 <process>
@@ -30,9 +27,7 @@ else's project has to leave that project to reach Cadence:
    step 4 instead of steps 2-3. If a todo has no `--phase`, default to the
    current phase from the STATE cursor (`cursor get`); if the cursor is absent
    or unparseable, capture it unphased - pass no `--phase` at all - rather than
-   guessing a phase or stopping. Under `--cadence` skip the cursor: a phase
-   number belongs to this project's roadmap and means nothing in Cadence's
-   queue.
+   guessing a phase or stopping. Under `--cadence` skip the cursor.
 
 2. **Capture through the seam** - one call, and the only way this command
    reaches `.planning/CAPTURE.md`:
@@ -42,20 +37,18 @@ else's project has to leave that project to reach Cadence:
    ```
 
    Write the sentence to a scratch file and pass the PATH, never interpolate it
-   (caller-derived text - `cadence-core/references/conventions.md`). `--text`
-   remains for a human at a shell.
+   (caller-derived text - `cadence-core/references/conventions.md`).
 
    Pass `--phase` only with `--kind todo`, and leave it off entirely when step 1
    found no phase. The seam owns every byte: it creates the file with its
    headings when absent, puts the bullet under the one heading that kind owns,
    stamps a note's date itself, and holds a lock so a concurrent writer cannot
    erase the line. Do not compose the bullet yourself and do not reach that file
-   with any other tool - a second statement of the format is how the queue's
-   writer and its reader drifted apart, and five items were lost.
+   with any other tool.
 
    An `ok:false` return STOPS the capture: report its `reason` back with the
-   user's own sentence, so nothing is lost and they can re-run it, and skip
-   step 3. A bullet that did not land is never reported as captured.
+   user's own sentence, and skip step 3. A bullet that did not land is never
+   reported as captured.
    `capture-locked` means another writer holds the queue at this instant, and
    running the call again is the whole fix.
 
@@ -67,11 +60,9 @@ else's project has to leave that project to reach Cadence:
 4. **`--cadence`: the note is about Cadence itself.** REPLACES steps 2-3.
    - **The queue** sits beside the global config layer: `CAPTURE.md` in the
      directory part of `CADENCE_GLOBAL_CONFIG` when that variable is set, in
-     `~/.claude/cadence/` otherwise - the resolution
-     `cadence-core/bin/lib/config-merge.mjs` performs for the config file. Never
-     `${CLAUDE_PLUGIN_ROOT}`: the next upgrade orphans a write there. Resolve
-     that path yourself and hand it to the same seam, which creates the file and
-     its directory when absent, so one writer serves both queues:
+     `~/.claude/cadence/` otherwise. Never `${CLAUDE_PLUGIN_ROOT}`. Resolve the
+     queue's path yourself and hand it to the same seam, which creates the file
+     and its directory when absent:
 
      ```
      node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind <kind> --text-file <path> --file <resolved dir>/CAPTURE.md
@@ -81,10 +72,9 @@ else's project has to leave that project to reach Cadence:
      the `--text-file` sentence and never a phase: `<text> (host: <host>, command: /cad-<name>)`.
      HOST: this repo's `origin` URL (`git remote get-url origin`), else the
      basename of the root from `git rev-parse --show-toplevel`, else the
-     absolute working directory when this is not a repo - `origin` first because
-     a worktree and a detached checkout both still resolve through it. COMMAND:
-     the `/cad-*` whose behaviour caused the friction, from the invocation when
-     the user names one, asked for once when not.
+     absolute working directory when this is not a repo. COMMAND: the `/cad-*`
+     whose behaviour caused the friction, from the invocation when the user names
+     one, asked for once when not.
    - **Quote nothing else from this tree** - no diff, no file contents, no path
      out of the user's own work. The seam strips URL credentials from the entry
      on this arm, and nothing else; this rule covers everything else.
@@ -107,5 +97,4 @@ characters, and skip it when the host has no such tool
 <guardrails>
 - Do not act on the item now - capture is parking, not doing. A todo is queued,
   not executed.
-- Stage only CAPTURE.md; never sweep the user's working changes into the commit.
 </guardrails>

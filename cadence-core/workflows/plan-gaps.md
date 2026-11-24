@@ -27,20 +27,8 @@ at `spawn_planner` with Mode: gaps.
    phase holding `PLAN.md` alone gets `PLAN-2.md`, and one holding `PLAN-1.md`
    through `PLAN-3.md` gets `PLAN-4.md`. Carry that exact filename forward.
 
-   Why a new file. Measured on a fixture 2026-08-31: with the gap plan written
-   OVER `PLAN.md`, the prior run's `records/reports/plan-1.md` still read
-   `PLAN COMPLETE` and `replay-check` answered `dispatch_set: []`, so nothing
-   routing off the seam could see the gap plan at all. Renaming it `PLAN-2.md`
-   in that same fixture returned `dispatch_set: ["PLAN-2.md"]` - which is what
-   makes /cad-execute reach it and /cad-progress route to it. An mtime
-   comparison was rejected: it does not survive a fresh clone or a checkout.
-
 4. Continue to plan.md `spawn_planner` with:
    - Mode: gaps
    - Write target: the filename step 3 resolved, never `PLAN.md`.
-   - The heading carries the plan number step 3 resolved and a plan name:
-     `# Phase <N>: <phase name> - Plan <K>: <plan name>`.
-   - The planner's read list additionally includes phases/<N>/UAT.md plus
-     the existing PLAN* and SUMMARY* files.
    - The gap items (with their evidence and causes) go into the prompt as
      the work to close; the phase goal stays the ROADMAP goal.

@@ -1,15 +1,8 @@
 <purpose>
 Initialize a project: deep questioning until the idea is concrete, then
 PROJECT.md, REQUIREMENTS.md, a phased ROADMAP.md with falsifiable success
-criteria, and the .planning/ state every other Cadence skill reads.
-
-This is the entry point, and the questioning is the point. An hour of
-following threads here buys weeks of downstream clarity; a vague PROJECT.md
-forces every later phase to guess, and the cost compounds.
-
-One questioning spine, not a fan-out: one optional research pass (not four
-researchers), config defaults copied with only the forge, the roles and the
-testing policy asked, and the roadmap derived inline (no roadmapper/synthesizer agents).
+criteria, and the .planning/ state every other Cadence skill reads. The
+questioning is the point.
 </purpose>
 
 <process>
@@ -17,8 +10,7 @@ testing policy asked, and the roadmap derived inline (no roadmapper/synthesizer 
 <step name="setup">
 Parse `$ARGUMENTS`: optional `--research` flag, which forces the research
 pass on for this run regardless of config, and optional `--brief <file>`, a
-design brief some earlier freeform conversation already produced
-(`docs/DISCOVERY.md` describes how a user arrives with one).
+design brief an earlier freeform conversation produced.
 
 A `--brief` path that is a directory is a Seldon design: before item 1, Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/new-project-design.md` and
@@ -26,17 +18,13 @@ follow it instead of this file's steps, running only the ones it names. A file
 keeps the read below, and a path that is neither keeps its stop.
 
 With `--brief`, `Read` that file WHOLE before questioning starts - no parser,
-no schema, no seam subcommand. A brief's whole value is that it is freeform,
-and a schema would impose exactly the structure the discovery deliberately
-lacks. If the path does not resolve, stop with one line naming it ("No brief
-at `<path>`.") and write nothing: falling through into the blank-page
-interview would silently discard the input the flag exists to carry.
+no schema, no seam subcommand. If the path does not resolve, stop with one
+line naming it ("No brief at `<path>`.") and write nothing.
 
 In order (items 2-5 are one Bash step, not four separate turns - git-init if
 needed, `mkdir -p .planning`, the config copy if absent, and the `config.mjs
 get` chained in a single script that echoes a marker when it wrote the config,
-so the coordinator knows whether to print the "Config written with defaults"
-line):
+for item 4's one line):
 
 1. If `.planning/PROJECT.md` exists, stop: "Project already initialized.
    /cad-progress shows where you are."
@@ -49,12 +37,8 @@ line):
 
    Create-if-absent: the rules live in the records folder's own
    `.planning/records/.gitignore`, so the project's `.gitignore` is never
-   edited, and a records `.gitignore` that already exists keeps every line it
-   had. A re-run writes nothing (`written:false`, `reason:"already-ignored"`),
-   and a project that ignores `.planning/` wholesale is already correct and is
-   left alone. `.planning/records/trace.jsonl` is ONE MACHINE's
-   routing/provider/worker record, so a project must not commit it - and this
-   seam is the only thing in Cadence that writes that file.
+   edited, a records `.gitignore` that already exists keeps every line it had,
+   and a project that ignores `.planning/` wholesale is left alone.
 4. If `.planning/config.json` does not exist, copy the engine template
    verbatim:
 
@@ -63,11 +47,8 @@ line):
    ```
 
    Ask no configuration questions - with THREE deliberate exceptions, and no
-   others. The first is item 6 below: the forge. A forge is a PRECONDITION
-   rather than an option (FRG-02), and no template can carry a default for it,
-   because which forge hosts a repository is a fact about that repository and
-   not about Cadence. So it is asked, once, and a repository that has answered
-   is never asked again.
+   others. The first is item 6 below: the forge. It is asked once, and a
+   repository that has answered is never asked again.
 
    The second is what each role costs. Read
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-roles.md` (one consult
@@ -75,23 +56,17 @@ line):
    script has run: the full thirteen questions
    written to the user-global layer when that layer holds no `roles` key, and
    the shorter per-project confirmation written to this repository's own file
-   when it already does. It is an exception for the same shape of reason the
-   forge is - a template cannot carry a default for what a model costs the
-   person paying for it, and the six roles' models are the largest single
-   decision about what running Cadence costs. A user who accepts every default
-   answers thirteen questions once per machine and none of them again.
+   when it already does.
 
    The third is the testing policy, asked once as the `testing_policy` step
-   between `requirements` and `roadmap`. Same shape of reason as the forge - no
-   template can carry a default for what a project's tests must prove, and the
-   roadmap's phases are planned against the answer.
+   between `requirements` and `roadmap`.
 
-   Every other key keeps the template's value. Tell the user in one line what
-   was written and where: "Config written with defaults (standard granularity,
-   research and plan check off, verifier on) in `.planning/config.json`, and
-   the per-role models and start rungs you just chose in <the file the
-   interview named>. /cad-config changes any of it, and /cad-config --roles
-   re-opens those thirteen questions."
+   Every other key keeps the template's value, and config keys are never
+   invented. Tell the user in one line what was written and where: "Config
+   written with defaults (standard granularity, research and plan check off,
+   verifier on) in `.planning/config.json`, and the per-role models and start
+   rungs you just chose in <the file the interview named>. /cad-config changes
+   any of it, and /cad-config --roles re-opens those thirteen questions."
 5. Read the keys this workflow needs through the seam (effective values,
    global layer included):
 
@@ -101,17 +76,11 @@ line):
      granularity git.protected_branches git.on_protected git.base_branch
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" detect --dir .
    ```
-
-   The `forge.mjs detect` line rides this same script rather than taking a turn
-   of its own: it reads a config and PATH, and item 6 is prose over what it
-   already printed.
 6. **Pick a forge**, from the `forge.mjs detect` line in that same script.
-   Branch on `action` alone, the way /cad-land step 1 branches on
-   `issue-check`'s:
+   Branch on `action` alone:
 
    - `configured` - this repository has already answered. Say NOTHING and ask
-     nothing. This is what makes a second run of /cad-new-project silent on the
-     subject.
+     nothing.
    - `refuse` - print the envelope's `reason` and its `hint`, one line each, and
      stop the forge step here. A forge is a precondition (FRG-02): do not invent
      a no-tracker mode, and do not fall through to the questions below.
@@ -122,14 +91,9 @@ line):
         entries - one option per entry, naming the provider and the binary that
         drives it. When `defaults.provider` names one of those providers, put
         that option FIRST and label it `(recommended)`; when it is null, offer
-        them in the order the envelope lists and label NOTHING. That is the
-        seam's own rule that a recommendation must fall out of analysis the step
-        already did, and no analysis here recommends a forge for a host the
-        origin URL cannot classify. Always offer one more option than there are
-        providers - **None of these**, last in the list. The ask-user seam
-        states that an always-present option consumes one of the four slots a
-        question has, and three providers plus NONE is exactly four, so this
-        question never splits however many resolved.
+        them in the order the envelope lists and label NOTHING. Always offer one
+        more option than there are providers - **None of these**, last in the
+        list.
 
         - header: "Code host"
         - question: "Which service hosts this project's repository?"
@@ -147,16 +111,13 @@ line):
 
      c. **Which Forgejo instance** - asked ONLY when the chosen provider is
         `forgejo` and the envelope's `host` is null. Open-ended per the ask-user
-        seam, because the value is typed rather than picked from a set, and with
-        NO default offered. Ask for the instance the user reaches in a BROWSER -
-        `forge.example.com` - and NOT the SSH endpoint the remote URL carries,
-        which is often a different name (`ssh.example.com`); that split is a
-        normal deployment rather than a misconfiguration, this repository is one,
-        and only the browser host resolves a `tea` login. Say that the answer may
-        carry a PORT when the instance is not on the default one, spelled
-        `host:port` - `forge.example.com:3001` - and that it is the port the
-        BROWSER reaches, never the SSH port. `github` and `gitlab`
-        are never asked this; their hosts are fixed.
+        seam, with NO default offered. Ask for the instance the user reaches in
+        a BROWSER - `forge.example.com` - and NOT the SSH endpoint the remote
+        URL carries, which is often a different name (`ssh.example.com`). Say
+        that the answer may carry a PORT when the instance is not on the default
+        one, spelled `host:port` - `forge.example.com:3001` - and that it is the
+        port the BROWSER reaches, never the SSH port. `github` and `gitlab` are
+        never asked this; their hosts are fixed.
 
         - header: "Instance"
         - question: "What address do you use in a browser to reach your Forgejo instance? Type just the host name, with no https:// and no path, and add the port as host:port only if it isn't the default one. This is the address you browse to, not the one git uses over SSH."
@@ -174,11 +135,7 @@ line):
 
      Do not re-ask inside this run and do not invent a no-forge mode: a forge is
      a precondition (FRG-02), and the fix is to re-run this entry point once a
-     provider is picked. This arm has to be written down because a declined
-     question has no answer at all - `references/seam-ask-user.md` forbids
-     fabricating or defaulting an answer the seam was supposed to collect - so
-     prose that does not say what happens next lets setup run on past a
-     question it never got.
+     provider is picked.
 
      Persist the answers in ONE call, against this repository's own
      `.planning/config.json` (the default target - no `--file`, no `--global`):
@@ -191,28 +148,19 @@ line):
      On the forgejo arm that same call carries `git.forge_host=<host>` as a
      third pair. On `github` and `gitlab` the pair is OMITTED entirely rather
      than written empty: null there means "fixed host, nothing to name", and an
-     empty string would read back as an answered question. There is no new
-     writer here on purpose, so `checkPairs`, `retiredKeyError` and the
-     repo-layer-only refusal on `git.forge_repo` all still apply to this write.
+     empty string would read back as an answered question.
 
      **Then offer to CREATE it, when there is nothing to create it beside.**
-     Only on the arm where `git remote get-url origin` names nothing - a
-     directory just `git init`ed has no origin, and a repository that already
-     has one already exists on a forge. Ask through the ask-user seam as a plain
-     confirm, so no option carries `(recommended)`, and put all four facts in
-     the question itself:
+     Only on the arm where `git remote get-url origin` names nothing. Ask
+     through the ask-user seam as a plain confirm, so no option carries
+     `(recommended)`, and put all four facts in the question itself:
 
        - header: "Create repo"
        - question: "Create <owner>/<name> on <provider> now? It will be created as a private repository."
        - options: "Create it - the repository is made on <provider> and set as this project's origin" / "Not now - setup carries on and nothing is created"
 
-     Those four - the provider, the owner, the repository name and the
-     visibility - are the confirmation, and nothing else in this run states them
-     together. Visibility is not a question and is never asked: every repository
-     Cadence creates is private, because `gh` with no visibility flag drops to
-     an interactive prompt that would hang, `glab` silently defaults to
-     `internal`, and three different defaults are not a choice worth putting to
-     a user.
+     Visibility is not a question and is never asked: every repository Cadence
+     creates is private.
 
      Only on "Create it", and never ahead of one:
 
@@ -222,20 +170,16 @@ line):
        --remote-url <url> --dir .
      ```
 
-     `--confirmed` is what the user's answer buys. The seam cannot ask - it
-     would hang blocking on stdin inside a Bash call - so the flag is this
-     step's assertion that the question was put and answered, and passing it
-     ahead of the answer is the one thing that would make the whole gate a
-     formality.
+     `--confirmed` says the user was asked and answered "Create it": pass it only
+     on that answer.
 
      `--remote-url` is passed on `forgejo` and `github` and OMITTED on `gitlab`.
      Those two providers' create commands wire no git remote, so the seam adds
-     `origin` itself and needs the URL to point it at; `glab` wires its own. It
-     is not a fourth question and neither host is guessed: on `forgejo` build it
-     from the `git.forge_host` just confirmed above - WHOLE, port and all, since
-     the seam refuses a URL whose port the configured instance does not serve -
-     and on `github` from the fixed `github.com`, each with the answered slug -
-     `https://<host>/<owner>/<name>.git`.
+     `origin` itself and needs the URL to point it at; `glab` wires its own. On
+     `forgejo` build it from the `git.forge_host` just confirmed above - WHOLE,
+     port and all, since the seam refuses a URL whose port the configured
+     instance does not serve - and on `github` from the fixed `github.com`, each
+     with the answered slug - `https://<host>/<owner>/<name>.git`.
 
      On an `ok:false`, print the envelope's `reason` and `hint`, one line each,
      and stop the forge step. Do not continue as though a repository exists, and
@@ -250,15 +194,14 @@ line):
 </step>
 
 <step name="questioning">
-This is dream extraction, not requirements gathering. You are a thinking
-partner helping the user sharpen a fuzzy idea, not an interviewer filling
-out a form. Don't follow a script; follow the thread.
+You are a thinking partner helping the user sharpen a fuzzy idea, not an
+interviewer filling out a form. Don't follow a script; follow the thread.
 
 **Open freeform** (plain prose, NOT AskUserQuestion):
 
 "What do you want to build?"
 
-Wait for the response. It gives you the material for every question after.
+Wait for the response.
 
 **With `--brief`, that opening question is already answered.** Everything the
 brief SETTLES is answered material, not a topic to re-open. Replace the opening
@@ -270,13 +213,11 @@ Then question only what the brief leaves OPEN.
 What is open is what the brief SAYS, read the way you read any prose: a section
 that decides something has decided it, a question it poses and does not answer
 has not, and an item it parks as pending, deferred or a hypothesis is still
-live. Never key this off a marker convention. A brief that happens not to write
-`**OPEN**` anywhere would then read as settled throughout and the run would skip
-the questioning entirely - the exact failure this flag exists to prevent, turned
-inside out. No score, no coverage gate, no walking the brief section by section.
+live. Never key this off a marker convention. No score, no coverage gate, no
+walking the brief section by section.
 
-The background checklist below is where a brief lands: the items it settles are
-ticked already, and the ones it leaves open are the thread to follow.
+On the background checklist below, the items the brief settles are ticked
+already, and the ones it leaves open are the thread to follow.
 
 **Follow the thread.** Each answer opens new threads; pick the live one.
 Techniques:
@@ -300,9 +241,8 @@ answers is open.
 
 **Freeform rule:** the moment the user signals they want to explain in their
 own words ("let me describe it", an open-ended reply, picking the escape
-option), STOP structured questions. Ask the follow-up as plain text, let
-them type, and only resume structured questions after processing what they
-said.
+option), STOP structured questions. Ask the follow-up as plain text, let them
+type, and resume structured questions only after processing what they said.
 
 **Background checklist** (mental, never a conversation structure):
 
@@ -348,7 +288,8 @@ and every later commit in this workflow. Otherwise apply the
 protected-branch guard from references/git-guard.md now, before the first commit.
 Exception: a repo with no commits yet (`git rev-parse HEAD` fails) has
 nothing to branch from - skip the guard and let the initial docs commit
-create the root commit on the current branch.
+create the root commit on the current branch. At this commit and every later
+one of the run, push nothing.
 
 Commit: `docs: initialize project` with `.planning/PROJECT.md` and
 `.planning/config.json`.
@@ -356,11 +297,11 @@ Commit: `docs: initialize project` with `.planning/PROJECT.md` and
 
 <step name="research">
 Run this step only when `workflow.research` is true in config OR `--research`
-was passed. Otherwise skip silently - research is off by default, and a solo
-dev who knows the domain loses nothing by skipping a generic ecosystem survey.
+was passed. Otherwise skip silently.
 
-One pass, one agent, one file. Dispatch a single fresh-context agent via the
-spawn-agent seam (references/seam-spawn-agent.md):
+One pass, one agent, one file, and never a second agent. Dispatch a single
+fresh-context agent via the spawn-agent seam (references/seam-spawn-agent.md), a
+generic host agent with no Cadence role to resolve:
 
 ```text
 Read .planning/PROJECT.md for project context.
@@ -377,15 +318,6 @@ Write ONE file: .planning/research/RESEARCH.md with those three sections
 plus Sources and a confidence level per recommendation. Write the file
 first, then return a one-paragraph summary.
 ```
-
-This agent is the one Cadence dispatch path with NO `maxTurns` runaway bound,
-and it is excluded deliberately rather than overlooked: `maxTurns` is per-FILE
-frontmatter, this pass dispatches a generic host agent Cadence owns no file for,
-and minting a 31st rung file to bound one optional research pass would cost a
-`lib/rung-agent.mjs` map row plus both directions of self-verify's rung checks.
-It therefore has NO runaway bound at all. This pass is opt-in (`workflow.research`, default false)
-and advisory, never a gate, so an unbounded optional pass was judged the
-smaller cost against minting a 31st rung file to bound it.
 
 On return, verify `.planning/research/RESEARCH.md` exists and is non-empty.
 If the agent returned the document inline without writing it, write the file
@@ -420,8 +352,8 @@ Batch the category questions ceil(N/4) per AskUserQuestion call (up to 4
 categories at once), not one blocking turn per category; only a question whose
 wording depends on an earlier answer stays sequential.
 
-Track the outcome: selected features are v1; unselected table stakes go to
-v2; unselected differentiators go to Out of Scope.
+Selected features are v1; unselected table stakes go to v2; unselected
+differentiators go to Out of Scope.
 
 **Catch gaps** (ask-user seam):
 
@@ -443,7 +375,7 @@ user-centric, and atomic. Push vague ones until they pass:
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/REQUIREMENTS.md` and write
 `.planning/REQUIREMENTS.md`: v1 requirements as `## Active` bullets by
 category with REQ-IDs, v2 deferred, Out of Scope with reasons, Traceability
-table left as bare headers (seeded per phase by `/cad-plan`, never here).
+table left as bare headers.
 
 **Present the full v1 list** (every requirement, not counts) and confirm (ask-user seam):
 
@@ -468,11 +400,11 @@ Skip that section's publishing question. Ask nothing about publishing; say in
 one line that verification publishing is off and that `/cad-config --testing` is
 where to authorize it.
 
-The step leaves `testing.*` in `.planning/config.json` and writes
-`.github/cadence/coverage-policy.json`. Both ride the `state` step's commit when
-`planning.commit_docs` is true. When it is false they stay uncommitted, and the
-first CI plan task commits the policy file, since `/cad-plan` puts that task
-first when `check` finds no gate.
+This step is the only place `testing.*` is written. It leaves `testing.*` in
+`.planning/config.json` and writes `.github/cadence/coverage-policy.json`. Both
+ride the `state` step's commit when `planning.commit_docs` is true. When it is
+false they stay uncommitted, and the first CI plan task commits the policy file,
+since `/cad-plan` puts that task first when `check` finds no gate.
 </step>
 
 <step name="roadmap">
@@ -498,14 +430,13 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
 headers - `/cad-plan` seeds each row when its phase is planned
 (`references/req-traceability.md`); do not hand-author a row here.
 
-Then enter each phase, in order. The list is generated from the state file, so
-a hand-written line would be overwritten:
+Then enter each phase, in order, one add each and no hand-written line:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
 ```
 
-Then count what you just wrote - rule 5 above is prose until a seam counts it:
+Then count what you just wrote:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --roadmap-min 2 --roadmap-max 5
@@ -514,8 +445,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --roadm
 No `--phase`: one call walks every phase the roadmap declares. Each `over` entry
 names the phase, its measured count and the bound it broke. `roadmap_found:
 false` is not zero criteria - that phase's block declares none at all, so write
-them rather than report it as under the floor. A REPORT, not a gate, exactly as
-`plan-size`'s `phase-too-big` is: present it and let the approval gate decide.
+them rather than report it as under the floor. A REPORT, not a gate: present it
+and let the approval gate decide.
 
 **Present the roadmap** inline: a table (phase, goal, REQ-IDs, and the criteria
 count the seam just reported), then per-phase details with their success
@@ -553,8 +484,7 @@ file": show the file, then re-ask.
 </step>
 
 <step name="state">
-Write the initial cursor through the seam (ROADMAP.md exists now, so
-name/total derive automatically):
+Write the initial cursor through the seam:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
@@ -587,51 +517,18 @@ Next: /cad-context 1
 ```
 
 One suggestion, no menu. A `/clear` before it is safe - everything is on disk
-in `.planning/` and `/cad-context` runs a fresh analyzer, so the interview
-transcript need not be carried forward.
+in `.planning/`.
 </step>
 
 </process>
 
 <guardrails>
-- Never spawn more than one research agent, and none at all unless
-  configured or `--research` was passed. The 4-researcher fan-out and
-  synthesizer are gone; do not reintroduce them.
-- STATE.md is a four-line overwritten cursor plus an optional `Plan:` line: no audit logs, no session
-  narratives, no progress bars, no metrics.
-- Config keys come from the engine config template only; never invent keys,
-  never ask config questions beyond the forge, the roles interview and the
-  testing policy step. That step is the only place `testing.*` is written, and
-  it never asks about publishing.
 - Never fabricate an answer the ask-user seam was supposed to collect; when
   the user wants to talk freeform, drop structured questions until they're
   done.
 - Create nothing outside the canonical .planning/ set (PROJECT.md,
   REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json, records/state.json,
-  records/.gitignore, research/ if the pass ran) and `.github/cadence/coverage-policy.json`, which the testing policy
-  step renders. No phases/ dirs, no CLAUDE.md generation, no extra scaffolding.
-- A failed research pass is reported and skipped, never a blocker.
-- Don't rush the questioning to get to the artifacts. The artifacts are
-  only as good as the questioning that fed them.
+  records/.gitignore, research/ if the pass ran) and
+  `.github/cadence/coverage-policy.json`, which the testing policy step renders.
+  No phases/ dirs, no CLAUDE.md generation, no extra scaffolding.
 </guardrails>
-
-<success_criteria>
-- [ ] Questioning followed threads until what / why / who / done were all
-      concrete (not rushed, not checklist-walked)
-- [ ] .planning/config.json copied from the engine template; the forge, roles
-      and testing policy answers are the only config interrogation
-- [ ] The testing policy was accepted before the roadmap was written, publishing
-      was not asked, and `.github/cadence/coverage-policy.json` was rendered
-- [ ] PROJECT.md captures the full gathered context; Active requirements
-      framed as hypotheses
-- [ ] REQUIREMENTS.md: user scoped every category; REQ-IDs assigned;
-      v1 / v2 / Out of Scope explicit, exclusions carry reasons
-- [ ] ROADMAP.md: every v1 requirement mapped to exactly one phase; 2-5
-      falsifiable success criteria per phase; user approved it
-- [ ] Every `## Active` id appears in a ROADMAP phase (100% coverage);
-      Traceability table left as bare headers for `/cad-plan` to seed
-- [ ] STATE.md is a four-line cursor (no `Plan:` line) pointing at phase 1
-- [ ] Commits follow references/git-guard.md (guard before first commit, docs:
-      prefix, specific files, no push) and respect planning.commit_docs
-- [ ] At most one research agent spawned, only when enabled
-</success_criteria>

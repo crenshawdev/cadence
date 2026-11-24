@@ -1,8 +1,7 @@
 # cad-undo workflow
 
-Roll back a phase's commits safely. The phase SUMMARY.md is the manifest -
-cad-execute writes commits-per-task with their hashes there - so discovery is a
-read, not a guess.
+Roll back a phase's commits safely. The phase SUMMARY.md is the manifest:
+cad-execute writes commits-per-task with their hashes there.
 
 ## 1. Resolve the target
 `$ARGUMENTS` names the phase number. Read `.planning/phases/<N>/SUMMARY.md` and
@@ -27,13 +26,12 @@ dependency-guessing). Require an explicit yes (ask-user seam).
 Before a **committing** revert, apply the protected-branch guard
 (`references/git-guard.md` rail 1, the protected-branch check): a `git revert` writes
 commits, so if HEAD is a protected branch, gate it through the ask-user seam with
-no preselected default - the same discipline every other commit-producing step
-follows. Only the protected-branch check applies; a recovery revert does not open
-an integration branch. The `--no-commit` form writes no commit, so it skips this
-guard.
+no preselected default. Only the protected-branch check applies; a recovery
+revert does not open an integration branch. The `--no-commit` form writes no
+commit, so it skips this guard.
 
 - **Default**: `git revert --no-edit <hashes in reverse order>` - one revert
-  commit per undone commit, preserving history (the safe, auditable path).
+  commit per undone commit.
 - **`--no-commit`**: `git revert --no-commit <hashes reverse>` - apply the
   reversal to the index without committing, so the changes are staged for the
   user to adjust and re-do. A squash-style undo; leave it staged, do not commit.
@@ -41,8 +39,7 @@ Reverting a range that does not apply cleanly stops on the conflict - report it,
 do not force; the user resolves or aborts (`git revert --abort`).
 
 ## 5. Reset the phase status
-Because the phase is being undone, roll its status back (the one legitimate
-exception to cad-verify owning status) - two seam calls:
+Roll the phase's status back - two seam calls:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-done --n <N> --undo
@@ -51,8 +48,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N
 
 (`--undo` unchecks the ROADMAP box and flips the phase's traceability rows
 back to Pending; pick the cursor status by how far back the revert went.)
-Do this only for a committed revert; for `--no-commit`, leave status alone
-(the user has not finalized the undo).
+Do this only for a committed revert; for `--no-commit`, leave status alone.
 
 ## 6. Report
 Which commits were reverted (or staged), the new HEAD, the status reset, and the

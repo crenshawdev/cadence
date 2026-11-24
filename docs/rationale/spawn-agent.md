@@ -115,3 +115,14 @@ Two closes of one dispatch render as ONE bracket in either arrival order -
 the first opened, filling only the fields that row left empty - except the two
 cache figures, where the LARGER read wins, because they have one writer and two
 values for one worker are two reads of a transcript that only grows.
+
+## The one dispatch with no turn bound
+
+`/cad-new-project`'s research pass is the only dispatch Cadence makes with no
+`maxTurns` bound. `maxTurns` is per-file frontmatter, and that pass dispatches a
+generic host agent, which Cadence owns no file for, so there is nowhere to set
+it. Bounding it would take a new rung file plus its row in the
+`cadence-core/bin/lib/rung-agent.mjs` map, held to both directions of
+self-verify's rung checks, all for one optional pass. This was chosen, not
+overlooked: the pass is opt-in (`workflow.research`, default false) and advisory,
+never a gate, so leaving it unbounded costs less than carrying that file.

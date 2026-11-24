@@ -1,21 +1,12 @@
 <purpose>
-Gather everything /cad-plan needs to plan a phase without guessing: locked
-implementation decisions, falsifiable acceptance criteria, flagged
-assumptions, and explicit scope boundaries - in ONE conversational pass.
-
-The flow is codebase-first. A cad-assumptions-analyzer subagent reads the
-relevant source off the main context and returns evidence-cited assumptions;
-questioning is adaptive and covers only what the analyzer could not resolve.
-The exit condition is judged, not scored: decisions closed, acceptance
-criteria falsifiable.
+Gather what /cad-plan needs to plan a phase without guessing: locked
+implementation decisions, falsifiable acceptance criteria, flagged assumptions
+and explicit scope boundaries, in ONE conversational pass. The pass ends when
+decisions are closed and the acceptance criteria are falsifiable, which is
+judged, not scored.
 
 Output: `.planning/phases/{N}/CONTEXT.md` - an OPTIONAL phase artifact.
 /cad-plan reads it when present and plans without it when not.
-
-Why each step is shaped the way it is - the measured failures, the ordering
-arguments, the rejected alternatives - is in `docs/rationale/context.md`. It is
-not read at runtime. Read it before EDITING this file, so a step is not removed
-for looking redundant.
 </purpose>
 
 <process>
@@ -79,17 +70,12 @@ Read what already constrains this phase - never re-ask a settled question:
 - up to 3 most recent prior `phases/*/CONTEXT.md` files (locked decisions
   that carry forward)
 - the `## Deviations` bullets of up to 3 most recent prior
-  `phases/*/SUMMARY.md` files - bounded most-recent-first exactly as the
-  CONTEXT reads above are, so this read set cannot grow with N. Those
-  deviations are the evidence the spend gate's "already grounded by a prior
-  phase" arm turns on.
+  `phases/*/SUMMARY.md` files, most recent first like the CONTEXT reads
 
 Priors are subordinate to current scope: `REQUIREMENTS.md` and `ROADMAP.md`
-carry the latest decisions, while a prior CONTEXT can be stale - a scope change
-often updates requirements without touching an older phase's CONTEXT file. When
-a carried-forward decision contradicts current REQUIREMENTS/ROADMAP, treat the
-current docs as authoritative: drop or re-open that decision rather than
-feeding it forward as settled.
+carry the latest decisions. When a carried-forward decision contradicts current
+REQUIREMENTS/ROADMAP, treat the current docs as authoritative: drop or re-open
+that decision rather than feeding it forward as settled.
 
 Missing files are fine - continue without. Build an internal prior-decisions
 summary - what earlier phases locked, plus what their deviations later
@@ -98,26 +84,21 @@ annotating questions ("you chose X in phase 2").
 </step>
 
 <step name="spend_gate">
-The analyzer pass is the single most expensive dispatch in this spine, and no
-phase buys it unasked. Decide here, BEFORE `analyze`: that step's `route.mjs
-resolve` writes the lifecycle dispatch half unconditionally, so a gate placed
-after it strands an unpaired bracket on every skipped phase and inverts the
-record-health signal /cad-report reads.
+The analyzer pass costs extra, and no phase buys it unasked. Decide here,
+BEFORE `analyze`.
 
-Load prior-project memory first - BOTH arms need it. The buy arm feeds it to
-the analyzer payload; the skip arm reasons with it directly. ONE call for every
-key this workflow uses, the batched form seven other sites already ship:
+Load prior-project memory first - BOTH arms need it. ONE call for every key
+this workflow uses:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   memory.backend planning.commit_docs testing.scope testing.required_jobs planning.code_map
 ```
 
-`planning.commit_docs` is not needed until the `commit` step at the very end.
-Read it HERE and carry the value forward. `testing.scope` and
-`testing.required_jobs` ride the same call for `acceptance_criteria`, which
-carries them forward too. `planning.code_map` rides it for `analyze` only, and the
-skip arm never reads it.
+`planning.commit_docs` is for the `commit` step. Read it HERE and carry the
+value forward. `testing.scope` and `testing.required_jobs` are for
+`acceptance_criteria` and carry forward too. `planning.code_map` is for
+`analyze` only, and the skip arm never reads it.
 
 When `memory.backend` is `builtin` (the schema default), run recall for the
 phase goal:
@@ -127,7 +108,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms fr
 ```
 
 Skip this substep entirely when the backend is `none` - do not issue the
-recall call at all. The gate precedes the call on purpose (D-03).
+recall call at all.
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (one
 consult site - this step) for the result shape and how the top results render
@@ -143,10 +124,9 @@ question:
   1. "Read the code first - a separate pass reads the relevant code, then I ask only what the code can't answer. It costs extra time and tokens."
   2. "Skip it - I ask you directly, using the phase goal and what earlier phases settled. It costs less, and I may ask things the code already answers."
 
-Order the two by your recommendation, recommended first, the way every other
-ask in this workflow presents its options. Annotate the question with evidence
-you have ALREADY read - never with a fresh measurement, and never with a
-number you invent for the occasion:
+Order the two by your recommendation, recommended first. Annotate the question
+with evidence you have ALREADY read - never with a fresh measurement, and never
+with a number you invent for the occasion:
 
 - how many requirements this phase carries
 - the surfaces its ROADMAP entry names, by path
@@ -162,12 +142,10 @@ score, hold no threshold, and run no seam to rank the phase.
 On "Read the code first", continue into `analyze` below, unchanged.
 
 On "Skip it", do NOT enter `analyze` at all - no resolve, no dispatch, no
-bracket, and so no analyzer cost in this phase's run record. Say plainly that
-the pass was skipped and on which evidence, then take the same plain
-conversational pass `analyze`'s failure arm describes: derive 2-4 gray areas
-from the phase goal and the priors yourself, treat each as Unclear, and
-continue at `close_gray_areas`. Skipping is a stated choice, never a silent
-degradation.
+bracket. Say plainly that the pass was skipped and on which evidence, then take
+the plain conversational pass `analyze`'s failure arm describes, with the priors
+beside the goal, and continue at `close_gray_areas`. Skipping is a stated
+choice, never a silent degradation.
 </step>
 
 <step name="analyze">
@@ -175,16 +153,12 @@ Before dispatching, settle any user-only foundational fork the analyzer cannot
 resolve from code - where new code lives (which repo / path), the target
 platform, whether a referenced repo is even in scope this milestone. Surface
 the blocking ones via the ask-user seam first, and do NOT bake an unverified
-scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
-wastes the whole pass and forces a mid-analysis interruption.
+scope premise (e.g. "port repo X") into the analyzer prompt.
 
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seam-spawn-agent.md), the bracket on its resolve:
 `--bracket-read ".planning/ROADMAP.md"`. Prior phases' decisions reach it as the
-`<prior_decisions>` summary in the payload, distilled from the (at most 3) files
-load_priors read.
-
-This keeps raw file contents out of the main context.
+`<prior_decisions>` summary in the payload.
 
 When `planning.code_map`, read in `spend_gate`, is `true`, the payload carries a code map block, and one local scan with no model feeds it. Before the payload is assembled, make the scan once:
 
@@ -216,26 +190,25 @@ Follow your output format exactly.
 
 The dispatch came back, so close its bracket before anything else. ONE line,
 whichever way it ended - when the agent failed or timed out, write what failed
-to a scratch file and add `--detail-file <path>` (caller-derived text -
-references/conventions.md), and the seam closes it as a `checkpoint` instead of
-a `return`:
+to a scratch file and add `--detail-file <path>`, and the seam closes it as a
+`checkpoint` instead of a `return`:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
 ```
 
-Parse:
-- `assumptions[]` - each with area, statement, evidence, if-wrong
-  consequence, confidence (Confident / Likely / Unclear), and alternatives
-  (Likely/Unclear items only)
-- `needs_research[]` - topics the codebase alone could not settle (often empty)
+Parse, by the contract's names:
+- `assumptions[]` - grouped by area, each with Decision, Certainty (Confident /
+  Likely / Unclear), Evidence, If wrong, and Alternatives (Likely and Unclear
+  items only)
+- `needs_research[]` - the topics under Needs external research (often empty)
 
 Drop an assumption that only restates a spine decision. One that goes beyond
 it stays.
 
 If the agent fails or times out, say so and continue with a plain
 conversational pass: derive 2-4 gray areas from the phase goal yourself and
-treat each as Unclear below. Do not silently degrade.
+treat each as Unclear below.
 </step>
 
 <step name="close_gray_areas">
@@ -273,7 +246,7 @@ Confident and Likely assumptions:
 ## Phase {N}: {phase_name} - proposed decisions
 
 ### {Area}
-{Confidence} **{statement}**
+{Certainty} **{Decision}**
   Evidence: {file paths}
   If wrong: {consequence}
 ```
@@ -283,12 +256,10 @@ Then ask (ask-user seam, structured):
 - question: "Do these decisions look right to you?"
 - options: "Yes, keep them all - they are recorded as this phase's decisions" / "Change some - you pick which ones to change"
 
-On "Change some": multiSelect over the assumptions (label = statement,
+On "Change some": multiSelect over the assumptions (label = {Decision},
 description = "If wrong: {consequence}"), then one focused question per
-selected item with 2-3 concrete alternatives, batched ceil(N/4) per
-AskUserQuestion call, up to four questions per call; only a question whose
-wording depends on an earlier answer stays sequential. Corrections override the
-original.
+selected item with 2-3 concrete alternatives, batched ceil(N/4) as in
+`close_gray_areas`. Corrections override the original.
 
 The spine decisions are locked, so they stay out of the picture above, out of
 "Do these decisions look right to you?" and out of the "Change some"
@@ -308,11 +279,8 @@ all three parts of this test:
 - The result of a real trade-off: an alternative was genuinely considered
   and rejected, not the only option on the table.
 
-A decision failing any part of the test stays phase-local. This is workflow-
-prose judgment, applied here at confirm/write time - there is no scoring
-seam and no durability score is computed or stored; write_context (below)
-sorts confirmed decisions into `## Durable decisions` and `## Decisions` on
-this judgment.
+A decision failing any part of the test stays phase-local. The test is a
+judgment, never a score.
 
 **Requirement wording drift.** If a locked decision contradicts the wording
 of a REQUIREMENTS.md row this phase serves - a corrected count or a term
@@ -336,46 +304,39 @@ phase goal plus the locked decisions. Rules:
 - Pass/fail only - a stranger could check each box without judgment calls.
 - Observed behavior, not implementation: "running X shows Y", not "X is
   implemented" or "X works well".
-- 3-7 criteria. Fewer means the goal is vague; more means the phase is
-  probably too big (feeds the next step).
+- 3-7 criteria.
 - No subjective words: "clean", "reasonable", "robust" are banned.
 - Each criterion carries a phase-local `AC<N>` id at the head of its bullet,
   numbered from 1 in presentation order - never phase-prefixed, never
-  renumbered afterwards. `/cad-verify` carries that id onto the UAT item it
-  builds, and `/cad-audit` FAILs on a criterion that reached none
-  (`references/acceptance-criteria.md`).
+  renumbered afterwards.
 
 Present the draft list and ask (ask-user seam, structured):
 - header: "Acceptance"
 - question: "Do these criteria describe what finished looks like for this phase?"
 - options: "Keep them - the phase is checked against these criteria at the end" / "Change them - tell me what to change, and I show the list again once"
 
-On "Change them", take the user's changes in prose and re-present once. These
-criteria are what /cad-verify will check - do not lock anything untestable.
+On "Change them", take the user's changes in prose and re-present once. Do not
+lock anything untestable.
 
 **Tool-availability tag.** For each criterion, judge whether proving it
 needs an external tool or service (docker, a cloud CLI like doctl, a browser
 driver, a live endpoint). Probe the machine ones with `command -v <tool>`.
 Tag a criterion `(human-verify: needs <tool/service>)` when the tool is
-absent here or the check is inherently live/external - so /cad-verify routes
-it to a human check from the start and the executor never discovers
-mid-task that it cannot self-verify (which is how a deferred check
-masquerades as a pass). A criterion whose tool is present stays a normal
-machine-checkable box.
+absent here or the check is inherently live/external. A criterion whose tool
+is present stays a normal machine-checkable box.
 
 When `testing.scope` is set, a criterion whose tool is absent here is not
 tagged `human-verify`. It gets a CI check instead: a job from
 `testing.required_jobs` that proves it, recorded as a `(ci: <required job>)`
 suffix beside where the tag would sit. Where no automated check seems possible,
 ask the user once (ask-user seam) what to do about that criterion. The answer
-is in the person's own words, because the workflow fixes no set of answers:
+is in the person's own words:
 
 - header: "No check"
 - question: "Criterion {AC id} has no automated check that could prove it: {criterion}. What do you want to do about it?"
 - options: none, the person answers in their own words
 
-Never
-rewrite a criterion and never make one optional yourself: only the user's
+Never rewrite a criterion and never make one optional yourself: only the user's
 explicit decision does. A `human-verify` criterion already written stays as it
 is. With `testing.scope` unset, the paragraph above is the whole rule.
 </step>
@@ -403,14 +364,16 @@ Record the outcome as a one-line "Plan shape" note for CONTEXT.md.
 </step>
 
 <step name="write_context">
+Never modify source code. This workflow writes CONTEXT.md, the STATE.md cursor
+and at most one user-approved REQUIREMENTS.md row correction, nothing else. No
+audit artifacts: no DISCUSSION-LOG, checkpoint JSON, interview log or ambiguity
+scores. Never tell the user planning is blocked on this workflow, and never
+create a CONTEXT.md retroactively for a phase that skipped it.
+
 Write `{phase_dir}/CONTEXT.md` (create the directory if needed).
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/CONTEXT.md` (one
 consult site - this step) for its shape - five sections, nothing else, with the
 fill-in guidance for each.
-
-Deferred on SIZE, not branch-locality (references/dispatch-shape.md, File
-round-trip): this step is unconditional but reached once, at the very end, so
-the read folds into the turn that writes the file.
 
 When `resolve_phase` held spine decisions, `## Durable decisions` opens with
 that `text`, inserted unchanged and never retyped or reworded. The spine
@@ -426,14 +389,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --phase
 ```
 
 Report an `over` entry to the user in ONE line, its count and the bound it
-broke. A REPORT, not a gate - like `plan-size`'s `phase-too-big`, present it and
-continue. `context_found: false` is not zero: the section was never read (absent
-or near-miss heading), which is a file to fix rather than a count to report.
+broke. A REPORT, not a gate: present it and continue. `context_found: false` is
+not zero: the section was never read (absent or near-miss heading), which is a
+file to fix rather than a count to report.
 </step>
 
 <step name="update_cursor">
-Update the cursor through the seam (it derives name/total from ROADMAP and
-stamps the date):
+Update the cursor through the seam:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"
@@ -443,10 +405,9 @@ Hold its envelope's `cursor` for `done`: the position is composed from it.
 </step>
 
 <step name="commit">
-If `planning.commit_docs` - the value read in the `spend_gate` batch, never
-re-read here - is true: apply the protected-branch guard
-(references/git-guard.md rail 1 - context is the first act of a phase), then
-commit exactly `{phase_dir}/CONTEXT.md`,
+If `planning.commit_docs` - the value read in `spend_gate` - is true: apply the
+protected-branch guard (references/git-guard.md rail 1 - context is the first
+act of a phase), then commit exactly `{phase_dir}/CONTEXT.md`,
 `.planning/STATE.md`, `.planning/records/state.json`, and - only
 when the requirement-wording-drift step edited it - `.planning/REQUIREMENTS.md`:
 `docs: capture context for phase {N}`. Nothing this workflow wrote may be
@@ -470,43 +431,27 @@ Commit: {hash or "not committed (planning.commit_docs=false)"}
 `plan` field, ending at "plan {K} of {J}" when that has no `name`. Never
 "plan 0 of 0".
 
-One suggestion max: `/cad-plan {N}` - safe to `/clear` first: CONTEXT.md
-holds every decision and planning runs in a fresh subagent, so a cleared
-context loses nothing.
+One suggestion max: `/cad-plan {N}` - safe to `/clear` first.
 </step>
 
 </process>
 
 <guardrails>
-- Never modify source code - this workflow writes CONTEXT.md and the
-  STATE.md cursor, plus at most one user-approved REQUIREMENTS.md row
-  correction (requirement-wording drift, above). Nothing else.
-- No audit artifacts: no DISCUSSION-LOG, no checkpoint JSON, no interview
-  log, no ambiguity scores. Git history is the log.
 - Exactly one size question, near the end, and exactly one spend question,
   before the analyzer - two asks, never merged into one and never re-asked.
-  No SPIDR, no story formats, no splitting frameworks, for either of them.
 - Question budget is earned by the analyzer: Confident items cost zero
   questions. Never interview area-by-area through things the codebase
   already answers.
 - Decisions record WHAT was decided, not HOW to build it - implementation
   detail belongs to /cad-plan.
-- No review trigger fires here (see references/review-triggers.md wiring) -
-  the plan gets its review after /cad-plan writes PLAN.md.
-- CONTEXT.md is optional. Never tell the user planning is blocked on this
-  workflow, and never create one retroactively for phases that skipped it.
+- No review trigger fires here - the plan gets its review after /cad-plan
+  writes PLAN.md.
 </guardrails>
 
 <success_criteria>
 - [ ] Every decision traces to a user confirmation or correction, with
       evidence cited - except the spine decisions, which trace to the
       phase's `**Spine decisions:**` field
-- [ ] Every acceptance criterion is pass/fail observable behavior
 - [ ] Exactly one size question and exactly one spend question were asked -
       the size outcome recorded as Plan shape, the spend arm stated plainly
-- [ ] CONTEXT.md contains exactly: scope boundary, durable decisions,
-      decisions (phase-local), acceptance criteria, flagged assumptions -
-      each decision classified against the durability filter
-- [ ] Committed per planning.commit_docs with the protected-branch guard
-      applied; no audit artifacts written
 </success_criteria>

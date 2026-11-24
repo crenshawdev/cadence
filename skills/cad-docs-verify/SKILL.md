@@ -11,14 +11,8 @@ allowed-tools:
 ---
 
 <objective>
-Catch documentation that has drifted from the code - the failure that quietly
-misleads every new reader of a distributed project. Extract the checkable claims
-from the target docs and test each against the actual repo, then report each as
-accurate, stale, or unverifiable.
-
-This is the docs-verifier engine only; the doc WRITER is collapsed out
-(DESIGN §2). cad-docs-verify never rewrites a doc - it produces the findings a
-human (or a later edit) acts on.
+Check the target docs' claims against the live code and report each as accurate,
+stale or unverifiable.
 </objective>
 
 <execution_context>
@@ -26,9 +20,7 @@ human (or a later edit) acts on.
 </execution_context>
 
 <process>
-Run the verify workflow end-to-end. Only claim `stale` when the code actually
-contradicts the doc; when a claim cannot be checked mechanically, mark it
-`unverifiable` rather than guessing. Do not edit any doc.
+Run the verify workflow end-to-end.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200
