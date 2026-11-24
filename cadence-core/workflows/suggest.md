@@ -51,7 +51,7 @@ That one call reads TWO records, `.planning/records/trace.jsonl` and
 <step name="present">
 Open with one line naming the scope read and the `events_read` count. Then TWO
 headed blocks, the tweaks first and the receipts below them. The two kinds never
-interleave: presenting them as one list is what makes a retune read as a report.
+interleave.
 
 **Heading one - the tweaks this record supports.** Every `kind: "suggest"` entry
 is a NUMBERED item under it and no `info` entry appears inside it. Each item
@@ -60,37 +60,30 @@ states five things, in this order:
 - What it is about: its `subject`, the role, trigger or marker the rule counted.
 - The config key it concerns: its `action`, spelled exactly as returned.
 - Its `current` value - the key and the value in force, AS GIVEN. Never
-  re-resolved here into what would actually fire: a user who sets a key to move
-  it off a printed effective value has just pinned that gate, and a printed
-  value they did not choose is what makes them do it.
+  re-resolved here into what would actually fire: a user who moves a key off a
+  printed effective value pins that gate.
 - Its `direction`, with the `proposed` target beside it where the seam returned
   one - `current` to `proposed`, both spelled as returned. Where the entry
-  carries NO `proposed`, state that absence in words rather than leaving a
-  blank, which is indistinguishable from a forgotten field: the record cannot
-  price a target, and a suggestion it cannot price comes back without one rather
-  than with a guess.
+  carries NO `proposed`, state that absence in words.
 - Its `evidence`, verbatim as the seam computed it.
 
 When the return carries `info` entries but no `suggest` entry, that heading
 still appears and carries exactly one line: the record supports no tweak in this
-scope, meaning no CONFIG KEY this record prices - which is a claim about keys
-specifically and not about the run. Where a receipt below names a remedy that is
-not a key, that line points at the receipts rather than standing alone; the
-in-dispatch re-reading receipt is the case this exists for, and printing "no
-tweak" directly above a file opened 29 times inside one dispatch is the reading
-it prevents. Nothing else is attached to that line - an offer with nothing
-behind it is the same mute output pointed the other way.
+scope, meaning no CONFIG KEY this record prices - a claim about keys and not
+about the run. Where a receipt below names a remedy that is not a key, that line
+points at the receipts rather than standing alone. Nothing else is attached to
+that line.
 
 **Heading two - the receipts, below the tweak block.** Every `kind: "info"`
-entry is one line under it. An `info` asks for nothing; it is there because the
-record earned it a mention, and it is never lifted into the block above.
+entry is one line under it. An `info` asks for nothing, and it is never lifted
+into the block above.
 
-That has ONE stated exception, and it is one of presentation rather than of
-kind. An in-dispatch re-reading receipt names a remedy that is not a config key
-- there is none, which is why its `action` is null - so relay the remedy its
-`evidence` names, in its own words, rather than leaving the reader holding a
-ratio with nothing to do about it. It stays a receipt, it is still not numbered,
-and it still generates no `/cad-config` token: there is no key to put in one.
+That has ONE stated exception, of presentation rather than of kind. An
+in-dispatch re-reading receipt names a remedy that is not a config key, which is
+why its `action` is null, so relay the remedy its `evidence` names, in its own
+words. It stays a receipt, it is still not numbered, and it still generates no
+`/cad-config` token: there is no key to put in one.
+
 `capped`, `rotated` or `malformed` gets one line each here, named rather than
 swallowed: a capped file was read to a limit, a rotated one was CUT at the
 newest phase anchor with everything older in the sibling it names, and a
@@ -98,31 +91,24 @@ malformed count is lines the reader could not parse. Capped and rotated are
 different facts - a rotated record is whole.
 
 Relay the figures UNCHANGED and recompute none of them - including the ones
-whose denominator is arguable. The per-role escalation evidence is denominated
-in `routing/resolve` events, so on a cross-model-only configuration it counts
-routing decisions no subagent ever acted on, and a run can report a start rung
-"held across N resolves" for a role dispatched once or not at all. Relay it as
-given anyway: correcting it means changing the seam's denominators, and a number
-quietly adjusted in prose is the one failure mode this command has no defence
-against.
+whose denominator is arguable. A figure the record does not carry is reported
+absent, never filled in.
 
 Then ASK, below the receipts. Every tweak that came back with a `proposed`
 target is one `/cad-config <key>=<value>` token - the key as `action` returned
 it, the value its `proposed` - and the closing question is whether to run
 `/cad-config` with those tokens, through the `SlashCommand` tool. Name the exact
-tokens in the question: a user answering "yes" to a summary has not seen the
-values. A tweak the seam could not price has no token to offer and is named in
-the block without one - never synthesize a value for it - and when NO entry
-carries a target there is nothing to route, so say that and ask nothing.
+tokens in the question. A tweak the seam could not price has no token to offer
+and is named in the block without one - never synthesize a value for it - and
+when NO entry carries a target there is nothing to route, so say that and ask
+nothing.
 
-The posture that question keeps is `cadence-core/references/triage-gate.md`'s
-over review findings: the suggestion is input to the user's decision, nothing is
-applied on the way to asking, and an unanswered offer means no change. Bind it
-through the ask-user seam's open-ended arm - end the turn on the question, never
-assume the answer. WHERE the write happens, on a yes, is inside `/cad-config`,
-which takes `<key>=<value>` tokens directly; this command writes no config key
-itself, before the question or after it, and a user who would rather edit
-`.planning/config.json` by hand declines and does that.
+The suggestion is input to the user's decision: nothing is applied on the way to
+asking, and an unanswered offer means no change. Bind the question through the
+ask-user seam's open-ended arm - end the turn on the question, never assume the
+answer. WHERE the write happens, on a yes, is inside `/cad-config`, which takes
+`<key>=<value>` tokens directly; this command writes no config key itself,
+before the question or after it.
 </step>
 
 <step name="thin_record">
