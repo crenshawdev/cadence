@@ -364,14 +364,16 @@ Record the outcome as a one-line "Plan shape" note for CONTEXT.md.
 </step>
 
 <step name="write_context">
+Never modify source code. This workflow writes CONTEXT.md, the STATE.md cursor
+and at most one user-approved REQUIREMENTS.md row correction, nothing else. No
+audit artifacts: no DISCUSSION-LOG, checkpoint JSON, interview log or ambiguity
+scores. Never tell the user planning is blocked on this workflow, and never
+create a CONTEXT.md retroactively for a phase that skipped it.
+
 Write `{phase_dir}/CONTEXT.md` (create the directory if needed).
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/CONTEXT.md` (one
 consult site - this step) for its shape - five sections, nothing else, with the
 fill-in guidance for each.
-
-Deferred on SIZE, not branch-locality (references/dispatch-shape.md, File
-round-trip): this step is unconditional but reached once, at the very end, so
-the read folds into the turn that writes the file.
 
 When `resolve_phase` held spine decisions, `## Durable decisions` opens with
 that `text`, inserted unchanged and never retyped or reworded. The spine
@@ -387,14 +389,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --phase
 ```
 
 Report an `over` entry to the user in ONE line, its count and the bound it
-broke. A REPORT, not a gate - like `plan-size`'s `phase-too-big`, present it and
-continue. `context_found: false` is not zero: the section was never read (absent
-or near-miss heading), which is a file to fix rather than a count to report.
+broke. A REPORT, not a gate: present it and continue. `context_found: false` is
+not zero: the section was never read (absent or near-miss heading), which is a
+file to fix rather than a count to report.
 </step>
 
 <step name="update_cursor">
-Update the cursor through the seam (it derives name/total from ROADMAP and
-stamps the date):
+Update the cursor through the seam:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"
@@ -404,10 +405,9 @@ Hold its envelope's `cursor` for `done`: the position is composed from it.
 </step>
 
 <step name="commit">
-If `planning.commit_docs` - the value read in the `spend_gate` batch, never
-re-read here - is true: apply the protected-branch guard
-(references/git-guard.md rail 1 - context is the first act of a phase), then
-commit exactly `{phase_dir}/CONTEXT.md`,
+If `planning.commit_docs` - the value read in `spend_gate` - is true: apply the
+protected-branch guard (references/git-guard.md rail 1 - context is the first
+act of a phase), then commit exactly `{phase_dir}/CONTEXT.md`,
 `.planning/STATE.md`, `.planning/records/state.json`, and - only
 when the requirement-wording-drift step edited it - `.planning/REQUIREMENTS.md`:
 `docs: capture context for phase {N}`. Nothing this workflow wrote may be
@@ -431,31 +431,21 @@ Commit: {hash or "not committed (planning.commit_docs=false)"}
 `plan` field, ending at "plan {K} of {J}" when that has no `name`. Never
 "plan 0 of 0".
 
-One suggestion max: `/cad-plan {N}` - safe to `/clear` first: CONTEXT.md
-holds every decision and planning runs in a fresh subagent, so a cleared
-context loses nothing.
+One suggestion max: `/cad-plan {N}` - safe to `/clear` first.
 </step>
 
 </process>
 
 <guardrails>
-- Never modify source code - this workflow writes CONTEXT.md and the
-  STATE.md cursor, plus at most one user-approved REQUIREMENTS.md row
-  correction (requirement-wording drift, above). Nothing else.
-- No audit artifacts: no DISCUSSION-LOG, no checkpoint JSON, no interview
-  log, no ambiguity scores. Git history is the log.
 - Exactly one size question, near the end, and exactly one spend question,
   before the analyzer - two asks, never merged into one and never re-asked.
-  No SPIDR, no story formats, no splitting frameworks, for either of them.
 - Question budget is earned by the analyzer: Confident items cost zero
   questions. Never interview area-by-area through things the codebase
   already answers.
 - Decisions record WHAT was decided, not HOW to build it - implementation
   detail belongs to /cad-plan.
-- No review trigger fires here (see references/review-triggers.md wiring) -
-  the plan gets its review after /cad-plan writes PLAN.md.
-- CONTEXT.md is optional. Never tell the user planning is blocked on this
-  workflow, and never create one retroactively for phases that skipped it.
+- No review trigger fires here - the plan gets its review after /cad-plan
+  writes PLAN.md.
 </guardrails>
 
 <success_criteria>
@@ -465,9 +455,4 @@ context loses nothing.
 - [ ] Every acceptance criterion is pass/fail observable behavior
 - [ ] Exactly one size question and exactly one spend question were asked -
       the size outcome recorded as Plan shape, the spend arm stated plainly
-- [ ] CONTEXT.md contains exactly: scope boundary, durable decisions,
-      decisions (phase-local), acceptance criteria, flagged assumptions -
-      each decision classified against the durability filter
-- [ ] Committed per planning.commit_docs with the protected-branch guard
-      applied; no audit artifacts written
 </success_criteria>
