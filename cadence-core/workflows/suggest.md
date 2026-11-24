@@ -1,42 +1,31 @@
 <purpose>
-The run record prices its own configuration. `planning.mjs trace suggest` reads
-the joined trace and returns the retune the record supports - each suggestion
-carrying the evidence behind it and the config key it concerns - and this
-command presents that and stops. Every figure comes from the seam: nothing here
-is recomputed, and nothing here is applied.
+`planning.mjs trace suggest` reads the joined trace and returns the retune the
+record supports. This command presents that retune and stops.
 
 This file is the ONE statement of those presentation rules.
-`cadence-core/workflows/milestone.md`'s retune step and
-`cadence-core/workflows/report.md`'s closing pointer both route here instead of
-restating them, so the rules cannot drift into three versions of themselves.
 </purpose>
 
 <process>
 
 <step name="scope">
 Parse `$ARGUMENTS` for a phase number: it becomes `--phase <N>`. NO argument
-means the WHOLE record, on purpose - the milestone close is the caller this seam
-was built for, and a milestone's evidence spans every phase it shipped. Those
-are the only two scopes. Add no flag of any kind: `trace suggest`'s contract row
-in `cadence-core/bin/lib/arg-contract.mjs` fixes its flags at `--phase`
-alone, so a scoping flag would be a contract change, and there is no
-correlation-id scoping to reach for either.
+means the WHOLE record. Those are the only two scopes. Add no flag of any kind.
 
 The scope is REPORTED, never narrowed. Say which record was read - the return's
-`file` names it - and what it spans: nothing prunes `.planning/records/trace.jsonl` at a
-close, so an unscoped run spans every milestone still in the LIVE record, and a
-`--phase <N>` run admits an older cycle's phase `N` beside this one's. The one
-thing that ever shortens it is the cut at its size bound, which `rotated`
-reports. The user reading a suggestion needs both.
+`file` names it - and what it spans: nothing prunes `.planning/records/trace.jsonl`
+at a close, so an unscoped run spans every milestone still in the LIVE record. A
+`--phase <N>` run starts after the newest cycle marker in the trace, so it covers
+the open cycle's phase `N`, and a trace with no marker pools every cycle's phase
+`N`. The one thing that ever shortens the record is the cut at its size bound,
+which `rotated` reports.
 
-The same is true of the SECOND record the seam reads, `.planning/records/reads.jsonl`,
-and it has one more caveat of its own: nothing prunes it at a close either, the
-one thing that ever shortens it is the same cut at its size bound - which
-`reads.rotated` reports - and it carries NO phase scoping at all: it is one
-file per project. A `--phase <N>`
-run therefore reaches its reads only through that phase's dispatch BRACKETS,
-which is the join doing the scoping rather than the flag. Say that where an
-in-dispatch figure is presented.
+The same is true of the SECOND record the seam reads, `.planning/records/reads.jsonl`:
+nothing prunes it at a close either, and the one thing that ever shortens it is
+the same cut at its size bound, which `reads.rotated` reports. Its own caveat is
+that it carries NO phase scoping at all: it is one file per project. A
+`--phase <N>` run reaches its reads only through that phase's dispatch BRACKETS:
+the join does the scoping, not the flag. Say that where an in-dispatch figure is
+presented.
 </step>
 
 <step name="read_record">
@@ -49,16 +38,14 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace suggest [--phas
 Everything below reads off its return: `file`, `scope`, `events_read`,
 `suggestions`, `reads` (the second record's path, and `reads.rotated` when that
 record was cut), and `capped` / `rotated` / `malformed` / `warnings` when any of
-the four is present - a
-`warnings` entry is a config layer the merge could not read whole, so a `current`
-below may be reading less than the project set, and it is relayed rather than
-swallowed. A `warnings` entry naming `.planning/records/reads.jsonl` is that file being
-unreadable, so no in-dispatch figure was measured this run - relay it the same
-way rather than reporting an absence as a low number.
+the four is present. A `warnings` entry is a config layer the merge could not
+read whole, so a `current` below may be reading less than the project set: relay
+it, never swallow it. One naming `.planning/records/reads.jsonl` is that file
+being unreadable, so no in-dispatch figure was measured this run: relay it the
+same way.
 
-That one call reads TWO records - `.planning/records/trace.jsonl` and
-`.planning/records/reads.jsonl` - and open NEITHER. The seam is the reader, and prose
-that re-reads either is prose that can disagree with it.
+That one call reads TWO records, `.planning/records/trace.jsonl` and
+`.planning/records/reads.jsonl`, and open NEITHER.
 </step>
 
 <step name="present">
