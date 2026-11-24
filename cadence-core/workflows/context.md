@@ -246,7 +246,7 @@ Confident and Likely assumptions:
 ## Phase {N}: {phase_name} - proposed decisions
 
 ### {Area}
-{Confidence} **{statement}**
+{Certainty} **{Decision}**
   Evidence: {file paths}
   If wrong: {consequence}
 ```
@@ -256,12 +256,10 @@ Then ask (ask-user seam, structured):
 - question: "Do these decisions look right to you?"
 - options: "Yes, keep them all - they are recorded as this phase's decisions" / "Change some - you pick which ones to change"
 
-On "Change some": multiSelect over the assumptions (label = statement,
+On "Change some": multiSelect over the assumptions (label = {Decision},
 description = "If wrong: {consequence}"), then one focused question per
-selected item with 2-3 concrete alternatives, batched ceil(N/4) per
-AskUserQuestion call, up to four questions per call; only a question whose
-wording depends on an earlier answer stays sequential. Corrections override the
-original.
+selected item with 2-3 concrete alternatives, batched ceil(N/4) as in
+`close_gray_areas`. Corrections override the original.
 
 The spine decisions are locked, so they stay out of the picture above, out of
 "Do these decisions look right to you?" and out of the "Change some"
@@ -281,11 +279,8 @@ all three parts of this test:
 - The result of a real trade-off: an alternative was genuinely considered
   and rejected, not the only option on the table.
 
-A decision failing any part of the test stays phase-local. This is workflow-
-prose judgment, applied here at confirm/write time - there is no scoring
-seam and no durability score is computed or stored; write_context (below)
-sorts confirmed decisions into `## Durable decisions` and `## Decisions` on
-this judgment.
+A decision failing any part of the test stays phase-local. The test is a
+judgment, never a score.
 
 **Requirement wording drift.** If a locked decision contradicts the wording
 of a REQUIREMENTS.md row this phase serves - a corrected count or a term
