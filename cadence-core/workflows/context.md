@@ -452,7 +452,6 @@ One suggestion max: `/cad-plan {N}` - safe to `/clear` first.
 - [ ] Every decision traces to a user confirmation or correction, with
       evidence cited - except the spine decisions, which trace to the
       phase's `**Spine decisions:**` field
-- [ ] Every acceptance criterion is pass/fail observable behavior
 - [ ] Exactly one size question and exactly one spend question were asked -
       the size outcome recorded as Plan shape, the spend arm stated plainly
 </success_criteria>
