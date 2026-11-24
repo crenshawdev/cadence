@@ -24,7 +24,7 @@ Parse `$ARGUMENTS`:
 - Starts with `--roles`: go to **Roles interview** - the thirteen questions
   that say what each of the six roles costs. A trailing `--global` re-enters
   the full thirteen against the user-global layer instead of writing repo diffs.
-- `--walk`: go to **Interactive menu (no args)** - the full walk of every knob.
+- `--walk`: go to **Interactive menu (no args)**.
 - Starts with a `<key>=` token (a dotted key name, then `=`): go to **Direct set**.
   A value runs to the next `<key>=` token or the end, so it may hold spaces
   (`git.protected_branches=["main", "develop"]`). An `=` further into the text
@@ -76,7 +76,7 @@ selectable lists, the twelve `roles.<role>.model` and `.effort` keys included. T
      - the knob IS in the repo file -> that option is `(current)`.
      - the knob is NOT in the repo file -> the effective value's option is
        `(in force)`, and its `description` opens by saying the value is active
-       but INHERITED, and that picking it writes it into this repo.
+       but INHERITED.
      List the labelled option FIRST either way.
    - **A pick equal to the value already in force writes NOTHING**, on both
      arms: re-picking `(current)` and re-picking `(in force)` are each a no-op.
