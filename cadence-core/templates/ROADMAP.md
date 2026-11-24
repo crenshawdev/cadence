@@ -47,9 +47,8 @@ Notes:
   insertions added later via /cad-phase; execution follows numeric order.
 - Phase status is held in the state file and shown as the `## Phases`
   checkbox: `- [ ]` open, `- [x]` complete. /cad-verify completes a phase when
-  its UAT fully passes. A status that drifts is reported by /cad-progress, which
-  edits neither file (this one or REQUIREMENTS.md) and routes to /cad-verify
-  where the drift involves completion. There is no separate progress table -
-  /cad-progress derives live status from phase artifacts.
+  its UAT fully passes. A drift that involves completion is reported by
+  /cad-progress, which edits neither file (this one or REQUIREMENTS.md) and
+  routes to /cad-verify. There is no separate progress table.
 - No time estimates, no plan sub-lists - plans live in
   .planning/phases/<N>/PLAN.md, created by /cad-plan when a phase starts.
