@@ -1,18 +1,15 @@
 # cad-config workflow
 
-Configure `.planning/config.json`. Canonical shape and validation live in
-`cadence-core/config.schema.json` (the source of truth), enforced by the
-`bin/config.mjs` seam; `cadence-core/templates/config.json` is the scaffolded
-default. One interactive skill; the substantive part is review-provider model
-assignment, which is the only config knob that needs live detection rather than
-a plain edit.
+Configure `.planning/config.json`. `cadence-core/config.schema.json` is the
+source of truth for its shape and validation, and the `bin/config.mjs` seam
+enforces it.
 
 ## 0. Locate config
 
 Read `.planning/config.json`. If it is absent, this project has no config yet
 (`cad-new-project` writes one for a blank page, `cad-adopt` for a repo that
-already has code and history). Offer to copy the template into place; stop if
-the user declines.
+already has code and history). Offer to copy
+`cadence-core/templates/config.json` into place; stop if the user declines.
 
 ## 1. Route
 
@@ -60,10 +57,7 @@ Reached with `--walk`, or with no arguments while `workflow.config_menu` is off.
 selectable lists, the twelve `roles.<role>.model` and `.effort` keys included. Two sets stay out:
 `review.providers.*`, which needs live detection, so the menu routes it to
 **Review provider setup** rather than free-typing model ids; and
-`review.decision_review`'s two keys, which belong to an on-demand command
-rather than the phase loop. The **Roles interview** below is the guided way
-into the roles keys, one question per value with what it costs beside it; this
-walk is the flat way.
+`review.decision_review`'s two keys, which belong to an on-demand command.
 
 ### The walk
 
@@ -71,8 +65,7 @@ walk is the flat way.
 2. Read the walk's rows with
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys --walk`
    (sections in walk order).
-   Walk them **in order, 4 knobs per `AskUserQuestion` call** (the ask-user seam;
-   its 4-option cap is why we page). For each knob:
+   Walk them **in order, 4 knobs per `AskUserQuestion` call** (the ask-user seam). For each knob:
    - one question; its text = the knob's `question`, options = the first item of
      each `explain` entry (`[value, text?]`),
    - **each option carries the entry's second item, `text`, as its
@@ -87,9 +80,6 @@ walk is the flat way.
      List the labelled option FIRST either way.
    - **A pick equal to the value already in force writes NOTHING**, on both
      arms: re-picking `(current)` and re-picking `(in force)` are each a no-op.
-     This is what stops the walk pinning the whole global layer into the repo
-     file page by page - a user who agrees with an inherited value is
-     agreeing, not choosing to override it.
    - **A key with more than four options does not fit the seam.** The cap is 4
      options and `Other` is the free-type entry, so show the value in force plus
      the three the user is most likely to want, and name every omitted value in
@@ -111,14 +101,11 @@ walk is the flat way.
    - Picking `review.triggers.risk_surface.surfaces` opens **Risk surfaces**
      (`/cad-config --surfaces`), which scans the project first and offers
      answers from what it finds.
-3. A page whose knobs the user leaves unchanged is a no-op, and so is a page
-   where every pick matched the value already in force (step 2's no-op rule).
-   Only a value that DIFFERS from what is in force is a diff, and only diffs are
-   applied.
+3. A page whose knobs the user leaves unchanged is a no-op (step 2's no-op
+   rule); only diffs are applied.
 4. After the last page, show the changed keys as a diff. A value typed through
-   `Other` can carry `$(...)`, which runs before Node starts, and the preview
-   comes before the yes, so write each changed value as JSON to its own file in
-   a directory this run made
+   `Other` can carry `$(...)`, so write each changed value as JSON to its own
+   file in a directory this run made
    (`D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "$D"`) and pass the
    preview and `set` each key as `<key>="$(cat <path>)"` (`references/conventions.md`,
    Caller-derived text). Run `config.mjs preview <key>="$(cat <path>)"…` once for
