@@ -139,26 +139,18 @@ Repeat until a root cause is confirmed or a dead-end is reached:
 
 ## Consult at dead-ends (references/consult.md)
 
-Offer a consult - user-gated, one per dead-end - when an OBSERVABLE state is hit,
-never on a feeling of being stuck. The threshold T is
-`review.consult.attempt_threshold` (default 3), read in the one
-method-loop entry call (above).
-`memory.backend` gates the Hypothesize recall step; the threshold gates
-this consult:
+With `review.consult.enabled` false, make no offer and leave consult.md unread.
+Otherwise offer a consult only when one of these OBSERVABLE states is hit, T
+being `review.consult.attempt_threshold` (default 3):
 
 - **Attempts >= T** on the same bug (T applied fixes, still failing).
 - **Test still red after T** method-loop iterations.
 - **Exhausted hypotheses** - the set is empty and the bug is unresolved.
 
-Run `offer_consult` with the situation = the symptom, the confirmed/refuted
-hypotheses, and what the fixes changed. Ground each returned angle against the
-real code, present the survivors, and let the user pick the next move. The
-consult never decides; it reopens the hypothesis space. Bounded: do not
-re-offer for the same dead-end unless a new observation has appeared since.
-
-## Discipline
-
-- One variable per test; no shotgun fixes.
-- Persist the state file after every test and every fix attempt.
-- Single pass: no automatic retry loops. Each fix attempt and each consult is a
-  deliberate, recorded step.
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/consult.md` for the bound and
+run its `offer_consult` with the situation = the symptom, the confirmed/refuted
+hypotheses, and what the fixes changed. An offer waits for an explicit yes, and
+a declined one is not repeated for the same dead-end unless a new observation
+has appeared since. Check each returned angle against the real code, present the
+survivors, and let the user pick the next move: the consult never decides. Write
+every consult taken to the state file.
