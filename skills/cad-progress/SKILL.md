@@ -13,16 +13,8 @@ allowed-tools:
 ---
 
 <objective>
-Answer "where am I and what's next" for the current Cadence project. Truth is
-derived by counting: ROADMAP.md phases vs phases/<N>/ artifacts (PLAN.md,
-SUMMARY.md, UAT.md fully passed) plus recent git log. STATE.md is a hint, not
-a source. Detects incomplete or paused work and offers to resume at the right
-step, routing to the spine skill that does it (/cad-context, /cad-plan,
-/cad-execute, /cad-verify, /cad-milestone, /cad-phase add between milestones) -
-never does the work itself.
-`--stats` prints a summary derived on demand; `--trace` prints the current
-phase's joined run record - routing, provider, worker-lifecycle and outcome
-events - and writes nothing.
+Answer "where am I and what's next" for the current Cadence project, and route
+to the skill that does it.
 </objective>
 
 <execution_context>
