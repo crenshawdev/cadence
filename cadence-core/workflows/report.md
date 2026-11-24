@@ -1,9 +1,8 @@
 <purpose>
-The run record already holds the story of what a phase cost and what that
-spend caught; this command tells it. Everything reported is drawn from
-`.planning/records/trace.jsonl` and the phase's own artifacts - no subagent runs, no
-planning file is written (the render's scratch file is the model's own temp),
-and a number that is not in the record is not in the report.
+Tell what a phase cost and what that spend caught, from
+`.planning/records/trace.jsonl` and the phase's own artifacts - no subagent
+runs, no planning file is written (the render's scratch file is the model's own
+temp).
 </purpose>
 
 <process>
@@ -11,21 +10,15 @@ and a number that is not in the record is not in the report.
 <step name="scope">
 Parse `$ARGUMENTS`: a phase number scopes to that phase; `--all` spans the
 whole record; neither means the STATE cursor's phase (`planning.mjs cursor
-get`). No `.planning/records/trace.jsonl` -> say so and stop: there is no record to
-report, which is itself the answer.
+get`). No `.planning/records/trace.jsonl` -> say so and stop.
 </step>
 
 <step name="read_record">
-Three seam calls. The render is the largest response any Cadence prose
-prescribes - measured 2026-08-17 at 68,044 B unscoped and 14,857 B at
-`--phase 3` on this repository, and the unscoped figure grows with the record -
-so it rides THIS RUN's own scratch directory
+Three seam calls. The render is the largest response here and grows with the
+record, so it rides THIS RUN's own scratch directory
 (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md` states the rule;
 the file is the model's own scratch, never a phase artifact). The other two stay
-inline, under the threshold: `reads --join` measures 2,494 B - re-measured
-2026-08-22 on this repository, when the per-role `inDispatch` rows joined that
-response, and it grows slowly with the record the same way the render figure
-above does - and `trace window` 5,378 B.
+inline, under the threshold: `reads --join` measures 2,494 B.
 
 ```
 D="$(mktemp -d "${TMPDIR:-/tmp}/cad-record-XXXXXX")" && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
@@ -35,15 +28,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" reads --join
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace window [--phase <N>]
 ```
 
-**That last `echo` is why the step exists in this shape.** `compose` runs in a
-DIFFERENT Bash invocation, and the tool persists the working directory and not
-shell state, so `$D` is empty there. The directory and the run token are printed
-here precisely so the next step can carry them as LITERALS - copy the printed
-path and the printed token into `compose`'s read-back, and do NOT re-derive
-either with a fresh `mktemp`, which would point the read-back at an empty
-directory. The token is what makes a carried path safe: a path carried by hand
-is the one arm where an EARLIER run's complete, well-formed record still
-resolves, and the token it was handed is an id that file cannot supply itself.
+The directory and the run token are printed to be carried as LITERALS: copy the
+printed path and token into `compose`'s read-back, and do not re-derive either
+with a fresh `mktemp`.
 
 Everything below reads from that scratch FILE: `brackets` (one row per paired
 dispatch - `role`, `plan`, `event`, `ms`, `tokens`, and `turns` on the rows
@@ -53,12 +40,11 @@ whose close carried a tool-call count), `outcomes` (every outcome event),
 coordinator's own per-step residue, present only where markers were written),
 `provider_spend` (what the PROVIDERS said this scope's cross-model reviews cost:
 `calls`, `tokens`, `unrecorded` - REVIEW calls that were actually sent, so a
-`detect-models` listing, a `/cad-debug` consult and a call refused before the
+`detect-models` listing, a consult and a call refused before the
 request left the machine are none of them in it; present only where the scope
 holds such a call), `unpaired`, `mismatched`, `capped`, `malformed`, and `rotated` where the
 record was cut at its size bound. Never ask for the raw `events`
-array: nothing here reads one, and the flag re-buys 27 KB on the one path that
-reads a record into a model's context. The third reads the SAME `brackets[]`
+array. The third reads the SAME `brackets[]`
 rows against the per-role `workflow.max_dispatch_tokens` ceilings and
 returns `ceilings`, `problems` (each `{kind, file, detail}`), `compared`,
 `unbudgeted` and `unrecorded`; it takes the same `--phase` scope, so pass it
@@ -75,17 +61,12 @@ phase artifacts that ground the narrative, each at most once:
 `.planning/phases/<N>/SUMMARY.md` (deviations, gate-fix commits),
 `.planning/phases/<N>/records/REVIEW-*.md` (persisted advisory findings),
 `.planning/phases/<N>/records/ADJUDICATION-*.json` (one per blocking or adjudicated
-fire: the finding bodies and the ruling each was given - that `REVIEW-*.md` glob
-cannot match a `.json` sibling, so it is listed separately or the Gates line has
-nothing to count), and
+fire: the finding bodies and the ruling each was given), and
 `.planning/phases/<N>/records/reports/plan-*.md` ONLY when SUMMARY is absent (an
-unfinished phase). Do not re-read the trace file itself - the render is the
-reader.
+unfinished phase). Do not re-read the trace file itself.
 
-**The read-back BOUND, or the redirect buys nothing.** Every line of `compose`
-below pulls the ONE field it needs out of the scratch file, at the line that
-needs it - a `node -e` field read, the shape `workflows/progress.md` and
-`references/triage-gate.md` already use:
+Every line of `compose` below pulls the ONE field it needs out of the scratch
+file, at the line that needs it - a `node -e` field read:
 
 ```
 node -e 'const f=require("fs");const d=process.argv[1];let tok;try{tok=f.readFileSync(d+"/run-token","utf8")}catch(e){console.error("scratch-stale: no run token in "+d);process.exit(1)}if(tok!==process.argv[2]){console.error("scratch-stale: "+d+" belongs to another run");process.exit(1)}let r;try{r=JSON.parse(f.readFileSync(d+"/render.json","utf8"))}catch(e){console.error("scratch-unreadable: "+d+"/render.json: "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+d+"/render.json is not an object");process.exit(1)}if(!Array.isArray(r.brackets)){console.error("scratch-shape: brackets is not an array in "+d+"/render.json");process.exit(1)}if(!r.brackets.every((b)=>b&&typeof b==="object")){console.error("scratch-shape: brackets has a non-object entry in "+d+"/render.json");process.exit(1)}for(const b of r.brackets)console.log([b.role,b.rung,b.effort,b.plan,b.event,b.ms,b.tokens,b.turns,b.duration_ms].join("\t"))' "<the echoed scratch directory>" "<the echoed run token>"
@@ -95,15 +76,10 @@ Its first two arguments are the two literals `read_record` printed. It refuses
 before it reads anything else: `scratch-stale` when the directory holds no run
 token or holds a different one, `scratch-unreadable` when the record cannot be
 read or parsed, and `scratch-shape` when `brackets` is not an array - all three
-on stderr with a non-zero exit and nothing on stdout, because a report composed
-from another run's brackets is worse than no report. Every other field read
+on stderr with a non-zero exit and nothing on stdout. Every other field read
 below takes the same three guards and the same two leading arguments; only the
-last expression changes.
-
-and never read the file whole - no `cat`, no `Read`, no unfiltered `grep` of it
-into the transcript. A whole-file read-back after the redirect is the same bytes
-on the same turn, which is the transport not happening. The composed report IS
-the digest this transport owes the transcript.
+last expression changes. The scratch file is never read whole: no `cat`, no
+`Read`, no unfiltered `grep` of it into the transcript.
 </step>
 
 <step name="compose">
