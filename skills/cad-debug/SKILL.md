@@ -15,16 +15,10 @@ allowed-tools:
 ---
 
 <objective>
-Debug a symptom by the scientific method - form hypotheses, run the cheapest
-discriminating test for each, confirm a root cause, fix it, verify the symptom
-is gone. The investigation is persisted to `.planning/debug/<slug>.md` after
-every step, so a `/clear` or a new session resumes it losslessly. At a genuine
-dead-end (repeated failed fixes, exhausted hypotheses), OFFER a second-model
-consult (references/consult.md) - user-gated, decision-support only.
-
-Routing: parse `$ARGUMENTS` per the workflow's Route table (debug.md) -
-`list`, `status <slug>`, `continue <slug>`, `--diagnose`, else a new symptom.
-The table lives in the workflow, once.
+Debug a symptom by the scientific method: form hypotheses, run the cheapest
+discriminating test for each, confirm a root cause, fix it and verify the
+symptom is gone. The state file at `.planning/debug/<slug>.md` lets a new
+session resume it.
 </objective>
 
 <execution_context>
@@ -33,9 +27,6 @@ The table lives in the workflow, once.
 
 <process>
 Route on `$ARGUMENTS`, then run the debug workflow single-pass end-to-end.
-Persist the state file after every hypothesis test and fix attempt. Never
-auto-loop fixes and never auto-consult - both are deliberate, and the consult
-is always user-gated.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200
