@@ -190,18 +190,13 @@ whose `reason` is the absent planning root - `ENOENT` from the trace seams, "no
 planning root" from `task-record` - where the run reports done with the check's
 disposition stated and its record called unrecorded, because git is the code
 record and the durable Cadence receipt is the one thing a treeless run has
-nowhere to put. `ENOENT` is the whole of that spelling on the trace side:
-`trace.jsonl` sits directly under `.planning/records/`, which the append makes itself, so an append that raised it
-found no planning root, and there is no second reading of it.
+nowhere to put.
 
 A `written: false` for any other reason - a symlinked trace, a failed stat,
 `EACCES` or `ENOSPC` on the append, `oversized-event`, a rotation that failed,
 an unwritable or symlinked `tasks/{slug}/` - does not report done: state the
 reason and re-run once a record can land. The two are told apart on the
-envelope's own `reason`, never on a `[ -d .planning ]` check beside the seam. This
-path has no `risk-check status` call of its own the way `execute.md` does, so
-that flag is its whole guard, and an `ok:true` with nothing on the record for
-any other cause is exactly the state this step exists to refuse.
+envelope's own `reason`, never on a `[ -d .planning ]` check beside the seam.
 
 `{slug}` is this task's own slug, derived here when it isn't derived yet
 (kebab-case of the task description). Whether this task wrote a PLAN.md decides
@@ -239,26 +234,20 @@ same path, then reporting done.
 <step name="record">
 (Both work paths.)
 
-Write what shipped into this run's own directory and hand the seam the PATH -
-that prose is caller-derived text, which references/conventions.md binds to a
-file transport, so it never rides the inline `--text` form:
+Write what shipped into this run's own directory and hand the seam the PATH,
+never the inline `--text` form:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" task-record --slug <the task's slug> --base <the echoed start sha> --head HEAD --text-file <the echoed scratch directory>/what-shipped.txt
 ```
 
-Every figure in the record is DERIVED from the range - the commits table from
-one `git log` and the declared-files lines from one `git diff --name-only` - so
-nothing is retyped onto a flag and a re-run over an unchanged range rewrites the
-same bytes.
-
 The seam writes into `.planning/tasks/{slug}/`, creating it on the inline path,
-under an EXISTING `.planning/` and creates NOTHING without one: there it answers `written: false`
-with a reason and writes no record at all. That reason is the absent-root one
-the `risk_check` step's completion rule already decided - the run reports done
-and calls its record unrecorded - so an inline task in a repository with no
-planning tree scaffolds nothing AND still finishes, which is what this
-workflow's success criterion actually protects.
+under an EXISTING `.planning/` and creates NOTHING without one: there it answers
+`written: false` with a reason, no record is written and nothing is scaffolded.
+Whether the run is done on that answer is decided by the `risk_check` step's
+completion rule.
+
+Git and this receipt are the record: STATE.md is never written for a task.
 </step>
 
 <step name="done">
@@ -273,8 +262,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0
 On a run that ends WITHOUT reporting done - a blocking `risk_surface` FAIL that
 survived its one narrowed re-arm, the commit hook refusing this run's commit, a
 stop you can still describe - add `--detail-file "<the echoed scratch directory>/close-detail.txt"` naming
-why, and the seam closes a `checkpoint` instead of a `return`. A run that never
-reaches this line at all is reported as unpaired, which is what it is.
+why, and the seam closes a `checkpoint` instead of a `return`.
 
 Report:
 
@@ -286,20 +274,17 @@ Risk check: {`risk_check_skipped` when nothing landed | `checked: false` and the
 Record: {the `record` path from the task-record envelope}
 ```
 
-Two lines, two rules. The `Record:` line rides an envelope that said
-`written: true`; on `written: false` - no planning tree, an unwritable or
-symlinked `tasks/{slug}/`, a range that would not resolve - drop the line and
-state the envelope's reason in its place, because a record that never landed
-must not read as one that did.
+The `Record:` line rides an envelope that said `written: true`; on
+`written: false` - no planning tree, an unwritable or symlinked `tasks/{slug}/`,
+a range that would not resolve - drop the line and state the envelope's reason
+in its place.
 
-The `Risk check:` line is never dropped, because a verdict that RAN is reported
-whether or not its receipt landed. Both halves are the envelope's own words and
-nothing minted: the verdict from the `risk-check run` envelope or the
+The `Risk check:` line is never dropped. Both halves are the envelope's own
+words and nothing minted: the verdict from the `risk-check run` envelope or the
 `risk_check_skipped` event that stood in for it, then `trace: {written: true}`
 rendered as recorded and `trace: {written: false, reason}` as unrecorded with
 the reason in words - the absent planning root where that reason is `ENOENT`.
-Whether this block is reached at all was decided by the `risk_check`
-step's completion rule; this step only renders what that rule let through.
+Whether this block is reached is the `risk_check` step's completion rule's call.
 
 No next-step menu.
 </step>
