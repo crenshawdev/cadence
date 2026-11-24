@@ -214,33 +214,16 @@ only:
 | `cycle` is `none` (milestone closed) | /cad-phase add |
 | `current` is null (all complete) | /cad-milestone |
 
-The planned/executed rows scan ALL phases lowest-first, not just the
-cursor's phase - this recovers a mid-execution session death even when the
-cursor was advanced past the unfinished work. A pause note pointing at a
-different phase than the derivation is shown as context but does not route.
+The planned and executed rows scan ALL phases lowest-first, not just the
+cursor's phase. A pause note pointing at a different phase than the derivation
+is shown as context but does not route.
 
-The `outstanding` row NARROWS the executed case, it does not invert it. A
-SUMMARY on disk says a run ended, not that the work is done: a `/cad-plan
---gaps` plan can sit beside it never dispatched. The
-`Lowest **executed** phase` row stays exactly where it is and still routes to
-/cad-verify {N}, which is what an empty outstanding set gets. Read the fact off
-the one `status` line the derive step already fetched - do NOT spawn a
-`replay-check` per phase for it, because these rows scan ALL phases and that
-costs one process per executed phase on every run. The derived status is still
-`executed` either way, so the reconcile step's status mapping and the cursor
-this workflow writes are untouched.
+An executed phase with nothing outstanding still routes to /cad-verify {N}. Read
+the outstanding set off the one `status` answer - do NOT spawn a `replay-check`
+per phase for it.
 
-The `phase-dir` row sits ABOVE `cycle is none` deliberately: an interrupted
-close returns both at once, and finishing the prune precedes opening a new
-cycle. Reordering them offers a new phase on top of unfinished work.
-
-The `deferred` row sits BELOW every recovery and work row - a paused cursor, a
-planned phase, an executed one - because those are where the work that clears
-the queue happens, and ABOVE the three rows that end a cycle, because each of
-them leads to a land: `/cad-milestone` chains `/cad-land` after its prune, and
-`/cad-land` refuses on this same queue. It is the one row whose next step is
-not a skill invocation, so the ask-user offer below reads "triage the queue"
-and this workflow invokes nothing.
+The `deferred` row's next step is not a skill: the ask-user offer below reads
+"triage the queue" and this workflow invokes nothing.
 
 Offer the suggestion through the ask-user seam (references/seam-ask-user.md):
 1. Continue now - invoke the suggested skill

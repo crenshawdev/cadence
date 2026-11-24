@@ -1,0 +1,22 @@
+# Why /cad-progress is shaped this way
+
+Companion to `cadence-core/workflows/progress.md`. **Not read at runtime** - no
+workflow, skill or agent loads this file, and it is outside every budgeted
+prose surface (`weight.mjs` measures `cadence-core/workflows/*.md` top-level
+only).
+
+Read it before EDITING that workflow. Anchors match the step names.
+
+---
+
+## route - why the `phase-dir` and `deferred` rows sit where they do
+
+The `phase-dir` row sits above `cycle is none` because an interrupted close
+returns both at once, and finishing the prune comes before opening a new cycle.
+The other order would offer a new phase on top of unfinished work.
+
+The `deferred` row sits below every recovery and work row (a paused cursor, a
+planned phase, an executed one), because those are where the work that clears
+the queue happens. It sits above the three rows that end a cycle because each
+of them leads to a land: `/cad-milestone` chains `/cad-land` after its prune,
+and `/cad-land` refuses on this same queue.
