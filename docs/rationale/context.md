@@ -16,9 +16,10 @@ carrying its weight rather than defending itself.
 ## load_priors - why prior SUMMARY deviations are read
 
 `workflows/report.md` already reads deviations out of SUMMARY for its `Refuted:`
-line, so this is the same source, not a new artifact. Without them the spend
-gate's "already grounded by a prior phase" arm never fires and the gate
-collapses to its size arm alone.
+line, so this is the same source, not a new artifact. Without them `spend_gate`
+can't weigh whether prior phases' SUMMARY deviations already settled the ground
+this phase reopens, and it is left with the requirement count and the surfaces
+the ROADMAP entry names.
 
 The read is bounded most-recent-first, exactly as the CONTEXT reads are, so the
 set cannot grow with N.
@@ -35,11 +36,25 @@ Recall's own backend-off return is a backstop for a direct caller, not this
 workflow's gate. `none` means the call is never made and no recalled data
 reaches the pass, rather than a call made and a result discarded.
 
+## spend_gate - why recall is bounded
+
+An unbounded query was rejected. On a mature `.planning/` a real one returned 72
+results at 55.8 KB, past the host's spool threshold, so the caller paid the emit
+and a second round trip to read back the five hits it wanted. The same query
+bounded was 953 B.
+
+## spend_gate - why closed-milestone rows rank flat with the live ones
+
+The flat ranking has no recency term and no per-source cap. Retired work is
+sometimes the best answer in the corpus, and only the caller knows whether this
+query wants it, so the discounting is the caller's. That takes knowing what a
+leading milestone label means, which is why `references/recall.md` explains it.
+
 ## spend_gate - why the gate computes no score
 
 A requirement-count threshold was measured on the committed verbatim fixture and
-orders its two phases backwards. This workflow's guardrails already ban
-splitting frameworks for the same reason, and a ranking seam here would be one.
+orders its two phases backwards. The `size_check` step already bans splitting
+frameworks for the same reason, and a ranking seam here would be one.
 
 ## spend_gate - why the gate sits above analyze
 
@@ -66,6 +81,13 @@ Prior phases' decisions reach it as a distilled `<prior_decisions>` summary
 rather than as files. The contract opens a prior CONTEXT.md itself only when the
 code contradicts a cited decision, so the sweep of every prior phase's file that
 used to grow with N is gone from both the contract and this record.
+
+## analyze - why recalled snippets ride the prompt
+
+They go in the dispatch prompt and never in the `cad-assumptions-analyzer` agent
+definition. They change with every phase, while the agent's stable instruction
+to consume and cite them lives in its cached file. Putting them in the agent
+definition would invalidate that cache once per phase and buy nothing.
 
 ## write_context - why the template read is deferred
 
