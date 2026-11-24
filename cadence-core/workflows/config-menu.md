@@ -1,10 +1,8 @@
 # cad-config menu (cold branch)
 
 Loaded from config.md when `/cad-config` ran with no arguments or with a sentence, or when the reply to the opening
-screen is a number or a sentence, and only while `workflow.config_menu` is true: config.md's Route reads that switch
-first, and with it off sends no arguments to the walk and answers a sentence with the command that turns it on. Direct
-set never reads it. Every count and value on a screen comes from `config.mjs layers`, never from a
-raw config file.
+screen is a number or a sentence, and only while `workflow.config_menu` is true. Every count and value on a screen comes
+from `config.mjs layers`, never from a raw config file.
 
 ## Opening screen
 
@@ -15,8 +13,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" layers
 ```
 
 It answers `groups` (each with `n`, `name`, `settings`, `repo`, `global`, `beating`, `at_default`), `totals` in the
-same fields, `unreadable` and `warnings`. Print it as plain text and end the turn: text above a choice box can be
-hidden while the box is open, so the opening screen is never a box.
+same fields, `unreadable` and `warnings`. Print it as plain text and end the turn: the opening screen is
+never a choice box.
 
 ```
 Cadence config
@@ -63,17 +61,14 @@ sentence of `no_effect`. When the row has `dropped`, say the same thing the list
 value, and leave the line out when both are empty. Ask for the new value in the turn's last line. A setting with no effect can still be picked, because it may be
 set up ahead of its gate, so end that line with "You can still set it now." and change nothing else in the flow.
 
-- `type` says how a value is typed: `bool` and `enum` are picked from the `explain` values, `int`, `string` and
-  `string_or_null` are typed (empty becomes `null`), `array_string` and `array_enum` are comma-typed and written
-  as an array. A `hint` is shown as text.
-- A `null` on a list key is not written, because `set` refuses it.
+- `type`, `hint` and `null` mean what the walk's step 2 in config.md says, with a value typed in plain text and not
+  through `Other`.
 - `review.triggers.risk_surface.surfaces` opens **Risk surfaces** instead of being typed.
 - A value equal to the one in force writes nothing. Two keys can have a value in force that differs from what the
   target file stores: `git.auto_close` and `review.reviewers`.
   On those, a pick writes nothing only when it equals what the target file stores, or when that file stores
-  nothing and the pick equals the value in force. So picking false over a repo true is written, and the menu can
-  undo its own write. Picking true where the repo already stores true writes nothing to the repo, and **The second
-  file** still runs.
+  nothing and the pick equals the value in force. Picking true where the repo already stores true writes nothing to
+  the repo, and **The second file** still runs.
 
 **The value.** What the person typed never goes on the command line as typed: a double-quoted word carrying `$(...)`
 runs before Node starts, and the preview comes before the yes. Make a directory for the run, write the new value as
@@ -144,12 +139,11 @@ settings at once is the full `--walk`.
 ## A sentence
 
 Reached when `/cad-config` got text that is not a flag or a list of `key=value`, or when the reply to the opening
-screen is not a number. The sentence names what the person wants, such as `make reviews cheaper`. Nothing is
-written until a yes.
+screen is not a number. Nothing is written until a yes.
 
-**Matching.** `catalog` answers every setting's `key`, `label`, `question`, `purpose`, `explain` and value in force, which is
-too big for the transcript, so it goes to a file in a directory this run makes. Run it, and copy the printed
-directory and token as literals into the read-back:
+**Matching.** `catalog` answers every setting's `key`, `label`, `question`, `purpose`, `explain` and value in force. It
+goes to a file in a directory this run makes. Run it, and copy the printed directory and token as literals into the
+read-back:
 
 ```
 D="$(mktemp -d "${TMPDIR:-/tmp}/cad-config-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
@@ -172,16 +166,14 @@ matched: say so, name the groups from the opening screen, and write nothing.
 
 **Hand-off.** The test is the settings you picked to change, not the lines read back and not the words used. A pick
 of `review.providers.*`, or one that adds a cross-model name to `review.reviewers`, goes to **Review provider setup**
-(`config.md`), because model ids need live detection and enrolling a provider needs the global-layer question only that
-setup asks: `set up OpenAI reviews` picks provider keys, while `make reviews cheaper` picks tier keys and shows them
+(`config.md`): `set up OpenAI reviews` picks provider keys, while `make reviews cheaper` picks tier keys and shows them
 here even when the read-back also held provider keys. A pick of `review.triggers.risk_surface.surfaces` goes to
 **Risk surfaces** (`config.md`), as it does in a group and in the walk, and is never typed. Show nothing else here.
 When the picks also hold other settings, say which picks weren't made, and that they can ask again after the setup.
 
 **Scratch value.** A value taken from the sentence is written as JSON to its own file in that directory with the
 Write tool (`<D>/v1.json`, `<D>/v2.json`), before anything uses it. The preview and `set` take it as
-`<key>="$(cat <path>)"` (`references/conventions.md`, Caller-derived text), because a double-quoted word carrying
-`$(...)` runs before Node starts, and the preview comes before the yes.
+`<key>="$(cat <path>)"` (`references/conventions.md`, Caller-derived text).
 
 **Showing.** Run the preview from **A group** once for all the picks:
 
