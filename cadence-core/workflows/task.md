@@ -203,67 +203,37 @@ path has no `risk-check status` call of its own the way `execute.md` does, so
 that flag is its whole guard, and an `ok:true` with nothing on the record for
 any other cause is exactly the state this step exists to refuse.
 
-`{slug}` is this task's own slug. `planned_path` step 1 creates
-`.planning/tasks/{slug}/` for its plan, never without `.planning/`: a task plan
-does not justify project scaffolding. On both paths the `record` seam
-writes into it, creating it on the inline path, where nothing writes there
-before `record`. So derive
-the slug here when the inline path did not (kebab-case of the task description).
-A redirect into a directory nothing created fails `No such file or directory`,
-and this trigger defaults to `blocking`, so that failure is a blocking
-gate that cannot fire rather than a gate that passes.
+`{slug}` is this task's own slug, derived here when it isn't derived yet
+(kebab-case of the task description). Whether this task wrote a PLAN.md decides
+where the diff goes, who fixes a FAIL and whether the settle writes a record:
 
-Which directory depends on whether this task already owns one, and the INLINE
-path never does:
-
-- The PLANNED path wrote `.planning/tasks/{slug}/PLAN.md`, so the directory
-  exists and the diff goes beside it at the named path above. Delete the
-  `.diff` on return and the directory stays, correctly - it holds the plan.
-- The INLINE path creates no directory and must not start now: the `record`
-  step below is the only writer under `.planning/tasks/{slug}/` on this path,
-  and an inline task that `mkdir -p`s a slug directory HERE leaves it behind
-  empty whenever the run ends before that step - a blocking FAIL, say - once the
-  transient diff is deleted, accreting one per risk-surface task. So make this
+- **It wrote one**, so `planned_path` step 1 made `.planning/tasks/{slug}/`: the
+  diff goes beside the PLAN.md at the path named above. Delete the `.diff` as
+  stated above, and the folder stays. The settle writes its record with `--task {slug}`
+  (`references/review-record.md`). A FAIL's fix is owned by a continuation
+  `cad-executor`, dispatched with that PLAN.md and the persisted findings path
+  and bracketed like any executor. Its worker key is the plan key `1`, not this
+  run's own `--plan {slug}` key, and no lease gate fires: the executor contract
+  skips `lease-check` whenever `<plandir>` is not `.planning/phases/<N>/`.
+- **It wrote none** (inline, or planned with no `.planning/`): make this
   run's own directory - `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-risk-XXXXXX")"` - write
-  the diff to `$D/cadence-risk-task-{slug}.diff`, and fire with THAT path -
-  still shape (c), which admits a flagged-diff file however it was produced. A fixed shared name collides between two inline runs of the
-  same-slugged task, and what collides is the artifact of the trigger the schema
-  defaults to BLOCKING, a stale diff reaching a blocking gate. The `.diff` is still deleted once the trigger
-  returns and the run directory is left for the operating system to reap;
-  neither is a `.planning/` artifact, so the success criterion holds. The same
-  applies when `.planning/` does not exist at all.
+  the diff to `$D/cadence-risk-task-{slug}.diff`, and fire with THAT path, still
+  shape (c). Delete the `.diff` as stated above and leave the run directory for
+  the operating system to reap. Make no directory under `.planning/tasks/` here:
+  on the inline path `record` is the only writer there, and it creates the folder
+  after the settle, where `.planning/` exists. So the task has no folder at the
+  settle and no home for a record, and with no PLAN.md there is no worker key
+  for a fix to dispatch under: the FAIL stays with the user.
 
-The settle writes its record with `--task {slug}` - `/cad-task` fires with
-`--phase 0` on purpose and keeps its artifacts under `.planning/tasks/{slug}/`,
-so that flag is what puts the ruling beside the sibling REVIEW file instead of
-in a `phases/0/` that does not exist (`references/review-record.md`). The INLINE
-path owns no directory, so it owns no home for a record either: its FAIL stays
-with the user, the same absence the `<guardrails>` line below already states.
-
-This trigger defaults to `blocking`, so its re-arm is CAPPED at ONE
-narrowed round - RE-READ
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before fixing a
-FAIL, since this workflow does not preload it and the cap lives only there.
-
-On the `--plan` path, the fix is owned by a continuation `cad-executor`
-dispatched with `.planning/tasks/{slug}/PLAN.md` and the persisted findings
-path, bracketed like any executor. Its worker key is the plan key `1` -
-`skills/cad-executor-contract/SKILL.md` derives `k` from the plan file's own
-name, `1` for a bare `PLAN.md` - deliberately a different key from this run's
-own `--plan {slug}` `cad-task` bracket, so the two workers do not pair FIFO
-against each other. Its lease gate does not fire at all: the executor
-contract skips `lease-check` whenever `<plandir>` is not
-`.planning/phases/<N>/`, and `/cad-task` dispatches from
-`.planning/tasks/<slug>/`. The INLINE path never writes a PLAN.md, so it mints
-no worker key for a fix to dispatch under: its `risk_surface` FAIL stays with
-the user there, the same absence that already keeps the `<guardrails>` line
-below true.
+Before fixing a FAIL, RE-READ
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`, which this
+workflow does not preload.
 
 On the workflow path (`references/review-workflow.md`) the fire is the launch
 ending the turn and the notice resuming this step, with nothing else dispatched
-in between. The resumed step runs the gate, then on FAIL the fix under worker
-key `1` on the `--plan` path or with the user on the inline path, the one
-narrowed re-arm, a fire of its own on the same path, then reporting done.
+in between. The resumed step runs the gate, then on FAIL the fix by the owner
+the PLAN.md test above gives, the one narrowed re-arm, a fire of its own on the
+same path, then reporting done.
 </step>
 
 <step name="record">
