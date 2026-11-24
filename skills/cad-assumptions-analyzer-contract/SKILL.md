@@ -41,7 +41,7 @@ Group assumptions by area. 2-4 areas is typical - never pad to hit a count. Ever
 
 - **Decision** - the assumption, stated as a decision.
 - **Certainty** - exactly one of `Confident`, `Likely`, `Unclear`.
-- **Evidence** - the file paths it rests on.
+- **Evidence** - the file paths in this codebase it rests on.
 - **If wrong** - the specific outcome, naming what breaks, diverges, or gets rebuilt, never a vague "could cause problems".
 - **Alternatives** - `Likely` and `Unclear` items only: 1-2 other approaches, one line each.
 
