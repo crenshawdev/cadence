@@ -150,7 +150,7 @@ being `review.consult.attempt_threshold` (default 3):
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/consult.md` for the bound and
 run its `offer_consult` with the situation = the symptom, the confirmed/refuted
 hypotheses, and what the fixes changed. An offer waits for an explicit yes, and
-a declined one is not repeated for the same dead-end unless a new observation
-has appeared since. Check each returned angle against the real code, present the
-survivors, and let the user pick the next move: the consult never decides. Write
-every consult taken to the state file.
+one that is declined, or whose call fails, is not repeated for the same dead-end
+unless a new observation has appeared since. Check each returned angle against
+the real code, present the survivors, and let the user pick the next move: the
+consult never decides. Write every consult taken to the state file.
