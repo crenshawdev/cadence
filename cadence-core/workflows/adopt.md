@@ -1,14 +1,7 @@
 <purpose>
-The second front door. A repo that already exists - code, history, usually a
-README that already says what it is - enters Cadence without being interviewed
-as though it were nothing yet. Read the code and the history, derive PROJECT.md,
-REQUIREMENTS.md and a REMAINING-work ROADMAP.md from them, and write the same
-`.planning/` shape /cad-new-project writes: same files, same STATE cursor, same
-config, so every downstream command works unchanged.
-
-Everything is derived INLINE in this context. No subagent is dispatched, no
-detector seam is added, and no scoring mechanism decides what the repo said -
-the brownfield read is a reading, paid here, and judged here.
+The second front door, for a repo that already has code and history. Read both,
+derive PROJECT.md, REQUIREMENTS.md and a REMAINING-work ROADMAP.md from them,
+and write the same `.planning/` shape /cad-new-project writes.
 </purpose>
 
 <process>
@@ -26,14 +19,11 @@ Two stops first, before anything is written.
    - It succeeds but names a DIFFERENT directory -> stop, naming that root:
      "This is a subdirectory of {root}. Run /cad-adopt in {root}."
    `git rev-parse --git-dir` is NOT this check and must never be substituted for
-   it: it succeeds in any subdirectory of an enclosing repo. Adopt's inputs are
-   the code AND the history, and git discovers a repo UPWARD from the working
-   directory, so from `/repo/sub` that check would answer this whole workflow
-   out of `/repo`'s log and tags while writing `.planning/` into `sub`.
+   it: it succeeds in any subdirectory of an enclosing repo.
 3. Scaffold and read config as ONE Bash step, not four turns - `mkdir -p`, the
    ignore line, the config copy if absent, and the config read chained in a
-   single script that echoes a marker when it wrote the config, so this
-   coordinator knows whether to print the "Config written with defaults" line:
+   single script that echoes a marker when it wrote the config, so you
+   know whether to print this item's one line:
 
    ```bash
    mkdir -p .planning
@@ -45,19 +35,14 @@ Two stops first, before anything is written.
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" detect --dir .
    ```
 
-   The ignore rule is not optional: `.planning/records/trace.jsonl` is ONE MACHINE's
-   run record, this seam is the only thing in Cadence that writes the rule, and
-   /cad-health reports `ignored:false` and `tracked:true` as separate issues
-   with different remedies. The rule sits in the records folder's own
-   `.planning/records/.gitignore`, created only when absent, so a brownfield
+   The ignore rule sits in the records folder's own
+   `.planning/records/.gitignore`, created only when absent: the project's own
    `.gitignore` is never edited and a re-run changes nothing.
 
    The config template is copied VERBATIM - ask no configuration questions,
    with THREE deliberate exceptions and no others. The first is item 4 below: the
-   forge. A forge is a PRECONDITION rather than an option (FRG-02), and no
-   template can carry a default for it, because which forge hosts a repository
-   is a fact about that repository and not about Cadence. So it is asked, once,
-   and a repository that has answered is never asked again.
+   forge. It is asked once, and a repository that has answered is never asked
+   again.
 
    The second is what each role costs. Read
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-roles.md` (one consult
@@ -65,14 +50,10 @@ Two stops first, before anything is written.
    script has run: the full thirteen questions
    written to the user-global layer when that layer holds no `roles` key, and
    the shorter per-project confirmation written to this repository's own file
-   when it already does. Same shape of reason as the forge - a template cannot carry a
-   default for what a model costs the person paying for it, and an adopted
-   repository is exactly where a per-project answer differs from the machine's.
+   when it already does.
 
    The third is the testing policy, asked once as the `testing_policy` step
-   between `write_requirements` and `write_roadmap`. Same shape of reason as the
-   forge - no template can carry a default for what a project's tests must
-   prove, and the roadmap's first phase may be planned against the answer.
+   between `write_requirements` and `write_roadmap`.
 
    Every other key keeps the template's value. Say in one line what was written
    and where: "Config written with defaults (standard granularity, research and
