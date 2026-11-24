@@ -47,24 +47,18 @@ When unsure between inline and planned, pick planned.
 </step>
 
 <step name="git_guard">
-(Inline and planned scope only. The "too big" arm has already said so and
-stopped, so it reaches no commit and is charged no branch question. Before
-`bracket` rather than after, because the guard's `ask` arm carries an Abort
-option and an abort taken past an open bracket would leave a dispatch event
-with nothing to close it.)
+(Inline and planned scope only. Before `bracket` rather than after.)
 
 Apply the protected-branch guard from
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` before any work.
 </step>
 
 <step name="bracket">
-(Both work paths, and NOT the "too big" arm: that arm says so and stops, so a
-bracket opened there would have nothing left to close it.)
+(Both work paths, and NOT the "too big" arm.)
 
 One Bash invocation makes this run's own directory, mints its run token, reads
 the start sha off HEAD, writes the read set, and opens the bracket. The three
-`trace` lines stay on their own lines rather than chained with `\`, because a
-continuation joins them into one command and one command carries one event:
+`trace` lines stay on their own lines rather than chained with `\`:
 
 ```
 D="$(mktemp -d "${TMPDIR:-/tmp}/cad-task-XXXXXX")" && T="$$-$(date +%s)" && S="$(git rev-parse --short HEAD)" && printf '%s' "<the paths this task will open, comma-separated>" > "$D/read-set.txt" && echo "scratch dir: $D  run token: $T  start sha: $S"
@@ -72,35 +66,18 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event dispatch --plan <the task's slug> --role cad-task --read-file "$D/read-set.txt"
 ```
 
-The correlation id is DERIVED from the `--sha` value, the way
-`workflows/execute.md` derives a phase's from its own `phase_start`. Without an
-anchor every phase-0 event keys to the bare `0`, and two task runs then fund one
-worker. The TOKEN half is what makes the id PER-RUN rather than per-commit: a
-run that ends without committing leaves HEAD where it was, so a re-run of the
-same slug from the same commit would mint a byte-identical anchor, and because
-the worker key pairs FIFO the second run's close would pair against the first
-run's still-open dispatch. `--sha` is a free-form string flag here - nothing
-validates it as hex - so carrying the token in it costs no seam change.
+The correlation id is DERIVED from the `--sha` value, and its TOKEN half makes
+the id PER-RUN rather than per-commit.
 
 The START SHA ALONE - the echoed `$S`, never the anchor value - is what the
-`risk_check` step's `--base` and the `record` step's `--base` want. Two
-quantities from one measurement: name them apart and hand neither the other's.
+`risk_check` step's `--base` and the `record` step's `--base` want.
 
-The read set rides a PATH and not an inline `--read` because it is
-caller-derived text, which references/conventions.md binds to a file transport.
+The read set rides a PATH and not an inline `--read`.
 
-The bracket is closed by ONE line, and it lives in the `done` step. Exactly one:
-the trace census asserts closes equal dispatches, and a second closing call on
-one moment appends a duplicate terminal that either funds this dispatch twice or
-strands the next run as unpaired. EVERY path that ends this run once the bracket
-is open routes through that one line - a blocking `risk_surface` FAIL surviving
-its one narrowed re-arm included.
-
-That close carries no `--tokens` and no `--turns`, and neither is an oversight:
-both figures are read off a SUBAGENT's return, and this bracket bills the
-COORDINATOR, which has no return to read. So the role renders `unrecorded`
-rather than claiming a number - an invented figure would land in
-`trace suggest`'s share denominator and misprice every other role with it.
+The bracket is closed by exactly ONE line, and it lives in the `done` step.
+EVERY path that ends this run once the bracket is open routes through that one
+line - a blocking `risk_surface` FAIL surviving its one narrowed re-arm
+included. That close carries no `--tokens` and no `--turns`.
 </step>
 
 <step name="inline_path">
