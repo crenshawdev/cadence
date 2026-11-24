@@ -1,15 +1,8 @@
 <purpose>
 Initialize a project: deep questioning until the idea is concrete, then
 PROJECT.md, REQUIREMENTS.md, a phased ROADMAP.md with falsifiable success
-criteria, and the .planning/ state every other Cadence skill reads.
-
-This is the entry point, and the questioning is the point. An hour of
-following threads here buys weeks of downstream clarity; a vague PROJECT.md
-forces every later phase to guess, and the cost compounds.
-
-One questioning spine, not a fan-out: one optional research pass (not four
-researchers), config defaults copied with only the forge, the roles and the
-testing policy asked, and the roadmap derived inline (no roadmapper/synthesizer agents).
+criteria, and the .planning/ state every other Cadence skill reads. The
+questioning is the point.
 </purpose>
 
 <process>
@@ -17,8 +10,7 @@ testing policy asked, and the roadmap derived inline (no roadmapper/synthesizer 
 <step name="setup">
 Parse `$ARGUMENTS`: optional `--research` flag, which forces the research
 pass on for this run regardless of config, and optional `--brief <file>`, a
-design brief some earlier freeform conversation already produced
-(`docs/DISCOVERY.md` describes how a user arrives with one).
+design brief an earlier freeform conversation produced.
 
 A `--brief` path that is a directory is a Seldon design: before item 1, Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/new-project-design.md` and
@@ -26,17 +18,13 @@ follow it instead of this file's steps, running only the ones it names. A file
 keeps the read below, and a path that is neither keeps its stop.
 
 With `--brief`, `Read` that file WHOLE before questioning starts - no parser,
-no schema, no seam subcommand. A brief's whole value is that it is freeform,
-and a schema would impose exactly the structure the discovery deliberately
-lacks. If the path does not resolve, stop with one line naming it ("No brief
-at `<path>`.") and write nothing: falling through into the blank-page
-interview would silently discard the input the flag exists to carry.
+no schema, no seam subcommand. If the path does not resolve, stop with one
+line naming it ("No brief at `<path>`.") and write nothing.
 
 In order (items 2-5 are one Bash step, not four separate turns - git-init if
 needed, `mkdir -p .planning`, the config copy if absent, and the `config.mjs
 get` chained in a single script that echoes a marker when it wrote the config,
-so the coordinator knows whether to print the "Config written with defaults"
-line):
+for item 4's one line):
 
 1. If `.planning/PROJECT.md` exists, stop: "Project already initialized.
    /cad-progress shows where you are."
@@ -49,12 +37,8 @@ line):
 
    Create-if-absent: the rules live in the records folder's own
    `.planning/records/.gitignore`, so the project's `.gitignore` is never
-   edited, and a records `.gitignore` that already exists keeps every line it
-   had. A re-run writes nothing (`written:false`, `reason:"already-ignored"`),
-   and a project that ignores `.planning/` wholesale is already correct and is
-   left alone. `.planning/records/trace.jsonl` is ONE MACHINE's
-   routing/provider/worker record, so a project must not commit it - and this
-   seam is the only thing in Cadence that writes that file.
+   edited, a records `.gitignore` that already exists keeps every line it had,
+   and a project that ignores `.planning/` wholesale is left alone.
 4. If `.planning/config.json` does not exist, copy the engine template
    verbatim:
 
