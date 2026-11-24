@@ -239,27 +239,5 @@ workflow. cad-progress never does the work itself.
 
 <guardrails>
 - Report and route only - never plan, execute, verify, or fix anything here.
-- The seam's derivation is authoritative; never trust the STATE.md cursor
-  over it, and never re-derive by hand what `status` already returned.
-- The cursor is written only through `cursor set` - no manual STATE.md edits.
-- ROADMAP/REQUIREMENTS drift is reported and routed to /cad-verify, never
-  edited here.
-- No stored analytics or progress artifacts; `--stats` and `--trace` both derive
-  on demand and store nothing - the `--trace` scratch render is the model's own
-  temp file, never a phase artifact. The trace file itself is written by the seams and
-  by the context, plan, execute, verify and verify-deep workflows, plus the
-  reviewer bracket in `references/review-triggers.md` - never by progress.
 - Never invoke a spine skill without the user accepting the offer.
 </guardrails>
-
-<success_criteria>
-- [ ] Status came from one `planning.mjs status` call plus git, not from
-      hand-derivation or the cursor
-- [ ] Incomplete or paused work found lowest-first, with the matching resume
-      step offered
-- [ ] Cursor rewritten via `cursor set` whenever the seam reported cursor
-      drift; other drift routed to /cad-verify untouched
-- [ ] Exactly one suggestion made; work handed off only on user acceptance
-- [ ] --stats printed a derived summary, and --trace printed the phase's run
-      record; neither stored a planning artifact
-</success_criteria>
