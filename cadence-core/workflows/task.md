@@ -218,7 +218,9 @@ where the diff goes, who fixes a FAIL and whether the settle writes a record:
   on the inline path `record` is the only writer there, and it creates the folder
   after the settle, where `.planning/` exists. So the task has no folder at the
   settle and no home for a record, and with no PLAN.md there is no worker key
-  for a fix to dispatch under: the FAIL stays with the user.
+  for a fix to dispatch under: the FAIL stays with the user. Where no
+  `.planning/` exists, this run and its fire create nothing under it, the review
+  file included.
 
 Before fixing a FAIL, RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`, which this
