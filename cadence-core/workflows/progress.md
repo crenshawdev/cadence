@@ -130,21 +130,13 @@ D="$(mktemp -d "${TMPDIR:-/tmp}/cad-trace-XXXXXX")" \
   && node -e 'const f=require("fs");let r;try{r=JSON.parse(f.readFileSync(process.argv[1],"utf8"))}catch(e){console.error("scratch-unreadable: "+process.argv[1]+": "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+process.argv[1]+" is not an object");process.exit(1)}const miss=["counts","roles","unpaired","capped"].filter((k)=>r[k]===undefined||r[k]===null);if(miss.length){console.error("scratch-shape: "+miss.join(", ")+" absent from "+process.argv[1]);process.exit(1)}console.log(JSON.stringify({counts:r.counts,roles:r.roles,unpaired:r.unpaired,capped:r.capped,rotated:r.rotated}))' "$D/render.json"
 ```
 
-The directory is made for this run and both calls are `&&`-chained to it, so no
-other run's render can be the one this step prints and the read-back cannot run
-on a render that failed.
-
 The read-back REFUSES rather than printing an answer it could not stand behind:
 `scratch-unreadable` on stderr with a non-zero exit when the file could not be
 read or parsed, and `scratch-shape` NAMING the missing field when the parse
-succeeded without one of the four this step prints. Both matter here because
-the old form had no guard at all - a truncated file threw, and a file of the
-wrong shape stringified four `undefined` fields into `{}`, which prints as a
-clean, empty, successful answer.
+succeeded without one of the four this step prints.
 
 The `brackets` and `outcomes` arrays are the bulk of that response and nothing
-in this step reads either, so they stay in the file - widening that field list
-to the whole envelope is the same bytes on the same turn and buys nothing.
+in this step reads either, so they stay in the file.
 
 Print the four family counts (`routing`, `provider`, `lifecycle`, `outcome`)
 over the events the phase filter admitted - the filter reads `phase` alone and
@@ -152,27 +144,21 @@ never `corr`, so those counts can span several runs of the same phase number;
 then the `roles` block, one line per role key carrying its dispatch count, the
 host's own token figure off the subagent returns, its turn count, and each of
 `unrecorded` and `turns_unrecorded` when present. That block is what each
-worker's returns REPORTED, never the run's price - for the reason `/cad-report`
-now states where it prints the same figure. Read it by this rule, which is
-the distinction the block exists to protect: an absent token total means NO
+worker's returns REPORTED, never the run's price. An absent token total means NO
 dispatch of that role reported a figure, and is printed as `unrecorded`, never
-as `0` - a role that was never measured and a role that spent nothing are
-different answers. The same rule governs the turn total under its own
-`turns_unrecorded` counter: a role whose returns carried no tool-call count is
-turn-unrecorded, not a role that took zero turns. An `unrecorded` count BESIDE a
-real total means that many of
-that role's dispatches came back without one, so the total is real but short. A
-render carrying no `roles` key prints nothing for it, exactly as an absent trace
-file already prints empty counts. Then every `unpaired` entry, which names a worker
-that was handed work and never came back with a return, checkpoint or
-escalation; then the `capped` flag when it is true, which means the record hit
-its size bound and what follows is missing rather than absent; then `rotated`
-when the render carries it, which is the OTHER thing a size bound does and not
-the same one - the record was cut at the newest phase anchor, so everything
-older than the run in flight is in the sibling it names and is not in what was
-just read. A rotated record is not a capped one. An absent trace
-file returns `ok:true` with empty counts - a phase can simply not have run yet,
-and that is an answer, not an error.
+as `0`. The same rule governs the turn total under its own `turns_unrecorded`
+counter: a role whose returns carried no tool-call count is turn-unrecorded, not
+a role that took zero turns. An `unrecorded` count BESIDE a real total means that
+many of that role's dispatches came back without one, so the total is real but
+short. A render carrying no `roles` key prints nothing for it. Then every
+`unpaired` entry, which names a worker that was handed work and never came back
+with a return, checkpoint or escalation; then the `capped` flag when it is true,
+which means the record hit its size bound and what follows is missing rather
+than absent; then `rotated` when the render carries it, the OTHER thing a size
+bound does: the record was cut at the newest phase anchor, so everything older
+than the run in flight is in the sibling it names and is not in what was just
+read. A rotated record is not a capped one. An absent trace file returns
+`ok:true` with empty counts, and that is an answer, not an error.
 </step>
 
 <step name="report">
