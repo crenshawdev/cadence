@@ -1,17 +1,9 @@
 # cad-phase workflow
 
 CRUD the ROADMAP `## Phases` list. The list, the REQUIREMENTS `## Traceability`
-table and the STATE cursor are generated from the state file, so this workflow
-changes them through seams and never writes them by hand; the one thing it
-hand-writes is a phase's `### Phase N:` detail section. The renumbering ops
-(insert/remove) are the reason this is a skill: a phase number appears in the
-state, the `.planning/phases/<N>/` dirs and the generated views, and
-renumbering keeps them in step. One exception: insert and remove shift the
-REQUIREMENTS column only on Pending `## Traceability` rows and leave Complete
-and Deferred rows as written, since they record where work shipped. The
-mechanics live in the planning seam's `renumber` subcommand - this workflow
-gathers the judgment inputs, shows the dry-run at the confirmation gate, and
-repairs what the seam deliberately leaves to judgment.
+table and the STATE cursor are generated from the state file: change them
+through seams, never by hand. A phase's `### Phase N:` detail section is
+hand-written.
 
 ## Route on $ARGUMENTS
 Any `$ARGUMENTS` carrying `--brief`: Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/phase-design.md` and follow it instead of the routes below.
@@ -33,9 +25,8 @@ is paused, which stays as the user left it; never run `cursor set` after it.
 When the answer carries `opened_cycle: true`, rewrite the
 ROADMAP Overview's sentence that says no cycle is open so it names the cycle
 this add opened, and the "no cycle open" sentences a milestone close wrote in
-PROJECT.md `### Active` and REQUIREMENTS.md `## Active` the same way - the
-session wrote that prose, so the session rewrites it; no script edits the
-Overview or those sections.
+PROJECT.md `### Active` and REQUIREMENTS.md `## Active` the same way; no script
+edits the Overview or those sections.
 
 ### edit <N>
 A name or description change goes through the seam, no renumbering, no dir
@@ -57,8 +48,7 @@ A success-criteria change is a plain edit to the `### Phase N:` section.
    Show the returned `ops` (dir moves, file edits), any `in_text_refs`
    (lowercase prose references the seam will NOT rewrite), and any `warn`.
    Show every `req_row_changes` entry verbatim, with its `line`, `before` and
-   `after` text, never as a summary: those are the REQUIREMENTS rows the user
-   is confirming.
+   `after` text, never as a summary.
    Require an explicit yes (ask-user seam).
 2. Re-run without `--dry-run`. The seam moves dirs high-to-low (collision-
    safe, `git mv` so history follows), shifts every `Phase K` token and
@@ -70,15 +60,12 @@ A success-criteria change is a plain edit to the `### Phase N:` section.
 3. The seam leaves the numbered slot empty (`slot` in its output): fill it with
    `phase-entry add --phase <N>`, the same `--at` number, and the gathered
    name and description, then hand-write that phase's detail section.
-4. Repair any reported `in_text_refs` by hand - they need judgment (a prose
-   "phase 3" may or may not mean the renumbered phase).
+4. Repair any reported `in_text_refs` by hand, judging each one.
 
 ### remove <N>
 1. If `.planning/phases/<N>/` has real work (PLAN/SUMMARY), warn that removal
-   is destructive to that phase's planning docs (git still holds them). (This
-   dir inspection and the step-2 `--dry-run` are independent read-only probes -
-   batch them in one message; only a call that consumes a prior call's output
-   is serialized.)
+   is destructive to that phase's planning docs (git still holds them). Batch
+   this dir inspection and the step-2 `--dry-run` in one message.
 2. Dry-run (`renumber remove --n <N> --dry-run`), show `ops`, the
    `orphaned_reqs` (Pending requirements that pointed at the removed phase),
    any `in_text_refs` and `warn`. Show every `req_row_changes` entry verbatim,
@@ -94,7 +81,7 @@ A success-criteria change is a plain edit to the `### Phase N:` section.
 4. Ask (ask-user seam) where each orphaned requirement goes, a phase the state
    holds or Deferred, and apply the answer with
    `req-row --id <id> --phase <N>` or `req-row --id <id> --defer`. Repair
-   reported `in_text_refs` by hand.
+   reported `in_text_refs` by hand, judging each one.
 
 ## Finish
 - A failed apply (`ok:false`, `partial-apply`, with a `completed` list) leaves
