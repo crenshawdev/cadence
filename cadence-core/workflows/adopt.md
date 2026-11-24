@@ -276,10 +276,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
 there is no roadmapper agent.
 
 1. Every `## Phases` entry is `- [ ]`. Never reconstruct shipped work as an
-   `- [x]` phase: /cad-health rule 5 flags an `- [x]` phase whose mapped
-   REQUIREMENTS rows are not all `Complete`, and seeded rows are always
-   `Pending`, so a reconstructed history becomes a status-drift issue on the
-   first /cad-plan. Shipped work is PROJECT.md's Validated section.
+   `- [x]` phase: seeded rows are `Pending`, which /cad-health rule 5 flags under
+   an `- [x]` phase. Shipped work is PROJECT.md's Validated section.
 2. Phase count follows the `granularity` read in setup: coarse 3-5, standard
    5-8, fine 8-12. When in doubt, fewer.
 3. Prefer vertical slices - each phase delivers something the user can exercise
@@ -296,14 +294,13 @@ there is no roadmapper agent.
    id unless one is about this work, and its criteria are the thresholds met and
    the required jobs passing. It never lowers a threshold to make that easier.
 
-Then enter each phase, in order. The list is generated from the state file, so
-a hand-written line would be overwritten:
+Then enter each phase, in order, one add each and no hand-written line:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry add --phase <N> --name <name> --description <one line>
 ```
 
-Then count what you just wrote - rule 4 above is prose until a seam counts it:
+Then count what you just wrote:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --roadmap-min 2 --roadmap-max 5
@@ -312,8 +309,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --roadm
 No `--phase`: one call walks every phase the roadmap declares. Each `over` entry
 names the phase, its measured count and the bound it broke. `roadmap_found:
 false` is not zero criteria - that phase's block declares none at all, so write
-them rather than report it as under the floor. A REPORT, not a gate, exactly as
-`plan-size`'s `phase-too-big` is: present it and let the approval gate decide.
+them rather than report it as under the floor. A REPORT, not a gate: present it
+and let the approval gate decide.
 
 Present the roadmap inline (a table of phase, goal, REQ-IDs and the criteria
 count the seam just reported, then the per-phase criteria, naming every `over`
@@ -348,8 +345,7 @@ whole file", show the file and re-ask.
 </step>
 
 <step name="state">
-Write the initial cursor through the seam - ROADMAP.md exists now, so name and
-total derive automatically:
+Write the initial cursor through the seam:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
@@ -374,9 +370,7 @@ Then ONE commit, `docs: adopt existing project into Cadence`, staging exactly
 the eight files written: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
 `.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/records/state.json`,
 `.planning/records/.gitignore`, `.planning/config.json` and
-`.github/cadence/coverage-policy.json`. One
-commit, not three - all three documents were derived in a single pass, so there
-is no intermediate state worth a separate commit.
+`.github/cadence/coverage-policy.json`.
 </step>
 
 <step name="done">
@@ -393,8 +387,8 @@ Commit: {hash, or "none - commit_docs is false"}
 Next: /cad-context 1
 ```
 
-One suggestion, no menu. A `/clear` before it is safe - everything gathered is
-on disk in `.planning/`.
+One suggestion, no menu. A `/clear` before it is safe - everything is on disk
+in `.planning/`.
 </step>
 
 </process>
