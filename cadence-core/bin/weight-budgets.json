@@ -129,7 +129,7 @@
     "skills/cad-docs-verify/SKILL.md": 905,
     "skills/cad-execute/SKILL.md": 1015,
     "skills/cad-executor-contract/SKILL.md": 15919,
-    "skills/cad-health/SKILL.md": 8525,
+    "skills/cad-health/SKILL.md": 8497,
     "skills/cad-help/SKILL.md": 862,
     "skills/cad-land/SKILL.md": 21023,
     "skills/cad-map/SKILL.md": 920,
@@ -154,6 +154,6 @@
     "skills/cad-verify/SKILL.md": 1294,
     "skills/cad-report/SKILL.md": 579,
     "skills/cad-why/SKILL.md": 941,
-    "cadence-core/workflows/report.md": 18713
+    "cadence-core/workflows/report.md": 18684
   }
 }

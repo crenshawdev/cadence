@@ -18,7 +18,7 @@ well-formed enough for the other skills to trust.
 </objective>
 
 <process>
-Check, then report - do not fix without asking.
+Check, then report.
 
 1. **Presence.** `.planning/` exists with PROJECT.md, REQUIREMENTS.md,
    ROADMAP.md, STATE.md. A missing core doc is an issue (if the dir itself is

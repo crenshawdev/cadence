@@ -132,8 +132,8 @@ Rules:
     count under `unrecorded`, never as a zero.
   So the total prices recorded claude-subagent returns only, short by an
   unstated amount, and it is not what the run cost. Cross-model provider spend
-  is not excluded: it is reported on the `Cross-model reviews` line above, and
-  the two are never added.
+  is not excluded: it is reported on the
+  `Cross-model reviews` line above.
 - The gap is printed as its TERMS and never as one number. The per-dispatch
   window figure is the `tokens` on each `brackets[]` row, and say it is a PROXY:
   it behaves like that dispatch's FINAL context window rather than a sum across
