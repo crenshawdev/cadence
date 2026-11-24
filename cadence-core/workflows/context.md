@@ -153,16 +153,12 @@ Before dispatching, settle any user-only foundational fork the analyzer cannot
 resolve from code - where new code lives (which repo / path), the target
 platform, whether a referenced repo is even in scope this milestone. Surface
 the blocking ones via the ask-user seam first, and do NOT bake an unverified
-scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
-wastes the whole pass and forces a mid-analysis interruption.
+scope premise (e.g. "port repo X") into the analyzer prompt.
 
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seam-spawn-agent.md), the bracket on its resolve:
 `--bracket-read ".planning/ROADMAP.md"`. Prior phases' decisions reach it as the
-`<prior_decisions>` summary in the payload, distilled from the (at most 3) files
-load_priors read.
-
-This keeps raw file contents out of the main context.
+`<prior_decisions>` summary in the payload.
 
 When `planning.code_map`, read in `spend_gate`, is `true`, the payload carries a code map block, and one local scan with no model feeds it. Before the payload is assembled, make the scan once:
 
@@ -194,26 +190,25 @@ Follow your output format exactly.
 
 The dispatch came back, so close its bracket before anything else. ONE line,
 whichever way it ended - when the agent failed or timed out, write what failed
-to a scratch file and add `--detail-file <path>` (caller-derived text -
-references/conventions.md), and the seam closes it as a `checkpoint` instead of
-a `return`:
+to a scratch file and add `--detail-file <path>`, and the seam closes it as a
+`checkpoint` instead of a `return`:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on the subagent return>
 ```
 
-Parse:
-- `assumptions[]` - each with area, statement, evidence, if-wrong
-  consequence, confidence (Confident / Likely / Unclear), and alternatives
-  (Likely/Unclear items only)
-- `needs_research[]` - topics the codebase alone could not settle (often empty)
+Parse, by the contract's names:
+- `assumptions[]` - grouped by area, each with Decision, Certainty (Confident /
+  Likely / Unclear), Evidence, If wrong, and Alternatives (Likely and Unclear
+  items only)
+- `needs_research[]` - the topics under Needs external research (often empty)
 
 Drop an assumption that only restates a spine decision. One that goes beyond
 it stays.
 
 If the agent fails or times out, say so and continue with a plain
 conversational pass: derive 2-4 gray areas from the phase goal yourself and
-treat each as Unclear below. Do not silently degrade.
+treat each as Unclear below.
 </step>
 
 <step name="close_gray_areas">
