@@ -177,15 +177,13 @@ For each `key=value` (dotted paths allowed, e.g. `workflow.plan_check=false`):
 `worktree.baseRef` is a Claude Code setting, not a Cadence key: it is absent
 from `config.schema.json`, never goes through `config.mjs`, and lives in the
 user's settings files. It decides where a subagent worktree forks from, so the
-parallel `/cad-execute` path depends on it - under its `"fresh"` default a
-worktree branches from the remote default branch and an executor arrives
-without this phase's CONTEXT or its own PLAN file, which is why `choose_path`
-refuses to parallelize there (`workflows/execute.md`; Claude Code >= 2.1.208).
-Inside a worktree, `"head"` means that worktree's own `HEAD`.
+parallel `/cad-execute` path depends on it: its `"fresh"` default is the remote
+default branch, and `choose_path` refuses to parallelize there. Inside a
+worktree, `"head"` means that worktree's own `HEAD`.
 
 Run this step whenever `parallelization.use_worktrees` is true in the config as
 it now stands, WITHOUT also requiring `parallelization.enabled`. Skip the step
-only when `use_worktrees` is false, where worktrees genuinely cannot be used.
+only when `use_worktrees` is false.
 
 1. Read the effective value:
 
@@ -201,14 +199,13 @@ only when `use_worktrees` is false, where worktrees genuinely cannot be used.
    with the repo, so every clone's parallel runs behave the same) /
    `~/.claude/settings.json` (all projects) / leave it (parallel execution
    keeps falling back to sequential). Declining is a valid answer and ends the
-   step - a plugin does not overrule a user's settings.
+   step.
 4. On accept: READ the target file first and show the user its current
    `worktree` block (or that there is none), then merge the one key in,
    preserving every other setting byte-for-byte, and write it back. Never
    replace a settings file wholesale, never write one whose contents you did
-   not read, and never touch a managed-policy file - a higher layer keeps
-   winning, so the write would be a lie. Re-run the seam and report the value
-   it now resolves to and the file it came from.
+   not read, and never touch a managed-policy file. Re-run the seam and report
+   the value it now resolves to and the file it came from.
 
 ## Risk surfaces (`--surfaces`)
 
@@ -249,8 +246,7 @@ rejoins here at **Wrap-up**.
 Summarize the final tier map per provider and note which triggers now have a
 cross-model reviewer (a trigger whose `tier` resolves to a non-null id on a
 reviewer that both this repository's and the user-global `review.reviewers`
-name). Remind the user this is re-runnable (`/cad-config
---review`).
+name). Remind the user this is re-runnable (`/cad-config --review`).
 
 **Flag dangling enrollment, user-global half included.** If `review.reviewers`
 names a cross-model provider (`openai`, `gemini` or `deepseek`) but one or more `review.triggers.<t>.tier`
@@ -259,9 +255,7 @@ explicitly: the trigger silently falls back to `claude-subagent`, so the
 cross-model setup is inert for it. Name the trigger and the empty tier and
 offer to assign it or drop the provider from `reviewers`. Flag too a provider
 this repository's `review.reviewers` names but the user-global config's does
-not: the user-global config must name it too, or every trigger drops it. A
-config that enrolls a reviewer it cannot actually reach should never look
-configured.
+not: the user-global config must name it too, or every trigger drops it.
 
 ## Degradation contract
 
