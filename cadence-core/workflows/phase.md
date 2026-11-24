@@ -39,7 +39,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-entry edit --ph
 A success-criteria change is a plain edit to the `### Phase N:` section.
 
 ### insert <N>
-1. Dry-run first - this is what the user confirms:
+1. Get the new phase's name, one-line description, and success criteria as
+   `### add` does (from args or the ask-user seam), then dry-run first - this is
+   what the user confirms:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" renumber insert --at <N> --dry-run
