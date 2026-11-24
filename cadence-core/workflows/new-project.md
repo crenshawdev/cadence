@@ -288,7 +288,8 @@ and every later commit in this workflow. Otherwise apply the
 protected-branch guard from references/git-guard.md now, before the first commit.
 Exception: a repo with no commits yet (`git rev-parse HEAD` fails) has
 nothing to branch from - skip the guard and let the initial docs commit
-create the root commit on the current branch.
+create the root commit on the current branch. At this commit and every later
+one of the run, push nothing.
 
 Commit: `docs: initialize project` with `.planning/PROJECT.md` and
 `.planning/config.json`.
@@ -522,44 +523,12 @@ in `.planning/`.
 </process>
 
 <guardrails>
-- Never spawn more than one research agent, and none at all unless
-  configured or `--research` was passed. The 4-researcher fan-out and
-  synthesizer are gone; do not reintroduce them.
-- STATE.md is a four-line overwritten cursor plus an optional `Plan:` line: no audit logs, no session
-  narratives, no progress bars, no metrics.
-- Config keys come from the engine config template only; never invent keys,
-  never ask config questions beyond the forge, the roles interview and the
-  testing policy step. That step is the only place `testing.*` is written, and
-  it never asks about publishing.
 - Never fabricate an answer the ask-user seam was supposed to collect; when
   the user wants to talk freeform, drop structured questions until they're
   done.
 - Create nothing outside the canonical .planning/ set (PROJECT.md,
   REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json, records/state.json,
-  records/.gitignore, research/ if the pass ran) and `.github/cadence/coverage-policy.json`, which the testing policy
-  step renders. No phases/ dirs, no CLAUDE.md generation, no extra scaffolding.
-- A failed research pass is reported and skipped, never a blocker.
-- Don't rush the questioning to get to the artifacts. The artifacts are
-  only as good as the questioning that fed them.
+  records/.gitignore, research/ if the pass ran) and
+  `.github/cadence/coverage-policy.json`, which the testing policy step renders.
+  No phases/ dirs, no CLAUDE.md generation, no extra scaffolding.
 </guardrails>
-
-<success_criteria>
-- [ ] Questioning followed threads until what / why / who / done were all
-      concrete (not rushed, not checklist-walked)
-- [ ] .planning/config.json copied from the engine template; the forge, roles
-      and testing policy answers are the only config interrogation
-- [ ] The testing policy was accepted before the roadmap was written, publishing
-      was not asked, and `.github/cadence/coverage-policy.json` was rendered
-- [ ] PROJECT.md captures the full gathered context; Active requirements
-      framed as hypotheses
-- [ ] REQUIREMENTS.md: user scoped every category; REQ-IDs assigned;
-      v1 / v2 / Out of Scope explicit, exclusions carry reasons
-- [ ] ROADMAP.md: every v1 requirement mapped to exactly one phase; 2-5
-      falsifiable success criteria per phase; user approved it
-- [ ] Every `## Active` id appears in a ROADMAP phase (100% coverage);
-      Traceability table left as bare headers for `/cad-plan` to seed
-- [ ] STATE.md is a four-line cursor (no `Plan:` line) pointing at phase 1
-- [ ] Commits follow references/git-guard.md (guard before first commit, docs:
-      prefix, specific files, no push) and respect planning.commit_docs
-- [ ] At most one research agent spawned, only when enabled
-</success_criteria>
