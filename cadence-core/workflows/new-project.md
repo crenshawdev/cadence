@@ -47,11 +47,8 @@ for item 4's one line):
    ```
 
    Ask no configuration questions - with THREE deliberate exceptions, and no
-   others. The first is item 6 below: the forge. A forge is a PRECONDITION
-   rather than an option (FRG-02), and no template can carry a default for it,
-   because which forge hosts a repository is a fact about that repository and
-   not about Cadence. So it is asked, once, and a repository that has answered
-   is never asked again.
+   others. The first is item 6 below: the forge. It is asked once, and a
+   repository that has answered is never asked again.
 
    The second is what each role costs. Read
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-roles.md` (one consult
@@ -59,23 +56,17 @@ for item 4's one line):
    script has run: the full thirteen questions
    written to the user-global layer when that layer holds no `roles` key, and
    the shorter per-project confirmation written to this repository's own file
-   when it already does. It is an exception for the same shape of reason the
-   forge is - a template cannot carry a default for what a model costs the
-   person paying for it, and the six roles' models are the largest single
-   decision about what running Cadence costs. A user who accepts every default
-   answers thirteen questions once per machine and none of them again.
+   when it already does.
 
    The third is the testing policy, asked once as the `testing_policy` step
-   between `requirements` and `roadmap`. Same shape of reason as the forge - no
-   template can carry a default for what a project's tests must prove, and the
-   roadmap's phases are planned against the answer.
+   between `requirements` and `roadmap`.
 
-   Every other key keeps the template's value. Tell the user in one line what
-   was written and where: "Config written with defaults (standard granularity,
-   research and plan check off, verifier on) in `.planning/config.json`, and
-   the per-role models and start rungs you just chose in <the file the
-   interview named>. /cad-config changes any of it, and /cad-config --roles
-   re-opens those thirteen questions."
+   Every other key keeps the template's value, and config keys are never
+   invented. Tell the user in one line what was written and where: "Config
+   written with defaults (standard granularity, research and plan check off,
+   verifier on) in `.planning/config.json`, and the per-role models and start
+   rungs you just chose in <the file the interview named>. /cad-config changes
+   any of it, and /cad-config --roles re-opens those thirteen questions."
 5. Read the keys this workflow needs through the seam (effective values,
    global layer included):
 
@@ -85,10 +76,6 @@ for item 4's one line):
      granularity git.protected_branches git.on_protected git.base_branch
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" detect --dir .
    ```
-
-   The `forge.mjs detect` line rides this same script rather than taking a turn
-   of its own: it reads a config and PATH, and item 6 is prose over what it
-   already printed.
 6. **Pick a forge**, from the `forge.mjs detect` line in that same script.
    Branch on `action` alone, the way /cad-land step 1 branches on
    `issue-check`'s:
