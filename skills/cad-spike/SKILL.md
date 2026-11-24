@@ -15,9 +15,7 @@ allowed-tools:
 <objective>
 Answer one unknown with evidence before a plan commits to it - "will this
 approach work", "is this library fast enough", "does this API do what we need".
-The discipline is what makes it useful: falsifiable criteria written BEFORE the
-experiment, the riskiest assumption tested first so a dead end dies fast, and an
-honest verdict. The code is throwaway; the SPIKE.md verdict is the deliverable.
+The code is throwaway; the SPIKE.md verdict is the deliverable.
 </objective>
 
 <execution_context>
@@ -25,10 +23,7 @@ honest verdict. The code is throwaway; the SPIKE.md verdict is the deliverable.
 </execution_context>
 
 <process>
-Run the spike workflow end-to-end. Write the Given/When/Then criteria before
-building anything, order them risk-first, and stop the moment a risk-first
-criterion invalidates the approach. Never soften an invalidated result into
-"inconclusive" to save the idea - a spike that kills a bad approach is a success.
+Run the spike workflow end-to-end.
 
 Before any question to the user, send one `PushNotification` naming the
 command, the phase or position line and what is needed, in one line under 200
