@@ -157,35 +157,30 @@ What to read:
   version.
 
 Then state what you found in a few lines - shape, stack, apparent purpose,
-release state. This is the input to every step below; it is not a report, so do
-not narrate the reading.
+release state. This is the input to every step below, not a report: do not
+narrate the reading.
 </step>
 
 <step name="questioning">
 Adopt asks only what the repo cannot answer. Whatever the survey READ is
 ANSWERED: the goal a README states, the stack and the build commands a manifest
-states, the shape the tree states, the direction the log states. Re-asking any
-of it is the blank-page interview this door exists to avoid, and it tells the
-user their project was not read.
+states, the shape the tree states, the direction the log states.
 
-So a question is legitimate only when it names something the repo does not
-state, and asking it that way out loud is the test: "the README says what this
+A question is legitimate only when it names something the repo does not state,
+and asking it that way out loud is the test: "the README says what this
 does but never who it is for"; "the log stops at the parser - what comes after
 it?" A question that cannot name its gap is one the survey already answered.
 
-**Background checklist** (mental, never a conversation structure), the same four
-items /cad-new-project carries:
+**Background checklist** (mental, never a conversation structure):
 
 - [ ] What this is (concrete enough to explain to a stranger)
 - [ ] Why it needs to exist (the problem or desire driving it)
 - [ ] Who it is for (even if just themselves)
 - [ ] What "done" looks like (observable outcomes)
 
-A repo with history usually answers the first two by itself and rarely answers
-the last two. Weave in what is left naturally; do not switch to checklist mode.
-And the REMAINING work - what the user wants next - is the one thing no repo
-states, so it is where the questioning belongs: it is what ROADMAP.md is about
-to be made of.
+Weave in what is left naturally; do not switch to checklist mode. The REMAINING
+work - what the user wants next - is the one thing no repo states and what
+ROADMAP.md will be made of, so the questioning belongs there.
 
 **Structured questions** go through the ask-user seam
 (references/seam-ask-user.md):
@@ -207,12 +202,9 @@ skill level (never do this - Claude builds).
 
 **No mechanism decides any of this.** No score, no coverage percentage, no
 threshold, no rubric, and no per-item walk of the repo's own documents against a
-list of things a project ought to state - each of those is forbidden here, and
-the standing requirement on this door is that it never become a scripted
-interview.
-Suppression is judgment. You read the repo, so you already know what it said.
-The `testing_policy` step below reports coverage figures and thresholds and
-decides no question here.
+list of things a project ought to state - each of those is forbidden here. The
+coverage figures and thresholds the `testing_policy` step reports decide no
+question here either.
 </step>
 
 <step name="write_project">
@@ -220,8 +212,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PROJECT.md` and write
 `.planning/PROJECT.md` from the survey.
 
 - `### Validated` carries the SHIPPED capability - what the existing code
-  already does, one line each. This is the brownfield rule the template itself
-  states, and it is where reconstructed history belongs.
+  already does, one line each.
 - `## Context` carries the current state of the code: stack, layout, known
   rough edges, anything a later phase has to work around.
 - `### Active` is REMAINING work only, framed as hypotheses until shipped.
@@ -232,11 +223,10 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PROJECT.md` and write
 
 The `### Active` milestone version is a PROPOSED NEXT version, confirmed with
 the user through the ask-user seam (references/seam-ask-user.md), and never the
-repo's current tag: /cad-health rule 7 reports drift when the Active version is
-a member of `git tag --list`, so naming the version already shipped fails the
-first health check the user runs. Propose the next one from the tag list
-(`v1.4.0` shipped -> `v1.5.0` proposed), and offer the alternatives rather than
-deciding alone:
+repo's current tag: /cad-health rule 7 reports an Active version in
+`git tag --list` as drift. Propose the next one from the tag list (`v1.4.0`
+shipped -> `v1.5.0` proposed), and offer the alternatives rather than deciding
+alone:
 
 - header: "Next version"
 - question: "Which version should the next release of this project be? The latest one already released is {latest tag}."
@@ -253,34 +243,30 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/REQUIREMENTS.md` and write
   `- **[CAT]-01**: [requirement]`, with a 3-5 letter category code that starts
   with a letter. What the code already does is Validated in PROJECT.md, not a
   requirement to deliver a second time.
-- Each one specific, testable, user-centric and atomic - the same bar
-  /cad-new-project holds: "User can X", never "System does Y", never "Handle Z".
+- Each one specific, testable, user-centric and atomic: "User can X", never
+  "System does Y", never "Handle Z".
 - `## v2 Requirements` and `## Out of Scope` take what the repo or the user
   deferred, exclusions carrying their reason.
 - `## Traceability` is left as BARE HEADERS. `/cad-plan` seeds each row when its
-  phase is planned (`references/req-traceability.md`); `planning.mjs seed-reqs`
-  reads `.planning/phases/<N>/PLAN*.md` and returns `no-phase-dir` / `no-plans`
-  before any plan exists, so adopt structurally cannot seed a row, and a
-  hand-authored one would make the mismatched arm the normal case on every
-  adopted repo.
+  phase is planned (`references/req-traceability.md`), and no row can be seeded
+  before a plan exists.
 </step>
 
 <step name="testing_policy">
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config-testing.md` (one
 consult site - this step) and follow its **Testing policy** arm here, after
 `survey`'s reading and before the roadmap: one recommendation, Accept or
-Adjust, written, rendered and checked. The survey already read the workflows,
-manifests and tree whose thresholds and exclusions it quotes.
+Adjust, written, rendered and checked.
 
 Skip that section's publishing question. Ask nothing about publishing; say in
 one line that verification publishing is off and that `/cad-config --testing` is
 where to authorize it.
 
-The step leaves `testing.*` in `.planning/config.json` and writes
-`.github/cadence/coverage-policy.json`. Both are staged by the `commit` step
-when `planning.commit_docs` is true. When it is false they stay uncommitted, and
-the first CI plan task commits the policy file, since `/cad-plan` puts that task
-first when `check` finds no gate.
+This step is the only place `testing.*` is written. It leaves `testing.*` in
+`.planning/config.json` and writes `.github/cadence/coverage-policy.json`. Both
+are staged by the `commit` step when `planning.commit_docs` is true. When it is
+false they stay uncommitted, and the first CI plan task commits the policy file,
+since `/cad-plan` puts that task first when `check` finds no gate.
 </step>
 
 <step name="write_roadmap">
