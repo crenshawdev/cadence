@@ -121,8 +121,7 @@ selectable lists, the twelve `roles.<role>.model` and `.effort` keys included. T
 
 ### Validation seam
 
-`bin/config.mjs` is the enforcement point - the schema, not this doc, decides what
-is valid. Never write config JSON by hand; go through the seam:
+Never write config JSON by hand; go through the seam:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" validate            # whole file ok?
@@ -135,32 +134,26 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys --walk         # t
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" preview <key=value>…  # read-only: the file, before and after, what changes
 ```
 
-`get` is how every workflow reads config - the only read that sees the global
-layer. Never read a config file raw for a VALUE. There are exactly three
-exceptions, and every one of them asks which LAYER holds a key rather than what
-the key says, which is the one question a merged read cannot answer: the walk's
-layer labels (step 2); the **Roles interview**'s first-run test, which reads the
-user-global file for the PRESENCE of a `roles` key; and the **Stakes
+Never read a config file raw for a VALUE. There are exactly three exceptions:
+the walk's layer labels (step 2); the **Roles interview**'s first-run test, which
+reads the user-global file for the PRESENCE of a `roles` key; and the **Stakes
 migration**, which reads both files for a key it is about to remove from them.
 
 Each prints one JSON line (`{ok, …}`); `--file <path>` overrides the default
 `.planning/config.json`, and `--global` targets the user-global layer at
 `~/.claude/cadence/config.json` (`CADENCE_GLOBAL_CONFIG` relocates it), which
 `set` auto-creates. Collect the menu's diffs and apply them with one `set` call
-per file, so each write is one atomic, validated operation.
+per file.
 
-**Config layering.** At read time `bin/route.mjs` deep-merges global under repo
-(precedence **repo > global > built-in defaults**); nested objects merge, arrays
-replace wholesale. Each file is still validated on its own - every layer must be
-independently valid. Use `--global` for machine-wide defaults - the model and
-the start rung each role runs at, which is exactly what the **Roles interview**
-writes there on a first run - and the per-repo file to override per project.
+**Config layering.** Precedence is **repo > global > built-in defaults**: nested
+objects merge, arrays replace wholesale, and every layer must be independently
+valid. Use `--global` for machine-wide defaults and the per-repo file to override
+per project.
 
 ## Direct set
 
-A `worktree.baseRef=…` pair is not a Cadence key and the seam would reject it
-as unknown: route it to **Worktree base ref** instead, and say it is a Claude
-Code setting the user's own settings file owns.
+Route a `worktree.baseRef=…` pair to **Worktree base ref** instead, and say it
+is a Claude Code setting the user's own settings file owns.
 
 For each `key=value` (dotted paths allowed, e.g. `workflow.plan_check=false`):
 - Validate and write in one shot through the **Validation seam**:
@@ -171,16 +164,13 @@ For each `key=value` (dotted paths allowed, e.g. `workflow.plan_check=false`):
   pair is valid - and echoes `{ok:true, changed:[…]}` on success.
 - `check` dry-runs the same pairs and speaks the same contract - `{ok:true}`,
   or `{ok:false, reason:"invalid", detail:[…]}` - without writing anything, and
-  a key retired by a release carries a `detail` naming the key that replaced it,
-  so that remediation needs no `keys` lookup.
+  a key retired by a release carries a `detail` naming the key that replaced it.
 - On rejection, surface the seam's `detail` (the invalid keys and why). For a
-  per-key detail, look up the allowed values via `config.mjs keys`; for a
-  `(root)` detail, that lookup returns nothing - the remediation instead is
-  that the target file's top level is not a JSON object (repair or replace the
-  file). A `cannot set through "…"` detail carries its own remediation: that
-  container holds an array or a scalar and must be removed or replaced first -
-  the seam will not overwrite it, because doing so would discard its contents.
-  Do not retry with a malformed config.
+  per-key detail, look up the allowed values via `config.mjs keys`. A `(root)`
+  detail means the target file's top level is not a JSON object: repair or
+  replace the file. A `cannot set through "…"` detail means that container holds
+  an array or a scalar and must be removed or replaced first - the seam will not
+  overwrite it. Do not retry with a malformed config.
 
 ## Worktree base ref (a HOST setting - offered, never written silently)
 
