@@ -1,10 +1,6 @@
 <purpose>
-Answer "where am I and what's next" from the filesystem and git, then hand
-off to the spine skill that does the next piece of work. The derivation is
-the planning seam's `status` subcommand - count-based truth from ROADMAP and
-phase artifacts; the STATE.md cursor is only a hint. This workflow reports,
-reconciles the cursor, and routes. It finds incomplete or paused phases and
-offers to resume them, and prints stats (`--stats`).
+Answer "where am I and what's next" from the filesystem and git: report,
+reconcile the cursor, and route to the skill that does the next piece of work.
 </purpose>
 
 <process>
@@ -18,7 +14,9 @@ Run the planning seam:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status
 ```
 
-Its one JSON line carries everything this workflow reads:
+Its one JSON line carries everything this workflow reads. Its derivation is
+authoritative: never trust the STATE.md cursor over it, and never re-derive by
+hand what `status` already returned.
 
 - `phases[]` - each phase's derived status: **unplanned** (no PLAN) ->
   **planned** (PLAN, no SUMMARY) -> **executed** (SUMMARY, UAT not fully
@@ -44,17 +42,11 @@ Its one JSON line carries everything this workflow reads:
   the total `findings`, and `unreadable[]`. ALWAYS present, unlike `cycle` and
   `drift`: an absent key means a seam that predates the queue, never "nothing
   is deferred". The count this workflow reports comes from HERE and never from
-  the cursor's `Next:` text - the cursor is a hint the derivation overrides,
-  and parsing a count back out of free text is the substitution this repository
-  already condemned for trigger names.
+  the cursor's `Next:` text.
 - `outstanding` - the plans a phase still has to DISPATCH: one `{phase, plans}`
-  entry per phase with work left, derived off the same plan-report reading
-  `/cad-execute` gets as `replay-check`'s `dispatch_set`, so the command that
-  routes and the command that dispatches cannot disagree about what a phase
-  still owes. A SUMMARY is the end of a RUN, not the end of the work - a
-  `/cad-plan --gaps` plan written after one sits here undispatched. ALWAYS
-  present, the same rule `deferred` carries: an absent key means a seam that
-  predates the field, never "nothing is outstanding".
+  entry per phase with work left, a `/cad-plan --gaps` plan written after the
+  SUMMARY included. ALWAYS present, the same rule `deferred` carries: an absent
+  key means a seam that predates the field, never "nothing is outstanding".
 
 On `ok:false` with `invalid-state` and a hint naming `state-rebuild`, go to
 the reconcile step's first arm. On any other `ok:false`, relay `reason`/`hint`
@@ -62,14 +54,11 @@ the reconcile step's first arm. On any other `ok:false`, relay `reason`/`hint`
 one from a blank page; /cad-adopt starts one from a repo that already has code
 and history.") and stop.
 
-On `--stats`, branch straight to the stats step now - it derives its own commit
-timeline and needs nothing else; do NOT walk reconcile, which writes STATE.md,
-and `--stats` must write nothing. On `--trace`, branch straight to the trace
-step under the identical rule: it reads one seam and prints, and must not walk
-reconcile either. Otherwise (the normal path) batch a
-`git log --oneline -8` for the report's Recent line in the SAME message as
-`status` - independent, so they share one message; only a call that consumes a
-prior call's output is serialized.
+On `--stats`, branch straight to the stats step now and do NOT walk reconcile:
+`--stats` must write nothing. On `--trace`, branch straight to the trace step
+under the identical rule: it reads one seam and prints, and must not walk
+reconcile either. Otherwise (the normal path) batch a `git log --oneline -8` for
+the report's Recent line in the SAME message as `status`.
 </step>
 
 <step name="reconcile">
@@ -83,7 +72,7 @@ prior call's output is serialized.
   hand. A refused rebuild: relay its `reason`/`hint` and stop.
 - Drift kind `cursor`, or no `cursor` in the answer (no STATE.md, or a
   rebuilt state that had none to keep): rewrite the cursor to the
-  derivation through the seam - never by hand:
+  derivation through the seam - only through `cursor set`, never by hand:
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
@@ -96,29 +85,26 @@ prior call's output is serialized.
   Status mapping: unplanned -> `ready to plan`, planned -> `planned`,
   executed -> `executed`; all complete -> `phase complete` (with `--phase`
   = the last phase). A `paused` cursor always agrees - leave it.
-- Closed milestone (`cycle` is `none`) with cursor drift: rewrite it as
-  `--phase 1 --status "ready to plan" --next "/cad-phase add"` - no
-  `--name`/`--total`; the cursor then reads as no cycle open.
+- Closed milestone (`cycle` is `none`) with cursor drift: rewrite it with
+  `cursor set`, as `--phase 1 --status "ready to plan" --next "/cad-phase add"`,
+  no `--name`/`--total`; the cursor then reads as no cycle open.
 - Drift kind `plan-report`: run
   `planning.mjs replay-check --phase <N>` for the phase the entry names, which
   folds the finished report into the state, then `status` again. Write no file
   by hand.
 - Drift kind `phase-dir`: the prune was interrupted - route to
-  `/cad-milestone` to finish it. NOT to `/cad-verify {N}`: that phase is no
-  longer in ROADMAP, so the workflow would refuse it.
+  `/cad-milestone` to finish it, NOT to `/cad-verify {N}`.
 - Drift kinds `phase-dir-grammar` / `phase-dir-collision`: name the entries
   in the report. Renaming a directory is the user's call, never made here.
 - Drift kind `roadmap-box` ("state says X, derived Y"), by direction:
   - X lags Y and neither is `complete` (the artifacts are ahead): run
     `planning.mjs replay-check --phase <N>` for the phase the entry names, then
     `status` again, as the `plan-report` arm does. Write no file by hand.
-  - `complete` on either side, or X ahead of Y: do NOT edit ROADMAP here -
-    cad-verify is the only writer of a ROADMAP checkbox. Note the drift in the
-    report ("ROADMAP shows phase N open but it is complete") and route to
-    `/cad-verify N` to repair it.
-- Drift kind `req-status`: do NOT edit REQUIREMENTS here - cad-verify is the
-  only writer of a Traceability Status beyond `Pending`. Note the drift in the
-  report and route to `/cad-verify N` to repair it.
+  - `complete` on either side, or X ahead of Y: do NOT edit ROADMAP here.
+    Note the drift in the report ("ROADMAP shows phase N open but it is complete")
+    and route to `/cad-verify N` to repair it.
+- Drift kind `req-status`: do NOT edit REQUIREMENTS here. Note the drift
+  in the report and route to `/cad-verify N` to repair it.
 </step>
 
 <step name="stats">
