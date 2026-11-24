@@ -1,8 +1,6 @@
 # cad-spike workflow
 
-Resolve one unknown with a throwaway experiment. The value is in the order:
-criteria first, riskiest assumption first, verdict last. Reversing any of those
-turns a spike into wishful coding that declares success on an assumption.
+Resolve one unknown with a throwaway experiment.
 
 ## 1. Frame the question
 State the unknown as a single question and the decision that hinges on it
@@ -16,28 +14,25 @@ with an OBSERVABLE outcome that decides validated vs invalidated:
 > <the opposite observation> -> invalidated.
 Vague criteria ("it feels fast enough") are not allowed - pin a number, an
 output, a behavior. Derive `<slug>` now (a short kebab of the question) and write
-them into `.planning/spikes/<slug>/SPIKE.md` before the experiment exists, so the
-result cannot be rationalized after the fact - step 6 completes this same file in
-place.
+them into `.planning/spikes/<slug>/SPIKE.md` before the experiment exists - step 6
+completes this same file in place.
 
 ## 3. Order risk-first
 Rank the criteria so the assumption most likely to KILL the approach is tested
-first. The point is to fail fast: if the riskiest thing does not hold, the spike
-is over and the later criteria never run. Order for fastest disproof, not for
-easiest confirmation.
+first. If the riskiest thing does not hold, the spike is over and the later
+criteria never run.
 
 ## 4. Run the experiment (throwaway)
 Build the minimum throwaway code in a scratch location (`.planning/spikes/<slug>/`
-or a temp dir) - NOT in the project's real source. Run the criteria in
-risk-first order. Stop the instant a risk-first criterion invalidates the
-approach; do not keep polishing a dead idea. Record each criterion's actual
-observation as you go.
+or a temp dir) - NOT in the project's real source. Stop the instant a risk-first
+criterion invalidates the approach. Record each criterion's actual observation
+as you go.
 
 ## 5. Verdict
 One of, with the evidence behind it:
 - **validated** - the criteria held; the approach is safe to plan on.
-- **invalidated** - a criterion failed; the approach is out (this is a win - it
-  saved the real build). Say what specifically failed.
+- **invalidated** - a criterion failed; the approach is out. Say what
+  specifically failed.
 - **inconclusive** - the experiment could not decide (blocked, needs more than a
   spike). Say what would decide it. Do not use this to avoid an invalidated call.
 
@@ -45,7 +40,7 @@ One of, with the evidence behind it:
 Complete the `.planning/spikes/<slug>/SPIKE.md` begun in step 2: the question,
 the criteria, the observed result per criterion, the verdict, and the
 recommendation for the plan (what to do given the answer). No five-artifact
-ceremony. Discard the throwaway code or note where it is; it is not project
-source. If `planning.commit_docs` is true (`config.mjs get planning.commit_docs`),
-commit SPIKE.md (`docs: spike <slug>`, protected-branch guard); else say in
-one line it stays uncommitted.
+ceremony. Discard the throwaway code or note where it is. If
+`planning.commit_docs` is true (`config.mjs get planning.commit_docs`), apply the
+protected-branch guard (references/git-guard.md rail 1), then commit SPIKE.md
+(`docs: spike <slug>`); else say in one line it stays uncommitted.
