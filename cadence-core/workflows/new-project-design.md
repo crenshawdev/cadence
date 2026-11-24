@@ -12,10 +12,8 @@ Before anything is written, in this order:
 
 1. If `.planning/PROJECT.md` exists, stop as `new-project.md`'s `setup` item 1
    does.
-2. One call checks the design and writes nothing. Its answer is too big for
-   the transcript, so it goes to a file in a directory this run makes, and one
-   read-back prints every path and text the later steps use, so nothing is
-   retyped and `brief.md` is never opened. The path goes in quoted, exactly as
+2. One call checks the design and writes nothing, and one read-back prints
+   every path and text the later steps use. The path goes in quoted, exactly as
    typed:
 
    ```
@@ -30,7 +28,7 @@ Before anything is written, in this order:
    missing a document is refused here, never read as a freeform brief. Either
    way nothing was written: no `.git`, no `.planning/`, no config.
 4. Only an accepted answer goes on, to `new-project.md`'s `setup` items 2
-   to 7. Phase numbers, IDs and texts come from the printed answer only.
+   to 7.
 
 ## 2. Write, after an accepted answer only, in this order
 
@@ -38,14 +36,14 @@ This route replaces `new-project.md`'s `questioning`, `write_project`,
 `research`, `requirements` and `roadmap` steps, and shares its `setup`,
 `testing_policy`, `state` and `done` steps. It asks only what those shared
 steps ask, and no gate of the freeform path: the design already answers them.
-Phase numbers, names and texts come from the check's printout, never retyped;
-never compare IDs or work out a number in the session.
+Phase numbers, IDs, names and texts come only from the check's printout:
+nothing is retyped or compared, no number is worked out in the session and
+`brief.md` is never opened.
 
 1. **Setup.** `new-project.md`'s `setup` items 2 to 7 as written: git init,
    `.planning/`, `trace ignore`, the config copy, the config and forge reads,
    the forge pick, the roles interview and the brownfield note. Print the note;
-   its guidance for questioning doesn't apply, because PROJECT.md comes from
-   the design.
+   its guidance for questioning doesn't apply.
 2. **PROJECT.md.** Copy the printed project text file to `.planning/PROJECT.md`
    byte for byte (`cp "<project text file>" .planning/PROJECT.md`). Then
    replace its one bracketed Core Value line with one sentence you write from
@@ -68,7 +66,7 @@ never compare IDs or work out a number in the session.
    No category scoping, no additions, no confirmation and no check of the Core
    Value against the requirements.
 4. **Testing policy.** `new-project.md`'s `testing_policy` step as written. It
-   reads the stack from PROJECT.md's Constraints, which the design filled.
+   reads the stack from PROJECT.md's Constraints.
 5. **ROADMAP.md**, laid out as
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md`:
    - `# Roadmap: <title>`, then `## Overview` with one paragraph you write,
