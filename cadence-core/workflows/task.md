@@ -292,17 +292,7 @@ No next-step menu.
 </process>
 
 <guardrails>
-- Never spawn a subagent on the inline path.
 - Never use worktrees - cad-task is always sequential.
-- Never write STATE.md for a task - git and the `record` receipt are the record.
 - If mid-task the scope grows past "planned", stop and re-route to
   /cad-phase add rather than improvising a phase inline.
 </guardrails>
-
-<success_criteria>
-- [ ] Protected-branch guard applied before the first commit
-- [ ] Each logical change is one conventional commit of specific files
-- [ ] Verification was observed behavior, not assumption
-- [ ] No PLAN.md and no SUMMARY.md for an inline task, and no `.planning/` tree
-      created where none exists
-</success_criteria>
