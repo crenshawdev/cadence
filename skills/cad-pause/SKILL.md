@@ -11,11 +11,8 @@ allowed-tools:
 ---
 
 <objective>
-Stop mid-work without losing the thread. Two small acts: commit the in-flight
-changes as WIP so nothing is lost, and write the STATE cursor so the next
-session (via /cad-progress, which finds it and offers to resume) knows exactly
-where to pick up.
-Tiny by design - no Stop hook, no handoff document, no activity log.
+Commit the in-flight changes as WIP and write the STATE cursor, which
+/cad-progress finds and offers to resume.
 </objective>
 
 <execution_context>
@@ -25,8 +22,7 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
 <process>
 1. **WIP commit.** If the tree has changes, stage exactly what the user was
    working on and commit `wip: <short description>` (protected-branch guard
-   applies - references/git-guard.md). If the tree is clean, skip this; there is
-   nothing to preserve.
+   applies - references/git-guard.md). If the tree is clean, skip this.
 
 2. **Set the cursor** through the seam (never hand-edit STATE.md):
 
@@ -37,18 +33,17 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
 
    The resume pointer is a one-line "where I was" naming the next concrete
    action (from `$ARGUMENTS`, or ask via the ask-user seam if not given) -
-   the user's own sentence, so write it to a scratch file and pass the PATH
+   the user's own sentence: write it to a scratch file and pass the PATH
    (caller-derived text - references/conventions.md).
    This line IS the pause note /cad-progress surfaces. `--phase <current>` is
    required - the seam does NOT preserve a prior `Phase:` (it fails `bad-args`
    without it); supply the current phase from `cursor get`, which goes in one
-   message with step 1's protected-branch git probes - they are independent, and
-   only a call that consumes a prior call's output is serialized. The seam
-   derives name/total from ROADMAP and stamps `Updated:` itself; hold its
-   envelope for the report.
+   message with step 1's protected-branch git probes. The seam derives
+   name/total from ROADMAP and stamps `Updated:` itself; hold its envelope for
+   the report.
    Commit the cursor and `.planning/records/state.json` (`docs:`), or fold them
    into the WIP commit if one was made.
-   Never leave the tree dirty.
+   Never leave the tree dirty. Write no handoff document and no activity log.
 
 3. **Report.** One line: "Paused at {position}, resume with /cad-progress".
    The position comes from step 2's envelope `cursor`: "Phase {phase} of
