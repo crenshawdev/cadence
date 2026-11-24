@@ -1,13 +1,7 @@
 <purpose>
 Execute a small, off-roadmap task with Cadence's two guarantees - atomic
-conventional commits and the references/git-guard.md rail-1 guard (the protected-branch check
-plus base-integrity and the integration-branch decision, not a bare branch
-check) - and no planning apparatus beyond that: inline by default (no subagents,
-no plan files). `--plan` opts into a written PLAN.md for genuinely multi-step
-work.
-
-One command, not a fast/quick split: the skill classifies the task instead of
-making the user pick a lane.
+conventional commits and the references/git-guard.md rail-1 guard - inline by
+default. `--plan` opts into a written PLAN.md for genuinely multi-step work.
 </purpose>
 
 <process>
@@ -43,16 +37,11 @@ Classify $TASK before touching anything:
   the command that refuses here. NAME BOTH doors and let the user pick: "This
   is phase-sized, and there is no Cadence project here yet. /cad-adopt starts
   one from a repo that already has code and history; /cad-new-project starts
-  one from a blank page. Either gets you a roadmap this can go on." The arm
-  NAMES the two rather than measuring which applies: Cadence has no seam for
-  "existing code" versus "blank page" - `status` collapses every treeless
-  repository into that one reason - and probing the git root here would make
-  /cad-task answer differently than /cad-progress on the same tree. Add no
-  `[ -d .planning ]` check beside it either; the seam's answer is the gate,
-  and two ways of asking "is there a project here" in one workflow drift.
+  one from a blank page. Either gets you a roadmap this can go on." Probe
+  nothing else to tell which applies, neither the git root nor a
+  `[ -d .planning ]` check: the seam's answer is the gate.
 
-  On any other `ok:false`, relay the envelope's `reason` and `hint` and stop,
-  the way `workflows/execute.md`'s `locate` step relays a seam refusal.
+  On any other `ok:false`, relay the envelope's `reason` and `hint` and stop.
 
 When unsure between inline and planned, pick planned.
 </step>
@@ -240,8 +229,7 @@ A `written: false` for any other reason - a symlinked trace, a failed stat,
 `EACCES` or `ENOSPC` on the append, `oversized-event`, a rotation that failed,
 an unwritable or symlinked `tasks/{slug}/` - does not report done: state the
 reason and re-run once a record can land. The two are told apart on the
-envelope's own `reason`, never on a `[ -d .planning ]` check beside the seam;
-the `scope` step already states why two ways of asking one question drift. This
+envelope's own `reason`, never on a `[ -d .planning ]` check beside the seam. This
 path has no `risk-check status` call of its own the way `execute.md` does, so
 that flag is its whole guard, and an `ok:true` with nothing on the record for
 any other cause is exactly the state this step exists to refuse.
