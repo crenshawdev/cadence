@@ -1,7 +1,6 @@
 # cad-coverage workflow
 
-Find and close failing-capable test-coverage gaps for a completed phase. The
-whole flow turns on one definition:
+Find and close failing-capable test-coverage gaps for a completed phase.
 
 > **Covered** = there exists a test whose failure would signal that this
 > requirement regressed. A test that imports or runs the code but would still
@@ -16,12 +15,11 @@ highest phase whose status is complete, else executed). On `ok:false`
 closed milestone, not a project with nothing complete: stop with "The
 milestone is closed - no active cycle. /cad-phase add opens the next one."
 and do NOT derive a phase from the empty array. If the phase's status is
-unplanned or planned, say so and stop - there is nothing to cover yet.
+unplanned or planned, say so and stop.
 
 ## 2. Gather the phase's requirements and artifacts
 Batch the independent reads in one message - REQUIREMENTS.md, the PLAN
-frontmatter, CONTEXT.md, SUMMARY.md, and the test-file glob are all known-path
-and independent; only the `git diff
+frontmatter, CONTEXT.md, SUMMARY.md and the test-file glob; only the `git diff
 <phase-start>..<phase-end>` waits, since it needs the commit range from
 SUMMARY.md.
 
