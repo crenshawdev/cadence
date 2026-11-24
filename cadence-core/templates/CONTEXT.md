@@ -16,8 +16,8 @@ Plan shape: {one plan | multiple plans | split - deferred slice above}
 - D-01 ({area}): {decision}. Evidence: {file paths / cited docs}.
 - D-02 ...
 {first the phase's spine decisions, as /cad-context reads them from its
-roadmap section; then the decisions that pass all three parts of the
-durability filter above; "None this phase" only when there are neither}
+roadmap section; then the decisions that pass `confirm_decisions`'
+durability filter; "None this phase" only when there are neither}
 
 ## Decisions
 
@@ -37,7 +37,7 @@ criterion whose tool is absent locally; otherwise use `human-verify`}
 
 ## Flagged assumptions
 
-- {statement} - {confidence}; if wrong: {consequence}
+- {decision} - {certainty}; if wrong: {consequence}
 {unresolved research topics and items left to the planner's judgment;
 "None - all assumptions confirmed" if empty}
 
