@@ -1,6 +1,6 @@
 # cad-map workflow
 
-Builds the code map, or refreshes the modules that went stale. Everything the readers will open is already on disk as facts, so this prints what a launch would start and waits for a typed yes before any reader does. `references/review-workflow.md` is the pattern for the launch and the notice. Only the `planning.code_map` switch gates it: a committed `true` can only add a local scan, because no agent starts without a typed `/cad-map` and a yes.
+Builds the code map, or refreshes the modules that went stale. Everything the readers will open is already on disk as facts, so this prints what a launch would start and waits for a typed yes before any reader does. Only the `planning.code_map` switch gates it: a committed `true` can only add a local scan, because no agent starts without a typed `/cad-map` and a yes.
 
 ## 1. Read the switch
 
