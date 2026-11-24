@@ -84,26 +84,21 @@ annotating questions ("you chose X in phase 2").
 </step>
 
 <step name="spend_gate">
-The analyzer pass is the single most expensive dispatch in this spine, and no
-phase buys it unasked. Decide here, BEFORE `analyze`: that step's `route.mjs
-resolve` writes the lifecycle dispatch half unconditionally, so a gate placed
-after it strands an unpaired bracket on every skipped phase and inverts the
-record-health signal /cad-report reads.
+The analyzer pass costs extra, and no phase buys it unasked. Decide here,
+BEFORE `analyze`.
 
-Load prior-project memory first - BOTH arms need it. The buy arm feeds it to
-the analyzer payload; the skip arm reasons with it directly. ONE call for every
-key this workflow uses, the batched form seven other sites already ship:
+Load prior-project memory first - BOTH arms need it. ONE call for every key
+this workflow uses:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   memory.backend planning.commit_docs testing.scope testing.required_jobs planning.code_map
 ```
 
-`planning.commit_docs` is not needed until the `commit` step at the very end.
-Read it HERE and carry the value forward. `testing.scope` and
-`testing.required_jobs` ride the same call for `acceptance_criteria`, which
-carries them forward too. `planning.code_map` rides it for `analyze` only, and the
-skip arm never reads it.
+`planning.commit_docs` is for the `commit` step. Read it HERE and carry the
+value forward. `testing.scope` and `testing.required_jobs` are for
+`acceptance_criteria` and carry forward too. `planning.code_map` is for
+`analyze` only, and the skip arm never reads it.
 
 When `memory.backend` is `builtin` (the schema default), run recall for the
 phase goal:
@@ -113,7 +108,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms fr
 ```
 
 Skip this substep entirely when the backend is `none` - do not issue the
-recall call at all. The gate precedes the call on purpose (D-03).
+recall call at all.
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (one
 consult site - this step) for the result shape and how the top results render
@@ -129,10 +124,9 @@ question:
   1. "Read the code first - a separate pass reads the relevant code, then I ask only what the code can't answer. It costs extra time and tokens."
   2. "Skip it - I ask you directly, using the phase goal and what earlier phases settled. It costs less, and I may ask things the code already answers."
 
-Order the two by your recommendation, recommended first, the way every other
-ask in this workflow presents its options. Annotate the question with evidence
-you have ALREADY read - never with a fresh measurement, and never with a
-number you invent for the occasion:
+Order the two by your recommendation, recommended first. Annotate the question
+with evidence you have ALREADY read - never with a fresh measurement, and never
+with a number you invent for the occasion:
 
 - how many requirements this phase carries
 - the surfaces its ROADMAP entry names, by path
@@ -148,12 +142,10 @@ score, hold no threshold, and run no seam to rank the phase.
 On "Read the code first", continue into `analyze` below, unchanged.
 
 On "Skip it", do NOT enter `analyze` at all - no resolve, no dispatch, no
-bracket, and so no analyzer cost in this phase's run record. Say plainly that
-the pass was skipped and on which evidence, then take the same plain
-conversational pass `analyze`'s failure arm describes: derive 2-4 gray areas
-from the phase goal and the priors yourself, treat each as Unclear, and
-continue at `close_gray_areas`. Skipping is a stated choice, never a silent
-degradation.
+bracket. Say plainly that the pass was skipped and on which evidence, then take
+the plain conversational pass `analyze`'s failure arm describes, with the priors
+beside the goal, and continue at `close_gray_areas`. Skipping is a stated
+choice, never a silent degradation.
 </step>
 
 <step name="analyze">
