@@ -100,7 +100,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get testing.scope workf
    active, the policy's behavior-change rule replaces that sanity check.
 4. Commit per references/git-guard.md rail 2 (specific files, conventional message).
 
-No PLAN.md, no SUMMARY.md, no state writes.
+No PLAN.md, no SUMMARY.md and no STATE.md write. Never spawn a subagent on this
+path.
 </step>
 
 <step name="planned_path">
@@ -122,8 +123,8 @@ policy active, read `references/test-policy.md` once.
    spawn-agent seam instead, and wait for its result.
 3. Append a 3-5 line "Outcome" section to the PLAN.md (what shipped, commit
    hashes, deviations). When step 2's cad-executor exception was taken, write
-   it from `.planning/tasks/{slug}/reports/plan-1.md` - the executor returns a
-   digest, not a table - read once here. No separate SUMMARY.md for tasks.
+   it from `.planning/tasks/{slug}/reports/plan-1.md`, read once here. No
+   separate SUMMARY.md for tasks.
 4. If `planning.commit_docs` is true and the plan file exists, commit it, plus
    that report file when one was written (`docs: task plan {slug}`).
 </step>
