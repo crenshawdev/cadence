@@ -143,9 +143,19 @@ function storiesOf(agile, epic) {
 }
 
 /**
- * What an epic that isn't done does next.
+ * The highest story number the epic has used: its story files and the IDs its own file names, so one a refinement
+ * replaced and removed is never handed out again.
+ * @param {string} agile @param {string} epic
+ */
+function usedNumber(agile, epic) {
+  const named = [...readFileSync(epicFile(agile, epic), 'utf8').matchAll(new RegExp(`\\b${epic}-(\\d+)\\b`, 'g'))].map((m) => Number(m[1]));
+  return Math.max(0, ...storyIds(agile, epic).map((id) => Number(id.slice(epic.length + 1))), ...named);
+}
+
+/**
+ * What an epic that isn't done does next. An L is never built, so an epic holding one is refined again.
  * @param {string} agile @param {string} epic @param {string} status
- * @returns {{value: {step: string, story?: {id: string, title: string, size: string, status: string}}} | {refusal: Refusal}}
+ * @returns {{value: {step: string, first?: string, story?: {id: string, title: string, size: string, status: string}}} | {refusal: Refusal}}
  */
 function stepOf(agile, epic, status) {
   if (status !== 'in-progress') return { value: { step: status === 'backlog' ? 'refine' : 'accept' } };
@@ -156,6 +166,7 @@ function stepOf(agile, epic, status) {
       hint: 'put its story files back from git or your backup, or set its status to backlog to refine it again, then re-run; nothing was written' } };
   }
   const open = stories.value.find((s) => s.status !== 'done');
+  if (stories.value.some((s) => s.status !== 'done' && s.size === 'L')) return { value: { step: 'refine', first: `${epic}-${usedNumber(agile, epic) + 1}` } };
   return { value: open ? { step: 'build', story: { id: open.id, title: open.title, size: open.size, status: open.status } } : { step: 'accept' } };
 }
 
@@ -223,13 +234,16 @@ function refinement(dir, payloadFile) {
   let text = '';
   const held = readBack(file, 'a requirements line and a "## Decisions" section', (t) => { text = t; return readEpicFile(t); });
   if ('refusal' in held) return no(held.refusal);
-  // a dead run's leftovers are all backlog, or too broken to say, and neither counts
+  const again = at.next.status === 'in-progress';
+  // a dead run's leftovers are all backlog, or too broken to say, and neither counts; cut again, a done story stays as it is
   for (const id of storyIds(agile, epic)) {
     const status = readEpicStatus(readFileSync(storyFile(agile, id), 'utf8'));
-    if (status !== null && status !== 'backlog') {
-      return no({ reason: 'stories-begun', detail: `${epic} is marked backlog and its story ${id} is ${status}`,
+    if (status === null || status === 'backlog' || (again && status === 'done')) continue;
+    return no(again
+      ? { reason: 'stories-begun', detail: `${epic} holds an L to cut again, and its story ${id} is ${status}`,
+        hint: `set ${id}'s status to backlog or done, then re-run; nothing was written` }
+      : { reason: 'stories-begun', detail: `${epic} is marked backlog and its story ${id} is ${status}`,
         hint: `set the status in ${file} back to in-progress, then re-run; nothing was written` });
-    }
   }
   return { agile, file, text, epic, next: at.next, epics: at.epics, release: at.release, requirements: held.value.requirements, payload: payload.value };
 }
@@ -295,7 +309,13 @@ function judged(dir, payloadFile) {
       hint: 'move that line out of the file, or leave defer and add empty, then re-run; nothing was written' });
   }
   const cut = judgeSplit(split, { ...self, id: up.epic, requirements: ask.requirements, added: ask.add.map((q) => q.id), rest: again?.id ?? nextEpic(up.epics) });
-  const list = judgeStories(up.payload, { id: up.epic, requirements: cut.requirements, earlier, backlog: captureLines(agileBacklogFile(up.agile)) });
+  // cut again: done stories stay, carry what they carry and may be built on, and the list numbers past every ID used
+  const mine = up.next.status === 'in-progress' ? storiesOf(up.agile, up.epic) : { value: [] };
+  if ('refusal' in mine) return no(mine.refusal);
+  const done = mine.value.filter((s) => s.status === 'done');
+  const list = judgeStories(up.payload, { id: up.epic, requirements: cut.requirements, earlier: [...earlier, ...done.map((s) => s.id)],
+    backlog: captureLines(agileBacklogFile(up.agile)), start: mine.value.length ? usedNumber(up.agile, up.epic) + 1 : 1,
+    covered: done.flatMap((s) => s.requirements) });
   const issues = [...ask.issues, ...cut.issues, ...list.issues];
   if (issues.length) {
     for (const e of left) {
@@ -311,7 +331,8 @@ function judged(dir, payloadFile) {
     .map(([id, lines]) => `${id} was split off ${up.epic} by a run cut short, and ${up.epic} still holds these Done when lines ${id} holds too: ${/** @type {string[]} */ (lines).map((l) => JSON.stringify(l)).join(', ')} - remove from ${up.epic} the ones only ${id} needs`);
   const splits = [...(cut.rest ? [{ ...cut.rest, outcome: undefined }] : []),
     ...left.map((e) => ({ id: e.id, name: e.read.title, requirements: e.read.requirements, done_when: e.read.done_when, cut_short: true }))];
-  return { up, ...list, ask, cut, listed: again !== null, self, warnings, splits, unplaced, asked: { text, read: file.value },
+  const replaced = mine.value.filter((s) => s.status !== 'done');
+  return { up, ...list, ask, cut, listed: again !== null, self, warnings, splits, unplaced, replaced, asked: { text, read: file.value },
     named: list.stories.map((s) => ({ id: s.id, title: s.title, size: s.size })) };
 }
 
@@ -319,7 +340,8 @@ function judged(dir, payloadFile) {
 function propose(dir, payloadFile) {
   const got = judged(dir, payloadFile);
   if (got === null) return;
-  emit({ ok: true, epic: got.up.epic, stories: got.named, ...(got.splits.length ? { splits: got.splits } : {}),
+  emit({ ok: true, epic: got.up.epic, stories: got.named, ...(got.replaced.length ? { replaces: got.replaced.map((s) => s.id) } : {}),
+    ...(got.splits.length ? { splits: got.splits } : {}),
     ...(got.unplaced.length ? { unplaced: got.unplaced } : {}), ...(got.warnings.length ? { warnings: got.warnings } : {}) });
 }
 
@@ -330,14 +352,17 @@ function propose(dir, payloadFile) {
 function refine(dir, payloadFile) {
   const got = judged(dir, payloadFile);
   if (got === null) return;
-  const { up: { agile, file, text, epic, next, release, requirements }, stories, decisions, backlog, named, ask, asked, cut, listed, self, splits } = got;
+  const { up: { agile, file, text, epic, next: { first, ...next }, release, requirements }, stories, decisions, backlog, named, ask, asked, cut, listed, self, splits, replaced } = got;
   const written = stories.map((s) => storyFile(agile, s.id));
   stories.forEach((s, i) => atomicWrite(written[i], renderStoryFile(s)));
+  const kept = new Set(replaced.length ? storyIds(agile, epic).filter((id) => !replaced.some((s) => s.id === id)).map((id) => storyFile(agile, id)) : []);
+  const large = replaced.filter((s) => s.size === 'L').map((s) => storyFile(agile, s.id));
   // a refinement killed before its epic turned leaves stories behind, and a longer list's would read as this one's
   for (const name of readdirSync(dirname(file))) {
     const path = join(dirname(file), name);
     const whole = name.replace(/\.\d+\.\d+\.tmp$/, '');
-    const left = whole === basename(file) ? name !== whole : storyNumber(whole, epic) !== null && !written.includes(path);
+    const left = whole === basename(file) ? name !== whole
+      : storyNumber(whole, epic) !== null && (name !== whole || (!written.includes(path) && !kept.has(path) && !large.includes(path)));
     if (left) unlinkFile(path);
   }
   for (const name of readdirSync(agile)) if (/^(REQUIREMENTS|release)\.md\.\d+\.\d+\.tmp$/.test(name)) unlinkFile(join(agile, name));
@@ -355,8 +380,12 @@ function refine(dir, payloadFile) {
     if (changed !== asked.text) atomicWrite(requirementsFile(agile), changed);
   }
   const same = cut.requirements.join() === requirements.join();
-  // last, because this is what makes the stories count
-  atomicWrite(file, renderRefinedEpic(text, decisions, same ? null : cut.requirements, cut.moves));
+  const span = stories.length > 1 ? `${stories[0].id} to ${stories[stories.length - 1].id}` : stories[0].id;
+  const recut = replaced.length ? [`Cut again: ${replaced.map((s) => s.id).join(', ')} became ${span}.`] : [];
+  // last of the first cut, because this is what makes the stories count
+  atomicWrite(file, renderRefinedEpic(text, [...decisions, ...recut], same ? null : cut.requirements, cut.moves));
+  // cut again, the epic reads as one to refine while an L is on disk, so the L goes last
+  for (const path of large) unlinkFile(path);
   // after it, so a stop here leaves an item in two places and never in none
   const taken = backlog.length ? removeCaptures(agileBacklogFile(agile), backlog) : { ok: true };
   const warnings = [

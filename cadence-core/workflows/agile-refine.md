@@ -26,6 +26,7 @@ Then, in one message:
 - `.planning/agile/backlog.md`, the whole file, when it's there
 - the `## Decisions` of every epic this one builds on
 - the question and the verdict of every `.planning/agile/spikes/*/SPIKE.md`
+- the epic's story files, when `next.status` is `in-progress`
 - the code this epic's Outcome changes, as far as cutting and sizing its stories
   takes, and nothing past it
 
@@ -94,8 +95,13 @@ answered again replaces the answer before it.
   goes in `backlog`, exactly as it stands in that file.
 - No plan is written for any of them.
 
+An epic in progress is here because it holds an L, and is cut again: the list
+replaces every story that isn't done, and done stories stay as they are, count
+toward its requirements and may be built on.
+
 Write `stories.json` in that folder. A story's ID is `{id}-` and its place in
-the list, so the second is `{id}-2`. `builds_on` takes those, an earlier epic or
+the list, so the second is `{id}-2`; cut again, the first is `next.first`.
+`builds_on` takes those, an earlier epic or
 one of its stories, or nothing. `decisions` holds your picks. `defer` holds the
 IDs of the epic's requirements the user said to leave for later, and `add` each
 requirement they asked for that none covers, as `{"id": "...", "text": "..."}`,
@@ -130,7 +136,7 @@ stop. Show each of its `warnings` under the list in step 4.
 Show the list, each part left out when it's empty:
 
 ```
-{id} {name}: {N} stories
+{id} {name}: {N} stories, {replacing each of `replaces` when there are any}
 
 | Story | Size | Delivers | Accepted when |
 

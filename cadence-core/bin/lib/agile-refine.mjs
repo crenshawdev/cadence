@@ -174,8 +174,9 @@ export function judgeSplit(split, at) {
 /**
  * The stories a payload holds, numbered in its order, or every reason it can't be written.
  * @param {unknown} payload
- * @param {{id: string, requirements: string[], earlier: string[], backlog: string[]}} epic `earlier` is what a story may
- *   build on besides this list, `backlog` the lines it may take from there
+ * @param {{id: string, requirements: string[], earlier: string[], backlog: string[], start?: number, covered?: string[]}} epic
+ *   `earlier` is what a story may build on besides this list, `backlog` the lines it may take from there, `start` the
+ *   first story's number and `covered` what done stories already carry
  * @returns {{issues: Issue[], decisions: string[], stories: Story[], backlog: string[]}}
  */
 export function judgeStories(payload, epic) {
@@ -191,9 +192,9 @@ export function judgeStories(payload, epic) {
   if (!Array.isArray(taken)) issues.push({ field: 'backlog', problem: 'is a list of lines of backlog.md, each as it stands there' });
   else for (const line of taken) if (!String(line).startsWith('- ') || !epic.backlog.includes(line)) issues.push({ field: 'backlog', problem: `${JSON.stringify(line)} is not an item in backlog.md` });
   const earlier = new Set(epic.earlier);
-  const covered = new Set();
+  const covered = new Set(epic.covered ?? []);
   payload.stories.forEach((s, i) => {
-    const id = `${epic.id}-${i + 1}`;
+    const id = `${epic.id}-${i + (epic.start ?? 1)}`;
     const found = isObject(s) ? storyProblems(s, epic.requirements, earlier) : [{ field: 'stories', problem: 'is not a story' }];
     earlier.add(id);
     if (Array.isArray(s?.requirements)) for (const q of s.requirements) covered.add(q);
