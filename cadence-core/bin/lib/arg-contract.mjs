@@ -902,6 +902,7 @@ export const CONTRACTS = {
     '*': {
       '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    next: {},
     start: {
       '--design': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },

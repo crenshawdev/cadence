@@ -23,6 +23,11 @@ export function buildPid(name) {
   return m ? Number(m[1]) : null;
 }
 
+/** The release's own file, inside whichever agile folder is being read or built. @param {string} agile */
+export function releaseFile(agile) {
+  return join(agile, 'release.md');
+}
+
 /** An epic's file, inside whichever agile folder is being read or built. @param {string} agile @param {string} epic */
 export function epicFile(agile, epic) {
   return join(agile, 'epics', epic, 'epic.md');

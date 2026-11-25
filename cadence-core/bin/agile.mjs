@@ -1,21 +1,23 @@
 #!/usr/bin/env node
 // @ts-check
-// agile.mjs - the agile path's own script: it starts a release from a Seldon design
+// agile.mjs - the agile path's own script: it starts a release from a Seldon design and says what the open one does next
 // not a planning.mjs subcommand: every one of those refuses a project this path owns
 //
-// Usage: agile.mjs start --design <folder> [--dir <.planning>]
+// Usage: agile.mjs next [--dir <.planning>]
+//        agile.mjs start --design <folder> [--dir <.planning>]
 //
 // one JSON object on stdout; a refusal names the next step
 // no lock: each start builds in its own folder and one rename decides, so a killed start never makes the next one wait
 'use strict';
 
-import { lstatSync, readdirSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { readDesignFolder } from './planning/design-read.mjs';
 import { invalidHint } from './planning/state-import.mjs';
-import { agileDir, buildDir, buildPid, epicFile } from './lib/agile-paths.mjs';
+import { agileDir, buildDir, buildPid, epicFile, releaseFile } from './lib/agile-paths.mjs';
 import { renderEpicFile, renderProjectFile, renderReleaseFile, renderRequirementsFile } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
+import { STATUSES, readEpicStatus, readReleaseFile } from './lib/agile-read.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { ensureRecordsIgnore, makeDir, movePath, removeTree, writeFileNew } from './lib/planning-store.mjs';
 import { emptyState, markAgile, readState, statePath } from './lib/project-state.mjs';
@@ -83,6 +85,36 @@ function refusal(dir) {
   return null;
 }
 
+/**
+ * One of the release's files, read back. A file that isn't there and one that doesn't read are the same refusal, since
+ * both mean the release can't say what's next.
+ * @template T @param {string} file @param {string} want @param {(text: string) => T | null} read
+ * @returns {{value: T} | {refusal: Refusal}}
+ */
+function readBack(file, want, read) {
+  /** @type {T | null} */
+  let value = null;
+  let detail = `${file} does not hold ${want}`;
+  try { value = read(readFileSync(file, 'utf8')); } catch (e) { detail = `${file} could not be read: ${/** @type {any} */ (e).code}`; }
+  return value !== null ? { value } : { refusal: { reason: 'release-damaged', detail,
+    hint: 'put that file back from git or your backup, or fix what the detail names, then re-run; nothing was written' } };
+}
+
+/** @param {string} dir */
+function next(dir) {
+  const why = refusal(dir);
+  if (why === null) return emit({ ok: true, release: null, next: null });
+  if (why.reason !== 'release-open') return refuse(why);
+  const release = readBack(releaseFile(agileDir(dir)), 'a "# Release:" title and a "## Epics" list of "- E-01: name" lines', readReleaseFile);
+  if ('refusal' in release) return refuse(release.refusal);
+  for (const { id, name } of release.value.epics) {
+    const status = readBack(epicFile(agileDir(dir), id), `a status of ${STATUSES.join(', ')}`, readEpicStatus);
+    if ('refusal' in status) return refuse(status.refusal);
+    if (status.value !== 'done') return emit({ ok: true, release: release.value.title, next: { id, name, status: status.value } });
+  }
+  emit({ ok: true, release: release.value.title, next: null });
+}
+
 /** @param {string} dir @param {string} design */
 function start(dir, design) {
   const folder = resolve(design);
@@ -127,7 +159,7 @@ function start(dir, design) {
   }
   writeFileNew(join(building, 'project.md'), renderProjectFile(title, brief, epics, decisions));
   writeFileNew(join(building, 'REQUIREMENTS.md'), renderRequirementsFile(title, requirements));
-  writeFileNew(join(building, 'release.md'), renderReleaseFile(title, brief, epics));
+  writeFileNew(releaseFile(building), renderReleaseFile(title, brief, epics));
   try {
     movePath(building, agileDir(dir));
   } catch (e) {
@@ -136,7 +168,8 @@ function start(dir, design) {
     removeTree(building);
     return refuse(releaseOpen(dir));
   }
-  emit({ ok: true, release: title, folder: agileDir(dir), epics: epics.map((e) => ({ id: e.epic, name: e.name })), uncovered });
+  emit({ ok: true, release: title, folder: agileDir(dir), epics: epics.map((e) => ({ id: e.epic, name: e.name })), uncovered,
+    next: { id: epics[0].epic, name: epics[0].name, status: 'backlog' } });
 }
 
 /** A trailing slash makes lstat follow a link, so it comes off before anything is judged. @param {string | undefined} given */
@@ -153,8 +186,9 @@ const argv = process.argv.slice(2);
 const arg = rowReader(argv, CONTRACTS['agile.mjs']);
 
 try {
-  if (argv[0] === 'start') start(planningDir(arg('start', '--dir')), arg('start', '--design'));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: start --design <folder> [--dir <.planning>]' });
+  if (argv[0] === 'next') next(planningDir(arg('next', '--dir')));
+  else if (argv[0] === 'start') start(planningDir(arg('start', '--dir')), arg('start', '--design'));
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | start --design <folder> [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }
