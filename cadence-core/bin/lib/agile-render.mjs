@@ -112,18 +112,36 @@ export function renderStoryFile(s) {
 }
 
 /**
- * An epic's file once its stories are approved: in progress, with the decisions under any it already holds.
- * @param {string} text an epic file `readEpicFile` reads @param {string[]} decisions @returns {string}
+ * An epic's file with its Decisions changed and every other line as it was.
+ * @param {string} text an epic file `readEpicFile` reads @param {(held: string[]) => string[]} change @returns {string}
  */
-export function renderRefinedEpic(text, decisions) {
+function withDecisions(text, change) {
   // split as the readers do, or a Windows line ending hides the section from this one alone
   const lines = text.split(/\r?\n/);
-  const status = lines.findIndex((l) => /^status:/.test(l));
-  lines[status] = 'status: in-progress';
   const { start, end } = sectionSpan(lines, '## Decisions');
   const held = lines.slice(start + 1, end).join('\n').trim();
-  const all = [...(held === 'None yet.' ? [] : [held]), ...decisions.map((d) => `- ${d}`)].filter(Boolean);
-  const out = page([lines.slice(0, start).join('\n').trimEnd(), '## Decisions', all.join('\n') || 'None yet.',
+  const out = page([lines.slice(0, start).join('\n').trimEnd(), '## Decisions',
+    change(held === '' || held === 'None yet.' ? [] : held.split('\n')).join('\n') || 'None yet.',
     ...(end < lines.length ? [lines.slice(end).join('\n').trimEnd()] : [])]);
   return text.includes('\r\n') ? out.replaceAll('\n', '\r\n') : out;
+}
+
+/** The user's answers, each under its question, over any earlier answer to it. @param {string} text @param {{question: string, answer: string}[]} answers */
+export function renderAnswers(text, answers) {
+  return withDecisions(text, (held) => {
+    const lines = [...held];
+    for (const { question, answer } of answers) {
+      const at = lines.findIndex((l) => l.startsWith(`- **${question}** `));
+      lines.splice(at < 0 ? lines.length : at, at < 0 ? 0 : 1, `- **${question}** ${answer}`);
+    }
+    return lines;
+  });
+}
+
+/**
+ * An epic's file once its stories are approved: in progress, with the decisions under any it already holds.
+ * @param {string} text @param {string[]} decisions @returns {string}
+ */
+export function renderRefinedEpic(text, decisions) {
+  return withDecisions(text.replace(/^status:.*/m, 'status: in-progress'), (held) => [...held, ...decisions.map((d) => `- ${d}`)]);
 }

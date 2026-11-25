@@ -909,6 +909,12 @@ export const CONTRACTS = {
     start: {
       '--design': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    answer: {
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    propose: {
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     refine: {
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },

@@ -1,6 +1,6 @@
 ---
 name: cad-agile
-description: "The agile path's one command - starts a release from a Seldon design with --brief, and on a project that has one open names what comes next"
+description: "The agile path's one command - starts a release from a Seldon design with --brief, and on a project that has one open refines its next epic with you or names what comes next"
 argument-hint: "[--brief <design folder>]"
 allowed-tools:
   - Read
@@ -14,7 +14,7 @@ allowed-tools:
 <objective>
 With no release open, ask what the project's setup leaves open, then turn the
 Seldon design `--brief` names into `.planning/agile/` and commit it. With one
-open, name its next step.
+open, refine its next epic with the user, or name its next step.
 </objective>
 
 <execution_context>

@@ -1,7 +1,7 @@
 <purpose>
 The agile path's one command: ask the project's files what comes next and do
-it. The script writes every file of a release from the design's own words, so
-nothing under `.planning/agile/` is written, edited or summarized here.
+it. A script writes every file of a release, so nothing under `.planning/agile/`
+is written or edited by hand here.
 </purpose>
 
 <process>
@@ -56,6 +56,24 @@ git commit -m "docs: start the release" -- "$@"
 
 Nothing here ends the run: when the guard stops the commit or git refuses it,
 go on to `report` with the reason.
+</step>
+
+<step name="refine">
+Only on a release that was already open, with no commit above left unmade.
+
+- `next.step` is `refine` -> Read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-refine.md` and follow it.
+  It reports for itself, so the run ends there.
+- `next.step` is `build` -> a refinement cut short before its commit is finished
+  here, unless `commit` printed `IGNORED` or `planning.commit_docs` is false:
+
+  ```
+  git cat-file -e 'HEAD:./.planning/agile/epics/{next.id}/{next.story.id}.md' 2>/dev/null && echo REFINED
+  ```
+
+  Without `REFINED`, Read that same file, apply its branch step and make its
+  commit, then go on to `report`.
+- Anything else -> `report`.
 </step>
 
 <step name="report">

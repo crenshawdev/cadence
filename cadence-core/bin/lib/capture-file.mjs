@@ -101,6 +101,28 @@ function read(file) {
   }
 }
 
+/** The file's lines, none when it isn't there. @param {string} file @returns {string[]} */
+export function captureLines(file) {
+  return (read(file) ?? '').split(/\r?\n/).map((l) => l.trimEnd());
+}
+
+/**
+ * Take bullets out of `file`, whatever heading they're under. One already gone is no failure: it's what was wanted.
+ * @param {string} file @param {string[]} bullets @returns {{ok: true} | {ok: false, reason: string, detail: string}}
+ */
+export function removeCaptures(file, bullets) {
+  const done = withPlanningFileLock(file, () => {
+    let taking = false;
+    const kept = (read(file) ?? '').split('\n').filter((l) => {
+      // a bullet someone wrapped by hand goes with the lines indented under it
+      taking = bullets.includes(l.trimEnd()) || (taking && /^\s+\S/.test(l));
+      return !taking;
+    });
+    if (existsSync(file)) atomicWrite(file, kept.join('\n'));
+  });
+  return done.ok ? { ok: true } : done;
+}
+
 // --- the guard ---------------------------------------------------------------
 /**
  * How many times an overwritten bullet is re-appended before the write is called lost.

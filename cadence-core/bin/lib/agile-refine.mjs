@@ -1,5 +1,6 @@
 // @ts-check
-// agile-refine.mjs - the rules a list of stories meets before it's written, so an approved list is one that can be built
+// agile-refine.mjs - the rules a refinement's answers and its list of stories meet before they're written, so an approved
+// list is one that can be built
 // pure: a payload in, stories or issues out
 'use strict';
 
@@ -9,7 +10,9 @@ import { renderStoryFile } from './agile-render.mjs';
 /** @typedef {import('./agile-read.mjs').Story} Story */
 /** @typedef {{story?: string, field: string, problem: string}} Issue */
 
-const PAYLOAD = Object.freeze(['epic', 'decisions', 'stories']);
+const PAYLOAD = Object.freeze(['epic', 'decisions', 'stories', 'backlog']);
+const ANSWERS = Object.freeze(['epic', 'answers']);
+const ANSWER = Object.freeze(['question', 'answer']);
 const STORY = Object.freeze(['title', 'size', 'builds_on', 'requirements', 'delivers', 'accepted_when']);
 
 /** Is it text that fits on one line of a file as it stands? Half an emoji doesn't survive the write. @param {unknown} v @returns {v is string} */
@@ -41,22 +44,47 @@ function storyProblems(s, wanted, earlier) {
   return found;
 }
 
+/** What's wrong with a payload's own fields. @param {Record<string, unknown>} payload @param {readonly string[]} known @param {string} epic @returns {Issue[]} */
+function payloadProblems(payload, known, epic) {
+  return [...Object.keys(payload).filter((key) => !known.includes(key)).map((field) => ({ field, problem: `is not a field here - those are ${known.join(', ')}` })),
+    ...(payload.epic === epic ? [] : [{ field: 'epic', problem: `is ${epic}, the epic up for refinement` }])];
+}
+
+/**
+ * The answers a payload holds, or every reason they can't be saved.
+ * @param {unknown} payload @param {string} epic @returns {{issues: Issue[], answers: {question: string, answer: string}[]}}
+ */
+export function judgeAnswers(payload, epic) {
+  if (!isObject(payload) || !Array.isArray(payload.answers) || !payload.answers.length) {
+    return { issues: [{ field: 'answers', problem: 'is a list of at least one answer' }], answers: [] };
+  }
+  const issues = payloadProblems(payload, ANSWERS, epic);
+  for (const a of payload.answers) {
+    if (!isObject(a) || !ANSWER.every((key) => oneLine(a[key])) || Object.keys(a).length !== ANSWER.length) {
+      issues.push({ field: 'answers', problem: `${JSON.stringify(a)} is not a question and an answer, each on one line` });
+    }
+  }
+  return { issues, answers: issues.length ? [] : payload.answers };
+}
+
 /**
  * The stories a payload holds, numbered in its order, or every reason it can't be written.
- * @param {unknown} payload @param {{id: string, requirements: string[], earlier: string[]}} epic `earlier` is what a story may build on besides this list
- * @returns {{issues: Issue[], decisions: string[], stories: Story[]}}
+ * @param {unknown} payload
+ * @param {{id: string, requirements: string[], earlier: string[], backlog: string[]}} epic `earlier` is what a story may
+ *   build on besides this list, `backlog` the lines it may take from there
+ * @returns {{issues: Issue[], decisions: string[], stories: Story[], backlog: string[]}}
  */
 export function judgeStories(payload, epic) {
-  /** @type {Issue[]} */
-  const issues = [];
   /** @type {Story[]} */
   const stories = [];
   if (!isObject(payload) || !Array.isArray(payload.stories) || !payload.stories.length) {
-    return { issues: [{ field: 'stories', problem: 'is a list of at least one story' }], decisions: [], stories };
+    return { issues: [{ field: 'stories', problem: 'is a list of at least one story' }], decisions: [], stories, backlog: [] };
   }
-  for (const key of Object.keys(payload)) if (!PAYLOAD.includes(key)) issues.push({ field: key, problem: `is not a field here - those are ${PAYLOAD.join(', ')}` });
-  if (payload.epic !== epic.id) issues.push({ field: 'epic', problem: `is ${epic.id}, the epic up for refinement` });
+  const issues = payloadProblems(payload, PAYLOAD, epic.id);
   if (!lines(payload.decisions)) issues.push({ field: 'decisions', problem: 'is a list of decisions, each on one line, empty when there are none' });
+  const taken = payload.backlog ?? [];
+  if (!lines(taken)) issues.push({ field: 'backlog', problem: 'is a list of lines of backlog.md, each as it stands there' });
+  else for (const line of /** @type {string[]} */ (taken)) if (!line.startsWith('- ') || !epic.backlog.includes(line)) issues.push({ field: 'backlog', problem: `${JSON.stringify(line)} is not an item in backlog.md` });
   const earlier = new Set(epic.earlier);
   const covered = new Set();
   payload.stories.forEach((s, i) => {
@@ -76,5 +104,6 @@ export function judgeStories(payload, epic) {
     issues.push(...found.map((f) => ({ story: id, ...f })));
   });
   for (const q of epic.requirements) if (!covered.has(q)) issues.push({ field: 'requirements', problem: `${q} is on no story` });
-  return { issues, decisions: issues.length ? [] : /** @type {string[]} */ (payload.decisions), stories };
+  if (issues.length) return { issues, decisions: [], stories, backlog: [] };
+  return { issues, decisions: /** @type {string[]} */ (payload.decisions), stories, backlog: /** @type {string[]} */ (taken) };
 }
