@@ -77,11 +77,10 @@ count. Item 4 waits for **Write**, and item 5 is never asked here.
 
 **The branch**, unless this start makes no commit (`IGNORED`, or
 `planning.commit_docs` false) or has nothing to branch from (`NO_COMMITS`). Read
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section
-1's protected-branch guard and base integrity, suggesting the check's `branch`.
-Null -> say that neither the release's name nor `git.integration_branch_name`
-gives one, and the user types it. A new branch is held for **Write**, and a stop
-stops the start. Skip its integration branch: the release isn't written yet.
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section 1
+as on an agile project, with the check's `decide` as that call's answer, since
+no release is on disk yet. A new branch is held for **Write**, and a stop or
+an abort stops the start.
 
 **The answers.** Every value goes in single quotes, here and in **Write**, the
 branch's name with them, and one that holds a single quote is asked again. This
@@ -98,7 +97,9 @@ In this order, stopping at the first call that fails, with its `detail` and
 `hint` or git's own words. The next run asks only what is still unanswered.
 
 1. `git rev-parse --git-dir >/dev/null 2>&1 || git init`, then
-   `git checkout -b '<branch>'` when the user picked a new one.
+   `git checkout -b '<branch>'` when there's a new one. One that already exists
+   stops here, since the check didn't see what's on it: name
+   `git checkout '<branch>'` and this command again.
 2. The settings, when any was answered, the testing ones left to the next call.
    A project's first config.json holds its answers and the guard switch every
    new project gets, so the rest follows the user's own settings:

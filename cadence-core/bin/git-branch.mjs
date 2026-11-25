@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-check
-// git-branch.mjs - the workflow-facing seam over lib/branch-decision.mjs. It advises whether to create, switch, stay
+// git-branch.mjs - the workflow-facing seam over lib/branch-advice.mjs. It advises whether to create, switch, stay
 // or ask on the integration branch, and never runs `checkout -b` itself. One JSON line.
 //   decide [--dir <path>] [--branch <name>]
 //     --dir is the planning root: absent means cwd, an empty or valueless one refuses (true of `tags` too).
@@ -14,51 +14,17 @@
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
-import { integrationBranchName, releaseBranchName, configuredNameProblem, milestoneVersion, decideBranch } from './lib/branch-decision.mjs';
-import { agileDir, releaseFile } from './lib/agile-paths.mjs';
-import { readReleaseFile } from './lib/agile-read.mjs';
+import { adviseBranch } from './lib/branch-advice.mjs';
 // shared with the audit so the two can't drift apart
 import { readTags } from './lib/git-tags.mjs';
-import { resolveProtectedBranches } from './lib/protected-branches.mjs';
-import { readState } from './lib/project-state.mjs';
-// reads '' on failure
-import { readText } from './lib/seam-input.mjs';
 // no flag rule here: arg-contract declares them. `--dir` refuses though this seam mutates nothing, since an advisory
 // reader answering about the wrong tree is the same quiet wrong answer (`tags --dir ''` did exactly that)
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
-// degrades to "", which reads as not-on-a-base
-import { readCurrentBranch } from './lib/git-head.mjs';
 
 function decide(dir, branchOverride) {
   // warnings[] rides every result: a torn layer means the advice came from defaults, and the caller has to see that
-  const planning = join(dir, '.planning');
-  const { config, warnings } = mergeLayers(join(planning, 'config.json'));
-  const git = config.git || {};
-  const mode = git.integration_branch || 'milestone';
-  const autoBranch = git.auto_branch || 'ask';
-  // one coercion for protected_branches, or this advises a named branch unprotected while git-guard honors it
-  const protectedBranches = resolveProtectedBranches(git);
-  const branch = branchOverride !== undefined ? branchOverride : readCurrentBranch(dir);
-  const state = readState(planning);
-  const agile = state.kind === 'invalid' && state.reason === 'agile-path';
-  // an old-path file left beside a release must not name its branch
-  const projectText = agile ? '' : readText(join(planning, 'PROJECT.md'));
-  const roadmapText = agile ? '' : readText(join(planning, 'ROADMAP.md'));
-  // the configured name wins; one failing the grammar on read is a naming problem, never a `create` under it
-  const configured = git.integration_branch_name;
-  const nameProblem = configuredNameProblem(configured);
-  const integrationName = agile
-    ? releaseBranchName(readReleaseFile(readText(releaseFile(agileDir(planning))))?.title ?? '', configured)
-    : integrationBranchName(projectText, roadmapText, configured);
-  const noName = agile
-    ? 'the release in .planning/agile has no name a branch can take - set git.integration_branch_name' : undefined;
-  // the guard reads the version itself, so it holds under any branch name
-  const version = milestoneVersion(projectText, roadmapText);
-  // the whole tag list, unranked: `decideBranch` only tests membership
-  // `dir` is the project root, so it's both where the question is asked and the root the answer must belong to
-  const d = decideBranch({ mode, autoBranch, currentBranch: branch, protectedBranches, integrationName, nameProblem,
-    noName, version, publishedVersions: readTags(dir, dir) });
-  emit({ ok: true, action: d.action, branch: d.branch, mode, currentBranch: branch, reason: d.reason, warnings });
+  const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
+  emit({ ok: true, ...adviseBranch(dir, config.git || {}, { branch: branchOverride }), warnings });
 }
 
 /**

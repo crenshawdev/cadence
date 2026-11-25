@@ -1,7 +1,7 @@
 // @ts-check
 // git-head.mjs - the one reader of "what branch is this repo on". Node builtins only.
 // Apart from lib/git-tags.mjs because only three of the seams that want the branch also want the tags.
-// Consumers: git-guard.mjs, git-publish.mjs and git-branch.mjs. Not land-cleanup.mjs, which takes --branch instead.
+// Consumers: git-guard.mjs, git-publish.mjs and branch-advice.mjs. Not land-cleanup.mjs, which takes --branch instead.
 import { execFileSync } from 'node:child_process';
 
 /**

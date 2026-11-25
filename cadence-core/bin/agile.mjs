@@ -26,7 +26,7 @@ import { STATUSES, readEpicStatus, readReleaseFile } from './lib/agile-read.mjs'
 import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { boundedRun } from './lib/bounded-run.mjs';
-import { releaseBranchName } from './lib/branch-decision.mjs';
+import { adviseBranch } from './lib/branch-advice.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { ensureRecordsIgnore, makeDir, movePath, removeTree, writeFileNew } from './lib/planning-store.mjs';
 import { REBUILDABLE, emptyState, markAgile, readState, statePath } from './lib/project-state.mjs';
@@ -197,7 +197,7 @@ function check(dir, design) {
   }
   if (open.includes('testing')) ask.constraints = limits(got.decisions);
   emit({ ok: true, release: got.design.title, epics: got.design.phases.length, unanswered: open, ...ask,
-    branch: releaseBranchName(got.design.title, (got.config.git || {}).integration_branch_name),
+    decide: adviseBranch(root, got.config.git || {}, { title: got.design.title }),
     reviewers: reviewersOf(dir, got.config) });
 }
 

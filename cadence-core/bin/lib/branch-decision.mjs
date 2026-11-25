@@ -35,7 +35,7 @@ function opensSentence(body, i) {
  * is the declaration only if it agrees with the first token or its line opens a sentence. One on a wrapped continuation
  * line is layout, and reading it as a declaration failed the ship gate on a correct section.
  * With no candidate the first token anywhere stands.
- * Shared with `git-branch.mjs decide`, since a second comparand for the audit alone is the drift this module prevents.
+ * Shared with `branch-advice.mjs`, since a second comparand for the audit alone is the drift this module prevents.
  * @param {string} projectText
  */
 export function activeVersion(projectText) {

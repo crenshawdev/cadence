@@ -141,11 +141,11 @@ purpose test runs against the reach the author just replaced.
 | `parallelization.max_concurrent_agents` | universal | `references/execute-parallel.md`, read at `workflows/execute.md`'s `execute_parallel` step - dispatch batch size |
 | `parallelization.min_plans_for_parallel` | universal | `workflows/execute.md` - the parallel-path gate |
 | `parallelization.use_worktrees` | universal | `workflows/execute.md` - worktree isolation for parallel writes |
-| `git.protected_branches` | universal | `bin/git-guard.mjs`, `bin/git-publish.mjs`, `bin/git-branch.mjs`, `bin/land-cleanup.mjs` and `bin/issue-check.mjs` - all five through `bin/lib/protected-branches.mjs`, the one place the grammar lives, so a sixth reader finds it rather than a callsite to copy; the last two index `[0]` for a base ref, so what an out-of-grammar value resolves to moves a git query and not only a guard verdict |
+| `git.protected_branches` | universal | `bin/git-guard.mjs`, `bin/git-publish.mjs`, `bin/lib/branch-advice.mjs`, `bin/land-cleanup.mjs` and `bin/issue-check.mjs` - all five through `bin/lib/protected-branches.mjs`, the one place the grammar lives, so a sixth reader finds it rather than a callsite to copy; the last two index `[0]` for a base ref, so what an out-of-grammar value resolves to moves a git query and not only a guard verdict |
 | `git.on_protected` | universal | `bin/git-guard.mjs` - ask / refuse / allow on a protected branch |
-| `git.integration_branch` | universal | `bin/git-branch.mjs` - milestone branch or trunk |
-| `git.auto_branch` | universal | `bin/git-branch.mjs` - how that branch is created |
-| `git.integration_branch_name` | universal | `bin/git-branch.mjs` `decide` - the whole name of the integration branch in place of `cadence/<version>`, or of `cadence/` and the release's name on an agile project; `bin/agile.mjs` `check` - the branch a start suggests; a value failing the `branch_name` grammar on read is not used |
+| `git.integration_branch` | universal | `bin/lib/branch-advice.mjs` - milestone branch or trunk |
+| `git.auto_branch` | universal | `bin/lib/branch-advice.mjs` - how that branch is created |
+| `git.integration_branch_name` | universal | `bin/lib/branch-advice.mjs`, for `bin/git-branch.mjs` `decide` and `bin/agile.mjs` `check` - the whole name of the integration branch in place of `cadence/<version>`, or of `cadence/` and the release's name on an agile project; a value failing the `branch_name` grammar on read is not used |
 | `git.base_branch` | universal | `bin/land-cleanup.mjs` - the base a land returns to |
 | `git.create_tag` | universal | `skills/cad-land/SKILL.md` - the release tag cut in its cleanup step, on the pulled base after the merge confirms (tag-after-merge); no other site reads it |
 | `git.on_land_cleanup` | universal | `bin/land-cleanup.mjs` - return, pull, reap after a merge |
