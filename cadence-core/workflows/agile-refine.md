@@ -97,7 +97,9 @@ one of its stories, or nothing. `decisions` holds your picks. `defer` holds the
 IDs of the epic's requirements the user said to leave for later, and `add` each
 requirement they asked for that none covers, as `{"id": "...", "text": "..."}`,
 its ID the next number of the prefix it belongs with in REQUIREMENTS.md,
-deferred ones counted. Both stay empty unless the user said so:
+deferred ones counted. One `propose` lists under `unplaced` is on no epic, left
+there by the design or by a refinement cut short, and goes in `add` exactly as
+listed when this epic takes it. Both stay empty unless the user said so:
 
 ```
 {"epic": "{id}", "decisions": ["..."], "backlog": [], "defer": [], "add": [], "stories": [
@@ -139,6 +141,9 @@ Deferred
 Added
 - {each ID added}: {its text}
 
+On no epic
+- {each ID `propose` lists under `unplaced`}: {its text}
+
 You didn't ask for this
 - {each thing left off, and why it came up}
 ```
@@ -178,7 +183,7 @@ changed:
 ```
 set -- '.planning/agile/epics/{id}/epic.md' ':(glob).planning/agile/epics/{id}/{id}-*.md'
 git diff --numstat HEAD -- .planning/agile/backlog.md 2>/dev/null | grep -qE '^0[[:space:]]' && set -- "$@" .planning/agile/backlog.md
-git diff HEAD -- '.planning/agile/epics/{id}/epic.md' | grep -q '^+requirements:' && set -- "$@" .planning/agile/REQUIREMENTS.md
+[ "$(git cat-file blob 'HEAD:./.planning/agile/epics/{id}/epic.md' 2>/dev/null | grep -m1 '^requirements:')" = "$(grep -m1 '^requirements:' '.planning/agile/epics/{id}/epic.md')" ] || set -- "$@" .planning/agile/REQUIREMENTS.md
 git add -A -- "$@"
 git commit -m "docs: refine {id}" -- "$@"
 ```

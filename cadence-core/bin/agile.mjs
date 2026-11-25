@@ -271,16 +271,22 @@ function judged(dir, payloadFile) {
     (t) => { text = t; return readRequirementsFile(t); });
   if ('refusal' in file) return no(file.refusal);
   const ask = judgeAsk(up.payload, { own: up.requirements, file: file.value, named: onEpics });
+  if ((ask.defer.length || ask.add.length) && !file.value.whole) {
+    return no({ reason: 'release-damaged', detail: `${requirementsFile(up.agile)} holds a line its own writer doesn't, and deferring or adding would rewrite the file without it`,
+      hint: 'move that line out of the file, or leave defer and add empty, then re-run; nothing was written' });
+  }
   const list = judgeStories(up.payload, { id: up.epic, requirements: ask.requirements, earlier, backlog: captureLines(agileBacklogFile(up.agile)) });
   const issues = [...ask.issues, ...list.issues];
   if (issues.length) return no(payloadRefused('stories-refused', `the stories for ${up.epic} have`, issues));
-  return { up, ...list, ask, asked: { text, read: file.value }, named: list.stories.map((s) => ({ id: s.id, title: s.title, size: s.size })) };
+  // on no epic: one the design left there, or one a refinement cut short added
+  const unplaced = file.value.requirements.filter((q) => !onEpics.has(q.id) && !ask.add.some((a) => a.id === q.id)).map(({ id, text: said }) => ({ id, text: said }));
+  return { up, ...list, ask, unplaced, asked: { text, read: file.value }, named: list.stories.map((s) => ({ id: s.id, title: s.title, size: s.size })) };
 }
 
 /** Would that list be written? @param {string} dir @param {string} payloadFile */
 function propose(dir, payloadFile) {
   const got = judged(dir, payloadFile);
-  if (got !== null) emit({ ok: true, epic: got.up.epic, stories: got.named });
+  if (got !== null) emit({ ok: true, epic: got.up.epic, stories: got.named, ...(got.unplaced.length ? { unplaced: got.unplaced } : {}) });
 }
 
 /**

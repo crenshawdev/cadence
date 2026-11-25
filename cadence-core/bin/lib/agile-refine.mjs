@@ -4,7 +4,7 @@
 // pure: a payload in, stories or issues out
 'use strict';
 
-import { readStoryFile } from './agile-read.mjs';
+import { readStoryFile, requirementPrefix } from './agile-read.mjs';
 import { renderStoryFile } from './agile-render.mjs';
 
 /** @typedef {import('./agile-read.mjs').Story} Story */
@@ -77,8 +77,9 @@ function highest(all) {
   /** @type {Map<string, {n: number, width: number}>} */
   const top = new Map();
   for (const { id } of all) {
-    const m = /^(.+)-(\d+)$/.exec(id);
-    if (m && Number(m[2]) >= (top.get(m[1])?.n ?? -1)) top.set(m[1], { n: Number(m[2]), width: m[2].length });
+    const prefix = requirementPrefix(id);
+    const n = prefix === null ? '' : id.slice(prefix.length);
+    if (prefix !== null && Number(n) >= (top.get(prefix)?.n ?? -1)) top.set(prefix, { n: Number(n), width: n.length });
   }
   return top;
 }
@@ -113,11 +114,12 @@ export function judgeAsk(payload, { own, file, named }) {
     const q = { id: String(a.id), text: String(a.text) };
     // a refinement cut short after REQUIREMENTS.md wrote it there, and no epic has it yet
     if (held.get(q.id) === q.text && !named.has(q.id)) { add.push(q); continue; }
-    const m = /^(.+)-\d+$/.exec(q.id);
-    const at = m ? top.get(m[1]) : undefined;
-    const want = m && at ? `${m[1]}-${String(at.n + 1).padStart(at.width, '0')}` : null;
-    if (want === null) issues.push({ field: 'add', problem: `${q.id} has no prefix REQUIREMENTS.md uses - those are ${[...top.keys()].join(', ')}` });
-    else if (q.id !== want) issues.push({ field: 'add', problem: `is ${q.id}, and the next ${m?.[1]} is ${want}` });
+    const prefix = requirementPrefix(q.id);
+    const at = prefix === null ? undefined : top.get(prefix);
+    const want = prefix !== null && at ? `${prefix}${String(at.n + 1).padStart(at.width, '0')}` : null;
+    const say = (/** @type {string | null} */ p) => String(p).replace(/-$/, '');
+    if (want === null) issues.push({ field: 'add', problem: `${q.id} has no prefix REQUIREMENTS.md uses - those are ${[...top.keys()].map(say).join(', ')}` });
+    else if (q.id !== want) issues.push({ field: 'add', problem: `is ${q.id}, and the next ${say(prefix)} is ${want}` });
     else { /** @type {{n: number}} */ (at).n += 1; add.push(q); }
   }
   // judged from the entries that hold, so a bad one isn't reported again by every story carrying a good one

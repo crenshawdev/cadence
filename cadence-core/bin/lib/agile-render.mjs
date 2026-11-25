@@ -3,6 +3,7 @@
 // pure: values in, text out, no fs and no process
 'use strict';
 
+import { requirementPrefix } from './agile-read.mjs';
 import { sectionSpan } from './planning-files.mjs';
 
 /** @typedef {import('./seldon-design.mjs').Phase} Epic */
@@ -68,20 +69,20 @@ export function renderRequirementsFile(title, requirements, deferred = []) {
 /**
  * REQUIREMENTS.md once a refinement changed the ask: each added one after the last of its prefix, then each deferred
  * one moved under Deferred. One a run cut short already moved or added is left where it is.
- * @param {string} text the file `read` came from @param {NonNullable<ReturnType<typeof import('./agile-read.mjs').readRequirementsFile>>} read
+ * @param {string} text the file `read` came from, which read `whole` @param {ReturnType<typeof import('./agile-read.mjs').readRequirementsFile>} read
  * @param {string[]} defer @param {{id: string, text: string}[]} add @returns {string}
  */
 export function renderAskChanged(text, read, defer, add) {
   const held = [...read.requirements];
   for (const q of add) {
     if (held.some((h) => h.id === q.id)) continue;
-    const prefix = q.id.replace(/-\d+$/, '');
-    const last = held.map((h) => h.id.replace(/-\d+$/, '')).lastIndexOf(prefix);
+    const prefix = requirementPrefix(q.id);
+    const last = held.map((h) => requirementPrefix(h.id)).lastIndexOf(prefix);
     // every one of its prefix deferred leaves no category to sit in, so the prefix names its own
-    held.splice(last < 0 ? held.length : last + 1, 0, { ...q, category: last < 0 ? prefix : held[last].category });
+    held.splice(last < 0 ? held.length : last + 1, 0, { ...q, category: last < 0 ? String(prefix).replace(/-$/, '') : held[last].category });
   }
   const moving = held.filter((h) => defer.includes(h.id));
-  const out = renderRequirementsFile(read.title, held.filter((h) => !moving.includes(h)),
+  const out = renderRequirementsFile(String(read.title), held.filter((h) => !moving.includes(h)),
     [...read.deferred, ...moving.map(({ id, text: said }) => ({ id, text: said }))]);
   return text.includes('\r\n') ? out.replaceAll('\n', '\r\n') : out;
 }

@@ -31,15 +31,22 @@ export function readReleaseFile(text) {
 
 /** @typedef {{id: string, category: string, text: string}} Requirement */
 
+/** Where an ID's number starts: `CAT-` of `CAT-03`, `#` of `#41`. @param {string} id */
+export function requirementPrefix(id) {
+  return /^(.+-|#)\d+$/.exec(id)?.[1] ?? null;
+}
+
 /**
- * REQUIREMENTS.md as agile-render.mjs writes it: the release's requirements under their categories, then the deferred.
- * Deferred ones stay in the file, since the next ID of a prefix counts them.
- * @param {string} text @returns {{title: string, requirements: Requirement[], deferred: {id: string, text: string}[]} | null}
+ * REQUIREMENTS.md's requirements under their categories, then the deferred. Deferred ones stay in the file, since the
+ * next ID of a prefix counts them. A line agile-render.mjs wouldn't write is passed over, and `whole` says there was none,
+ * since rewriting the file would lose it.
+ * @param {string} text
+ * @returns {{title: string | null, requirements: Requirement[], deferred: {id: string, text: string}[], whole: boolean}}
  */
 export function readRequirementsFile(text) {
   const lines = text.split(/\r?\n/);
-  const title = /^# Requirements: (.+)$/.exec(lines[0])?.[1];
-  if (!title) return null;
+  const title = /^# Requirements: (.+)$/.exec(lines[0])?.[1] ?? null;
+  let whole = title !== null;
   /** @type {Requirement[]} */
   const requirements = [];
   /** @type {{id: string, text: string}[]} */
@@ -54,17 +61,21 @@ export function readRequirementsFile(text) {
     if (line.trim() === '') continue;
     if (line === '## Requirements' && part === null) part = 'held';
     else if (line === '## Deferred' && part === 'held') part = 'deferred';
-    else if (part === 'held' && line.startsWith('### ') && line.length > 4) category = line.slice(4);
+    // Seldon keeps a category it trimmed to nothing, so a bare heading is still one
+    else if (part === 'held' && line.startsWith('### ')) category = line.slice(4);
     else if (part === 'deferred' && line === 'None.' && !none) none = true;
     else {
       const m = /^- \*\*([^*]+)\*\*: (.+)$/.exec(line);
-      if (!m || !isRequirementId(m[1]) || seen.has(m[1]) || part === null || (part === 'held' && category === null)) return null;
+      if (!m || !isRequirementId(m[1]) || seen.has(m[1]) || part === null || (part === 'held' && category === null)) {
+        whole = false;
+        continue;
+      }
       seen.add(m[1]);
       if (part === 'held') requirements.push({ id: m[1], category: /** @type {string} */ (category), text: m[2] });
       else deferred.push({ id: m[1], text: m[2] });
     }
   }
-  return part === 'deferred' && none !== deferred.length > 0 ? { title, requirements, deferred } : null;
+  return { title, requirements, deferred, whole: whole && part === 'deferred' && none !== deferred.length > 0 };
 }
 
 /** An epic's status, or a story's from a file too broken to read whole. @param {string} text @returns {string | null} */
