@@ -34,7 +34,7 @@ Analyze the codebase for epic {id}: {name}. There is no roadmap here: .planning/
 <search_terms>{key terms from the unknowns}</search_terms>
 <unknowns>{each unknown, one to a line}</unknowns>
 
-Settle the unknowns and nothing wider. Follow your output format exactly.
+Settle the unknowns and nothing wider. Give each unknown one assumption whose Decision answers it, even when the answer looks obvious, and put one the code can't answer under Needs external research. Follow your output format exactly.
 ```
 
 Close its bracket the moment it's back, with `--detail-file <path>` naming what
@@ -44,8 +44,11 @@ failed when it did:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0 --plan {id} --role cad-assumptions-analyzer --agent-id <the id on the subagent return> --tokens <the token count on it> --turns <the tool-call count on it> --duration-ms <the wall clock on it>
 ```
 
-What it found is the answer, with the file it rests on. One it left Unclear, or
-all of them when it failed, is asked again with the two options left.
+An unknown is answered by an assumption about it rated Confident: its Decision
+is the answer, with the file its Evidence names. Every other one is asked again
+with the two options left: one rated Likely or Unclear, one under Needs external
+research, one the report doesn't take up, or all of them when it failed. A Likely
+one's Decision is named as the guess that cutting without it would take.
 
 ## Spike it
 
@@ -54,4 +57,5 @@ read by the next refinement, so nothing is saved for it here.
 
 ## Cut without it
 
-The guess is the answer, and it's named as one under "Picked for you".
+The answer saved is "Guess: " and the guess. It goes on no `decisions` line,
+since step 4 of agile-refine.md shows it under "Resting on a guess".

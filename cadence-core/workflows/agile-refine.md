@@ -31,9 +31,11 @@ Then, in one message:
 
 What those settle is settled: the epic's Boundaries, Done when and Spine
 decisions, the project's Constraints and Key decisions, the earlier epics'
-decisions, a spike's verdict, and every line already under this epic's own
-Decisions, which an earlier run of this conversation saved. None of it is asked
-about.
+decisions, a validated or invalidated spike's verdict, and every line already
+under this epic's own Decisions, which an earlier run of this conversation saved.
+None of it is asked about. A saved answer that opens with "Guess:" isn't asked
+again either, and step 4 shows it. An inconclusive spike settles nothing: its
+question is an unknown again, asked with what the spike said would decide it.
 
 ## 2. Ask
 
@@ -119,6 +121,9 @@ Show the list, each part left out when it's empty:
 
 Picked for you
 - {each decision}
+
+Resting on a guess
+- {each saved answer that opens with "Guess:"}
 
 From the backlog
 - {each item taken}, in {story}
