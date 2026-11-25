@@ -8,26 +8,22 @@
 /** @param {string[]} blocks one per paragraph, list or heading @returns {string} */
 const page = (blocks) => `${blocks.join('\n\n')}\n`;
 
-/**
- * Each distinct stack or hosting decision once, in the order the epics name them.
- * @param {Epic[]} epics @returns {string[]}
- */
-function constraints(epics) {
-  /** @type {Map<string, string>} */
-  const seen = new Map();
-  for (const d of epics.flatMap((e) => e.spine_decisions)) {
-    if (d.kind !== 'stack' && d.kind !== 'hosting') continue;
-    if (!seen.has(d.id)) seen.set(d.id, `- **${d.kind}**: ${d.title} - ${d.text}`);
-  }
-  return [...seen.values()];
-}
+/** @typedef {import('./seldon-design.mjs').Decision} Decision */
+
+/** @param {Decision} d */
+const decisionLine = (d) => `- **${d.id}: ${d.title}** (${d.kind}): ${d.text}`;
 
 /**
- * @param {string} title @param {Record<string, string>} brief @param {Epic[]} epics @returns {string}
+ * Every spine decision has a home: stack and hosting here as constraints, the ones an epic names in that epic's file, and
+ * any that no epic names here as key decisions.
+ * @param {string} title @param {Record<string, string>} brief @param {Epic[]} epics @param {Decision[]} decisions
+ * @returns {string}
  */
-export function renderProjectFile(title, brief, epics) {
+export function renderProjectFile(title, brief, epics, decisions) {
   const section = (/** @type {string} */ name) => [`### ${name}`, brief[name]];
-  const limits = constraints(epics);
+  const named = new Set(epics.flatMap((e) => e.spine_decisions).map((d) => d.id));
+  const limits = decisions.filter((d) => d.kind === 'stack' || d.kind === 'hosting');
+  const key = decisions.filter((d) => !limits.includes(d) && !named.has(d.id));
   return page([
     `# ${title}`,
     '## What it is',
@@ -36,9 +32,9 @@ export function renderProjectFile(title, brief, epics) {
     '## Out of scope',
     brief['What it refuses'],
     '## Constraints',
-    limits.length ? limits.join('\n') : 'None.',
+    limits.map(decisionLine).join('\n') || 'None.',
     '## Key decisions',
-    'None yet.',
+    key.map(decisionLine).join('\n') || 'None yet.',
   ]);
 }
 
@@ -86,7 +82,7 @@ export function renderEpicFile(e) {
     '## Done when',
     e.success_criteria.map((c) => `- ${c}`).join('\n'),
     '## Spine decisions',
-    e.spine_decisions.map((d) => `- **${d.id}: ${d.title}** (${d.kind}): ${d.text}`).join('\n') || 'None.',
+    e.spine_decisions.map(decisionLine).join('\n') || 'None.',
     '## Decisions',
     'None yet.',
   ]);

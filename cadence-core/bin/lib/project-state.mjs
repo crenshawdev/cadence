@@ -249,8 +249,16 @@ export function writeState(planningRoot, state) {
 }
 
 /**
+ * Does a state hold nothing at all? A seam call in a folder with no project stamps one, so it says nothing about the old path.
+ * @param {ProjectState} s
+ */
+export function emptyState(s) {
+  return !s.cycleOpen && s.cursor === null && s.phases.length === 0 && s.requirements.length === 0;
+}
+
+/**
  * Mark a project as on the agile path, which every old-path command then refuses. A marked project is left as it is, and
- * a project with any other state file is refused untouched, since only a switch may replace an old-path state.
+ * a project with a state that holds anything is refused untouched, since only a switch may replace an old-path state.
  * @param {string} planningRoot
  * @returns {StateWrite}
  */
@@ -258,7 +266,7 @@ export function markAgile(planningRoot) {
   return locked(planningRoot, (file) => {
     const was = readState(planningRoot);
     if (was.kind === 'invalid' && was.reason === 'agile-path') return { ok: true, changed: false };
-    if (was.kind !== 'absent') return { ok: false, reason: 'state-present', detail: `${file} is already there` };
+    if (was.kind === 'invalid' || (was.kind === 'valid' && !emptyState(was.state))) return { ok: false, reason: 'state-present', detail: `${file} is already there` };
     atomicWrite(file, `${JSON.stringify({ [STAMP_KEY]: AGILE_LAYOUT, path: AGILE_PATH }, null, 2)}\n`);
     return { ok: true, changed: true };
   });
