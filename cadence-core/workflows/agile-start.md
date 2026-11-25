@@ -96,10 +96,17 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" check '<key>=<value>' '
 In this order, stopping at the first call that fails, with its `detail` and
 `hint` or git's own words. The next run asks only what is still unanswered.
 
-1. `git rev-parse --git-dir >/dev/null 2>&1 || git init`, then
-   `git checkout -b '<branch>'` when there's a new one. One that already exists
-   stops here, since the check didn't see what's on it: name
-   `git checkout '<branch>'` and this command again.
+1. The repository, when there isn't one. Some git settings only apply inside it,
+   so one made here is checked again before anything else is written:
+
+   ```
+   git rev-parse --git-dir >/dev/null 2>&1 || { git init && node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" check --design '<folder>'; }
+   ```
+
+   Its `ok:false` stops the start, with only an empty `.git` on disk, and
+   nothing else it says is used. Then `git checkout -b '<branch>'` when there's
+   a new one. One that already exists stops here, since the check didn't see
+   what's on it: name `git checkout '<branch>'` and this command again.
 2. The settings, when any was answered, the testing ones left to the next call.
    A project's first config.json holds its answers and the guard switch every
    new project gets, so the rest follows the user's own settings:

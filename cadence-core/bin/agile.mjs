@@ -190,8 +190,8 @@ function check(dir, design) {
   }
   const unsigned = signingProblem(root);
   if (unsigned !== null) {
-    return refuse({ reason: 'signing-failed', detail: `git signs commits here, and a test signature failed: ${unsigned}`,
-      hint: 'fix the key, or the user.signingkey and gpg.format settings that name it, then re-run; nothing was written' });
+    return refuse({ reason: 'signing-failed', detail: `git can't make a signed commit here: ${unsigned}`,
+      hint: 'fix the key, or the commit.gpgsign, user.signingkey and gpg.format settings behind it, then re-run; in a folder git doesn\'t know yet, making it a repository first lets its own settings apply; the check wrote nothing' });
   }
   const open = unanswered(got.config);
   /** @type {Record<string, unknown>} */
