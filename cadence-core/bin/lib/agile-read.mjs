@@ -122,7 +122,7 @@ export function readEpicFile(text) {
   if (readEpicStatus(text) === null || !requirements.length || section(text, '## Decisions') === null) return null;
   return { requirements, title: f?.get('title') ?? '', split_from: f?.get('split_from') || null, outcome: section(text, '## Outcome') ?? '',
     boundaries: section(text, '## Boundaries') ?? '', spine: section(text, '## Spine decisions') ?? '',
-    done_when: (section(text, '## Done when') ?? '').split('\n').filter((l) => l.startsWith('- ')).map((l) => l.slice(2)) };
+    done_when: (section(text, '## Done when') ?? '').split('\n').filter((l) => /^[-*] /.test(l)).map((l) => l.slice(2).trim()) };
 }
 
 /** @param {string} text @returns {Story | null} */

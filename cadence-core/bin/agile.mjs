@@ -278,8 +278,11 @@ function judged(dir, payloadFile) {
   const self = /** @type {import('./lib/agile-read.mjs').EpicRead} */ (read.find((e) => e.id === up.epic)?.read);
   const split = up.payload !== null && typeof up.payload === 'object' ? up.payload.split : undefined;
   const from = read.filter((e) => e.read.split_from === up.epic);
-  // a rest a run cut short listed already, which the same split finishes rather than lists twice
-  const again = from.find((e) => e.read.title === split?.name) ?? null;
+  // a run cut short's rest: this epic hasn't turned, so its line still names all the rest carries
+  const stopped = from.filter((e) => e.read.requirements.every((id) => up.requirements.includes(id)));
+  // one the same split finishes rather than lists twice
+  const again = stopped.find((e) => e.read.title === split?.name) ?? null;
+  const left = stopped.filter((e) => e !== again);
   const off = new Set(from.filter((e) => e !== again).flatMap((e) => e.read.requirements));
   let text = '';
   const file = readBack(requirementsFile(up.agile), 'a "# Requirements:" title, then "## Requirements" with "- **ID**: text" lines under "### " categories, then "## Deferred"',
@@ -294,13 +297,21 @@ function judged(dir, payloadFile) {
   const cut = judgeSplit(split, { ...self, id: up.epic, requirements: ask.requirements, added: ask.add.map((q) => q.id), rest: again?.id ?? nextEpic(up.epics) });
   const list = judgeStories(up.payload, { id: up.epic, requirements: cut.requirements, earlier, backlog: captureLines(agileBacklogFile(up.agile)) });
   const issues = [...ask.issues, ...cut.issues, ...list.issues];
-  if (issues.length) return no(payloadRefused('stories-refused', `the stories for ${up.epic} have`, issues));
+  if (issues.length) {
+    for (const e of left) {
+      issues.push({ field: 'split', problem: `${e.id} ${e.read.title} was split off ${up.epic} by a run cut short and carries ${e.read.requirements.join(', ')} - leave those to it, or give a split named ${JSON.stringify(e.read.title)} to finish it` });
+    }
+    return no(payloadRefused('stories-refused', `the stories for ${up.epic} have`, issues));
+  }
   // on no epic: one the design left there, or one a refinement cut short added
   const unplaced = file.value.requirements.filter((q) => !onEpics.has(q.id) && !ask.add.some((a) => a.id === q.id)).map(({ id, text: said }) => ({ id, text: said }));
-  // a rest a run cut short listed, which this list leaves alone: its requirements leave this epic, its Done when lines can't be told apart
-  const stranded = from.filter((e) => e !== again && e.read.requirements.some((id) => up.requirements.includes(id)))
-    .map((e) => ({ id: e.id, lines: e.read.done_when.filter((l) => self.done_when.includes(l)) })).filter((e) => e.lines.length);
-  return { up, ...list, ask, cut, listed: again !== null, self, stranded, unplaced, asked: { text, read: file.value },
+  // a stopped run's rest this list leaves alone takes its requirements, and which shared Done when lines it took can't be told
+  const warnings = left.map((e) => [e.id, e.read.done_when.filter((l) => self.done_when.includes(l))])
+    .filter(([, lines]) => lines.length)
+    .map(([id, lines]) => `${id} was split off ${up.epic} by a run cut short, and ${up.epic} still holds these Done when lines ${id} holds too: ${/** @type {string[]} */ (lines).map((l) => JSON.stringify(l)).join(', ')} - remove from ${up.epic} the ones only ${id} needs`);
+  const splits = [...(cut.rest ? [{ ...cut.rest, outcome: undefined }] : []),
+    ...left.map((e) => ({ id: e.id, name: e.read.title, requirements: e.read.requirements, done_when: e.read.done_when, cut_short: true }))];
+  return { up, ...list, ask, cut, listed: again !== null, self, warnings, splits, unplaced, asked: { text, read: file.value },
     named: list.stories.map((s) => ({ id: s.id, title: s.title, size: s.size })) };
 }
 
@@ -308,8 +319,8 @@ function judged(dir, payloadFile) {
 function propose(dir, payloadFile) {
   const got = judged(dir, payloadFile);
   if (got === null) return;
-  emit({ ok: true, epic: got.up.epic, stories: got.named, ...(got.cut.rest ? { split: { id: got.cut.rest.id, name: got.cut.rest.name } } : {}),
-    ...(got.unplaced.length ? { unplaced: got.unplaced } : {}) });
+  emit({ ok: true, epic: got.up.epic, stories: got.named, ...(got.splits.length ? { splits: got.splits } : {}),
+    ...(got.unplaced.length ? { unplaced: got.unplaced } : {}), ...(got.warnings.length ? { warnings: got.warnings } : {}) });
 }
 
 /**
@@ -319,7 +330,7 @@ function propose(dir, payloadFile) {
 function refine(dir, payloadFile) {
   const got = judged(dir, payloadFile);
   if (got === null) return;
-  const { up: { agile, file, text, epic, next, release, requirements }, stories, decisions, backlog, named, ask, asked, cut, listed, self, stranded } = got;
+  const { up: { agile, file, text, epic, next, release, requirements }, stories, decisions, backlog, named, ask, asked, cut, listed, self, splits } = got;
   const written = stories.map((s) => storyFile(agile, s.id));
   stories.forEach((s, i) => atomicWrite(written[i], renderStoryFile(s)));
   // a refinement killed before its epic turned leaves stories behind, and a longer list's would read as this one's
@@ -350,9 +361,9 @@ function refine(dir, payloadFile) {
   const taken = backlog.length ? removeCaptures(agileBacklogFile(agile), backlog) : { ok: true };
   const warnings = [
     ...(taken.ok ? [] : [`the stories are written, and ${agileBacklogFile(agile)} still holds the items they took (${/** @type {any} */ (taken).detail}) - remove them there`]),
-    ...stranded.map((e) => `${e.id} was split off ${epic} by a run cut short, and ${file} still holds Done when lines ${e.id} holds too: ${e.lines.map((l) => JSON.stringify(l)).join(', ')} - remove the ones ${e.id} covers`),
+    ...got.warnings,
   ];
-  emit({ ok: true, release, epic, stories: named, ...(cut.rest ? { split: { id: cut.rest.id, name: cut.rest.name } } : {}), next: { ...next, status: 'in-progress', step: 'build', story: { ...named[0], status: stories[0].status } },
+  emit({ ok: true, release, epic, stories: named, ...(splits.length ? { splits } : {}), next: { ...next, status: 'in-progress', step: 'build', story: { ...named[0], status: stories[0].status } },
     ...(warnings.length ? { warnings } : {}) });
 }
 

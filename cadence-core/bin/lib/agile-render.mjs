@@ -177,7 +177,7 @@ export function renderAnswers(text, answers) {
 export function renderRefinedEpic(text, decisions, requirements, moved = []) {
   const status = text.replace(/^status:.*/m, 'status: in-progress');
   const turned = requirements ? status.replace(/^requirements:.*/m, `requirements: ${requirements.join(', ')}`) : status;
-  const kept = moved.length ? withSection(turned, '## Done when', (held) => held.filter((l) => !moved.includes(l.replace(/^- /, '')))) : turned;
+  const kept = moved.length ? withSection(turned, '## Done when', (held) => held.filter((l) => !moved.includes(l.replace(/^[-*] /, '').trim()))) : turned;
   return withDecisions(kept, (held) => [...held, ...decisions.map((d) => `- ${d}`)]);
 }
 

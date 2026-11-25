@@ -123,7 +123,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" propose --payload <that 
 
 On `stories-refused`, fix what `issues` names and run it again until it answers
 `ok:true`. Any other `ok:false`: print `detail` and `hint`, one line each, and
-stop.
+stop. Show each of its `warnings` under the list in step 4.
 
 ## 4. Show and ask
 
@@ -152,8 +152,8 @@ Added
 On no epic
 - {each ID `propose` lists under `unplaced`}: {its text}
 
-Split off as {split.id} {split.name}, built next
-- {its requirements}; done when: {each of its Done when lines}
+Split off, built next
+- {each of `splits`: its id and name}: {its requirements}; done when: {its Done when lines}, {and "left by a run cut short" when `cut_short`}
 
 You didn't ask for this
 - {each thing left off, and why it came up}
@@ -194,8 +194,8 @@ changed, and `release.md` with a split-off epic's file when a split listed one:
 ```
 set -- '.planning/agile/epics/{id}/epic.md' ':(glob).planning/agile/epics/{id}/{id}-*.md'
 git diff --numstat HEAD -- .planning/agile/backlog.md 2>/dev/null | grep -qE '^0[[:space:]]' && set -- "$@" .planning/agile/backlog.md
-[ "$(git cat-file blob 'HEAD:./.planning/agile/REQUIREMENTS.md' 2>/dev/null | grep -oE '^(- \*\*[^*]*\*\*|## .*)')" = "$(grep -oE '^(- \*\*[^*]*\*\*|## .*)' .planning/agile/REQUIREMENTS.md)" ] || set -- "$@" .planning/agile/REQUIREMENTS.md
-git cat-file blob 'HEAD:./.planning/agile/release.md' 2>/dev/null | cmp -s - .planning/agile/release.md || { set -- "$@" .planning/agile/release.md; for e in $(sed -n 's/^- \(E-[0-9]*\): .*/\1/p' .planning/agile/release.md); do git cat-file -e "HEAD:./.planning/agile/epics/$e/epic.md" 2>/dev/null || set -- "$@" ".planning/agile/epics/$e/epic.md"; done; }
+[ "$(git cat-file blob 'HEAD:./.planning/agile/REQUIREMENTS.md' 2>/dev/null | tr -d '\r' | grep -oE '^(- \*\*[^*]*\*\*|## .*)')" = "$(tr -d '\r' < .planning/agile/REQUIREMENTS.md | grep -oE '^(- \*\*[^*]*\*\*|## .*)')" ] || set -- "$@" .planning/agile/REQUIREMENTS.md
+[ "$(git cat-file blob 'HEAD:./.planning/agile/release.md' 2>/dev/null | tr -d '\r' | grep -E '^- E-[0-9]+: ')" = "$(tr -d '\r' < .planning/agile/release.md | grep -E '^- E-[0-9]+: ')" ] || { set -- "$@" .planning/agile/release.md; for e in $(sed -n 's/^- \(E-[0-9]*\): .*/\1/p' .planning/agile/release.md); do git cat-file -e "HEAD:./.planning/agile/epics/$e/epic.md" 2>/dev/null || set -- "$@" ".planning/agile/epics/$e/epic.md"; done; }
 git add -A -- "$@"
 git commit -m "docs: refine {id}" -- "$@"
 ```
