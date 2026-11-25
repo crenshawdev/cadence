@@ -356,7 +356,8 @@ function strayAgile(dir, got) {
 
 /** @param {string} dir */
 function failStray(dir) {
-  fail('agile-path', `${agileDir(dir)} is there but ${statePath(dir)} does not say the project is on the agile path`, invalidHint('agile-path'));
+  fail('agile-path', `${agileDir(dir)} is there but ${statePath(dir)} does not say the project is on the agile path`,
+    'run /cad-agile here, which says how to put it right; nothing was changed');
 }
 
 /**
@@ -404,8 +405,9 @@ export function cmdStateRebuild(dir) {
 /**
  * Make sure the planning directory has a valid state file before a handler runs, converting an unstamped project once.
  * @param {string} dir the planning directory the call resolved
- * @param {'now' | 'before' | 'after' | 'rebuild'} [mode] 'now' judges and converts; 'before' judges only; 'after' converts
- *   with no refusal emitted; 'rebuild' is 'now' that lets a state file that is there but not valid through to `state-rebuild`
+ * @param {'now' | 'before' | 'after' | 'rebuild' | 'shared'} [mode] 'now' judges and converts; 'before' judges only; 'after' converts
+ *   with no refusal emitted; 'rebuild' is 'now' that lets a state file that is there but not valid through to `state-rebuild`;
+ *   'shared' is 'now' that lets the agile marker through
  * @returns {boolean} true when the handler may run; false when a refusal has been emitted and the handler must not
  */
 export function ensureState(dir, mode = 'now') {
@@ -415,16 +417,19 @@ export function ensureState(dir, mode = 'now') {
   let st = null;
   try { st = statSync(dir); } catch { /* absent */ }
   if (!st || !st.isDirectory()) return true;
-  // a planning directory that is itself a link may be a repository's way of pointing writes out of the tree, so nothing
-  // is stamped through it; the handler keeps whatever refusal it has for that
-  // resolve drops a trailing slash, which would make lstat follow the link it is asking about
-  try { if (lstatSync(resolve(dir)).isSymbolicLink()) return true; } catch { return true; }
+  // the agile path is judged before the link below, or a seam that never loads the state would run on its project
   const got = readState(dir);
   if (got.kind === 'valid') return true;
   if (strayAgile(dir, got)) {
     if (!quiet) failStray(dir);
     return false;
   }
+  const marked = got.kind === 'invalid' && got.reason === 'agile-path';
+  if (marked && mode === 'shared') return true;
+  // a planning directory that is itself a link may be a repository's way of pointing writes out of the tree, so nothing
+  // is stamped through it; the handler keeps whatever refusal it has for that
+  // resolve drops a trailing slash, which would make lstat follow the link it is asking about
+  try { if (!marked && lstatSync(resolve(dir)).isSymbolicLink()) return true; } catch { return true; }
 
   if (got.kind === 'invalid') {
     // the rebuild judges the file again under its own lock, newer layouts and unreadable files included

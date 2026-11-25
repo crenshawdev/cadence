@@ -2,7 +2,7 @@
 // @ts-check
 // agile.mjs - the agile path's own script: it says what a start still has to ask, starts a release from a Seldon design
 // and says what the open one does next
-// not a planning.mjs subcommand: every one of those refuses a project this path owns
+// not a planning.mjs subcommand: those belong to the old path, and all but a few refuse a project this path owns
 //
 // Usage: agile.mjs next [--dir <.planning>]
 //        agile.mjs check --design <folder> [--dir <.planning>]
@@ -211,7 +211,7 @@ function start(dir, design) {
 
   const { decisions, design: { title, brief, requirements, phases: epics, uncovered } } = got;
   makeDir(dir);
-  // here because `test-policy render` refuses a marked project, so a start that died would leave it unwritten for good
+  // part of the start, so one that died before it gets it written by the next
   writePolicy(dirname(resolve(dir)), got.config.testing);
   // of the release, the marker goes first: a run that dies after it leaves a project the old path refuses, and the next start finishes
   const marked = markAgile(dir);

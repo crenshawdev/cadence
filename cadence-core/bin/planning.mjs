@@ -9,6 +9,7 @@
 // A new subcommand is a COMMANDS entry, never an if-chain
 // Before a handler runs, planning/migrate.mjs gives the project its state file (records/state.json), converting an unstamped v4.0 project into the layout once
 // The one exception is design-read, which writes nothing, accepted or refused, so it runs without that step
+// An agile project is refused there too, except for the calls in AGILE_CALLS
 'use strict';
 
 import {
@@ -142,6 +143,9 @@ const COMMANDS = {
   'state-rebuild': async (dir, _sub, _opts) => (await import('./planning/migrate.mjs')).cmdStateRebuild(dir),
 };
 
+// the calls an agile project may run, because what they read and write is in the same place on both paths
+const AGILE_CALLS = ['codemap', 'detect-commands', 'detect-surfaces', 'recall', 'risk-check', 'test-policy', 'trace'];
+
 try {
   const { words, opts } = parseArgs(ARGV);
   const [cmd, sub] = words;
@@ -181,7 +185,8 @@ try {
     // `--check` is the read-only report cad-health runs and writes nothing, so it leaves the stamp to the next seam
     const late = cmd === 'trace' && sub === 'ignore';
     // a state file that does not parse refuses every call but the one that rebuilds it; an unstamped project still converts first
-    const mode = late ? 'before' : cmd === 'state-rebuild' ? 'rebuild' : 'now';
+    // late goes first, so `trace ignore` refuses an agile project: the old commands' stops ask it
+    const mode = late ? 'before' : cmd === 'state-rebuild' ? 'rebuild' : AGILE_CALLS.includes(cmd) ? 'shared' : 'now';
     const { ensureState, conversionNote, holdAnswer } = await import('./planning/migrate.mjs');
     if (ensureState(planningDir, mode)) {
       const afterwards = late && !('check' in opts);

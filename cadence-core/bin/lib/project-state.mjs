@@ -174,7 +174,8 @@ export function readState(planningRoot) {
 }
 
 /**
- * May a log writer append under `records/`? Only in a project stamped with a valid state, and never through a link.
+ * May a log writer append under `records/`? Only in a project stamped with a valid state or marked as on the agile path,
+ * since the logs are both paths' own, and never through a link.
  * It creates nothing: hooks and route.mjs call the log writers, and neither may convert a project (D-10). A folder
  * that is a link or not a folder keeps the reason it always had, ahead of the state's.
  * @param {string} planningRoot
@@ -190,7 +191,9 @@ export function recordsReady(planningRoot) {
   }
   if (st.isSymbolicLink()) return { ok: false, reason: 'symlinked-records' };
   if (!st.isDirectory()) return { ok: false, reason: 'ENOTDIR' };
-  return readState(planningRoot).kind === 'valid' ? { ok: true } : { ok: false, reason: 'no-valid-state' };
+  const got = readState(planningRoot);
+  if (got.kind === 'valid' || (got.kind === 'invalid' && got.reason === 'agile-path')) return { ok: true };
+  return { ok: false, reason: 'no-valid-state' };
 }
 
 /**
