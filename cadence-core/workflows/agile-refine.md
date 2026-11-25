@@ -97,7 +97,8 @@ answered again replaces the answer before it.
 
 An epic in progress is here because it holds an L, and is cut again: the list
 replaces every story that isn't done, and done stories stay as they are, count
-toward its requirements and may be built on.
+toward its requirements and may be built on. What a done story carries can't be
+deferred or split off, and the list may be empty when what's left is.
 
 Write `stories.json` in that folder. A story's ID is `{id}-` and its place in
 the list, so the second is `{id}-2`; cut again, the first is `next.first`.

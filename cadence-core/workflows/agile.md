@@ -73,6 +73,12 @@ Only on a release that was already open, with no commit above left unmade.
 
   Without `REFINED`, Read that same file, apply its branch step, where a stop
   goes on to `report` with its reason, and make its commit. Then `report`.
+- `next.step` is `accept` -> the same, for a cut again that left no story,
+  with this check in place of that one:
+
+  ```
+  [ "$(git cat-file blob 'HEAD:./.planning/agile/epics/{next.id}/epic.md' 2>/dev/null | tr -d '\r')" = "$(tr -d '\r' < '.planning/agile/epics/{next.id}/epic.md')" ] && echo REFINED
+  ```
 - Anything else -> `report`.
 </step>
 

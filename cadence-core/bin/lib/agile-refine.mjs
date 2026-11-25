@@ -89,18 +89,23 @@ function highest(all) {
  * The requirements the epic's stories must carry once the payload's `defer` and `add` are applied, or every reason
  * they can't be. What's under Deferred is off every epic, whatever an epic's line still says.
  * @param {unknown} payload
- * @param {{own: string[], file: {requirements: {id: string, text: string}[], deferred: {id: string, text: string}[]}, named: Set<string>}} ask
- *   `own` is the epic's requirements line, `named` every ID on any epic's line
+ * @param {{own: string[], file: {requirements: {id: string, text: string}[], deferred: {id: string, text: string}[]}, named: Set<string>, kept?: string[]}} ask
+ *   `own` is the epic's requirements line, `named` every ID on any epic's line, `kept` what its done stories carry
  * @returns {{issues: Issue[], defer: string[], add: {id: string, text: string}[], requirements: string[]}}
  */
-export function judgeAsk(payload, { own, file, named }) {
+export function judgeAsk(payload, { own, file, named, kept = [] }) {
   /** @type {Issue[]} */
   const issues = [];
   const off = new Set(file.deferred.map((d) => d.id));
   const p = isObject(payload) ? payload : {};
   const defer = p.defer ?? [];
   if (!lines(defer)) issues.push({ field: 'defer', problem: 'is a list of the epic\'s requirement IDs, empty when none is deferred' });
-  else for (const id of /** @type {string[]} */ (defer)) if (!own.includes(id)) issues.push({ field: 'defer', problem: `names ${id}, which isn't one of the epic's - those are ${own.join(', ')}` });
+  else {
+    for (const id of /** @type {string[]} */ (defer)) {
+      if (!own.includes(id)) issues.push({ field: 'defer', problem: `names ${id}, which isn't one of the epic's - those are ${own.join(', ')}` });
+      else if (kept.includes(id)) issues.push({ field: 'defer', problem: `names ${id}, which a done story already carries` });
+    }
+  }
   const held = new Map(file.requirements.map((q) => [q.id, q.text]));
   const top = highest([...file.requirements, ...file.deferred]);
   /** @type {{id: string, text: string}[]} */
@@ -133,7 +138,7 @@ export function judgeAsk(payload, { own, file, named }) {
 /**
  * The epic a payload's `split` makes of the rest, and what this one keeps, or every reason it can't be split so.
  * @param {unknown} split
- * @param {{requirements: string[], added: string[], done_when: string[], id: string, rest: string, boundaries: string, spine: string}} at
+ * @param {{requirements: string[], added: string[], kept: string[], done_when: string[], id: string, rest: string, boundaries: string, spine: string}} at
  *   `requirements` is what this epic carries once the ask changed, `added` the ones this refinement adds, `rest` the ID
  *   the split-off epic takes
  * @returns {{issues: Issue[], rest: import('./agile-render.mjs').Rest | null, moves: string[], requirements: string[]}}
@@ -151,6 +156,7 @@ export function judgeSplit(split, at) {
   if (!taken.length) bad('requirements is a list of at least one of the epic\'s requirements');
   for (const id of taken) {
     if (at.added.includes(id)) bad(`requirements names ${id}, which this refinement adds - add it when the split-off epic is refined`);
+    else if (at.kept.includes(id)) bad(`requirements names ${id}, which a done story already carries`);
     else if (!at.requirements.includes(id)) bad(`requirements names ${id}, which isn't one of the epic's - those are ${at.requirements.join(', ')}`);
   }
   const kept = at.requirements.filter((id) => !taken.includes(id));
@@ -174,15 +180,15 @@ export function judgeSplit(split, at) {
 /**
  * The stories a payload holds, numbered in its order, or every reason it can't be written.
  * @param {unknown} payload
- * @param {{id: string, requirements: string[], earlier: string[], backlog: string[], start?: number, covered?: string[]}} epic
+ * @param {{id: string, requirements: string[], earlier: string[], backlog: string[], start?: number, covered?: string[], again?: boolean}} epic
  *   `earlier` is what a story may build on besides this list, `backlog` the lines it may take from there, `start` the
- *   first story's number and `covered` what done stories already carry
+ *   first story's number, `covered` what done stories already carry, and `again` a cut again, whose list may be empty
  * @returns {{issues: Issue[], decisions: string[], stories: Story[], backlog: string[]}}
  */
 export function judgeStories(payload, epic) {
   /** @type {Story[]} */
   const stories = [];
-  if (!isObject(payload) || !Array.isArray(payload.stories) || !payload.stories.length) {
+  if (!isObject(payload) || !Array.isArray(payload.stories) || (!payload.stories.length && !epic.again)) {
     return { issues: [{ field: 'stories', problem: 'is a list of at least one story' }], decisions: [], stories, backlog: [] };
   }
   const issues = payloadProblems(payload, PAYLOAD, epic.id);
