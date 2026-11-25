@@ -144,7 +144,8 @@ const COMMANDS = {
 };
 
 // the calls an agile project may run; every other one is the old path's and refuses there
-const AGILE_CALLS = ['codemap', 'detect-commands', 'detect-surfaces', 'recall', 'risk-check', 'test-policy', 'trace'];
+const AGILE_CALLS = ['adjudication', 'codemap', 'detect-commands', 'detect-surfaces', 'recall', 'review-file', 'risk-check',
+  'task-record', 'test-policy', 'trace', 'workflow-run'];
 
 try {
   const { words, opts } = parseArgs(ARGV);

@@ -9,7 +9,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import {
   ARGV, DISPATCH_WINDOW_DEFAULTS, RECORD_TOKEN, argRefusal, fail, intFlag, listPlanFiles, ok,
-  phaseGuard, read, readReadsRecords, routeLadder,
+  phaseGuard, read, readReadsRecords, realChain, routeLadder,
 } from './core.mjs';
 import { deriveCounts, recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS, evaluateFlag } from '../lib/arg-contract.mjs';
@@ -17,6 +17,7 @@ import { mergeLayers } from '../lib/config-merge.mjs';
 import { unfixedFromEntries } from '../lib/filing-decision.mjs';
 import { planTaskTitles } from '../lib/planning-files.mjs';
 import { ensureRecordsDir, ensureRecordsIgnore, makeDir, phaseRecordsDir, recordsPath } from '../lib/planning-store.mjs';
+import { tasksHome } from '../lib/project-homes.mjs';
 import { planFileFor } from '../lib/phase-plans.mjs';
 import {
   READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
@@ -775,7 +776,7 @@ const RANGE_DISCRIMINATOR = /^([0-9a-f]{7,40})-([0-9a-f]{7,40})$/;
  * Finding none, it falls back to the legacy names (D-13): `plan-<k>` with its round for a per-plan fire, a head-sha
  * tail for every other. A `plan-<k>` record storing its ids is only this receipt's when both ends agree with them.
  * Two candidates answer '', not a guess: a check that might read another fire's rulings refuses a correct receipt.
- * Homes by phase: `phases/<N>/records/`, or every `.planning/tasks/<slug>/` for a task's 0, since a receipt carries no slug.
+ * Homes by phase: `phases/<N>/records/`, or every folder under `tasksHome` for a task's 0, since a receipt carries no slug.
  * `deferred/<N>/` is deliberately left out (see fireHome); `trigger` goes through RECORD_TOKEN before `join`.
  * @param {string} dir @param {string|number} phaseRaw
  * @param {string|undefined} trigger @param {any} plan @param {any} sha
@@ -789,12 +790,10 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round, base) {
   if (String(phaseRaw) !== '0') {
     homes = [phaseRecordsDir(join(dir, 'phases', String(phaseRaw)))];
   } else {
-    // lstat tasks/ first, as fireHome does: readdirSync follows a symlink and would walk outside the planning tree
+    // judged first, as fireHome does: readdirSync follows a symlink and would walk outside the planning tree
     // each entry's isDirectory reads as lstat does, so a symlink to a directory is false
-    const troot = join(dir, 'tasks');
-    let root = null;
-    try { root = lstatSync(troot); } catch { /* no tasks/ is no candidate */ }
-    if (root && root.isDirectory()) {
+    const { path: troot, rel } = tasksHome(dir);
+    if (realChain(dir, rel)) {
       try {
         homes = readdirSync(troot, { withFileTypes: true })
           .filter((d) => d.isDirectory()).map((d) => join(troot, d.name));

@@ -26,6 +26,21 @@ export function buildPid(name) {
   return m ? Number(m[1]) : null;
 }
 
+/** Where each task's own folder goes. @param {string} agile */
+export function agileTasksDir(agile) {
+  return join(agile, 'tasks');
+}
+
+/** The findings this project's reviews filed as issues. @param {string} agile */
+export function agileFiledFile(agile) {
+  return join(agile, 'filed.md');
+}
+
+/** The findings its reviews raised and the user said no to. @param {string} agile */
+export function agileDeclinedFile(agile) {
+  return join(agile, 'declined.md');
+}
+
 /** The release's own file, inside whichever agile folder is being read or built. @param {string} agile */
 export function releaseFile(agile) {
   return join(agile, 'release.md');

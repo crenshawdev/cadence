@@ -890,6 +890,11 @@ A line that is not a row is skipped, so a human note added here changes nothing
 the seam reads.
 `;
 
+/** The same two on the agile path, which spells its ledgers in lowercase and keeps neither CAPTURE.md nor ARCHIVE.md. */
+export const AGILE_FILED_PREAMBLE = FILED_PREAMBLE.replace(' beside CAPTURE.md', '').replace('DECLINED.md', 'declined.md');
+export const AGILE_DECLINED_PREAMBLE = DECLINED_PREAMBLE.replace('CAPTURE.md, ARCHIVE.md, the task records', 'the task records')
+  .replaceAll('FILED.md', 'filed.md');
+
 /**
  * FILED.md rows in document order, as the `{text, source}` shape cmdRecall builds its corpus from.
  * `text` is the title alone, the only part a query shares words with: date, provider and slug would dilute the score.
@@ -946,10 +951,11 @@ function parseRows(text, source) {
  * @param {string} text
  * @param {{date: string, provider: string, slug: string, fingerprint: string,
  *   title: string, unconfirmed?: boolean}} row
+ * @param {string} [preamble]
  * @returns {string}
  */
-export function appendFiledRow(text, row) {
-  return appendRow(text, row, FILED_PREAMBLE);
+export function appendFiledRow(text, row, preamble = FILED_PREAMBLE) {
+  return appendRow(text, row, preamble);
 }
 
 /**
@@ -961,10 +967,11 @@ export function appendFiledRow(text, row) {
  *
  * @param {string} text
  * @param {{date: string, provider: string, slug: string, fingerprint: string, title: string}} row
+ * @param {string} [preamble]
  * @returns {string}
  */
-export function appendDeclinedRow(text, row) {
-  return appendRow(text, row, DECLINED_PREAMBLE);
+export function appendDeclinedRow(text, row, preamble = DECLINED_PREAMBLE) {
+  return appendRow(text, row, preamble);
 }
 
 /** The shared body of both appenders.

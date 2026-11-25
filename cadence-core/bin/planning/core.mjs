@@ -17,6 +17,7 @@ import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
 import { classifyPhaseList, parseRequirements, parseUat, uatComplete } from '../lib/planning-files.mjs';
 import { codemapDir, deferredDir, phaseRecordsDir, phaseReportsDir, recordsPath } from '../lib/planning-store.mjs';
+import { tasksHome } from '../lib/project-homes.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
@@ -591,20 +592,9 @@ function fireIdentity(face, dir, opts) {
 }
 
 /**
- * Is `<dir>/<name>` a real directory, present and not a symlink?
- * lstat follows a symlinked parent in passing, so the parent gets the same test as the leaf.
- * @param {string} dir @param {string} name @returns {boolean}
- */
-function realDir(dir, name) {
-  let stat = null;
-  try { stat = lstatSync(join(dir, name)); } catch { return false; }
-  return stat.isDirectory();
-}
-
-/**
  * The directory a fire's artifact is written into, or null once the refusal is out.
  * It sits beside the sibling REVIEW file, never in `<plandir>/records/reports/`, where lease-check exempts only one path.
- * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/records/`, then the carried queue's `<N>/`.
+ * A task names its own home (`tasksHome`'s), the only one tried; else `phases/<N>/records/`, then the carried queue's `<N>/`.
  * The phase must exist; its records folder need not, and nothing is created here: the writer makes it on its first write.
  * @param {string} dir @param {string} n the phase as the caller spelled it
  * @param {string} what the artifact, for the refusal's wording
@@ -613,17 +603,18 @@ function realDir(dir, name) {
  */
 function fireHome(dir, n, what, task) {
   if (task) {
-    const tdir = join(dir, 'tasks', task);
+    const { path, rel } = tasksHome(dir);
+    const tdir = join(path, task);
     let tstat = null;
-    if (realDir(dir, 'tasks')) {
+    if (realChain(dir, rel)) {
       try { tstat = lstatSync(tdir); } catch { /* absent is the answer, never a throw */ }
     }
     if (tstat && tstat.isDirectory()) return tdir;
     fail('no-task-dir',
-      `tasks/${task}/ is not a directory under ${dir} - the ${what} is written BESIDE the `
+      `${rel}/${task}/ is not a directory under ${dir} - the ${what} is written BESIDE the `
       + 'sibling REVIEW file, and a task keeps both under its own slug, so that directory has '
       + 'to exist already',
-      `check the --task spelling first - it addresses tasks/${task}/ verbatim. A task that `
+      `check the --task spelling first - it addresses ${rel}/${task}/ verbatim. A task that `
       + 'never wrote a PLAN.md has no directory: the inline path writes no plan, so a blocking '
       + 'gate there is settled by the user rather than recorded here');
     return null;
@@ -1143,6 +1134,7 @@ export {
   readProject,
   readQueue,
   readReadsRecords,
+  realChain,
   readStoredMap,
   resolveIndex,
   resolveRange,

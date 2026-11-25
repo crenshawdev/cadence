@@ -41,9 +41,15 @@ Classify $TASK before touching anything:
   nothing else to tell which applies, neither the git root nor a
   `[ -d .planning ]` check: the seam's answer is the gate.
 
+  On `ok:false` with reason `agile-path`: "This is bigger than a task. Run
+  /cad-capture $TASK, and the next refinement picks it up."
+
   On any other `ok:false`, relay the envelope's `reason` and `hint` and stop.
 
 When unsure between inline and planned, pick planned.
+
+On an agile project (`.planning/agile/` exists) every `.planning/tasks/` in this
+file is `.planning/agile/tasks/`.
 </step>
 
 <step name="git_guard">
@@ -295,5 +301,6 @@ No next-step menu.
 <guardrails>
 - Never use worktrees - cad-task is always sequential.
 - If mid-task the scope grows past "planned", stop and re-route to
-  /cad-phase add rather than improvising a phase inline.
+  /cad-phase add, or /cad-capture on an agile project, rather than improvising a
+  phase inline.
 </guardrails>

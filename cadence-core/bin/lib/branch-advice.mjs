@@ -12,7 +12,7 @@ import { configuredNameProblem, decideBranch, integrationBranchName, milestoneVe
 import { readCurrentBranch } from './git-head.mjs';
 // shared with the audit so the two can't drift apart
 import { readTags } from './git-tags.mjs';
-import { readState } from './project-state.mjs';
+import { onAgilePath } from './project-homes.mjs';
 import { resolveProtectedBranches } from './protected-branches.mjs';
 // reads '' on failure
 import { readText } from './seam-input.mjs';
@@ -29,8 +29,7 @@ export function adviseBranch(dir, git, { branch: branchOverride, title } = {}) {
   // one coercion for protected_branches, or this advises a named branch unprotected while git-guard honors it
   const protectedBranches = resolveProtectedBranches(git);
   const branch = branchOverride !== undefined ? branchOverride : readCurrentBranch(dir);
-  const state = readState(planning);
-  const agile = title !== undefined || (state.kind === 'invalid' && state.reason === 'agile-path');
+  const agile = title !== undefined || onAgilePath(planning);
   // an old-path file left beside a release must not name its branch
   const projectText = agile ? '' : readText(join(planning, 'PROJECT.md'));
   const roadmapText = agile ? '' : readText(join(planning, 'ROADMAP.md'));

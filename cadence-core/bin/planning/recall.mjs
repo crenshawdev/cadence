@@ -7,7 +7,8 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PHASE_DIR_NAME, fail, intFlag, memoryBackend, ok, read } from './core.mjs';
 import { buildIndex, search } from '../lib/bm25.mjs';
-import { archivePath, filedPath } from '../lib/planning-store.mjs';
+import { archivePath } from '../lib/planning-store.mjs';
+import { filedHome, fromRoot, onAgilePath } from '../lib/project-homes.mjs';
 import {
   parseArchiveRows, parseCaptureSnippets, parseFiledRows, parseTaskRecordSnippets, phaseRecallSnippets,
 } from '../lib/planning-files.mjs';
@@ -68,19 +69,20 @@ function cmdRecall(dir, query, opts) {
   // the tasks tier: /cad-task is where most real work goes and the corpus had a hole there; last, like ARCHIVE.md
   // no phase key: a task sits outside the phase spine, and recall.md forbids inferring one
   // taskRecordsIn is guarded and contained: an absent tasks/ is an empty list and an outside-the-root slug is skipped
-  for (const { slug, path } of taskRecordsIn(dir)) {
+  for (const { path, label } of taskRecordsIn(dir)) {
     const record = read(path);
     if (!record) continue;
     for (const text of parseTaskRecordSnippets(record)) {
-      corpus.push({ text, source: `tasks/${slug}/RECORD.md` });
+      corpus.push({ text, source: `${label}/RECORD.md` });
     }
   }
 
   // the filed tier keeps findings routed to the tracker reachable: pointers only, and a declined finding is never here
   // no phase key, as with tasks: a filed issue sits outside the phase spine
-  const filed = read(filedPath(dir));
+  const filedFile = filedHome(dir);
+  const filed = read(filedFile);
   if (filed) for (const row of parseFiledRows(filed)) {
-    corpus.push({ text: row.text, source: row.source });
+    corpus.push({ text: row.text, source: onAgilePath(dir) ? fromRoot(dir, filedFile) : row.source });
   }
 
   if (!corpus.length) return ok({ results: [], total: 0, ...warn });

@@ -15,7 +15,8 @@ import { recordName } from './adjudication-record.mjs';
 import { phaseDirsIn } from './phase-plans.mjs';
 import { parseArchiveRows } from './planning-files.mjs';
 import { archivePath, phaseRecordsDir } from './planning-store.mjs';
-import { RECORD_FILE, TASKS_DIR, taskRecordsIn } from './task-record.mjs';
+import { TASKS_DIR } from './project-homes.mjs';
+import { RECORD_FILE, taskRecordsIn } from './task-record.mjs';
 import { parseAdjudication, parseCommitRows, shaMatches } from './why-record.mjs';
 
 /**
@@ -132,10 +133,10 @@ export function buildTaskIndex(planningRoot) {
   const rows = [];
   /** @type {string[]} */
   const warnings = [];
-  for (const { slug, path } of taskRecordsIn(planningRoot)) {
+  for (const { slug, path, label } of taskRecordsIn(planningRoot)) {
     /** @type {TaskDir} */
     const dir = {
-      label: `${TASKS_DIR}/${slug}`,
+      label,
       path: dirname(path),
       group: TASKS_DIR,
       phase: null,
