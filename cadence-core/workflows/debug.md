@@ -7,7 +7,9 @@ after every step.
 ## State file: `.planning/debug/<slug>.md`
 
 The source of truth; a resume reads only this. `<slug>` is a short kebab of the
-symptom. Schema:
+symptom. On an agile project (`.planning/agile/` exists and
+`.planning/PROJECT.md` doesn't) every `.planning/debug/` in this file is
+`.planning/agile/debug/`. Schema:
 
 ```markdown
 # debug: <one-line symptom>
@@ -116,7 +118,9 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    or an `inconclusive: true` fires the `risk_surface` review trigger
    (references/review-triggers.md) before the fix is trusted, and the artifact
    is the staged-diff scope - shape (b): the reviewer runs `git diff --cached`
-   in the cwd it inherits, never the diff text. That gate is `blocking`; RE-READ
+   in the cwd it inherits, never the diff text. On an agile project its review
+   file and record go in `.planning/agile/tasks/<slug>/`, made for them, and
+   `<slug>` is the `--task` they pass. That gate is `blocking`; RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
    fixing a FAIL, since this workflow does not preload it. On the workflow
    path (`references/review-workflow.md`) the fire is the launch ending the
