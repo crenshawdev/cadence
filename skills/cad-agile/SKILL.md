@@ -4,13 +4,17 @@ description: "The agile path's one command - starts a release from a Seldon desi
 argument-hint: "[--brief <design folder>]"
 allowed-tools:
   - Read
+  - Write
+  - Grep
+  - Glob
   - AskUserQuestion
   - PushNotification
 ---
 
 <objective>
-With no release open, turn the Seldon design `--brief` names into
-`.planning/agile/` and commit it. With one open, name its next step.
+With no release open, ask what the project's setup leaves open, then turn the
+Seldon design `--brief` names into `.planning/agile/` and commit it. With one
+open, name its next step.
 </objective>
 
 <execution_context>

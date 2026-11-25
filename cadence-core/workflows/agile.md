@@ -17,22 +17,11 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" next
 - `ok:false` -> print `detail` and `hint`, one line each, and stop.
 - `release` is a name -> that release is open: go to `commit`. With `--brief`,
   say in one line that the design wasn't read because {release} is still open.
-- `release` is null, with `--brief` -> go to `start`.
+- `release` is null, with `--brief` -> Read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-start.md` and follow it,
+  then go to `commit`.
 - `release` is null, without it -> stop: "No release is open here. Start one
   from a Seldon design with /cad-agile --brief <design folder>."
-</step>
-
-<step name="start">
-There is no confirm step: typing the command is the consent. The path goes in
-as one single-quoted word, a leading `~` written out as the home folder. Double
-quotes would run a `$(...)` or a backtick in it, and a path holding a single
-quote is refused here, never escaped:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" start --design '<folder>'
-```
-
-On `ok:false`, print `detail`, every entry of `issues` and `hint`, and stop.
 </step>
 
 <step name="commit">
@@ -50,17 +39,21 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
 
 Make no commit on `IGNORED` or with `planning.commit_docs` false, nor on
 `COMMITTED` for a release that was already open. After a start `COMMITTED` is
-about the release before this one, so it doesn't count. Otherwise, unless it
-printed `NO_COMMITS` (there is nothing to branch from), Read
+about the release before this one, so it doesn't count, and the start has
+settled its branch. On a release that was already open, unless it printed
+`NO_COMMITS` (there is nothing to branch from), Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section
 1's protected-branch guard and base integrity. Skip its integration branch:
 that one is named from files this path doesn't have.
 
-Then commit the release and nothing else the user has staged, and push nothing:
+Then commit the release, its setup and nothing else the user has staged, and
+push nothing:
 
 ```
-git add .planning/agile .planning/records/state.json .planning/records/.gitignore
-git commit -m "docs: start the release" -- .planning/agile .planning/records/state.json .planning/records/.gitignore
+set -- .planning/agile .planning/records/state.json .planning/records/.gitignore
+for f in .planning/config.json .github/cadence/coverage-policy.json; do [ -f "$f" ] && ! git check-ignore -q "$f" && set -- "$@" "$f"; done
+git add -- "$@"
+git commit -m "docs: start the release" -- "$@"
 ```
 
 Nothing here ends the run: when the guard stops the commit or git refuses it,
@@ -72,6 +65,8 @@ After a start:
 
 ```
 Release: {release}, {N} epics in .planning/agile/
+Setup: {each answer this run wrote, the line left out when it asked nothing}
+Repository: {created, or "not created - " and why, the line left out unless it was asked for}
 Commit: {hash, or "none - " and why}
 On no epic: {the `uncovered` requirement IDs, the line left out when empty}
 
