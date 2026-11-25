@@ -22,6 +22,10 @@ to the skill that does it.
 </execution_context>
 
 <process>
+On an agile project (`.planning/agile/` exists and `.planning/PROJECT.md`
+doesn't), stop before anything else, with this line and nothing after it: "This
+project is on the agile path. /cad-agile shows what comes next."
+
 Execute end-to-end.
 
 Before any question to the user, send one `PushNotification` naming the

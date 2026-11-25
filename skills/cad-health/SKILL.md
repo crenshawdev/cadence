@@ -18,6 +18,10 @@ well-formed enough for the other skills to trust.
 </objective>
 
 <process>
+On an agile project (`.planning/agile/` exists and `.planning/PROJECT.md`
+doesn't), stop before anything else, with this line and nothing after it: "This
+project is on the agile path. /cad-agile shows what comes next."
+
 Check, then report.
 
 1. **Presence.** `.planning/` exists with PROJECT.md, REQUIREMENTS.md,
