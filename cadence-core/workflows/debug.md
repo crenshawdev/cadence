@@ -104,9 +104,18 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    (no fix applied).
 3. Else propose the minimal fix and apply it ONLY with user approval (ask-user
    seam). Rewrite the state file every time a fix is applied, then `git add`
-   exactly the files the fix touched, and only THEN ask the seam. Whether the
-   fix touched a risk surface is the SEAM's answer over the index, never a
-   reading of the diff, and `--staged` is that scope's one machine spelling:
+   exactly the files the fix touched, and only THEN ask the seam. On an agile
+   project each fix opens its own run first, or another session's fix could
+   spend its one re-arm:
+
+   ```
+   A="$(git rev-parse --short HEAD)-$$-$(date +%s)"
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event phase_start --sha "$A"
+   ```
+
+   Whether the fix touched a risk surface is the SEAM's answer over the index,
+   never a reading of the diff, and `--staged` is that scope's one machine
+   spelling:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase 0 --base HEAD --staged
@@ -119,8 +128,8 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    (references/review-triggers.md) before the fix is trusted, and the artifact
    is the staged-diff scope - shape (b): the reviewer runs `git diff --cached`
    in the cwd it inherits, never the diff text. On an agile project its review
-   file and record go in `.planning/agile/tasks/<slug>/`, made for them, and
-   `<slug>` is the `--task` they pass. That gate is `blocking`; RE-READ
+   file and record go in `.planning/agile/tasks/<slug>/`, made for them, and the
+   fire's calls pass `--phase 0` and `--task <slug>`. That gate is `blocking`; RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
    fixing a FAIL, since this workflow does not preload it. On the workflow
    path (`references/review-workflow.md`) the fire is the launch ending the

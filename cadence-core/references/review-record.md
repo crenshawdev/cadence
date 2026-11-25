@@ -119,7 +119,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" adjudication --phase 
 
 `--task <slug>` on a `/cad-task` fire ONLY, and required there: that workflow
 fires with `--phase 0` and keeps its artifacts under `.planning/tasks/<slug>/`
-(`.planning/agile/tasks/<slug>/` on an agile project),
+(`.planning/agile/tasks/<slug>/` on an agile project, where a `/cad-debug` fire
+does the same),
 so the record goes beside the sibling REVIEW file there. Without it `--phase 0`
 is refused. A phase fire passes nothing. `deferred record` does NOT take it:
 the queue enumeration reads the two phase homes only, so a member under a slug
