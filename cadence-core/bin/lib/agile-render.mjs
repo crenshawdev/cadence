@@ -3,6 +3,8 @@
 // pure: values in, text out, no fs and no process
 'use strict';
 
+import { sectionSpan } from './planning-files.mjs';
+
 /** @typedef {import('./seldon-design.mjs').Phase} Epic */
 
 /** @param {string[]} blocks one per paragraph, list or heading @returns {string} */
@@ -89,4 +91,37 @@ export function renderEpicFile(e) {
     '## Decisions',
     'None yet.',
   ]);
+}
+
+/** @typedef {import('./agile-read.mjs').Story} Story */
+
+/** An S is built without a written plan, so it has no section for one. @param {Story} s @returns {string} */
+export function renderStoryFile(s) {
+  return page([
+    ['---', `story: ${s.id}`, `title: ${s.title}`, `size: ${s.size}`, `status: ${s.status}`,
+      `builds_on: ${s.builds_on.join(', ') || 'None'}`, `requirements: ${s.requirements.join(', ')}`, '---'].join('\n'),
+    `# ${s.id}: ${s.title}`,
+    '## Delivers',
+    s.delivers,
+    '## Accepted when',
+    s.accepted_when.map((c) => `- ${c}`).join('\n'),
+    ...(s.size === 'S' ? [] : ['## Plan', 'None yet.']),
+    '## Result',
+    'None yet.',
+  ]);
+}
+
+/**
+ * An epic's file once its stories are approved: in progress, with the decisions under any it already holds.
+ * @param {string} text an epic file `readEpicFile` reads @param {string[]} decisions @returns {string}
+ */
+export function renderRefinedEpic(text, decisions) {
+  const lines = text.split('\n');
+  const status = lines.findIndex((l) => /^status:/.test(l));
+  lines[status] = 'status: in-progress';
+  const { start, end } = sectionSpan(lines, '## Decisions');
+  const held = lines.slice(start + 1, end).join('\n').trim();
+  const all = [...(held === 'None yet.' ? [] : [held]), ...decisions.map((d) => `- ${d}`)].filter(Boolean);
+  return page([lines.slice(0, start).join('\n').trimEnd(), '## Decisions', all.join('\n') || 'None.',
+    ...(end < lines.length ? [lines.slice(end).join('\n').trimEnd()] : [])]);
 }

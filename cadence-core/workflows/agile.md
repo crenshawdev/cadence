@@ -68,8 +68,10 @@ Repository: {created, or "not created - " and why, the line left out unless it w
 Commit: {hash, or "none - " and why}
 On no epic: {the `uncovered` requirement IDs, the line left out when empty}
 
-Next: refine {next.id} {next.name}, with /cad-agile
+Next: {next.step} {next.id} {next.name}, with /cad-agile
 ```
+
+A `build` step names `{next.story.id} {next.story.title}` there instead.
 
 On a release that was already open, the `Release: {release}` and `Next:` lines,
 with `Commit:` between them only when this run made one or tried to. `next`

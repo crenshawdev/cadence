@@ -1,35 +1,39 @@
 #!/usr/bin/env node
 // @ts-check
-// agile.mjs - the agile path's own script: it says what a start still has to ask, starts a release from a Seldon design
-// and says what the open one does next
+// agile.mjs - the agile path's own script: it says what a start still has to ask, starts a release from a Seldon design,
+// writes an epic's approved stories and says what the open release does next
 // not a planning.mjs subcommand: those belong to the old path, and all but a few refuse a project this path owns
 //
 // Usage: agile.mjs next [--dir <.planning>]
 //        agile.mjs check --design <folder> [--dir <.planning>]
 //        agile.mjs start --design <folder> [--dir <.planning>]
+//        agile.mjs refine --payload <file> [--dir <.planning>]
 //
 // one JSON object on stdout; a refusal names the next step
-// no lock: each start builds in its own folder and one rename decides, so a killed start never makes the next one wait
+// no lock: each start builds in its own folder and one rename decides, and a refinement's last write is the one that counts,
+// so a killed run never makes the next one wait
 'use strict';
 
 import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readDesignFolder } from './planning/design-read.mjs';
 import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
-import { OLD_PATH, agileDir, buildDir, buildPid, epicFile, releaseFile } from './lib/agile-paths.mjs';
-import { limits, renderEpicFile, renderProjectFile, renderReleaseFile, renderRequirementsFile } from './lib/agile-render.mjs';
+import { readJsonPayload } from './planning/core.mjs';
+import { OLD_PATH, agileDir, buildDir, buildPid, epicFile, releaseFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
+import { limits, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderRequirementsFile, renderStoryFile } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
-import { STATUSES, readEpicStatus, readReleaseFile } from './lib/agile-read.mjs';
+import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readStoryFile } from './lib/agile-read.mjs';
+import { judgeStories } from './lib/agile-refine.mjs';
 import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { boundedRun } from './lib/bounded-run.mjs';
 import { adviseBranch } from './lib/branch-advice.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { signingProblem } from './lib/git-signing.mjs';
-import { ensureRecordsIgnore, makeDir, movePath, removeTree, writeFileNew } from './lib/planning-store.mjs';
+import { atomicWrite, ensureRecordsIgnore, makeDir, movePath, removeTree, unlinkFile, writeFileNew } from './lib/planning-store.mjs';
 import { REBUILDABLE, emptyState, markAgile, readState, statePath } from './lib/project-state.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { interviewOptions } from './lib/surface-scan.mjs';
@@ -116,19 +120,130 @@ function readBack(file, want, read) {
     hint: 'put that file back from git or your backup, or fix what the detail names, then re-run; nothing was written' } };
 }
 
+/** An epic's stories are the story files in its folder, in number order. @param {string} agile @param {string} epic */
+function storiesOf(agile, epic) {
+  const numbers = readdirSync(dirname(epicFile(agile, epic))).map((name) => storyNumber(name, epic)).filter((n) => n !== null).sort((a, b) => a - b);
+  /** @type {import('./lib/agile-read.mjs').Story[]} */
+  const value = [];
+  for (const n of numbers) {
+    const id = `${epic}-${n}`;
+    const story = readBack(storyFile(agile, id), `the story ${id}`, (text) => {
+      const read = readStoryFile(text);
+      return read?.id === id ? read : null;
+    });
+    if ('refusal' in story) return story;
+    value.push(story.value);
+  }
+  return { value };
+}
+
+/**
+ * What an epic that isn't done does next.
+ * @param {string} agile @param {string} epic @param {string} status
+ * @returns {{value: {step: string, story?: {id: string, title: string, size: string, status: string}}} | {refusal: Refusal}}
+ */
+function stepOf(agile, epic, status) {
+  if (status !== 'in-progress') return { value: { step: status === 'backlog' ? 'refine' : 'accept' } };
+  const stories = storiesOf(agile, epic);
+  if ('refusal' in stories) return stories;
+  if (!stories.value.length) {
+    return { refusal: { reason: 'release-damaged', detail: `${dirname(epicFile(agile, epic))} holds no story, and ${epic} is in progress`,
+      hint: 'put its story files back from git or your backup, or set its status to backlog to refine it again, then re-run; nothing was written' } };
+  }
+  const open = stories.value.find((s) => s.status !== 'done');
+  return { value: open ? { step: 'build', story: { id: open.id, title: open.title, size: open.size, status: open.status } } : { step: 'accept' } };
+}
+
+/**
+ * The open release's next step, or why it can't say. It writes nothing.
+ * @param {string} dir
+ */
+function whatsNext(dir) {
+  const why = refusal(dir);
+  if (why === null) return { release: null, epics: [], next: null };
+  if (why.reason !== 'release-open') return { refusal: why };
+  const agile = agileDir(dir);
+  const release = readBack(releaseFile(agile), 'a "# Release:" title and a "## Epics" list of "- E-01: name" lines', readReleaseFile);
+  if ('refusal' in release) return release;
+  const { title, epics } = release.value;
+  for (const { id, name } of epics) {
+    const status = readBack(epicFile(agile, id), `a status of ${STATUSES.join(', ')}`, readEpicStatus);
+    if ('refusal' in status) return status;
+    if (status.value === 'done') continue;
+    const step = stepOf(agile, id, status.value);
+    if ('refusal' in step) return step;
+    return { release: title, epics, next: { id, name, status: status.value, ...step.value } };
+  }
+  return { release: title, epics, next: null };
+}
+
 /** @param {string} dir */
 function next(dir) {
-  const why = refusal(dir);
-  if (why === null) return emit({ ok: true, release: null, next: null });
-  if (why.reason !== 'release-open') return refuse(why);
-  const release = readBack(releaseFile(agileDir(dir)), 'a "# Release:" title and a "## Epics" list of "- E-01: name" lines', readReleaseFile);
-  if ('refusal' in release) return refuse(release.refusal);
-  for (const { id, name } of release.value.epics) {
-    const status = readBack(epicFile(agileDir(dir), id), `a status of ${STATUSES.join(', ')}`, readEpicStatus);
-    if ('refusal' in status) return refuse(status.refusal);
-    if (status.value !== 'done') return emit({ ok: true, release: release.value.title, next: { id, name, status: status.value } });
+  const at = whatsNext(dir);
+  if ('refusal' in at) return refuse(at.refusal);
+  emit({ ok: true, release: at.release, next: at.next });
+}
+
+/** @param {string} detail @returns {Refusal} */
+function notRefinable(detail) {
+  return { reason: 'not-refinable', detail, hint: 'run /cad-agile, which does the next step; nothing was written' };
+}
+
+/**
+ * Write the next epic's approved stories and decisions, or refuse with nothing written.
+ * @param {string} dir @param {string} payloadFile
+ */
+function refine(dir, payloadFile) {
+  const at = whatsNext(dir);
+  if ('refusal' in at) return refuse(at.refusal);
+  if (at.next?.step !== 'refine') {
+    const now = at.next ? `to ${at.next.step} ${at.next.story?.id ?? at.next.id}` : at.release === null ? 'to start a release' : 'to close the release';
+    return refuse(notRefinable(`no epic is up for refinement - the next step here is ${now}`));
   }
-  emit({ ok: true, release: release.value.title, next: null });
+  const epic = at.next.id;
+  const payload = readJsonPayload(payloadFile);
+  if (!payload.ok) return undefined;
+  // a list drafted for one epic must not land on another
+  if (payload.value?.epic !== epic) return refuse(notRefinable(`the payload's epic is ${JSON.stringify(payload.value?.epic)}, and the one up for refinement is ${epic}`));
+  const agile = agileDir(dir);
+  const file = epicFile(agile, epic);
+  let text = '';
+  const held = readBack(file, 'a requirements line and a "## Decisions" section', (t) => { text = t; return readEpicFile(t); });
+  if ('refusal' in held) return refuse(held.refusal);
+  const mine = storiesOf(agile, epic);
+  if ('refusal' in mine) return refuse(mine.refusal);
+  const begun = mine.value.find((s) => s.status !== 'backlog');
+  if (begun) {
+    return refuse({ reason: 'stories-begun', detail: `${epic} is marked backlog and its story ${begun.id} is ${begun.status}`,
+      hint: `set the status in ${file} back to in-progress, then re-run; nothing was written` });
+  }
+  /** @type {string[]} */
+  const earlier = [];
+  for (const { id } of at.epics.slice(0, at.epics.findIndex((e) => e.id === epic))) {
+    const stories = storiesOf(agile, id);
+    if ('refusal' in stories) return refuse(stories.refusal);
+    earlier.push(id, ...stories.value.map((s) => s.id));
+  }
+  const { issues, decisions, stories } = judgeStories(payload.value, { id: epic, requirements: held.value.requirements, earlier });
+  if (issues.length) {
+    return refuse({ reason: 'stories-refused', issues,
+      detail: `the stories for ${epic} have ${issues.length} problem${issues.length === 1 ? '' : 's'} - the issues list names each`,
+      hint: 'fix each issue in the payload, then re-run; nothing was written' });
+  }
+  const written = stories.map((s) => storyFile(agile, s.id));
+  stories.forEach((s, i) => atomicWrite(written[i], renderStoryFile(s)));
+  // a refinement killed before its epic turned leaves stories behind, and a longer list's would read as this one's
+  for (const name of readdirSync(dirname(file))) {
+    const path = join(dirname(file), name);
+    const whole = name.replace(/\.\d+\.\d+\.tmp$/, '');
+    const left = whole === basename(file) ? name !== whole : storyNumber(whole, epic) !== null && !written.includes(path);
+    if (left) unlinkFile(path);
+  }
+  // last, because this is what makes the stories count
+  atomicWrite(file, renderRefinedEpic(text, decisions));
+  const [first] = stories;
+  emit({ ok: true, release: at.release, epic, stories: stories.map((s) => ({ id: s.id, title: s.title, size: s.size })),
+    next: { ...at.next, status: 'in-progress', step: 'build', story: { id: first.id, title: first.title, size: first.size, status: first.status } } });
 }
 
 /**
@@ -253,7 +368,7 @@ function start(dir, design) {
     return refuse(releaseOpen(dir));
   }
   emit({ ok: true, release: title, folder: agileDir(dir), epics: epics.map((e) => ({ id: e.epic, name: e.name })), uncovered,
-    next: { id: epics[0].epic, name: epics[0].name, status: 'backlog' } });
+    next: { id: epics[0].epic, name: epics[0].name, status: 'backlog', step: 'refine' } });
 }
 
 /** A trailing slash makes lstat follow a link, so it comes off before anything is judged. @param {string | undefined} given */
@@ -273,7 +388,8 @@ try {
   if (argv[0] === 'next') next(planningDir(arg('next', '--dir')));
   else if (argv[0] === 'check') check(planningDir(arg('check', '--dir')), arg('check', '--design'));
   else if (argv[0] === 'start') start(planningDir(arg('start', '--dir')), arg('start', '--design'));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--dir <.planning>]' });
+  else if (argv[0] === 'refine') refine(planningDir(arg('refine', '--dir')), arg('refine', '--payload'));
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--dir <.planning>] | refine --payload <file> [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }

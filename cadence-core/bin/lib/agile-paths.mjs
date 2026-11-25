@@ -55,3 +55,14 @@ export function releaseFile(agile) {
 export function epicFile(agile, epic) {
   return join(agile, 'epics', epic, 'epic.md');
 }
+
+/** A story's file, beside its epic's. @param {string} agile @param {string} story */
+export function storyFile(agile, story) {
+  return join(agile, 'epics', story.replace(/-\d+$/, ''), `${story}.md`);
+}
+
+/** The number a story file's name carries in that epic, or null when the name isn't one. @param {string} name @param {string} epic */
+export function storyNumber(name, epic) {
+  const m = /^(E-\d{2,})-([1-9]\d*)\.md$/.exec(name);
+  return m && m[1] === epic ? Number(m[2]) : null;
+}

@@ -909,6 +909,9 @@ export const CONTRACTS = {
     start: {
       '--design': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    refine: {
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
   },
   // why.mjs takes a query (<path>[:<line>]) as its positional argument, never a subcommand, so the bare row carries
   // the whole flag set, as skim.mjs does. --dir is the repository root and sits on '*' like every seam's
