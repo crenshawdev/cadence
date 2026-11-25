@@ -7,10 +7,15 @@ and write the same `.planning/` shape /cad-new-project writes.
 <process>
 
 <step name="setup">
-Two stops first, before anything is written.
+These stops come first, before anything is written.
 
 1. If `.planning/PROJECT.md` exists, stop: "Project already initialized.
-   /cad-progress shows where you are."
+   /cad-progress shows where you are." Then one check that writes nothing, and
+   on `ok:false` with reason `agile-path`, print its `hint` and stop:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --check --root .
+   ```
 2. Run `git rev-parse --show-toplevel`. Adopt needs BOTH that it SUCCEEDS and
    that its output IS the current working directory:
    - It fails - no repo here at all -> stop. There is no history to adopt;

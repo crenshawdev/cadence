@@ -10,8 +10,7 @@ or moved.
 
 Before anything is written, in this order:
 
-1. If `.planning/PROJECT.md` exists, stop as `new-project.md`'s `setup` item 1
-   does.
+1. Run `new-project.md`'s `setup` item 1 and stop where it stops.
 2. One call checks the design and writes nothing, and one read-back prints
    every path and text the later steps use. The path goes in quoted, exactly as
    typed:
