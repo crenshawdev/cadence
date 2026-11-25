@@ -127,9 +127,8 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    or an `inconclusive: true` fires the `risk_surface` review trigger
    (references/review-triggers.md) before the fix is trusted, and the artifact
    is the staged-diff scope - shape (b): the reviewer runs `git diff --cached`
-   in the cwd it inherits, never the diff text. On an agile project its review
-   file and record go in `.planning/agile/tasks/<slug>/`, made for them, and the
-   fire's calls pass `--phase 0` and `--task <slug>`. That gate is `blocking`; RE-READ
+   in the cwd it inherits, never the diff text. On an agile project this session's
+   slug is the fire's `<slug>`. That gate is `blocking`; RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
    fixing a FAIL, since this workflow does not preload it. On the workflow
    path (`references/review-workflow.md`) the fire is the launch ending the

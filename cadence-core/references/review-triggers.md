@@ -15,6 +15,13 @@ Every reviewer returns the same shape:
 
 ## fire(trigger)
 
+**On an agile project** (`.planning/agile/` exists and `.planning/PROJECT.md`
+doesn't) there are no phases. `<N>` is 0, under the phase-0 `phase_start` the
+command that fired appended. The fire's files go in
+`.planning/agile/tasks/<slug>/`, made for them, wherever a step says
+`.planning/phases/<N>/records/`; `review-file` and `adjudication` pass
+`--task <slug>`, and `records-dir` isn't run.
+
 ### 1. Gate
 Resolve the bundle ONCE through the routing seam:
 

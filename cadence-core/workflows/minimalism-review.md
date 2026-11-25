@@ -50,7 +50,16 @@ Assemble `{ instruction, artifact }`:
 Bracket the worker in the joined run record first. `<N>` is the target phase
 when the target IS a phase, and the STATE cursor's phase
 (`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor get`)
-for a path or directory target. The read-set is the target the USER named,
+for a path or directory target. On an agile project (`.planning/agile/` exists
+and `.planning/PROJECT.md` doesn't) it is 0, with no cursor read, under a run this
+command opens first, and a phase number is a target that does not resolve:
+
+```
+A="$(git rev-parse --short HEAD)-$$-$(date +%s)"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event phase_start --sha "$A"
+```
+
+The read-set is the target the USER named,
 resolved, so write that reference to a scratch file and pass the path
 (caller-derived text - references/conventions.md):
 

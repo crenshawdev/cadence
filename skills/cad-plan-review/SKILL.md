@@ -29,13 +29,26 @@ There is no separate reviewer here and no convergence loop: this delegates to
    - a path -> that file.
    - empty -> the current phase from the STATE.md cursor; if that is ambiguous,
      ask (ask-user seam) which phase.
+   On an agile project (`.planning/agile/` exists and `.planning/PROJECT.md`
+   doesn't) only a path resolves. A number or nothing -> stop: "This project is
+   on the agile path and has no phases. Give /cad-plan-review a plan's path, or
+   run /cad-agile for what comes next."
    If no plan file is found, report it and stop - there is nothing to review.
    (Resolve the plan path and, for the empty-args case, the cursor read as one
    batched step - independent; conventions.md Parallel work.)
 
 2. **Fire the `plan` trigger** with the resolved PLAN file(s) as the artifact -
    Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` here,
-   not preloaded (one site), and run the fire as it says.
+   not preloaded (one site), and run the fire as it says. On an agile project the
+   `<slug>` is the plan's folder under `.planning/agile/tasks/`, or a short kebab
+   of its file name; the plan is checked against `.planning/agile/release.md` and
+   `.planning/agile/REQUIREMENTS.md`, with no `brief` call; and the run is opened
+   first:
+
+   ```
+   A="$(git rev-parse --short HEAD)-$$-$(date +%s)"
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event phase_start --sha "$A"
+   ```
 
 3. **Report** the outcome: for advisory, the findings; for blocking, the
    PASS/FAIL and surviving blocker/high findings; for adjudicated, the grounded

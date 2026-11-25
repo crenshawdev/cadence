@@ -19,6 +19,9 @@ file and isolate:
   under `## Durable decisions` or `## Decisions`.
 - a PROJECT.md: the named row of the `## Key Decisions` table.
 
+- an agile project's `project.md` or `epic.md`, under `.planning/agile/`: the
+  named `S-NN` line, or the named line under Key decisions or Decisions.
+
 If the file exists but the named decision cannot be found in it, say so and
 stop - do not guess which line the user meant.
 </step>
@@ -38,6 +41,14 @@ The reviewer set is `review.reviewers[]`, filtered as the two arms below state:
 - **claude-subagent** (always available): bracket this worker in the joined
   run record first. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
   a PROJECT.md row it is the STATE cursor's phase (references/review-inline.md).
+  On an agile project (`.planning/agile/` exists and `.planning/PROJECT.md`
+  doesn't) it is 0, under a run this command opens first:
+
+  ```
+  A="$(git rev-parse --short HEAD)-$$-$(date +%s)"
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event phase_start --sha "$A"
+  ```
+
   The read-set is the decision doc the USER named, so write that reference to
   a scratch file and pass the path (caller-derived text - references/conventions.md):
 
