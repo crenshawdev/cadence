@@ -43,22 +43,47 @@ export function renderProjectFile(title, brief, epics, decisions) {
   ]);
 }
 
+/** @param {{id: string, text: string}} q */
+const requirementLine = (q) => `- **${q.id}**: ${q.text}`;
+
 /**
- * The release's requirements in Seldon's own bullet, under their PRD categories, with nothing deferred yet.
- * @param {string} title @param {import('./seldon-design.mjs').Requirement[]} requirements @returns {string}
+ * The release's requirements in Seldon's own bullet, under their PRD categories, then the deferred ones.
+ * @param {string} title @param {import('./seldon-design.mjs').Requirement[]} requirements
+ * @param {{id: string, text: string}[]} [deferred] @returns {string}
  */
-export function renderRequirementsFile(title, requirements) {
+export function renderRequirementsFile(title, requirements, deferred = []) {
   /** @type {string[]} */
   const blocks = [];
   /** @type {string | null} */
   let category = null;
   for (const q of requirements) {
-    const bullet = `- **${q.id}**: ${q.text}`;
+    const bullet = requirementLine(q);
     if (q.category !== category) blocks.push(`### ${q.category}`, bullet);
     else blocks[blocks.length - 1] += `\n${bullet}`;
     category = q.category;
   }
-  return page([`# Requirements: ${title}`, '## Requirements', ...blocks, '## Deferred', 'None.']);
+  return page([`# Requirements: ${title}`, '## Requirements', ...blocks, '## Deferred', deferred.map(requirementLine).join('\n') || 'None.']);
+}
+
+/**
+ * REQUIREMENTS.md once a refinement changed the ask: each added one after the last of its prefix, then each deferred
+ * one moved under Deferred. One a run cut short already moved or added is left where it is.
+ * @param {string} text the file `read` came from @param {NonNullable<ReturnType<typeof import('./agile-read.mjs').readRequirementsFile>>} read
+ * @param {string[]} defer @param {{id: string, text: string}[]} add @returns {string}
+ */
+export function renderAskChanged(text, read, defer, add) {
+  const held = [...read.requirements];
+  for (const q of add) {
+    if (held.some((h) => h.id === q.id)) continue;
+    const prefix = q.id.replace(/-\d+$/, '');
+    const last = held.map((h) => h.id.replace(/-\d+$/, '')).lastIndexOf(prefix);
+    // every one of its prefix deferred leaves no category to sit in, so the prefix names its own
+    held.splice(last < 0 ? held.length : last + 1, 0, { ...q, category: last < 0 ? prefix : held[last].category });
+  }
+  const moving = held.filter((h) => defer.includes(h.id));
+  const out = renderRequirementsFile(read.title, held.filter((h) => !moving.includes(h)),
+    [...read.deferred, ...moving.map(({ id, text: said }) => ({ id, text: said }))]);
+  return text.includes('\r\n') ? out.replaceAll('\n', '\r\n') : out;
 }
 
 /**
@@ -139,9 +164,12 @@ export function renderAnswers(text, answers) {
 }
 
 /**
- * An epic's file once its stories are approved: in progress, with the decisions under any it already holds.
- * @param {string} text @param {string[]} decisions @returns {string}
+ * An epic's file once its stories are approved: in progress, with the decisions under any it already holds, and its
+ * requirements line rewritten only when the ask changed.
+ * @param {string} text @param {string[]} decisions @param {string[] | null} requirements @returns {string}
  */
-export function renderRefinedEpic(text, decisions) {
-  return withDecisions(text.replace(/^status:.*/m, 'status: in-progress'), (held) => [...held, ...decisions.map((d) => `- ${d}`)]);
+export function renderRefinedEpic(text, decisions, requirements) {
+  const status = text.replace(/^status:.*/m, 'status: in-progress');
+  const turned = requirements ? status.replace(/^requirements:.*/m, `requirements: ${requirements.join(', ')}`) : status;
+  return withDecisions(turned, (held) => [...held, ...decisions.map((d) => `- ${d}`)]);
 }

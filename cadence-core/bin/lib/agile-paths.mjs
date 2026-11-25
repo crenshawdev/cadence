@@ -46,6 +46,11 @@ export function agileDeclinedFile(agile) {
   return join(agile, 'declined.md');
 }
 
+/** The release's requirements and the deferred ones, inside whichever agile folder is being read or built. @param {string} agile */
+export function requirementsFile(agile) {
+  return join(agile, 'REQUIREMENTS.md');
+}
+
 /** The release's own file, inside whichever agile folder is being read or built. @param {string} agile */
 export function releaseFile(agile) {
   return join(agile, 'release.md');

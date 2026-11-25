@@ -83,7 +83,8 @@ answered again replaces the answer before it.
 - Each check is one line Cadence can run or see fail: "running X shows Y". None
   is the user's to do.
 - Together the stories deliver every Done when line and carry every requirement
-  the epic names, and each carries at least one.
+  the epic names that isn't under Deferred in REQUIREMENTS.md, and each carries
+  at least one.
 - What no Done when line and no requirement needs is on no story. It goes under
   "You didn't ask for this".
 - A backlog item this epic delivers goes into the story that does, and its line
@@ -92,10 +93,14 @@ answered again replaces the answer before it.
 
 Write `stories.json` in that folder. A story's ID is `{id}-` and its place in
 the list, so the second is `{id}-2`. `builds_on` takes those, an earlier epic or
-one of its stories, or nothing. `decisions` holds your picks:
+one of its stories, or nothing. `decisions` holds your picks. `defer` holds the
+IDs of the epic's requirements the user said to leave for later, and `add` each
+requirement they asked for that none covers, as `{"id": "...", "text": "..."}`,
+its ID the next number of the prefix it belongs with in REQUIREMENTS.md,
+deferred ones counted. Both stay empty unless the user said so:
 
 ```
-{"epic": "{id}", "decisions": ["..."], "backlog": [], "stories": [
+{"epic": "{id}", "decisions": ["..."], "backlog": [], "defer": [], "add": [], "stories": [
   {"title": "...", "size": "S", "builds_on": [], "requirements": ["..."],
    "delivers": "...", "accepted_when": ["..."]}]}
 ```
@@ -128,6 +133,12 @@ Resting on a guess
 From the backlog
 - {each item taken}, in {story}
 
+Deferred
+- {each ID deferred}: {its text}
+
+Added
+- {each ID added}: {its text}
+
 You didn't ask for this
 - {each thing left off, and why it came up}
 ```
@@ -144,8 +155,9 @@ Then ask, through the ask-user seam and with nothing recommended:
 On "Change them", take the change in the user's words. One that changes an
 answer is saved first, with `answer` and the question as it stands under
 Decisions. Then cut again and come back through `propose`. Something they want from "You didn't ask for this" goes on a
-story when one of the epic's requirements covers it. Otherwise say that
-`/cad-capture` keeps it for a later epic. On "Not now", stop there: nothing else
+story when one of the epic's requirements covers it. Otherwise it's added as a
+requirement if they say so, or `/cad-capture` keeps it for a later epic. A
+requirement they say to leave for later goes in `defer`. On "Not now", stop there: nothing else
 is written and nothing is committed.
 
 ## 5. Write
@@ -160,11 +172,13 @@ are any.
 Then one commit of the refinement and nothing else the user has staged, unless
 the branch step above was skipped for `IGNORED` or `planning.commit_docs`. Push
 nothing. `backlog.md` goes in only when lines taken out of it are all that
-changed there:
+changed there, and `REQUIREMENTS.md` only when the epic's requirements line
+changed:
 
 ```
 set -- '.planning/agile/epics/{id}/epic.md' ':(glob).planning/agile/epics/{id}/{id}-*.md'
 git diff --numstat HEAD -- .planning/agile/backlog.md 2>/dev/null | grep -qE '^0[[:space:]]' && set -- "$@" .planning/agile/backlog.md
+git diff HEAD -- '.planning/agile/epics/{id}/epic.md' | grep -q '^+requirements:' && set -- "$@" .planning/agile/REQUIREMENTS.md
 git add -A -- "$@"
 git commit -m "docs: refine {id}" -- "$@"
 ```

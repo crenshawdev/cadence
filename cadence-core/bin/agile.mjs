@@ -22,11 +22,11 @@ import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
-import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, releaseFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
-import { limits, renderAnswers, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderRequirementsFile, renderStoryFile } from './lib/agile-render.mjs';
+import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, releaseFile, requirementsFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
+import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderRequirementsFile, renderStoryFile } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
-import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readStoryFile } from './lib/agile-read.mjs';
-import { judgeAnswers, judgeStories } from './lib/agile-refine.mjs';
+import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readRequirementsFile, readStoryFile } from './lib/agile-read.mjs';
+import { judgeAnswers, judgeAsk, judgeStories } from './lib/agile-refine.mjs';
 import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { boundedRun } from './lib/bounded-run.mjs';
@@ -251,16 +251,30 @@ function answer(dir, payloadFile) {
 function judged(dir, payloadFile) {
   const up = refinement(dir, payloadFile);
   if (up === null) return null;
+  const no = (/** @type {Refusal} */ r) => { refuse(r); return null; };
   /** @type {string[]} */
   const earlier = [];
   for (const { id } of up.epics.slice(0, up.epics.findIndex((e) => e.id === up.epic))) {
     const stories = storiesOf(up.agile, id);
-    if ('refusal' in stories) { refuse(stories.refusal); return null; }
+    if ('refusal' in stories) return no(stories.refusal);
     earlier.push(id, ...stories.value.map((s) => s.id));
   }
-  const list = judgeStories(up.payload, { id: up.epic, requirements: up.requirements, earlier, backlog: captureLines(agileBacklogFile(up.agile)) });
-  if (list.issues.length) { refuse(payloadRefused('stories-refused', `the stories for ${up.epic} have`, list.issues)); return null; }
-  return { up, ...list, named: list.stories.map((s) => ({ id: s.id, title: s.title, size: s.size })) };
+  /** @type {Set<string>} */
+  const onEpics = new Set();
+  for (const { id } of up.epics) {
+    const line = readBack(epicFile(up.agile, id), 'a requirements line and a "## Decisions" section', readEpicFile);
+    if ('refusal' in line) return no(line.refusal);
+    for (const q of line.value.requirements) onEpics.add(q);
+  }
+  let text = '';
+  const file = readBack(requirementsFile(up.agile), 'a "# Requirements:" title, then "## Requirements" with "- **ID**: text" lines under "### " categories, then "## Deferred"',
+    (t) => { text = t; return readRequirementsFile(t); });
+  if ('refusal' in file) return no(file.refusal);
+  const ask = judgeAsk(up.payload, { own: up.requirements, file: file.value, named: onEpics });
+  const list = judgeStories(up.payload, { id: up.epic, requirements: ask.requirements, earlier, backlog: captureLines(agileBacklogFile(up.agile)) });
+  const issues = [...ask.issues, ...list.issues];
+  if (issues.length) return no(payloadRefused('stories-refused', `the stories for ${up.epic} have`, issues));
+  return { up, ...list, ask, asked: { text, read: file.value }, named: list.stories.map((s) => ({ id: s.id, title: s.title, size: s.size })) };
 }
 
 /** Would that list be written? @param {string} dir @param {string} payloadFile */
@@ -276,7 +290,7 @@ function propose(dir, payloadFile) {
 function refine(dir, payloadFile) {
   const got = judged(dir, payloadFile);
   if (got === null) return;
-  const { up: { agile, file, text, epic, next, release }, stories, decisions, backlog, named } = got;
+  const { up: { agile, file, text, epic, next, release, requirements }, stories, decisions, backlog, named, ask, asked } = got;
   const written = stories.map((s) => storyFile(agile, s.id));
   stories.forEach((s, i) => atomicWrite(written[i], renderStoryFile(s)));
   // a refinement killed before its epic turned leaves stories behind, and a longer list's would read as this one's
@@ -286,8 +300,15 @@ function refine(dir, payloadFile) {
     const left = whole === basename(file) ? name !== whole : storyNumber(whole, epic) !== null && !written.includes(path);
     if (left) unlinkFile(path);
   }
+  for (const name of readdirSync(agile)) if (/^REQUIREMENTS\.md\.\d+\.\d+\.tmp$/.test(name)) unlinkFile(join(agile, name));
+  // before the epic, so a stop between them leaves a deferred one off every epic and an added one on none
+  if (ask.defer.length || ask.add.length) {
+    const changed = renderAskChanged(asked.text, asked.read, ask.defer, ask.add);
+    if (changed !== asked.text) atomicWrite(requirementsFile(agile), changed);
+  }
+  const same = ask.requirements.join() === requirements.join();
   // last, because this is what makes the stories count
-  atomicWrite(file, renderRefinedEpic(text, decisions));
+  atomicWrite(file, renderRefinedEpic(text, decisions, same ? null : ask.requirements));
   // after it, so a stop here leaves an item in two places and never in none
   const taken = backlog.length ? removeCaptures(agileBacklogFile(agile), backlog) : { ok: true };
   emit({ ok: true, release, epic, stories: named, next: { ...next, status: 'in-progress', step: 'build', story: { ...named[0], status: stories[0].status } },
@@ -405,7 +426,7 @@ function start(dir, design) {
     writeFileNew(epicFile(building, e.epic), renderEpicFile(e));
   }
   writeFileNew(join(building, 'project.md'), renderProjectFile(title, brief, epics, decisions));
-  writeFileNew(join(building, 'REQUIREMENTS.md'), renderRequirementsFile(title, requirements));
+  writeFileNew(requirementsFile(building), renderRequirementsFile(title, requirements));
   writeFileNew(releaseFile(building), renderReleaseFile(title, brief, epics));
   try {
     movePath(building, agileDir(dir));

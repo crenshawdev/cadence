@@ -10,10 +10,11 @@ import { renderStoryFile } from './agile-render.mjs';
 /** @typedef {import('./agile-read.mjs').Story} Story */
 /** @typedef {{story?: string, field: string, problem: string}} Issue */
 
-const PAYLOAD = Object.freeze(['epic', 'decisions', 'stories', 'backlog']);
+const PAYLOAD = Object.freeze(['epic', 'decisions', 'stories', 'backlog', 'defer', 'add']);
 const ANSWERS = Object.freeze(['epic', 'answers']);
 const ANSWER = Object.freeze(['question', 'answer']);
 const STORY = Object.freeze(['title', 'size', 'builds_on', 'requirements', 'delivers', 'accepted_when']);
+const ADDED = Object.freeze(['id', 'text']);
 
 /** Is it text that fits on one line of a file as it stands? Half an emoji doesn't survive the write. @param {unknown} v @returns {v is string} */
 const oneLine = (v) => typeof v === 'string' && v !== '' && v === v.trim() && !/[\p{Cc}\p{Cs}\u2028\u2029]/u.test(v);
@@ -69,6 +70,61 @@ export function judgeAnswers(payload, epic) {
     } else asked.add(a.question);
   }
   return { issues, answers: issues.length ? [] : payload.answers };
+}
+
+/** Each prefix's highest number in the file, deferred ones counted, and how many digits it's written with. @param {{id: string}[]} all */
+function highest(all) {
+  /** @type {Map<string, {n: number, width: number}>} */
+  const top = new Map();
+  for (const { id } of all) {
+    const m = /^(.+)-(\d+)$/.exec(id);
+    if (m && Number(m[2]) >= (top.get(m[1])?.n ?? -1)) top.set(m[1], { n: Number(m[2]), width: m[2].length });
+  }
+  return top;
+}
+
+/**
+ * The requirements the epic's stories must carry once the payload's `defer` and `add` are applied, or every reason
+ * they can't be. What's under Deferred is off every epic, whatever an epic's line still says.
+ * @param {unknown} payload
+ * @param {{own: string[], file: {requirements: {id: string, text: string}[], deferred: {id: string, text: string}[]}, named: Set<string>}} ask
+ *   `own` is the epic's requirements line, `named` every ID on any epic's line
+ * @returns {{issues: Issue[], defer: string[], add: {id: string, text: string}[], requirements: string[]}}
+ */
+export function judgeAsk(payload, { own, file, named }) {
+  /** @type {Issue[]} */
+  const issues = [];
+  const off = new Set(file.deferred.map((d) => d.id));
+  const p = isObject(payload) ? payload : {};
+  const defer = p.defer ?? [];
+  if (!lines(defer)) issues.push({ field: 'defer', problem: 'is a list of the epic\'s requirement IDs, empty when none is deferred' });
+  else for (const id of /** @type {string[]} */ (defer)) if (!own.includes(id)) issues.push({ field: 'defer', problem: `names ${id}, which isn't one of the epic's - those are ${own.join(', ')}` });
+  const held = new Map(file.requirements.map((q) => [q.id, q.text]));
+  const top = highest([...file.requirements, ...file.deferred]);
+  /** @type {{id: string, text: string}[]} */
+  const add = [];
+  const given = Array.isArray(p.add) ? p.add : null;
+  if (given === null && p.add !== undefined) issues.push({ field: 'add', problem: 'is a list of {"id", "text"} requirements, empty when none is added' });
+  for (const a of given ?? []) {
+    if (!isObject(a) || !ADDED.every((key) => oneLine(a[key])) || Object.keys(a).length !== ADDED.length || add.some((q) => q.id === a.id)) {
+      issues.push({ field: 'add', problem: `${JSON.stringify(a)} is not an "id" and a "text", each on one line, with an ID given once` });
+      continue;
+    }
+    const q = { id: String(a.id), text: String(a.text) };
+    // a refinement cut short after REQUIREMENTS.md wrote it there, and no epic has it yet
+    if (held.get(q.id) === q.text && !named.has(q.id)) { add.push(q); continue; }
+    const m = /^(.+)-\d+$/.exec(q.id);
+    const at = m ? top.get(m[1]) : undefined;
+    const want = m && at ? `${m[1]}-${String(at.n + 1).padStart(at.width, '0')}` : null;
+    if (want === null) issues.push({ field: 'add', problem: `${q.id} has no prefix REQUIREMENTS.md uses - those are ${[...top.keys()].join(', ')}` });
+    else if (q.id !== want) issues.push({ field: 'add', problem: `is ${q.id}, and the next ${m?.[1]} is ${want}` });
+    else { /** @type {{n: number}} */ (at).n += 1; add.push(q); }
+  }
+  // judged from the entries that hold, so a bad one isn't reported again by every story carrying a good one
+  const out = lines(defer) ? /** @type {string[]} */ (defer).filter((id) => own.includes(id)) : [];
+  const requirements = [...own.filter((id) => !off.has(id) && !out.includes(id)), ...add.map((q) => q.id)];
+  if (!requirements.length) issues.push({ field: 'defer', problem: 'leaves the epic no requirement, so no story could carry one' });
+  return { issues, defer: out, add, requirements };
 }
 
 /**

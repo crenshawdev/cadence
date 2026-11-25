@@ -4,7 +4,7 @@
 'use strict';
 
 import { FRONTMATTER_RE } from './frontmatter.mjs';
-import { sectionSpan } from './planning-files.mjs';
+import { isRequirementId, sectionSpan } from './planning-files.mjs';
 
 /** The words a story's or an epic's status can be, in the order they happen. */
 export const STATUSES = Object.freeze(['backlog', 'in-progress', 'review', 'done']);
@@ -27,6 +27,44 @@ export function readReleaseFile(text) {
     epics.push({ id: m[1], name: m[2] });
   }
   return epics.length ? { title, epics } : null;
+}
+
+/** @typedef {{id: string, category: string, text: string}} Requirement */
+
+/**
+ * REQUIREMENTS.md as agile-render.mjs writes it: the release's requirements under their categories, then the deferred.
+ * Deferred ones stay in the file, since the next ID of a prefix counts them.
+ * @param {string} text @returns {{title: string, requirements: Requirement[], deferred: {id: string, text: string}[]} | null}
+ */
+export function readRequirementsFile(text) {
+  const lines = text.split(/\r?\n/);
+  const title = /^# Requirements: (.+)$/.exec(lines[0])?.[1];
+  if (!title) return null;
+  /** @type {Requirement[]} */
+  const requirements = [];
+  /** @type {{id: string, text: string}[]} */
+  const deferred = [];
+  const seen = new Set();
+  /** @type {string | null} */
+  let part = null;
+  /** @type {string | null} */
+  let category = null;
+  let none = false;
+  for (const line of lines.slice(1)) {
+    if (line.trim() === '') continue;
+    if (line === '## Requirements' && part === null) part = 'held';
+    else if (line === '## Deferred' && part === 'held') part = 'deferred';
+    else if (part === 'held' && line.startsWith('### ') && line.length > 4) category = line.slice(4);
+    else if (part === 'deferred' && line === 'None.' && !none) none = true;
+    else {
+      const m = /^- \*\*([^*]+)\*\*: (.+)$/.exec(line);
+      if (!m || !isRequirementId(m[1]) || seen.has(m[1]) || part === null || (part === 'held' && category === null)) return null;
+      seen.add(m[1]);
+      if (part === 'held') requirements.push({ id: m[1], category: /** @type {string} */ (category), text: m[2] });
+      else deferred.push({ id: m[1], text: m[2] });
+    }
+  }
+  return part === 'deferred' && none !== deferred.length > 0 ? { title, requirements, deferred } : null;
 }
 
 /** An epic's status, or a story's from a file too broken to read whole. @param {string} text @returns {string | null} */
