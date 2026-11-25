@@ -121,12 +121,16 @@ function readBack(file, want, read) {
 }
 
 /** An epic's stories are the story files in its folder, in number order. @param {string} agile @param {string} epic */
+function storyIds(agile, epic) {
+  return readdirSync(dirname(epicFile(agile, epic))).map((name) => storyNumber(name, epic)).filter((n) => n !== null)
+    .sort((a, b) => a - b).map((n) => `${epic}-${n}`);
+}
+
+/** @param {string} agile @param {string} epic */
 function storiesOf(agile, epic) {
-  const numbers = readdirSync(dirname(epicFile(agile, epic))).map((name) => storyNumber(name, epic)).filter((n) => n !== null).sort((a, b) => a - b);
   /** @type {import('./lib/agile-read.mjs').Story[]} */
   const value = [];
-  for (const n of numbers) {
-    const id = `${epic}-${n}`;
+  for (const id of storyIds(agile, epic)) {
     const story = readBack(storyFile(agile, id), `the story ${id}`, (text) => {
       const read = readStoryFile(text);
       return read?.id === id ? read : null;
@@ -203,19 +207,21 @@ function refine(dir, payloadFile) {
   const epic = at.next.id;
   const payload = readJsonPayload(payloadFile);
   if (!payload.ok) return undefined;
-  // a list drafted for one epic must not land on another
-  if (payload.value?.epic !== epic) return refuse(notRefinable(`the payload's epic is ${JSON.stringify(payload.value?.epic)}, and the one up for refinement is ${epic}`));
+  // a list drafted for one epic must not land on another; one that names none is the payload's own problem
+  const named = payload.value?.epic;
+  if (typeof named === 'string' && named !== epic) return refuse(notRefinable(`the payload's epic is ${named}, and the one up for refinement is ${epic}`));
   const agile = agileDir(dir);
   const file = epicFile(agile, epic);
   let text = '';
   const held = readBack(file, 'a requirements line and a "## Decisions" section', (t) => { text = t; return readEpicFile(t); });
   if ('refusal' in held) return refuse(held.refusal);
-  const mine = storiesOf(agile, epic);
-  if ('refusal' in mine) return refuse(mine.refusal);
-  const begun = mine.value.find((s) => s.status !== 'backlog');
-  if (begun) {
-    return refuse({ reason: 'stories-begun', detail: `${epic} is marked backlog and its story ${begun.id} is ${begun.status}`,
-      hint: `set the status in ${file} back to in-progress, then re-run; nothing was written` });
+  // a dead run's leftovers are all backlog, or too broken to say, and neither counts
+  for (const id of storyIds(agile, epic)) {
+    const status = readEpicStatus(readFileSync(storyFile(agile, id), 'utf8'));
+    if (status !== null && status !== 'backlog') {
+      return refuse({ reason: 'stories-begun', detail: `${epic} is marked backlog and its story ${id} is ${status}`,
+        hint: `set the status in ${file} back to in-progress, then re-run; nothing was written` });
+    }
   }
   /** @type {string[]} */
   const earlier = [];

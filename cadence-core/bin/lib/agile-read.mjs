@@ -29,7 +29,7 @@ export function readReleaseFile(text) {
   return epics.length ? { title, epics } : null;
 }
 
-/** @param {string} text @returns {string | null} */
+/** An epic's status, or a story's from a file too broken to read whole. @param {string} text @returns {string | null} */
 export function readEpicStatus(text) {
   const status = /^status:[ \t]*(\S+)[ \t]*$/m.exec(FRONTMATTER_RE.exec(text)?.[1] ?? '')?.[1] ?? '';
   return STATUSES.includes(status) ? status : null;

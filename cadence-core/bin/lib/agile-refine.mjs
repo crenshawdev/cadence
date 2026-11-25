@@ -12,8 +12,8 @@ import { renderStoryFile } from './agile-render.mjs';
 const PAYLOAD = Object.freeze(['epic', 'decisions', 'stories']);
 const STORY = Object.freeze(['title', 'size', 'builds_on', 'requirements', 'delivers', 'accepted_when']);
 
-/** Is it text that fits on one line of a file as it stands? @param {unknown} v @returns {v is string} */
-const oneLine = (v) => typeof v === 'string' && v !== '' && v === v.trim() && !/[\r\n\u2028\u2029]/.test(v);
+/** Is it text that fits on one line of a file as it stands? Half an emoji doesn't survive the write. @param {unknown} v @returns {v is string} */
+const oneLine = (v) => typeof v === 'string' && v !== '' && v === v.trim() && !/[\p{Cc}\p{Cs}\u2028\u2029]/u.test(v);
 
 /** @param {unknown} v @returns {v is Record<string, unknown>} */
 const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -55,6 +55,7 @@ export function judgeStories(payload, epic) {
     return { issues: [{ field: 'stories', problem: 'is a list of at least one story' }], decisions: [], stories };
   }
   for (const key of Object.keys(payload)) if (!PAYLOAD.includes(key)) issues.push({ field: key, problem: `is not a field here - those are ${PAYLOAD.join(', ')}` });
+  if (payload.epic !== epic.id) issues.push({ field: 'epic', problem: `is ${epic.id}, the epic up for refinement` });
   if (!lines(payload.decisions)) issues.push({ field: 'decisions', problem: 'is a list of decisions, each on one line, empty when there are none' });
   const earlier = new Set(epic.earlier);
   const covered = new Set();

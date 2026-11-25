@@ -116,12 +116,14 @@ export function renderStoryFile(s) {
  * @param {string} text an epic file `readEpicFile` reads @param {string[]} decisions @returns {string}
  */
 export function renderRefinedEpic(text, decisions) {
-  const lines = text.split('\n');
+  // split as the readers do, or a Windows line ending hides the section from this one alone
+  const lines = text.split(/\r?\n/);
   const status = lines.findIndex((l) => /^status:/.test(l));
   lines[status] = 'status: in-progress';
   const { start, end } = sectionSpan(lines, '## Decisions');
   const held = lines.slice(start + 1, end).join('\n').trim();
   const all = [...(held === 'None yet.' ? [] : [held]), ...decisions.map((d) => `- ${d}`)].filter(Boolean);
-  return page([lines.slice(0, start).join('\n').trimEnd(), '## Decisions', all.join('\n') || 'None.',
+  const out = page([lines.slice(0, start).join('\n').trimEnd(), '## Decisions', all.join('\n') || 'None yet.',
     ...(end < lines.length ? [lines.slice(end).join('\n').trimEnd()] : [])]);
+  return text.includes('\r\n') ? out.replaceAll('\n', '\r\n') : out;
 }
