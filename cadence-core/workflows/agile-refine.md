@@ -87,6 +87,9 @@ answered again replaces the answer before it.
   at least one.
 - What no Done when line and no requirement needs is on no story. It goes under
   "You didn't ask for this".
+- An epic holding more than one outcome the user would accept on its own is
+  split: these stories deliver the first, and `split` makes the rest the next
+  epic.
 - A backlog item this epic delivers goes into the story that does, and its line
   goes in `backlog`, exactly as it stands in that file.
 - No plan is written for any of them.
@@ -99,7 +102,12 @@ requirement they asked for that none covers, as `{"id": "...", "text": "..."}`,
 its ID the next number of the prefix it belongs with in REQUIREMENTS.md,
 deferred ones counted. One `propose` lists under `unplaced` is on no epic, left
 there by the design or by a refinement cut short, and goes in `add` exactly as
-listed when this epic takes it. Both stay empty unless the user said so:
+listed when this epic takes it. Both stay empty unless the user said so.
+`split`, only for a split, is `{"name", "outcome", "requirements", "moves",
+"done_when"}`: the rest's name and outcome, each on one line, the requirements
+that go with it, `moves`, the Done when lines that leave this epic exactly as
+they stand, and `done_when`, the rest's other lines, where a line both need is
+written again:
 
 ```
 {"epic": "{id}", "decisions": ["..."], "backlog": [], "defer": [], "add": [], "stories": [
@@ -144,6 +152,9 @@ Added
 On no epic
 - {each ID `propose` lists under `unplaced`}: {its text}
 
+Split off as {split.id} {split.name}, built next
+- {its requirements}; done when: {each of its Done when lines}
+
 You didn't ask for this
 - {each thing left off, and why it came up}
 ```
@@ -177,13 +188,14 @@ are any.
 Then one commit of the refinement and nothing else the user has staged, unless
 the branch step above was skipped for `IGNORED` or `planning.commit_docs`. Push
 nothing. `backlog.md` goes in only when lines taken out of it are all that
-changed there, and `REQUIREMENTS.md` only when the epic's requirements line
-changed:
+changed there, `REQUIREMENTS.md` only when the IDs it lists or their sections
+changed, and `release.md` with a split-off epic's file when a split listed one:
 
 ```
 set -- '.planning/agile/epics/{id}/epic.md' ':(glob).planning/agile/epics/{id}/{id}-*.md'
 git diff --numstat HEAD -- .planning/agile/backlog.md 2>/dev/null | grep -qE '^0[[:space:]]' && set -- "$@" .planning/agile/backlog.md
-[ "$(git cat-file blob 'HEAD:./.planning/agile/epics/{id}/epic.md' 2>/dev/null | grep -m1 '^requirements:')" = "$(grep -m1 '^requirements:' '.planning/agile/epics/{id}/epic.md')" ] || set -- "$@" .planning/agile/REQUIREMENTS.md
+[ "$(git cat-file blob 'HEAD:./.planning/agile/REQUIREMENTS.md' 2>/dev/null | grep -oE '^(- \*\*[^*]*\*\*|## .*)')" = "$(grep -oE '^(- \*\*[^*]*\*\*|## .*)' .planning/agile/REQUIREMENTS.md)" ] || set -- "$@" .planning/agile/REQUIREMENTS.md
+git cat-file blob 'HEAD:./.planning/agile/release.md' 2>/dev/null | cmp -s - .planning/agile/release.md || { set -- "$@" .planning/agile/release.md; for e in $(sed -n 's/^- \(E-[0-9]*\): .*/\1/p' .planning/agile/release.md); do git cat-file -e "HEAD:./.planning/agile/epics/$e/epic.md" 2>/dev/null || set -- "$@" ".planning/agile/epics/$e/epic.md"; done; }
 git add -A -- "$@"
 git commit -m "docs: refine {id}" -- "$@"
 ```

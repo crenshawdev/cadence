@@ -138,19 +138,23 @@ export function renderStoryFile(s) {
 }
 
 /**
- * An epic's file with its Decisions changed and every other line as it was.
- * @param {string} text an epic file `readEpicFile` reads @param {(held: string[]) => string[]} change @returns {string}
+ * An epic's file with one section changed and every other line as it was.
+ * @param {string} text an epic file `readEpicFile` reads @param {string} heading @param {(held: string[]) => string[]} change
+ * @returns {string}
  */
-function withDecisions(text, change) {
+function withSection(text, heading, change) {
   // split as the readers do, or a Windows line ending hides the section from this one alone
   const lines = text.split(/\r?\n/);
-  const { start, end } = sectionSpan(lines, '## Decisions');
+  const { start, end } = sectionSpan(lines, heading);
   const held = lines.slice(start + 1, end).join('\n').trim();
-  const out = page([lines.slice(0, start).join('\n').trimEnd(), '## Decisions',
+  const out = page([lines.slice(0, start).join('\n').trimEnd(), heading,
     change(held === '' || held === 'None yet.' ? [] : held.split('\n')).join('\n') || 'None yet.',
     ...(end < lines.length ? [lines.slice(end).join('\n').trimEnd()] : [])]);
   return text.includes('\r\n') ? out.replaceAll('\n', '\r\n') : out;
 }
+
+/** @param {string} text @param {(held: string[]) => string[]} change */
+const withDecisions = (text, change) => withSection(text, '## Decisions', change);
 
 /** The user's answers, each under its question, over any earlier answer to it. @param {string} text @param {{question: string, answer: string}[]} answers */
 export function renderAnswers(text, answers) {
@@ -165,12 +169,46 @@ export function renderAnswers(text, answers) {
 }
 
 /**
- * An epic's file once its stories are approved: in progress, with the decisions under any it already holds, and its
- * requirements line rewritten only when the ask changed.
- * @param {string} text @param {string[]} decisions @param {string[] | null} requirements @returns {string}
+ * An epic's file once its stories are approved: in progress, with the decisions under any it already holds, its
+ * requirements line rewritten only when the ask changed, and the Done when lines a split took gone.
+ * @param {string} text @param {string[]} decisions @param {string[] | null} requirements @param {string[]} [moved]
+ * @returns {string}
  */
-export function renderRefinedEpic(text, decisions, requirements) {
+export function renderRefinedEpic(text, decisions, requirements, moved = []) {
   const status = text.replace(/^status:.*/m, 'status: in-progress');
   const turned = requirements ? status.replace(/^requirements:.*/m, `requirements: ${requirements.join(', ')}`) : status;
-  return withDecisions(turned, (held) => [...held, ...decisions.map((d) => `- ${d}`)]);
+  const kept = moved.length ? withSection(turned, '## Done when', (held) => held.filter((l) => !moved.includes(l.replace(/^- /, '')))) : turned;
+  return withDecisions(kept, (held) => [...held, ...decisions.map((d) => `- ${d}`)]);
+}
+
+/** @typedef {{id: string, name: string, outcome: string, requirements: string[], done_when: string[]}} Rest */
+
+/**
+ * The epic a split makes of the rest: it builds on the one it came from and keeps its Boundaries and Spine decisions.
+ * `split_from` is how a split cut short is told from the design's own epics.
+ * @param {Rest} rest @param {{id: string, boundaries: string, spine: string}} from @returns {string}
+ */
+export function renderSplitEpic(rest, from) {
+  return page([
+    ['---', `epic: ${rest.id}`, `title: ${rest.name}`, 'status: backlog', `builds_on: ${from.id}`,
+      `requirements: ${rest.requirements.join(', ')}`, `split_from: ${from.id}`, '---'].join('\n'),
+    `# ${rest.id}: ${rest.name}`,
+    '## Outcome',
+    rest.outcome,
+    '## Boundaries',
+    from.boundaries || 'None.',
+    '## Done when',
+    rest.done_when.map((c) => `- ${c}`).join('\n'),
+    '## Spine decisions',
+    from.spine || 'None.',
+    '## Decisions',
+    'None yet.',
+  ]);
+}
+
+/** release.md with the rest listed right after the epic it came from, so it's built next. @param {string} text @param {string} after @param {Rest} rest */
+export function renderReleaseSplit(text, after, rest) {
+  const lines = text.split(/\r?\n/);
+  lines.splice(lines.findIndex((l) => l.startsWith(`- ${after}: `)) + 1, 0, `- ${rest.id}: ${rest.name}`);
+  return lines.join(text.includes('\r\n') ? '\r\n' : '\n');
 }

@@ -113,10 +113,16 @@ function section(text, heading) {
   return start < 0 ? null : lines.slice(start + 1, end).join('\n').trim();
 }
 
-/** What a refinement needs of an epic's file. @param {string} text @returns {{requirements: string[]} | null} */
+/** @typedef {{requirements: string[], title: string, split_from: string | null, outcome: string, boundaries: string, done_when: string[], spine: string}} EpicRead */
+
+/** What a refinement needs of an epic's file. @param {string} text @returns {EpicRead | null} */
 export function readEpicFile(text) {
-  const requirements = listed(fields(text)?.get('requirements'));
-  return readEpicStatus(text) !== null && requirements.length && section(text, '## Decisions') !== null ? { requirements } : null;
+  const f = fields(text);
+  const requirements = listed(f?.get('requirements'));
+  if (readEpicStatus(text) === null || !requirements.length || section(text, '## Decisions') === null) return null;
+  return { requirements, title: f?.get('title') ?? '', split_from: f?.get('split_from') || null, outcome: section(text, '## Outcome') ?? '',
+    boundaries: section(text, '## Boundaries') ?? '', spine: section(text, '## Spine decisions') ?? '',
+    done_when: (section(text, '## Done when') ?? '').split('\n').filter((l) => l.startsWith('- ')).map((l) => l.slice(2)) };
 }
 
 /** @param {string} text @returns {Story | null} */

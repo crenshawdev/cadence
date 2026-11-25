@@ -4,13 +4,14 @@
 // pure: a payload in, stories or issues out
 'use strict';
 
-import { readStoryFile, requirementPrefix } from './agile-read.mjs';
-import { renderStoryFile } from './agile-render.mjs';
+import { readEpicFile, readStoryFile, requirementPrefix } from './agile-read.mjs';
+import { renderSplitEpic, renderStoryFile } from './agile-render.mjs';
 
 /** @typedef {import('./agile-read.mjs').Story} Story */
 /** @typedef {{story?: string, field: string, problem: string}} Issue */
 
-const PAYLOAD = Object.freeze(['epic', 'decisions', 'stories', 'backlog', 'defer', 'add']);
+const PAYLOAD = Object.freeze(['epic', 'decisions', 'stories', 'backlog', 'defer', 'add', 'split']);
+const SPLIT = Object.freeze(['name', 'outcome', 'requirements', 'moves', 'done_when']);
 const ANSWERS = Object.freeze(['epic', 'answers']);
 const ANSWER = Object.freeze(['question', 'answer']);
 const STORY = Object.freeze(['title', 'size', 'builds_on', 'requirements', 'delivers', 'accepted_when']);
@@ -127,6 +128,47 @@ export function judgeAsk(payload, { own, file, named }) {
   const requirements = [...own.filter((id) => !off.has(id) && !out.includes(id)), ...add.map((q) => q.id)];
   if (!requirements.length) issues.push({ field: 'defer', problem: 'leaves the epic no requirement, so no story could carry one' });
   return { issues, defer: out, add, requirements };
+}
+
+/**
+ * The epic a payload's `split` makes of the rest, and what this one keeps, or every reason it can't be split so.
+ * @param {unknown} split
+ * @param {{requirements: string[], added: string[], done_when: string[], id: string, rest: string, boundaries: string, spine: string}} at
+ *   `requirements` is what this epic carries once the ask changed, `added` the ones this refinement adds, `rest` the ID
+ *   the split-off epic takes
+ * @returns {{issues: Issue[], rest: import('./agile-render.mjs').Rest | null, moves: string[], requirements: string[]}}
+ */
+export function judgeSplit(split, at) {
+  if (split === undefined) return { issues: [], rest: null, moves: [], requirements: at.requirements };
+  /** @type {Issue[]} */
+  const issues = [];
+  const bad = (/** @type {string} */ problem) => { issues.push({ field: 'split', problem }); };
+  const s = isObject(split) ? split : {};
+  if (!isObject(split)) bad(`is {${SPLIT.map((k) => `"${k}"`).join(', ')}}`);
+  for (const key of Object.keys(s)) if (!SPLIT.includes(key)) bad(`holds ${key}, which isn't one of ${SPLIT.join(', ')}`);
+  for (const key of ['name', 'outcome']) if (!oneLine(s[key])) bad(`${key} is one line of text`);
+  const taken = lines(s.requirements) ? /** @type {string[]} */ (s.requirements) : [];
+  if (!taken.length) bad('requirements is a list of at least one of the epic\'s requirements');
+  for (const id of taken) {
+    if (at.added.includes(id)) bad(`requirements names ${id}, which this refinement adds - add it when the split-off epic is refined`);
+    else if (!at.requirements.includes(id)) bad(`requirements names ${id}, which isn't one of the epic's - those are ${at.requirements.join(', ')}`);
+  }
+  const kept = at.requirements.filter((id) => !taken.includes(id));
+  if (taken.length && !kept.length) bad('requirements takes every one the epic has, so nothing is left to build here');
+  const moves = lines(s.moves) ? /** @type {string[]} */ (s.moves) : [];
+  if (!moves.length) bad('moves is a list of at least one of the epic\'s Done when lines, each as it stands there');
+  for (const line of moves) if (!at.done_when.includes(line)) bad(`moves names ${JSON.stringify(line)}, which isn't one of the epic's Done when lines`);
+  if (moves.length && moves.length >= at.done_when.length) bad('moves takes every Done when line, so this epic would have nothing to be done by');
+  const more = s.done_when ?? [];
+  if (!lines(more) || /** @type {string[]} */ (more).some((l) => moves.includes(l))) bad('done_when is a list of the split-off epic\'s other Done when lines, each on one line and none of them in moves');
+  if (issues.length) return { issues, rest: null, moves: [], requirements: kept };
+  const rest = { id: at.rest, name: String(s.name), outcome: String(s.outcome), requirements: taken, done_when: [...moves, .../** @type {string[]} */ (more)] };
+  const back = readEpicFile(renderSplitEpic(rest, at));
+  // a line that reads as a heading or opens a fence would leave a file no reader takes back
+  if (!back || back.title !== rest.name || back.outcome !== rest.outcome || JSON.stringify(back.done_when) !== JSON.stringify(rest.done_when)) {
+    bad('would not read back from its own file - reword a line that opens a code fence or reads as a heading');
+  }
+  return issues.length ? { issues, rest: null, moves: [], requirements: kept } : { issues, rest, moves, requirements: kept };
 }
 
 /**

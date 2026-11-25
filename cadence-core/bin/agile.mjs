@@ -23,10 +23,10 @@ import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
 import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, releaseFile, requirementsFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
-import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderRequirementsFile, renderStoryFile } from './lib/agile-render.mjs';
+import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryFile } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
 import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readRequirementsFile, readStoryFile } from './lib/agile-read.mjs';
-import { judgeAnswers, judgeAsk, judgeStories } from './lib/agile-refine.mjs';
+import { judgeAnswers, judgeAsk, judgeSplit, judgeStories } from './lib/agile-refine.mjs';
 import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { boundedRun } from './lib/bounded-run.mjs';
@@ -244,6 +244,12 @@ function answer(dir, payloadFile) {
   emit({ ok: true, epic: up.epic, saved: answers.length });
 }
 
+/** The ID one past the release's highest epic, at the width its IDs are written. @param {{id: string}[]} epics */
+function nextEpic(epics) {
+  const top = epics.map((e) => e.id.slice(2)).sort((a, b) => Number(b) - Number(a))[0];
+  return `E-${String(Number(top) + 1).padStart(top.length, '0')}`;
+}
+
 /**
  * The payload's list judged, or null when the refusal is already out. It writes nothing.
  * @param {string} dir @param {string} payloadFile
@@ -261,32 +267,49 @@ function judged(dir, payloadFile) {
   }
   /** @type {Set<string>} */
   const onEpics = new Set();
+  /** @type {{id: string, read: import('./lib/agile-read.mjs').EpicRead}[]} */
+  const read = [];
   for (const { id } of up.epics) {
     const line = readBack(epicFile(up.agile, id), 'a requirements line and a "## Decisions" section', readEpicFile);
     if ('refusal' in line) return no(line.refusal);
     for (const q of line.value.requirements) onEpics.add(q);
+    read.push({ id, read: line.value });
   }
+  const self = /** @type {import('./lib/agile-read.mjs').EpicRead} */ (read.find((e) => e.id === up.epic)?.read);
+  const split = up.payload !== null && typeof up.payload === 'object' ? up.payload.split : undefined;
+  const from = read.filter((e) => e.read.split_from === up.epic);
+  // a rest a run cut short listed already, which the same split finishes rather than lists twice
+  const again = from.find((e) => e.read.title === split?.name) ?? null;
+  const off = new Set(from.filter((e) => e !== again).flatMap((e) => e.read.requirements));
   let text = '';
   const file = readBack(requirementsFile(up.agile), 'a "# Requirements:" title, then "## Requirements" with "- **ID**: text" lines under "### " categories, then "## Deferred"',
     (t) => { text = t; return readRequirementsFile(t); });
   if ('refusal' in file) return no(file.refusal);
-  const ask = judgeAsk(up.payload, { own: up.requirements, file: file.value, named: onEpics });
+  // what an epic split from this one carries is off this one, as Deferred is off every epic
+  const ask = judgeAsk(up.payload, { own: up.requirements.filter((id) => !off.has(id)), file: file.value, named: onEpics });
   if ((ask.defer.length || ask.add.length) && !file.value.whole) {
     return no({ reason: 'release-damaged', detail: `${requirementsFile(up.agile)} holds a line its own writer doesn't, and deferring or adding would rewrite the file without it`,
       hint: 'move that line out of the file, or leave defer and add empty, then re-run; nothing was written' });
   }
-  const list = judgeStories(up.payload, { id: up.epic, requirements: ask.requirements, earlier, backlog: captureLines(agileBacklogFile(up.agile)) });
-  const issues = [...ask.issues, ...list.issues];
+  const cut = judgeSplit(split, { ...self, id: up.epic, requirements: ask.requirements, added: ask.add.map((q) => q.id), rest: again?.id ?? nextEpic(up.epics) });
+  const list = judgeStories(up.payload, { id: up.epic, requirements: cut.requirements, earlier, backlog: captureLines(agileBacklogFile(up.agile)) });
+  const issues = [...ask.issues, ...cut.issues, ...list.issues];
   if (issues.length) return no(payloadRefused('stories-refused', `the stories for ${up.epic} have`, issues));
   // on no epic: one the design left there, or one a refinement cut short added
   const unplaced = file.value.requirements.filter((q) => !onEpics.has(q.id) && !ask.add.some((a) => a.id === q.id)).map(({ id, text: said }) => ({ id, text: said }));
-  return { up, ...list, ask, unplaced, asked: { text, read: file.value }, named: list.stories.map((s) => ({ id: s.id, title: s.title, size: s.size })) };
+  // a rest a run cut short listed, which this list leaves alone: its requirements leave this epic, its Done when lines can't be told apart
+  const stranded = from.filter((e) => e !== again && e.read.requirements.some((id) => up.requirements.includes(id)))
+    .map((e) => ({ id: e.id, lines: e.read.done_when.filter((l) => self.done_when.includes(l)) })).filter((e) => e.lines.length);
+  return { up, ...list, ask, cut, listed: again !== null, self, stranded, unplaced, asked: { text, read: file.value },
+    named: list.stories.map((s) => ({ id: s.id, title: s.title, size: s.size })) };
 }
 
 /** Would that list be written? @param {string} dir @param {string} payloadFile */
 function propose(dir, payloadFile) {
   const got = judged(dir, payloadFile);
-  if (got !== null) emit({ ok: true, epic: got.up.epic, stories: got.named, ...(got.unplaced.length ? { unplaced: got.unplaced } : {}) });
+  if (got === null) return;
+  emit({ ok: true, epic: got.up.epic, stories: got.named, ...(got.cut.rest ? { split: { id: got.cut.rest.id, name: got.cut.rest.name } } : {}),
+    ...(got.unplaced.length ? { unplaced: got.unplaced } : {}) });
 }
 
 /**
@@ -296,7 +319,7 @@ function propose(dir, payloadFile) {
 function refine(dir, payloadFile) {
   const got = judged(dir, payloadFile);
   if (got === null) return;
-  const { up: { agile, file, text, epic, next, release, requirements }, stories, decisions, backlog, named, ask, asked } = got;
+  const { up: { agile, file, text, epic, next, release, requirements }, stories, decisions, backlog, named, ask, asked, cut, listed, self, stranded } = got;
   const written = stories.map((s) => storyFile(agile, s.id));
   stories.forEach((s, i) => atomicWrite(written[i], renderStoryFile(s)));
   // a refinement killed before its epic turned leaves stories behind, and a longer list's would read as this one's
@@ -306,19 +329,31 @@ function refine(dir, payloadFile) {
     const left = whole === basename(file) ? name !== whole : storyNumber(whole, epic) !== null && !written.includes(path);
     if (left) unlinkFile(path);
   }
-  for (const name of readdirSync(agile)) if (/^REQUIREMENTS\.md\.\d+\.\d+\.tmp$/.test(name)) unlinkFile(join(agile, name));
+  for (const name of readdirSync(agile)) if (/^(REQUIREMENTS|release)\.md\.\d+\.\d+\.tmp$/.test(name)) unlinkFile(join(agile, name));
+  // the rest before release.md lists it, so a stop between them leaves a folder nothing reads and the next split writes over
+  if (cut.rest) {
+    const home = dirname(epicFile(agile, cut.rest.id));
+    makeDir(home);
+    for (const name of readdirSync(home)) if (/^epic\.md\.\d+\.\d+\.tmp$/.test(name)) unlinkFile(join(home, name));
+    atomicWrite(epicFile(agile, cut.rest.id), renderSplitEpic(cut.rest, { ...self, id: epic }));
+    if (!listed) atomicWrite(releaseFile(agile), renderReleaseSplit(readFileSync(releaseFile(agile), 'utf8'), epic, cut.rest));
+  }
   // before the epic, so a stop between them leaves a deferred one off every epic and an added one on none
   if (ask.defer.length || ask.add.length) {
     const changed = renderAskChanged(asked.text, asked.read, ask.defer, ask.add);
     if (changed !== asked.text) atomicWrite(requirementsFile(agile), changed);
   }
-  const same = ask.requirements.join() === requirements.join();
+  const same = cut.requirements.join() === requirements.join();
   // last, because this is what makes the stories count
-  atomicWrite(file, renderRefinedEpic(text, decisions, same ? null : ask.requirements));
+  atomicWrite(file, renderRefinedEpic(text, decisions, same ? null : cut.requirements, cut.moves));
   // after it, so a stop here leaves an item in two places and never in none
   const taken = backlog.length ? removeCaptures(agileBacklogFile(agile), backlog) : { ok: true };
-  emit({ ok: true, release, epic, stories: named, next: { ...next, status: 'in-progress', step: 'build', story: { ...named[0], status: stories[0].status } },
-    ...(taken.ok ? {} : { warnings: [`the stories are written, and ${agileBacklogFile(agile)} still holds the items they took (${/** @type {any} */ (taken).detail}) - remove them there`] }) });
+  const warnings = [
+    ...(taken.ok ? [] : [`the stories are written, and ${agileBacklogFile(agile)} still holds the items they took (${/** @type {any} */ (taken).detail}) - remove them there`]),
+    ...stranded.map((e) => `${e.id} was split off ${epic} by a run cut short, and ${file} still holds Done when lines ${e.id} holds too: ${e.lines.map((l) => JSON.stringify(l)).join(', ')} - remove the ones ${e.id} covers`),
+  ];
+  emit({ ok: true, release, epic, stories: named, ...(cut.rest ? { split: { id: cut.rest.id, name: cut.rest.name } } : {}), next: { ...next, status: 'in-progress', step: 'build', story: { ...named[0], status: stories[0].status } },
+    ...(warnings.length ? { warnings } : {}) });
 }
 
 /**
