@@ -1,11 +1,11 @@
 // @ts-check
-// planning/capture.mjs - `capture`: one bullet into .planning/CAPTURE.md, under the heading its kind owns
+// planning/capture.mjs - `capture`: one bullet into the project's captures, under the heading its kind owns
 'use strict';
 
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { fail, ok } from './core.mjs';
 import { CAPTURE_KINDS, appendCapture } from '../lib/capture-file.mjs';
+import { captureHome, missingRelease, onAgilePath } from '../lib/project-homes.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 
@@ -82,7 +82,16 @@ function cmdCapture(dir, opts) {
       'name the CAPTURE.md to append to, or drop --file to use the one under --dir - nothing was'
       + ' captured');
   }
-  const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
+  // the other queue's file is its caller's, so nothing about this project is asked
+  if (typeof opts.file !== 'string') {
+    if (phase !== undefined && onAgilePath(dir)) {
+      return fail('bad-args', 'capture --phase is for a project with phases, and this one is on the agile path',
+        'drop --phase and re-run - the next refinement reads the whole backlog; nothing was captured');
+    }
+    const missing = missingRelease(dir);
+    if (missing !== null) return fail('no-release', missing, 'finish the start, then capture it again - nothing was captured');
+  }
+  const file = typeof opts.file === 'string' ? opts.file : captureHome(dir);
   // --file is the /cad-capture --cadence arm and its `host: <origin URL>` can carry credentials, so strip once here
   // ssh://git@host becomes ssh://<redacted>@host, over-redacted and accepted; the project arm writes the text unchanged
   if (typeof opts.file === 'string') text = redactUrl(text);

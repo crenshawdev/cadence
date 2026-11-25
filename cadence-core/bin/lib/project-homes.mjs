@@ -1,11 +1,11 @@
 // @ts-check
-// project-homes.mjs - where a project keeps its tasks and its two findings ledgers, which the two paths don't share
+// project-homes.mjs - where a project keeps its tasks, its captures and its two findings ledgers, which the two paths don't share
 // the state file's marker says which path, so whatever writes or reads one of them asks here and never spells it
 'use strict';
 
 import { lstatSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import { agileDeclinedFile, agileDir, agileFiledFile, agileTasksDir } from './agile-paths.mjs';
+import { agileBacklogFile, agileDeclinedFile, agileDir, agileFiledFile, agileTasksDir } from './agile-paths.mjs';
 import { declinedPath, ensureRecordsDir, filedPath, makeDir } from './planning-store.mjs';
 import { readState } from './project-state.mjs';
 
@@ -25,6 +25,11 @@ export function onAgilePath(planningRoot) {
 export function tasksHome(planningRoot) {
   const path = onAgilePath(planningRoot) ? agileTasksDir(agileDir(planningRoot)) : join(planningRoot, TASKS_DIR);
   return { path, rel: fromRoot(planningRoot, path) };
+}
+
+/** The file a capture is added to. @param {string} planningRoot */
+export function captureHome(planningRoot) {
+  return onAgilePath(planningRoot) ? agileBacklogFile(agileDir(planningRoot)) : join(planningRoot, 'CAPTURE.md');
 }
 
 /** @param {string} planningRoot */

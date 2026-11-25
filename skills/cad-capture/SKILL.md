@@ -10,8 +10,10 @@ allowed-tools:
 ---
 
 <objective>
-Three kinds, landing in `.planning/CAPTURE.md` - or, with `--cadence`, in
-Cadence's own queue (step 4):
+Three kinds, landing in `.planning/CAPTURE.md`, or on an agile project
+(`.planning/agile/` exists and `.planning/PROJECT.md` doesn't) in
+`.planning/agile/backlog.md`, which the next refinement reads - or, with
+`--cadence`, in Cadence's own queue (step 4):
 - **todo** - an actionable item, tagged to a phase, so it resurfaces where it
   matters.
 - **seed** - an idea for a future phase or milestone, parked in the backlog.
@@ -27,7 +29,8 @@ Cadence's own queue (step 4):
    step 4 instead of steps 2-3. If a todo has no `--phase`, default to the
    current phase from the STATE cursor (`cursor get`); if the cursor is absent
    or unparseable, capture it unphased - pass no `--phase` at all - rather than
-   guessing a phase or stopping. Under `--cadence` skip the cursor.
+   guessing a phase or stopping. Under `--cadence`, and on an agile project, skip
+   the cursor; an agile project takes no `--phase`, and the seam refuses one.
 
 2. **Capture through the seam** - one call, and the only way this command
    reaches `.planning/CAPTURE.md`:
@@ -53,7 +56,8 @@ Cadence's own queue (step 4):
    running the call again is the whole fix.
 
 3. **Persist** - the project-directed arm only, never under `--cadence`. Stage
-   ONLY `.planning/CAPTURE.md` and commit `docs: capture <kind>`
+   ONLY `.planning/CAPTURE.md`, or `.planning/agile/backlog.md` on an agile
+   project, and commit `docs: capture <kind>`
    (protected-branch guard applies) - this never touches the user's in-flight
    changes. Report the one line captured and where.
 

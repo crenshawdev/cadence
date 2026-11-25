@@ -31,6 +31,11 @@ export function agileTasksDir(agile) {
   return join(agile, 'tasks');
 }
 
+/** The open todos, seeds and notes a refinement reads. @param {string} agile */
+export function agileBacklogFile(agile) {
+  return join(agile, 'backlog.md');
+}
+
 /** The findings this project's reviews filed as issues. @param {string} agile */
 export function agileFiledFile(agile) {
   return join(agile, 'filed.md');

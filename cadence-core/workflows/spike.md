@@ -1,6 +1,8 @@
 # cad-spike workflow
 
-Resolve one unknown with a throwaway experiment.
+Resolve one unknown with a throwaway experiment. On an agile project
+(`.planning/agile/` exists and `.planning/PROJECT.md` doesn't) every
+`.planning/spikes/` in this file is `.planning/agile/spikes/`.
 
 ## 1. Frame the question
 State the unknown as a single question and the decision that hinges on it

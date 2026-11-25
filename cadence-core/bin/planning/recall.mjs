@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { PHASE_DIR_NAME, fail, intFlag, memoryBackend, ok, read } from './core.mjs';
 import { buildIndex, search } from '../lib/bm25.mjs';
 import { archivePath } from '../lib/planning-store.mjs';
-import { filedHome, fromRoot, onAgilePath } from '../lib/project-homes.mjs';
+import { captureHome, filedHome, fromRoot, onAgilePath } from '../lib/project-homes.mjs';
 import {
   parseArchiveRows, parseCaptureSnippets, parseFiledRows, parseTaskRecordSnippets, phaseRecallSnippets,
 } from '../lib/planning-files.mjs';
@@ -56,9 +56,10 @@ function cmdRecall(dir, query, opts) {
       }
     }
   }
-  const capture = read(join(dir, 'CAPTURE.md'));
+  const captureFile = captureHome(dir);
+  const capture = read(captureFile);
   if (capture) for (const item of parseCaptureSnippets(capture)) {
-    corpus.push({ text: item.text, source: 'CAPTURE.md',
+    corpus.push({ text: item.text, source: fromRoot(dir, captureFile),
       ...(item.phase !== undefined ? { phase: item.phase } : {}) });
   }
   // ARCHIVE.md goes last so appending leaves every corpus index alone, and a tree without it emits the same bytes

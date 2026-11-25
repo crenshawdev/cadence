@@ -144,7 +144,7 @@ const COMMANDS = {
 };
 
 // the calls an agile project may run; every other one is the old path's and refuses there
-const AGILE_CALLS = ['adjudication', 'codemap', 'detect-commands', 'detect-surfaces', 'recall', 'review-file', 'risk-check',
+const AGILE_CALLS = ['adjudication', 'capture', 'codemap', 'detect-commands', 'detect-surfaces', 'recall', 'review-file', 'risk-check',
   'task-record', 'test-policy', 'trace', 'workflow-run'];
 
 try {
