@@ -13,7 +13,7 @@ import { parseActiveIds, phaseRequirements, phaseSpineDecisions, sectionSpan } f
 import { readState, statePath } from '../lib/project-state.mjs';
 import { DESIGN_FILES, readDesign } from '../lib/seldon-design.mjs';
 import { unreadable } from './phase-entry.mjs';
-import { invalidHint } from './state-import.mjs';
+import { invalidHint, invalidReason } from './state-import.mjs';
 
 // a stand-in for the other value, so the judge's verdict on one value is about that value alone
 const PLAIN = 'plain';
@@ -102,7 +102,7 @@ function holdsToken(text, id) {
 function readProject(dir) {
   const got = readState(dir);
   if (got.kind === 'invalid') {
-    fail('invalid-state', `${statePath(dir)}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
+    fail(invalidReason(got.reason), `${statePath(dir)}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
     return null;
   }
   if (got.kind === 'absent') {

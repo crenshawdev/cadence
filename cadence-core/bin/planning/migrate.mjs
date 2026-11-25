@@ -19,7 +19,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSyn
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fail, ok } from './core.mjs';
-import { importState, invalidHint, loadState, writeViews } from './state-import.mjs';
+import { importState, invalidHint, invalidReason, loadState, writeViews } from './state-import.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   archivePath, codemapDir, declinedPath, deferredDir, ensurePhaseRecordsDir, ensureRecordsDir, ensureRecordsIgnore,
@@ -354,8 +354,8 @@ export function cmdStateRebuild(dir) {
   // an unstamped project was converted before this ran, so absent here is the linked planning directory nothing stamps
   if (got.kind === 'absent') return loadState(dir);
   if (got.kind === 'valid') return ok({ rebuilt: false, file, detail: 'the state file is valid, so nothing was rebuilt' });
-  if (got.reason === 'newer-layout' || got.reason === 'unreadable') {
-    return fail('invalid-state', `${file}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
+  if (got.reason === 'newer-layout' || got.reason === 'agile-path' || got.reason === 'unreadable') {
+    return fail(invalidReason(got.reason), `${file}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
   }
   const imported = importState(dir);
   if (imported.ok === false) {
@@ -368,8 +368,8 @@ export function cmdStateRebuild(dir) {
     writeViews(dir, state, VIEWS.filter((v) => existsSync(join(dir, v))), views);
   });
   if (wrote.ok === false) {
-    if (wrote.reason === 'newer-layout' || wrote.reason === 'unreadable') {
-      return fail('invalid-state', wrote.detail, invalidHint(wrote.reason));
+    if (wrote.reason === 'newer-layout' || wrote.reason === 'agile-path' || wrote.reason === 'unreadable') {
+      return fail(invalidReason(wrote.reason), wrote.detail, invalidHint(wrote.reason));
     }
     const written = 'stateWritten' in wrote && wrote.stateWritten;
     return fail('state-write-failed', `${file}: ${wrote.reason} - ${wrote.detail}`, written
@@ -408,7 +408,7 @@ export function ensureState(dir, mode = 'now') {
     // the rebuild judges the file again under its own lock, newer layouts and unreadable files included
     if (mode === 'rebuild') return true;
     if (quiet) return false;
-    fail('invalid-state', `${statePath(dir)}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
+    fail(invalidReason(got.reason), `${statePath(dir)}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
     return false;
   }
 
