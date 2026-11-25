@@ -41,15 +41,19 @@ Classify $TASK before touching anything:
   nothing else to tell which applies, neither the git root nor a
   `[ -d .planning ]` check: the seam's answer is the gate.
 
-  On `ok:false` with reason `agile-path`: "This is bigger than a task. Run
-  /cad-capture $TASK, and the next refinement picks it up."
+  On `ok:false` with reason `agile-path`, run
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" next`. A `release`
+  name -> "This is bigger than a task. Run /cad-capture $TASK, and the next
+  refinement picks it up." Null -> "No release is open here. Start one from a
+  Seldon design with /cad-agile --brief <design folder>." `ok:false` -> its
+  `detail` and `hint`.
 
   On any other `ok:false`, relay the envelope's `reason` and `hint` and stop.
 
 When unsure between inline and planned, pick planned.
 
-On an agile project (`.planning/agile/` exists) every `.planning/tasks/` in this
-file is `.planning/agile/tasks/`.
+On an agile project (`.planning/agile/` exists and `.planning/PROJECT.md`
+doesn't) every `.planning/tasks/` in this file is `.planning/agile/tasks/`.
 </step>
 
 <step name="git_guard">
@@ -223,7 +227,8 @@ where the diff goes, who fixes a FAIL and whether the settle writes a record:
   on the inline path `record` is the only writer there, and it creates the folder
   after the settle, where `.planning/` exists. So the task has no folder at the
   settle and no home for a record, and with no PLAN.md there is no worker key
-  for a fix to dispatch under: the FAIL stays with the user. Where no
+  for a fix to dispatch under: the FAIL stays with the user. On an agile project
+  the review file alone goes in the task's folder, made for it. Where no
   `.planning/` exists, this run and its fire create nothing under it, the review
   file included.
 

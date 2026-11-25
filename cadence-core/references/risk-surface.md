@@ -106,8 +106,9 @@ safe is the reviewer's call.
 
 `references/review-triggers.md` step 5 states WHY this write happens at every
 gate and who consumes it. This is WHERE. Write the settled survivor list to
-`.planning/phases/<N>/records/REVIEW-risk_surface-<discriminator>.md`. At gate
-`adjudicated`, and at a `blocking` gate on the workflow path, it is the Markdown
+`.planning/phases/<N>/records/REVIEW-risk_surface-<discriminator>.md`, or on an
+agile project, which has no phases, in the folder the command that fired names,
+under the same name. At gate `adjudicated`, and at a `blocking` gate on the workflow path, it is the Markdown
 file `planning.mjs review-file` writes (`references/review-record.md`), the
 workflow's from the seam's `survivors.json`. At a `blocking` gate on today's
 path, and at any other gate, it is the same JSON object every reviewer returns,

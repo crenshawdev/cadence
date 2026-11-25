@@ -557,7 +557,7 @@ function fireIdentity(face, dir, opts) {
         + 'only, opening with a letter or a digit and at most 64 characters - got '
         + `${typeof opts.task === 'string' ? JSON.stringify(opts.task) : 'nothing'}`,
         're-send --task with the task slug spelled with those characters only - it addresses'
-        + ' .planning/tasks/<slug>/ verbatim; nothing was written');
+        + ` .planning/${tasksHome(dir).rel}/<slug>/ verbatim; nothing was written`);
       return null;
     }
     task = opts.task;
@@ -568,7 +568,7 @@ function fireIdentity(face, dir, opts) {
   if (n === '0' && task === undefined) {
     fail('bad-args',
       `${face} --phase 0 is a TASK's number and resolves no phase home - a task keeps its `
-      + 'record beside the sibling REVIEW file under .planning/tasks/<slug>/',
+      + `record beside the sibling REVIEW file under .planning/${tasksHome(dir).rel}/<slug>/`,
       'pass --task <slug> naming the task directory. `deferred record` does not take it: the '
       + 'queue enumeration reads the two phase homes only, so a member written under a slug '
       + 'would never be found, and a blocking gate is the one that has to be');

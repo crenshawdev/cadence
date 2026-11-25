@@ -59,10 +59,11 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-branch.mjs" decide
 Relay the envelope's `warnings[]` to the user before acting: a config layer
 that did not parse means the advice came from DEFAULTS, not the user's settings.
 
-On an agile project (`.planning/agile/` exists) run it before the guard's
-question and suggest its `branch` there. Null -> say its `reason` and suggest
-the slug, or with no slug let the user type the name. Act on its `action` only
-when that question wasn't asked, and switch to a branch that already exists.
+On an agile project (`.planning/agile/` exists and `.planning/PROJECT.md`
+doesn't) run it before the guard's question and suggest its `branch` there. Null
+-> say its `reason` and suggest the slug, or with no slug let the user type the
+name. Act on its `action` only when that question wasn't asked, and switch to a
+branch that already exists.
 
 Act on its `action`:
 

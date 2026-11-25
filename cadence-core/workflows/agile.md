@@ -48,7 +48,7 @@ Then commit the release, its setup and nothing else the user has staged, and
 push nothing:
 
 ```
-set -- .planning/agile .planning/records/state.json .planning/records/.gitignore
+set -- .planning/agile/project.md .planning/agile/REQUIREMENTS.md .planning/agile/release.md .planning/agile/epics .planning/records/state.json .planning/records/.gitignore
 for f in .planning/config.json .github/cadence/coverage-policy.json; do [ -f "$f" ] && ! git check-ignore -q "$f" && set -- "$@" "$f"; done
 git add -- "$@"
 git commit -m "docs: start the release" -- "$@"
