@@ -58,6 +58,11 @@ function cmdCapture(dir, opts) {
   /** @type {string|undefined} */
   let phase;
   if ('phase' in opts) {
+    // first, or a seed is told to go in as a todo, which this path refuses too
+    if (typeof opts.file !== 'string' && onAgilePath(dir)) {
+      return fail('bad-args', 'capture --phase is for a project with phases, and this one is on the agile path',
+        'drop --phase and re-run - the next refinement reads the whole backlog; nothing was captured');
+    }
     // todo only: a seed or note with --phase would be written untagged and the caller would think it tagged
     if (kind !== 'todo') {
       return fail('bad-args', 'capture --phase is admitted only with --kind todo'
@@ -84,10 +89,6 @@ function cmdCapture(dir, opts) {
   }
   // the other queue's file is its caller's, so nothing about this project is asked
   if (typeof opts.file !== 'string') {
-    if (phase !== undefined && onAgilePath(dir)) {
-      return fail('bad-args', 'capture --phase is for a project with phases, and this one is on the agile path',
-        'drop --phase and re-run - the next refinement reads the whole backlog; nothing was captured');
-    }
     const missing = missingRelease(dir);
     if (missing !== null) return fail('no-release', missing, 'finish the start, then capture it again - nothing was captured');
   }

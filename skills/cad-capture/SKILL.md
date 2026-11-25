@@ -57,9 +57,11 @@ Three kinds, landing in `.planning/CAPTURE.md`, or on an agile project
 
 3. **Persist** - the project-directed arm only, never under `--cadence`. Stage
    ONLY `.planning/CAPTURE.md`, or `.planning/agile/backlog.md` on an agile
-   project, and commit `docs: capture <kind>`
-   (protected-branch guard applies) - this never touches the user's in-flight
-   changes. Report the one line captured and where.
+   project, and commit `docs: capture <kind>` (protected-branch guard applies; on
+   an agile project by path,
+   `git commit -m "docs: capture <kind>" -- .planning/agile/backlog.md`) - this
+   never touches the user's in-flight changes. Report the one line captured and
+   where.
 
 4. **`--cadence`: the note is about Cadence itself.** REPLACES steps 2-3.
    - **The queue** sits beside the global config layer: `CAPTURE.md` in the
