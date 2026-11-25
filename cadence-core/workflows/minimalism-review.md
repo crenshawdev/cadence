@@ -15,6 +15,8 @@ Three shapes, and the run NAMES the one it resolved:
 - **a directory** - the files under it, which the reviewer globs for itself.
 - **a phase number** - the committed range that phase's
   `.planning/phases/<N>/SUMMARY.md` records, as a `<base_ref>..<head_ref>` pair.
+  An agile project (`.planning/agile/` exists and `.planning/PROJECT.md` doesn't)
+  has no phases, so there a number does not resolve and the ask below leaves it out.
 
 When `$ARGUMENTS` is empty or resolves to more than one of those at once, ask
 ONCE (ask-user seam): "What should this pass try to delete? (a path, a
@@ -50,15 +52,7 @@ Assemble `{ instruction, artifact }`:
 Bracket the worker in the joined run record first. `<N>` is the target phase
 when the target IS a phase, and the STATE cursor's phase
 (`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor get`)
-for a path or directory target. On an agile project (`.planning/agile/` exists
-and `.planning/PROJECT.md` doesn't) it is 0, with no cursor read, under a run this
-command opens first, and a phase number is a target that does not resolve:
-
-```
-A="$(git rev-parse --short HEAD)-$$-$(date +%s)"
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event phase_start --sha "$A"
-```
-
+for a path or directory target. On an agile project it is 0, with no cursor read.
 The read-set is the target the USER named,
 resolved, so write that reference to a scratch file and pass the path
 (caller-derived text - references/conventions.md):

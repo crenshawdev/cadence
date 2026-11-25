@@ -13,12 +13,13 @@ grounds and rules each objection.
 Parse `$ARGUMENTS` for a path (from the invoking skill's `$ARGUMENTS`, a path
 to an existing decision doc - a CONTEXT.md or PROJECT.md). If the path or the
 decision is missing or unclear, ask (ask-user seam): "Which decision? (path to
-a CONTEXT.md or PROJECT.md, plus which D-NN or Key Decisions row)". Read the
-file and isolate:
+a CONTEXT.md or PROJECT.md, plus which D-NN or Key Decisions row)" - on an agile
+project (`.planning/agile/` exists and `.planning/PROJECT.md` doesn't), "Which
+decision? (path to project.md or an epic.md under .planning/agile/, plus which
+S-NN or decision line)". Read the file and isolate:
 - a CONTEXT.md: the named `- D-NN (area): decision. Evidence: ...` line
   under `## Durable decisions` or `## Decisions`.
 - a PROJECT.md: the named row of the `## Key Decisions` table.
-
 - an agile project's `project.md` or `epic.md`, under `.planning/agile/`: the
   named `S-NN` line, or the named line under Key decisions or Decisions.
 
@@ -41,14 +42,7 @@ The reviewer set is `review.reviewers[]`, filtered as the two arms below state:
 - **claude-subagent** (always available): bracket this worker in the joined
   run record first. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
   a PROJECT.md row it is the STATE cursor's phase (references/review-inline.md).
-  On an agile project (`.planning/agile/` exists and `.planning/PROJECT.md`
-  doesn't) it is 0, under a run this command opens first:
-
-  ```
-  A="$(git rev-parse --short HEAD)-$$-$(date +%s)"
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event phase_start --sha "$A"
-  ```
-
+  On an agile project it is 0.
   The read-set is the decision doc the USER named, so write that reference to
   a scratch file and pass the path (caller-derived text - references/conventions.md):
 
@@ -167,7 +161,7 @@ Never report it as a bare "no findings".
 Close with the qualitative cost line from `report_cost`. Do NOT edit the
 decision doc or any other file - this is a review, not an auto-apply; the user
 decides what to amend and does it themselves (or via a follow-up
-`/cad-context` correction, `/cad-task`, etc).
+`/cad-context` correction, `/cad-task`, etc; on an agile project, `/cad-task`).
 </step>
 
 </process>
