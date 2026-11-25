@@ -36,8 +36,8 @@ On `ok:false`, print `detail`, every entry of `issues` and `hint`, and stop.
 </step>
 
 <step name="commit">
-One Bash step, after a start and on an open release alike, so a run cut short
-before its commit is finished by the next one:
+One Bash step, after a start and on an open release alike, so a project's first
+start, cut short before its commit, is finished by the next run:
 
 ```
 git rev-parse --git-dir >/dev/null 2>&1 || git init
@@ -64,7 +64,7 @@ git commit -m "docs: start the release" -- .planning/agile .planning/records/sta
 ```
 
 Nothing here ends the run: when the guard stops the commit or git refuses it,
-go on to `report` with the reason. The next run tries again.
+go on to `report` with the reason.
 </step>
 
 <step name="report">

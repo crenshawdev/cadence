@@ -14,7 +14,7 @@ import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { readDesignFolder } from './planning/design-read.mjs';
 import { invalidHint } from './planning/state-import.mjs';
-import { agileDir, buildDir, buildPid, epicFile, releaseFile } from './lib/agile-paths.mjs';
+import { OLD_PATH, agileDir, buildDir, buildPid, epicFile, releaseFile } from './lib/agile-paths.mjs';
 import { renderEpicFile, renderProjectFile, renderReleaseFile, renderRequirementsFile } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
 import { STATUSES, readEpicStatus, readReleaseFile } from './lib/agile-read.mjs';
@@ -24,9 +24,6 @@ import { REBUILDABLE, emptyState, markAgile, readState, statePath } from './lib/
 import { emit, emitCaught } from './lib/seam-io.mjs';
 
 /** @typedef {{reason: string, detail: string, hint: string}} Refusal */
-
-/** What an old-path project keeps at the top of its planning folder; any one of them means the old path owns it. */
-const OLD_PATH = ['PROJECT.md', 'REQUIREMENTS.md', 'ROADMAP.md', 'STATE.md', 'phases'];
 
 /** @param {string} path @returns {import('node:fs').Stats | null} */
 function lstatOf(path) {

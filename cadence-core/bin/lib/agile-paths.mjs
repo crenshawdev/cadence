@@ -7,6 +7,9 @@ import { join } from 'node:path';
 
 const AGILE_DIR = 'agile';
 
+/** What an old-path project keeps at the top of its planning folder; any one of them means the old path owns it. */
+export const OLD_PATH = Object.freeze(['PROJECT.md', 'REQUIREMENTS.md', 'ROADMAP.md', 'STATE.md', 'phases']);
+
 /** @param {string} planningRoot */
 export function agileDir(planningRoot) {
   return join(planningRoot, AGILE_DIR);
