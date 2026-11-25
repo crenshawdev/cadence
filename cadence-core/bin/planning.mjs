@@ -143,7 +143,7 @@ const COMMANDS = {
   'state-rebuild': async (dir, _sub, _opts) => (await import('./planning/migrate.mjs')).cmdStateRebuild(dir),
 };
 
-// the calls an agile project may run, because what they read and write is in the same place on both paths
+// the calls an agile project may run; every other one is the old path's and refuses there
 const AGILE_CALLS = ['codemap', 'detect-commands', 'detect-surfaces', 'recall', 'risk-check', 'test-policy', 'trace'];
 
 try {
