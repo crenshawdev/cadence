@@ -10,7 +10,7 @@ A project works in releases, epics and stories on this path, or in milestones an
 
 | Command | Arguments | What it does |
 |---|---|---|
-| `/cadence:cad-agile` | `[--brief <design folder>]` | Run the path. With no release open, `--brief` turns a Seldon design into a release and its epics under `.planning/agile/` and commits them. It asks for the forge, the risk surfaces and the testing policy first, and asks about a reviewer that can't run. Nothing is written until you've answered, and a project that has answers is asked for none of them again. With one open and an epic to refine, it asks about the choices that are hard to undo, shows the stories with their sizes and checks, and writes and commits them once you approve. Your answers are kept if you clear the session, and it starts no agent. Otherwise it names the next step. |
+| `/cadence:cad-agile` | `[--brief <design folder>]` | Run the path. With no release open, `--brief` turns a Seldon design into a release and its epics under `.planning/agile/` and commits them. It asks for the forge, the risk surfaces and the testing policy first, and asks about a reviewer that can't run. Nothing is written until you've answered, and a project that has answers is asked for none of them again. With one open and an epic to refine, it asks about the choices that are hard to undo, shows the stories with their sizes and checks, and writes and commits them once you approve. Your answers are kept if you clear the session. When how to cut the epic depends on something nobody knows yet, it offers to read the code, which starts one agent, or to spike it. It starts no other. With nothing to refine, it names the next step. |
 
 ## Start and build
 

@@ -2,7 +2,8 @@
 
 Read from agile.md when the release's next step is to refine an epic. One
 conversation: read, ask, cut, show, write. `{id}` and `{name}` are `next`'s. No
-agent is started, no code is changed, and a script writes every file.
+agent is started but the one section 2 offers, no code is changed, and a script
+writes every file.
 
 ## 1. Read
 
@@ -24,17 +25,25 @@ Then, in one message:
   `.planning/agile/REQUIREMENTS.md`
 - `.planning/agile/backlog.md`, the whole file, when it's there
 - the `## Decisions` of every epic this one builds on
+- the question and the verdict of every `.planning/agile/spikes/*/SPIKE.md`
 - the code this epic's Outcome changes, as far as cutting and sizing its stories
   takes, and nothing past it
 
 What those settle is settled: the epic's Boundaries, Done when and Spine
 decisions, the project's Constraints and Key decisions, the earlier epics'
-decisions, and every line already under this epic's own Decisions, which an
-earlier run of this conversation saved. None of it is asked about.
+decisions, a spike's verdict, and every line already under this epic's own
+Decisions, which an earlier run of this conversation saved. None of it is asked
+about.
 
 ## 2. Ask
 
-Ask about a choice only when undoing it later costs real rework and nothing above
+**An unknown first.** It's a fact the cut depends on that nothing read above
+tells: how code too wide to read here behaves, or whether something works at all.
+A choice isn't one, and neither is an `[ASSUMPTION]` the design has made. With
+one, Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-unknown.md` and
+settle it there. With none, no agent is started and nothing is asked about it.
+
+**Then the choices.** Ask about a choice only when undoing it later costs real rework and nothing above
 settles it. Pick every other one and put the pick on the list in step 4. With
 nothing to ask, go on.
 

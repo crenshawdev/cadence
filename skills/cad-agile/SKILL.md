@@ -9,6 +9,7 @@ allowed-tools:
   - Glob
   - AskUserQuestion
   - PushNotification
+  - Task
 ---
 
 <objective>
