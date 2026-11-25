@@ -34,7 +34,7 @@ call.
 **Outside reviewers.** For every name in `reviewers.outside`, all in one message:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" detect-models --provider <name> [--key-file '<review.key_file, only if set>']
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" detect-models --provider '<name>' [--key-file '<review.key_file, only if set>']
 ```
 
 A name that answers `ok:false` joins `dropped`, for its `reason` and `detail`. A
@@ -55,8 +55,9 @@ On the first, hold `review.reviewers` as `reviewers.list` without them, or
 `refuse`, print its `reason` and `hint`, one line each, and the start stops. On
 `ask`, Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/new-project.md`, only
 its **Pick a forge** item, and ask that item's questions a, b and c. On "None of
-these", print that item's two lines and the start stops. After `NO_ORIGIN`, ask
-its **Create repo** question too, and hold the answer. Hold `git.forge_provider`,
+these" the start stops: name the binaries in `installed`, and say the project can
+start once one of those services hosts it. After `NO_ORIGIN`, ask its **Create
+repo** question too, and hold the answer. Hold `git.forge_provider`,
 `git.forge_repo` and, on forgejo, `git.forge_host`.
 
 **Risk surfaces**, when `unanswered` names `surfaces`. Ask as
@@ -73,14 +74,6 @@ where the design decides none, the user is asked for it. A strong area's
 requirement is one the design's `prd.md` states, and the surfaces just answered
 count. Item 4 waits for **Write**, and item 5 is never asked here.
 
-**The answers.** Every value goes in single quotes, and one that holds a single
-quote is asked again. The testing lists are left out of this call, which writes
-nothing. A pair it refuses is asked again with its error, until none is:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" check '<key>=<value>' '<key>=<value>'
-```
-
 **The branch**, unless this start makes no commit (`IGNORED`, or
 `planning.commit_docs` false) or has nothing to branch from (`NO_COMMITS`). Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section
@@ -89,10 +82,19 @@ release's name in lowercase letters, digits and dashes. A new branch is held for
 **Write**, and a stop stops the start. Skip its integration branch: that one is
 named from files this path doesn't have.
 
+**The answers.** Every value goes in single quotes, here and in **Write**, the
+branch's name with them, and one that holds a single quote is asked again. This
+call writes nothing and leaves the testing lists out. A pair it refuses is asked
+again with its error, until none is:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" check '<key>=<value>' '<key>=<value>'
+```
+
 ## 3. Write
 
-In this order, stopping at the first `ok:false` with its `detail` and `hint`.
-The next run asks only what is still unanswered.
+In this order, stopping at the first call that fails, with its `detail` and
+`hint` or git's own words. The next run asks only what is still unanswered.
 
 1. `git rev-parse --git-dir >/dev/null 2>&1 || git init`, then
    `git checkout -b '<branch>'` when the user picked a new one.
