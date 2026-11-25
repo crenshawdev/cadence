@@ -30,7 +30,7 @@ export function unanswered(config) {
 
 /**
  * The reviewers a project names. `dropped` are the outside ones no review that fires would run; one a single review drops
- * still reviews, so it isn't there.
+ * still reviews, so it isn't there. With every review off none of them says anything, so all are asked.
  * @param {any} config the merged layers @param {any} resolved what `route.mjs resolve --role cad-reviewer` answered
  * @returns {{list: string[], outside: string[], dropped: string[]}}
  */
@@ -38,8 +38,9 @@ export function namedReviewers(config, resolved) {
   const wrote = at(config, 'review', 'reviewers');
   /** @type {string[]} */
   const list = [...new Set(Array.isArray(wrote) ? wrote.filter((n) => typeof n === 'string' && n) : [])];
-  const firing = Object.keys(resolved.review).filter((trigger) => resolved.review[trigger] !== 'off');
-  const runs = new Set(firing.flatMap((trigger) => resolved.reviewers[trigger] ?? []));
+  const triggers = Object.keys(resolved.review);
+  const firing = triggers.filter((trigger) => resolved.review[trigger] !== 'off');
+  const runs = new Set((firing.length ? firing : triggers).flatMap((trigger) => resolved.reviewers[trigger] ?? []));
   const named = list.filter((n) => n !== 'claude-subagent');
   return { list, outside: named.filter((n) => runs.has(n)), dropped: named.filter((n) => !runs.has(n)) };
 }

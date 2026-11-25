@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { readDesignFolder } from './planning/design-read.mjs';
 import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
+import { writePolicy } from './planning/testing-policy.mjs';
 import { OLD_PATH, agileDir, buildDir, buildPid, epicFile, releaseFile } from './lib/agile-paths.mjs';
 import { limits, renderEpicFile, renderProjectFile, renderReleaseFile, renderRequirementsFile } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
@@ -210,7 +211,9 @@ function start(dir, design) {
 
   const { decisions, design: { title, brief, requirements, phases: epics, uncovered } } = got;
   makeDir(dir);
-  // the marker goes first: a run that dies after it leaves a project the old path refuses, and the next start finishes
+  // here because `test-policy render` refuses a marked project, so a start that died would leave it unwritten for good
+  writePolicy(dirname(resolve(dir)), got.config.testing);
+  // of the release, the marker goes first: a run that dies after it leaves a project the old path refuses, and the next start finishes
   const marked = markAgile(dir);
   if (marked.ok === false) {
     return emit({ ok: false, reason: marked.reason, detail: `${statePath(dir)}: ${marked.detail}`,

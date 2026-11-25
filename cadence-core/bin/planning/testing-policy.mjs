@@ -91,6 +91,18 @@ const SET_FORGE = 'run /cad-config --testing, or name the forge with config.mjs 
 const NO_POLICY_HINT = 'run /cad-config --testing to accept a testing policy first - until then the project behaves as it did before the policy existed';
 
 /**
+ * Write an accepted `testing` section's committed form under the project root; a file that already holds it isn't touched.
+ * @param {string} root @param {any} testing
+ */
+export function writePolicy(root, testing) {
+  const file = join(root, POLICY_FILE);
+  const text = `${JSON.stringify(fill(testing), null, 2)}\n`;
+  if (read(file) === text) return;
+  makeDir(dirname(file));
+  atomicWrite(file, text);
+}
+
+/**
  * @param {string} root
  */
 function cmdRender(root) {
@@ -99,9 +111,7 @@ function cmdRender(root) {
   if (!policy) {
     return fail('no-policy', 'testing.scope is unset, so no policy was accepted and there is nothing to render', NO_POLICY_HINT);
   }
-  const file = join(root, POLICY_FILE);
-  makeDir(dirname(file));
-  atomicWrite(file, `${JSON.stringify(policy, null, 2)}\n`);
+  writePolicy(root, policy);
   return ok({ file: POLICY_FILE, policy });
 }
 

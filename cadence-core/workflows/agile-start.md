@@ -37,10 +37,11 @@ call.
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" detect-models --provider '<name>' [--key-file '<review.key_file, only if set>']
 ```
 
-A name that answers `ok:false` joins `dropped`, for its `reason` and `detail`. A
-name already there is dropped for what `reviewers.warnings` says of it. With
-none dropped, ask nothing. Otherwise ask once for all of them, with no option
-recommended:
+A name that answers `no-key`, `bad-provider`, or `http` with a 401 or 403 joins
+`dropped`, for its `detail`. Any other `ok:false` is a provider that couldn't be
+reached just now: say so in one line and ask nothing about it. A name already
+there is dropped for what `reviewers.warnings` says of it. With none dropped,
+ask nothing. Otherwise ask once for all of them, with no option recommended:
 
 - header: "Reviewers"
 - question: "{names} can't review this project: {why, in plain words}. How do you want to start?"
@@ -107,13 +108,14 @@ In this order, stopping at the first call that fails, with its `detail` and
    [ -f .planning/config.json ] || printf '{"git":{"guard_bypass":true}}\n' > .planning/config.json
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set '<key>=<value>' '<key>=<value>'
    ```
-3. The testing policy, when it was answered: item 4 of that same arm, before the
-   next call marks the project.
-4. The release:
+3. The repository, when the user said to create it: the `forge.mjs create` call
+   in that same forge item. Its `ok:false` is printed and carried to the report,
+   and the start goes on.
+4. The testing answers, when they were asked: the one `config.mjs set` of item 4
+   in that same arm. `start` renders the policy file from them, so none of that
+   item's other calls is run.
+5. The release:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" start --design '<folder>'
    ```
-5. The repository, when the user said to create it: the `forge.mjs create` call
-   in that same forge item. Its `ok:false` is printed and carried to the report,
-   and the run goes on.
