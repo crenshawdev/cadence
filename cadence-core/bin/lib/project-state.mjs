@@ -273,7 +273,7 @@ export function markAgile(planningRoot) {
 }
 
 /** The invalid states a rebuild may replace: ones it read and judged. A newer layout or a file it could not read is not one. */
-const REBUILDABLE = ['not-json', 'no-stamp', 'bad-shape'];
+export const REBUILDABLE = ['not-json', 'no-stamp', 'bad-shape'];
 
 /**
  * Replace a state file that is there and does not parse with `state`, the look and the write under one lock, so a state

@@ -5,6 +5,7 @@
 'use strict';
 
 import { renderEpicFile, renderProjectFile, renderReleaseFile } from './agile-render.mjs';
+import { fenceScanner } from './text-util.mjs';
 
 /** @typedef {import('./seldon-design.mjs').Issue} Issue */
 
@@ -15,28 +16,22 @@ const UNREADABLE = 'would not read back from the file it goes into - it opens a 
   + ' reads as one of that file\'s own headings; close the fence or reword that line';
 
 /**
- * The headings a reader finds in a file: every `#` line outside a code fence. Level 3 and deeper count only when the file
- * has that heading itself, so a brief section may hold its own.
+ * The headings a reader finds in a file: every `#` and `##` line outside a code fence, and any line that spells one of the
+ * file's own, so a brief section may hold deeper ones. The fences are the readers' own, or a start writes what they can't read.
  * @param {string} text @param {Set<string>} own @returns {string}
  */
 function outline(text, own) {
-  /** @type {string | null} */
-  let fence = null;
+  const fenced = fenceScanner();
   const found = [];
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    const mark = /^(`{3,}|~{3,})/.exec(line)?.[1];
-    if (fence !== null) {
-      if (mark && mark[0] === fence[0] && mark.length >= fence.length && line === mark) fence = null;
-    } else if (mark) fence = mark;
-    else if (/^#{1,2} /.test(line) || own.has(line)) found.push(line);
+  for (const line of text.split('\n')) {
+    if (!fenced(line) && (/^ {0,3}#{1,2} /.test(line) || own.has(line.trim()))) found.push(line.trim());
   }
-  return JSON.stringify([found, fence !== null]);
+  return JSON.stringify([found, fenced('')]);
 }
 
 /** @param {string} plain @param {string} real */
 function readsBack(plain, real) {
-  const own = new Set(plain.split('\n').filter((l) => /^#{3,} /.test(l)));
+  const own = new Set(plain.split('\n').filter((l) => /^#+ /.test(l)));
   return outline(plain, own) === outline(real, own);
 }
 

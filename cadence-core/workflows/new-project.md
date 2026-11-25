@@ -27,8 +27,9 @@ get` chained in a single script that echoes a marker when it wrote the config,
 for item 4's one line):
 
 1. If `.planning/PROJECT.md` exists, stop: "Project already initialized.
-   /cad-progress shows where you are." Then one check that writes nothing, and
-   on `ok:false` with reason `agile-path`, print its `hint` and stop:
+   /cad-progress shows where you are." Then, when `.planning/agile/` exists or
+   the call below, which writes nothing, answers reason `agile-path`, stop: "This
+   project is on the agile path. /cad-agile shows what comes next."
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --check --root .

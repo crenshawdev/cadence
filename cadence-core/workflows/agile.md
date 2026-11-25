@@ -24,10 +24,12 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" next
 
 <step name="start">
 There is no confirm step: typing the command is the consent. The path goes in
-quoted, exactly as typed:
+as one single-quoted word, a leading `~` written out as the home folder. Double
+quotes would run a `$(...)` or a backtick in it, and a path holding a single
+quote is refused here, never escaped:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" start --design "<folder>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" start --design '<folder>'
 ```
 
 On `ok:false`, print `detail`, every entry of `issues` and `hint`, and stop.
@@ -40,17 +42,19 @@ before its commit is finished by the next one:
 ```
 git rev-parse --git-dir >/dev/null 2>&1 || git init
 git cat-file -e HEAD:./.planning/agile/release.md 2>/dev/null && echo COMMITTED
-git check-ignore -q .planning/agile/release.md && echo IGNORED
+git check-ignore .planning/agile/release.md .planning/records/state.json .planning/records/.gitignore >/dev/null && echo IGNORED
 git rev-parse -q --verify HEAD >/dev/null || echo NO_COMMITS
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   planning.commit_docs git.protected_branches git.on_protected git.base_branch
 ```
 
-Make no commit on `COMMITTED`, on `IGNORED` or with `planning.commit_docs`
-false. Otherwise, unless it printed `NO_COMMITS` (there is nothing to branch
-from), Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and
-apply section 1's protected-branch guard and base integrity. Skip its
-integration branch: that one is named from files this path doesn't have.
+Make no commit on `IGNORED` or with `planning.commit_docs` false, nor on
+`COMMITTED` for a release that was already open. After a start `COMMITTED` is
+about the release before this one, so it doesn't count. Otherwise, unless it
+printed `NO_COMMITS` (there is nothing to branch from), Read
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section
+1's protected-branch guard and base integrity. Skip its integration branch:
+that one is named from files this path doesn't have.
 
 Then commit the release and nothing else the user has staged, and push nothing:
 
@@ -58,6 +62,9 @@ Then commit the release and nothing else the user has staged, and push nothing:
 git add .planning/agile .planning/records/state.json .planning/records/.gitignore
 git commit -m "docs: start the release" -- .planning/agile .planning/records/state.json .planning/records/.gitignore
 ```
+
+Nothing here ends the run: when the guard stops the commit or git refuses it,
+go on to `report` with the reason. The next run tries again.
 </step>
 
 <step name="report">
@@ -65,15 +72,15 @@ After a start:
 
 ```
 Release: {release}, {N} epics in .planning/agile/
-Commit: {hash, or "none - " and which of the three reasons}
+Commit: {hash, or "none - " and why}
 On no epic: {the `uncovered` requirement IDs, the line left out when empty}
 
 Next: refine {next.id} {next.name}, with /cad-agile
 ```
 
 On a release that was already open, the `Release: {release}` and `Next:` lines,
-with `Commit:` between them only when this run made one. `next` null -> "Every
-epic is done." in place of the `Next:` line.
+with `Commit:` between them only when this run made one or tried to. `next`
+null -> "Every epic is done." in place of the `Next:` line.
 </step>
 
 </process>

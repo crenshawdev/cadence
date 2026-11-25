@@ -20,7 +20,7 @@ import { judgeDesign } from './lib/agile-judge.mjs';
 import { STATUSES, readEpicStatus, readReleaseFile } from './lib/agile-read.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { ensureRecordsIgnore, makeDir, movePath, removeTree, writeFileNew } from './lib/planning-store.mjs';
-import { emptyState, markAgile, readState, statePath } from './lib/project-state.mjs';
+import { REBUILDABLE, emptyState, markAgile, readState, statePath } from './lib/project-state.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 
 /** @typedef {{reason: string, detail: string, hint: string}} Refusal */
@@ -54,6 +54,12 @@ function releaseOpen(dir) {
     hint: 'run /cad-agile, which names that release\'s next step; nothing was written' };
 }
 
+/** @param {string} dir @returns {Refusal} */
+function unmarked(dir) {
+  return { reason: 'unmarked', detail: `${agileDir(dir)} is there but ${statePath(dir)} does not say the project is on the agile path`,
+    hint: 'put the state file back from git or your backup, or move that folder aside, then re-run; nothing was written' };
+}
+
 /**
  * Why a release can't start in this planning folder, or null.
  * @param {string} dir @returns {Refusal | null}
@@ -67,7 +73,10 @@ function refusal(dir) {
   }
   const state = readState(dir);
   const marked = state.kind === 'invalid' && state.reason === 'agile-path';
-  if (marked && lstatOf(agileDir(dir)) !== null) return releaseOpen(dir);
+  const release = lstatOf(agileDir(dir)) !== null;
+  if (marked && release) return releaseOpen(dir);
+  // a marker too damaged to read is still this path's, and the old path's hint for one rebuilds it as an old-path state
+  if (release && state.kind === 'invalid' && REBUILDABLE.includes(state.reason)) return unmarked(dir);
   // a marked project keeps its own archives there, so only an unmarked one's archives are the old path's
   const old = readdirSync(dir).filter((name) => OLD_PATH.includes(name) || (!marked && name.startsWith('_archive-'))).sort();
   if (!marked && state.kind === 'invalid') {
@@ -78,11 +87,7 @@ function refusal(dir) {
     return { reason: 'old-path', detail: `${dir} belongs to an old-path project: ${old.join(', ')}`,
       hint: 'close that project\'s release with /cad-milestone and land it with /cad-land before it can leave the old path; nothing was written' };
   }
-  if (!marked && lstatOf(agileDir(dir)) !== null) {
-    return { reason: 'unmarked', detail: `${agileDir(dir)} is there but ${statePath(dir)} is not`,
-      hint: 'put the state file back from your backup, or move that folder aside, then re-run; nothing was written' };
-  }
-  return null;
+  return release && !marked ? unmarked(dir) : null;
 }
 
 /**

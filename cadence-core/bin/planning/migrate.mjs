@@ -20,6 +20,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fail, ok } from './core.mjs';
 import { importState, invalidHint, invalidReason, loadState, writeViews } from './state-import.mjs';
+import { agileDir, releaseFile } from '../lib/agile-paths.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   archivePath, codemapDir, declinedPath, deferredDir, ensurePhaseRecordsDir, ensureRecordsDir, ensureRecordsIgnore,
@@ -357,6 +358,8 @@ export function cmdStateRebuild(dir) {
   if (got.reason === 'newer-layout' || got.reason === 'agile-path' || got.reason === 'unreadable') {
     return fail(invalidReason(got.reason), `${file}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
   }
+  // a damaged agile marker: rebuilding it would hand that release's project to the old path
+  if (existsSync(releaseFile(agileDir(dir)))) return fail('agile-path', `${file}: ${got.reason} - ${got.detail}`, invalidHint('agile-path'));
   const imported = importState(dir);
   if (imported.ok === false) {
     const { reason, detail, issues, hint } = imported;
