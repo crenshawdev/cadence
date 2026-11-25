@@ -2,6 +2,13 @@
 
 Invoke as `/cad-<name>`.
 
+## Agile path
+A project is on this path or on the phase path below, never on both.
+
+| Command | What it does |
+|---|---|
+| `/cad-agile [--brief <design folder>]` | The path's one command. With no release open, `--brief` turns a Seldon design into one, with its epics, and commits it. With one open, names its next step. |
+
 ## Build spine (the core loop)
 A phase travels new-project -> context -> plan -> execute -> verify.
 

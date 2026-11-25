@@ -4,6 +4,14 @@ Use the full `/cadence:cad-` name in Claude Code. Square brackets below mean an 
 
 The commands do different kinds of work. Execution, task work, fixes, pausing and rollback can make commits. Setup and planning can commit project records. Landing publishes only through its chosen or explicitly authorized path. A slash command isn't inherently read-only.
 
+## The agile path
+
+A project works in releases, epics and stories on this path, or in milestones and phases through the commands below it. It's on one or the other, and the commands that start a phase project stop on an agile one.
+
+| Command | Arguments | What it does |
+|---|---|---|
+| `/cadence:cad-agile` | `[--brief <design folder>]` | Run the path. With no release open, `--brief` turns a Seldon design into a release and its epics under `.planning/agile/` and commits them. With one open, it names the next step. |
+
 ## Start and build
 
 | Command | Arguments | What it does |
