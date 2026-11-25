@@ -220,7 +220,8 @@ function readSpine(text, issues) {
 
 /**
  * @typedef {{epic: string, number: number, name: string, description: string, goal: string, success_criteria: string[],
- *   depends_on: string, requirements: string[], spine_decisions: Decision[]}} Phase
+ *   depends_on: string, requirements: string[], spine_decisions: Decision[], boundaries: string, builds_on: string[]}} Phase
+ * `boundaries` and `builds_on` are the epic's own words and E- IDs, for the agile path; the old path reads `goal` and `depends_on`.
  */
 
 /**
@@ -339,6 +340,8 @@ function readEpics(text, issues, ctx) {
       success_criteria: criteria(doneWhen ?? []),
       depends_on: depends.length ? depends.map((x) => `Phase ${position.get(x)}`).join(', ') : 'Nothing',
       requirements,
+      boundaries: oneLine(boundaries ?? []),
+      builds_on: depends,
       // repeated in full in every phase that names one; a declared decision that didn't parse already has its issue
       spine_decisions: decisions.flatMap((x) => (ctx.decisions.has(x) ? [{ ...ctx.decisions.get(x) }] : [])),
     });

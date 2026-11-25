@@ -38,6 +38,34 @@ function readDocument(file) {
 }
 
 /**
+ * A design folder's four documents read and parsed, with every problem in them: a file that can't be read, a line break
+ * only some readers see, and what `readDesign` finds. Both paths read a design through this.
+ * @param {string} folder @param {number} [first] the number the first epic's phase takes
+ * @returns {{read: ReturnType<typeof readDesign>, issues: import('../lib/seldon-design.mjs').Issue[]}}
+ */
+export function readDesignFolder(folder, first = 1) {
+  /** @type {import('../lib/seldon-design.mjs').Issue[]} */
+  const issues = [];
+  /** @type {Record<string, string|null>} */
+  const texts = {};
+  for (const name of DESIGN_FILES) {
+    const got = readDocument(join(folder, name));
+    const text = got.text;
+    texts[name] = text;
+    if (got.problem !== null) issues.push({ file: name, problem: got.problem });
+    const lines = text === null ? []
+      : [...new Set([...text.matchAll(LINE_BREAK_G)].map((m) => text.slice(0, m.index).split('\n').length))];
+    if (lines.length) {
+      issues.push({ file: name, problem: `a carriage return with no newline after it, or a U+2028 or U+2029 separator, on`
+        + ` line${lines.length === 1 ? '' : 's'} ${lines.join(', ')} - Cadence's readers take each as a line break, so take it out` });
+    }
+  }
+  const read = readDesign(texts, first);
+  issues.push(...read.issues);
+  return { read, issues };
+}
+
+/**
  * The read-back check phase-entry add runs, on every phase's name and description, here and not in lib/ so lib never
  * imports planning/. The judge passes a balanced `**Bold**`, which reads back unchanged, so `**` is refused beside it.
  * At most one issue per value.
@@ -176,24 +204,7 @@ function cmdDesignRead(dir, opts) {
   if (add && project === null) return;
   if (project) first = project.first;
 
-  /** @type {import('../lib/seldon-design.mjs').Issue[]} */
-  const issues = [];
-  /** @type {Record<string, string|null>} */
-  const texts = {};
-  for (const name of DESIGN_FILES) {
-    const got = readDocument(join(design.abs, name));
-    const text = got.text;
-    texts[name] = text;
-    if (got.problem !== null) issues.push({ file: name, problem: got.problem });
-    const lines = text === null ? []
-      : [...new Set([...text.matchAll(LINE_BREAK_G)].map((m) => text.slice(0, m.index).split('\n').length))];
-    if (lines.length) {
-      issues.push({ file: name, problem: `a carriage return with no newline after it, or a U+2028 or U+2029 separator, on`
-        + ` line${lines.length === 1 ? '' : 's'} ${lines.join(', ')} - Cadence's readers take each as a line break, so take it out` });
-    }
-  }
-  const read = readDesign(texts, first);
-  issues.push(...read.issues);
+  const { read, issues } = readDesignFolder(design.abs, first);
   judgePhases(read.design.phases, issues);
   // judgePhases covers the phase list line; this covers the Requirements line, read back the way the planner reads it
   const sections = renderSections(read.design.phases);
