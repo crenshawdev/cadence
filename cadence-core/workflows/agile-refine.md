@@ -6,10 +6,17 @@ agent is started, no code is changed, and a script writes every file.
 
 ## 1. Read
 
-**The branch first**, unless `commit` printed `IGNORED` or `NO_COMMITS`,
-`planning.commit_docs` is false, or that step already asked: Read
+**The branch first**, unless `commit` printed `IGNORED`, `planning.commit_docs`
+is false, or that step already asked: Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section 1.
 A stop or an abort ends the run here.
+
+**This run's own folder**, whose printed path goes into every later call as a
+literal:
+
+```
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-refine-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "$D"
+```
 
 Then, in one message:
 
@@ -37,15 +44,9 @@ Questions that don't wait on each other go in one call. An answer that reaches
 past the epic's Boundaries is a line for "You didn't ask for this" in step 4.
 
 Save the answers the moment they come, before anything else, so a cleared
-session doesn't ask them again. The first call makes this run's own folder; the
-printed path goes into every later call as a literal:
-
-```
-D="$(mktemp -d "${TMPDIR:-/tmp}/cad-refine-XXXXXX")" && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D" >&2; exit 1;; esac && echo "$D"
-```
-
-Write `answers.json` there with the Write tool, each value on one line and each
-answer in the user's own words where they typed one:
+session doesn't ask them again. Write `answers.json` in that folder with the
+Write tool, each value on one line and each answer in the user's own words where
+they typed one:
 
 ```
 {"epic": "{id}", "answers": [{"question": "...", "answer": "..."}]}
@@ -126,8 +127,9 @@ Then ask, through the ask-user seam and with nothing recommended:
   - "Change them - say what to change, and the list is shown again"
   - "Not now - no story is saved, and the answers you gave are kept"
 
-On "Change them", take the change in the user's words, cut again and come back
-through `propose`. Something they want from "You didn't ask for this" goes on a
+On "Change them", take the change in the user's words. One that changes an
+answer is saved first, with `answer` and the question as it stands under
+Decisions. Then cut again and come back through `propose`. Something they want from "You didn't ask for this" goes on a
 story when one of the epic's requirements covers it. Otherwise say that
 `/cad-capture` keeps it for a later epic. On "Not now", stop there: nothing else
 is written and nothing is committed.
@@ -143,12 +145,13 @@ are any.
 
 Then one commit of the refinement and nothing else the user has staged, unless
 the branch step above was skipped for `IGNORED` or `planning.commit_docs`. Push
-nothing. `backlog.md` goes in only when the list took something from it:
+nothing. `backlog.md` goes in only when lines taken out of it are all that
+changed there:
 
 ```
-set -- .planning/agile/epics/{id}
-set -- "$@" .planning/agile/backlog.md
-git add -- "$@"
+set -- '.planning/agile/epics/{id}/epic.md' ':(glob).planning/agile/epics/{id}/{id}-*.md'
+git diff --numstat HEAD -- .planning/agile/backlog.md 2>/dev/null | grep -qE '^0[[:space:]]' && set -- "$@" .planning/agile/backlog.md
+git add -A -- "$@"
 git commit -m "docs: refine {id}" -- "$@"
 ```
 

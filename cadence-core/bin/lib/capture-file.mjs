@@ -111,16 +111,21 @@ export function captureLines(file) {
  * @param {string} file @param {string[]} bullets @returns {{ok: true} | {ok: false, reason: string, detail: string}}
  */
 export function removeCaptures(file, bullets) {
-  const done = withPlanningFileLock(file, () => {
-    let taking = false;
-    const kept = (read(file) ?? '').split('\n').filter((l) => {
-      // a bullet someone wrapped by hand goes with the lines indented under it
-      taking = bullets.includes(l.trimEnd()) || (taking && /^\s+\S/.test(l));
-      return !taking;
+  try {
+    const done = withPlanningFileLock(file, () => {
+      const lines = (read(file) ?? '').split('\n');
+      const kept = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (!bullets.includes(lines[i].trimEnd())) { kept.push(lines[i]); continue; }
+        // a bullet someone wrapped by hand goes with everything indented under it, a second paragraph too
+        for (let j = i + 1; j < lines.length && (lines[j].trim() === '' || /^\s/.test(lines[j])); j++) if (lines[j].trim() !== '') i = j;
+      }
+      if (existsSync(file)) atomicWrite(file, kept.join('\n'));
     });
-    if (existsSync(file)) atomicWrite(file, kept.join('\n'));
-  });
-  return done.ok ? { ok: true } : done;
+    return done.ok ? { ok: true } : done;
+  } catch (e) {
+    return { ok: false, reason: 'write-failed', detail: `${file}: ${/** @type {any} */ (e).message}` };
+  }
 }
 
 // --- the guard ---------------------------------------------------------------

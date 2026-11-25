@@ -71,8 +71,8 @@ Only on a release that was already open, with no commit above left unmade.
   git cat-file -e 'HEAD:./.planning/agile/epics/{next.id}/{next.story.id}.md' 2>/dev/null && echo REFINED
   ```
 
-  Without `REFINED`, Read that same file, apply its branch step and make its
-  commit, then go on to `report`.
+  Without `REFINED`, Read that same file, apply its branch step, where a stop
+  goes on to `report` with its reason, and make its commit. Then `report`.
 - Anything else -> `report`.
 </step>
 

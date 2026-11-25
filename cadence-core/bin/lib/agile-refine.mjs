@@ -59,10 +59,14 @@ export function judgeAnswers(payload, epic) {
     return { issues: [{ field: 'answers', problem: 'is a list of at least one answer' }], answers: [] };
   }
   const issues = payloadProblems(payload, ANSWERS, epic);
+  const asked = new Set();
   for (const a of payload.answers) {
     if (!isObject(a) || !ANSWER.every((key) => oneLine(a[key])) || Object.keys(a).length !== ANSWER.length) {
       issues.push({ field: 'answers', problem: `${JSON.stringify(a)} is not a question and an answer, each on one line` });
-    }
+    // the file sets a question off with those marks, so one of its own would read as another question
+    } else if (String(a.question).includes('**') || asked.has(a.question)) {
+      issues.push({ field: 'answers', problem: `${JSON.stringify(a.question)} holds ** or is there twice` });
+    } else asked.add(a.question);
   }
   return { issues, answers: issues.length ? [] : payload.answers };
 }
@@ -83,8 +87,9 @@ export function judgeStories(payload, epic) {
   const issues = payloadProblems(payload, PAYLOAD, epic.id);
   if (!lines(payload.decisions)) issues.push({ field: 'decisions', problem: 'is a list of decisions, each on one line, empty when there are none' });
   const taken = payload.backlog ?? [];
-  if (!lines(taken)) issues.push({ field: 'backlog', problem: 'is a list of lines of backlog.md, each as it stands there' });
-  else for (const line of /** @type {string[]} */ (taken)) if (!line.startsWith('- ') || !epic.backlog.includes(line)) issues.push({ field: 'backlog', problem: `${JSON.stringify(line)} is not an item in backlog.md` });
+  // whatever an item holds, being one of that file's lines is the whole rule
+  if (!Array.isArray(taken)) issues.push({ field: 'backlog', problem: 'is a list of lines of backlog.md, each as it stands there' });
+  else for (const line of taken) if (!String(line).startsWith('- ') || !epic.backlog.includes(line)) issues.push({ field: 'backlog', problem: `${JSON.stringify(line)} is not an item in backlog.md` });
   const earlier = new Set(epic.earlier);
   const covered = new Set();
   payload.stories.forEach((s, i) => {
