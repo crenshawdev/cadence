@@ -42,9 +42,7 @@ Make no commit on `IGNORED` or with `planning.commit_docs` false, nor on
 about the release before this one, so it doesn't count, and the start has
 settled its branch. On a release that was already open, unless it printed
 `NO_COMMITS` (there is nothing to branch from), Read
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section
-1's protected-branch guard and base integrity. Skip its integration branch:
-that one is named from files this path doesn't have.
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section 1.
 
 Then commit the release, its setup and nothing else the user has staged, and
 push nothing:

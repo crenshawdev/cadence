@@ -11,7 +11,8 @@ Read `git.protected_branches` and `git.on_protected` from config
 the protected list:
 
 - `ask` (default) -> ask the user (ask-user seam), no preselected default,
-  filling in the branch and a suggested name from the task/phase slug:
+  filling in the branch and a suggested name from the task/phase slug, or on an
+  agile project the release's branch, from **Integration branch** below:
 
   - header: "Branch"
   - question: "You're on {branch}, a protected branch. Cadence won't commit there unless you say so. What do you want to do?"
@@ -58,20 +59,27 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-branch.mjs" decide
 Relay the envelope's `warnings[]` to the user before acting: a config layer
 that did not parse means the advice came from DEFAULTS, not the user's settings.
 
+On an agile project (`.planning/agile/` exists) run it before the guard's
+question and suggest its `branch` there, the slug when that's null. Act on its
+`action` only when that question wasn't asked, and switch to a branch that
+already exists.
+
 Act on its `action`:
 
 - `create` -> `git checkout -b <branch>` and continue on it. `<branch>` is the
   seam's `branch` field: `git.integration_branch_name` if set (e.g.
   `seldon/hardin`), else `cadence/<version>` (e.g. `cadence/v1.1.0-rc.2`) from
   `PROJECT.md`'s `### Active` milestone, falling back to the `ROADMAP.md`
-  title. A configured name that fails its grammar comes back as `ask`, never
-  `create`. Never run `checkout -b` with an empty/null `branch`: treat a
-  `create` with a null `branch` as a naming problem too.
+  title, or on an agile project `cadence/` and the release's name. A configured
+  name that fails its grammar comes back as `ask`, never `create`. Never run
+  `checkout -b` with an empty/null `branch`: treat a `create` with a null
+  `branch` as a naming problem too.
 - `ask` -> prompt once via the ask-user seam, no preselected default. With
   `branch` named: create it / stay on the base / abort. With `branch` null:
   tell the user no milestone version was found in `PROJECT.md`'s `### Active`
   or the `ROADMAP.md` title, and offer to set the version / stay on the base /
-  abort - never invent a name.
+  abort - never invent a name. On an agile project, tell them the `reason` and
+  offer the last two.
 - `stay` -> do nothing.
 
 `git.integration_branch` picks the model. `milestone` creates the integration

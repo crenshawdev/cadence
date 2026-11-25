@@ -78,10 +78,10 @@ count. Item 4 waits for **Write**, and item 5 is never asked here.
 **The branch**, unless this start makes no commit (`IGNORED`, or
 `planning.commit_docs` false) or has nothing to branch from (`NO_COMMITS`). Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section
-1's protected-branch guard and base integrity, suggesting `cadence/` and the
-release's name in lowercase letters, digits and dashes. A new branch is held for
-**Write**, and a stop stops the start. Skip its integration branch: that one is
-named from files this path doesn't have.
+1's protected-branch guard and base integrity, suggesting the check's `branch`.
+Null -> say that neither the release's name nor `git.integration_branch_name`
+gives one, and the user types it. A new branch is held for **Write**, and a stop
+stops the start. Skip its integration branch: the release isn't written yet.
 
 **The answers.** Every value goes in single quotes, here and in **Write**, the
 branch's name with them, and one that holds a single quote is asked again. This

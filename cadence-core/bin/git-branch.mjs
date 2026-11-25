@@ -5,6 +5,7 @@
 //   decide [--dir <path>] [--branch <name>]
 //     --dir is the planning root: absent means cwd, an empty or valueless one refuses (true of `tags` too).
 //     It reads the tag list because no integration branch may be named after a published version.
+//     On an agile project the branch carries the release's name, and no version is read.
 //     --branch overrides the current branch.
 //   tags [--dir <path>]
 //     Prints `tags[]` for that root, read-only. Any failure is an empty list, not an enclosing repo's releases.
@@ -13,10 +14,13 @@
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
-import { integrationBranchName, configuredNameProblem, milestoneVersion, decideBranch } from './lib/branch-decision.mjs';
+import { integrationBranchName, releaseBranchName, configuredNameProblem, milestoneVersion, decideBranch } from './lib/branch-decision.mjs';
+import { agileDir, releaseFile } from './lib/agile-paths.mjs';
+import { readReleaseFile } from './lib/agile-read.mjs';
 // shared with the audit so the two can't drift apart
 import { readTags } from './lib/git-tags.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
+import { readState } from './lib/project-state.mjs';
 // reads '' on failure
 import { readText } from './lib/seam-input.mjs';
 // no flag rule here: arg-contract declares them. `--dir` refuses though this seam mutates nothing, since an advisory
@@ -27,25 +31,33 @@ import { readCurrentBranch } from './lib/git-head.mjs';
 
 function decide(dir, branchOverride) {
   // warnings[] rides every result: a torn layer means the advice came from defaults, and the caller has to see that
-  const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
+  const planning = join(dir, '.planning');
+  const { config, warnings } = mergeLayers(join(planning, 'config.json'));
   const git = config.git || {};
   const mode = git.integration_branch || 'milestone';
   const autoBranch = git.auto_branch || 'ask';
   // one coercion for protected_branches, or this advises a named branch unprotected while git-guard honors it
   const protectedBranches = resolveProtectedBranches(git);
   const branch = branchOverride !== undefined ? branchOverride : readCurrentBranch(dir);
-  const projectText = readText(join(dir, '.planning', 'PROJECT.md'));
-  const roadmapText = readText(join(dir, '.planning', 'ROADMAP.md'));
+  const state = readState(planning);
+  const agile = state.kind === 'invalid' && state.reason === 'agile-path';
+  // an old-path file left beside a release must not name its branch
+  const projectText = agile ? '' : readText(join(planning, 'PROJECT.md'));
+  const roadmapText = agile ? '' : readText(join(planning, 'ROADMAP.md'));
   // the configured name wins; one failing the grammar on read is a naming problem, never a `create` under it
   const configured = git.integration_branch_name;
   const nameProblem = configuredNameProblem(configured);
-  const integrationName = integrationBranchName(projectText, roadmapText, configured);
+  const integrationName = agile
+    ? releaseBranchName(readReleaseFile(readText(releaseFile(agileDir(planning))))?.title ?? '', configured)
+    : integrationBranchName(projectText, roadmapText, configured);
+  const noName = agile
+    ? 'the release in .planning/agile has no name a branch can take - set git.integration_branch_name' : undefined;
   // the guard reads the version itself, so it holds under any branch name
   const version = milestoneVersion(projectText, roadmapText);
   // the whole tag list, unranked: `decideBranch` only tests membership
   // `dir` is the project root, so it's both where the question is asked and the root the answer must belong to
   const d = decideBranch({ mode, autoBranch, currentBranch: branch, protectedBranches, integrationName, nameProblem,
-    version, publishedVersions: readTags(dir, dir) });
+    noName, version, publishedVersions: readTags(dir, dir) });
   emit({ ok: true, action: d.action, branch: d.branch, mode, currentBranch: branch, reason: d.reason, warnings });
 }
 
