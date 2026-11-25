@@ -1,0 +1,140 @@
+#!/usr/bin/env node
+// @ts-check
+// agile.mjs - the agile path's own script: it starts a release from a Seldon design
+// not a planning.mjs subcommand: every one of those refuses a project this path owns
+//
+// Usage: agile.mjs start --design <folder> [--dir <.planning>]
+//
+// one JSON object on stdout; a refusal names the next step
+// no lock: each start builds in its own folder and one rename decides, so a killed start never makes the next one wait
+'use strict';
+
+import { lstatSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { readDesignFolder } from './planning/design-read.mjs';
+import { agileDir, buildDir, buildPid, epicFile } from './lib/agile-paths.mjs';
+import { renderEpicFile, renderProjectFile, renderReleaseFile, renderRequirementsFile } from './lib/agile-render.mjs';
+import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
+import { makeDir, movePath, removeTree, writeFileNew } from './lib/planning-store.mjs';
+import { markAgile, readState, statePath } from './lib/project-state.mjs';
+import { emit, emitCaught } from './lib/seam-io.mjs';
+
+/** @typedef {{reason: string, detail: string, hint: string}} Refusal */
+
+/** What an old-path project keeps at the top of its planning folder; any one of them means the old path owns it. */
+const OLD_PATH = ['PROJECT.md', 'REQUIREMENTS.md', 'ROADMAP.md', 'STATE.md', 'phases'];
+
+/** @param {string} path @returns {import('node:fs').Stats | null} */
+function lstatOf(path) {
+  try { return lstatSync(path); } catch { return null; }
+}
+
+/** @param {Refusal} r */
+function refuse(r) {
+  emit({ ok: false, reason: r.reason, detail: r.detail, hint: r.hint });
+}
+
+/** Is that process still running? EPERM means it is, and someone else's. @param {number} pid */
+function alive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return /** @type {any} */ (e).code === 'EPERM'; }
+}
+
+/** @param {string} dir @returns {Refusal} */
+function releaseOpen(dir) {
+  return { reason: 'release-open', detail: `${agileDir(dir)} already holds a release`,
+    hint: 'run /cad-agile, which names that release\'s next step; nothing was written' };
+}
+
+/**
+ * Why a release can't start in this planning folder, or null.
+ * @param {string} dir @returns {Refusal | null}
+ */
+function refusal(dir) {
+  const st = lstatOf(dir);
+  if (st === null) return null;
+  if (!st.isDirectory()) {
+    return { reason: 'planning-dir', detail: `${dir} is not a real folder`,
+      hint: 'move it aside, or point --dir at the real planning folder, then re-run; nothing was written' };
+  }
+  const state = readState(dir);
+  const marked = state.kind === 'invalid' && state.reason === 'agile-path';
+  if (marked && lstatOf(agileDir(dir)) !== null) return releaseOpen(dir);
+  // a marked project keeps its own archives there, so only an unmarked one's archives are the old path's
+  const old = readdirSync(dir).filter((name) => OLD_PATH.includes(name) || (!marked && name.startsWith('_archive-'))).sort();
+  if (!marked && state.kind !== 'absent') old.push(statePath(dir));
+  if (old.length) {
+    return { reason: 'old-path', detail: `${dir} belongs to an old-path project: ${old.join(', ')}`,
+      hint: 'a release starts on a project the old path has never run on; nothing was written' };
+  }
+  if (!marked && lstatOf(agileDir(dir)) !== null) {
+    return { reason: 'unmarked', detail: `${agileDir(dir)} is there but ${statePath(dir)} is not`,
+      hint: 'put the state file back from your backup, or move that folder aside, then re-run; nothing was written' };
+  }
+  return null;
+}
+
+/** @param {string} dir @param {string} design */
+function start(dir, design) {
+  const folder = resolve(design);
+  if (!statIsDir(folder)) {
+    return emit({ ok: false, reason: 'no-design-dir', detail: `${folder} is not a folder`,
+      hint: 'point --design at the folder Seldon wrote the design into, then re-run; nothing was written' });
+  }
+  const early = refusal(dir);
+  if (early) return refuse(early);
+  const { read, issues } = readDesignFolder(folder);
+  if (issues.length) {
+    return emit({ ok: false, reason: 'design-refused',
+      detail: `the design in ${folder} has ${issues.length} problem${issues.length === 1 ? '' : 's'} - the issues list names each`,
+      issues,
+      hint: 'fix each issue in the design folder, by a Seldon rerun of that document or by hand, then re-run; nothing was written' });
+  }
+
+  const { title, brief, requirements, phases: epics, uncovered } = read.design;
+  makeDir(dir);
+  // the marker goes first: a run that dies after it leaves a project the old path refuses, and the next start finishes
+  const marked = markAgile(dir);
+  if (marked.ok === false) {
+    return emit({ ok: false, reason: marked.reason, detail: `${statePath(dir)}: ${marked.detail}`,
+      hint: marked.reason === 'state-locked'
+        ? 'another command is writing here, or one was killed doing it - re-run in two minutes, or remove the lock the detail names now if nothing else is running; no release file was written'
+        : 'fix the cause the detail names, then re-run; no release file was written' });
+  }
+  for (const name of readdirSync(dir)) {
+    const pid = buildPid(name);
+    // a dead run's half-built folder, or this pid's own from before a reboot
+    if (pid !== null && (pid === process.pid || !alive(pid))) removeTree(join(dir, name));
+  }
+  const building = buildDir(dir);
+  for (const e of epics) {
+    makeDir(dirname(epicFile(building, e.epic)));
+    writeFileNew(epicFile(building, e.epic), renderEpicFile(e));
+  }
+  writeFileNew(join(building, 'project.md'), renderProjectFile(title, brief, epics));
+  writeFileNew(join(building, 'REQUIREMENTS.md'), renderRequirementsFile(title, requirements));
+  writeFileNew(join(building, 'release.md'), renderReleaseFile(title, brief, epics));
+  try {
+    movePath(building, agileDir(dir));
+  } catch (e) {
+    // two starts at once: the first rename won, and a folder never renames over a full one
+    if (lstatOf(agileDir(dir)) === null) throw e;
+    removeTree(building);
+    return refuse(releaseOpen(dir));
+  }
+  emit({ ok: true, release: title, folder: agileDir(dir), epics: epics.map((e) => ({ id: e.epic, name: e.name })), uncovered });
+}
+
+/** @param {string} path */
+function statIsDir(path) {
+  try { return statSync(path).isDirectory(); } catch { return false; }
+}
+
+const argv = process.argv.slice(2);
+const arg = rowReader(argv, CONTRACTS['agile.mjs']);
+
+try {
+  if (argv[0] === 'start') start(arg('start', '--dir') || '.planning', arg('start', '--design'));
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: start --design <folder> [--dir <.planning>]' });
+} catch (e) {
+  emitCaught(e);
+}
