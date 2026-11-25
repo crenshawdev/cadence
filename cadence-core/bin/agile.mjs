@@ -28,6 +28,7 @@ import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { boundedRun } from './lib/bounded-run.mjs';
 import { adviseBranch } from './lib/branch-advice.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
+import { signingProblem } from './lib/git-signing.mjs';
 import { ensureRecordsIgnore, makeDir, movePath, removeTree, writeFileNew } from './lib/planning-store.mjs';
 import { REBUILDABLE, emptyState, markAgile, readState, statePath } from './lib/project-state.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
@@ -35,7 +36,7 @@ import { interviewOptions } from './lib/surface-scan.mjs';
 
 /** @typedef {{reason: string, detail: string, hint: string, issues?: unknown[]}} Refusal */
 
-/** Both calls `check` makes out are local reads, so this only guards a wedged filesystem. */
+/** The identity and reviewer calls are local reads, so this only guards a wedged filesystem. */
 const CHILD_TIMEOUT_MS = 10000;
 
 /** @param {string} path @returns {import('node:fs').Stats | null} */
@@ -186,6 +187,11 @@ function check(dir, design) {
   if (!hasIdentity(root)) {
     return refuse({ reason: 'no-git-identity', detail: 'git has no name and email to commit with here',
       hint: 'set them with git config --global user.name and git config --global user.email, then re-run; nothing was written' });
+  }
+  const unsigned = signingProblem(root);
+  if (unsigned !== null) {
+    return refuse({ reason: 'signing-failed', detail: `git signs commits here, and a test signature failed: ${unsigned}`,
+      hint: 'fix the key, or the user.signingkey and gpg.format settings that name it, then re-run; nothing was written' });
   }
   const open = unanswered(got.config);
   /** @type {Record<string, unknown>} */
