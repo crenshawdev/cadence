@@ -40,10 +40,11 @@ export const CENSUSES = Object.freeze([
     // no paren after mergeLayers here, or the merge-warnings rule reads this row as a callsite
     counts: 'the `mergeLayers` callsites and the files they span, each in one '
       + 'of the warning-surfacing arms',
-    asserted_by: 'the test named `check 12: the live tree is TWENTY-ONE callsites '
-      + 'over FIFTEEN files, each in an arm`',
+    asserted_by: 'the test named `check 12: the live tree is TWENTY-TWO callsites '
+      + 'over SIXTEEN files, each in an arm`',
     // lib/config-merge.mjs isn't a subject: that test skips it, so editing it can't move the count
     subjects: [
+      'cadence-core/bin/agile.mjs',
       'cadence-core/bin/config.mjs',
       'cadence-core/bin/forge.mjs',
       'cadence-core/bin/git-branch.mjs',

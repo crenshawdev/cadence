@@ -13,6 +13,9 @@ const page = (blocks) => `${blocks.join('\n\n')}\n`;
 /** @param {Decision} d */
 const decisionLine = (d) => `- **${d.id}: ${d.title}** (${d.kind}): ${d.text}`;
 
+/** The decisions that limit the whole project. @param {Decision[]} decisions */
+export const limits = (decisions) => decisions.filter((d) => d.kind === 'stack' || d.kind === 'hosting');
+
 /**
  * Every spine decision has a home: stack and hosting here as constraints, the ones an epic names in that epic's file, and
  * any that no epic names here as key decisions.
@@ -22,8 +25,8 @@ const decisionLine = (d) => `- **${d.id}: ${d.title}** (${d.kind}): ${d.text}`;
 export function renderProjectFile(title, brief, epics, decisions) {
   const section = (/** @type {string} */ name) => [`### ${name}`, brief[name]];
   const named = new Set(epics.flatMap((e) => e.spine_decisions).map((d) => d.id));
-  const limits = decisions.filter((d) => d.kind === 'stack' || d.kind === 'hosting');
-  const key = decisions.filter((d) => !limits.includes(d) && !named.has(d.id));
+  const limited = limits(decisions);
+  const key = decisions.filter((d) => !limited.includes(d) && !named.has(d.id));
   return page([
     `# ${title}`,
     '## What it is',
@@ -32,7 +35,7 @@ export function renderProjectFile(title, brief, epics, decisions) {
     '## Out of scope',
     brief['What it refuses'],
     '## Constraints',
-    limits.map(decisionLine).join('\n') || 'None.',
+    limited.map(decisionLine).join('\n') || 'None.',
     '## Key decisions',
     key.map(decisionLine).join('\n') || 'None yet.',
   ]);

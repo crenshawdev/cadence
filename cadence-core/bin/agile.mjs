@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // @ts-check
-// agile.mjs - the agile path's own script: it starts a release from a Seldon design and says what the open one does next
+// agile.mjs - the agile path's own script: it says what a start still has to ask, starts a release from a Seldon design
+// and says what the open one does next
 // not a planning.mjs subcommand: every one of those refuses a project this path owns
 //
 // Usage: agile.mjs next [--dir <.planning>]
+//        agile.mjs check --design <folder> [--dir <.planning>]
 //        agile.mjs start --design <folder> [--dir <.planning>]
 //
 // one JSON object on stdout; a refusal names the next step
@@ -12,18 +14,27 @@
 
 import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readDesignFolder } from './planning/design-read.mjs';
+import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
 import { OLD_PATH, agileDir, buildDir, buildPid, epicFile, releaseFile } from './lib/agile-paths.mjs';
-import { renderEpicFile, renderProjectFile, renderReleaseFile, renderRequirementsFile } from './lib/agile-render.mjs';
+import { limits, renderEpicFile, renderProjectFile, renderReleaseFile, renderRequirementsFile } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
 import { STATUSES, readEpicStatus, readReleaseFile } from './lib/agile-read.mjs';
+import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
+import { boundedRun } from './lib/bounded-run.mjs';
+import { mergeLayers } from './lib/config-merge.mjs';
 import { ensureRecordsIgnore, makeDir, movePath, removeTree, writeFileNew } from './lib/planning-store.mjs';
 import { REBUILDABLE, emptyState, markAgile, readState, statePath } from './lib/project-state.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
+import { interviewOptions } from './lib/surface-scan.mjs';
 
-/** @typedef {{reason: string, detail: string, hint: string}} Refusal */
+/** @typedef {{reason: string, detail: string, hint: string, issues?: unknown[]}} Refusal */
+
+/** Both calls `check` makes out are local reads, so this only guards a wedged filesystem. */
+const CHILD_TIMEOUT_MS = 10000;
 
 /** @param {string} path @returns {import('node:fs').Stats | null} */
 function lstatOf(path) {
@@ -37,7 +48,7 @@ function clear(path) {
 
 /** @param {Refusal} r */
 function refuse(r) {
-  emit({ ok: false, reason: r.reason, detail: r.detail, hint: r.hint });
+  emit({ ok: false, reason: r.reason, detail: r.detail, ...(r.issues ? { issues: r.issues } : {}), hint: r.hint });
 }
 
 /** Is that process still running? EPERM means it is, and someone else's. @param {number} pid */
@@ -117,27 +128,87 @@ function next(dir) {
   emit({ ok: true, release: release.value.title, next: null });
 }
 
-/** @param {string} dir @param {string} design */
-function start(dir, design) {
+/**
+ * The design and the project's settings, or why no start can go ahead here. It writes nothing.
+ * @param {string} dir @param {string} design
+ */
+function ready(dir, design) {
+  const no = (/** @type {Refusal} */ refusal) => ({ refusal });
   const folder = resolve(design);
   if (!statIsDir(folder)) {
-    return emit({ ok: false, reason: 'no-design-dir', detail: `${folder} is not a folder`,
+    return no({ reason: 'no-design-dir', detail: `${folder} is not a folder`,
       hint: 'point --design at the folder Seldon wrote the design into, then re-run; nothing was written' });
   }
   const early = refusal(dir);
-  if (early) return refuse(early);
+  if (early) return no(early);
   const { read, issues } = readDesignFolder(folder);
   const decisions = [...read.decisions.values()];
   // a design with a document missing has no text to judge, and its own issue says so
   if (!issues.length) issues.push(...judgeDesign(read.design.phases, read.lost, read.design.title, read.design.brief, decisions));
   if (issues.length) {
-    return emit({ ok: false, reason: 'design-refused',
+    return no({ reason: 'design-refused',
       detail: `the design in ${folder} has ${issues.length} problem${issues.length === 1 ? '' : 's'} - the issues list names each`,
       issues,
       hint: 'fix each issue in the design folder, by a Seldon rerun of that document or by hand, then re-run; nothing was written' });
   }
+  const { config, warnings, tornLayers } = mergeLayers(join(dir, 'config.json'));
+  // a layer that can't be read would ask again for what it already answers
+  if (tornLayers.length) {
+    return no({ reason: 'config-unreadable', detail: warnings.join('; '),
+      hint: 'repair the config file the detail names, then re-run; nothing was written' });
+  }
+  return { design: read.design, decisions, config };
+}
 
-  const { title, brief, requirements, phases: epics, uncovered } = read.design;
+/** Can git say who it would commit as? `git var` judges that the way a commit does. @param {string} root */
+function hasIdentity(root) {
+  return ['GIT_AUTHOR_IDENT', 'GIT_COMMITTER_IDENT'].every((name) =>
+    boundedRun('git', ['var', name], { cwd: root, timeout: CHILD_TIMEOUT_MS }).ok);
+}
+
+/** The project's reviewers, read by the resolve every review makes. @param {string} dir @param {any} config */
+function reviewersOf(dir, config) {
+  // --no-record, or asking would write to the run record before anything is started
+  const r = boundedRun(process.execPath, [fileURLToPath(new URL('route.mjs', import.meta.url)), 'resolve', '--role', 'cad-reviewer',
+    '--no-record', '--file', join(resolve(dir), 'config.json')], { cwd: dirname(resolve(dir)), timeout: CHILD_TIMEOUT_MS });
+  if (!r.ok) throw new Error('route.mjs could not say who reviews this project');
+  const resolved = JSON.parse(r.stdout);
+  return { ...namedReviewers(config, resolved), warnings: resolved.warnings ?? [] };
+}
+
+/** Everything a start needs to ask, and nothing written. @param {string} dir @param {string} design */
+function check(dir, design) {
+  const got = ready(dir, design);
+  if ('refusal' in got) return refuse(got.refusal);
+  const root = dirname(resolve(dir));
+  if (!hasIdentity(root)) {
+    return refuse({ reason: 'no-git-identity', detail: 'git has no name and email to commit with here',
+      hint: 'set them with git config --global user.name and git config --global user.email, then re-run; nothing was written' });
+  }
+  const open = unanswered(got.config);
+  /** @type {Record<string, unknown>} */
+  const ask = {};
+  if (open.includes('surfaces')) {
+    const scanned = scanSurfaces(root);
+    if ('error' in scanned) throw new Error(`${root} cannot be listed (${scanned.error})`);
+    ask.surfaces = interviewOptions(scanned.scan);
+  }
+  if (open.includes('testing')) ask.constraints = limits(got.decisions);
+  emit({ ok: true, release: got.design.title, epics: got.design.phases.length, unanswered: open, ...ask,
+    reviewers: reviewersOf(dir, got.config) });
+}
+
+/** @param {string} dir @param {string} design */
+function start(dir, design) {
+  const got = ready(dir, design);
+  if ('refusal' in got) return refuse(got.refusal);
+  const open = unanswered(got.config);
+  if (open.length) {
+    return refuse({ reason: 'setup-unanswered', detail: `this project's setup still has ${open.join(', ')} to answer`,
+      hint: 'run /cad-agile --brief with this design, which asks for each; nothing was written' });
+  }
+
+  const { decisions, design: { title, brief, requirements, phases: epics, uncovered } } = got;
   makeDir(dir);
   // the marker goes first: a run that dies after it leaves a project the old path refuses, and the next start finishes
   const marked = markAgile(dir);
@@ -189,8 +260,9 @@ const arg = rowReader(argv, CONTRACTS['agile.mjs']);
 
 try {
   if (argv[0] === 'next') next(planningDir(arg('next', '--dir')));
+  else if (argv[0] === 'check') check(planningDir(arg('check', '--dir')), arg('check', '--design'));
   else if (argv[0] === 'start') start(planningDir(arg('start', '--dir')), arg('start', '--design'));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | start --design <folder> [--dir <.planning>]' });
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }
