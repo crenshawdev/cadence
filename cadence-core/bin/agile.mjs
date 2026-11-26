@@ -1062,7 +1062,10 @@ function ready(dir, design) {
   }
   const closed = early === null ? null : closedRelease(dir);
   if (closed !== null && 'refusal' in closed) return no(closed.refusal);
-  return { design: read.design, decisions, config, closed: closed !== null && 'value' in closed ? closed.value : null };
+  const carried = closed !== null && 'value' in closed ? closed.value : null;
+  const epics = carried === null ? { epics: read.design.phases } : renumbered(read.design.phases, carried.top);
+  if ('refusal' in epics) return no(epics.refusal);
+  return { design: { ...read.design, phases: epics.epics }, decisions, config, closed: carried };
 }
 
 /**
@@ -1092,12 +1095,36 @@ function closedRelease(dir) {
 /**
  * The design's epics numbered after `top`: a story's task folder is named by its ID and outlives its release.
  * @param {import('./lib/seldon-design.mjs').Phase[]} epics @param {number} top
+ * @returns {{epics: import('./lib/seldon-design.mjs').Phase[]} | {refusal: Refusal}}
  */
 function renumbered(epics, top) {
-  const shift = Math.max(0, top + 1 - Math.min(...epics.map((e) => Number(e.epic.slice(2)))));
-  if (shift === 0) return epics;
-  const ids = new Map(epics.map((e) => [e.epic, `E-${String(Number(e.epic.slice(2)) + shift).padStart(2, '0')}`]));
-  return epics.map((e) => ({ ...e, epic: /** @type {string} */ (ids.get(e.epic)), builds_on: e.builds_on.map((b) => ids.get(b) ?? b) }));
+  const at = epics.map((e) => Number(e.epic.slice(2)));
+  const shift = Math.max(0, top + 1 - Math.min(...at));
+  if (shift === 0) return { epics };
+  const moved = at.map((n) => n + shift);
+  // E-01 and E-001 are two IDs and one number, and a number past 2^53 rounds into its neighbour
+  if (new Set(moved).size !== moved.length || !moved.every(Number.isSafeInteger)) {
+    return { refusal: { reason: 'epic-numbers', detail: `numbered after E-${top}, the highest a closed release used, the design's ${epics.map((e) => e.epic).join(', ')} don't each get an ID of their own`,
+      hint: 'give each epic in epics.md its own number, or rename the closed release\'s epic folder the detail names, then re-run; nothing was written' } };
+  }
+  const ids = new Map(epics.map((e, i) => [e.epic, `E-${String(moved[i]).padStart(2, '0')}`]));
+  return { epics: epics.map((e) => ({ ...e, epic: /** @type {string} */ (ids.get(e.epic)), builds_on: e.builds_on.map((b) => ids.get(b) ?? b) })) };
+}
+
+/** Is that folder empty, or gone? @param {string} path */
+function empty(path) {
+  try { return readdirSync(path).length === 0; } catch (e) { if (/** @type {any} */ (e).code === 'ENOENT') return true; throw e; }
+}
+
+/**
+ * Another start that is moving files in: a live pid whose build folder still holds some. An empty one has nothing left to
+ * move, and its pid may be another process's by now.
+ * @param {string} dir @returns {Refusal | null}
+ */
+function otherStart(dir) {
+  const pid = readdirSync(dir).map(buildPid).find((p) => p !== null && p !== process.pid && alive(p) && !empty(buildDir(dir, p)));
+  return pid === undefined ? null : { reason: 'start-running', detail: `another start (pid ${pid}) is writing ${buildDir(dir, pid)}`,
+    hint: `let it finish and run /cad-agile; if no start is running here, remove ${buildDir(dir, pid)} and re-run; nothing was written` };
 }
 
 /** Can git say who it would commit as? `git var` judges that the way a commit does. @param {string} root */
@@ -1160,14 +1187,10 @@ function start(dir, design, commitHere) {
       hint: 'pass the branch the start is on, the one the user said to commit on anyway; nothing was written' });
   }
 
-  const { decisions, closed, design: { title, brief, requirements, phases, uncovered } } = got;
-  const epics = closed === null ? phases : renumbered(phases, closed.top);
+  const { decisions, closed, design: { title, brief, requirements, phases: epics, uncovered } } = got;
   // another start is moving its files in, and the leftover epics/ cleared below may be its
-  const running = closed === null ? undefined : readdirSync(dir).map(buildPid).find((pid) => pid !== null && pid !== process.pid && alive(pid));
-  if (running !== undefined) {
-    return refuse({ reason: 'start-running', detail: `another start (pid ${running}) is writing ${buildDir(dir, /** @type {number} */ (running))}`,
-      hint: 'let it finish, then run /cad-agile; nothing was written' });
-  }
+  const running = closed === null ? null : otherStart(dir);
+  if (running !== null) return refuse(running);
   makeDir(dir);
   // part of the start, so one that died before it gets it written by the next
   writePolicy(dirname(resolve(dir)), got.config.testing);
@@ -1183,11 +1206,17 @@ function start(dir, design, commitHere) {
   ensureRecordsIgnore(dir);
   for (const name of readdirSync(dir)) {
     const pid = buildPid(name);
-    // a dead run's half-built folder, or this pid's own from before a reboot
-    if (pid !== null && (pid === process.pid || !alive(pid))) clear(join(dir, name));
+    // a dead run's half-built folder, this pid's own from before a reboot, or one with nothing left to move
+    if (pid !== null && (pid === process.pid || !alive(pid) || empty(join(dir, name)))) clear(join(dir, name));
   }
-  // no release.md and no close under way, so only a start that died moving its files in left epics/ there
-  if (closed !== null) clear(join(agileDir(dir), 'epics'));
+  if (closed !== null) {
+    // asked again just before the clear: a start that finished since the first ask opened its release, and one still moving holds its folder
+    if (lstatOf(releaseFile(agileDir(dir))) !== null) return refuse(releaseOpen(dir));
+    const late = otherStart(dir);
+    if (late !== null) return refuse(late);
+    // no release.md, no close under way and no start moving, so only a start that died moving its files in left epics/ there
+    clear(join(agileDir(dir), 'epics'));
+  }
   const building = buildDir(dir);
   for (const e of epics) {
     makeDir(dirname(epicFile(building, e.epic)));
@@ -1208,7 +1237,8 @@ function start(dir, design, commitHere) {
   }
   if (closed !== null) {
     for (const file of [requirementsFile, projectFile, releaseFile]) movePath(file(building), file(agileDir(dir)));
-    removeTree(building);
+    // emptied, so a start begun meanwhile may have cleared it already
+    clear(building);
   }
   emit({ ok: true, release: title, folder: agileDir(dir), epics: epics.map((e) => ({ id: e.epic, name: e.name })), uncovered,
     next: { id: epics[0].epic, name: epics[0].name, status: 'backlog', step: 'refine' } });
