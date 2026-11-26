@@ -857,7 +857,8 @@ const arg = rowReader(argv, CONTRACTS['agile.mjs']);
 try {
   if (argv[0] === 'next') next(planningDir(arg('next', '--dir')));
   else if (argv[0] === 'check') check(planningDir(arg('check', '--dir')), arg('check', '--design'));
-  else if (argv[0] === 'start') start(planningDir(arg('start', '--dir')), arg('start', '--design'), arg('start', '--commit-here'));
+  // read first, so its own refusal names it even with --design missing
+  else if (argv[0] === 'start') { const commitHere = arg('start', '--commit-here'); start(planningDir(arg('start', '--dir')), arg('start', '--design'), commitHere); }
   else if (argv[0] === 'answer') answer(planningDir(arg('answer', '--dir')), arg('answer', '--payload'));
   else if (argv[0] === 'propose') propose(planningDir(arg('propose', '--dir')), arg('propose', '--payload'));
   else if (argv[0] === 'refine') refine(planningDir(arg('refine', '--dir')), arg('refine', '--payload'));
