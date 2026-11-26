@@ -470,16 +470,17 @@ function checkCommands(dir, payloadFile) {
     });
   }
   if (issues.length) return refuse(payloadRefused('commands-refused', `the commands for ${up.id} have`, issues));
-  // recorded before the review reads them, so a command swapped in later, after a failure say, is one nobody reviewed
-  const ran = readStoryChecks(up.text).some((c) => c.result !== 'not run');
-  if (up.story.status !== 'in-progress' || ran) {
-    return refuse({ reason: 'commands-closed', detail: ran ? `${up.id}'s checks have already run` : `${up.id} is ${up.story.status}, and commands are recorded while it's being built`,
-      hint: ran ? 'fix the code they check and run them again; a command that has to change goes through the review again; nothing was written'
-        : `run /cad-agile, which records them once ${up.id} is being built; nothing was written` });
+  // recorded while the story is built, before the review reads them
+  if (up.story.status !== 'in-progress') {
+    return refuse({ reason: 'commands-closed', detail: `${up.id} is ${up.story.status}, and commands are recorded while it's being built`,
+      hint: `run /cad-agile, which records them once ${up.id} is being built; nothing was written` });
   }
+  // after a run, a new command is one nobody reviewed, so the review and its fix round are cleared and owed again
+  const ran = readStoryChecks(up.text).some((c) => c.result !== 'not run');
   const checks = /** @type {string[]} */ (commands).map((command, i) => ({ n: i + 1, command: command.trim(), result: 'not run' }));
-  atomicWrite(up.file, renderStoryResult(up.text, checkLines(checks)));
-  emit({ ok: true, story: up.id, commands: checks.length });
+  const cleared = ran ? [{ kind: 'Review', line: '' }, { kind: 'Fix round', line: '' }] : [];
+  atomicWrite(up.file, renderStoryResult(up.text, [...checkLines(checks), ...cleared]));
+  emit({ ok: true, story: up.id, commands: checks.length, ...(ran ? { review_cleared: true } : {}) });
 }
 
 /** Where the work starts, or null with no commit to start from. @param {string} root */
@@ -613,9 +614,10 @@ function runOne(command, root) {
 async function runChecks(dir) {
   const up = building(dir);
   if (up === null) return undefined;
-  if (up.story.status !== 'review') {
-    return refuse({ reason: 'not-reviewed', detail: `${up.id} is ${up.story.status}, and its checks run once it's reviewed`,
-      hint: 'run /cad-agile, which runs them after the review; nothing was written' });
+  if (up.story.status !== 'review' || readStoryResult(up.text).review === null) {
+    return refuse({ reason: 'not-reviewed', detail: up.story.status !== 'review' ? `${up.id} is ${up.story.status}, and its checks run once it's reviewed`
+      : `${up.id}'s Result notes no review of its commands`,
+    hint: 'run /cad-agile, which runs them after the review; nothing was written' });
   }
   const recorded = readStoryChecks(up.text);
   const lines = up.story.accepted_when;

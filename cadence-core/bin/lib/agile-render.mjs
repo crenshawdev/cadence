@@ -172,7 +172,8 @@ export function renderStoryResult(text, lines, status) {
   const kinds = new Set(lines.map((l) => l.kind));
   const order = (/** @type {string} */ l) => { const k = kindOf(l); return k === 'Check' ? RESULT_KINDS.length : RESULT_KINDS.indexOf(/** @type {string} */ (k)); };
   const out = withSection(text, '## Result', (held) => {
-    const mine = [...held.filter((l) => kindOf(l) !== null && !kinds.has(/** @type {string} */ (kindOf(l)))), ...lines.map((l) => l.line)];
+    // a kind given an empty line is taken out
+    const mine = [...held.filter((l) => kindOf(l) !== null && !kinds.has(/** @type {string} */ (kindOf(l)))), ...lines.map((l) => l.line).filter(Boolean)];
     // a stable sort, so check lines stay in the order they came
     return [...held.filter((l) => kindOf(l) === null), ...mine.sort((x, y) => order(x) - order(y))];
   });
