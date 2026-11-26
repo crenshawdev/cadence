@@ -193,6 +193,8 @@ export function judgeStories(payload, epic) {
   }
   const issues = payloadProblems(payload, PAYLOAD, epic.id);
   if (!lines(payload.decisions)) issues.push({ field: 'decisions', problem: 'is a list of decisions, each on one line, empty when there are none' });
+  // the script writes these, and one written as a decision would open or close a Not yet nobody said
+  else for (const d of /** @type {string[]} */ (payload.decisions)) if (/^(Not yet:|Cut again)/.test(d.trim())) issues.push({ field: 'decisions', problem: `${JSON.stringify(d)} starts the way a line the script writes does - reword it` });
   const taken = payload.backlog ?? [];
   // whatever an item holds, being one of that file's lines is the whole rule
   if (!Array.isArray(taken)) issues.push({ field: 'backlog', problem: 'is a list of lines of backlog.md, each as it stands there' });

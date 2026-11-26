@@ -8,7 +8,7 @@
 // Usage: agile.mjs next [--dir <.planning>]
 //        agile.mjs check --design <folder> [--dir <.planning>]
 //        agile.mjs start --design <folder> [--commit-here <branch>] [--dir <.planning>]
-//        agile.mjs answer|propose|refine|size|check-commands|note --payload <file> [--dir <.planning>]
+//        agile.mjs answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>]
 //        agile.mjs run-checks [--dir <.planning>]
 //        agile.mjs move --to in-progress|review [--dir <.planning>]
 //        agile.mjs accept [--dir <.planning>]
@@ -28,9 +28,9 @@ import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
 import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, releaseFile, requirementsFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
-import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStatus } from './lib/agile-render.mjs';
+import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStatus } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
-import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
+import { STATUSES, readEpicFile, readEpicStatus, readNotYet, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
 import { judgeAnswers, judgeAsk, judgeSplit, judgeStories } from './lib/agile-refine.mjs';
 import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
@@ -175,6 +175,8 @@ function stepOf(agile, epic, status) {
   const begun = stories.value.find((s) => s.status === 'in-progress' || s.status === 'review');
   const open = begun ?? stories.value.find((s) => s.status !== 'done');
   if (!begun && stories.value.some((s) => s.status !== 'done' && s.size === 'L')) return { value: { step: 'refine', first: `${epic}-${usedNumber(agile, epic) + 1}` } };
+  // every story done and the user said what's missing: that's cut again before the epic is asked about again
+  if (!open && readNotYet(readFileSync(epicFile(agile, epic), 'utf8')) !== null) return { value: { step: 'refine', first: `${epic}-${usedNumber(agile, epic) + 1}` } };
   return { value: open ? { step: 'build', story: { id: open.id, title: open.title, size: open.size, status: open.status } } : { step: 'accept' } };
 }
 
@@ -387,7 +389,8 @@ function refine(dir, payloadFile) {
   const { up: { agile, file, text, epic, release, requirements }, stories, decisions, backlog, named, ask, asked, cut, listed, self, splits, replaced } = got;
   const written = stories.map((s) => storyFile(agile, s.id));
   stories.forEach((s, i) => atomicWrite(written[i], renderStoryFile(s)));
-  const kept = new Set(replaced.length ? storyIds(agile, epic).filter((id) => !replaced.some((s) => s.id === id)).map((id) => storyFile(agile, id)) : []);
+  // cut again, whether for an L or for what was missing, every story it doesn't replace stays
+  const kept = new Set(got.up.next.status === 'in-progress' ? storyIds(agile, epic).filter((id) => !replaced.some((s) => s.id === id)).map((id) => storyFile(agile, id)) : []);
   const large = replaced.filter((s) => s.size === 'L').map((s) => storyFile(agile, s.id));
   // a refinement killed before its epic turned leaves stories behind, and a longer list's would read as this one's
   for (const name of readdirSync(dirname(file))) {
@@ -413,7 +416,9 @@ function refine(dir, payloadFile) {
   }
   const same = cut.requirements.join() === requirements.join();
   const span = stories.length > 1 ? `${stories[0].id} to ${stories[stories.length - 1].id}` : stories[0]?.id;
-  const recut = !replaced.length ? [] : [`Cut again: ${replaced.map((s) => s.id).join(', ')} ${span ? `became ${span}` : 'left with no story in its place'}.`];
+  const missing = readNotYet(text) !== null;
+  const recut = replaced.length ? [`Cut again: ${replaced.map((s) => s.id).join(', ')} ${span ? `became ${span}` : 'left with no story in its place'}.`]
+    : missing ? [`Cut again for what was missing: ${span ?? 'no story'}.`] : [];
   // last of the first cut, because this is what makes the stories count
   atomicWrite(file, renderRefinedEpic(text, [...decisions, ...recut], same ? null : cut.requirements, cut.moves));
   // cut again, the epic reads as one to refine while an L is on disk, so the L goes last
@@ -455,6 +460,39 @@ function accept(dir) {
   // a damaged epic after it is only read now, and a null next would read as the release's end
   const now = whatsNext(dir);
   emit({ ok: true, epic: id, status: 'done', next: 'refusal' in now ? null : now.next, ...('refusal' in now ? { next_refusal: now.refusal } : {}) });
+}
+
+/**
+ * The user didn't accept the epic `next` names to accept, and says what's missing. It goes under Decisions, and the
+ * epic is cut again for it before it's asked about again.
+ * @param {string} dir @param {string} payloadFile
+ */
+function notYet(dir, payloadFile) {
+  const got = whatsNext(dir);
+  if ('refusal' in got) return refuse(got.refusal);
+  if (got.next?.step !== 'accept') {
+    return refuse({ reason: 'not-accepting', detail: got.next ? `${got.next.id} is at ${got.next.step}, not accept` : got.release ? 'every epic is done' : 'no release is open',
+      hint: 'run /cad-agile, which asks for acceptance once every story of the epic is done; nothing was written' });
+  }
+  const { id } = got.next;
+  const payload = readJsonPayload(payloadFile);
+  if (!payload.ok) return undefined;
+  const p = payload.value;
+  /** @type {{field: string, problem: string}[]} */
+  const issues = [];
+  if (p === null || typeof p !== 'object' || Array.isArray(p)) issues.push({ field: 'payload', problem: 'is an object with epic and missing' });
+  else {
+    for (const key of Object.keys(p)) if (key !== 'epic' && key !== 'missing') issues.push({ field: key, problem: 'is not a field of this payload' });
+    if (p.epic !== undefined && p.epic !== id) issues.push({ field: 'epic', problem: `is ${JSON.stringify(p.epic)}, and the epic up for acceptance is ${id}` });
+    if (typeof p.missing !== 'string' || !p.missing.trim() || /[\u0000-\u001f\u007f\u2028\u2029]/.test(p.missing)) {
+      issues.push({ field: 'missing', problem: 'is what the user says is missing, on one line' });
+    }
+  }
+  if (issues.length) return refuse(payloadRefused('not-yet-refused', `the Not yet for ${id} has`, issues));
+  const file = epicFile(agileDir(dir), id);
+  atomicWrite(file, renderNotYet(readFileSync(file, 'utf8'), p.missing.trim()));
+  const now = whatsNext(dir);
+  emit({ ok: true, epic: id, missing: p.missing.trim(), next: 'refusal' in now ? null : now.next, ...('refusal' in now ? { next_refusal: now.refusal } : {}) });
 }
 
 /** A check that hangs is a failed one, and a headless run of a command fits in this. */
@@ -897,7 +935,8 @@ try {
   else if (argv[0] === 'move') move(planningDir(arg('move', '--dir')), arg('move', '--to'));
   else if (argv[0] === 'note') note(planningDir(arg('note', '--dir')), arg('note', '--payload'));
   else if (argv[0] === 'accept') accept(planningDir(arg('accept', '--dir')));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>] | accept [--dir <.planning>]' });
+  else if (argv[0] === 'not-yet') notYet(planningDir(arg('not-yet', '--dir')), arg('not-yet', '--payload'));
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>] | accept [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }

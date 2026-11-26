@@ -119,6 +119,20 @@ function section(text, heading) {
   return start < 0 ? null : lines.slice(start + 1, end).join('\n').trim();
 }
 
+/**
+ * What the user said is missing at acceptance, while no cut again has followed it, else null.
+ * @param {string} text an epic's file
+ */
+export function readNotYet(text) {
+  let open = null;
+  for (const line of (section(text, '## Decisions') ?? '').split('\n')) {
+    const said = /^- Not yet: (.+)$/.exec(line.trim());
+    if (said) open = said[1];
+    else if (line.trim().startsWith('- Cut again')) open = null;
+  }
+  return open;
+}
+
 /** @typedef {{requirements: string[], title: string, split_from: string | null, outcome: string, boundaries: string, done_when: string[], spine: string}} EpicRead */
 
 /** What a refinement needs of an epic's file. @param {string} text @returns {EpicRead | null} */

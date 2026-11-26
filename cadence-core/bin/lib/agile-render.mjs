@@ -209,6 +209,9 @@ export function renderAnswers(text, answers) {
   });
 }
 
+/** An epic the user didn't accept yet, what's missing in its Decisions. @param {string} text @param {string} missing */
+export const renderNotYet = (text, missing) => withDecisions(text, (held) => [...held, `- Not yet: ${missing}`]);
+
 /**
  * An epic's file once its stories are approved: in progress, with the decisions under any it already holds, its
  * requirements line rewritten only when the ask changed, and the Done when lines a split took gone.
