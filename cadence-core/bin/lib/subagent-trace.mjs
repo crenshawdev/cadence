@@ -126,7 +126,8 @@ function inWorkflowDir(path) {
  * disk half's one loop covers both.
  * @param {any} payload the host's `SubagentStop` JSON
  * @param {any} render the result of `renderTrace(planningRoot)`, unscoped because the payload carries no phase
- * @param {{transcript?: any}} [evidence] the worker's own JSONL as a string; without it the gate answers `unknown`
+ * @param {{transcript?: any, agile?: boolean}} [evidence] the worker's own JSONL as a string, without which the gate
+ * answers `unknown`, and whether the project is on the agile path
  * @returns {{corr: any, phase: any, plan?: any, family: string, event: string, role: string, agent_id?: string, ts?: string, cache_creation_input_tokens?: number, cache_read_input_tokens?: number, effort?: string, rung?: string}[]}
  * Either the single `return` an unambiguous terminal stop closes with, or the single `WORKER_CACHE` fact a
  * withholding gate states instead, or nothing. `effort` and `rung` ride both and are omitted together when the
@@ -148,6 +149,20 @@ export function closeForStop(payload, render, evidence) {
   const effort = effortOf(entries);
   // both keys or neither; gate 1 already refused every type with no rung file, so a role means a rung
   const ran = effort ? { effort, rung: rungOfAgent(payload && payload.agent_type) } : {};
+  // every agile run is phase 0 and several can be live, so "the newest run" scopes nothing: the role's one open
+  // dispatch across all of them is this worker's, and with two, taking either could cross them
+  if (evidence && evidence.agile) {
+    const open = (render && Array.isArray(render.unpaired) ? render.unpaired : []).filter((r) => r && r.role === role);
+    // the newest bracket with this id, since a reused id's oldest one is a dead run's
+    const done = id ? [...(render && Array.isArray(render.brackets) ? render.brackets : [])].reverse()
+      .find((r) => r && r.agent_id === id) || null : null;
+    const lone = open.length === 1 ? open[0] : null;
+    if (stopped.state === STOP_STATE.NOT_TERMINAL || done || !lone
+      || inWorkflowDir(payload && payload.agent_transcript_path)) {
+      return cacheFact(id, role, cache, stopped.ts, done || lone, ran);
+    }
+    return [adopt(lone, role, id, stopped, cache, ran)];
+  }
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
   // named once so gates 2a and 2b share one notion of now; a bracket can name it when no unpaired row of the role
   // survives, which is where a stop arriving after its own close sits
@@ -178,8 +193,16 @@ export function closeForStop(payload, render, evidence) {
   if (mine.length !== 1) return withheld();
   const best = mine[0];
 
-  // gate 3: identity quoted off the adopted row, no return figures (the hook never sees any), and the cache sums
-  return [{
+  return [adopt(best, role, id, stopped, cache, ran)];
+}
+
+/**
+ * Gate 3: identity quoted off the adopted row, no return figures (the hook never sees any), and the cache sums.
+ * @param {any} best @param {string} role @param {string|null} id @param {{ts: any}} stopped
+ * @param {Record<string, number>} cache @param {{effort?: string, rung?: string}} ran
+ */
+function adopt(best, role, id, stopped, cache, ran) {
+  return {
     corr: best.corr,
     phase: best.phase,
     plan: best.plan,
@@ -193,5 +216,5 @@ export function closeForStop(payload, render, evidence) {
     ...(stopped.ts ? { ts: stopped.ts } : {}),
     ...cache,
     ...ran,
-  }];
+  };
 }

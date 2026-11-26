@@ -161,10 +161,10 @@ function readLines(planningRoot) {
 }
 
 /**
- * The newest `lifecycle` event called `name` that `want` accepts, and its line index, or null. Walks backwards, a line
- * that isn't a JSON object is skipped. A `lifecycle` event called `stop` ends the walk with null.
+ * The newest `lifecycle` event called `name` (any, for null) that `want` accepts, and its line index, or null. Walks
+ * backwards, a line that isn't a JSON object is skipped. A `lifecycle` event called `stop` ends the walk with null.
  * @param {string[]} lines
- * @param {string} name
+ * @param {string|null} name
  * @param {(e: any) => boolean} [want]
  * @param {string} [stop]
  * @returns {{e: any, at: number}|null}
@@ -177,7 +177,7 @@ function newestLifecycle(lines, name, want, stop) {
     try { e = JSON.parse(line); } catch { continue; }
     if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
     if (stop !== undefined && e.family === 'lifecycle' && e.event === stop) return null;
-    if (e.family !== 'lifecycle' || e.event !== name) continue;
+    if (e.family !== 'lifecycle' || (name !== null && e.event !== name)) continue;
     if (want && !want(e)) continue;
     return { e, at: i };
   }
@@ -225,18 +225,33 @@ export function correlationId(planningRoot, phase, ownSha) {
 }
 
 /**
- * The `corr` of the newest dispatch of this phase and plan, and role when given, or null. Not stopped at the first
- * terminal: the stop hook writes its return before the hand-written close, so a closed dispatch is still the one.
- * @param {string} planningRoot @param {any} phase @param {any} plan @param {string} [role]
+ * The run a close belongs to, or null to derive as ever: the run of the newest event already carrying this worker's
+ * id, since the stop hook files it before the hand-written close; else the newest dispatch of this plan and role that
+ * nothing has closed yet. A closed one is someone else's past run, and taking it bills this close to that run.
+ * @param {string} planningRoot @param {any} phase @param {any} plan @param {string} [role] @param {string} [agentId]
  * @returns {string|null}
  */
-export function dispatchCorr(planningRoot, phase, plan, role) {
+export function ownCorr(planningRoot, phase, plan, role, agentId) {
   const lines = readLines(planningRoot);
   if (lines === null) return null;
   const p = key(phase);
-  const found = newestLifecycle(lines, 'dispatch',
+  const corrOf = (found) => (found && typeof found.e.corr === 'string' && found.e.corr ? found.e.corr : null);
+  if (agentId) {
+    // the hook's cache fact names no plan, so a plan only rules out an event that names another
+    const filed = newestLifecycle(lines, null, (e) => key(e.phase) === p && e.agent_id === agentId
+      && (e.plan === undefined || key(e.plan) === key(plan)), CYCLE);
+    if (corrOf(filed)) return corrOf(filed);
+  }
+  const sent = newestLifecycle(lines, DISPATCH,
     (e) => key(e.phase) === p && key(e.plan) === key(plan) && (role === undefined || key(e.role) === role), CYCLE);
-  return found && typeof found.e.corr === 'string' && found.e.corr ? found.e.corr : null;
+  if (!corrOf(sent)) return null;
+  for (let i = sent.at + 1; i < lines.length; i++) {
+    let e;
+    try { e = JSON.parse(lines[i]); } catch { continue; }
+    if (e && e.family === 'lifecycle' && TERMINAL.includes(e.event) && key(e.corr) === key(sent.e.corr)
+      && key(e.phase) === p && key(e.plan) === key(plan)) return null;
+  }
+  return corrOf(sent);
 }
 
 /**

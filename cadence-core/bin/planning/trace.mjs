@@ -27,7 +27,7 @@ import { requirePhaseArg } from '../lib/require-int.mjs';
 import { RUNG_ORDER } from '../lib/rung-agent.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
-import { FAMILIES, ROTATED_TRACE_FILE, TRACE_FILE, appendEvent, correlationId, dispatchCorr, renderTrace } from '../lib/trace.mjs';
+import { FAMILIES, ROTATED_TRACE_FILE, TRACE_FILE, appendEvent, correlationId, ownCorr, renderTrace } from '../lib/trace.mjs';
 import { windowBudget } from '../lib/window-budget.mjs';
 
 // prose writes the lifecycle and outcome events through this seam; scripts with code call lib/trace.mjs directly
@@ -559,7 +559,7 @@ function cmdTrace(dir, sub, opts) {
     const anchor = trimmed('--anchor');
     // every agile run is phase 0, so the newest one is often another piece of work's; a close joins its own dispatch
     const own = anchor === undefined && sub === 'close' && flags['--plan'] !== undefined && onAgilePath(dir)
-      ? dispatchCorr(dir, parsedPhase.raw, flags['--plan'], trimmed('--role'))
+      ? ownCorr(dir, parsedPhase.raw, flags['--plan'], trimmed('--role'), agentId)
       : null;
     const corr = anchor !== undefined
       ? correlationId(dir, parsedPhase.raw, anchor)

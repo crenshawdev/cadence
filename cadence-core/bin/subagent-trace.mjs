@@ -38,7 +38,8 @@ try {
   if (root && roleOfAgent(input?.agent_type)) {
     const { renderTrace, appendEvent } = await import('./lib/trace.mjs');
     const { closeForStop } = await import('./lib/subagent-trace.mjs');
-    const evidence = { transcript: readTranscript(input?.agent_transcript_path) };
+    const { onAgilePath } = await import('./lib/project-homes.mjs');
+    const evidence = { transcript: readTranscript(input?.agent_transcript_path), agile: onAgilePath(root) };
     // no phase scope: the payload carries none, and the rule needs every open dispatch to pick this worker's
     const events = closeForStop(input, renderTrace(root), evidence);
     // a bad answer can't throw in a hook; appendEvent keeps each event's corr, so it joins the adopted bracket
