@@ -28,7 +28,7 @@ import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
-import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, closingVersion, epicFile, projectFile, releaseFile, releasesDir, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
+import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, closingVersion, epicFile, tagSafeVersion as tagSafe, projectFile, releaseFile, releasesDir, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
 import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStatus } from './lib/agile-render.mjs';
 import { epicEvidence, renderEvidence } from './lib/agile-evidence.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
@@ -683,10 +683,6 @@ function notYet(dir, payloadFile) {
   const now = whatsNext(dir);
   emit({ ok: true, epic: id, missing: p.missing.trim(), next: 'refusal' in now ? null : now.next, ...('refusal' in now ? { next_refusal: now.refusal } : {}) });
 }
-
-/** A version is a folder name and a tag, so it holds nothing a path or git would read as more, nor what git refuses in a tag. */
-const VERSION = /^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$/;
-const tagSafe = (/** @type {string} */ v) => VERSION.test(v) && !v.includes('..') && !v.endsWith('.') && !v.endsWith('.lock');
 
 /**
  * Move the release's files into its close's folder, the epics first and release.md last, then rename that folder to

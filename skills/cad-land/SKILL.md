@@ -232,7 +232,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      the same `<root>` step 3's `authorized` call read; on
      `action:"halt"` stop the chain and surface the `findings` instead of
      merging over them, and surface a non-empty `overridden` with them.
-     When neither root holds a record or a review, pipe an explicit
+     When no root holds a record or a review, pipe an explicit
      `{"findings":[]}` - that is the only spelling of "nothing survived", and
      `action:"halt"` also fires when the payload could not be read at all,
      since the gate never reports "no surviving finding" about input it never
@@ -308,14 +308,15 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    envelope names, then `git pull`.
 
    **Release tag on the pulled base (tag-after-merge), before the reap.** When
-   `git.create_tag` is true and the shipped version - the manifest's `version`
-   (`.claude-plugin/plugin.json` or the project's own manifest), else the
-   version PROJECT.md says just shipped, or on an agile project the newest
-   folder under `.planning/agile/releases/` - has no tag yet (`git tag`
-   membership), cut it HERE: write the milestone label to a scratch file and run
-   `git tag -a <version> -F <path>` on the now-current base - the label is a
-   PROJECT.md milestone name, or the `# Release:` title in that folder's
-   `release.md` on an agile project, so it reaches git as a PATH (caller-derived text
+   `git.create_tag` is true and the shipped version - on an agile project the
+   `release.version` the `cleanup` call above printed (the newest closed
+   release, checked as the close checks a version; `null` means no tag), else
+   the manifest's `version` (`.claude-plugin/plugin.json` or the project's own
+   manifest), else the version PROJECT.md says just shipped - has no tag yet
+   (`git tag` membership), cut it HERE: write the milestone label to a scratch
+   file and run `git tag -a <version> -F <path>` on the now-current base - the
+   label is a PROJECT.md milestone name, or that call's `release.title` on an
+   agile project, so it reaches git as a PATH (caller-derived text
    - references/conventions.md). Then ask separately whether to push it
    (references/git-publish.md rails; never auto-push a tag):
 

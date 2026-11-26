@@ -78,6 +78,14 @@ export function closingDir(agile, version) {
 
 const CLOSING = '.closing-';
 
+/** A version is a folder name and a tag, so it holds nothing a path or git would read as more, nor what git refuses in a tag. */
+const VERSION = /^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$/;
+
+/** @param {string} v */
+export function tagSafeVersion(v) {
+  return VERSION.test(v) && !v.includes('..') && !v.endsWith('.') && !v.endsWith('.lock');
+}
+
 /** The version a close's folder name carries, or null when the name isn't one. @param {string} name */
 export function closingVersion(name) {
   return name.startsWith(CLOSING) && name.length > CLOSING.length ? name.slice(CLOSING.length) : null;

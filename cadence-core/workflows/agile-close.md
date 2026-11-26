@@ -85,7 +85,7 @@ git commit -m "docs: close the release {version}" -- "$@"
 
 When git refuses it, go on to section 4 with its reason.
 
-**Land.** With the commit made, ask whether this project lands on its own:
+**Land.** Then, the commit made or skipped, ask whether this project lands on its own:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir .

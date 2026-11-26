@@ -15,7 +15,8 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { integrationBranchName, configuredNameProblem, releaseBranchName } from './lib/branch-decision.mjs';
-import { agileDir, releaseFile, releasesDir } from './lib/agile-paths.mjs';
+import { agileDir, releaseFile, releasesDir, tagSafeVersion } from './lib/agile-paths.mjs';
+import { compareVersions, normalizeTargetVersion } from './lib/release-decision.mjs';
 import { readReleaseFile } from './lib/agile-read.mjs';
 import { onAgilePath } from './lib/project-homes.mjs';
 import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-decision.mjs';
@@ -110,8 +111,10 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
   if (nameProblem !== null) warnings.push(`${nameProblem}; cleanup treats it as unset`);
   const configured = nameProblem === null && typeof git.integration_branch_name === 'string'
     ? git.integration_branch_name : null;
+  const agile = onAgilePath(join(dir, '.planning')) ? agileDir(join(dir, '.planning')) : null;
+  const closed = agile === null ? null : newestClosed(agile, warnings);
   const derived = branchArg !== undefined ? branchArg
-    : onAgilePath(join(dir, '.planning')) ? agileBranch(join(dir, '.planning'))
+    : agile !== null ? agileBranch(agile, closed)
     : integrationBranchName(
       readText(join(dir, '.planning', 'PROJECT.md')),
       readText(join(dir, '.planning', 'ROADMAP.md')),
@@ -123,26 +126,42 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
   // any value in the key counts as set, a bad one included: it should stop applying too
   const nameSet = git.integration_branch_name !== undefined && git.integration_branch_name !== null;
   const decision = decideCleanup({ onLandCleanup, mergedIntoBase, branch, nameSet });
-  emit({ ok: true, ...decision, base, warnings });
+  emit({ ok: true, ...decision, base, warnings, ...(agile !== null ? { release: closed } : {}) });
 }
 
 /**
- * The branch an agile release was built on, the name its start suggested: the open release's title, else the one the
- * newest close moved, or null when neither reads.
- * @param {string} planning
+ * The newest closed release, `{version, title}`, for the land's tag and branch, or null before any close. The highest
+ * version wins, since a fresh clone gives every folder one mtime; mtime only orders folders that aren't semver.
+ * A folder name is untrusted, so one git wouldn't take as a tag is passed over and named.
+ * @param {string} agile @param {string[]} warnings
  */
-function agileBranch(planning) {
-  const agile = agileDir(planning);
+function newestClosed(agile, warnings) {
   /** @type {string[]} */
-  let closed = [];
-  try { closed = readdirSync(releasesDir(agile)).filter((n) => !n.startsWith('.')); } catch { /* no close yet */ }
-  const newest = closed.map((v) => { try { return { v, at: statSync(join(releasesDir(agile), v)).mtimeMs }; } catch { return null; } })
-    .filter((c) => c !== null).sort((a, b) => b.at - a.at)[0];
-  for (const file of [releaseFile(agile), ...(newest ? [releaseFile(join(releasesDir(agile), newest.v))] : [])]) {
-    const title = readReleaseFile(readText(file) ?? '')?.title;
-    if (title) return releaseBranchName(title);
+  let names = [];
+  try { names = readdirSync(releasesDir(agile)).filter((n) => !n.startsWith('.')); } catch { /* no close yet */ }
+  const candidates = [];
+  for (const v of names) {
+    if (!tagSafeVersion(v)) { warnings.push(`releases/${JSON.stringify(v)} is not a version git takes as a tag, so the land neither tags nor names a branch from it`); continue; }
+    const sv = normalizeTargetVersion(v);
+    // compareVersions is null exactly when a side isn't semver
+    try { candidates.push({ v, sv, semver: compareVersions(sv, sv) !== null, at: statSync(join(releasesDir(agile), v)).mtimeMs }); } catch { /* gone since the read */ }
   }
-  return null;
+  const newest = candidates.sort((a, b) => {
+    if (a.semver && b.semver) return -(compareVersions(a.sv, b.sv) ?? 0);
+    return a.semver !== b.semver ? (a.semver ? -1 : 1) : b.at - a.at;
+  })[0];
+  if (!newest) return null;
+  return { version: newest.v, title: readReleaseFile(readText(releaseFile(join(releasesDir(agile), newest.v))) ?? '')?.title ?? null };
+}
+
+/**
+ * The branch an agile release was built on, the name its start suggested: the open release's title, else the newest
+ * closed one's, or null when neither reads.
+ * @param {string} agile @param {{title: string|null}|null} closed
+ */
+function agileBranch(agile, closed) {
+  const title = readReleaseFile(readText(releaseFile(agile)) ?? '')?.title ?? closed?.title;
+  return title ? releaseBranchName(title) : null;
 }
 
 function gate(dir) {
