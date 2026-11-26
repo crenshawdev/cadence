@@ -217,7 +217,7 @@ Then one commit of the refinement and nothing else the user has staged, unless
 the branch step above was skipped for `IGNORED` or `planning.commit_docs`. Push
 nothing. `backlog.md` goes in only when lines taken out of it are all that
 changed there, `REQUIREMENTS.md` only when the IDs it lists or their sections
-changed, `project.md` only when its Standing rules changed, and `release.md` with
+changed, `project.md` only when the standing rules it wrote changed, and `release.md` with
 a split-off epic's file when a split listed one:
 
 ```
@@ -225,8 +225,8 @@ set -- '.planning/agile/epics/{id}/epic.md' ':(glob).planning/agile/epics/{id}/{
 git diff --numstat HEAD -- .planning/agile/backlog.md 2>/dev/null | grep -qE '^0[[:space:]]' && set -- "$@" .planning/agile/backlog.md
 [ "$(git cat-file blob 'HEAD:./.planning/agile/REQUIREMENTS.md' 2>/dev/null | tr -d '\r' | grep -oE '^(- \*\*[^*]*\*\*|## .*)')" = "$(tr -d '\r' < .planning/agile/REQUIREMENTS.md | grep -oE '^(- \*\*[^*]*\*\*|## .*)')" ] || set -- "$@" .planning/agile/REQUIREMENTS.md
 [ "$(git cat-file blob 'HEAD:./.planning/agile/release.md' 2>/dev/null | tr -d '\r' | grep -E '^- E-[0-9]+: ')" = "$(tr -d '\r' < .planning/agile/release.md | grep -E '^- E-[0-9]+: ')" ] || { set -- "$@" .planning/agile/release.md; for e in $(sed -n 's/^- \(E-[0-9]*\): .*/\1/p' .planning/agile/release.md); do git cat-file -e "HEAD:./.planning/agile/epics/$e/epic.md" 2>/dev/null || set -- "$@" ".planning/agile/epics/$e/epic.md"; done; }
-sr() { tr -d '\r' | awk '/^## /{s=($0=="## Standing rules")} s'; }
-[ "$(git cat-file blob 'HEAD:./.planning/agile/project.md' 2>/dev/null | sr)" = "$(sr < .planning/agile/project.md)" ] || set -- "$@" .planning/agile/project.md
+sr() { tr -d '\r' | grep -E ' \(E-[0-9]{2,}, Change next [1-9][0-9]*\)$'; }
+[ -f .planning/agile/project.md ] && [ "$(git cat-file blob 'HEAD:./.planning/agile/project.md' 2>/dev/null | sr)" != "$(sr < .planning/agile/project.md)" ] && set -- "$@" .planning/agile/project.md
 git add -A -- "$@"
 git commit -m "docs: refine {id}" -- "$@"
 ```
