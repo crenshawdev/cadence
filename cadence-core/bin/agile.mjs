@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // @ts-check
 // agile.mjs - the agile path's own script: it says what a start still has to ask, starts a release from a Seldon design,
-// holds an epic's refinement, runs a story's checks and says what the open release does next
+// holds an epic's refinement, moves a story through its build and runs its checks, and says what the open release does next
 // not a planning.mjs subcommand: those belong to the old path, and all but a few refuse a project this path owns
 //
 // Usage: agile.mjs next [--dir <.planning>]
 //        agile.mjs check --design <folder> [--dir <.planning>]
 //        agile.mjs start --design <folder> [--dir <.planning>]
-//        agile.mjs answer|propose|refine|check-commands --payload <file> [--dir <.planning>]
+//        agile.mjs answer|propose|refine|check-commands|note --payload <file> [--dir <.planning>]
 //        agile.mjs run-checks [--dir <.planning>]
+//        agile.mjs move --to in-progress|review [--dir <.planning>]
 //
 // one JSON object on stdout; a refusal names the next step
 // no lock: each start builds in its own folder and one rename decides, and a refinement's last write is the one that counts,
@@ -25,9 +26,9 @@ import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
 import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, releaseFile, requirementsFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
-import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryChecks, renderStoryFile } from './lib/agile-render.mjs';
+import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryFile, renderStoryResult, checkLines } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
-import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile } from './lib/agile-read.mjs';
+import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryResult } from './lib/agile-read.mjs';
 import { judgeAnswers, judgeAsk, judgeSplit, judgeStories } from './lib/agile-refine.mjs';
 import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
@@ -252,8 +253,24 @@ function refinement(dir, payloadFile) {
   return { agile, file, text, epic, next: at.next, epics: at.epics, release: at.release, requirements: held.value.requirements, payload: payload.value };
 }
 
-/** Save what the user answered, as they answer it. @param {string} dir @param {string} payloadFile */
+/** Save what the user answered, as they answer it: at refinement, or the findings rule at an epic's first build. @param {string} dir @param {string} payloadFile */
 function answer(dir, payloadFile) {
+  const at = whatsNext(dir);
+  if (!('refusal' in at) && at.next?.step === 'build') {
+    const epic = at.next.id;
+    const payload = readJsonPayload(payloadFile);
+    if (!payload.ok) return undefined;
+    const named = payload.value?.epic;
+    if (typeof named === 'string' && named !== epic) return refuse(notRefinable(`the payload's epic is ${named}, and the one being built is ${epic}`));
+    const file = epicFile(agileDir(dir), epic);
+    let text = '';
+    const held = readBack(file, 'a requirements line and a "## Decisions" section', (t) => { text = t; return readEpicFile(t); });
+    if ('refusal' in held) return refuse(held.refusal);
+    const { issues, answers } = judgeAnswers(payload.value, epic);
+    if (issues.length) return refuse(payloadRefused('answers-refused', `the answers for ${epic} have`, issues));
+    atomicWrite(file, renderAnswers(text, answers));
+    return emit({ ok: true, epic, saved: answers.length });
+  }
   const up = refinement(dir, payloadFile);
   if (up === null) return undefined;
   const { issues, answers } = judgeAnswers(up.payload, up.epic);
@@ -461,8 +478,82 @@ function checkCommands(dir, payloadFile) {
         : `run /cad-agile, which records them once ${up.id} is being built; nothing was written` });
   }
   const checks = /** @type {string[]} */ (commands).map((command, i) => ({ n: i + 1, command: command.trim(), result: 'not run' }));
-  atomicWrite(up.file, renderStoryChecks(up.text, checks));
+  atomicWrite(up.file, renderStoryResult(up.text, checkLines(checks)));
   emit({ ok: true, story: up.id, commands: checks.length });
+}
+
+/** Where the work starts, or null with no commit to start from. @param {string} root */
+function headOf(root) {
+  const r = boundedRun('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, timeout: CHILD_TIMEOUT_MS });
+  return r.ok ? r.stdout.trim() : null;
+}
+
+/**
+ * Begin the story `next` names, or hand it to the review. Begun, its Result says where it started; reviewed, it holds a
+ * command for every Accepted when line, so the review reads them. Done only comes from its checks.
+ * @param {string} dir @param {string | undefined} to
+ */
+function move(dir, to) {
+  if (to !== 'in-progress' && to !== 'review') {
+    return refuse({ reason: 'bad-args', detail: `--to is ${JSON.stringify(to)}`, hint: 'pass --to in-progress or --to review; nothing was written' });
+  }
+  const up = building(dir);
+  if (up === null) return undefined;
+  const from = up.story.status;
+  if (from === to) return emit({ ok: true, story: up.id, status: to, already: true });
+  const stuck = (/** @type {string} */ why) => refuse({ reason: 'not-movable', detail: `${up.id} is ${from}, ${why}`,
+    hint: 'run /cad-agile, which moves a story when its step is done; nothing was written' });
+  if (to === 'in-progress') {
+    if (from !== 'backlog') return stuck('and only a story in backlog is begun');
+    const base = headOf(dirname(resolve(dir)));
+    if (base === null) {
+      return refuse({ reason: 'no-commit', detail: 'git has no commit here to start the story from',
+        hint: 'commit the release with /cad-agile, then re-run; nothing was written' });
+    }
+    atomicWrite(up.file, renderStoryResult(up.text, [{ kind: 'Base', line: `- Base: ${base}` }], to));
+    return emit({ ok: true, story: up.id, status: to, base });
+  }
+  if (from !== 'in-progress') return stuck('and only a story being built is reviewed');
+  const recorded = readStoryChecks(up.text).map((c) => c.n);
+  if (!up.story.accepted_when.every((_, i) => recorded.includes(i + 1))) {
+    return refuse({ reason: 'checks-missing', detail: `${up.id} records a command for ${recorded.length} of its ${up.story.accepted_when.length} Accepted when lines`,
+      hint: 'record one for each with agile.mjs check-commands, so the review reads them, then re-run; nothing was written' });
+  }
+  atomicWrite(up.file, renderStoryResult(up.text, [], to));
+  emit({ ok: true, story: up.id, status: to });
+}
+
+/**
+ * Note what the build did in the story's Result: its commits since it began, worked out here, and what the payload says.
+ * @param {string} dir @param {string} payloadFile
+ */
+function note(dir, payloadFile) {
+  const payload = readJsonPayload(payloadFile);
+  if (!payload.ok) return undefined;
+  const p = payload.value !== null && typeof payload.value === 'object' ? payload.value : {};
+  const up = building(dir, typeof p.story === 'string' ? p.story : undefined);
+  if (up === null) return undefined;
+  const fields = /** @type {const} */ ([['review', 'Review'], ['fix_round', 'Fix round'], ['differently', 'Done differently']]);
+  /** @type {{field: string, problem: string}[]} */
+  const issues = [];
+  if (typeof p.story !== 'string') issues.push({ field: 'story', problem: `name the story the note is about, ${up.id}` });
+  for (const [field] of fields) {
+    const v = p[field];
+    if (v !== undefined && (typeof v !== 'string' || v.trim() === '' || /[\x00-\x1f\x7f]/.test(v))) issues.push({ field, problem: 'give one line of text, or leave the field out' });
+  }
+  if (issues.length) return refuse(payloadRefused('note-refused', `the note for ${up.id} has`, issues));
+  const { base } = readStoryResult(up.text);
+  if (base === null || (up.story.status !== 'in-progress' && up.story.status !== 'review')) {
+    return refuse({ reason: 'not-begun', detail: `${up.id} is ${up.story.status}${base === null ? ' and its Result names no Base' : ''}`,
+      hint: 'run /cad-agile, which begins the story first; nothing was written' });
+  }
+  const log = boundedRun('git', ['log', '--reverse', '--format=%h', `${base}..HEAD`], { cwd: dirname(resolve(dir)), timeout: CHILD_TIMEOUT_MS });
+  if (!log.ok) throw new Error(`git can't list the commits since ${base}`);
+  const commits = log.stdout.split('\n').filter(Boolean);
+  const lines = [{ kind: 'Commits', line: `- Commits: ${commits.length ? commits.join(', ') : 'none'}` },
+    ...fields.filter(([field]) => p[field] !== undefined).map(([field, kind]) => ({ kind, line: `- ${kind}: ${String(p[field]).trim()}` }))];
+  atomicWrite(up.file, renderStoryResult(up.text, lines));
+  emit({ ok: true, story: up.id, commits });
 }
 
 /** One line of what a check printed, for its Result line. @param {string} out */
@@ -543,7 +634,7 @@ async function runChecks(dir) {
   }
   const failed = ran.filter((c) => !c.passed);
   const status = failed.length ? 'in-progress' : 'done';
-  atomicWrite(up.file, renderStoryChecks(up.text, ran, status));
+  atomicWrite(up.file, renderStoryResult(up.text, checkLines(ran), status));
   emit({ ok: true, story: up.id, status, passed: ran.length - failed.length,
     failed: failed.map((c) => ({ check: c.n, line: lines[c.n - 1], result: c.result })) });
 }
@@ -695,7 +786,9 @@ try {
   else if (argv[0] === 'refine') refine(planningDir(arg('refine', '--dir')), arg('refine', '--payload'));
   else if (argv[0] === 'check-commands') checkCommands(planningDir(arg('check-commands', '--dir')), arg('check-commands', '--payload'));
   else if (argv[0] === 'run-checks') runChecks(planningDir(arg('run-checks', '--dir'))).catch(emitCaught);
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--dir <.planning>] | answer|propose|refine|check-commands --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>]' });
+  else if (argv[0] === 'move') move(planningDir(arg('move', '--dir')), arg('move', '--to'));
+  else if (argv[0] === 'note') note(planningDir(arg('note', '--dir')), arg('note', '--payload'));
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--dir <.planning>] | answer|propose|refine|check-commands|note --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }

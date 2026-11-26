@@ -157,17 +157,32 @@ function withSection(text, heading, change) {
 /** @param {string} text @param {(held: string[]) => string[]} change */
 const withDecisions = (text, change) => withSection(text, '## Decisions', change);
 
+/** The Result lines a script writes, in the order they're written. */
+const RESULT_KINDS = Object.freeze(['Base', 'Commits', 'Review', 'Fix round', 'Done differently']);
+const kindOf = (/** @type {string} */ line) => (CHECK_LINE.test(line) ? 'Check' : RESULT_KINDS.find((k) => line.startsWith(`- ${k}: `)) ?? null);
+
 /**
- * A story with its Result's check lines replaced by these, every other Result line kept, and its status when given.
- * @param {string} text a story file `readStoryFile` reads @param {import('./agile-read.mjs').Check[]} checks @param {string} [status]
+ * A story with Result's lines of these kinds replaced, the script's lines in their own order after any other, and its
+ * status when given.
+ * @param {string} text a story file `readStoryFile` reads
+ * @param {{kind: string, line: string}[]} lines each a whole line, `kind` one of RESULT_KINDS or `Check`
+ * @param {string} [status]
  */
-export function renderStoryChecks(text, checks, status) {
-  const out = withSection(text, '## Result', (held) => [...held.filter((l) => !CHECK_LINE.test(l)),
-    ...checks.map((c) => `- Check ${c.n}: \`${c.command}\` - ${c.result}`)]);
+export function renderStoryResult(text, lines, status) {
+  const kinds = new Set(lines.map((l) => l.kind));
+  const order = (/** @type {string} */ l) => { const k = kindOf(l); return k === 'Check' ? RESULT_KINDS.length : RESULT_KINDS.indexOf(/** @type {string} */ (k)); };
+  const out = withSection(text, '## Result', (held) => {
+    const mine = [...held.filter((l) => kindOf(l) !== null && !kinds.has(/** @type {string} */ (kindOf(l)))), ...lines.map((l) => l.line)];
+    // a stable sort, so check lines stay in the order they came
+    return [...held.filter((l) => kindOf(l) === null), ...mine.sort((x, y) => order(x) - order(y))];
+  });
   // the frontmatter's own line, spaced or not as the reader allows, never a "status:" further down the file
   return status === undefined ? out
     : out.replace(FRONTMATTER_RE, (block) => block.replace(/^status:[ \t]*\S+[ \t]*$/m, `status: ${status}`));
 }
+
+/** The check lines for these checks. @param {import('./agile-read.mjs').Check[]} checks */
+export const checkLines = (checks) => checks.map((c) => ({ kind: 'Check', line: `- Check ${c.n}: \`${c.command}\` - ${c.result}` }));
 
 /** The user's answers, each under its question, over any earlier answer to it. @param {string} text @param {{question: string, answer: string}[]} answers */
 export function renderAnswers(text, answers) {

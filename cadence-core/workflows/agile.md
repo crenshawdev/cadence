@@ -72,7 +72,9 @@ Only on a release that was already open, with no commit above left unmade.
   ```
 
   Without `REFINED`, Read that same file, apply its branch step, where a stop
-  goes on to `report` with its reason, and make its commit. Then `report`.
+  goes on to `report` with its reason, and make its commit. Then Read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-build.md` and follow it.
+  It reports for itself, so the run ends there.
 - `next.step` is `accept` -> the same, for a cut again that left no story,
   with this check in place of that one:
 

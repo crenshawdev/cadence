@@ -149,3 +149,10 @@ export function readStoryChecks(text) {
   return (section(text, '## Result') ?? '').split('\n').map((l) => CHECK_LINE.exec(l))
     .filter((m) => m !== null).map((m) => ({ n: Number(m[1]), command: m[2], result: m[3] }));
 }
+
+/** What a story's Result says of its build: where it began and what's been noted, each null until it is. @param {string} text */
+export function readStoryResult(text) {
+  const lines = (section(text, '## Result') ?? '').split('\n');
+  const of = (/** @type {string} */ kind) => lines.find((l) => l.startsWith(`- ${kind}: `))?.slice(kind.length + 4) ?? null;
+  return { base: of('Base'), commits: of('Commits'), review: of('Review'), fix_round: of('Fix round'), differently: of('Done differently') };
+}
