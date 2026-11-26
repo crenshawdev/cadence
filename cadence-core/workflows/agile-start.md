@@ -80,7 +80,7 @@ count. Item 4 waits for **Write**, and item 5 is never asked here.
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section 1
 as on an agile project, with the check's `decide` as that call's answer, since
 no release is on disk yet. Its second option reads "Commit here anyway - this
-release's commits go on {branch}, and this isn't asked again". A new branch is
+release's commits go on {branch}, and this question isn't asked again". A new branch is
 held for **Write**, and so is that answer, with the branch it names. A stop or
 an abort stops the start.
 
@@ -125,7 +125,8 @@ In this order, stopping at the first call that fails, with its `detail` and
    in that same arm. `start` renders the policy file from them, so none of that
    item's other calls is run.
 5. The release, with `--commit-here '<branch>'` after "Commit here anyway", so
-   no later commit of the release on that branch asks again:
+   no later run asks the branch question there again. The git-guard hook still
+   asks at each commit there unless `git.guard_bypass` is set in both layers:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" start --design '<folder>' [--commit-here '<branch>']

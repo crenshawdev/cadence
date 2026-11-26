@@ -28,8 +28,9 @@ export function readReleaseFile(text) {
     epics.push({ id: m[1], name: m[2] });
   }
   // anything but the line the start writes reads as no answer, so a bad edit means asking again, never not asking
-  const branch = sectionSpan(lines, '## Branch');
-  const kept = branch.start < 0 ? [] : lines.slice(branch.start + 1, branch.end).filter((l) => l.trim() !== '');
+  // and only right after the epics: a design's goal can hold the heading indented, and that's no answer anyone gave
+  const after = lines.slice(span.end);
+  const kept = after[0] === '## Branch' ? after.slice(1).filter((l) => l.trim() !== '') : [];
   const commitHere = kept.length === 1 ? /^- Commit here anyway: (\S+)$/.exec(kept[0])?.[1] ?? null : null;
   return epics.length ? { title, epics, commitHere } : null;
 }
