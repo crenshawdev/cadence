@@ -28,12 +28,12 @@ import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
-import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, releaseFile, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
-import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStatus } from './lib/agile-render.mjs';
+import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, projectFile, releaseFile, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
+import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStatus } from './lib/agile-render.mjs';
 import { epicEvidence, renderEvidence } from './lib/agile-evidence.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
-import { STATUSES, readEpicFile, readEpicStatus, readNotYet, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
-import { judgeAnswers, judgeAsk, judgeSplit, judgeStories } from './lib/agile-refine.mjs';
+import { STATUSES, readChangeNext, readEpicFile, readEpicStatus, readLessonRecords, readNotYet, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
+import { judgeAnswers, judgeAsk, judgeLessons, judgeSplit, judgeStories } from './lib/agile-refine.mjs';
 import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { boundedRun } from './lib/bounded-run.mjs';
@@ -206,11 +206,35 @@ function whatsNext(dir) {
   return { release: title, epics, next: null };
 }
 
+/**
+ * The Change next lines of each accepted epic's retrospective, up to the one being refined, that no epic's Decisions
+ * records yet. An epic accepted with no retrospective has none.
+ * @param {string} agile @param {{id: string}[]} epics @param {string} epic
+ * @returns {{value: {from: string, line: number, text: string}[]} | {refusal: Refusal}}
+ */
+function openLessons(agile, epics, epic) {
+  const recorded = new Set();
+  /** @type {{from: string, line: number, text: string}[]} */
+  const said = [];
+  for (const { id } of epics.slice(0, epics.findIndex((e) => e.id === epic) + 1)) {
+    const text = readFileSync(epicFile(agile, id), 'utf8');
+    for (const key of readLessonRecords(text)) recorded.add(key);
+    if (readEpicStatus(text) !== 'done' || lstatOf(retroFile(agile, id)) === null) continue;
+    const retro = readBack(retroFile(agile, id), 'a "## Change next" section', readChangeNext);
+    if ('refusal' in retro) return retro;
+    said.push(...retro.value.map((l) => ({ from: id, line: l.line, text: l.text })));
+  }
+  return { value: said.filter((l) => !recorded.has(`${l.from} ${l.line}`)) };
+}
+
 /** @param {string} dir */
 function next(dir) {
   const at = whatsNext(dir);
   if ('refusal' in at) return refuse(at.refusal);
-  emit({ ok: true, release: at.release, next: at.next });
+  if (at.next?.step !== 'refine') return emit({ ok: true, release: at.release, next: at.next });
+  const lessons = openLessons(agileDir(dir), at.epics, at.next.id);
+  if ('refusal' in lessons) return refuse(lessons.refusal);
+  emit({ ok: true, release: at.release, next: { ...at.next, ...(lessons.value.length ? { change_next: lessons.value } : {}) } });
 }
 
 /** @param {string} detail @returns {Refusal} */
@@ -353,7 +377,13 @@ function judged(dir, payloadFile) {
   const list = judgeStories(up.payload, { id: up.epic, requirements: cut.requirements, earlier: [...earlier, ...done.map((s) => s.id)],
     backlog: captureLines(agileBacklogFile(up.agile)), start: mine.value.length ? usedNumber(up.agile, up.epic) + 1 : 1,
     covered: kept, again: mine.value.length > 0 });
-  const issues = [...ask.issues, ...cut.issues, ...list.issues];
+  const open = openLessons(up.agile, up.epics, up.epic);
+  if ('refusal' in open) return no(open.refusal);
+  const taken = judgeLessons(up.payload, open.value);
+  // read before anything is written, since the standing ones go there
+  const project = taken.lessons.length ? readBack(projectFile(up.agile), 'the project\'s own file', (t) => t) : { value: '' };
+  if ('refusal' in project) return no(project.refusal);
+  const issues = [...ask.issues, ...cut.issues, ...list.issues, ...taken.issues];
   if (issues.length) {
     for (const e of left) {
       issues.push({ field: 'split', problem: `${e.id} ${e.read.title} was split off ${up.epic} by a run cut short and carries ${e.read.requirements.join(', ')} - leave those to it, or give a split named ${JSON.stringify(e.read.title)} to finish it` });
@@ -370,6 +400,7 @@ function judged(dir, payloadFile) {
     ...left.map((e) => ({ id: e.id, name: e.read.title, requirements: e.read.requirements, done_when: e.read.done_when, cut_short: true }))];
   const replaced = mine.value.filter((s) => s.status !== 'done');
   return { up, ...list, ask, cut, listed: again !== null, self, warnings, splits, unplaced, replaced, asked: { text, read: file.value },
+    lessons: taken.lessons, project: project.value,
     named: list.stories.map((s) => ({ id: s.id, title: s.title, size: s.size })) };
 }
 
@@ -389,7 +420,7 @@ function propose(dir, payloadFile) {
 function refine(dir, payloadFile) {
   const got = judged(dir, payloadFile);
   if (got === null) return;
-  const { up: { agile, file, text, epic, release, requirements }, stories, decisions, backlog, named, ask, asked, cut, listed, self, splits, replaced } = got;
+  const { up: { agile, file, text, epic, release, requirements }, stories, decisions, backlog, named, ask, asked, cut, listed, self, splits, replaced, lessons, project } = got;
   const written = stories.map((s) => storyFile(agile, s.id));
   stories.forEach((s, i) => atomicWrite(written[i], renderStoryFile(s)));
   // cut again, whether for an L or for what was missing, every story it doesn't replace stays
@@ -403,7 +434,7 @@ function refine(dir, payloadFile) {
       : storyNumber(whole, epic) !== null && (name !== whole || (!written.includes(path) && !kept.has(path) && !large.includes(path)));
     if (left) unlinkFile(path);
   }
-  for (const name of readdirSync(agile)) if (/^(REQUIREMENTS|release)\.md\.\d+\.\d+\.tmp$/.test(name)) unlinkFile(join(agile, name));
+  for (const name of readdirSync(agile)) if (/^(REQUIREMENTS|release|project)\.md\.\d+\.\d+\.tmp$/.test(name)) unlinkFile(join(agile, name));
   // the rest before release.md lists it, so a stop between them leaves a folder nothing reads and the next split writes over
   if (cut.rest) {
     const home = dirname(epicFile(agile, cut.rest.id));
@@ -417,13 +448,16 @@ function refine(dir, payloadFile) {
     const changed = renderAskChanged(asked.text, asked.read, ask.defer, ask.add);
     if (changed !== asked.text) atomicWrite(requirementsFile(agile), changed);
   }
+  // before the epic, which records each line, so a stop between them is redone from the next list
+  const standing = lessons.length ? renderStandingRules(project, lessons) : project;
+  if (standing !== project) atomicWrite(projectFile(agile), standing);
   const same = cut.requirements.join() === requirements.join();
   const span = stories.length > 1 ? `${stories[0].id} to ${stories[stories.length - 1].id}` : stories[0]?.id;
   const missing = readNotYet(text) !== null;
   const recut = replaced.length ? [`Cut again: ${replaced.map((s) => s.id).join(', ')} ${span ? `became ${span}` : 'left with no story in its place'}.`]
     : missing ? [`Cut again for what was missing: ${span ?? 'no story'}.`] : [];
   // last of the first cut, because this is what makes the stories count
-  atomicWrite(file, renderRefinedEpic(text, [...decisions, ...recut], same ? null : cut.requirements, cut.moves));
+  atomicWrite(file, renderRefinedEpic(text, [...lessons.map(lessonRecord), ...decisions, ...recut], same ? null : cut.requirements, cut.moves));
   // cut again, the epic reads as one to refine while an L is on disk, so the L goes last
   for (const path of large) unlinkFile(path);
   // after it, so a stop here leaves an item in two places and never in none
@@ -977,7 +1011,7 @@ function start(dir, design, commitHere) {
     makeDir(dirname(epicFile(building, e.epic)));
     writeFileNew(epicFile(building, e.epic), renderEpicFile(e));
   }
-  writeFileNew(join(building, 'project.md'), renderProjectFile(title, brief, epics, decisions));
+  writeFileNew(projectFile(building), renderProjectFile(title, brief, epics, decisions));
   writeFileNew(requirementsFile(building), renderRequirementsFile(title, requirements));
   writeFileNew(releaseFile(building), renderReleaseFile(title, brief, epics, commitHere));
   try {

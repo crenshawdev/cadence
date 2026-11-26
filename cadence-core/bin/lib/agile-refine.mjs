@@ -10,7 +10,9 @@ import { renderSplitEpic, renderStoryFile } from './agile-render.mjs';
 /** @typedef {import('./agile-read.mjs').Story} Story */
 /** @typedef {{story?: string, field: string, problem: string}} Issue */
 
-const PAYLOAD = Object.freeze(['epic', 'decisions', 'stories', 'backlog', 'defer', 'add', 'split']);
+const PAYLOAD = Object.freeze(['epic', 'decisions', 'stories', 'backlog', 'defer', 'add', 'split', 'change_next']);
+const LESSON = Object.freeze(['from', 'line', 'outcome', 'how']);
+const OUTCOMES = Object.freeze(['applied', 'standing', 'dropped']);
 const SPLIT = Object.freeze(['name', 'outcome', 'requirements', 'moves', 'done_when']);
 const ANSWERS = Object.freeze(['epic', 'answers']);
 const ANSWER = Object.freeze(['question', 'answer']);
@@ -178,6 +180,37 @@ export function judgeSplit(split, at) {
 }
 
 /**
+ * What the refinement does with each Change next line still open, one entry for each, or every reason it can't be
+ * recorded.
+ * @param {unknown} payload @param {{from: string, line: number, text: string}[]} open
+ * @returns {{issues: Issue[], lessons: import('./agile-render.mjs').Lesson[]}}
+ */
+export function judgeLessons(payload, open) {
+  const given = isObject(payload) ? payload.change_next ?? [] : [];
+  const say = (/** @type {{from: string, line: number}} */ l) => `${l.from} ${l.line}`;
+  if (!Array.isArray(given)) {
+    return { issues: [{ field: 'change_next', problem: `is a list of {"from", "line", "outcome", "how"}, one for each Change next line next names${open.length ? `: ${open.map(say).join(', ')}` : ', empty when it names none'}` }], lessons: [] };
+  }
+  /** @type {Issue[]} */
+  const issues = [];
+  /** @type {import('./agile-render.mjs').Lesson[]} */
+  const lessons = [];
+  const named = new Set();
+  for (const e of given) {
+    const line = isObject(e) ? open.find((l) => l.from === e.from && l.line === e.line) : undefined;
+    if (line && named.has(say(line))) { issues.push({ field: 'change_next', problem: `${say(line)} is there twice` }); continue; }
+    if (line) named.add(say(line));
+    if (!isObject(e) || Object.keys(e).length !== LESSON.length || !LESSON.every((k) => k in e) || !OUTCOMES.includes(String(e.outcome)) || !oneLine(e.how)) {
+      issues.push({ field: 'change_next', problem: `${JSON.stringify(e)} is not {"from", "line", "outcome", "how"}, with outcome applied, standing or dropped and how on one line` });
+    } else if (!line) {
+      issues.push({ field: 'change_next', problem: `${e.from} ${e.line} isn't a Change next line still open${open.length ? ` - those are ${open.map(say).join(', ')}` : ', and none is'}` });
+    } else lessons.push({ ...line, outcome: String(e.outcome), how: String(e.how) });
+  }
+  for (const l of open) if (!named.has(say(l))) issues.push({ field: 'change_next', problem: `${say(l)} has no entry - say whether it's applied, standing or dropped, and how` });
+  return { issues, lessons: issues.length ? [] : lessons };
+}
+
+/**
  * The stories a payload holds, numbered in its order, or every reason it can't be written.
  * @param {unknown} payload
  * @param {{id: string, requirements: string[], earlier: string[], backlog: string[], start?: number, covered?: string[], again?: boolean}} epic
@@ -194,7 +227,7 @@ export function judgeStories(payload, epic) {
   const issues = payloadProblems(payload, PAYLOAD, epic.id);
   if (!lines(payload.decisions)) issues.push({ field: 'decisions', problem: 'is a list of decisions, each on one line, empty when there are none' });
   // the script writes these, and one written as a decision would open or close a Not yet nobody said
-  else for (const d of /** @type {string[]} */ (payload.decisions)) if (/^(Not yet:|Cut again)/.test(d.trim())) issues.push({ field: 'decisions', problem: `${JSON.stringify(d)} starts the way a line the script writes does - reword it` });
+  else for (const d of /** @type {string[]} */ (payload.decisions)) if (/^(Not yet:|Cut again|Change next from)/.test(d.trim())) issues.push({ field: 'decisions', problem: `${JSON.stringify(d)} starts the way a line the script writes does - reword it` });
   const taken = payload.backlog ?? [];
   // whatever an item holds, being one of that file's lines is the whole rule
   if (!Array.isArray(taken)) issues.push({ field: 'backlog', problem: 'is a list of lines of backlog.md, each as it stands there' });

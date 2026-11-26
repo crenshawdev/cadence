@@ -6,6 +6,7 @@
 import { CHECK_LINE, requirementPrefix } from './agile-read.mjs';
 import { FRONTMATTER_RE } from './frontmatter.mjs';
 import { sectionSpan } from './planning-files.mjs';
+import { fenceScanner } from './text-util.mjs';
 
 /** @typedef {import('./seldon-design.mjs').Phase} Epic */
 
@@ -220,6 +221,40 @@ export function renderRetro(r) {
   const list = (/** @type {string[]} */ lines, numbered = false) => (lines.length ? lines.map((l, i) => `${numbered ? `${i + 1}.` : '-'} ${l}`).join('\n') : 'None.');
   return page([`# ${r.id} ${r.name} retrospective`, `Accepted ${r.date}.`, '## Evidence', r.evidence.join('\n'),
     '## What went well', list(r.went_well), '## What could we do better', list(r.do_better), '## Change next', list(r.change_next, true)]);
+}
+
+/** @typedef {{from: string, line: number, text: string, outcome: string, how: string}} Lesson */
+
+/** A Change next line's record under the refined epic's Decisions, as `LESSON_RECORD` reads it. @param {Lesson} l */
+export const lessonRecord = (l) => `Change next from ${l.from}, ${l.line}: ${l.outcome === 'standing' ? 'applied, standing' : l.outcome} - ${l.how}`;
+
+const STANDING = '## Standing rules';
+
+/**
+ * project.md with its Standing rules matching these lines: a standing one held once, under the retrospective's own
+ * words, and one no longer standing taken out. The section is made at the end when it isn't there.
+ * @param {string} text project.md @param {Lesson[]} lessons @returns {string} the text itself when nothing changes
+ */
+export function renderStandingRules(text, lessons) {
+  const lines = text.split(/\r?\n/);
+  const fenced = fenceScanner();
+  let start = -1;
+  let end = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    if (fenced(lines[i])) continue;
+    // whole and unindented, so a heading a design planted in the brief, indented or fenced, is never taken for this one
+    if (start < 0) { if (lines[i] === STANDING) start = i; } else if (/^## /.test(lines[i])) { end = i; break; }
+  }
+  const tag = (/** @type {Lesson} */ l) => ` (${l.from}, Change next ${l.line})`;
+  const block = start < 0 ? '' : lines.slice(start + 1, end).join('\n').trim();
+  const held = block === '' || block === 'None yet.' ? [] : block.split('\n');
+  const kept = held.filter((h) => !lessons.some((l) => h.endsWith(tag(l))));
+  const rules = [...kept, ...lessons.filter((l) => l.outcome === 'standing').map((l) => `- ${l.text}${tag(l)}`)];
+  if (JSON.stringify(rules) === JSON.stringify(held)) return text;
+  const out = start < 0 ? page([lines.join('\n').trimEnd(), STANDING, rules.join('\n')])
+    : page([lines.slice(0, start).join('\n').trimEnd(), STANDING, rules.join('\n') || 'None yet.',
+      ...(end < lines.length ? [lines.slice(end).join('\n').trimEnd()] : [])]);
+  return text.includes('\r\n') ? out.replaceAll('\n', '\r\n') : out;
 }
 
 /**

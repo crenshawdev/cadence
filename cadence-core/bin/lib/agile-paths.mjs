@@ -51,6 +51,11 @@ export function requirementsFile(agile) {
   return join(agile, 'REQUIREMENTS.md');
 }
 
+/** What the project is, its constraints and its standing rules, inside whichever agile folder is being read or built. @param {string} agile */
+export function projectFile(agile) {
+  return join(agile, 'project.md');
+}
+
 /** The release's own file, inside whichever agile folder is being read or built. @param {string} agile */
 export function releaseFile(agile) {
   return join(agile, 'release.md');

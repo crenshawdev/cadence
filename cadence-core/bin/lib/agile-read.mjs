@@ -133,6 +133,22 @@ export function readNotYet(text) {
   return open;
 }
 
+/** How a refinement records a Change next line under its epic's Decisions. */
+export const LESSON_RECORD = /^- Change next from (E-\d{2,}), ([1-9]\d*): (applied|applied, standing|dropped) - (.+)$/;
+
+/** The numbered lines under a retrospective's Change next, or null when it has no such section. @param {string} text */
+export function readChangeNext(text) {
+  const held = section(text, '## Change next');
+  if (held === null) return null;
+  return held.split('\n').map((l) => /^([1-9]\d*)\. (.+)$/.exec(l.trim())).filter((m) => m !== null)
+    .map((m) => ({ line: Number(m[1]), text: m[2].trim() }));
+}
+
+/** The Change next lines an epic's Decisions record, each as "E-04 1". @param {string} text an epic's file */
+export function readLessonRecords(text) {
+  return (section(text, '## Decisions') ?? '').split('\n').map((l) => LESSON_RECORD.exec(l.trim())).filter((m) => m !== null).map((m) => `${m[1]} ${m[2]}`);
+}
+
 /** @typedef {{requirements: string[], title: string, split_from: string | null, outcome: string, boundaries: string, done_when: string[], spine: string}} EpicRead */
 
 /** What a refinement needs of an epic's file. @param {string} text @returns {EpicRead | null} */
