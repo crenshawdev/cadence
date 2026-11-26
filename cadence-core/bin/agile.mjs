@@ -2,14 +2,14 @@
 // @ts-check
 // agile.mjs - the agile path's own script: it says what a start still has to ask, starts a release from a Seldon design,
 // holds an epic's refinement, moves a story through its build and runs its checks, gives a finished epic's Evidence and accepts it,
-// and says what the open release does next
+// closes the release, and says what the open release does next
 // not a planning.mjs subcommand: those belong to the old path, and all but a few refuse a project this path owns
 //
 // Usage: agile.mjs next [--dir <.planning>]
 //        agile.mjs check --design <folder> [--dir <.planning>]
 //        agile.mjs start --design <folder> [--commit-here <branch>] [--dir <.planning>]
 //        agile.mjs answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>]
-//        agile.mjs accept [--payload <file>] [--dir <.planning>]
+//        agile.mjs accept|close [--payload <file>] [--dir <.planning>]
 //        agile.mjs run-checks [--dir <.planning>]
 //        agile.mjs move --to in-progress|review [--dir <.planning>]
 //        agile.mjs evidence [--dir <.planning>]
@@ -28,7 +28,7 @@ import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
-import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, projectFile, releaseFile, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
+import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, closingVersion, epicFile, projectFile, releaseFile, releasesDir, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
 import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStatus } from './lib/agile-render.mjs';
 import { epicEvidence, renderEvidence } from './lib/agile-evidence.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
@@ -84,6 +84,20 @@ function unmarked(dir) {
     hint: 'put the state file back from git or your backup, or move that folder aside, then re-run; nothing was written' };
 }
 
+/** The release folder's closes: one under way, and the versions already closed. @param {string} agile */
+function closes(agile) {
+  let names = [];
+  try { names = readdirSync(releasesDir(agile)); } catch (e) { if (/** @type {any} */ (e).code !== 'ENOENT') throw e; }
+  const closing = names.map(closingVersion).filter((v) => v !== null).sort()[0] ?? null;
+  return { closing, closed: names.filter((n) => !n.startsWith('.')).sort() };
+}
+
+/** @param {string} dir @param {string[]} closed @returns {Refusal} */
+function releaseClosed(dir, closed) {
+  return { reason: 'release-closed', detail: `${agileDir(dir)} holds the release closed as ${closed.at(-1)}, and a start makes that folder new`,
+    hint: `move ${agileDir(dir)} aside to start the next release here; nothing was written` };
+}
+
 /**
  * Why a release can't start in this planning folder, or null.
  * @param {string} dir @returns {Refusal | null}
@@ -98,7 +112,11 @@ function refusal(dir) {
   const state = readState(dir);
   const marked = state.kind === 'invalid' && state.reason === 'agile-path';
   const release = lstatOf(agileDir(dir)) !== null;
-  if (marked && release) return releaseOpen(dir);
+  if (marked && release) {
+    // closed: its files went to releases/, and only a close under way still counts as open
+    const { closing, closed } = closes(agileDir(dir));
+    return closing === null && closed.length && lstatOf(releaseFile(agileDir(dir))) === null ? releaseClosed(dir, closed) : releaseOpen(dir);
+  }
   // a marker too damaged to read is still this path's, and the old path's hint for one rebuilds it as an old-path state
   if (release && state.kind === 'invalid' && REBUILDABLE.includes(state.reason)) return unmarked(dir);
   // a marked project keeps its own archives there, so only an unmarked one's archives are the old path's
@@ -189,9 +207,15 @@ function stepOf(agile, epic, status) {
  */
 function whatsNext(dir) {
   const why = refusal(dir);
-  if (why === null) return { release: null, epics: [], next: null };
+  if (why === null || why.reason === 'release-closed') return { release: null, epics: [], next: null };
   if (why.reason !== 'release-open') return { refusal: why };
   const agile = agileDir(dir);
+  // a close stopped while its files moved: release.md may be either side, and only finishing the move is left
+  const { closing } = closes(agile);
+  if (closing !== null) {
+    const title = [releaseFile(agile), releaseFile(closingDir(agile, closing))].map((f) => { try { return readReleaseFile(readFileSync(f, 'utf8'))?.title; } catch { return undefined; } }).find(Boolean);
+    return { release: title ?? closing, epics: [], next: { id: closing, name: title ?? closing, status: 'done', step: 'close', story: undefined, closing } };
+  }
   const release = readBack(releaseFile(agile), 'a "# Release:" title and a "## Epics" list of "- E-01: name" lines', readReleaseFile);
   if ('refusal' in release) return release;
   const { title, epics } = release.value;
@@ -660,6 +684,73 @@ function notYet(dir, payloadFile) {
   emit({ ok: true, epic: id, missing: p.missing.trim(), next: 'refusal' in now ? null : now.next, ...('refusal' in now ? { next_refusal: now.refusal } : {}) });
 }
 
+/** A version is a folder name and a tag, so it holds nothing a path or git would read as more. */
+const VERSION = /^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$/;
+
+/**
+ * Move the release's files into its close's folder, the epics first and release.md last, then rename that folder to
+ * the version: the one rename that closes it. A move a stopped run already made is passed over.
+ * @param {string} agile @param {string} version
+ */
+function moveRelease(agile, version) {
+  const staging = closingDir(agile, version);
+  makeDir(staging);
+  for (const name of ['epics', 'REQUIREMENTS.md', 'release.md']) if (lstatOf(join(agile, name)) !== null) movePath(join(agile, name), join(staging, name));
+  movePath(staging, join(releasesDir(agile), version));
+  return join(releasesDir(agile), version);
+}
+
+/**
+ * Close the release once every epic is done: the open requirements the user deferred go under Deferred, then its
+ * release.md, REQUIREMENTS.md and epics move to releases/<version>/. With no payload it finishes a close a stopped run
+ * left under way.
+ * @param {string} dir @param {string | undefined} payloadFile
+ */
+function close(dir, payloadFile) {
+  const at = whatsNext(dir);
+  if ('refusal' in at) return refuse(at.refusal);
+  const agile = agileDir(dir);
+  const no = (/** @type {string} */ detail, hint = 'run /cad-agile, which closes the release once every epic is done; nothing was written') => refuse({ reason: 'not-closing', detail, hint });
+  const closing = at.next?.step === 'close' ? /** @type {{closing?: string}} */ (at.next).closing : undefined;
+  if (closing !== undefined) {
+    if (payloadFile !== undefined) return no(`the close of ${closing} is under way`, 'run close with no payload, which finishes it; nothing was written');
+    return emit({ ok: true, version: closing, folder: moveRelease(agile, closing), deferred: [], finished: true });
+  }
+  if (at.release === null) return no('no release is open');
+  if (at.next !== null) return no(`the next step here is ${at.next.step} ${at.next.story?.id ?? at.next.id}`);
+  if (payloadFile === undefined) return no('no close is under way, and no version was given', 'run /cad-agile, which asks the version; nothing was written');
+  const payload = readJsonPayload(payloadFile);
+  if (!payload.ok) return undefined;
+  const p = payload.value;
+  const trace = traced(agile, at.epics);
+  if ('refusal' in trace) return refuse(trace.refusal);
+  const open = trace.value.filter((q) => q.status === 'open').map((q) => q.id);
+  /** @type {{field: string, problem: string}[]} */
+  const issues = [];
+  if (p === null || typeof p !== 'object' || Array.isArray(p)) issues.push({ field: 'payload', problem: 'is an object with version and defer' });
+  else {
+    for (const key of Object.keys(p)) if (key !== 'version' && key !== 'defer') issues.push({ field: key, problem: 'is not a field of this payload' });
+    const { closed } = closes(agile);
+    if (typeof p.version !== 'string' || !VERSION.test(p.version)) issues.push({ field: 'version', problem: 'is one version, letters, digits and ._+- only, starting with a letter or digit' });
+    else if (closed.includes(p.version)) issues.push({ field: 'version', problem: `${p.version} is closed already, in ${join(releasesDir(agile), p.version)}` });
+    const defer = p.defer ?? [];
+    if (!Array.isArray(defer) || defer.some((d) => typeof d !== 'string') || new Set(defer).size !== defer.length) issues.push({ field: 'defer', problem: 'is a list of the open requirements the user deferred, each once, empty when none' });
+    else {
+      for (const id of defer) if (!open.includes(id)) issues.push({ field: 'defer', problem: `names ${id}, which isn't open${open.length ? ` - those are ${open.join(', ')}` : ', and none is'}` });
+      for (const id of open) if (!defer.includes(id)) issues.push({ field: 'defer', problem: `${id} is open, so the release can't close without it - defer it, or build it first` });
+    }
+  }
+  if (issues.length) return refuse(payloadRefused('close-refused', 'the close has', issues));
+  /** @type {string[]} */
+  const defer = p.defer ?? [];
+  // before the move, so a stop between them leaves them deferred and the next close asks only the version
+  if (defer.length) {
+    const text = readFileSync(requirementsFile(agile), 'utf8');
+    atomicWrite(requirementsFile(agile), renderAskChanged(text, readRequirementsFile(text), defer, []));
+  }
+  emit({ ok: true, version: p.version, folder: moveRelease(agile, p.version), deferred: defer });
+}
+
 /** A check that hangs is a failed one, and a headless run of a command fits in this. */
 const CHECK_TIMEOUT_MS = 600000;
 const CHECK_OUTPUT_BYTES = 32 * 1024 * 1024;
@@ -1102,7 +1193,8 @@ try {
   else if (argv[0] === 'accept') accept(planningDir(arg('accept', '--dir')), arg('accept', '--payload'));
   else if (argv[0] === 'not-yet') notYet(planningDir(arg('not-yet', '--dir')), arg('not-yet', '--payload'));
   else if (argv[0] === 'evidence') evidence(planningDir(arg('evidence', '--dir')));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>] | accept [--payload <file>] [--dir <.planning>] | evidence [--dir <.planning>]' });
+  else if (argv[0] === 'close') close(planningDir(arg('close', '--dir')), arg('close', '--payload'));
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>] | accept|close [--payload <file>] [--dir <.planning>] | evidence [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }

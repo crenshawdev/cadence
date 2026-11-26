@@ -66,6 +66,23 @@ export function epicFile(agile, epic) {
   return join(agile, 'epics', epic, 'epic.md');
 }
 
+/** Where each closed release's files go, a folder per version. @param {string} agile */
+export function releasesDir(agile) {
+  return join(agile, 'releases');
+}
+
+/** A close's own folder while its files move in, renamed to the version once they all have. @param {string} agile @param {string} version */
+export function closingDir(agile, version) {
+  return join(releasesDir(agile), `${CLOSING}${version}`);
+}
+
+const CLOSING = '.closing-';
+
+/** The version a close's folder name carries, or null when the name isn't one. @param {string} name */
+export function closingVersion(name) {
+  return name.startsWith(CLOSING) && name.length > CLOSING.length ? name.slice(CLOSING.length) : null;
+}
+
 /** An epic's retrospective, written as it's accepted. @param {string} agile @param {string} epic */
 export function retroFile(agile, epic) {
   return join(agile, 'epics', epic, 'retro.md');
