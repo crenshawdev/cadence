@@ -10,9 +10,6 @@ A script writes every story and epic file, and none is edited by hand.
 
 A story picked up done needs only this run's own folder, then section 2.
 
-**An M stops here**, at the report: "{story} is sized M, and building an M
-needs a short plan this version doesn't write yet."
-
 **This run's own folder**, whose printed path goes into every later call as a
 literal:
 
@@ -71,10 +68,26 @@ began, and every commit after it is the story's and is never made again:
 
 ## 3. Build
 
-An S is one change and has no written plan. Make it, with the tests the
-testing policy asks for when there is one. A change that turns out to need more
-than one goes no further: section 8, the report saying {story} needs a written
-plan.
+**Its size**, before anything is changed. An S is one change with no written
+plan, an M has a short plan of two or three tasks, and anything more is an L,
+which is never built. When the story's Plan says "None yet.", or an S turns out
+to need more than one change, write `size.json` in the folder, each task one
+line saying what it changes, in which files, and what shows it's done:
+
+```
+{"story": "{story}", "size": "M", "plan": ["...", "..."], "why": "..."}
+```
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" size --payload <that file>
+```
+
+`why` is for an S alone: one line on why it needs a plan. One that needs more
+than three tasks is sized `"L"` with `why` and no plan, which sends it back to
+backlog for the next run to cut again: section 8, with nothing built.
+
+Then make it, an M task by task, with the tests the testing policy asks for
+when there is one. A cleared run takes the tasks the log already holds as done.
 
 Something the story doesn't need, found on the way, isn't built. Write it to a
 file in the folder and keep it for later:
@@ -85,7 +98,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind todo -
 
 Commit per references/git-guard.md rail 2: the paths you changed by name,
 `feat({story}): ...` or `fix({story}): ...`, and nothing else the user has
-staged.
+staged. An M commits each task as it's done.
 
 ## 4. The commands
 
@@ -133,7 +146,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-revie
 ```
 
 ```
-Refute this change. {story} {title} is to deliver: {its Delivers}. Its Accepted when lines, and the command recorded to check each one, are in .planning/agile/epics/{id}/{story}.md. The change is the diff at .planning/agile/tasks/{story}/review-{story}.diff. Find what breaks it, what it misses of Delivers or of a line, and any command that would pass with its line untrue. {With a testing policy: the test-finding sentence of references/review-triggers.md step 2.} Follow your output format exactly.
+Refute this change. {story} {title} is to deliver: {its Delivers}. Its Accepted when lines, its plan when it has one, and the command recorded to check each one, are in .planning/agile/epics/{id}/{story}.md. The change is the diff at .planning/agile/tasks/{story}/review-{story}.diff. Find what breaks it, what it misses of Delivers or of a line, and any command that would pass with its line untrue. {With a testing policy: the test-finding sentence of references/review-triggers.md step 2.} Follow your output format exactly.
 ```
 
 Close its bracket the moment it's back, with `--detail-file <path>` naming what
@@ -254,7 +267,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0
 ## 9. Report
 
 ```
-Story: {story} {title}, {done | in progress: check {n} failed after its fix round, {what it printed} | stopped: {why}}
+Story: {story} {title}, {done | in progress: check {n} failed after its fix round, {what it printed} | sized L, back to be cut again: {why} | stopped: {why}}
 Commits: {the Commits line}
 Review: {the Review line}
 Checks: {passed} of {N}
