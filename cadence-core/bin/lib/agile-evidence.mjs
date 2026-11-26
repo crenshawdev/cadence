@@ -24,8 +24,8 @@ function git(root, args) {
   return r.stdout.trim();
 }
 
-/** A Base the story file holds, if it's a commit here: hex only, so nothing in it reaches git as an option. @param {string} root @param {string} b */
-const isCommit = (root, b) => /^[0-9a-f]{4,40}$/.test(b)
+/** A Base the story file holds, if it's a commit here: hex only, SHA-256 length included, so nothing in it reaches git as an option. @param {string} root @param {string} b */
+const isCommit = (root, b) => /^[0-9a-f]{4,64}$/.test(b)
   && boundedRun('git', ['rev-parse', '--verify', '--quiet', '--end-of-options', `${b}^{commit}`], { cwd: root, timeout: GIT_TIMEOUT_MS }).ok;
 
 /** Counts keyed by text from the files, with no prototype a key like `__proto__` could reach. */
