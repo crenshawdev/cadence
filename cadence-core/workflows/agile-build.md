@@ -1,20 +1,17 @@
 # cad-agile build (cold branch)
 
-Read from agile.md when the release's next step is to build a story. One story,
-begun to done in this run or as far as a stop lets it get, and the story file
-says where the next run picks up. `{id}` is `next.id`, and `{story}`,
-`{title}` and `{size}` are `next.story`'s. A script writes every story and epic
-file, and none is edited by hand.
+Read from agile.md when the release's next step is to build a story, or when it
+finds a story done with no record yet. One story, begun to done in this run or
+as far as a stop lets it get, and the story file says where the next run picks
+up. `{id}` is `next.id`, and `{story}`, `{title}` and `{size}` are that story's.
+A script writes every story and epic file, and none is edited by hand.
 
 ## 1. Before anything is built
 
+A story picked up done needs only this run's own folder, then section 2.
+
 **An M stops here**, at the report: "{story} is sized M, and building an M
 needs a short plan this version doesn't write yet."
-
-**The branch**, unless agile.md's `commit` printed `IGNORED` or
-`planning.commit_docs` is false: Read
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section 1.
-A stop or an abort ends the run here.
 
 **This run's own folder**, whose printed path goes into every later call as a
 literal:
@@ -35,7 +32,8 @@ handled?", ask it through the ask-user seam:
 
 Save it the moment it comes, as agile-refine.md's section 2 saves an answer,
 with `{"epic": "{id}", "answers": [{"question": "How are review findings
-handled?", "answer": "<the label picked>"}]}` and `agile.mjs answer`.
+handled?", "answer": "<the label picked>"}]}`, the label without
+"(Recommended)", and `agile.mjs answer`.
 
 **Read**, in one message: the story file, the epic file,
 `.planning/agile/project.md`, the Result of each story it builds on, and the
@@ -61,11 +59,12 @@ began, and every commit after it is the story's and is never made again:
   then section 3.
 - `in-progress` with no `- Check` lines: section 3, from what
   `git log --oneline {Base}..HEAD` and `git status` show is already there.
-- `in-progress` with every check `not run`: section 5.
-- `review` with no `- Review:` line: section 5, which reviews it again.
+- `in-progress` with every check `not run`: section 5 with no `- Review:` line,
+  and section 6 with one, a fix round noted before its checks ran.
+- `review` with no `- Review:` line: section 5.
 - `review` with a `- Review:` line: section 6.
-- `in-progress` with checks that ran: section 7 when there's no `- Fix round:`
-  line, and section 8 when there is, the story staying in progress.
+- `in-progress` with checks that ran: section 7.
+- `done`: section 8, its record not made yet.
 
 `agile.mjs` calls answer one JSON object. On `ok:false`, print `detail` and
 `hint`, one line each, go to section 8, and close the bracket with the reason.
@@ -107,6 +106,11 @@ On `commands-refused`, fix what `issues` names and run it again.
 
 ## 5. Review
 
+When `.planning/agile/tasks/{story}/` holds a `payload-{reviewed}-{HEAD}.json`,
+`{HEAD}` being `git rev-parse --short HEAD`, the review ran and its fixes are in:
+go straight to its record below, with the reviewed head its name gives.
+Otherwise:
+
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" move --to review
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase 0 --base {Base} --head HEAD
@@ -116,7 +120,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phas
 references/review-triggers.md states, with `git diff {Base}..HEAD` written to
 `.planning/agile/tasks/{story}/risk-task-{story}.diff`, shape (c), and its
 records written with `--task {story}`. You fix what its gate says to fix, here,
-and its one narrowed round is the gate's.
+and its one narrowed round is the gate's. Remove that `.diff` file once the
+fire is done.
 
 **No match**: one reviewer. Write `git diff {Base}..HEAD` to
 `.planning/agile/tasks/{story}/review-{story}.diff`, then resolve it with its
@@ -145,19 +150,23 @@ can neither prove nor kill goes to the user. Then, by the epic's findings rule:
 
 - "Fix them, ask about lows": every survivor at medium and up is fixed now.
 - "Ask me each time": the survivors go to the user in one ask, at most three to a
-  question, and the ones picked are fixed now.
+  question, and the ones picked are fixed now. A blocker or high not picked
+  carries `overridden: true` in its ruling, since the user let it stand.
 
 Each fix is committed as section 3 commits, its hash set as that ruling's
 `fix_commit`. A finding that a command doesn't show its line is fixed by
-recording the commands again as section 4 does, which clears the review, so
-this section runs once more over the new ones. A fix's own range gets `risk-check run` from the review's HEAD,
-and its fire on a match. Then write `.planning/agile/tasks/{story}/payload.json`,
-as references/review-record.md composes it, with the reviewer's return verbatim
-and one ruling for each finding, and record it. It stays there until section 8
-has settled the lows, so a cleared run still has them:
+recording the commands again as section 4 does, while the story is in review,
+and committing the story file as section 3 commits; it isn't reviewed again. A
+fix's own range gets `risk-check run` from the review's HEAD, and its fire on a
+match. Then write `.planning/agile/tasks/{story}/payload-{reviewed}-{HEAD}.json`,
+`{reviewed}` being the head the reviewer read and `{HEAD}` the one now, both
+short, as references/review-record.md composes it, with the reviewer's return
+verbatim and one ruling for each finding, and record it. It stays there until
+section 8 has settled the lows, so a cleared run still has them, and
+`record-exists` means a run cut short recorded it already:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" adjudication --phase 0 --trigger diff --discriminator {Base}-{the reviewed head, short} --base {Base} --head {the reviewed head} --payload .planning/agile/tasks/{story}/payload.json --task {story}
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" adjudication --phase 0 --trigger diff --discriminator {Base}-{reviewed} --base {Base} --head {reviewed} --payload .planning/agile/tasks/{story}/payload-{reviewed}-{HEAD}.json --task {story}
 ```
 
 Remove the `.diff` file.
@@ -180,19 +189,27 @@ section 5 notes the review, with `differently`, since a done story takes no
 more notes. With nothing, leave it out.
 
 ```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" move --to review
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" run-checks
 ```
 
-`status: done` goes to section 8. `in-progress` goes to section 7.
+`status: done` goes to section 8. `in-progress` goes to section 7, or to section
+8 once this run has had its fix round, the story staying in progress.
 
 ## 7. One fix round
 
-Read what each failed check printed. When the command is what's wrong, a check
-that can't show its line whatever the code does, record the commands again as
-section 4 does. That clears the review and the fix round, and the run goes on
-at section 5. Otherwise fix the code, commit it as section 3 does, and run
-`risk-check run` over the fix's range, with its fire on a match. Then note the
-round, move the story back to review and run the checks once more:
+A run gets one. Read what each failed check printed. A commit past the last one
+the Commits line names, or a change in the tree, is a fix already made, by the
+user after an earlier run's round or by a run cut short: commit what's
+uncommitted as section 3 does, and take it as this round's fix.
+
+When the command is what's wrong, a check that can't show its line whatever the
+code does, record the commands again as section 4 does and commit the story
+file as section 3 does. That clears the review, so note the round and go to
+section 5, which reviews the new commands. Otherwise fix the code, commit it as
+section 3 does, and run `risk-check run` from the last commit the Commits line
+names to HEAD, with its fire on a match. Then note the round, which sets the
+checks back to `not run`, and go to section 6:
 
 ```
 {"story": "{story}", "fix_round": "check {n}: what was wrong and what fixed it, in {hash}"}
@@ -200,20 +217,18 @@ round, move the story back to review and run the checks once more:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" note --payload <that file>
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" move --to review
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" run-checks
 ```
 
-Done or not, go to section 8. A check still failing leaves the story in progress
-and stops here: the next story doesn't start until it passes.
+A check still failing after the round leaves the story in progress, and the
+next story doesn't start until it passes.
 
 ## 8. Lows and the record
 
 A survivor nobody fixed, a low under "Fix them, ask about lows" or one not
-picked under "Ask me each time", goes to the user once, as
+picked under "Ask me each time", goes to the user, as
 references/triage-gate-unfixed.md states, with `issue-filing.mjs unfixed` and
-`file` over `.planning/agile/tasks/{story}/payload.json`. With none, nothing is
-asked. Then remove that file.
+`file` over each `payload-*.json` in `.planning/agile/tasks/{story}/`, one ask
+for each. With none, nothing is asked. Then remove those files.
 
 Then one commit of the story's record and nothing else the user has staged,
 unless agile.md's `commit` printed `IGNORED` or `planning.commit_docs` is false.
@@ -222,7 +237,7 @@ Push nothing:
 ```
 set -- '.planning/agile/epics/{id}/{story}.md'
 [ -d '.planning/agile/tasks/{story}' ] && set -- "$@" '.planning/agile/tasks/{story}'
-for f in .planning/agile/backlog.md .planning/agile/declined.md .planning/agile/filed.md; do [ -f "$f" ] && [ -n "$(git status --porcelain -- "$f")" ] && set -- "$@" "$f"; done
+for f in '.planning/agile/epics/{id}/epic.md' .planning/agile/backlog.md .planning/agile/declined.md .planning/agile/filed.md; do [ -f "$f" ] && [ -n "$(git status --porcelain -- "$f")" ] && set -- "$@" "$f"; done
 git add -A -- "$@"
 git commit -m "docs({story}): record its build" -- "$@"
 ```

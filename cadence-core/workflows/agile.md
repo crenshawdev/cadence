@@ -61,6 +61,18 @@ go on to `report` with the reason.
 <step name="refine">
 Only on a release that was already open, with no commit above left unmade.
 
+On `build` and `accept`, a story of `{next.id}` done before its record was made,
+a run cut short after its checks passed, is finished first. Leave out the
+`git status` test when `planning.commit_docs` is false:
+
+```
+for f in '.planning/agile/epics/{next.id}/{next.id}'-*.md; do s="$(basename "$f" .md)"; grep -qx 'status: done' "$f" 2>/dev/null || continue; { ls ".planning/agile/tasks/$s/"payload-*.json || [ -n "$(git status --porcelain -- "$f")" ]; } >/dev/null 2>&1 && echo "UNRECORDED $s"; done
+```
+
+On `UNRECORDED`, Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-build.md`
+and follow it for the first story named. It reports for itself, so the run ends
+there.
+
 - `next.step` is `refine` -> Read
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-refine.md` and follow it.
   It reports for itself, so the run ends there.

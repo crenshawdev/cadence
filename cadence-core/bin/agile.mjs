@@ -253,6 +253,9 @@ function refinement(dir, payloadFile) {
   return { agile, file, text, epic, next: at.next, epics: at.epics, release: at.release, requirements: held.value.requirements, payload: payload.value };
 }
 
+/** The question an epic's first build asks, and its two answers as agile-build.md words them. */
+const FINDINGS_RULE = Object.freeze({ question: 'How are review findings handled?', answers: Object.freeze(['Fix them, ask about lows', 'Ask me each time']) });
+
 /** Save what the user answered, as they answer it: at refinement, or the findings rule at an epic's first build. @param {string} dir @param {string} payloadFile */
 function answer(dir, payloadFile) {
   const at = whatsNext(dir);
@@ -267,6 +270,10 @@ function answer(dir, payloadFile) {
     const held = readBack(file, 'a requirements line and a "## Decisions" section', (t) => { text = t; return readEpicFile(t); });
     if ('refusal' in held) return refuse(held.refusal);
     const { issues, answers } = judgeAnswers(payload.value, epic);
+    // a build asks one question, and any other answer here would write over what its refinement decided
+    if (!issues.length && (answers.length !== 1 || answers[0].question !== FINDINGS_RULE.question || !FINDINGS_RULE.answers.includes(answers[0].answer))) {
+      issues.push({ field: 'answers', problem: `while ${epic} is built, the one answer saved is to ${JSON.stringify(FINDINGS_RULE.question)}, and it is ${FINDINGS_RULE.answers.map((a) => JSON.stringify(a)).join(' or ')}` });
+    }
     if (issues.length) return refuse(payloadRefused('answers-refused', `the answers for ${epic} have`, issues));
     atomicWrite(file, renderAnswers(text, answers));
     return emit({ ok: true, epic, saved: answers.length });
@@ -475,13 +482,13 @@ function checkCommands(dir, payloadFile) {
     return refuse({ reason: 'commands-closed', detail: `${up.id} is ${up.story.status}, and commands are recorded while it's being built`,
       hint: `run /cad-agile, which records them once ${up.id} is being built; nothing was written` });
   }
-  // a new command is one nobody reviewed, so the story goes back to being built and owes the review and its fix round
-  const said = readStoryResult(up.text);
-  const ran = up.story.status === 'review' || said.review !== null || readStoryChecks(up.text).some((c) => c.result !== 'not run');
+  // during the review it's that review's own fix; once the review is noted or a check ran, nobody reviewed the new one,
+  // so the story goes back to being built and owes the review
+  const after = readStoryResult(up.text).review !== null || readStoryChecks(up.text).some((c) => c.result !== 'not run');
   const checks = /** @type {string[]} */ (commands).map((command, i) => ({ n: i + 1, command: command.trim(), result: 'not run' }));
-  const cleared = ran ? [{ kind: 'Review', line: '' }, { kind: 'Fix round', line: '' }] : [];
-  atomicWrite(up.file, renderStoryResult(up.text, [...checkLines(checks), ...cleared], 'in-progress'));
-  emit({ ok: true, story: up.id, commands: checks.length, ...(ran ? { review_cleared: true } : {}) });
+  const cleared = after ? [{ kind: 'Review', line: '' }] : [];
+  atomicWrite(up.file, renderStoryResult(up.text, [...checkLines(checks), ...cleared], after ? 'in-progress' : up.story.status));
+  emit({ ok: true, story: up.id, commands: checks.length, ...(after ? { review_cleared: true } : {}) });
 }
 
 /** Where the work starts, or null with no commit to start from. @param {string} root */
@@ -552,8 +559,10 @@ function note(dir, payloadFile) {
   const log = boundedRun('git', ['log', '--reverse', '--format=%h', `${base}..HEAD`], { cwd: dirname(resolve(dir)), timeout: CHILD_TIMEOUT_MS });
   if (!log.ok) throw new Error(`git can't list the commits since ${base}`);
   const commits = log.stdout.split('\n').filter(Boolean);
+  // a round's fix makes what the checks showed stale, so they're owed again, and a run cut short after this runs them
+  const owed = p.fix_round === undefined ? [] : checkLines(readStoryChecks(up.text).map((c) => ({ ...c, result: 'not run' })));
   const lines = [{ kind: 'Commits', line: `- Commits: ${commits.length ? commits.join(', ') : 'none'}` },
-    ...fields.filter(([field]) => p[field] !== undefined).map(([field, kind]) => ({ kind, line: `- ${kind}: ${String(p[field]).trim()}` }))];
+    ...fields.filter(([field]) => p[field] !== undefined).map(([field, kind]) => ({ kind, line: `- ${kind}: ${String(p[field]).trim()}` })), ...owed];
   atomicWrite(up.file, renderStoryResult(up.text, lines));
   emit({ ok: true, story: up.id, commits });
 }
