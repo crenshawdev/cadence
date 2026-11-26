@@ -95,10 +95,13 @@ answered again replaces the answer before it.
   goes in `backlog`, exactly as it stands in that file.
 - No plan is written for any of them.
 
-An epic in progress is here because it holds an L, and is cut again: the list
-replaces every story that isn't done, and done stories stay as they are, count
-toward its requirements and may be built on. What a done story carries can't be
-deferred or split off, and the list may be empty when what's left is.
+An epic in progress is here because it holds an L, or because the user said
+what's missing when asked to accept it, the last `- Not yet:` line under its
+Decisions. Either way it's cut again: the list replaces every story that isn't
+done, and done stories stay as they are, count toward its requirements and may
+be built on. What a done story carries can't be deferred or split off, and the
+list may be empty when what's left is. After a Not yet, open with what's missing,
+and the list adds the stories that deliver it.
 
 Write `stories.json` in that folder. A story's ID is `{id}-` and its place in
 the list, so the second is `{id}-2`; cut again, the first is `next.first`.

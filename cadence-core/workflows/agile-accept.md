@@ -20,11 +20,14 @@ Through the ask-user seam, with no option recommended:
 - question: "Is {id} {name} done? Every story's checks passed."
 - options:
   - "Accept - {id} is done, and the next epic comes after it"
-  - "Not yet - nothing is written, and {id} waits to be accepted"
+  - "Not yet - say what's missing, and {id} is cut again for it before it's asked about again"
 
-"Not yet" ends the run: go to section 4.
+After "Not yet", ask in plain words what's missing from {id}, and wait for the
+answer. Then section 3's **Not yet**.
 
 ## 3. Write
+
+**Accept.**
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" accept
@@ -42,15 +45,26 @@ git commit -m "docs: accept {id}" -- '.planning/agile/epics/{id}/epic.md'
 
 When git refuses it, go on to section 4 with its reason.
 
+**Not yet.** Write `{"epic": "{id}", "missing": "<what they said, in their words,
+on one line>"}` to `not-yet.json` in a folder of its own
+(`mktemp -d "${TMPDIR:-/tmp}/cad-accept-XXXXXX"`), then:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" not-yet --payload <that file>
+```
+
+On `not-yet-refused`, fix what `issues` names and run it again; on any other
+`ok:false`, print `detail` and `hint` and go to section 4. Then commit the
+epic's file as **Accept** does, with the message `docs: not yet {id}`.
+
 ## 4. Report
 
 ```
-Epic: {id} {name}, {accepted | not yet | not accepted: why}
+Epic: {id} {name}, {accepted | not yet: what's missing | not accepted: why}
 Commit: {hash, or "none - " and why}
 
 Next: {the accept call's next.step, its id and name, or a build's story id and title}, with /cad-agile
 ```
 
 With `next_refusal`, its `detail` and `hint` take the `Next:` line's place, and
-with neither that nor a next epic, "Every epic is done." does. After "Not yet",
-the `Commit:` line is left out and `Next:` is accept {id}.
+with neither that nor a next epic, "Every epic is done." does.
