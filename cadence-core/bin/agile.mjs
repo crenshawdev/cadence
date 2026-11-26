@@ -7,7 +7,7 @@
 // Usage: agile.mjs next [--dir <.planning>]
 //        agile.mjs check --design <folder> [--dir <.planning>]
 //        agile.mjs start --design <folder> [--dir <.planning>]
-//        agile.mjs answer|propose|refine|check-commands|note --payload <file> [--dir <.planning>]
+//        agile.mjs answer|propose|refine|size|check-commands|note --payload <file> [--dir <.planning>]
 //        agile.mjs run-checks [--dir <.planning>]
 //        agile.mjs move --to in-progress|review [--dir <.planning>]
 //
@@ -26,9 +26,9 @@ import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
 import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, releaseFile, requirementsFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
-import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryFile, renderStoryResult, checkLines } from './lib/agile-render.mjs';
+import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
-import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryResult } from './lib/agile-read.mjs';
+import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
 import { judgeAnswers, judgeAsk, judgeSplit, judgeStories } from './lib/agile-refine.mjs';
 import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
@@ -491,6 +491,64 @@ function checkCommands(dir, payloadFile) {
   emit({ ok: true, story: up.id, commands: checks.length, ...(after ? { review_cleared: true } : {}) });
 }
 
+/** The story's commits since it began, oldest first. @param {string} dir @param {string} base */
+function commitsSince(dir, base) {
+  const log = boundedRun('git', ['log', '--reverse', '--format=%h', `${base}..HEAD`], { cwd: dirname(resolve(dir)), timeout: CHILD_TIMEOUT_MS });
+  if (!log.ok) throw new Error(`git can't list the commits since ${base}`);
+  return log.stdout.split('\n').filter(Boolean);
+}
+
+/** The most tasks an M's plan holds; anything more is an L. */
+const PLAN_TASKS = 3;
+
+/**
+ * Size the story `next` names as it's begun: an M gets its short plan, an S that needs one becomes an M, and one bigger
+ * than an M goes back to backlog as an L, for the next run to cut again. One write.
+ * @param {string} dir @param {string} payloadFile
+ */
+function size(dir, payloadFile) {
+  const payload = readJsonPayload(payloadFile);
+  if (!payload.ok) return undefined;
+  const p = payload.value !== null && typeof payload.value === 'object' ? payload.value : {};
+  const up = building(dir, typeof p.story === 'string' ? p.story : undefined);
+  if (up === null) return undefined;
+  const from = up.story.size;
+  const line = (/** @type {unknown} */ v) => typeof v === 'string' && v.trim() !== '' && !/[\x00-\x1f\x7f]/.test(v);
+  /** @type {{field: string, problem: string}[]} */
+  const issues = [];
+  if (typeof p.story !== 'string') issues.push({ field: 'story', problem: `name the story being sized, ${up.id}` });
+  if (p.size !== 'M' && p.size !== 'L') issues.push({ field: 'size', problem: 'give "M" with its plan, or "L" with why it\'s bigger than an M' });
+  if (p.size === 'L' && p.plan !== undefined) issues.push({ field: 'plan', problem: 'an L is never built, so it takes no plan - leave plan out' });
+  if (p.size === 'M') {
+    if (!Array.isArray(p.plan) || !p.plan.length) issues.push({ field: 'plan', problem: `give ${up.id}'s plan, one to ${PLAN_TASKS} tasks of one line each` });
+    else if (p.plan.length > PLAN_TASKS) issues.push({ field: 'plan', problem: `${p.plan.length} tasks is more than an M holds - size it "L" with why, and the next run cuts it again` });
+    else p.plan.forEach((t, i) => { if (!line(t)) issues.push({ field: `plan[${i}]`, problem: 'a task is one line of text' }); });
+  }
+  // an M sized at refinement was cut as one, and any other size is a change that says why
+  const resized = (p.size === 'M' || p.size === 'L') && p.size !== from;
+  if (resized && !line(p.why)) issues.push({ field: 'why', problem: `say in one line why ${up.id} is ${p.size === 'L' ? 'bigger than an M' : 'more than one change'}` });
+  if (!resized && p.why !== undefined) issues.push({ field: 'why', problem: `${up.id} is sized ${from} already - leave why out` });
+  if (issues.length) return refuse(payloadRefused('size-refused', `sizing ${up.id} has`, issues));
+  const stuck = (/** @type {string} */ why, /** @type {string} */ hint) => refuse({ reason: 'not-sizable', detail: `${up.id} is ${up.story.status}, ${why}`, hint });
+  const { base } = readStoryResult(up.text);
+  if (p.size === 'M') {
+    if (up.story.status !== 'in-progress') return stuck('and its plan is written once it\'s begun and before it\'s built', 'run /cad-agile, which begins it first; nothing was written');
+    if (readStoryPlan(up.text) !== null) return stuck('and its plan is written already', 'build it from the plan its file holds; nothing was written');
+    if (readStoryChecks(up.text).length) return stuck('and its commands are recorded, so it\'s built already', 'finish it at its size with /cad-agile; nothing was written');
+    const planned = renderStoryPlan(up.text, /** @type {string[]} */ (p.plan).map((t) => t.trim()));
+    atomicWrite(up.file, resized ? renderStoryResult(withSize(planned, 'M'), [{ kind: 'Resized', line: `- Resized: ${from} to M - ${p.why.trim()}` }]) : planned);
+    return emit({ ok: true, story: up.id, size: 'M', tasks: p.plan.length, ...(resized ? { resized: from } : {}) });
+  }
+  if (up.story.status !== 'backlog' && up.story.status !== 'in-progress') return stuck('and only a story not yet reviewed goes back to be cut again', 'finish it at its size with /cad-agile; nothing was written');
+  // a cut again replaces the story, and its commits would be left on none
+  const made = base === null ? [] : commitsSince(dir, base);
+  if (made.length) return stuck(`and ${made.length} commit${made.length === 1 ? ' is' : 's are'} past its Base, which a cut again would leave on no story`, 'finish it at its size with /cad-agile; nothing was written');
+  atomicWrite(up.file, renderStoryResult(withSize(up.text, 'L'), [{ kind: 'Base', line: '' }, { kind: 'Commits', line: '' },
+    { kind: 'Resized', line: `- Resized: ${from} to L - ${p.why.trim()}` }], 'backlog'));
+  const now = whatsNext(dir);
+  emit({ ok: true, story: up.id, size: 'L', status: 'backlog', next: 'refusal' in now ? null : now.next });
+}
+
 /** Where the work starts, or null with no commit to start from. @param {string} root */
 function headOf(root) {
   const r = boundedRun('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, timeout: CHILD_TIMEOUT_MS });
@@ -556,9 +614,7 @@ function note(dir, payloadFile) {
     return refuse({ reason: 'not-begun', detail: `${up.id} is ${up.story.status}${base === null ? ' and its Result names no Base' : ''}`,
       hint: 'run /cad-agile, which begins the story first; nothing was written' });
   }
-  const log = boundedRun('git', ['log', '--reverse', '--format=%h', `${base}..HEAD`], { cwd: dirname(resolve(dir)), timeout: CHILD_TIMEOUT_MS });
-  if (!log.ok) throw new Error(`git can't list the commits since ${base}`);
-  const commits = log.stdout.split('\n').filter(Boolean);
+  const commits = commitsSince(dir, base);
   // a round's fix makes what the checks showed stale, so they're owed again, and a run cut short after this runs them
   const owed = p.fix_round === undefined ? [] : checkLines(readStoryChecks(up.text).map((c) => ({ ...c, result: 'not run' })));
   const lines = [{ kind: 'Commits', line: `- Commits: ${commits.length ? commits.join(', ') : 'none'}` },
@@ -796,11 +852,12 @@ try {
   else if (argv[0] === 'answer') answer(planningDir(arg('answer', '--dir')), arg('answer', '--payload'));
   else if (argv[0] === 'propose') propose(planningDir(arg('propose', '--dir')), arg('propose', '--payload'));
   else if (argv[0] === 'refine') refine(planningDir(arg('refine', '--dir')), arg('refine', '--payload'));
+  else if (argv[0] === 'size') size(planningDir(arg('size', '--dir')), arg('size', '--payload'));
   else if (argv[0] === 'check-commands') checkCommands(planningDir(arg('check-commands', '--dir')), arg('check-commands', '--payload'));
   else if (argv[0] === 'run-checks') runChecks(planningDir(arg('run-checks', '--dir'))).catch(emitCaught);
   else if (argv[0] === 'move') move(planningDir(arg('move', '--dir')), arg('move', '--to'));
   else if (argv[0] === 'note') note(planningDir(arg('note', '--dir')), arg('note', '--payload'));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--dir <.planning>] | answer|propose|refine|check-commands|note --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>]' });
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--dir <.planning>] | answer|propose|refine|size|check-commands|note --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }

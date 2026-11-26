@@ -154,5 +154,11 @@ export function readStoryChecks(text) {
 export function readStoryResult(text) {
   const lines = (section(text, '## Result') ?? '').split('\n');
   const of = (/** @type {string} */ kind) => lines.find((l) => l.startsWith(`- ${kind}: `))?.slice(kind.length + 4) ?? null;
-  return { base: of('Base'), commits: of('Commits'), review: of('Review'), fix_round: of('Fix round'), differently: of('Done differently') };
+  return { base: of('Base'), commits: of('Commits'), resized: of('Resized'), review: of('Review'), fix_round: of('Fix round'), differently: of('Done differently') };
+}
+
+/** A story's plan, one line per task, or null until one is written. @param {string} text */
+export function readStoryPlan(text) {
+  const held = section(text, '## Plan');
+  return held === null || held === '' || held === 'None yet.' ? null : held.split('\n').filter((l) => l.trim() !== '');
 }

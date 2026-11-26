@@ -918,6 +918,9 @@ export const CONTRACTS = {
     refine: {
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    size: {
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     'check-commands': {
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },

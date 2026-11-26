@@ -158,7 +158,7 @@ function withSection(text, heading, change) {
 const withDecisions = (text, change) => withSection(text, '## Decisions', change);
 
 /** The Result lines a script writes, in the order they're written. */
-const RESULT_KINDS = Object.freeze(['Base', 'Commits', 'Review', 'Fix round', 'Done differently']);
+const RESULT_KINDS = Object.freeze(['Base', 'Commits', 'Resized', 'Review', 'Fix round', 'Done differently']);
 const kindOf = (/** @type {string} */ line) => (CHECK_LINE.test(line) ? 'Check' : RESULT_KINDS.find((k) => line.startsWith(`- ${k}: `)) ?? null);
 
 /**
@@ -180,6 +180,23 @@ export function renderStoryResult(text, lines, status) {
   // the frontmatter's own line, spaced or not as the reader allows, never a "status:" further down the file
   return status === undefined ? out
     : out.replace(FRONTMATTER_RE, (block) => block.replace(/^status:[ \t]*\S+[ \t]*$/m, `status: ${status}`));
+}
+
+/** A story sized again, its frontmatter's own line and no other. @param {string} text @param {string} size */
+export const withSize = (text, size) => text.replace(FRONTMATTER_RE, (block) => block.replace(/^size:[ \t]*\S+[ \t]*$/m, `size: ${size}`));
+
+/**
+ * A story with its plan written, one line per task. An S has no Plan section, so one goes in before Result, where an M's
+ * file has it.
+ * @param {string} text a story file `readStoryFile` reads @param {string[]} tasks
+ */
+export function renderStoryPlan(text, tasks) {
+  const lines = text.split(/\r?\n/);
+  if (sectionSpan(lines, '## Plan').start < 0) {
+    lines.splice(sectionSpan(lines, '## Result').start, 0, '## Plan', '', 'None yet.', '');
+    text = lines.join(text.includes('\r\n') ? '\r\n' : '\n');
+  }
+  return withSection(text, '## Plan', () => tasks.map((t, i) => `- Task ${i + 1}: ${t}`));
 }
 
 /** The check lines for these checks. @param {import('./agile-read.mjs').Check[]} checks */
