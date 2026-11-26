@@ -227,10 +227,43 @@ function openLessons(agile, epics, epic) {
   return { value: said.filter((l) => !recorded.has(`${l.from} ${l.line}`)) };
 }
 
+/**
+ * Each requirement of the release, done, deferred or open: done when a story names it and every story naming it is
+ * done in an epic that's done, deferred when it's under Deferred, open otherwise. It writes nothing.
+ * @param {string} agile @param {{id: string}[]} epics
+ */
+function traced(agile, epics) {
+  const file = readBack(requirementsFile(agile), 'a "# Requirements:" title, then "## Requirements" and "## Deferred"', (t) => {
+    const read = readRequirementsFile(t);
+    return read.title === null ? null : read;
+  });
+  if ('refusal' in file) return file;
+  /** @type {Map<string, {story: string, done: boolean}[]>} */
+  const on = new Map();
+  for (const { id } of epics) {
+    const status = readBack(epicFile(agile, id), `a status of ${STATUSES.join(', ')}`, readEpicStatus);
+    if ('refusal' in status) return status;
+    const stories = storiesOf(agile, id);
+    if ('refusal' in stories) return stories;
+    for (const s of stories.value) {
+      for (const q of s.requirements) on.set(q, [...(on.get(q) ?? []), { story: s.id, done: s.status === 'done' && status.value === 'done' }]);
+    }
+  }
+  const row = (/** @type {{id: string, text: string}} */ q, /** @type {string} */ status) => ({ id: q.id, text: q.text, status, stories: (on.get(q.id) ?? []).map((s) => s.story) });
+  return { value: [...file.value.requirements.map((q) => row(q, (on.get(q.id) ?? []).length && /** @type {{done: boolean}[]} */ (on.get(q.id)).every((s) => s.done) ? 'done' : 'open')),
+    ...file.value.deferred.map((q) => row(q, 'deferred'))] };
+}
+
 /** @param {string} dir */
 function next(dir) {
   const at = whatsNext(dir);
   if ('refusal' in at) return refuse(at.refusal);
+  // every epic done: what's left is the close, and it needs each requirement done or deferred
+  if (at.next === null && at.release !== null) {
+    const trace = traced(agileDir(dir), at.epics);
+    if ('refusal' in trace) return refuse(trace.refusal);
+    return emit({ ok: true, release: at.release, next: { step: 'close', requirements: trace.value } });
+  }
   if (at.next?.step !== 'refine') return emit({ ok: true, release: at.release, next: at.next });
   const lessons = openLessons(agileDir(dir), at.epics, at.next.id);
   if ('refusal' in lessons) return refuse(lessons.refusal);
@@ -570,7 +603,7 @@ function accept(dir, payloadFile) {
   atomicWrite(file, withStatus(readFileSync(file, 'utf8'), 'done'));
   // a damaged epic after it is only read now, and a null next would read as the release's end
   const now = whatsNext(dir);
-  emit({ ok: true, epic: id, status: 'done', retro, next: 'refusal' in now ? null : now.next, ...('refusal' in now ? { next_refusal: now.refusal } : {}) });
+  emit({ ok: true, epic: id, status: 'done', retro, next: 'refusal' in now ? null : now.next ?? { step: 'close' }, ...('refusal' in now ? { next_refusal: now.refusal } : {}) });
 }
 
 /**
