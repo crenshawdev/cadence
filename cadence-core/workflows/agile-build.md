@@ -148,7 +148,9 @@ can neither prove nor kill goes to the user. Then, by the epic's findings rule:
   question, and the ones picked are fixed now.
 
 Each fix is committed as section 3 commits, its hash set as that ruling's
-`fix_commit`. A fix's own range gets `risk-check run` from the review's HEAD,
+`fix_commit`. A finding that a command doesn't show its line is fixed by
+recording the commands again as section 4 does, which clears the review, so
+this section runs once more over the new ones. A fix's own range gets `risk-check run` from the review's HEAD,
 and its fire on a match. Then write `.planning/agile/tasks/{story}/payload.json`,
 as references/review-record.md composes it, with the reviewer's return verbatim
 and one ruling for each finding, and record it. It stays there until section 8

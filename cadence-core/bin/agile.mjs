@@ -470,16 +470,17 @@ function checkCommands(dir, payloadFile) {
     });
   }
   if (issues.length) return refuse(payloadRefused('commands-refused', `the commands for ${up.id} have`, issues));
-  // recorded while the story is built, before the review reads them
-  if (up.story.status !== 'in-progress') {
+  // recorded while the story is built or reviewed, so a review that finds a weak command can have it fixed
+  if (up.story.status !== 'in-progress' && up.story.status !== 'review') {
     return refuse({ reason: 'commands-closed', detail: `${up.id} is ${up.story.status}, and commands are recorded while it's being built`,
       hint: `run /cad-agile, which records them once ${up.id} is being built; nothing was written` });
   }
-  // after a run, a new command is one nobody reviewed, so the review and its fix round are cleared and owed again
-  const ran = readStoryChecks(up.text).some((c) => c.result !== 'not run');
+  // a new command is one nobody reviewed, so the story goes back to being built and owes the review and its fix round
+  const said = readStoryResult(up.text);
+  const ran = up.story.status === 'review' || said.review !== null || readStoryChecks(up.text).some((c) => c.result !== 'not run');
   const checks = /** @type {string[]} */ (commands).map((command, i) => ({ n: i + 1, command: command.trim(), result: 'not run' }));
   const cleared = ran ? [{ kind: 'Review', line: '' }, { kind: 'Fix round', line: '' }] : [];
-  atomicWrite(up.file, renderStoryResult(up.text, [...checkLines(checks), ...cleared]));
+  atomicWrite(up.file, renderStoryResult(up.text, [...checkLines(checks), ...cleared], 'in-progress'));
   emit({ ok: true, story: up.id, commands: checks.length, ...(ran ? { review_cleared: true } : {}) });
 }
 
