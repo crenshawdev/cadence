@@ -684,8 +684,9 @@ function notYet(dir, payloadFile) {
   emit({ ok: true, epic: id, missing: p.missing.trim(), next: 'refusal' in now ? null : now.next, ...('refusal' in now ? { next_refusal: now.refusal } : {}) });
 }
 
-/** A version is a folder name and a tag, so it holds nothing a path or git would read as more. */
+/** A version is a folder name and a tag, so it holds nothing a path or git would read as more, nor what git refuses in a tag. */
 const VERSION = /^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$/;
+const tagSafe = (/** @type {string} */ v) => VERSION.test(v) && !v.includes('..') && !v.endsWith('.') && !v.endsWith('.lock');
 
 /**
  * Move the release's files into its close's folder, the epics first and release.md last, then rename that folder to
@@ -731,7 +732,7 @@ function close(dir, payloadFile) {
   else {
     for (const key of Object.keys(p)) if (key !== 'version' && key !== 'defer') issues.push({ field: key, problem: 'is not a field of this payload' });
     const { closed } = closes(agile);
-    if (typeof p.version !== 'string' || !VERSION.test(p.version)) issues.push({ field: 'version', problem: 'is one version, letters, digits and ._+- only, starting with a letter or digit' });
+    if (typeof p.version !== 'string' || !tagSafe(p.version)) issues.push({ field: 'version', problem: 'is one version git takes as a tag: letters, digits and ._+- only, starting with a letter or digit, with no "..", and not ending in "." or ".lock"' });
     else if (closed.includes(p.version)) issues.push({ field: 'version', problem: `${p.version} is closed already, in ${join(releasesDir(agile), p.version)}` });
     const defer = p.defer ?? [];
     if (!Array.isArray(defer) || defer.some((d) => typeof d !== 'string') || new Set(defer).size !== defer.length) issues.push({ field: 'defer', problem: 'is a list of the open requirements the user deferred, each once, empty when none' });

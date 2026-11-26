@@ -12,8 +12,8 @@ With `next.closing`, a close stopped while its files moved: ask nothing, run
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" close
 ```
 
-and go to section 3's **Bump and commit** with its `version`. On `ok:false`,
-print `detail` and `hint`, one line each, and go to section 4.
+and go to section 3's **Commit** with its `version`. On `ok:false`, print
+`detail` and `hint`, one line each, and go to section 4.
 
 ## 2. Show and ask
 
@@ -24,8 +24,9 @@ then `Open: {id}: {text}` for each one open. Then read what's been published:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-branch.mjs" tags --dir .
 ```
 
-The last version is the highest tag that reads as one, its `v` kept; with no
-tag, the `version` in `.claude-plugin/plugin.json`, else in `package.json`.
+The last version is the higher of the highest tag that reads as one, its `v`
+kept, and the `version` in `.claude-plugin/plugin.json`, else in `package.json`,
+so the one offered is never below what the manifest holds.
 
 Ask through the ask-user seam, in one call:
 
@@ -47,6 +48,15 @@ On "Stop", go to section 4: not closed, and the open IDs.
 
 ## 3. Write
 
+**Bump.** The manifest takes the version first, so a version it won't take stops
+the close with nothing moved. A project with no plugin manifest answers `action:
+skip`, and one already at the version `noop`. On `ok:false`, print `detail` and
+go to section 4; nothing else was written:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/release-bump.mjs" bump --dir . --version '{version}'
+```
+
 **Close.** Write `{"version": "<the version picked>", "defer": [<the open IDs
 when deferred, else none>]}` to `close.json` in a folder of its own
 (`mktemp -d "${TMPDIR:-/tmp}/cad-close-XXXXXX"`), then:
@@ -58,23 +68,17 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" close --payload <that fi
 On `close-refused`, fix what `issues` names and run it again; on any other
 `ok:false`, print `detail` and `hint`, one line each, and go to section 4.
 
-**Bump and commit.** The manifest takes the version; a project with no plugin
-manifest answers `action: skip`, and one already at it `noop`. On `ok:false`,
-print `detail` and go to section 4 with nothing committed:
+**Commit.** One commit of the close and nothing else the user has staged,
+unless agile.md's `commit` printed `IGNORED` or `planning.commit_docs` is false.
+Push nothing. The release's old paths go in when git tracks them, and a manifest
+file or CHANGELOG.md only when it holds the version and HEAD's copy doesn't:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/release-bump.mjs" bump --dir . --version '{version}'
-```
-
-Then one commit of the close and nothing else the user has staged, unless
-agile.md's `commit` printed `IGNORED` or `planning.commit_docs` is false. Push
-nothing. The release's old paths go in when git tracks them, and a manifest file
-when it differs from HEAD:
-
-```
+b='{version}'; b="${b#v}"
 set -- '.planning/agile/releases/{version}'
 for f in .planning/agile/release.md .planning/agile/REQUIREMENTS.md .planning/agile/epics; do [ -n "$(git ls-files -- "$f")" ] && set -- "$@" "$f"; done
-for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json CHANGELOG.md; do [ -f "$f" ] && ! git check-ignore -q "$f" && [ "$(git cat-file blob "HEAD:./$f" 2>/dev/null | tr -d '\r')" != "$(tr -d '\r' < "$f")" ] && set -- "$@" "$f"; done
+for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json; do [ -f "$f" ] && ! git check-ignore -q "$f" && tr -d ' \t\r' < "$f" | grep -qF "\"version\":\"$b\"" && ! git cat-file blob "HEAD:./$f" 2>/dev/null | tr -d ' \t\r' | grep -qF "\"version\":\"$b\"" && set -- "$@" "$f"; done
+[ -f CHANGELOG.md ] && ! git check-ignore -q CHANGELOG.md && grep -qF "## [$b]" CHANGELOG.md && ! git cat-file blob HEAD:./CHANGELOG.md 2>/dev/null | grep -qF "## [$b]" && set -- "$@" CHANGELOG.md
 git add -A -- "$@"
 git commit -m "docs: close the release {version}" -- "$@"
 ```

@@ -26,9 +26,11 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" next
   ```
 
   Unless `planning.commit_docs` is false, for each version `UNCOMMITTED` names,
-  Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-close.md` and apply
-  its section 3's **Bump and commit** with that version, then its report, and
-  the run ends there. With none, go on.
+  Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply
+  section 1 unless HEAD has no commit, a stop going to the report, then Read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-close.md` and apply its
+  section 3's **Commit** with that version, then its report, and the run ends
+  there. The manifest was bumped before the move. With none, go on.
 - `release` is null, with `--brief` -> Read
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-start.md` and follow it,
   then go to `commit`.
