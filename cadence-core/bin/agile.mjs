@@ -502,8 +502,8 @@ function commitsSince(dir, base) {
 const PLAN_TASKS = 3;
 
 /**
- * Size the story `next` names as it's begun: an M gets its short plan, an S that needs one becomes an M, and one bigger
- * than an M goes back to backlog as an L, for the next run to cut again. One write.
+ * Size the story `next` names as it's begun: an M gets its short plan, and one bigger than an M goes back to backlog as
+ * an L, for the next run to cut again. An S is built as one change, so it never takes a plan. One write.
  * @param {string} dir @param {string} payloadFile
  */
 function size(dir, payloadFile) {
@@ -518,18 +518,15 @@ function size(dir, payloadFile) {
   const issues = [];
   if (typeof p.story !== 'string') issues.push({ field: 'story', problem: `name the story being sized, ${up.id}` });
   if (p.size !== 'M' && p.size !== 'L') issues.push({ field: 'size', problem: 'give "M" with its plan, or "L" with why it\'s bigger than an M' });
+  if (p.size === 'M' && from !== 'M') issues.push({ field: 'size', problem: `${up.id} is an ${from}, and only an M has a plan - an S is built as one change, and one bigger than an M is sized "L"` });
   if (p.size === 'L' && p.plan !== undefined) issues.push({ field: 'plan', problem: 'an L is never built, so it takes no plan - leave plan out' });
   if (p.size === 'M') {
     if (!Array.isArray(p.plan) || !p.plan.length) issues.push({ field: 'plan', problem: `give ${up.id}'s plan, one to ${PLAN_TASKS} tasks of one line each` });
     else if (p.plan.length > PLAN_TASKS) issues.push({ field: 'plan', problem: `${p.plan.length} tasks is more than an M holds - size it "L" with why, and the next run cuts it again` });
     else p.plan.forEach((t, i) => { if (!line(t)) issues.push({ field: `plan[${i}]`, problem: 'a task is one line of text' }); });
   }
-  // an M sized at refinement was cut as one, and any other size is a change that says why
-  const resized = (p.size === 'M' || p.size === 'L') && p.size !== from;
-  // an S that needs a plan is more than one change, and an M refinement sized may turn out smaller than it looked
-  if (resized && p.size === 'M' && Array.isArray(p.plan) && p.plan.length === 1) issues.push({ field: 'plan', problem: `an S that needs a plan is more than one change, so its plan has two or three tasks - one change is built as ${up.id} is, with no plan` });
-  if (resized && !line(p.why)) issues.push({ field: 'why', problem: `say in one line why ${up.id} is ${p.size === 'L' ? 'bigger than an M' : 'more than one change'}` });
-  if (!resized && p.why !== undefined) issues.push({ field: 'why', problem: `${up.id} is sized ${from} already - leave why out` });
+  if (p.size === 'L' && !line(p.why)) issues.push({ field: 'why', problem: `say in one line why ${up.id} is bigger than an M` });
+  if (p.size === 'M' && p.why !== undefined) issues.push({ field: 'why', problem: 'an M is planned at the size refinement gave it - leave why out' });
   if (issues.length) return refuse(payloadRefused('size-refused', `sizing ${up.id} has`, issues));
   const stuck = (/** @type {string} */ why, /** @type {string} */ hint) => refuse({ reason: 'not-sizable', detail: `${up.id} is ${up.story.status}, ${why}`, hint });
   const { base } = readStoryResult(up.text);
@@ -537,9 +534,8 @@ function size(dir, payloadFile) {
     if (up.story.status !== 'in-progress') return stuck('and its plan is written once it\'s begun and before it\'s built', 'run /cad-agile, which begins it first; nothing was written');
     if (readStoryPlan(up.text) !== null) return stuck('and its plan is written already', 'build it from the plan its file holds; nothing was written');
     if (readStoryChecks(up.text).length) return stuck('and its commands are recorded, so it\'s built already', 'finish it at its size with /cad-agile; nothing was written');
-    const planned = renderStoryPlan(up.text, /** @type {string[]} */ (p.plan).map((t) => t.trim()));
-    atomicWrite(up.file, resized ? renderStoryResult(withSize(planned, 'M'), [{ kind: 'Resized', line: `- Resized: ${from} to M - ${p.why.trim()}` }]) : planned);
-    return emit({ ok: true, story: up.id, size: 'M', tasks: p.plan.length, ...(resized ? { resized: from } : {}) });
+    atomicWrite(up.file, renderStoryPlan(up.text, /** @type {string[]} */ (p.plan).map((t) => t.trim())));
+    return emit({ ok: true, story: up.id, size: 'M', tasks: p.plan.length });
   }
   if (up.story.status !== 'backlog' && up.story.status !== 'in-progress') return stuck('and only a story not yet reviewed goes back to be cut again', 'finish it at its size with /cad-agile; nothing was written');
   // a cut again replaces the story, and its commits would be left on none

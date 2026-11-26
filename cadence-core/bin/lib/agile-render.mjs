@@ -185,19 +185,8 @@ export function renderStoryResult(text, lines, status) {
 /** A story sized again, its frontmatter's own line and no other. @param {string} text @param {string} size */
 export const withSize = (text, size) => text.replace(FRONTMATTER_RE, (block) => block.replace(/^size:[ \t]*\S+[ \t]*$/m, `size: ${size}`));
 
-/**
- * A story with its plan written, one line per task. An S has no Plan section, so one goes in before Result, where an M's
- * file has it.
- * @param {string} text a story file `readStoryFile` reads @param {string[]} tasks
- */
-export function renderStoryPlan(text, tasks) {
-  const lines = text.split(/\r?\n/);
-  if (sectionSpan(lines, '## Plan').start < 0) {
-    lines.splice(sectionSpan(lines, '## Result').start, 0, '## Plan', '', 'None yet.', '');
-    text = lines.join(text.includes('\r\n') ? '\r\n' : '\n');
-  }
-  return withSection(text, '## Plan', () => tasks.map((t, i) => `- Task ${i + 1}: ${t}`));
-}
+/** An M with its plan written, one line per task. @param {string} text an M's story file @param {string[]} tasks */
+export const renderStoryPlan = (text, tasks) => withSection(text, '## Plan', () => tasks.map((t, i) => `- Task ${i + 1}: ${t}`));
 
 /** The check lines for these checks. @param {import('./agile-read.mjs').Check[]} checks */
 export const checkLines = (checks) => checks.map((c) => ({ kind: 'Check', line: `- Check ${c.n}: \`${c.command}\` - ${c.result}` }));

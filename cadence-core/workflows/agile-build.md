@@ -70,21 +70,21 @@ began, and every commit after it is the story's and is never made again:
 
 **Its size**, before anything is changed. An S is one change with no written
 plan, an M has a short plan of two or three tasks, and anything more is an L,
-which is never built. When the story's Plan says "None yet.", or an S turns out
-to need more than one change, write `size.json` in the folder, each task one
-line saying what it changes, in which files, and what shows it's done:
+which is never built. When an M's Plan says "None yet.", write `size.json` in
+the folder, each task one line saying what it changes, in which files, and what
+shows it's done:
 
 ```
-{"story": "{story}", "size": "M", "plan": ["...", "..."], "why": "..."}
+{"story": "{story}", "size": "M", "plan": ["...", "..."]}
 ```
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" size --payload <that file>
 ```
 
-`why` is for an S alone: one line on why it needs a plan. One that needs more
-than three tasks is sized `"L"` with `why` and no plan, which sends it back to
-backlog for the next run to cut again: section 8, with nothing built.
+A story that needs more than three tasks is sized `"L"` with `why`, one line,
+and no plan, which sends it back to backlog for the next run to cut again:
+section 8, with nothing built.
 
 Then make it, an M task by task, with the tests the testing policy asks for
 when there is one. A cleared run takes the tasks the log already holds as done.
