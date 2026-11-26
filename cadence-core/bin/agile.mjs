@@ -1288,33 +1288,49 @@ function start(dir, design, commitHere) {
 
 const DESIGN_FILES = ['brief.md', 'prd.md', 'spine.md', 'epics.md'];
 
+/** Seldon reads a bare reply of one of these as its step or its architecture document, so no design is named one. */
+const SELDON_WORDS = ['brief', 'prd', 'spine', 'epics', 'architecture'];
+
 /**
- * Where a design written without one goes, as Seldon would put it: the top of .planning/seldon/ for a project's first, a
- * folder named for its title once the top holds one. It writes nothing.
+ * Where a design written without one goes, as Seldon would put it: the top of .planning/seldon/ until a brief.md is
+ * there, then a folder named for the title, which is taken once anything is in it. It writes nothing.
  * @param {string} dir @param {string} title
  */
 function designFolder(dir, title) {
   const why = refusal(dir);
   if (why !== null && why.reason !== 'release-closed') return refuse(why);
   const slug = slugOf(title);
-  if (slug === '') {
-    return refuse({ reason: 'title-slug', detail: `${JSON.stringify(title)} has no letter or digit to name a folder by`,
-      hint: 'give the release a title with a letter or a digit in it, then re-run; nothing was written' });
+  const unusable = slug === '' ? 'it has no letter or digit' : SELDON_WORDS.includes(slug) ? `"${slug}" is one of Seldon's own words`
+    : slug.length > 64 ? 'its name runs past 64 characters' : null;
+  if (unusable !== null) {
+    return refuse({ reason: 'title-slug', detail: `${JSON.stringify(title)} can't name a design's folder: ${unusable}`,
+      hint: 'give the release another title, then re-run; nothing was written' });
   }
   const top = join(dir, 'seldon');
-  const named = join(top, slug);
-  // a link here could put the design anywhere
-  for (const folder of [top, named]) {
-    const st = lstatOf(folder);
-    if (st !== null && !st.isDirectory()) {
-      return refuse({ reason: 'design-folder', detail: `${folder} is not a folder`, hint: 'move it aside, then re-run; nothing was written' });
-    }
+  // /cad-agile --brief takes the folder in single quotes and refuses one holding a quote
+  if (top.includes("'")) {
+    return refuse({ reason: 'design-path', detail: `${top} holds a single quote, which /cad-agile --brief refuses in a path`,
+      hint: 'run it from a folder whose path has no single quote; nothing was written' });
   }
-  const holds = (/** @type {string} */ folder) => DESIGN_FILES.some((name) => lstatOf(join(folder, name)) !== null);
-  if (!holds(top)) return emit({ ok: true, folder: top, slug });
-  if (holds(named)) {
-    return refuse({ reason: 'design-there', detail: `${named} already holds a design`,
-      hint: `start from it with /cad-agile --brief '${named}', or finish it with /seldon; nothing was written` });
+  // a link here could put the design anywhere
+  const notFolder = (/** @type {string} */ folder) => { const st = lstatOf(folder); return st !== null && !st.isDirectory(); };
+  const there = (/** @type {string} */ folder, /** @type {string} */ name) => lstatOf(join(folder, name)) !== null;
+  const notAFolder = (/** @type {string} */ folder) => ({ reason: 'design-folder', detail: `${folder} is not a folder`, hint: 'move it aside, then re-run; nothing was written' });
+  if (notFolder(top)) return refuse(notAFolder(top));
+  if (!there(top, 'brief.md')) {
+    // with no brief.md Seldon holds no design there, but a file it would write over may be someone's start
+    if (DESIGN_FILES.some((name) => there(top, name))) {
+      return refuse({ reason: 'design-started', detail: `${top} holds part of a design and no brief.md`,
+        hint: 'finish it with /seldon, or move those files aside, then re-run; nothing was written' });
+    }
+    return emit({ ok: true, folder: top, slug });
+  }
+  const named = join(top, slug);
+  if (notFolder(named)) return refuse(notAFolder(named));
+  if (lstatOf(named) !== null && readdirSync(named).length) {
+    return refuse({ reason: 'design-there', detail: `${named} is already there and not empty, so that name is taken`,
+      hint: there(named, 'brief.md') ? `start from it with /cad-agile --brief '${named}', or finish it with /seldon; nothing was written`
+        : 'give the release another title, or move that folder aside, then re-run; nothing was written' });
   }
   emit({ ok: true, folder: named, slug });
 }
