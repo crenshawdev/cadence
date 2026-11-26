@@ -25,7 +25,8 @@ On `ok:false`, print `detail` and `hint`, one line each, and go to section 4.
 
 Draft the retrospective from the Evidence, the stories' Results and the review
 records: What went well, What could we do better, and Change next, what the next
-epic does differently. Each is a few lines of one sentence, and each line rests
+epic does differently. A Change next line whose lesson happened twice and shows in
+a diff says so, and the next refinement can make it a standing rule. Each is a few lines of one sentence, and each line rests
 on something you read. Then show the user:
 
 - each item under the epic's Done when

@@ -31,12 +31,25 @@ Then, in one message:
   takes, and nothing past it
 
 What those settle is settled: the epic's Boundaries, Done when and Spine
-decisions, the project's Constraints and Key decisions, the earlier epics'
+decisions, the project's Constraints, Key decisions and Standing rules, the earlier epics'
 decisions, a validated or invalidated spike's verdict, and every line already
 under this epic's own Decisions, which an earlier run of this conversation saved.
 None of it is asked about. A saved answer that opens with "Guess:" isn't asked
 again either, and step 4 shows it. An inconclusive spike settles nothing: its
 question is an unknown again, asked with what the spike said would decide it.
+
+**Then open with the last retrospective.** With `next.change_next`, show each
+line before anything is asked:
+
+```
+Change next, from the last retrospective
+- {from} {line}: {text}
+```
+
+Each one is applied to this epic, made standing, or dropped, and step 4 shows
+which and how. A line is standing only when it says its lesson happened twice and
+shows in a diff: the script puts it under project.md's Standing rules, which every
+later build follows.
 
 ## 2. Ask
 
@@ -113,14 +126,16 @@ its ID the next number of the prefix it belongs with in REQUIREMENTS.md,
 deferred ones counted. One `propose` lists under `unplaced` is on no epic, left
 there by the design or by a refinement cut short, and goes in `add` exactly as
 listed when this epic takes it. Both stay empty unless the user said so.
-`split`, only for a split, is `{"name", "outcome", "requirements", "moves",
+`change_next` holds one entry for each line of `next.change_next`, its `from`
+and `line` as given, `outcome` `applied`, `standing` or `dropped`, and `how` one
+line of what it changes here or why it's dropped. `split`, only for a split, is `{"name", "outcome", "requirements", "moves",
 "done_when"}`: the rest's name and outcome, each on one line, the requirements
 that go with it, `moves`, the Done when lines that leave this epic exactly as
 they stand, and `done_when`, the rest's other lines, where a line both need is
 written again:
 
 ```
-{"epic": "{id}", "decisions": ["..."], "backlog": [], "defer": [], "add": [], "stories": [
+{"epic": "{id}", "decisions": ["..."], "change_next": [], "backlog": [], "defer": [], "add": [], "stories": [
   {"title": "...", "size": "S", "builds_on": [], "requirements": ["..."],
    "delivers": "...", "accepted_when": ["..."]}]}
 ```
@@ -143,6 +158,9 @@ Show the list, each part left out when it's empty:
 {id} {name}: {N} stories, {replacing each of `replaces` when there are any}
 
 | Story | Size | Delivers | Accepted when |
+
+From the last retrospective
+- {from} {line}: {outcome} - {how}
 
 Picked for you
 - {each decision}
@@ -199,13 +217,16 @@ Then one commit of the refinement and nothing else the user has staged, unless
 the branch step above was skipped for `IGNORED` or `planning.commit_docs`. Push
 nothing. `backlog.md` goes in only when lines taken out of it are all that
 changed there, `REQUIREMENTS.md` only when the IDs it lists or their sections
-changed, and `release.md` with a split-off epic's file when a split listed one:
+changed, `project.md` only when its Standing rules changed, and `release.md` with
+a split-off epic's file when a split listed one:
 
 ```
 set -- '.planning/agile/epics/{id}/epic.md' ':(glob).planning/agile/epics/{id}/{id}-*.md'
 git diff --numstat HEAD -- .planning/agile/backlog.md 2>/dev/null | grep -qE '^0[[:space:]]' && set -- "$@" .planning/agile/backlog.md
 [ "$(git cat-file blob 'HEAD:./.planning/agile/REQUIREMENTS.md' 2>/dev/null | tr -d '\r' | grep -oE '^(- \*\*[^*]*\*\*|## .*)')" = "$(tr -d '\r' < .planning/agile/REQUIREMENTS.md | grep -oE '^(- \*\*[^*]*\*\*|## .*)')" ] || set -- "$@" .planning/agile/REQUIREMENTS.md
 [ "$(git cat-file blob 'HEAD:./.planning/agile/release.md' 2>/dev/null | tr -d '\r' | grep -E '^- E-[0-9]+: ')" = "$(tr -d '\r' < .planning/agile/release.md | grep -E '^- E-[0-9]+: ')" ] || { set -- "$@" .planning/agile/release.md; for e in $(sed -n 's/^- \(E-[0-9]*\): .*/\1/p' .planning/agile/release.md); do git cat-file -e "HEAD:./.planning/agile/epics/$e/epic.md" 2>/dev/null || set -- "$@" ".planning/agile/epics/$e/epic.md"; done; }
+sr() { tr -d '\r' | awk '/^## /{s=($0=="## Standing rules")} s'; }
+[ "$(git cat-file blob 'HEAD:./.planning/agile/project.md' 2>/dev/null | sr)" = "$(sr < .planning/agile/project.md)" ] || set -- "$@" .planning/agile/project.md
 git add -A -- "$@"
 git commit -m "docs: refine {id}" -- "$@"
 ```

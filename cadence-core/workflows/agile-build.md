@@ -33,8 +33,9 @@ handled?", "answer": "<the label picked>"}]}`, the label without
 "(Recommended)", and `agile.mjs answer`.
 
 **Read**, in one message: the story file, the epic file,
-`.planning/agile/project.md`, the Result of each story it builds on, and the
-code its Delivers changes, as far as building it takes. With a testing policy
+`.planning/agile/project.md`, whose Standing rules this build follows, the
+Result of each story it builds on, and the code its Delivers changes, as far as
+building it takes. With a testing policy
 (`testing.scope` set), `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md`
 too.
 
