@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // @ts-check
 // agile.mjs - the agile path's own script: it says what a start still has to ask, starts a release from a Seldon design,
-// holds an epic's refinement, moves a story through its build and runs its checks, and says what the open release does next
+// holds an epic's refinement, moves a story through its build and runs its checks, accepts a finished epic, and says what the
+// open release does next
 // not a planning.mjs subcommand: those belong to the old path, and all but a few refuse a project this path owns
 //
 // Usage: agile.mjs next [--dir <.planning>]
@@ -10,6 +11,7 @@
 //        agile.mjs answer|propose|refine|size|check-commands|note --payload <file> [--dir <.planning>]
 //        agile.mjs run-checks [--dir <.planning>]
 //        agile.mjs move --to in-progress|review [--dir <.planning>]
+//        agile.mjs accept [--dir <.planning>]
 //
 // one JSON object on stdout; a refusal names the next step
 // no lock: each start builds in its own folder and one rename decides, and a refinement's last write is the one that counts,
@@ -26,7 +28,7 @@ import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
 import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, releaseFile, requirementsFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
-import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize } from './lib/agile-render.mjs';
+import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStatus } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
 import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
 import { judgeAnswers, judgeAsk, judgeSplit, judgeStories } from './lib/agile-refine.mjs';
@@ -426,6 +428,31 @@ function refine(dir, payloadFile) {
   const now = whatsNext(dir);
   emit({ ok: true, release, epic, stories: named, ...(splits.length ? { splits } : {}), next: 'refusal' in now ? null : now.next,
     ...(warnings.length ? { warnings } : {}) });
+}
+
+/**
+ * The user accepts the epic `next` names to accept. Its status is the one write, so `next` moves past it.
+ * @param {string} dir
+ */
+function accept(dir) {
+  const got = whatsNext(dir);
+  if ('refusal' in got) return refuse(got.refusal);
+  const not = (/** @type {string} */ detail) => refuse({ reason: 'not-accepting', detail,
+    hint: 'run /cad-agile, which asks for acceptance once every story of the epic is done; nothing was written' });
+  if (got.next?.step !== 'accept') {
+    return not(got.next ? `${got.next.id} is at ${got.next.step}, not accept` : got.release ? 'every epic is done' : 'no release is open');
+  }
+  const agile = agileDir(dir);
+  const { id } = got.next;
+  // an epic marked review by hand answers accept with its stories unread
+  const stories = storiesOf(agile, id);
+  if ('refusal' in stories) return refuse(stories.refusal);
+  const open = stories.value.filter((s) => s.status !== 'done');
+  if (open.length) return not(`${open.map((s) => s.id).join(', ')} of ${id} ${open.length > 1 ? 'aren\'t' : 'isn\'t'} done`);
+  const file = epicFile(agile, id);
+  atomicWrite(file, withStatus(readFileSync(file, 'utf8'), 'done'));
+  const now = whatsNext(dir);
+  emit({ ok: true, epic: id, status: 'done', next: 'refusal' in now ? null : now.next });
 }
 
 /** A check that hangs is a failed one, and a headless run of a command fits in this. */
@@ -867,7 +894,8 @@ try {
   else if (argv[0] === 'run-checks') runChecks(planningDir(arg('run-checks', '--dir'))).catch(emitCaught);
   else if (argv[0] === 'move') move(planningDir(arg('move', '--dir')), arg('move', '--to'));
   else if (argv[0] === 'note') note(planningDir(arg('note', '--dir')), arg('note', '--payload'));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>]' });
+  else if (argv[0] === 'accept') accept(planningDir(arg('accept', '--dir')));
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>] | accept [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }

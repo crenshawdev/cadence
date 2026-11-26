@@ -61,6 +61,16 @@ go on to `report` with the reason.
 <step name="refine">
 Only on a release that was already open, with no commit above left unmade.
 
+An acceptance cut short before its commit is finished first, unless `commit`
+printed `IGNORED` or `planning.commit_docs` is false:
+
+```
+for f in .planning/agile/epics/E-*/epic.md; do tr -d '\r' < "$f" | grep -qx 'status: done' || continue; git cat-file blob "HEAD:./$f" 2>/dev/null | tr -d '\r' | grep -qx 'status: done' || echo "UNACCEPTED $(basename "$(dirname "$f")")"; done
+```
+
+Commit each epic it names as agile-accept.md's section 3 commits one, its ID in
+place of `{id}`. When git refuses, go on to `report` with its reason.
+
 On `build` and `accept`, a story of `{next.id}` done before its record was made,
 a run cut short after its checks passed, is finished first. Leave out the
 `git status` test when `planning.commit_docs` is false:
@@ -87,12 +97,15 @@ there.
   goes on to `report` with its reason, and make its commit. Then Read
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-build.md` and follow it.
   It reports for itself, so the run ends there.
-- `next.step` is `accept` -> the same, for a cut again that left no story,
-  with this check in place of that one:
+- `next.step` is `accept` -> a cut again that left no story, cut short before
+  its commit, is finished as for `build`, with this check in place of that one:
 
   ```
   [ "$(git cat-file blob 'HEAD:./.planning/agile/epics/{next.id}/epic.md' 2>/dev/null | tr -d '\r')" = "$(tr -d '\r' < '.planning/agile/epics/{next.id}/epic.md')" ] && echo REFINED
   ```
+
+  Then Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-accept.md` and
+  follow it. It reports for itself, so the run ends there.
 - Anything else -> `report`.
 </step>
 

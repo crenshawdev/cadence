@@ -185,6 +185,9 @@ export function renderStoryResult(text, lines, status) {
     : out.replace(FRONTMATTER_RE, (block) => block.replace(/^status:[ \t]*\S+[ \t]*$/m, `status: ${status}`));
 }
 
+/** An epic or story whose status changed, its frontmatter's own line and no other. @param {string} text @param {string} status */
+export const withStatus = (text, status) => text.replace(FRONTMATTER_RE, (block) => block.replace(/^status:[ \t]*\S+[ \t]*$/m, `status: ${status}`));
+
 /** A story sized again, its frontmatter's own line and no other. @param {string} text @param {string} size */
 export const withSize = (text, size) => text.replace(FRONTMATTER_RE, (block) => block.replace(/^size:[ \t]*\S+[ \t]*$/m, `size: ${size}`));
 
