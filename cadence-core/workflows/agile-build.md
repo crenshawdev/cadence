@@ -199,13 +199,15 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" run-checks
 ## 7. One fix round
 
 A run gets one. Read what each failed check printed. A commit past the last one
-the Commits line names, or a change in the tree, is a fix already made, by the
-user after an earlier run's round or by a run cut short: commit what's
-uncommitted as section 3 does, and take it as this round's fix.
+the Commits line names, or a change in the tree, that touches something outside
+`.planning/` is a fix already made, by the user after an earlier run's round or
+by a run cut short: commit what's uncommitted as section 3 does, take it as this
+round's fix, and go on from the `risk-check run` below. A record commit, or what
+`run-checks` wrote in the story file, isn't one.
 
-When the command is what's wrong, a check that can't show its line whatever the
-code does, record the commands again as section 4 does and commit the story
-file as section 3 does. That clears the review, so note the round and go to
+With none, when the command is what's wrong, a check that can't show its line
+whatever the code does, record the commands again as section 4 does and commit
+the story file as section 3 does. That clears the review, so note the round and go to
 section 5, which reviews the new commands. Otherwise fix the code, commit it as
 section 3 does, and run `risk-check run` from the last commit the Commits line
 names to HEAD, with its fire on a match. Then note the round, which sets the
