@@ -442,6 +442,20 @@ function notAccepting(detail) {
   return { reason: 'not-accepting', detail, hint: 'run /cad-agile, which asks for acceptance once every story of the epic is done; nothing was written' };
 }
 
+/**
+ * The stories of an epic `next` has at accept, refused unless there's one and every one is done: an epic marked review
+ * by hand answers accept with its stories unread.
+ * @param {string} agile @param {string} id
+ */
+function finishedStories(agile, id) {
+  const stories = storiesOf(agile, id);
+  if ('refusal' in stories) return stories;
+  if (!stories.value.length) return { refusal: notAccepting(`${id} has no story, so nothing of it was built`) };
+  const open = stories.value.filter((s) => s.status !== 'done');
+  if (open.length) return { refusal: notAccepting(`${open.map((s) => s.id).join(', ')} of ${id} ${open.length > 1 ? 'aren\'t' : 'isn\'t'} done`) };
+  return stories;
+}
+
 /** Where the release is, when it isn't at an epic's acceptance. @param {{release: string | null, next: {id: string, step: string} | null}} got */
 const whereNot = (got) => (got.next ? `${got.next.id} is at ${got.next.step}, not accept` : got.release ? 'every epic is done' : 'no release is open');
 
@@ -456,7 +470,7 @@ function evidence(dir) {
   if (got.next?.step !== 'accept') return refuse(notAccepting(whereNot(got)));
   const agile = agileDir(dir);
   const { id } = got.next;
-  const stories = storiesOf(agile, id);
+  const stories = finishedStories(agile, id);
   if ('refusal' in stories) return refuse(stories.refusal);
   const done = stories.value.map((s) => ({ id: s.id, title: s.title, size: s.size, base: readStoryResult(readFileSync(storyFile(agile, s.id), 'utf8')).base }));
   const found = epicEvidence({ planning: dir, root: dirname(resolve(dir)), epic: id, stories: done });
@@ -470,16 +484,11 @@ function evidence(dir) {
 function accept(dir) {
   const got = whatsNext(dir);
   if ('refusal' in got) return refuse(got.refusal);
-  const not = (/** @type {string} */ detail) => refuse(notAccepting(detail));
   if (got.next?.step !== 'accept') return refuse(notAccepting(whereNot(got)));
   const agile = agileDir(dir);
   const { id } = got.next;
-  // an epic marked review by hand answers accept with its stories unread
-  const stories = storiesOf(agile, id);
+  const stories = finishedStories(agile, id);
   if ('refusal' in stories) return refuse(stories.refusal);
-  if (!stories.value.length) return not(`${id} has no story, so nothing of it was built`);
-  const open = stories.value.filter((s) => s.status !== 'done');
-  if (open.length) return not(`${open.map((s) => s.id).join(', ')} of ${id} ${open.length > 1 ? 'aren\'t' : 'isn\'t'} done`);
   const file = epicFile(agile, id);
   atomicWrite(file, withStatus(readFileSync(file, 'utf8'), 'done'));
   // a damaged epic after it is only read now, and a null next would read as the release's end
