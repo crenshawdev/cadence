@@ -9,6 +9,7 @@ import { boundedRun } from './bounded-run.mjs';
 import { fingerprint } from './filing-decision.mjs';
 import { parseDeclinedRows, parseFiledRows } from './planning-files.mjs';
 import { declinedHome, filedHome } from './project-homes.mjs';
+import { isPlainObject } from './text-util.mjs';
 import { MAX_TRACE_BYTES, TERMINAL, rotatedTracePath, tracePath } from './trace.mjs';
 
 const GIT_TIMEOUT_MS = 30000;
@@ -99,7 +100,7 @@ export function epicEvidence({ planning, root, epic, stories }) {
       // a damaged record is named and left out, so the Evidence of the rest still comes back
       try { const r = JSON.parse(readFileSync(file, 'utf8')); entries = Array.isArray(r?.entries) ? r.entries : null; } catch { /* unread */ }
       if (entries === null) { unread.push(`${id}'s ${basename(file)}`); continue; }
-      for (const e of entries.filter((x) => x !== null && typeof x === 'object' && !Array.isArray(x))) {
+      for (const e of entries.filter(isPlainObject)) {
         raised += 1;
         const level = SEVERITIES.includes(e.severity) ? e.severity : 'unrated';
         severity[level] = (severity[level] ?? 0) + 1;
