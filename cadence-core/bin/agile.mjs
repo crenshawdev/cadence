@@ -15,8 +15,8 @@
 //        agile.mjs evidence [--dir <.planning>]
 //
 // one JSON object on stdout; a refusal names the next step
-// no lock: each start builds in its own folder and one rename decides, and a refinement's last write is the one that counts,
-// so a killed run never makes the next one wait
+// no lock: each start builds in its own folder and one rename decides (after a close, its epics' rename), and a refinement's
+// last write is the one that counts, so a killed run never makes the next one wait
 'use strict';
 
 import { spawn } from 'node:child_process';
@@ -29,7 +29,7 @@ import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
 import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, closingVersion, epicFile, tagSafeVersion as tagSafe, projectFile, releaseFile, releasesDir, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
-import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStatus } from './lib/agile-render.mjs';
+import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStandingRules, withStatus } from './lib/agile-render.mjs';
 import { epicEvidence, renderEvidence } from './lib/agile-evidence.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
 import { STATUSES, readChangeNext, readEpicFile, readEpicStatus, readLessonRecords, readNotYet, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
@@ -1042,7 +1042,8 @@ function ready(dir, design) {
       hint: 'point --design at the folder Seldon wrote the design into, then re-run; nothing was written' });
   }
   const early = refusal(dir);
-  if (early) return no(early);
+  // a closed release is where the next one starts
+  if (early && early.reason !== 'release-closed') return no(early);
   const { read, issues } = readDesignFolder(folder);
   const decisions = [...read.decisions.values()];
   // a design with a document missing has no text to judge, and its own issue says so
@@ -1059,7 +1060,44 @@ function ready(dir, design) {
     return no({ reason: 'config-unreadable', detail: warnings.join('; '),
       hint: 'repair the config file the detail names, then re-run; nothing was written' });
   }
-  return { design: read.design, decisions, config };
+  const closed = early === null ? null : closedRelease(dir);
+  if (closed !== null && 'refusal' in closed) return no(closed.refusal);
+  return { design: read.design, decisions, config, closed: closed !== null && 'value' in closed ? closed.value : null };
+}
+
+/**
+ * What a start after a close carries: the highest epic number a closed release used, and project.md. Both were written by
+ * an earlier run or by hand, so a name that isn't an epic's is passed over and a project.md that isn't a file is refused.
+ * @param {string} dir @returns {{value: {top: number, project: string | null}} | {refusal: Refusal}}
+ */
+function closedRelease(dir) {
+  const agile = agileDir(dir);
+  let top = 0;
+  for (const v of closes(agile).closed) {
+    const epics = join(releasesDir(agile), v, 'epics');
+    if (!lstatOf(join(releasesDir(agile), v))?.isDirectory() || !lstatOf(epics)?.isDirectory()) continue;
+    for (const name of readdirSync(epics)) {
+      const n = Number(/^E-(\d{2,})$/.exec(name)?.[1]);
+      if (Number.isSafeInteger(n)) top = Math.max(top, n);
+    }
+  }
+  const project = lstatOf(projectFile(agile));
+  if (project !== null && !project.isFile()) {
+    return { refusal: { reason: 'project-file', detail: `${projectFile(agile)} is not a file`,
+      hint: 'put project.md back as a plain file from git, or remove it, then re-run; nothing was written' } };
+  }
+  return { value: { top, project: project === null ? null : readFileSync(projectFile(agile), 'utf8') } };
+}
+
+/**
+ * The design's epics numbered after `top`: a story's task folder is named by its ID and outlives its release.
+ * @param {import('./lib/seldon-design.mjs').Phase[]} epics @param {number} top
+ */
+function renumbered(epics, top) {
+  const shift = Math.max(0, top + 1 - Math.min(...epics.map((e) => Number(e.epic.slice(2)))));
+  if (shift === 0) return epics;
+  const ids = new Map(epics.map((e) => [e.epic, `E-${String(Number(e.epic.slice(2)) + shift).padStart(2, '0')}`]));
+  return epics.map((e) => ({ ...e, epic: /** @type {string} */ (ids.get(e.epic)), builds_on: e.builds_on.map((b) => ids.get(b) ?? b) }));
 }
 
 /** Can git say who it would commit as? `git var` judges that the way a commit does. @param {string} root */
@@ -1122,7 +1160,14 @@ function start(dir, design, commitHere) {
       hint: 'pass the branch the start is on, the one the user said to commit on anyway; nothing was written' });
   }
 
-  const { decisions, design: { title, brief, requirements, phases: epics, uncovered } } = got;
+  const { decisions, closed, design: { title, brief, requirements, phases, uncovered } } = got;
+  const epics = closed === null ? phases : renumbered(phases, closed.top);
+  // another start is moving its files in, and the leftover epics/ cleared below may be its
+  const running = closed === null ? undefined : readdirSync(dir).map(buildPid).find((pid) => pid !== null && pid !== process.pid && alive(pid));
+  if (running !== undefined) {
+    return refuse({ reason: 'start-running', detail: `another start (pid ${running}) is writing ${buildDir(dir, /** @type {number} */ (running))}`,
+      hint: 'let it finish, then run /cad-agile; nothing was written' });
+  }
   makeDir(dir);
   // part of the start, so one that died before it gets it written by the next
   writePolicy(dirname(resolve(dir)), got.config.testing);
@@ -1141,21 +1186,29 @@ function start(dir, design, commitHere) {
     // a dead run's half-built folder, or this pid's own from before a reboot
     if (pid !== null && (pid === process.pid || !alive(pid))) clear(join(dir, name));
   }
+  // no release.md and no close under way, so only a start that died moving its files in left epics/ there
+  if (closed !== null) clear(join(agileDir(dir), 'epics'));
   const building = buildDir(dir);
   for (const e of epics) {
     makeDir(dirname(epicFile(building, e.epic)));
     writeFileNew(epicFile(building, e.epic), renderEpicFile(e));
   }
-  writeFileNew(projectFile(building), renderProjectFile(title, brief, epics, decisions));
+  writeFileNew(projectFile(building), withStandingRules(renderProjectFile(title, brief, epics, decisions), closed?.project ?? null));
   writeFileNew(requirementsFile(building), renderRequirementsFile(title, requirements));
   writeFileNew(releaseFile(building), renderReleaseFile(title, brief, epics, commitHere));
+  // after a close agile/ holds the releases, ledgers and tasks, so the new files go in one by one and release.md opens it last
+  const [from, to] = closed === null ? [building, agileDir(dir)] : [join(building, 'epics'), join(agileDir(dir), 'epics')];
   try {
-    movePath(building, agileDir(dir));
+    movePath(from, to);
   } catch (e) {
     // two starts at once: the first rename won, and a folder never renames over a full one
-    if (lstatOf(agileDir(dir)) === null) throw e;
+    if (lstatOf(to) === null) throw e;
     removeTree(building);
     return refuse(releaseOpen(dir));
+  }
+  if (closed !== null) {
+    for (const file of [requirementsFile, projectFile, releaseFile]) movePath(file(building), file(agileDir(dir)));
+    removeTree(building);
   }
   emit({ ok: true, release: title, folder: agileDir(dir), epics: epics.map((e) => ({ id: e.epic, name: e.name })), uncovered,
     next: { id: epics[0].epic, name: epics[0].name, status: 'backlog', step: 'refine' } });

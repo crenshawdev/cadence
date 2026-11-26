@@ -230,13 +230,8 @@ export const lessonRecord = (l) => `Change next from ${l.from}, ${l.line}: ${l.o
 
 const STANDING = '## Standing rules';
 
-/**
- * project.md with its Standing rules matching these lines: a standing one held once, under the retrospective's own
- * words, and one no longer standing taken out. The section is made at the end when it isn't there.
- * @param {string} text project.md @param {Lesson[]} lessons @returns {string} the text itself when nothing changes
- */
-export function renderStandingRules(text, lessons) {
-  const lines = text.split(/\r?\n/);
+/** The Standing rules heading's line, -1 when there's none, and the line its section ends before. @param {string[]} lines */
+function standingSpan(lines) {
   const fenced = fenceScanner();
   let start = -1;
   let end = lines.length;
@@ -245,6 +240,30 @@ export function renderStandingRules(text, lessons) {
     // whole and unindented, so a heading a design planted in the brief, indented or fenced, is never taken for this one
     if (start < 0) { if (lines[i] === STANDING) start = i; } else if (/^## /.test(lines[i])) { end = i; break; }
   }
+  return { start, end };
+}
+
+/**
+ * A new release's project.md with the Standing rules of the one it replaces, as they stand: the rest comes from the new
+ * design, and the rules are what the earlier releases learned.
+ * @param {string} text the new project.md @param {string | null} was the one it replaces, or null when there's none
+ * @returns {string}
+ */
+export function withStandingRules(text, was) {
+  const lines = (was ?? '').split(/\r?\n/);
+  const { start, end } = standingSpan(lines);
+  const block = start < 0 ? '' : lines.slice(start + 1, end).join('\n').trim();
+  return block === '' ? text : page([text.trimEnd(), STANDING, block]);
+}
+
+/**
+ * project.md with its Standing rules matching these lines: a standing one held once, under the retrospective's own
+ * words, and one no longer standing taken out. The section is made at the end when it isn't there.
+ * @param {string} text project.md @param {Lesson[]} lessons @returns {string} the text itself when nothing changes
+ */
+export function renderStandingRules(text, lessons) {
+  const lines = text.split(/\r?\n/);
+  const { start, end } = standingSpan(lines);
   const tag = (/** @type {Lesson} */ l) => ` (${l.from}, Change next ${l.line})`;
   const block = start < 0 ? '' : lines.slice(start + 1, end).join('\n').trim();
   const held = block === '' || block === 'None yet.' ? [] : block.split('\n');
