@@ -569,9 +569,9 @@ function fireIdentity(face, dir, opts) {
     fail('bad-args',
       `${face} --phase 0 is a TASK's number and resolves no phase home - a task keeps its `
       + `record beside the sibling REVIEW file under .planning/${tasksHome(dir).rel}/<slug>/`,
-      'pass --task <slug> naming the task directory. `deferred record` does not take it: the '
-      + 'queue enumeration reads the two phase homes only, so a member written under a slug '
-      + 'would never be found, and a blocking gate is the one that has to be');
+      'pass --task <slug> naming the task directory. `deferred record` takes it for an agile '
+      + 'story only: the old path\'s queue reads the two phase homes, so a member written under a '
+      + 'slug there would never be found');
     return null;
   }
 
