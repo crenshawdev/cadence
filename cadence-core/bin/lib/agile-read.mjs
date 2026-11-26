@@ -138,3 +138,14 @@ export function readStoryFile(text) {
   return { id: at('story'), title: at('title'), size: at('size'), status: at('status'), builds_on: listed(at('builds_on')), requirements,
     delivers, accepted_when: checks.map((l) => l.slice(2)) };
 }
+
+/** One recorded check: its Accepted when line's number, its command and what its last run showed. */
+export const CHECK_LINE = /^- Check ([1-9]\d*): `([^`\n]+)` - (.+)$/;
+
+/** @typedef {{n: number, command: string, result: string}} Check */
+
+/** The checks a story's Result records, in the order they're written. @param {string} text @returns {Check[]} */
+export function readStoryChecks(text) {
+  return (section(text, '## Result') ?? '').split('\n').map((l) => CHECK_LINE.exec(l))
+    .filter((m) => m !== null).map((m) => ({ n: Number(m[1]), command: m[2], result: m[3] }));
+}

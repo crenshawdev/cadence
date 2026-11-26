@@ -1,19 +1,21 @@
 #!/usr/bin/env node
 // @ts-check
 // agile.mjs - the agile path's own script: it says what a start still has to ask, starts a release from a Seldon design,
-// holds an epic's refinement and says what the open release does next
+// holds an epic's refinement, runs a story's checks and says what the open release does next
 // not a planning.mjs subcommand: those belong to the old path, and all but a few refuse a project this path owns
 //
 // Usage: agile.mjs next [--dir <.planning>]
 //        agile.mjs check --design <folder> [--dir <.planning>]
 //        agile.mjs start --design <folder> [--dir <.planning>]
-//        agile.mjs answer|propose|refine --payload <file> [--dir <.planning>]
+//        agile.mjs answer|propose|refine|check-commands --payload <file> [--dir <.planning>]
+//        agile.mjs run-checks [--dir <.planning>]
 //
 // one JSON object on stdout; a refusal names the next step
 // no lock: each start builds in its own folder and one rename decides, and a refinement's last write is the one that counts,
 // so a killed run never makes the next one wait
 'use strict';
 
+import { spawnSync } from 'node:child_process';
 import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,9 +25,9 @@ import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
 import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, releaseFile, requirementsFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
-import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryFile } from './lib/agile-render.mjs';
+import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryChecks, renderStoryFile } from './lib/agile-render.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
-import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readRequirementsFile, readStoryFile } from './lib/agile-read.mjs';
+import { STATUSES, readEpicFile, readEpicStatus, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile } from './lib/agile-read.mjs';
 import { judgeAnswers, judgeAsk, judgeSplit, judgeStories } from './lib/agile-refine.mjs';
 import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
@@ -401,6 +403,101 @@ function refine(dir, payloadFile) {
     ...(warnings.length ? { warnings } : {}) });
 }
 
+/** A check that hangs is a failed one, and a headless run of a command fits in this. */
+const CHECK_TIMEOUT_MS = 600000;
+const CHECK_OUTPUT_BYTES = 32 * 1024 * 1024;
+
+/**
+ * The story up to be built, its file and what it holds, or null when the refusal is already out.
+ * @param {string} dir @param {string} [named] the story a payload names, which has to be that one
+ */
+function building(dir, named) {
+  const no = (/** @type {Refusal} */ r) => { refuse(r); return null; };
+  const at = whatsNext(dir);
+  if ('refusal' in at) return no(at.refusal);
+  const id = at.next?.step === 'build' ? /** @type {{id: string}} */ (at.next.story).id : null;
+  if (id === null) {
+    const now = at.next ? `to ${at.next.step} ${at.next.id}` : at.release === null ? 'to start a release' : 'to close the release';
+    return no({ reason: 'not-building', detail: `no story is up to be built - the next step here is ${now}`,
+      hint: 'run /cad-agile, which does the next step; nothing was written' });
+  }
+  if (named !== undefined && named !== id) {
+    return no({ reason: 'not-building', detail: `the payload's story is ${named}, and the one up to be built is ${id}`,
+      hint: `name ${id} in the payload, then re-run; nothing was written` });
+  }
+  const file = storyFile(agileDir(dir), id);
+  const text = readFileSync(file, 'utf8');
+  return { id, file, text, story: /** @type {import('./lib/agile-read.mjs').Story} */ (readStoryFile(text)) };
+}
+
+/** Record the command that checks each of the story's Accepted when lines, before the review reads them. @param {string} dir @param {string} payloadFile */
+function checkCommands(dir, payloadFile) {
+  const payload = readJsonPayload(payloadFile);
+  if (!payload.ok) return undefined;
+  const p = payload.value;
+  const named = p !== null && typeof p === 'object' && typeof p.story === 'string' ? p.story : undefined;
+  const up = building(dir, named);
+  if (up === null) return undefined;
+  const lines = up.story.accepted_when;
+  const commands = p !== null && typeof p === 'object' ? p.commands : undefined;
+  /** @type {{field: string, problem: string}[]} */
+  const issues = [];
+  if (named === undefined) issues.push({ field: 'story', problem: `name the story the commands check, ${up.id}` });
+  if (!Array.isArray(commands)) issues.push({ field: 'commands', problem: `give a list of ${lines.length} commands, one for each Accepted when line in order` });
+  else {
+    if (commands.length !== lines.length) issues.push({ field: 'commands', problem: `${up.id} has ${lines.length} Accepted when lines and the list has ${commands.length} commands - give one for each, in order` });
+    commands.forEach((c, i) => {
+      if (typeof c !== 'string' || c.trim() === '') issues.push({ field: `commands[${i}]`, problem: `give the command that checks "${lines[i] ?? 'a line that isn\'t there'}"` });
+      else if (/[`\r\n]/.test(c)) issues.push({ field: `commands[${i}]`, problem: 'a command is one line with no backtick - use $(...) for a substitution' });
+    });
+  }
+  if (issues.length) return refuse(payloadRefused('commands-refused', `the commands for ${up.id} have`, issues));
+  const checks = /** @type {string[]} */ (commands).map((command, i) => ({ n: i + 1, command: command.trim(), result: 'not run' }));
+  atomicWrite(up.file, renderStoryChecks(up.text, checks));
+  emit({ ok: true, story: up.id, commands: checks.length });
+}
+
+/** One line of what a check printed, for its Result line. @param {string} out */
+function lastLine(out) {
+  const lines = out.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '').split(/\r?\n/).map((l) => l.replace(/[\x00-\x1f\x7f]/g, ' ').trim()).filter(Boolean);
+  const last = lines.at(-1) ?? '';
+  return last.length > 200 ? `${last.slice(0, 199)}…` : last;
+}
+
+/**
+ * Run the story's recorded checks and write what each showed. Every one exiting 0 turns it done; a failure sends one in
+ * review back to in-progress. The one write comes after the last check, so a run stopped midway leaves the file alone.
+ * @param {string} dir
+ */
+function runChecks(dir) {
+  const up = building(dir);
+  if (up === null) return undefined;
+  const recorded = readStoryChecks(up.text);
+  const lines = up.story.accepted_when;
+  const missing = lines.map((_, i) => i + 1).filter((n) => !recorded.some((c) => c.n === n));
+  if (missing.length || recorded.length !== lines.length) {
+    return refuse({ reason: 'checks-missing', detail: `${up.file} records a command for ${recorded.length} of its ${lines.length} Accepted when lines`,
+      hint: `record one for each with agile.mjs check-commands, then re-run; nothing was written` });
+  }
+  const root = dirname(resolve(dir));
+  const ran = recorded.sort((a, b) => a.n - b.n).map((c) => {
+    const r = spawnSync(c.command, { cwd: root, shell: true, encoding: 'utf8', timeout: CHECK_TIMEOUT_MS, killSignal: 'SIGKILL',
+      maxBuffer: CHECK_OUTPUT_BYTES, stdio: ['ignore', 'pipe', 'pipe'] });
+    const said = (r.status !== 0 && lastLine(r.stderr ?? '')) || lastLine(r.stdout ?? '') || lastLine(r.stderr ?? '') || 'no output';
+    const code = /** @type {any} */ (r.error)?.code;
+    const how = code === 'ETIMEDOUT' ? `timed out after ${CHECK_TIMEOUT_MS / 1000} s`
+      : code === 'ENOBUFS' ? `stopped at ${CHECK_OUTPUT_BYTES / 1048576} MiB of output`
+        : r.error ? `could not run: ${code ?? r.error.message}`
+          : r.status === null ? `killed by ${r.signal}` : `exit ${r.status}`;
+    return { n: c.n, command: c.command, result: `${how}, ${said}`, passed: !r.error && r.status === 0 };
+  });
+  const failed = ran.filter((c) => !c.passed);
+  const status = !failed.length ? 'done' : up.story.status === 'review' ? 'in-progress' : up.story.status;
+  atomicWrite(up.file, renderStoryChecks(up.text, ran, status));
+  emit({ ok: true, story: up.id, status, passed: ran.length - failed.length,
+    failed: failed.map((c) => ({ check: c.n, line: lines[c.n - 1], result: c.result })) });
+}
+
 /**
  * The design and the project's settings, or why no start can go ahead here. It writes nothing.
  * @param {string} dir @param {string} design
@@ -546,7 +643,9 @@ try {
   else if (argv[0] === 'answer') answer(planningDir(arg('answer', '--dir')), arg('answer', '--payload'));
   else if (argv[0] === 'propose') propose(planningDir(arg('propose', '--dir')), arg('propose', '--payload'));
   else if (argv[0] === 'refine') refine(planningDir(arg('refine', '--dir')), arg('refine', '--payload'));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--dir <.planning>] | answer|propose|refine --payload <file> [--dir <.planning>]' });
+  else if (argv[0] === 'check-commands') checkCommands(planningDir(arg('check-commands', '--dir')), arg('check-commands', '--payload'));
+  else if (argv[0] === 'run-checks') runChecks(planningDir(arg('run-checks', '--dir')));
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--dir <.planning>] | answer|propose|refine|check-commands --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }

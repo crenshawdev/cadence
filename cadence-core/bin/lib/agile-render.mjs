@@ -3,7 +3,7 @@
 // pure: values in, text out, no fs and no process
 'use strict';
 
-import { requirementPrefix } from './agile-read.mjs';
+import { CHECK_LINE, requirementPrefix } from './agile-read.mjs';
 import { sectionSpan } from './planning-files.mjs';
 
 /** @typedef {import('./seldon-design.mjs').Phase} Epic */
@@ -155,6 +155,17 @@ function withSection(text, heading, change) {
 
 /** @param {string} text @param {(held: string[]) => string[]} change */
 const withDecisions = (text, change) => withSection(text, '## Decisions', change);
+
+/**
+ * A story with its Result's check lines replaced by these, every other Result line kept, and its status when given.
+ * @param {string} text a story file `readStoryFile` reads @param {import('./agile-read.mjs').Check[]} checks @param {string} [status]
+ */
+export function renderStoryChecks(text, checks, status) {
+  const out = withSection(text, '## Result', (held) => [...held.filter((l) => !CHECK_LINE.test(l)),
+    ...checks.map((c) => `- Check ${c.n}: \`${c.command}\` - ${c.result}`)]);
+  // the frontmatter's own line, never a "status:" further down the file
+  return status === undefined ? out : out.replace(/^(---\r?\n(?:.*\r?\n)*?)status: .*$/m, `$1status: ${status}`);
+}
 
 /** The user's answers, each under its question, over any earlier answer to it. @param {string} text @param {{question: string, answer: string}[]} answers */
 export function renderAnswers(text, answers) {
