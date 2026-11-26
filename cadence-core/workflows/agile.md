@@ -69,12 +69,14 @@ st() { tr -d '\r' | awk 'NR==1 { if ($0 != "---") exit; next } /^---$/ { exit } 
 for f in .planning/agile/epics/E-*/epic.md; do [ "$(st < "$f")" = done ] || continue; [ "$(git cat-file blob "HEAD:./$f" 2>/dev/null | st)" = done ] || echo "UNACCEPTED $(basename "$(dirname "$f")")"; done
 ```
 
-Commit each epic it names, `{e}` its ID, by itself and with nothing else the
-user has staged. When git refuses, go on to `report` with its reason:
+Commit each epic it names, `{e}` its ID, by itself with its retrospective when
+it has one, and with nothing else the user has staged. When git refuses, go on
+to `report` with its reason:
 
 ```
-git add -- '.planning/agile/epics/{e}/epic.md'
-git commit -m "docs: accept {e}" -- '.planning/agile/epics/{e}/epic.md'
+set -- '.planning/agile/epics/{e}/epic.md'; [ -f '.planning/agile/epics/{e}/retro.md' ] && set -- "$@" '.planning/agile/epics/{e}/retro.md'
+git add -- "$@"
+git commit -m "docs: accept {e}" -- "$@"
 ```
 
 On `build` and `accept`, a story of `{next.id}` done before its record was made,
