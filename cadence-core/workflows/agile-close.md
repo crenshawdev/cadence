@@ -85,6 +85,18 @@ git commit -m "docs: close the release {version}" -- "$@"
 
 When git refuses it, go on to section 4 with its reason.
 
+**Land.** With the commit made, ask whether this project lands on its own:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir .
+```
+
+On `ok:true`, `git.auto_close` is set in both config layers: invoke
+`/cadence:cad-land` through the SlashCommand tool, as `/cad-milestone`'s close
+does, so it runs PR, merge and tag and asks once, before the tag push; its gate
+can still stop it before the merge. Its report follows this one. On `ok:false`,
+nothing more runs here.
+
 ## 4. Report
 
 ```
@@ -96,4 +108,5 @@ Commit: {hash, or "none - " and why}
 Next: publish it with /cad-land
 ```
 
-Not closed, the `Next:` line is "Next: close the release, with /cad-agile".
+Not closed, the `Next:` line is "Next: close the release, with /cad-agile", and
+after `/cad-land` ran it is left out.

@@ -13,6 +13,7 @@ allowed-tools:
   - Task
   - Workflow
   - Workflow(cadence:review-panel)
+  - SlashCommand
 ---
 
 <objective>
