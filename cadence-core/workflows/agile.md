@@ -34,8 +34,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" next
 - `release` is null, with `--brief` -> Read
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-start.md` and follow it,
   then go to `commit`.
-- `release` is null, without it -> stop: "No release is open here. Start one
-  from a Seldon design with /cad-agile --brief <design folder>."
+- `release` is null, without it -> Read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-design.md` and follow it,
+  then go to `commit`.
 </step>
 
 <step name="commit">
