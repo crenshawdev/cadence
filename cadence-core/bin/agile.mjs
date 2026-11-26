@@ -175,8 +175,9 @@ function stepOf(agile, epic, status) {
   const begun = stories.value.find((s) => s.status === 'in-progress' || s.status === 'review');
   const open = begun ?? stories.value.find((s) => s.status !== 'done');
   if (!begun && stories.value.some((s) => s.status !== 'done' && s.size === 'L')) return { value: { step: 'refine', first: `${epic}-${usedNumber(agile, epic) + 1}` } };
-  // every story done and the user said what's missing: that's cut again before the epic is asked about again
-  if (!open && readNotYet(readFileSync(epicFile(agile, epic), 'utf8')) !== null) return { value: { step: 'refine', first: `${epic}-${usedNumber(agile, epic) + 1}` } };
+  // the user said what's missing, so it's cut again before the epic is asked about again; until the cut's line closes it,
+  // a story not done is one a cut stopped short left, and the cut replaces it rather than building it
+  if (!begun && readNotYet(readFileSync(epicFile(agile, epic), 'utf8')) !== null) return { value: { step: 'refine', first: `${epic}-${usedNumber(agile, epic) + 1}` } };
   return { value: open ? { step: 'build', story: { id: open.id, title: open.title, size: open.size, status: open.status } } : { step: 'accept' } };
 }
 
@@ -475,6 +476,11 @@ function notYet(dir, payloadFile) {
       hint: 'run /cad-agile, which asks for acceptance once every story of the epic is done; nothing was written' });
   }
   const { id } = got.next;
+  // only an epic in progress is sent back to a cut once a Not yet is saved; one marked review by hand would be asked again
+  if (got.next.status !== 'in-progress') {
+    return refuse({ reason: 'not-accepting', detail: `${id} is marked ${got.next.status}, which only a hand edit sets`,
+      hint: `set the status in ${epicFile(agileDir(dir), id)} back to in-progress, then re-run; nothing was written` });
+  }
   const payload = readJsonPayload(payloadFile);
   if (!payload.ok) return undefined;
   const p = payload.value;
