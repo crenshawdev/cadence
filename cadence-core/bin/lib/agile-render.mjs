@@ -4,6 +4,7 @@
 'use strict';
 
 import { CHECK_LINE, requirementPrefix } from './agile-read.mjs';
+import { FRONTMATTER_RE } from './frontmatter.mjs';
 import { sectionSpan } from './planning-files.mjs';
 
 /** @typedef {import('./seldon-design.mjs').Phase} Epic */
@@ -163,8 +164,9 @@ const withDecisions = (text, change) => withSection(text, '## Decisions', change
 export function renderStoryChecks(text, checks, status) {
   const out = withSection(text, '## Result', (held) => [...held.filter((l) => !CHECK_LINE.test(l)),
     ...checks.map((c) => `- Check ${c.n}: \`${c.command}\` - ${c.result}`)]);
-  // the frontmatter's own line, never a "status:" further down the file
-  return status === undefined ? out : out.replace(/^(---\r?\n(?:.*\r?\n)*?)status: .*$/m, `$1status: ${status}`);
+  // the frontmatter's own line, spaced or not as the reader allows, never a "status:" further down the file
+  return status === undefined ? out
+    : out.replace(FRONTMATTER_RE, (block) => block.replace(/^status:[ \t]*\S+[ \t]*$/m, `status: ${status}`));
 }
 
 /** The user's answers, each under its question, over any earlier answer to it. @param {string} text @param {{question: string, answer: string}[]} answers */

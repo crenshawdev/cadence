@@ -15,7 +15,7 @@
 // so a killed run never makes the next one wait
 'use strict';
 
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -448,10 +448,18 @@ function checkCommands(dir, payloadFile) {
     if (commands.length !== lines.length) issues.push({ field: 'commands', problem: `${up.id} has ${lines.length} Accepted when lines and the list has ${commands.length} commands - give one for each, in order` });
     commands.forEach((c, i) => {
       if (typeof c !== 'string' || c.trim() === '') issues.push({ field: `commands[${i}]`, problem: `give the command that checks "${lines[i] ?? 'a line that isn\'t there'}"` });
-      else if (/[`\r\n]/.test(c)) issues.push({ field: `commands[${i}]`, problem: 'a command is one line with no backtick - use $(...) for a substitution' });
+      // a control character can't sit in a Markdown line, and a NUL can't reach the shell
+      else if (/[`\x00-\x1f\x7f]/.test(c)) issues.push({ field: `commands[${i}]`, problem: 'a command is one line with no backtick or control character - use $(...) for a substitution' });
     });
   }
   if (issues.length) return refuse(payloadRefused('commands-refused', `the commands for ${up.id} have`, issues));
+  // recorded before the review reads them, so a command swapped in later, after a failure say, is one nobody reviewed
+  const ran = readStoryChecks(up.text).some((c) => c.result !== 'not run');
+  if (up.story.status !== 'in-progress' || ran) {
+    return refuse({ reason: 'commands-closed', detail: ran ? `${up.id}'s checks have already run` : `${up.id} is ${up.story.status}, and commands are recorded while it's being built`,
+      hint: ran ? 'fix the code they check and run them again; a command that has to change goes through the review again; nothing was written'
+        : `run /cad-agile, which records them once ${up.id} is being built; nothing was written` });
+  }
   const checks = /** @type {string[]} */ (commands).map((command, i) => ({ n: i + 1, command: command.trim(), result: 'not run' }));
   atomicWrite(up.file, renderStoryChecks(up.text, checks));
   emit({ ok: true, story: up.id, commands: checks.length });
@@ -464,35 +472,77 @@ function lastLine(out) {
   return last.length > 200 ? `${last.slice(0, 199)}…` : last;
 }
 
+/** Kill a check and whatever it started, which a timeout's kill of the shell alone would leave running. @param {import('node:child_process').ChildProcess} child */
+function killTree(child) {
+  try { process.kill(process.platform === 'win32' ? /** @type {number} */ (child.pid) : -(/** @type {number} */ (child.pid)), 'SIGKILL'); } catch { /* gone already */ }
+}
+
 /**
- * Run the story's recorded checks and write what each showed. Every one exiting 0 turns it done; a failure sends one in
- * review back to in-progress. The one write comes after the last check, so a run stopped midway leaves the file alone.
+ * One check, in a shell at the root, in its own process group. Done when the shell exits, since a server it left in the
+ * background would hold its output open; the group goes then, and at the timeout.
+ * @param {string} command @param {string} root
+ * @returns {Promise<{status: number | null, signal: string | null, out: string, err: string, how: string | null}>}
+ */
+function runOne(command, root) {
+  return new Promise((done) => {
+    const child = spawn(command, { cwd: root, shell: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
+    /** @type {string | null} */
+    let how = null;
+    let size = 0;
+    const out = { stdout: '', stderr: '' };
+    for (const name of /** @type {const} */ (['stdout', 'stderr'])) {
+      child[name].setEncoding('utf8');
+      child[name].on('data', (chunk) => {
+        size += chunk.length;
+        if (size > CHECK_OUTPUT_BYTES) { how ??= `stopped at ${CHECK_OUTPUT_BYTES / 1048576} MiB of output`; killTree(child); } else out[name] += chunk;
+      });
+    }
+    const timer = setTimeout(() => { how ??= `timed out after ${CHECK_TIMEOUT_MS / 1000} s`; killTree(child); }, CHECK_TIMEOUT_MS);
+    /** @type {{status: number | null, signal: string | null}} */
+    let ended = { status: null, signal: null };
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      done({ ...ended, out: out.stdout, err: out.stderr, how });
+    };
+    child.on('error', (e) => { how ??= `could not run: ${/** @type {any} */ (e).code ?? e.message}`; finish(); });
+    child.on('exit', (status, signal) => { ended = { status, signal }; clearTimeout(timer); killTree(child); });
+    child.on('close', finish);
+  });
+}
+
+/**
+ * Run the story's recorded checks and write what each showed. They run once it's reviewed: every one exiting 0 turns it
+ * done, and a failure sends it back to in-progress. The one write comes after the last check, so a run stopped midway
+ * leaves the file alone.
  * @param {string} dir
  */
-function runChecks(dir) {
+async function runChecks(dir) {
   const up = building(dir);
   if (up === null) return undefined;
+  if (up.story.status !== 'review') {
+    return refuse({ reason: 'not-reviewed', detail: `${up.id} is ${up.story.status}, and its checks run once it's reviewed`,
+      hint: 'run /cad-agile, which runs them after the review; nothing was written' });
+  }
   const recorded = readStoryChecks(up.text);
   const lines = up.story.accepted_when;
   const missing = lines.map((_, i) => i + 1).filter((n) => !recorded.some((c) => c.n === n));
   if (missing.length || recorded.length !== lines.length) {
     return refuse({ reason: 'checks-missing', detail: `${up.file} records a command for ${recorded.length} of its ${lines.length} Accepted when lines`,
-      hint: `record one for each with agile.mjs check-commands, then re-run; nothing was written` });
+      hint: 'record one for each with agile.mjs check-commands while the story is being built, then re-run; nothing was written' });
   }
   const root = dirname(resolve(dir));
-  const ran = recorded.sort((a, b) => a.n - b.n).map((c) => {
-    const r = spawnSync(c.command, { cwd: root, shell: true, encoding: 'utf8', timeout: CHECK_TIMEOUT_MS, killSignal: 'SIGKILL',
-      maxBuffer: CHECK_OUTPUT_BYTES, stdio: ['ignore', 'pipe', 'pipe'] });
-    const said = (r.status !== 0 && lastLine(r.stderr ?? '')) || lastLine(r.stdout ?? '') || lastLine(r.stderr ?? '') || 'no output';
-    const code = /** @type {any} */ (r.error)?.code;
-    const how = code === 'ETIMEDOUT' ? `timed out after ${CHECK_TIMEOUT_MS / 1000} s`
-      : code === 'ENOBUFS' ? `stopped at ${CHECK_OUTPUT_BYTES / 1048576} MiB of output`
-        : r.error ? `could not run: ${code ?? r.error.message}`
-          : r.status === null ? `killed by ${r.signal}` : `exit ${r.status}`;
-    return { n: c.n, command: c.command, result: `${how}, ${said}`, passed: !r.error && r.status === 0 };
-  });
+  const ran = [];
+  for (const c of recorded.sort((a, b) => a.n - b.n)) {
+    const r = await runOne(c.command, root);
+    const said = (r.status !== 0 && lastLine(r.err)) || lastLine(r.out) || lastLine(r.err) || 'no output';
+    const how = r.how ?? (r.status === null ? `killed by ${r.signal}` : `exit ${r.status}`);
+    ran.push({ n: c.n, command: c.command, result: `${how}, ${said}`, passed: r.how === null && r.status === 0 });
+  }
   const failed = ran.filter((c) => !c.passed);
-  const status = !failed.length ? 'done' : up.story.status === 'review' ? 'in-progress' : up.story.status;
+  const status = failed.length ? 'in-progress' : 'done';
   atomicWrite(up.file, renderStoryChecks(up.text, ran, status));
   emit({ ok: true, story: up.id, status, passed: ran.length - failed.length,
     failed: failed.map((c) => ({ check: c.n, line: lines[c.n - 1], result: c.result })) });
@@ -644,7 +694,7 @@ try {
   else if (argv[0] === 'propose') propose(planningDir(arg('propose', '--dir')), arg('propose', '--payload'));
   else if (argv[0] === 'refine') refine(planningDir(arg('refine', '--dir')), arg('refine', '--payload'));
   else if (argv[0] === 'check-commands') checkCommands(planningDir(arg('check-commands', '--dir')), arg('check-commands', '--payload'));
-  else if (argv[0] === 'run-checks') runChecks(planningDir(arg('run-checks', '--dir')));
+  else if (argv[0] === 'run-checks') runChecks(planningDir(arg('run-checks', '--dir'))).catch(emitCaught);
   else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--dir <.planning>] | answer|propose|refine|check-commands --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
