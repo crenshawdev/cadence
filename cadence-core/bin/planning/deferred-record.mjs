@@ -5,13 +5,19 @@
 import { join, relative } from 'node:path';
 import { fail, fireHome, fireIdentity, firePayload, fireRange, fireTargetTaken, ok } from './core.mjs';
 import { buildQueue, queueName } from '../lib/deferred-queue.mjs';
+import { onAgilePath } from '../lib/project-homes.mjs';
 import { atomicWrite, makeDir } from '../lib/planning-store.mjs';
 
 // the opposite of the adjudication record: that says a fire was judged, this says it wasn't yet
 function cmdDeferredRecord(dir, opts) {
   const id = fireIdentity('deferred record', dir, opts);
   if (!id) return;
-  const { n, trigger, discriminator, round, base, head } = id;
+  const { n, trigger, discriminator, round, base, head, task } = id;
+  // the old path's land reads the phase homes alone, so a member under a task slug there would never be answered
+  if (task !== undefined && !onAgilePath(dir)) {
+    return fail('task-not-agile', `deferred record --task ${task}: a task's queue member is read on the agile path only, and this project is on the old one`,
+      'record the fire under its phase, with --phase and no --task - nothing was queued');
+  }
 
   // a file, as for the adjudication record: one stray quote in a heredoc makes verbatim reviewer text unparseable
   const payload = firePayload(opts,
@@ -32,7 +38,7 @@ function cmdDeferredRecord(dir, opts) {
   const range = fireRange(n, base, head);
   if (!range) return;
 
-  const pdir = fireHome(dir, n, 'queue member');
+  const pdir = fireHome(dir, n, 'queue member', task);
   if (!pdir) return;
 
   const name = queueName(trigger, discriminator, round);

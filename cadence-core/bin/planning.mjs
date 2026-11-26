@@ -144,7 +144,8 @@ const COMMANDS = {
 };
 
 // the calls an agile project may run; every other one is the old path's and refuses there
-const AGILE_CALLS = ['adjudication', 'capture', 'codemap', 'detect-commands', 'detect-surfaces', 'recall', 'review-file', 'risk-check',
+// a `cmd sub` entry opens that one subcommand: a story's deferred fire queues its findings, and the queue's readers stay the old path's
+const AGILE_CALLS = ['adjudication', 'capture', 'codemap', 'deferred record', 'detect-commands', 'detect-surfaces', 'recall', 'review-file', 'risk-check',
   'task-record', 'test-policy', 'trace', 'workflow-run'];
 
 try {
@@ -187,7 +188,7 @@ try {
     const late = cmd === 'trace' && sub === 'ignore';
     // a state file that does not parse refuses every call but the one that rebuilds it; an unstamped project still converts first
     // late goes first, so `trace ignore` refuses an agile project: the old commands' stops ask it
-    const mode = late ? 'before' : cmd === 'state-rebuild' ? 'rebuild' : AGILE_CALLS.includes(cmd) ? 'shared' : 'now';
+    const mode = late ? 'before' : cmd === 'state-rebuild' ? 'rebuild' : AGILE_CALLS.includes(cmd) || AGILE_CALLS.includes(key) ? 'shared' : 'now';
     const { ensureState, conversionNote, holdAnswer } = await import('./planning/migrate.mjs');
     if (ensureState(planningDir, mode)) {
       const afterwards = late && !('check' in opts);

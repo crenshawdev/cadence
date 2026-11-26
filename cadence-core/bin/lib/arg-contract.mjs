@@ -506,9 +506,9 @@ export const CONTRACTS = {
       '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
-      // no --task, unlike adjudication: the queue /cad-land reads walks the two phase homes only, so a member under a
-      // task slug would never be found. A task's only gate is risk_surface, which is never deferred, so nothing is
-      // lost.
+      // --task is an agile story's, whose member sits beside its REVIEW file for the land there to read; the old path's
+      // land walks the two phase homes only, so the handler refuses it on an old-path project
+      '--task': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // The queue as a whole: every member with no ADJUDICATION sibling, across both homes. --phase is optional here
     // because the writers name one fire and this reader answers about the tree. Present, it takes the phase type so
