@@ -17,6 +17,18 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" next
 - `ok:false` -> print `detail` and `hint`, one line each, and stop.
 - `release` is a name -> that release is open: go to `commit`. With `--brief`,
   say in one line that the design wasn't read because {release} is still open.
+- `release` is null -> first, a close stopped after its move and before its
+  commit is finished:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get planning.commit_docs
+  for d in .planning/agile/releases/*/; do [ -f "${d}release.md" ] && ! git check-ignore -q "${d}release.md" && ! git cat-file -e "HEAD:./${d}release.md" 2>/dev/null && echo "UNCOMMITTED $(basename "$d")"; done
+  ```
+
+  Unless `planning.commit_docs` is false, for each version `UNCOMMITTED` names,
+  Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-close.md` and apply
+  its section 3's **Bump and commit** with that version, then its report, and
+  the run ends there. With none, go on.
 - `release` is null, with `--brief` -> Read
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-start.md` and follow it,
   then go to `commit`.
@@ -114,6 +126,9 @@ there.
 
   Then Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-accept.md` and
   follow it. It reports for itself, so the run ends there.
+- `next.step` is `close` -> Read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-close.md` and follow it.
+  It reports for itself, so the run ends there.
 - Anything else -> `report`.
 </step>
 
@@ -133,11 +148,7 @@ Next: {next.step} {next.id} {next.name}, with /cad-agile
 A `build` step names `{next.story.id} {next.story.title}` there instead.
 
 On a release that was already open, the `Release: {release}` and `Next:` lines,
-with `Commit:` between them only when this run made one or tried to. At
-`close` every epic is done: above the `Next:` line go `Requirements: {N} done,
-{N} deferred, {N} open` from `next.requirements` and, for each one open,
-`Open: {id}: {text}`, and the `Next:` line is "Next: close the release, with
-/cad-agile".
+with `Commit:` between them only when this run made one or tried to.
 </step>
 
 </process>
