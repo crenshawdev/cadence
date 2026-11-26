@@ -104,8 +104,10 @@ staged. An M commits each task as it's done.
 
 One command for each Accepted when line, in order, each one Cadence runs and the
 line decides: a test that fails without the change, a script call, or a headless
-run. None passes whatever the code does, and none is a judgement. Write
-`commands.json` in the folder:
+run. None passes whatever the code does, and none is a judgement. A filter that
+matches no test still passes, as `node --test --test-name-pattern` does, so a
+command runs the test's own file or shows the test ran. Write `commands.json` in
+the folder:
 
 ```
 {"story": "{story}", "commands": ["...", "..."]}
