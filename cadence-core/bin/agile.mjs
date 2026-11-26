@@ -9,9 +9,10 @@
 //        agile.mjs check --design <folder> [--dir <.planning>]
 //        agile.mjs start --design <folder> [--commit-here <branch>] [--dir <.planning>]
 //        agile.mjs answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>]
+//        agile.mjs accept [--payload <file>] [--dir <.planning>]
 //        agile.mjs run-checks [--dir <.planning>]
 //        agile.mjs move --to in-progress|review [--dir <.planning>]
-//        agile.mjs accept|evidence [--dir <.planning>]
+//        agile.mjs evidence [--dir <.planning>]
 //
 // one JSON object on stdout; a refusal names the next step
 // no lock: each start builds in its own folder and one rename decides, and a refinement's last write is the one that counts,
@@ -27,8 +28,8 @@ import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload } from './planning/core.mjs';
-import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, releaseFile, requirementsFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
-import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderSplitEpic, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStatus } from './lib/agile-render.mjs';
+import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, epicFile, releaseFile, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
+import { limits, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStatus } from './lib/agile-render.mjs';
 import { epicEvidence, renderEvidence } from './lib/agile-evidence.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
 import { STATUSES, readEpicFile, readEpicStatus, readNotYet, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
@@ -459,6 +460,12 @@ function finishedStories(agile, id) {
 /** Where the release is, when it isn't at an epic's acceptance. @param {{release: string | null, next: {id: string, step: string} | null}} got */
 const whereNot = (got) => (got.next ? `${got.next.id} is at ${got.next.step}, not accept` : got.release ? 'every epic is done' : 'no release is open');
 
+/** @param {string} dir @param {string} id @param {import('./lib/agile-read.mjs').Story[]} stories */
+function evidenceOf(dir, id, stories) {
+  const done = stories.map((s) => ({ id: s.id, title: s.title, size: s.size, base: readStoryResult(readFileSync(storyFile(agileDir(dir), s.id), 'utf8')).base }));
+  return epicEvidence({ planning: dir, root: dirname(resolve(dir)), epic: id, stories: done });
+}
+
 /**
  * A finished epic's Evidence, for its retrospective, from git, its stories' review records and the run record. It
  * writes nothing.
@@ -472,28 +479,64 @@ function evidence(dir) {
   const { id } = got.next;
   const stories = finishedStories(agile, id);
   if ('refusal' in stories) return refuse(stories.refusal);
-  const done = stories.value.map((s) => ({ id: s.id, title: s.title, size: s.size, base: readStoryResult(readFileSync(storyFile(agile, s.id), 'utf8')).base }));
-  const found = epicEvidence({ planning: dir, root: dirname(resolve(dir)), epic: id, stories: done });
+  const found = evidenceOf(dir, id, stories.value);
   emit({ ok: true, epic: id, evidence: found, text: renderEvidence(found) });
 }
 
+/** A line of text a Markdown list item can hold. @param {unknown} v */
+const oneLine = (v) => typeof v === 'string' && v.trim() !== '' && !/[\u0000-\u001f\u007f\u2028\u2029]/.test(v);
+
+/** The sections of a retrospective the user approves, in the order `retro.md` holds them. */
+const RETRO_SECTIONS = Object.freeze(['went_well', 'do_better', 'change_next']);
+
+/** @param {Date} d */
+const day = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 /**
- * The user accepts the epic `next` names to accept. Its status is the one write, so `next` moves past it.
- * @param {string} dir
+ * The user accepts the epic `next` names to accept, with the retrospective they approved. `retro.md` goes first and the
+ * status line last, so a run stopped between them leaves one the next run finishes without asking again.
+ * @param {string} dir @param {string | undefined} payloadFile
  */
-function accept(dir) {
+function accept(dir, payloadFile) {
   const got = whatsNext(dir);
   if ('refusal' in got) return refuse(got.refusal);
   if (got.next?.step !== 'accept') return refuse(notAccepting(whereNot(got)));
   const agile = agileDir(dir);
-  const { id } = got.next;
+  const { id, name } = got.next;
   const stories = finishedStories(agile, id);
   if ('refusal' in stories) return refuse(stories.refusal);
+  const retro = retroFile(agile, id);
+  if (payloadFile === undefined) {
+    if (!lstatOf(retro)?.isFile()) {
+      return refuse({ reason: 'no-retrospective', detail: `${id} has no retrospective at ${retro}, and none was given`,
+        hint: 'run /cad-agile, which drafts it and asks you to approve it; nothing was written' });
+    }
+  } else {
+    const payload = readJsonPayload(payloadFile);
+    if (!payload.ok) return undefined;
+    const p = payload.value;
+    /** @type {{field: string, problem: string}[]} */
+    const issues = [];
+    if (p === null || typeof p !== 'object' || Array.isArray(p)) issues.push({ field: 'payload', problem: `is an object with epic and ${RETRO_SECTIONS.join(', ')}` });
+    else {
+      for (const key of Object.keys(p)) if (key !== 'epic' && !RETRO_SECTIONS.includes(key)) issues.push({ field: key, problem: 'is not a field of this payload' });
+      if (p.epic !== undefined && p.epic !== id) issues.push({ field: 'epic', problem: `is ${JSON.stringify(p.epic)}, and the epic up for acceptance is ${id}` });
+      for (const field of RETRO_SECTIONS) {
+        if (!Array.isArray(p[field])) issues.push({ field, problem: 'is a list of the lines the user approved, an empty one for none' });
+        else p[field].forEach((/** @type {unknown} */ l, /** @type {number} */ i) => { if (!oneLine(l)) issues.push({ field: `${field}[${i}]`, problem: 'is one line of text' }); });
+      }
+    }
+    if (issues.length) return refuse(payloadRefused('retro-refused', `the retrospective for ${id} has`, issues));
+    const found = evidenceOf(dir, id, stories.value);
+    const lines = (/** @type {string} */ field) => /** @type {string[]} */ (p[field]).map((l) => l.trim());
+    atomicWrite(retro, renderRetro({ id, name, date: day(new Date()), evidence: renderEvidence(found),
+      went_well: lines('went_well'), do_better: lines('do_better'), change_next: lines('change_next') }));
+  }
   const file = epicFile(agile, id);
   atomicWrite(file, withStatus(readFileSync(file, 'utf8'), 'done'));
   // a damaged epic after it is only read now, and a null next would read as the release's end
   const now = whatsNext(dir);
-  emit({ ok: true, epic: id, status: 'done', next: 'refusal' in now ? null : now.next, ...('refusal' in now ? { next_refusal: now.refusal } : {}) });
+  emit({ ok: true, epic: id, status: 'done', retro, next: 'refusal' in now ? null : now.next, ...('refusal' in now ? { next_refusal: now.refusal } : {}) });
 }
 
 /**
@@ -511,6 +554,11 @@ function notYet(dir, payloadFile) {
     return refuse({ reason: 'not-accepting', detail: `${id} is marked ${got.next.status}, which only a hand edit sets`,
       hint: `set the status in ${epicFile(agileDir(dir), id)} back to in-progress, then re-run; nothing was written` });
   }
+  // the user approved its retrospective and the run stopped before the epic turned, so the next run finishes it
+  if (lstatOf(retroFile(agileDir(dir), id)) !== null) {
+    return refuse({ reason: 'not-accepting', detail: `${id}'s retrospective is written, so it was accepted and the run stopped before it turned done`,
+      hint: 'run /cad-agile, which finishes the acceptance; nothing was written' });
+  }
   const payload = readJsonPayload(payloadFile);
   if (!payload.ok) return undefined;
   const p = payload.value;
@@ -520,7 +568,7 @@ function notYet(dir, payloadFile) {
   else {
     for (const key of Object.keys(p)) if (key !== 'epic' && key !== 'missing') issues.push({ field: key, problem: 'is not a field of this payload' });
     if (p.epic !== undefined && p.epic !== id) issues.push({ field: 'epic', problem: `is ${JSON.stringify(p.epic)}, and the epic up for acceptance is ${id}` });
-    if (typeof p.missing !== 'string' || !p.missing.trim() || /[\u0000-\u001f\u007f\u2028\u2029]/.test(p.missing)) {
+    if (!oneLine(p.missing)) {
       issues.push({ field: 'missing', problem: 'is what the user says is missing, on one line' });
     }
   }
@@ -970,10 +1018,10 @@ try {
   else if (argv[0] === 'run-checks') runChecks(planningDir(arg('run-checks', '--dir'))).catch(emitCaught);
   else if (argv[0] === 'move') move(planningDir(arg('move', '--dir')), arg('move', '--to'));
   else if (argv[0] === 'note') note(planningDir(arg('note', '--dir')), arg('note', '--payload'));
-  else if (argv[0] === 'accept') accept(planningDir(arg('accept', '--dir')));
+  else if (argv[0] === 'accept') accept(planningDir(arg('accept', '--dir')), arg('accept', '--payload'));
   else if (argv[0] === 'not-yet') notYet(planningDir(arg('not-yet', '--dir')), arg('not-yet', '--payload'));
   else if (argv[0] === 'evidence') evidence(planningDir(arg('evidence', '--dir')));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>] | accept|evidence [--dir <.planning>]' });
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>] | accept [--payload <file>] [--dir <.planning>] | evidence [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }

@@ -213,6 +213,16 @@ export function renderAnswers(text, answers) {
 export const renderNotYet = (text, missing) => withDecisions(text, (held) => [...held, `- Not yet: ${missing}`]);
 
 /**
+ * An accepted epic's retrospective: the Evidence a script read, then the three sections the user approved.
+ * @param {{id: string, name: string, date: string, evidence: string[], went_well: string[], do_better: string[], change_next: string[]}} r
+ */
+export function renderRetro(r) {
+  const list = (/** @type {string[]} */ lines, numbered = false) => (lines.length ? lines.map((l, i) => `${numbered ? `${i + 1}.` : '-'} ${l}`).join('\n') : 'None.');
+  return page([`# ${r.id} ${r.name} retrospective`, `Accepted ${r.date}.`, '## Evidence', r.evidence.join('\n'),
+    '## What went well', list(r.went_well), '## What could we do better', list(r.do_better), '## Change next', list(r.change_next, true)]);
+}
+
+/**
  * An epic's file once its stories are approved: in progress, with the decisions under any it already holds, its
  * requirements line rewritten only when the ask changed, and the Done when lines a split took gone.
  * @param {string} text @param {string[]} decisions @param {string[] | null} requirements @param {string[]} [moved]

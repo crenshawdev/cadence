@@ -61,6 +61,11 @@ export function epicFile(agile, epic) {
   return join(agile, 'epics', epic, 'epic.md');
 }
 
+/** An epic's retrospective, written as it's accepted. @param {string} agile @param {string} epic */
+export function retroFile(agile, epic) {
+  return join(agile, 'epics', epic, 'retro.md');
+}
+
 /** A story's file, beside its epic's. @param {string} agile @param {string} story */
 export function storyFile(agile, story) {
   return join(agile, 'epics', story.replace(/-\d+$/, ''), `${story}.md`);
