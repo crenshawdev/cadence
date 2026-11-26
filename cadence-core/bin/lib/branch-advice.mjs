@@ -30,6 +30,13 @@ export function adviseBranch(dir, git, { branch: branchOverride, title } = {}) {
   const protectedBranches = resolveProtectedBranches(git);
   const branch = branchOverride !== undefined ? branchOverride : readCurrentBranch(dir);
   const agile = title !== undefined || onAgilePath(planning);
+  // a start's own check reads none: the release on disk, if any, isn't the one starting
+  const release = agile && title === undefined ? readReleaseFile(readText(releaseFile(agileDir(planning)))) : null;
+  // the start was told to commit this release here, so nothing after it asks; `kept` rides only this answer
+  if (release?.commitHere && release.commitHere === branch) {
+    return { action: 'stay', branch, mode, currentBranch: branch,
+      reason: `commit-here: the start was told to commit this release on ${branch}`, kept: true };
+  }
   // an old-path file left beside a release must not name its branch
   const projectText = agile ? '' : readText(join(planning, 'PROJECT.md'));
   const roadmapText = agile ? '' : readText(join(planning, 'ROADMAP.md'));
@@ -37,7 +44,7 @@ export function adviseBranch(dir, git, { branch: branchOverride, title } = {}) {
   const configured = git.integration_branch_name;
   const nameProblem = configuredNameProblem(configured);
   const integrationName = agile
-    ? releaseBranchName(title ?? readReleaseFile(readText(releaseFile(agileDir(planning))))?.title ?? '', configured)
+    ? releaseBranchName(title ?? release?.title ?? '', configured)
     : integrationBranchName(projectText, roadmapText, configured);
   const noName = agile ? 'the release has no name a branch can take - set git.integration_branch_name' : undefined;
   // the guard reads the version itself, so it holds under any branch name

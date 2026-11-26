@@ -6,7 +6,7 @@
 //
 // Usage: agile.mjs next [--dir <.planning>]
 //        agile.mjs check --design <folder> [--dir <.planning>]
-//        agile.mjs start --design <folder> [--dir <.planning>]
+//        agile.mjs start --design <folder> [--commit-here <branch>] [--dir <.planning>]
 //        agile.mjs answer|propose|refine|size|check-commands|note --payload <file> [--dir <.planning>]
 //        agile.mjs run-checks [--dir <.planning>]
 //        agile.mjs move --to in-progress|review [--dir <.planning>]
@@ -36,6 +36,7 @@ import { boundedRun } from './lib/bounded-run.mjs';
 import { adviseBranch } from './lib/branch-advice.mjs';
 import { captureLines, removeCaptures } from './lib/capture-file.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
+import { readCurrentBranch } from './lib/git-head.mjs';
 import { signingProblem } from './lib/git-signing.mjs';
 import { atomicWrite, ensureRecordsIgnore, makeDir, movePath, removeTree, unlinkFile, writeFileNew } from './lib/planning-store.mjs';
 import { REBUILDABLE, emptyState, markAgile, readState, statePath } from './lib/project-state.mjs';
@@ -785,14 +786,20 @@ function check(dir, design) {
     reviewers: reviewersOf(dir, got.config) });
 }
 
-/** @param {string} dir @param {string} design */
-function start(dir, design) {
+/** @param {string} dir @param {string} design @param {string} [commitHere] the user's "Commit here anyway" */
+function start(dir, design, commitHere) {
   const got = ready(dir, design);
   if ('refusal' in got) return refuse(got.refusal);
   const open = unanswered(got.config);
   if (open.length) {
     return refuse({ reason: 'setup-unanswered', detail: `this project's setup still has ${open.join(', ')} to answer`,
       hint: 'run /cad-agile --brief with this design, which asks for each; nothing was written' });
+  }
+  // the answer was given about the branch the start is on, and keeping it for any other would be consent nobody gave
+  const on = commitHere === undefined ? '' : readCurrentBranch(dirname(resolve(dir)));
+  if (commitHere !== undefined && commitHere !== on) {
+    return refuse({ reason: 'commit-here-not-current', detail: `--commit-here names ${commitHere}, and the start is on ${on || 'no branch'}`,
+      hint: 'pass the branch the start is on, the one the user said to commit on anyway; nothing was written' });
   }
 
   const { decisions, design: { title, brief, requirements, phases: epics, uncovered } } = got;
@@ -821,7 +828,7 @@ function start(dir, design) {
   }
   writeFileNew(join(building, 'project.md'), renderProjectFile(title, brief, epics, decisions));
   writeFileNew(requirementsFile(building), renderRequirementsFile(title, requirements));
-  writeFileNew(releaseFile(building), renderReleaseFile(title, brief, epics));
+  writeFileNew(releaseFile(building), renderReleaseFile(title, brief, epics, commitHere));
   try {
     movePath(building, agileDir(dir));
   } catch (e) {
@@ -850,7 +857,7 @@ const arg = rowReader(argv, CONTRACTS['agile.mjs']);
 try {
   if (argv[0] === 'next') next(planningDir(arg('next', '--dir')));
   else if (argv[0] === 'check') check(planningDir(arg('check', '--dir')), arg('check', '--design'));
-  else if (argv[0] === 'start') start(planningDir(arg('start', '--dir')), arg('start', '--design'));
+  else if (argv[0] === 'start') start(planningDir(arg('start', '--dir')), arg('start', '--design'), arg('start', '--commit-here'));
   else if (argv[0] === 'answer') answer(planningDir(arg('answer', '--dir')), arg('answer', '--payload'));
   else if (argv[0] === 'propose') propose(planningDir(arg('propose', '--dir')), arg('propose', '--payload'));
   else if (argv[0] === 'refine') refine(planningDir(arg('refine', '--dir')), arg('refine', '--payload'));
@@ -859,7 +866,7 @@ try {
   else if (argv[0] === 'run-checks') runChecks(planningDir(arg('run-checks', '--dir'))).catch(emitCaught);
   else if (argv[0] === 'move') move(planningDir(arg('move', '--dir')), arg('move', '--to'));
   else if (argv[0] === 'note') note(planningDir(arg('note', '--dir')), arg('note', '--payload'));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--dir <.planning>] | answer|propose|refine|size|check-commands|note --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>]' });
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }

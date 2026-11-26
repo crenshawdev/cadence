@@ -12,7 +12,8 @@ export const STATUSES = Object.freeze(['backlog', 'in-progress', 'review', 'done
 /**
  * The release's title and its epics in build order. Every line under Epics has to be one, or a bad edit would drop an
  * epic and the release would close without it.
- * @param {string} text @returns {{title: string, epics: {id: string, name: string}[]} | null}
+ * `commitHere` is the branch the start was told to commit on though it's protected, and null without that exact line.
+ * @param {string} text @returns {{title: string, epics: {id: string, name: string}[], commitHere: string | null} | null}
  */
 export function readReleaseFile(text) {
   const lines = text.split(/\r?\n/);
@@ -26,7 +27,11 @@ export function readReleaseFile(text) {
     if (!m) return null;
     epics.push({ id: m[1], name: m[2] });
   }
-  return epics.length ? { title, epics } : null;
+  // anything but the line the start writes reads as no answer, so a bad edit means asking again, never not asking
+  const branch = sectionSpan(lines, '## Branch');
+  const kept = branch.start < 0 ? [] : lines.slice(branch.start + 1, branch.end).filter((l) => l.trim() !== '');
+  const commitHere = kept.length === 1 ? /^- Commit here anyway: (\S+)$/.exec(kept[0])?.[1] ?? null : null;
+  return epics.length ? { title, epics, commitHere } : null;
 }
 
 /** @typedef {{id: string, category: string, text: string}} Requirement */

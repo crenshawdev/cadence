@@ -89,15 +89,18 @@ export function renderAskChanged(text, read, defer, add) {
 }
 
 /**
- * @param {string} title @param {Record<string, string>} brief @param {Epic[]} epics @returns {string}
+ * @param {string} title @param {Record<string, string>} brief @param {Epic[]} epics
+ * @param {string} [commitHere] the protected branch the start was told to commit on anyway
+ * @returns {string}
  */
-export function renderReleaseFile(title, brief, epics) {
+export function renderReleaseFile(title, brief, epics, commitHere) {
   return page([
     `# Release: ${title}`,
     '## Goal',
     brief['Success criteria'],
     '## Epics',
     epics.map((e) => `- ${e.epic}: ${e.name}`).join('\n'),
+    ...(commitHere ? ['## Branch', `- Commit here anyway: ${commitHere}`] : []),
   ]);
 }
 
