@@ -63,7 +63,8 @@ On an agile project (`.planning/agile/` exists and `.planning/PROJECT.md`
 doesn't) run it before the guard's question and suggest its `branch` there. Null
 -> say its `reason` and suggest the slug, or with no slug let the user type the
 name. Act on its `action` only when that question wasn't asked, and switch to a
-branch that already exists.
+branch that already exists. On `kept: true` the start was told to commit this
+release on that branch, so `ask` asks nothing; `refuse` still stops.
 
 Act on its `action`:
 
