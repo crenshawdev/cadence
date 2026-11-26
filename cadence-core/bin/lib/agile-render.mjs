@@ -3,7 +3,7 @@
 // pure: values in, text out, no fs and no process
 'use strict';
 
-import { CHECK_LINE, requirementPrefix } from './agile-read.mjs';
+import { CHECK_LINE, EARLIER_IDS, requirementPrefix } from './agile-read.mjs';
 import { FRONTMATTER_RE } from './frontmatter.mjs';
 import { sectionSpan } from './planning-files.mjs';
 import { fenceScanner } from './text-util.mjs';
@@ -50,11 +50,12 @@ export function renderProjectFile(title, brief, epics, decisions) {
 const requirementLine = (q) => `- **${q.id}**: ${q.text}`;
 
 /**
- * The release's requirements in Seldon's own bullet, under their PRD categories, then the deferred ones.
+ * The release's requirements in Seldon's own bullet, under their PRD categories, then the deferred ones, then the highest
+ * ID of each prefix the closed releases used, when there were any.
  * @param {string} title @param {import('./seldon-design.mjs').Requirement[]} requirements
- * @param {{id: string, text: string}[]} [deferred] @returns {string}
+ * @param {{id: string, text: string}[]} [deferred] @param {string[]} [earlier] @returns {string}
  */
-export function renderRequirementsFile(title, requirements, deferred = []) {
+export function renderRequirementsFile(title, requirements, deferred = [], earlier = []) {
   /** @type {string[]} */
   const blocks = [];
   /** @type {string | null} */
@@ -65,7 +66,8 @@ export function renderRequirementsFile(title, requirements, deferred = []) {
     else blocks[blocks.length - 1] += `\n${bullet}`;
     category = q.category;
   }
-  return page([`# Requirements: ${title}`, '## Requirements', ...blocks, '## Deferred', deferred.map(requirementLine).join('\n') || 'None.']);
+  return page([`# Requirements: ${title}`, '## Requirements', ...blocks, '## Deferred', deferred.map(requirementLine).join('\n') || 'None.',
+    ...(earlier.length ? [EARLIER_IDS, earlier.map((id) => `- ${id}`).join('\n')] : [])]);
 }
 
 /**
@@ -85,7 +87,7 @@ export function renderAskChanged(text, read, defer, add) {
   }
   const moving = held.filter((h) => defer.includes(h.id));
   const out = renderRequirementsFile(String(read.title), held.filter((h) => !moving.includes(h)),
-    [...read.deferred, ...moving.map(({ id, text: said }) => ({ id, text: said }))]);
+    [...read.deferred, ...moving.map(({ id, text: said }) => ({ id, text: said }))], read.earlier);
   return text.includes('\r\n') ? out.replaceAll('\n', '\r\n') : out;
 }
 

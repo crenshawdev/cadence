@@ -42,12 +42,30 @@ export function requirementPrefix(id) {
   return /^(.+-|#)\d+$/.exec(id)?.[1] ?? null;
 }
 
+/** The heading over the highest ID of each prefix the closed releases used, which the next ID of a prefix counts too. */
+export const EARLIER_IDS = '## Highest IDs of earlier releases';
+
 /**
- * REQUIREMENTS.md's requirements under their categories, then the deferred. Deferred ones stay in the file, since the
- * next ID of a prefix counts them. A line agile-render.mjs wouldn't write is passed over, and `whole` says there was none,
- * since rewriting the file would lose it.
+ * The highest of `ids` for each prefix, one per prefix, in the order the prefixes first come.
+ * @param {string[]} ids @returns {string[]}
+ */
+export function highestIds(ids) {
+  /** @type {Map<string, {id: string, n: number}>} */
+  const top = new Map();
+  for (const id of ids) {
+    const prefix = requirementPrefix(id);
+    const n = prefix === null ? NaN : Number(id.slice(prefix.length));
+    if (prefix !== null && n >= (top.get(prefix)?.n ?? -1)) top.set(prefix, { id, n });
+  }
+  return [...top.values()].map((t) => t.id);
+}
+
+/**
+ * REQUIREMENTS.md's requirements under their categories, then the deferred, then the earlier releases' highest IDs when
+ * there were any. Deferred ones stay in the file, since the next ID of a prefix counts them. A line agile-render.mjs
+ * wouldn't write is passed over, and `whole` says there was none, since rewriting the file would lose it.
  * @param {string} text
- * @returns {{title: string | null, requirements: Requirement[], deferred: {id: string, text: string}[], whole: boolean}}
+ * @returns {{title: string | null, requirements: Requirement[], deferred: {id: string, text: string}[], earlier: string[], whole: boolean}}
  */
 export function readRequirementsFile(text) {
   const lines = text.split(/\r?\n/);
@@ -58,6 +76,9 @@ export function readRequirementsFile(text) {
   /** @type {{id: string, text: string}[]} */
   const deferred = [];
   const seen = new Set();
+  /** @type {string[]} */
+  const earlier = [];
+  const prefixes = new Set();
   /** @type {string | null} */
   let part = null;
   /** @type {string | null} */
@@ -67,6 +88,13 @@ export function readRequirementsFile(text) {
     if (line.trim() === '') continue;
     if (line === '## Requirements' && part === null) part = 'held';
     else if (line === '## Deferred' && part === 'held') part = 'deferred';
+    else if (line === EARLIER_IDS && part === 'deferred') part = 'earlier';
+    else if (part === 'earlier') {
+      const id = /^- (\S+)$/.exec(line)?.[1] ?? '';
+      const prefix = isRequirementId(id) ? requirementPrefix(id) : null;
+      if (prefix === null || prefixes.has(prefix)) whole = false;
+      else { prefixes.add(prefix); earlier.push(id); }
+    }
     // Seldon keeps a category it trimmed to nothing, so a bare heading is still one
     else if (part === 'held' && line.startsWith('### ')) category = line.slice(4);
     else if (part === 'deferred' && line === 'None.' && !none) none = true;
@@ -81,7 +109,8 @@ export function readRequirementsFile(text) {
       else deferred.push({ id: m[1], text: m[2] });
     }
   }
-  return { title, requirements, deferred, whole: whole && part === 'deferred' && none !== deferred.length > 0 };
+  return { title, requirements, deferred, earlier,
+    whole: whole && (part === 'deferred' || (part === 'earlier' && earlier.length > 0)) && none !== deferred.length > 0 };
 }
 
 /** An epic's status, or a story's from a file too broken to read whole. @param {string} text @returns {string | null} */

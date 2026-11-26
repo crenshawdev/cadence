@@ -32,7 +32,8 @@ import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, c
 import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStandingRules, withStatus } from './lib/agile-render.mjs';
 import { epicEvidence, renderEvidence } from './lib/agile-evidence.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
-import { STATUSES, readChangeNext, readEpicFile, readEpicStatus, readLessonRecords, readNotYet, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
+import { STATUSES, highestIds, readChangeNext, readEpicFile, readEpicStatus, readLessonRecords, readNotYet, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
+import { compareVersions, normalizeTargetVersion } from './lib/release-decision.mjs';
 import { judgeAnswers, judgeAsk, judgeLessons, judgeSplit, judgeStories } from './lib/agile-refine.mjs';
 import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
@@ -258,7 +259,7 @@ function openLessons(agile, epics, epic) {
  */
 function traced(agile, epics) {
   // the close is gated on this count, so a line its writer wouldn't write is one it can't count and nothing passes over it
-  const file = readBack(requirementsFile(agile), 'only its writer\'s lines: a "# Requirements:" title, then "## Requirements" with "- **ID**: text" lines under "### " categories, then "## Deferred"', (t) => {
+  const file = readBack(requirementsFile(agile), 'only its writer\'s lines: a "# Requirements:" title, then "## Requirements" with "- **ID**: text" lines under "### " categories, then "## Deferred", then any "## Highest IDs of earlier releases" with one "- ID" line per prefix', (t) => {
     const read = readRequirementsFile(t);
     return read.title === null || !read.whole ? null : read;
   });
@@ -1063,22 +1064,54 @@ function ready(dir, design) {
   const closed = early === null ? null : closedRelease(dir);
   if (closed !== null && 'refusal' in closed) return no(closed.refusal);
   const carried = closed !== null && 'value' in closed ? closed.value : null;
+  const named = new Set(read.design.requirements.map((q) => q.id));
+  const used = carried === null ? [] : [...named].filter((id) => carried.done.has(id));
+  if (used.length) {
+    return no({ reason: 'requirement-ids-used', detail: `${used.join(', ')} ${used.length === 1 ? 'is' : 'are'} done in a closed release, and an ID names one requirement for good`,
+      hint: `number the design's new requirements past the highest each prefix used (${carried?.earlier.join(', ')}), by a Seldon rerun or by hand, then re-run; nothing was written` });
+  }
   const epics = carried === null ? { epics: read.design.phases } : renumbered(read.design.phases, carried.top);
   if ('refusal' in epics) return no(epics.refusal);
-  return { design: { ...read.design, phases: epics.epics }, decisions, config, closed: carried };
+  // one the design names again is taken up, with the design's words
+  return { design: { ...read.design, phases: epics.epics }, decisions, config,
+    closed: carried === null ? null : { ...carried, deferred: carried.deferred.filter((q) => !named.has(q.id)) } };
 }
 
 /**
- * What a start after a close carries: the highest epic number a closed release used, and project.md. Both were written by
- * an earlier run or by hand, so a name that isn't an epic's is passed over and a project.md that isn't a file is refused.
- * @param {string} dir @returns {{value: {top: number, project: string | null}} | {refusal: Refusal}}
+ * What a start after a close carries from the closed releases: the highest epic number they used, the requirements they
+ * finished, the deferred ones still open, the highest ID of each prefix, and project.md. All of it was written by an
+ * earlier run or by hand, so a name that isn't an epic's is passed over, and a release folder, a requirements file or a
+ * project.md that isn't what a close leaves is refused.
+ * @param {string} dir
+ * @returns {{value: {top: number, project: string | null, done: Set<string>, deferred: {id: string, text: string}[], earlier: string[]}} | {refusal: Refusal}}
  */
 function closedRelease(dir) {
   const agile = agileDir(dir);
   let top = 0;
-  for (const v of closes(agile).closed) {
-    const epics = join(releasesDir(agile), v, 'epics');
-    if (!lstatOf(join(releasesDir(agile), v))?.isDirectory() || !lstatOf(epics)?.isDirectory()) continue;
+  const done = new Set();
+  /** @type {Map<string, string>} */
+  const deferred = new Map();
+  /** @type {string[]} */
+  const ids = [];
+  // oldest first, so a later release's words for a requirement it deferred again are the ones carried
+  const byVersion = (/** @type {string} */ a, /** @type {string} */ b) => compareVersions(normalizeTargetVersion(a), normalizeTargetVersion(b)) ?? (a < b ? -1 : a > b ? 1 : 0);
+  for (const v of closes(agile).closed.sort(byVersion)) {
+    const home = join(releasesDir(agile), v);
+    if (!lstatOf(home)?.isDirectory()) {
+      return { refusal: { reason: 'closed-release', detail: `${home} is not a folder, and releases/ holds only closed releases`,
+        hint: 'move it out of releases/, then re-run; nothing was written' } };
+    }
+    const file = requirementsFile(home);
+    const read = lstatOf(file)?.isFile() ? readRequirementsFile(readFileSync(file, 'utf8')) : null;
+    if (read === null || read.title === null || !read.whole) {
+      return { refusal: { reason: 'closed-requirements', detail: `${file} is not a requirements file the close wrote whole, so the IDs that release used aren't known`,
+        hint: 'put it back from git, then re-run; nothing was written' } };
+    }
+    for (const q of read.requirements) done.add(q.id);
+    for (const q of read.deferred) deferred.set(q.id, q.text);
+    ids.push(...read.requirements.map((q) => q.id), ...read.deferred.map((q) => q.id), ...read.earlier);
+    const epics = join(home, 'epics');
+    if (!lstatOf(epics)?.isDirectory()) continue;
     for (const name of readdirSync(epics)) {
       const n = Number(/^E-(\d{2,})$/.exec(name)?.[1]);
       if (Number.isSafeInteger(n)) top = Math.max(top, n);
@@ -1089,7 +1122,9 @@ function closedRelease(dir) {
     return { refusal: { reason: 'project-file', detail: `${projectFile(agile)} is not a file`,
       hint: 'put project.md back as a plain file from git, or remove it, then re-run; nothing was written' } };
   }
-  return { value: { top, project: project === null ? null : readFileSync(projectFile(agile), 'utf8') } };
+  for (const id of done) deferred.delete(id);
+  return { value: { top, project: project === null ? null : readFileSync(projectFile(agile), 'utf8'), done,
+    deferred: [...deferred].map(([id, text]) => ({ id, text })), earlier: highestIds(ids) } };
 }
 
 /**
@@ -1223,7 +1258,7 @@ function start(dir, design, commitHere) {
     writeFileNew(epicFile(building, e.epic), renderEpicFile(e));
   }
   writeFileNew(projectFile(building), withStandingRules(renderProjectFile(title, brief, epics, decisions), closed?.project ?? null));
-  writeFileNew(requirementsFile(building), renderRequirementsFile(title, requirements));
+  writeFileNew(requirementsFile(building), renderRequirementsFile(title, requirements, closed?.deferred ?? [], closed?.earlier ?? []));
   writeFileNew(releaseFile(building), renderReleaseFile(title, brief, epics, commitHere));
   // after a close agile/ holds the releases, ledgers and tasks, so the new files go in one by one and release.md opens it last
   const [from, to] = closed === null ? [building, agileDir(dir)] : [join(building, 'epics'), join(agileDir(dir), 'epics')];

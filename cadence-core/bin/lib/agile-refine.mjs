@@ -91,7 +91,7 @@ function highest(all) {
  * The requirements the epic's stories must carry once the payload's `defer` and `add` are applied, or every reason
  * they can't be. What's under Deferred is off every epic, whatever an epic's line still says.
  * @param {unknown} payload
- * @param {{own: string[], file: {requirements: {id: string, text: string}[], deferred: {id: string, text: string}[]}, named: Set<string>, kept?: string[]}} ask
+ * @param {{own: string[], file: {requirements: {id: string, text: string}[], deferred: {id: string, text: string}[], earlier: string[]}, named: Set<string>, kept?: string[]}} ask
  *   `own` is the epic's requirements line, `named` every ID on any epic's line, `kept` what its done stories carry
  * @returns {{issues: Issue[], defer: string[], add: {id: string, text: string}[], requirements: string[]}}
  */
@@ -109,7 +109,7 @@ export function judgeAsk(payload, { own, file, named, kept = [] }) {
     }
   }
   const held = new Map(file.requirements.map((q) => [q.id, q.text]));
-  const top = highest([...file.requirements, ...file.deferred]);
+  const top = highest([...file.requirements, ...file.deferred, ...file.earlier.map((id) => ({ id }))]);
   /** @type {{id: string, text: string}[]} */
   const add = [];
   const given = Array.isArray(p.add) ? p.add : null;
