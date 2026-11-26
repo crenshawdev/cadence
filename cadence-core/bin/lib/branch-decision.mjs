@@ -146,7 +146,12 @@ export function integrationBranchName(projectText, roadmapText, configured) {
  * @returns {string | null}
  */
 export function releaseBranchName(title, configured) {
-  return branchName(title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), configured);
+  return branchName(slugOf(title), configured);
+}
+
+/** A title as lowercase letters, digits and hyphens, for a branch or a folder; '' when it holds neither. @param {string} title */
+export function slugOf(title) {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 /**
