@@ -133,8 +133,11 @@ Next: {next.step} {next.id} {next.name}, with /cad-agile
 A `build` step names `{next.story.id} {next.story.title}` there instead.
 
 On a release that was already open, the `Release: {release}` and `Next:` lines,
-with `Commit:` between them only when this run made one or tried to. `next`
-null -> "Every epic is done." in place of the `Next:` line.
+with `Commit:` between them only when this run made one or tried to. At
+`close` every epic is done: above the `Next:` line go `Requirements: {N} done,
+{N} deferred, {N} open` from `next.requirements` and, for each one open,
+`Open: {id}: {text}`, and the `Next:` line is "Next: close the release, with
+/cad-agile".
 </step>
 
 </process>

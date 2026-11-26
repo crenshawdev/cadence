@@ -101,4 +101,4 @@ Next: {the accept call's next.step, its id and name, or a build's story id and t
 ```
 
 With `next_refusal`, its `detail` and `hint` take the `Next:` line's place, and
-with neither that nor a next epic, "Every epic is done." does.
+a `close` step makes it "Next: close the release, with /cad-agile".
