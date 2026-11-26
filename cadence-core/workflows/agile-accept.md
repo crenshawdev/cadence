@@ -51,5 +51,6 @@ Commit: {hash, or "none - " and why}
 Next: {the accept call's next.step, its id and name, or a build's story id and title}, with /cad-agile
 ```
 
-With no next epic, "Every epic is done." in place of the `Next:` line. After
-"Not yet", the `Commit:` line is left out and `Next:` is accept {id}.
+With `next_refusal`, its `detail` and `hint` take the `Next:` line's place, and
+with neither that nor a next epic, "Every epic is done." does. After "Not yet",
+the `Commit:` line is left out and `Next:` is accept {id}.

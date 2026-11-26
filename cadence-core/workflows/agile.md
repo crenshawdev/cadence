@@ -65,11 +65,17 @@ An acceptance cut short before its commit is finished first, unless `commit`
 printed `IGNORED` or `planning.commit_docs` is false:
 
 ```
-for f in .planning/agile/epics/E-*/epic.md; do tr -d '\r' < "$f" | grep -qx 'status: done' || continue; git cat-file blob "HEAD:./$f" 2>/dev/null | tr -d '\r' | grep -qx 'status: done' || echo "UNACCEPTED $(basename "$(dirname "$f")")"; done
+st() { tr -d '\r' | awk 'NR==1 { if ($0 != "---") exit; next } /^---$/ { exit } /^status:/ { sub(/^status:[ \t]*/, ""); sub(/[ \t]*$/, ""); print; exit }'; }
+for f in .planning/agile/epics/E-*/epic.md; do [ "$(st < "$f")" = done ] || continue; [ "$(git cat-file blob "HEAD:./$f" 2>/dev/null | st)" = done ] || echo "UNACCEPTED $(basename "$(dirname "$f")")"; done
 ```
 
-Commit each epic it names as agile-accept.md's section 3 commits one, its ID in
-place of `{id}`. When git refuses, go on to `report` with its reason.
+Commit each epic it names, `{e}` its ID, by itself and with nothing else the
+user has staged. When git refuses, go on to `report` with its reason:
+
+```
+git add -- '.planning/agile/epics/{e}/epic.md'
+git commit -m "docs: accept {e}" -- '.planning/agile/epics/{e}/epic.md'
+```
 
 On `build` and `accept`, a story of `{next.id}` done before its record was made,
 a run cut short after its checks passed, is finished first. Leave out the

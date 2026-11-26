@@ -447,12 +447,14 @@ function accept(dir) {
   // an epic marked review by hand answers accept with its stories unread
   const stories = storiesOf(agile, id);
   if ('refusal' in stories) return refuse(stories.refusal);
+  if (!stories.value.length) return not(`${id} has no story, so nothing of it was built`);
   const open = stories.value.filter((s) => s.status !== 'done');
   if (open.length) return not(`${open.map((s) => s.id).join(', ')} of ${id} ${open.length > 1 ? 'aren\'t' : 'isn\'t'} done`);
   const file = epicFile(agile, id);
   atomicWrite(file, withStatus(readFileSync(file, 'utf8'), 'done'));
+  // a damaged epic after it is only read now, and a null next would read as the release's end
   const now = whatsNext(dir);
-  emit({ ok: true, epic: id, status: 'done', next: 'refusal' in now ? null : now.next });
+  emit({ ok: true, epic: id, status: 'done', next: 'refusal' in now ? null : now.next, ...('refusal' in now ? { next_refusal: now.refusal } : {}) });
 }
 
 /** A check that hangs is a failed one, and a headless run of a command fits in this. */
