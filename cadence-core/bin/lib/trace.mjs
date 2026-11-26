@@ -225,6 +225,21 @@ export function correlationId(planningRoot, phase, ownSha) {
 }
 
 /**
+ * The `corr` of the newest dispatch of this phase and plan, and role when given, or null. Not stopped at the first
+ * terminal: the stop hook writes its return before the hand-written close, so a closed dispatch is still the one.
+ * @param {string} planningRoot @param {any} phase @param {any} plan @param {string} [role]
+ * @returns {string|null}
+ */
+export function dispatchCorr(planningRoot, phase, plan, role) {
+  const lines = readLines(planningRoot);
+  if (lines === null) return null;
+  const p = key(phase);
+  const found = newestLifecycle(lines, 'dispatch',
+    (e) => key(e.phase) === p && key(e.plan) === key(plan) && (role === undefined || key(e.role) === role), CYCLE);
+  return found && typeof found.e.corr === 'string' && found.e.corr ? found.e.corr : null;
+}
+
+/**
  * One event, in the fixed key order `{corr, phase, ts, family, event, ...}`.
  * @param {string} planningRoot
  * @param {any} event

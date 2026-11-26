@@ -17,7 +17,7 @@ import { mergeLayers } from '../lib/config-merge.mjs';
 import { unfixedFromEntries } from '../lib/filing-decision.mjs';
 import { planTaskTitles } from '../lib/planning-files.mjs';
 import { ensureRecordsDir, ensureRecordsIgnore, makeDir, phaseRecordsDir, recordsPath } from '../lib/planning-store.mjs';
-import { tasksHome } from '../lib/project-homes.mjs';
+import { onAgilePath, tasksHome } from '../lib/project-homes.mjs';
 import { planFileFor } from '../lib/phase-plans.mjs';
 import {
   READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
@@ -27,7 +27,7 @@ import { requirePhaseArg } from '../lib/require-int.mjs';
 import { RUNG_ORDER } from '../lib/rung-agent.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
-import { FAMILIES, ROTATED_TRACE_FILE, TRACE_FILE, appendEvent, correlationId, renderTrace } from '../lib/trace.mjs';
+import { FAMILIES, ROTATED_TRACE_FILE, TRACE_FILE, appendEvent, correlationId, dispatchCorr, renderTrace } from '../lib/trace.mjs';
 import { windowBudget } from '../lib/window-budget.mjs';
 
 // prose writes the lifecycle and outcome events through this seam; scripts with code call lib/trace.mjs directly
@@ -557,9 +557,13 @@ function cmdTrace(dir, sub, opts) {
     // it carries that window's anchor SHA, never a whole correlation id, so a receipt only names its own phase's window
     // no key when the flag is absent, so existing calls derive as before
     const anchor = trimmed('--anchor');
-    const corr = anchor === undefined
-      ? undefined
-      : correlationId(dir, parsedPhase.raw, anchor);
+    // every agile run is phase 0, so the newest one is often another piece of work's; a close joins its own dispatch
+    const own = anchor === undefined && sub === 'close' && flags['--plan'] !== undefined && onAgilePath(dir)
+      ? dispatchCorr(dir, parsedPhase.raw, flags['--plan'], trimmed('--role'))
+      : null;
+    const corr = anchor !== undefined
+      ? correlationId(dir, parsedPhase.raw, anchor)
+      : own ?? undefined;
 
     // the human answer this receipt descends from: one authorization over two ranges is two receipts, now linked
     // minted by the coordinator, not hashed from the reason text: grouping by exact --detail missed distinct wordings
@@ -588,7 +592,7 @@ function cmdTrace(dir, sub, opts) {
       phase: parsedPhase.raw,
       family,
       event,
-      // present only when --anchor named an earlier window; absent, renderEvent derives as always
+      // present only when --anchor named a window or an agile close found its dispatch; absent, renderEvent derives as always
       ...(corr === undefined ? {} : { corr }),
       // no guard here: the loop above already applied each disposition, so absent and fallback both arrive undefined
       ...(flags['--plan'] === undefined ? {} : { plan: flags['--plan'] }),
