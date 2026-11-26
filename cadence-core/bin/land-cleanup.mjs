@@ -16,7 +16,7 @@ import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { integrationBranchName, configuredNameProblem, releaseBranchName } from './lib/branch-decision.mjs';
 import { agileDir, releaseFile, releasesDir, tagSafeVersion } from './lib/agile-paths.mjs';
-import { compareVersions, normalizeTargetVersion } from './lib/release-decision.mjs';
+import { newerRelease } from './lib/release-decision.mjs';
 import { readReleaseFile } from './lib/agile-read.mjs';
 import { onAgilePath } from './lib/project-homes.mjs';
 import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-decision.mjs';
@@ -142,16 +142,11 @@ function newestClosed(agile, warnings) {
   const candidates = [];
   for (const v of names) {
     if (!tagSafeVersion(v)) { warnings.push(`releases/${JSON.stringify(v)} is not a version git takes as a tag, so the land neither tags nor names a branch from it`); continue; }
-    const sv = normalizeTargetVersion(v);
-    // compareVersions is null exactly when a side isn't semver
-    try { candidates.push({ v, sv, semver: compareVersions(sv, sv) !== null, at: statSync(join(releasesDir(agile), v)).mtimeMs }); } catch { /* gone since the read */ }
+    try { candidates.push({ version: v, at: statSync(join(releasesDir(agile), v)).mtimeMs }); } catch { /* gone since the read */ }
   }
-  const newest = candidates.sort((a, b) => {
-    if (a.semver && b.semver) return -(compareVersions(a.sv, b.sv) ?? 0);
-    return a.semver !== b.semver ? (a.semver ? -1 : 1) : b.at - a.at;
-  })[0];
+  const newest = candidates.sort(newerRelease)[0];
   if (!newest) return null;
-  return { version: newest.v, title: readReleaseFile(readText(releaseFile(join(releasesDir(agile), newest.v))) ?? '')?.title ?? null };
+  return { version: newest.version, title: readReleaseFile(readText(releaseFile(join(releasesDir(agile), newest.version))) ?? '')?.title ?? null };
 }
 
 /**

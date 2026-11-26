@@ -32,8 +32,8 @@ import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, c
 import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStandingRules, withStatus } from './lib/agile-render.mjs';
 import { epicEvidence, renderEvidence } from './lib/agile-evidence.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
-import { STATUSES, highestIds, readChangeNext, readEpicFile, readEpicStatus, readLessonRecords, readNotYet, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
-import { compareVersions, normalizeTargetVersion } from './lib/release-decision.mjs';
+import { STATUSES, highestIds, readChangeNext, requirementKey, readEpicFile, readEpicStatus, readLessonRecords, readNotYet, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
+import { newerRelease } from './lib/release-decision.mjs';
 import { judgeAnswers, judgeAsk, judgeLessons, judgeSplit, judgeStories } from './lib/agile-refine.mjs';
 import { namedReviewers, unanswered } from './lib/agile-setup.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
@@ -1064,8 +1064,8 @@ function ready(dir, design) {
   const closed = early === null ? null : closedRelease(dir);
   if (closed !== null && 'refusal' in closed) return no(closed.refusal);
   const carried = closed !== null && 'value' in closed ? closed.value : null;
-  const named = new Set(read.design.requirements.map((q) => q.id));
-  const used = carried === null ? [] : [...named].filter((id) => carried.done.has(id));
+  const named = new Set(read.design.requirements.map((q) => requirementKey(q.id)));
+  const used = carried === null ? [] : read.design.requirements.map((q) => q.id).filter((id) => carried.done.has(requirementKey(id)));
   if (used.length) {
     return no({ reason: 'requirement-ids-used', detail: `${used.join(', ')} ${used.length === 1 ? 'is' : 'are'} done in a closed release, and an ID names one requirement for good`,
       hint: `number the design's new requirements past the highest each prefix used (${carried?.earlier.join(', ')}), by a Seldon rerun or by hand, then re-run; nothing was written` });
@@ -1074,7 +1074,7 @@ function ready(dir, design) {
   if ('refusal' in epics) return no(epics.refusal);
   // one the design names again is taken up, with the design's words
   return { design: { ...read.design, phases: epics.epics }, decisions, config,
-    closed: carried === null ? null : { ...carried, deferred: carried.deferred.filter((q) => !named.has(q.id)) } };
+    closed: carried === null ? null : { ...carried, deferred: carried.deferred.filter((q) => !named.has(requirementKey(q.id))) } };
 }
 
 /**
@@ -1089,26 +1089,31 @@ function closedRelease(dir) {
   const agile = agileDir(dir);
   let top = 0;
   const done = new Set();
-  /** @type {Map<string, string>} */
+  /** @type {Map<string, {id: string, text: string}>} */
   const deferred = new Map();
   /** @type {string[]} */
   const ids = [];
-  // oldest first, so a later release's words for a requirement it deferred again are the ones carried
-  const byVersion = (/** @type {string} */ a, /** @type {string} */ b) => compareVersions(normalizeTargetVersion(a), normalizeTargetVersion(b)) ?? (a < b ? -1 : a > b ? 1 : 0);
-  for (const v of closes(agile).closed.sort(byVersion)) {
-    const home = join(releasesDir(agile), v);
-    if (!lstatOf(home)?.isDirectory()) {
-      return { refusal: { reason: 'closed-release', detail: `${home} is not a folder, and releases/ holds only closed releases`,
+  /** @type {{version: string, at: number}[]} */
+  const homes = [];
+  for (const v of closes(agile).closed) {
+    const st = lstatOf(join(releasesDir(agile), v));
+    if (!st?.isDirectory()) {
+      return { refusal: { reason: 'closed-release', detail: `${join(releasesDir(agile), v)} is not a folder, and releases/ holds only closed releases`,
         hint: 'move it out of releases/, then re-run; nothing was written' } };
     }
+    homes.push({ version: v, at: st.mtimeMs });
+  }
+  // oldest first, so a later release's words for a requirement it deferred again are the ones carried
+  for (const { version: v } of homes.sort((a, b) => newerRelease(b, a))) {
+    const home = join(releasesDir(agile), v);
     const file = requirementsFile(home);
     const read = lstatOf(file)?.isFile() ? readRequirementsFile(readFileSync(file, 'utf8')) : null;
     if (read === null || read.title === null || !read.whole) {
       return { refusal: { reason: 'closed-requirements', detail: `${file} is not a requirements file the close wrote whole, so the IDs that release used aren't known`,
         hint: 'put it back from git, then re-run; nothing was written' } };
     }
-    for (const q of read.requirements) done.add(q.id);
-    for (const q of read.deferred) deferred.set(q.id, q.text);
+    for (const q of read.requirements) done.add(requirementKey(q.id));
+    for (const q of read.deferred) { deferred.delete(requirementKey(q.id)); deferred.set(requirementKey(q.id), q); }
     ids.push(...read.requirements.map((q) => q.id), ...read.deferred.map((q) => q.id), ...read.earlier);
     const epics = join(home, 'epics');
     if (!lstatOf(epics)?.isDirectory()) continue;
@@ -1122,9 +1127,9 @@ function closedRelease(dir) {
     return { refusal: { reason: 'project-file', detail: `${projectFile(agile)} is not a file`,
       hint: 'put project.md back as a plain file from git, or remove it, then re-run; nothing was written' } };
   }
-  for (const id of done) deferred.delete(id);
+  for (const key of done) deferred.delete(key);
   return { value: { top, project: project === null ? null : readFileSync(projectFile(agile), 'utf8'), done,
-    deferred: [...deferred].map(([id, text]) => ({ id, text })), earlier: highestIds(ids) } };
+    deferred: [...deferred.values()], earlier: highestIds(ids) } };
 }
 
 /**

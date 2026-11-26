@@ -123,7 +123,7 @@ one of its stories, or nothing. `decisions` holds your picks. `defer` holds the
 IDs of the epic's requirements the user said to leave for later, and `add` each
 requirement they asked for that none covers, as `{"id": "...", "text": "..."}`,
 its ID the next number of the prefix it belongs with in REQUIREMENTS.md,
-deferred ones counted. One `propose` lists under `unplaced` is on no epic, left
+deferred ones and "Highest IDs of earlier releases" counted. One `propose` lists under `unplaced` is on no epic, left
 there by the design or by a refinement cut short, and goes in `add` exactly as
 listed when this epic takes it. Both stay empty unless the user said so.
 `change_next` holds one entry for each line of `next.change_next`, its `from`

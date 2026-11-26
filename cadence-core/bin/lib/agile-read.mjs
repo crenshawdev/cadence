@@ -45,6 +45,12 @@ export function requirementPrefix(id) {
 /** The heading over the highest ID of each prefix the closed releases used, which the next ID of a prefix counts too. */
 export const EARLIER_IDS = '## Highest IDs of earlier releases';
 
+/** One requirement however its number is padded: CAT-1 and CAT-01 are one key. @param {string} id */
+export function requirementKey(id) {
+  const prefix = requirementPrefix(id);
+  return prefix === null ? id : `${prefix}${Number(id.slice(prefix.length))}`;
+}
+
 /**
  * The highest of `ids` for each prefix, one per prefix, in the order the prefixes first come.
  * @param {string[]} ids @returns {string[]}
