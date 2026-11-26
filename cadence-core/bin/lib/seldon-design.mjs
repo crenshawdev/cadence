@@ -10,9 +10,9 @@ import { isRequirementId } from './planning-files.mjs';
 /** The four documents a design folder holds, in the order the chain builds them; anything else there is ignored. */
 export const DESIGN_FILES = Object.freeze(['brief.md', 'prd.md', 'spine.md', 'epics.md']);
 
-const BRIEF_SECTIONS = ['Problem', 'Solution', 'Who it serves', "What's different", 'Success criteria', 'Scope',
+export const BRIEF_SECTIONS = ['Problem', 'Solution', 'Who it serves', "What's different", 'Success criteria', 'Scope',
   'What it refuses', 'Vision'];
-const PRD_SECTIONS = ['Requirements', 'Non-functional requirements', 'User journeys', 'Non-goals', 'MVP scope'];
+export const PRD_SECTIONS = ['Requirements', 'Non-functional requirements', 'User journeys', 'Non-goals', 'MVP scope'];
 const REQUIREMENT_SECTIONS = ['Requirements', 'Non-functional requirements'];
 
 // the ID alone first, so a bullet whose ID is good declares it even when the rest of the line is wrong
@@ -110,15 +110,20 @@ function keptBody(body) {
   return body.slice(start, end).join('\n');
 }
 
+/** A brief's title, its first non-blank line less the `# `, or '' when that line isn't a title. @param {string} text */
+export function briefTitle(text) {
+  const first = split(text).lines.find((l) => l.trim() !== '');
+  return first !== undefined && first.startsWith('# ') ? first.slice(2).trim() : '';
+}
+
 /**
  * The brief: the design's title and its eight sections by exact name. Order isn't checked.
  * @param {string} text @param {Issue[]} issues
  * @returns {{title: string, brief: Record<string, string>}}
  */
 function readBrief(text, issues) {
-  const { lines, sections } = split(text);
-  const first = lines.find((l) => l.trim() !== '');
-  const title = first !== undefined && first.startsWith('# ') ? first.slice(2).trim() : '';
+  const { sections } = split(text);
+  const title = briefTitle(text);
   if (!title) issues.push(issue('brief.md', null, { section: 'title' }, 'the first non-blank line is not a "# " title'));
   const found = namedSections('brief.md', sections, BRIEF_SECTIONS, issues);
   /** @type {Record<string, string>} */

@@ -6,7 +6,7 @@
 // not a planning.mjs subcommand: those belong to the old path, and all but a few refuse a project this path owns
 //
 // Usage: agile.mjs next [--dir <.planning>]
-//        agile.mjs design-folder --title <title> [--dir <.planning>]
+//        agile.mjs design-folder [--title <title>] [--dir <.planning>]
 //        agile.mjs check --design <folder> [--dir <.planning>]
 //        agile.mjs start --design <folder> [--commit-here <branch>] [--dir <.planning>]
 //        agile.mjs answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>]
@@ -41,6 +41,7 @@ import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { boundedRun } from './lib/bounded-run.mjs';
 import { adviseBranch } from './lib/branch-advice.mjs';
 import { slugOf } from './lib/branch-decision.mjs';
+import { briefTitle } from './lib/seldon-design.mjs';
 import { captureLines, removeCaptures } from './lib/capture-file.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { readCurrentBranch } from './lib/git-head.mjs';
@@ -1047,10 +1048,10 @@ function ready(dir, design) {
   const early = refusal(dir);
   // a closed release is where the next one starts
   if (early && early.reason !== 'release-closed') return no(early);
-  const { read, issues } = readDesignFolder(folder);
+  const { read, issues, texts } = readDesignFolder(folder);
   const decisions = [...read.decisions.values()];
   // a design with a document missing has no text to judge, and its own issue says so
-  if (!issues.length) issues.push(...judgeDesign(read.design.phases, read.lost, read.design.title, read.design.brief, decisions));
+  if (!issues.length) issues.push(...judgeDesign(read.design.phases, read.lost, read.design.title, read.design.brief, decisions, texts));
   if (issues.length) {
     return no({ reason: 'design-refused',
       detail: `the design in ${folder} has ${issues.length} problem${issues.length === 1 ? '' : 's'} - the issues list names each`,
@@ -1292,13 +1293,36 @@ const DESIGN_FILES = ['brief.md', 'prd.md', 'spine.md', 'epics.md'];
 const SELDON_WORDS = ['brief', 'prd', 'spine', 'epics', 'architecture'];
 
 /**
+ * The designs under .planning/seldon/ no release has started from: a brief.md whose title no release, open or closed,
+ * carries. A file another run or a hand edit wrote is only read, and one that isn't a plain file is passed over.
+ * @param {string} dir @returns {{folder: string, title: string}[]}
+ */
+function waitingDesigns(dir) {
+  const top = join(dir, 'seldon');
+  if (!lstatOf(top)?.isDirectory()) return [];
+  const agile = agileDir(dir);
+  const homes = [agile, ...closes(agile).closed.map((v) => join(releasesDir(agile), v))];
+  const started = new Set(homes.map((h) => (lstatOf(releaseFile(h))?.isFile() ? readReleaseFile(readFileSync(releaseFile(h), 'utf8'))?.title : null)));
+  const folders = [top, ...readdirSync(top).sort().map((name) => join(top, name)).filter((f) => lstatOf(f)?.isDirectory())];
+  return folders.filter((f) => lstatOf(join(f, 'brief.md'))?.isFile())
+    .map((folder) => ({ folder, title: briefTitle(readFileSync(join(folder, 'brief.md'), 'utf8')) }))
+    .filter((d) => d.title !== '' && !started.has(d.title));
+}
+
+/**
  * Where a design written without one goes, as Seldon would put it: the top of .planning/seldon/ until a brief.md is
- * there, then a folder named for the title, which is taken once anything is in it. It writes nothing.
- * @param {string} dir @param {string} title
+ * there, then a folder named for the title, which is taken once anything is in it. After a close it also gives the
+ * highest ID each prefix used and the deferred requirements, so the draft numbers past them. With no title it lists the
+ * designs no release has started from. It writes nothing.
+ * @param {string} dir @param {string | undefined} title
  */
 function designFolder(dir, title) {
   const why = refusal(dir);
   if (why !== null && why.reason !== 'release-closed') return refuse(why);
+  if (title === undefined) return emit({ ok: true, waiting: waitingDesigns(dir) });
+  const carried = why === null ? null : closedRelease(dir);
+  if (carried !== null && 'refusal' in carried) return refuse(carried.refusal);
+  const ids = carried !== null && 'value' in carried ? { earlier: carried.value.earlier, deferred: carried.value.deferred } : { earlier: [], deferred: [] };
   const slug = slugOf(title);
   const unusable = slug === '' ? 'it has no letter or digit' : SELDON_WORDS.includes(slug) ? `"${slug}" is one of Seldon's own words`
     : slug.length > 64 ? 'its name runs past 64 characters' : null;
@@ -1323,7 +1347,7 @@ function designFolder(dir, title) {
       return refuse({ reason: 'design-started', detail: `${top} holds part of a design and no brief.md`,
         hint: 'finish it with /seldon, or move those files aside, then re-run; nothing was written' });
     }
-    return emit({ ok: true, folder: top, slug });
+    return emit({ ok: true, folder: top, slug, ...ids });
   }
   const named = join(top, slug);
   if (notFolder(named)) return refuse(notAFolder(named));
@@ -1332,7 +1356,7 @@ function designFolder(dir, title) {
       hint: there(named, 'brief.md') ? `start from it with /cad-agile --brief '${named}', or finish it with /seldon; nothing was written`
         : 'give the release another title, or move that folder aside, then re-run; nothing was written' });
   }
-  emit({ ok: true, folder: named, slug });
+  emit({ ok: true, folder: named, slug, ...ids });
 }
 
 /** A trailing slash makes lstat follow a link, so it comes off before anything is judged. @param {string | undefined} given */
@@ -1366,7 +1390,7 @@ try {
   else if (argv[0] === 'not-yet') notYet(planningDir(arg('not-yet', '--dir')), arg('not-yet', '--payload'));
   else if (argv[0] === 'evidence') evidence(planningDir(arg('evidence', '--dir')));
   else if (argv[0] === 'close') close(planningDir(arg('close', '--dir')), arg('close', '--payload'));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | design-folder --title <title> [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>] | accept|close [--payload <file>] [--dir <.planning>] | evidence [--dir <.planning>]' });
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | design-folder [--title <title>] [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>] | accept|close [--payload <file>] [--dir <.planning>] | evidence [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }

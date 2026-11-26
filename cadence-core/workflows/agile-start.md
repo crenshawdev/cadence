@@ -1,6 +1,7 @@
 # cad-agile start (cold branch)
 
-Read from agile.md when `--brief` starts a release. Everything a start has to
+Read from agile.md when `--brief` starts a release, and from agile-design.md
+with the design it wrote or found. Everything a start has to
 ask is asked before it writes anything, in this order: check, ask, write.
 
 ## 1. Check

@@ -904,7 +904,7 @@ export const CONTRACTS = {
     },
     next: {},
     'design-folder': {
-      '--title': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--title': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     check: {
       '--design': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },

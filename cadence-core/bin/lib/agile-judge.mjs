@@ -5,9 +5,15 @@
 'use strict';
 
 import { renderEpicFile, renderProjectFile, renderReleaseFile } from './agile-render.mjs';
+import { BRIEF_SECTIONS, PRD_SECTIONS } from './seldon-design.mjs';
 import { fenceScanner } from './text-util.mjs';
 
 /** @typedef {import('./seldon-design.mjs').Issue} Issue */
+
+/** Seldon's six kinds of spine decision (its docs/FORMAT.md, "The Kind line"); the shared reader takes any. */
+const KINDS = ['design approach', 'boundaries', 'how state changes', 'who owns shared data', 'stack', 'hosting'];
+
+const TAG = '[ASSUMPTION]';
 
 /** A stand-in for every other value, so a verdict is about one value alone. */
 const PLAIN = 'plain';
@@ -36,13 +42,31 @@ function readsBack(plain, real) {
 }
 
 /**
+ * Also what Seldon's own check refuses and the shared reader passes, since a design the interview wrote has met no
+ * check of Seldon's: a kind it doesn't have, the tag on a heading, more than five requirements on an epic, sections out
+ * of order.
  * @param {import('./seldon-design.mjs').Phase[]} epics @param {{epic: string, line: string}[]} lost
  * @param {string} title @param {Record<string, string>} brief @param {import('./seldon-design.mjs').Decision[]} decisions
+ * @param {Record<string, string | null>} [texts] the design's files as read, by name
  * @returns {Issue[]}
  */
-export function judgeDesign(epics, lost, title, brief, decisions) {
+export function judgeDesign(epics, lost, title, brief, decisions, texts = {}) {
   /** @type {Issue[]} */
   const issues = [];
+  for (const d of decisions) {
+    if (!KINDS.includes(d.kind)) issues.push({ file: 'spine.md', id: d.id, section: 'Kind', problem: `${JSON.stringify(d.kind)} is not one of Seldon's kinds: ${KINDS.join(', ')}` });
+    if (d.title.includes(TAG)) issues.push({ file: 'spine.md', id: d.id, problem: `its heading carries ${TAG}, which goes only in free text` });
+  }
+  for (const e of epics) {
+    if (e.name.includes(TAG)) issues.push({ file: 'epics.md', id: e.epic, problem: `its heading carries ${TAG}, which goes only in free text` });
+    if (e.requirements.length > 5) issues.push({ file: 'epics.md', id: e.epic, field: 'Requirements', problem: `names ${e.requirements.length} requirements, and an epic takes at most 5` });
+  }
+  for (const [file, names] of /** @type {[string, string[]][]} */ ([['brief.md', BRIEF_SECTIONS], ['prd.md', PRD_SECTIONS]])) {
+    const order = (texts[file] ?? '').split(/\r?\n/).filter((l) => l.startsWith('## ')).map((l) => l.slice(3).trim()).filter((n) => names.includes(n));
+    if (JSON.stringify(order) !== JSON.stringify(names.filter((n) => order.includes(n)))) {
+      issues.push({ file, problem: `its sections run ${order.join(', ')}, and Seldon's order is ${names.join(', ')}` });
+    }
+  }
   for (const { epic, line } of lost) {
     issues.push({ file: 'epics.md', id: epic, field: 'Done when',
       problem: `${JSON.stringify(line)} is in no item - an item opens with "- " at the start of its line, and its other lines are indented` });

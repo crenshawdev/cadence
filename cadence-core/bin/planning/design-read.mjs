@@ -41,7 +41,7 @@ function readDocument(file) {
  * A design folder's four documents read and parsed, with every problem in them: a file that can't be read, a line break
  * only some readers see, and what `readDesign` finds. Both paths read a design through this.
  * @param {string} folder @param {number} [first] the number the first epic's phase takes
- * @returns {{read: ReturnType<typeof readDesign>, issues: import('../lib/seldon-design.mjs').Issue[]}}
+ * @returns {{read: ReturnType<typeof readDesign>, issues: import('../lib/seldon-design.mjs').Issue[], texts: Record<string, string|null>}}
  */
 export function readDesignFolder(folder, first = 1) {
   /** @type {import('../lib/seldon-design.mjs').Issue[]} */
@@ -62,7 +62,7 @@ export function readDesignFolder(folder, first = 1) {
   }
   const read = readDesign(texts, first);
   issues.push(...read.issues);
-  return { read, issues };
+  return { read, issues, texts };
 }
 
 /**

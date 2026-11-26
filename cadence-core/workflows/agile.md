@@ -36,7 +36,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" next
   then go to `commit`.
 - `release` is null, without it -> Read
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-design.md` and follow it,
-  then go to `commit`.
+  then go to `commit` unless it stopped.
 </step>
 
 <step name="commit">
