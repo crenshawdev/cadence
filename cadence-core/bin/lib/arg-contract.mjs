@@ -933,6 +933,7 @@ export const CONTRACTS = {
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     accept: {},
+    evidence: {},
     'not-yet': {
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },
