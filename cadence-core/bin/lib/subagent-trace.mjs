@@ -125,7 +125,8 @@ function startedAt(entries) {
  * scopes nothing. It's the newest of its role sent before the worker started, open or already closed, so a dead run's
  * leftover or a reused id's old bracket is never it. With no start known, only a lone open one, or this id's own close.
  * @param {any} render @param {string} role @param {string|null} id @param {number|null} started
- * @returns {{row: any, open: boolean}|null} null when none fits, two tie, or the newest is another worker's close
+ * @returns {{row: any, open: boolean}|null} `open` false says don't adopt it, only file the figures there; null when
+ * none fits, two runs tie, or the newest is another worker's close
  */
 function agileDispatch(render, role, id, started) {
   const open = (render && Array.isArray(render.unpaired) ? render.unpaired : []).filter((r) => r && r.role === role);
@@ -141,10 +142,14 @@ function agileDispatch(render, role, id, started) {
   if (!sent.length) return null;
   const newest = Math.max(...sent.map((c) => c.t));
   const at = sent.filter((c) => c.t === newest);
-  if (at.length !== 1) return null;
+  if (at.length > 1) {
+    const one = at.every((c) => key(c.row.corr) === key(at[0].row.corr));
+    return one ? { row: at[0].row, open: false } : null;
+  }
   const [own] = at;
-  // two open in one run were sent in one message, so either could be this worker's (TRC-06)
-  if (own.open && open.some((r) => r !== own.row && key(r.corr) === key(own.row.corr))) return null;
+  // two open in one run were sent in one message, so either could be this worker's (TRC-06); the figures still have
+  // their run, and the fold keys them on it and the id alone
+  if (own.open && open.some((r) => r !== own.row && key(r.corr) === key(own.row.corr))) return { row: own.row, open: false };
   if (!own.open && own.row.agent_id && own.row.agent_id !== id) return null;
   return own;
 }
