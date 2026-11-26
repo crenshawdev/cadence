@@ -134,11 +134,16 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phas
 **A match**, or `inconclusive: true`, fires the `risk_surface` trigger as
 references/review-triggers.md states, with `git diff {Base}..HEAD` written to
 `.planning/agile/tasks/{story}/risk-task-{story}.diff`, shape (c), and its
-records written with `--task {story}`. You fix what its gate says to fix, here,
-and its one narrowed round is the gate's. Remove that `.diff` file once the
-fire is done.
+records written with `--task {story}`. On the workflow path its `args` carry
+`checkers: false`: prove each finding as **Its findings** below does, and one
+you can neither prove nor kill goes to the user. At `blocking` and
+`adjudicated` you fix what the gate says to fix, here, and its one narrowed
+round is the gate's. `advisory` reports and goes on. `deferred` fixes nothing:
+its `deferred record` takes `--task {story}` too, and the member is committed
+with the record. Remove that `.diff` file once the fire is done. A gate of
+`off` reviews nothing, so the story takes the one reviewer below.
 
-**No match**: one reviewer. Write `git diff {Base}..HEAD` to
+**No match**, or the gate `off`: one reviewer. Write `git diff {Base}..HEAD` to
 `.planning/agile/tasks/{story}/review-{story}.diff`, then resolve it with its
 bracket, relay each `warnings[]` entry to the user, and dispatch the
 `agent_type` and `model` it prints through `references/seam-spawn-agent.md`:
