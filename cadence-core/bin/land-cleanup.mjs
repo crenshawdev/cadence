@@ -8,13 +8,16 @@
 // bad stdin is named, never collapsed to [], and halts under auto_close; unruled reviews halt too
 'use strict';
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
-import { integrationBranchName, configuredNameProblem } from './lib/branch-decision.mjs';
+import { integrationBranchName, configuredNameProblem, releaseBranchName } from './lib/branch-decision.mjs';
+import { agileDir, releaseFile, releasesDir } from './lib/agile-paths.mjs';
+import { readReleaseFile } from './lib/agile-read.mjs';
+import { onAgilePath } from './lib/project-homes.mjs';
 import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-decision.mjs';
 // the one statement of what an entry means to a settling fire; here because lib/close-decision.mjs has no deps or I/O
 import { unfixedFromEntries } from './lib/filing-decision.mjs';
@@ -108,6 +111,7 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
   const configured = nameProblem === null && typeof git.integration_branch_name === 'string'
     ? git.integration_branch_name : null;
   const derived = branchArg !== undefined ? branchArg
+    : onAgilePath(join(dir, '.planning')) ? agileBranch(join(dir, '.planning'))
     : integrationBranchName(
       readText(join(dir, '.planning', 'PROJECT.md')),
       readText(join(dir, '.planning', 'ROADMAP.md')),
@@ -120,6 +124,25 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
   const nameSet = git.integration_branch_name !== undefined && git.integration_branch_name !== null;
   const decision = decideCleanup({ onLandCleanup, mergedIntoBase, branch, nameSet });
   emit({ ok: true, ...decision, base, warnings });
+}
+
+/**
+ * The branch an agile release was built on, the name its start suggested: the open release's title, else the one the
+ * newest close moved, or null when neither reads.
+ * @param {string} planning
+ */
+function agileBranch(planning) {
+  const agile = agileDir(planning);
+  /** @type {string[]} */
+  let closed = [];
+  try { closed = readdirSync(releasesDir(agile)).filter((n) => !n.startsWith('.')); } catch { /* no close yet */ }
+  const newest = closed.map((v) => { try { return { v, at: statSync(join(releasesDir(agile), v)).mtimeMs }; } catch { return null; } })
+    .filter((c) => c !== null).sort((a, b) => b.at - a.at)[0];
+  for (const file of [releaseFile(agile), ...(newest ? [releaseFile(join(releasesDir(agile), newest.v))] : [])]) {
+    const title = readReleaseFile(readText(file) ?? '')?.title;
+    if (title) return releaseBranchName(title);
+  }
+  return null;
 }
 
 function gate(dir) {

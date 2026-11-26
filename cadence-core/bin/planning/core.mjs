@@ -17,7 +17,7 @@ import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
 import { classifyPhaseList, parseRequirements, parseUat, uatComplete } from '../lib/planning-files.mjs';
 import { codemapDir, deferredDir, phaseRecordsDir, phaseReportsDir, recordsPath } from '../lib/planning-store.mjs';
-import { tasksHome } from '../lib/project-homes.mjs';
+import { onAgilePath, tasksHome } from '../lib/project-homes.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
@@ -743,13 +743,16 @@ const DEFERRED_REL = posixRel(deferredDir('.'));
 const PHASE_RECORDS_REL = posixRel(phaseRecordsDir('.'));
 
 /**
- * The two directories a queue member may live in: `rel` is how an answer names it, `path` where it is on disk.
+ * The directories a queue member may live in: `rel` is how an answer names it, `path` where it is on disk.
  * Each holds one directory per phase; `inner` is the folder inside a phase's directory that holds its members, empty
- * for the carried queue, whose phase directory holds them directly.
+ * for the carried queue, whose phase directory holds them directly. On the agile path the one home is the tasks
+ * folder, one directory per task, and `task` says so.
  * @param {string} dir the planning directory
- * @returns {{rel: string, path: string, inner: string}[]}
+ * @returns {{rel: string, path: string, inner: string, task?: boolean}[]}
  */
 function queueHomes(dir) {
+  // the agile path has no phases: a story's deferred fire leaves its member beside its review, in its task's folder
+  if (onAgilePath(dir)) { const home = tasksHome(dir); return [{ rel: home.rel, path: home.path, inner: '', task: true }]; }
   return [{ rel: 'phases', path: join(dir, 'phases'), inner: PHASE_RECORDS_REL },
     { rel: DEFERRED_REL, path: deferredDir(dir), inner: '' }];
 }
@@ -850,8 +853,9 @@ function readQueue(dir, wantPhase) {
           unreadable.push({ path, detail: id.detail });
           continue;
         }
-        // a member's phase must match its directory, or a hand move makes --phase narrow to a phase it doesn't claim
-        if (id.phase !== ent.name) {
+        // a member's phase must match its directory, or a hand move makes --phase narrow to a phase it doesn't claim;
+        // a task's member is a phase 0 fire, in the folder of the task it was fired for
+        if (home.task ? id.phase !== '0' : id.phase !== ent.name) {
           unreadable.push({ path, detail: `queue member says phase ${id.phase} but sits in ${where}/` });
           continue;
         }

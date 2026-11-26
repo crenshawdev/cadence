@@ -144,8 +144,8 @@ const COMMANDS = {
 };
 
 // the calls an agile project may run; every other one is the old path's and refuses there
-// a `cmd sub` entry opens that one subcommand: a story's deferred fire queues its findings, and the queue's readers stay the old path's
-const AGILE_CALLS = ['adjudication', 'capture', 'codemap', 'deferred record', 'detect-commands', 'detect-surfaces', 'recall', 'review-file', 'risk-check',
+// a `cmd sub` entry opens that one subcommand: a story's deferred fire queues its findings, and a land lists what's still queued
+const AGILE_CALLS = ['adjudication', 'capture', 'codemap', 'deferred list', 'deferred record', 'detect-commands', 'detect-surfaces', 'recall', 'review-file', 'risk-check',
   'task-record', 'test-policy', 'trace', 'workflow-run'];
 
 try {
