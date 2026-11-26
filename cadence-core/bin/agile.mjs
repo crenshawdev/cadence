@@ -233,20 +233,34 @@ function openLessons(agile, epics, epic) {
  * @param {string} agile @param {{id: string}[]} epics
  */
 function traced(agile, epics) {
-  const file = readBack(requirementsFile(agile), 'a "# Requirements:" title, then "## Requirements" and "## Deferred"', (t) => {
+  // the close is gated on this count, so a line its writer wouldn't write is one it can't count and nothing passes over it
+  const file = readBack(requirementsFile(agile), 'only its writer\'s lines: a "# Requirements:" title, then "## Requirements" with "- **ID**: text" lines under "### " categories, then "## Deferred"', (t) => {
     const read = readRequirementsFile(t);
-    return read.title === null ? null : read;
+    return read.title === null || !read.whole ? null : read;
   });
   if ('refusal' in file) return file;
+  const listed = new Set([...file.value.requirements, ...file.value.deferred].map((q) => q.id));
   /** @type {Map<string, {story: string, done: boolean}[]>} */
   const on = new Map();
   for (const { id } of epics) {
-    const status = readBack(epicFile(agile, id), `a status of ${STATUSES.join(', ')}`, readEpicStatus);
-    if ('refusal' in status) return status;
+    const epic = readBack(epicFile(agile, id), `a status of ${STATUSES.join(', ')}, a requirements line and a "## Decisions" section`, (t) => {
+      const status = readEpicStatus(t);
+      const read = readEpicFile(t);
+      return status && read ? { status, requirements: read.requirements } : null;
+    });
+    if ('refusal' in epic) return epic;
     const stories = storiesOf(agile, id);
     if ('refusal' in stories) return stories;
+    // a requirement dropped from the file would otherwise read as nothing left open
+    for (const [where, ids] of [[epicFile(agile, id), epic.value.requirements], ...stories.value.map((s) => [storyFile(agile, s.id), s.requirements])]) {
+      const lost = /** @type {string[]} */ (ids).filter((q) => !listed.has(q));
+      if (lost.length) {
+        return { refusal: { reason: 'release-damaged', detail: `${where} names ${lost.join(', ')}, which ${requirementsFile(agile)} lists nowhere`,
+          hint: 'put the requirement back in REQUIREMENTS.md from git or your backup, or take it off that file, then re-run; nothing was written' } };
+      }
+    }
     for (const s of stories.value) {
-      for (const q of s.requirements) on.set(q, [...(on.get(q) ?? []), { story: s.id, done: s.status === 'done' && status.value === 'done' }]);
+      for (const q of s.requirements) on.set(q, [...(on.get(q) ?? []), { story: s.id, done: s.status === 'done' && epic.value.status === 'done' }]);
     }
   }
   const row = (/** @type {{id: string, text: string}} */ q, /** @type {string} */ status) => ({ id: q.id, text: q.text, status, stories: (on.get(q.id) ?? []).map((s) => s.story) });
