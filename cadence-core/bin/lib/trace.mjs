@@ -225,9 +225,10 @@ export function correlationId(planningRoot, phase, ownSha) {
 }
 
 /**
- * The run a close belongs to, or null to derive as ever: the run of the newest event already carrying this worker's
- * id, since the stop hook files it before the hand-written close; else the newest dispatch of this plan and role that
- * nothing has closed yet. A closed one is someone else's past run, and taking it bills this close to that run.
+ * The run a close belongs to, or null to derive as ever. It starts from the newest dispatch of this plan and role: an
+ * event carrying this worker's id written after it names the run outright, since the stop hook files its worker before
+ * the hand-written close; otherwise that dispatch's run while nothing has closed it. A closed one is a past run's, and
+ * an id seen only before it is a reused one.
  * @param {string} planningRoot @param {any} phase @param {any} plan @param {string} [role] @param {string} [agentId]
  * @returns {string|null}
  */
@@ -235,23 +236,16 @@ export function ownCorr(planningRoot, phase, plan, role, agentId) {
   const lines = readLines(planningRoot);
   if (lines === null) return null;
   const p = key(phase);
-  const corrOf = (found) => (found && typeof found.e.corr === 'string' && found.e.corr ? found.e.corr : null);
-  if (agentId) {
-    // the hook's cache fact names no plan, so a plan only rules out an event that names another
-    const filed = newestLifecycle(lines, null, (e) => key(e.phase) === p && e.agent_id === agentId
-      && (e.plan === undefined || key(e.plan) === key(plan)), CYCLE);
-    if (corrOf(filed)) return corrOf(filed);
-  }
   const sent = newestLifecycle(lines, DISPATCH,
     (e) => key(e.phase) === p && key(e.plan) === key(plan) && (role === undefined || key(e.role) === role), CYCLE);
-  if (!corrOf(sent)) return null;
-  for (let i = sent.at + 1; i < lines.length; i++) {
-    let e;
-    try { e = JSON.parse(lines[i]); } catch { continue; }
-    if (e && e.family === 'lifecycle' && TERMINAL.includes(e.event) && key(e.corr) === key(sent.e.corr)
-      && key(e.phase) === p && key(e.plan) === key(plan)) return null;
-  }
-  return corrOf(sent);
+  if (!sent || typeof sent.e.corr !== 'string' || !sent.e.corr) return null;
+  // the hook's cache fact names no plan, so a plan only rules out an event that names another
+  const filed = agentId ? newestLifecycle(lines, null, (e) => key(e.phase) === p && e.agent_id === agentId
+    && (e.plan === undefined || key(e.plan) === key(plan)), CYCLE) : null;
+  if (filed && filed.at > sent.at && typeof filed.e.corr === 'string' && filed.e.corr) return filed.e.corr;
+  const shut = newestLifecycle(lines, null, (e) => TERMINAL.includes(e.event) && key(e.corr) === sent.e.corr
+    && key(e.phase) === p && key(e.plan) === key(plan), CYCLE);
+  return shut && shut.at > sent.at ? null : sent.e.corr;
 }
 
 /**

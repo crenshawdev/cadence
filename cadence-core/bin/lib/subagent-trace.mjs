@@ -111,6 +111,44 @@ function currentRun(rows, clocks) {
   return { corr, rows: rows.filter((row) => key(row.corr) === key(corr)) };
 }
 
+/** The instant the worker's first assistant entry names, or null. @param {any[]} entries @returns {number|null} */
+function startedAt(entries) {
+  for (const e of entries) {
+    const t = millis(e && e.timestamp);
+    if (t !== null) return t;
+  }
+  return null;
+}
+
+/**
+ * This worker's dispatch on an agile project, where every run is phase 0 and several can be live, so "the newest run"
+ * scopes nothing. It's the newest of its role sent before the worker started, open or already closed, so a dead run's
+ * leftover or a reused id's old bracket is never it. With no start known, only a lone open one, or this id's own close.
+ * @param {any} render @param {string} role @param {string|null} id @param {number|null} started
+ * @returns {{row: any, open: boolean}|null} null when none fits, two tie, or the newest is another worker's close
+ */
+function agileDispatch(render, role, id, started) {
+  const open = (render && Array.isArray(render.unpaired) ? render.unpaired : []).filter((r) => r && r.role === role);
+  const closed = (render && Array.isArray(render.brackets) ? render.brackets : []).filter((r) => r && r.role === role);
+  if (started === null) {
+    const done = id ? closed.filter((r) => r.agent_id === id).pop() : undefined;
+    if (done) return { row: done, open: false };
+    return open.length === 1 ? { row: open[0], open: true } : null;
+  }
+  const sent = [...open.map((row) => ({ row, open: true })), ...closed.map((row) => ({ row, open: false }))]
+    .map((c) => ({ ...c, t: millis(c.row.ts) }))
+    .filter((c) => c.t !== null && c.t <= started);
+  if (!sent.length) return null;
+  const newest = Math.max(...sent.map((c) => c.t));
+  const at = sent.filter((c) => c.t === newest);
+  if (at.length !== 1) return null;
+  const [own] = at;
+  // two open in one run were sent in one message, so either could be this worker's (TRC-06)
+  if (own.open && open.some((r) => r !== own.row && key(r.corr) === key(own.row.corr))) return null;
+  if (!own.open && own.row.agent_id && own.row.agent_id !== id) return null;
+  return own;
+}
+
 /**
  * Does this transcript path sit under a `subagents/workflows/` directory? That is where the host keeps the transcript of an
  * agent a workflow script spawned. Any other value, and no value, is no.
@@ -149,19 +187,13 @@ export function closeForStop(payload, render, evidence) {
   const effort = effortOf(entries);
   // both keys or neither; gate 1 already refused every type with no rung file, so a role means a rung
   const ran = effort ? { effort, rung: rungOfAgent(payload && payload.agent_type) } : {};
-  // every agile run is phase 0 and several can be live, so "the newest run" scopes nothing: the role's one open
-  // dispatch across all of them is this worker's, and with two, taking either could cross them
   if (evidence && evidence.agile) {
-    const open = (render && Array.isArray(render.unpaired) ? render.unpaired : []).filter((r) => r && r.role === role);
-    // the newest bracket with this id, since a reused id's oldest one is a dead run's
-    const done = id ? [...(render && Array.isArray(render.brackets) ? render.brackets : [])].reverse()
-      .find((r) => r && r.agent_id === id) || null : null;
-    const lone = open.length === 1 ? open[0] : null;
-    if (stopped.state === STOP_STATE.NOT_TERMINAL || done || !lone
+    const own = agileDispatch(render, role, id, startedAt(entries));
+    if (stopped.state === STOP_STATE.NOT_TERMINAL || !own || !own.open
       || inWorkflowDir(payload && payload.agent_transcript_path)) {
-      return cacheFact(id, role, cache, stopped.ts, done || lone, ran);
+      return cacheFact(id, role, cache, stopped.ts, own ? own.row : null, ran);
     }
-    return [adopt(lone, role, id, stopped, cache, ran)];
+    return [adopt(own.row, role, id, stopped, cache, ran)];
   }
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
   // named once so gates 2a and 2b share one notion of now; a bracket can name it when no unpaired row of the role
