@@ -526,6 +526,8 @@ function size(dir, payloadFile) {
   }
   // an M sized at refinement was cut as one, and any other size is a change that says why
   const resized = (p.size === 'M' || p.size === 'L') && p.size !== from;
+  // an S that needs a plan is more than one change, and an M refinement sized may turn out smaller than it looked
+  if (resized && p.size === 'M' && Array.isArray(p.plan) && p.plan.length === 1) issues.push({ field: 'plan', problem: `an S that needs a plan is more than one change, so its plan has two or three tasks - one change is built as ${up.id} is, with no plan` });
   if (resized && !line(p.why)) issues.push({ field: 'why', problem: `say in one line why ${up.id} is ${p.size === 'L' ? 'bigger than an M' : 'more than one change'}` });
   if (!resized && p.why !== undefined) issues.push({ field: 'why', problem: `${up.id} is sized ${from} already - leave why out` });
   if (issues.length) return refuse(payloadRefused('size-refused', `sizing ${up.id} has`, issues));
@@ -543,6 +545,10 @@ function size(dir, payloadFile) {
   // a cut again replaces the story, and its commits would be left on none
   const made = base === null ? [] : commitsSince(dir, base);
   if (made.length) return stuck(`and ${made.length} commit${made.length === 1 ? ' is' : 's are'} past its Base, which a cut again would leave on no story`, 'finish it at its size with /cad-agile; nothing was written');
+  // nor what's half made, which a later story's fix round would take for its own
+  const tree = boundedRun('git', ['status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude).planning'], { cwd: dirname(resolve(dir)), timeout: CHILD_TIMEOUT_MS });
+  if (!tree.ok) throw new Error('git can\'t say what the tree holds');
+  if (tree.stdout.trim()) return stuck('and the tree holds changes outside .planning/, which a cut again would leave on no story', 'finish it at its size with /cad-agile, or undo those changes; nothing was written');
   atomicWrite(up.file, renderStoryResult(withSize(up.text, 'L'), [{ kind: 'Base', line: '' }, { kind: 'Commits', line: '' },
     { kind: 'Resized', line: `- Resized: ${from} to L - ${p.why.trim()}` }], 'backlog'));
   const now = whatsNext(dir);
