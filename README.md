@@ -45,7 +45,7 @@ A release starts from a design: the problem, the requirements, the architecture 
 
 ### Start it
 
-`/cadence:cad-agile --brief <design folder>` turns the design into `.planning/agile/`: the project, its requirements, the release and one file per epic. Everything that could stop the release later is asked first, before anything is written: the forge, the testing policy, the parts of the code risky enough for a blocking review, your git identity, any outside reviewer that can't run, and a branch if you're on a protected one. The release is committed unless `planning.commit_docs` is off.
+`/cadence:cad-agile --brief <design folder>` turns the design into `.planning/agile/`: the project, its requirements, the release and one file per epic. Everything that could stop the release later is settled first, before anything is written. You're asked about the forge, the testing policy, the parts of the code risky enough for a blocking review, any outside reviewer that can't run, and a branch if you're on a protected one, and the start stops if git has no name and email to commit with. The release is committed unless `planning.commit_docs` is off.
 
 ### Refine an epic
 
@@ -63,7 +63,7 @@ When an epic's last story is done, Cadence shows what it took, from the stories,
 
 ### Close the release
 
-When every epic is done, you pick the version, and a requirement still open is either deferred or the close stops. Cadence moves the release into `.planning/agile/releases/<version>/` and commits it. On a Claude Code plugin it also sets the version in `.claude-plugin/plugin.json` and turns the CHANGELOG's Unreleased section into the release's entry. It pushes nothing.
+When every epic is done, you pick the version, and a requirement still open is either deferred or the close stops. Cadence moves the release into `.planning/agile/releases/<version>/` and commits it. On a Claude Code plugin it also sets the version in `.claude-plugin/plugin.json` and turns the CHANGELOG's Unreleased section into the release's entry. With `git.auto_close` set in both config layers, the close then lands the release as below; otherwise it pushes nothing.
 
 ### Land it
 
