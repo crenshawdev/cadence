@@ -1,6 +1,7 @@
 # CAPTURE.md bullet grammar
 
-The stated grammar for `.planning/CAPTURE.md` - which sections the recall walk
+The stated grammar for `.planning/CAPTURE.md`, and for `.planning/agile/backlog.md`
+on an agile project, whose bullets carry no phase tag - which sections the recall walk
 visits, what counts as a bullet, and which leading parenthetical is a PHASE TAG
 rather than content. It answers one question at each level, so a bullet that is
 filed but never recalled is a stated out-of-grammar row rather than a silent

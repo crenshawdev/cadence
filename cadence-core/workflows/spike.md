@@ -1,6 +1,8 @@
 # cad-spike workflow
 
-Resolve one unknown with a throwaway experiment.
+Resolve one unknown with a throwaway experiment. On an agile project
+(`.planning/agile/` exists and `.planning/PROJECT.md` doesn't) every
+`.planning/spikes/` in this file is `.planning/agile/spikes/`.
 
 ## 1. Frame the question
 State the unknown as a single question and the decision that hinges on it
@@ -43,4 +45,6 @@ recommendation for the plan (what to do given the answer). No five-artifact
 ceremony. Discard the throwaway code or note where it is. If
 `planning.commit_docs` is true (`config.mjs get planning.commit_docs`), apply the
 protected-branch guard (references/git-guard.md rail 1), then commit SPIKE.md
-(`docs: spike <slug>`); else say in one line it stays uncommitted.
+(`docs: spike <slug>`, on an agile project by path:
+`git commit -m "docs: spike <slug>" -- .planning/agile/spikes/<slug>/SPIKE.md`);
+else say in one line it stays uncommitted.

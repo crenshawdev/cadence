@@ -7,7 +7,9 @@ after every step.
 ## State file: `.planning/debug/<slug>.md`
 
 The source of truth; a resume reads only this. `<slug>` is a short kebab of the
-symptom. Schema:
+symptom. On an agile project (`.planning/agile/` exists and
+`.planning/PROJECT.md` doesn't) every `.planning/debug/` in this file is
+`.planning/agile/debug/`. Schema:
 
 ```markdown
 # debug: <one-line symptom>
@@ -102,9 +104,18 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    (no fix applied).
 3. Else propose the minimal fix and apply it ONLY with user approval (ask-user
    seam). Rewrite the state file every time a fix is applied, then `git add`
-   exactly the files the fix touched, and only THEN ask the seam. Whether the
-   fix touched a risk surface is the SEAM's answer over the index, never a
-   reading of the diff, and `--staged` is that scope's one machine spelling:
+   exactly the files the fix touched, and only THEN ask the seam. On an agile
+   project each fix opens its own run first, or another session's fix could
+   spend its one re-arm:
+
+   ```
+   A="$(git rev-parse --short HEAD)-$$-$(date +%s)"
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event phase_start --sha "$A"
+   ```
+
+   Whether the fix touched a risk surface is the SEAM's answer over the index,
+   never a reading of the diff, and `--staged` is that scope's one machine
+   spelling:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase 0 --base HEAD --staged
@@ -116,7 +127,8 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    or an `inconclusive: true` fires the `risk_surface` review trigger
    (references/review-triggers.md) before the fix is trusted, and the artifact
    is the staged-diff scope - shape (b): the reviewer runs `git diff --cached`
-   in the cwd it inherits, never the diff text. That gate is `blocking`; RE-READ
+   in the cwd it inherits, never the diff text. On an agile project this session's
+   slug is the fire's `<slug>`. That gate is `blocking`; RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
    fixing a FAIL, since this workflow does not preload it. On the workflow
    path (`references/review-workflow.md`) the fire is the launch ending the

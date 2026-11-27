@@ -54,7 +54,7 @@ Branch names governed by `git.on_protected` for direct commits. Verification pub
 
 **Format:** letters, digits, `.`, `_`, `-` and `/`, starting with a letter or digit. No `..`, no trailing `/` or `.`, no `.lock` ending and no path part starting with a dot. `null` leaves it unset.
 
-The whole name of the integration branch, such as `seldon/hardin`. `null` keeps `cadence/<version>`. A version that is already tagged still asks instead of creating a branch under either name. It stops applying after the land, so the next cycle cannot reuse the name. The one exception is a squash merge you land by hand: `git branch --merged` can't see a squash, so the key stays set until you clear it with `/cad-config git.integration_branch_name=null`. User-global config cannot set it, because that value would name every repository's branch.
+The whole name of the integration branch, such as `seldon/hardin`. `null` keeps `cadence/<version>`, or `cadence/` and the release's name on an agile project (`cadence/toolshed`). A version that is already tagged still asks instead of creating a branch under either name. It stops applying after the land, so the next cycle cannot reuse the name. The one exception is a squash merge you land by hand: `git branch --merged` can't see a squash, so the key stays set until you clear it with `/cad-config git.integration_branch_name=null`. User-global config cannot set it, because that value would name every repository's branch.
 
 ### `git.base_branch`
 
@@ -108,7 +108,7 @@ The confirmed Forgejo web/API hostname, optionally with a port. It is asked sepa
 
 **Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
 
-Turn the git-guard hook off, the first step to retiring it. It counts only when both the repository and user-global configuration set it to `true`; with either one unset the hook works as before. New projects get the repository half from the config template, so setting the user-global half turns the hook off there. Existing projects keep the hook until both halves are set.
+Turn off the git-guard hook's push and commit rails. The hook still asks before a pull or merge request is opened or merged with `gh`, `glab` or `tea`, and before a merge into a protected branch. It counts only when both the repository and user-global configuration set it to `true`; with either one unset the hook works as before. New projects get the repository half from the config template, so setting the user-global half turns those two rails off there. Existing projects keep them until both halves are set.
 
 ### `git.auto_close`
 

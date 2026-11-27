@@ -24,6 +24,10 @@ Close a finished milestone and set up the next.
 </execution_context>
 
 <process>
+On an agile project (`.planning/agile/` exists and `.planning/PROJECT.md`
+doesn't), stop before anything else, with this line and nothing after it: "This
+project is on the agile path. /cad-agile shows what comes next."
+
 Run the milestone workflow end-to-end.
 
 Before any question to the user, send one `PushNotification` naming the

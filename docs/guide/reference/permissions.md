@@ -70,7 +70,7 @@ No Cadence command lists `Bash` in `allowed-tools`, so every shell command a wor
 
 To stop the prompts, add rules for the commands you trust with `/permissions`. The unattended `/cadence:cad-milestone` into `/cadence:cad-land` chain stops at the first command your settings don't approve, so set those rules before you turn on `git.auto_close`.
 
-Pushes are still guarded by git-guard, a hook that only asks or refuses and never approves, and the pushes it never sees are the unattended close above and the verification publish, which a repository authorizes for itself in `.git/config`.
+git-guard, a hook that only asks or refuses and never approves, asks before a push that can reach a protected branch (`git.protected_branches`) or that it can't rule clear of one, such as a refspec with a quote or a glob in it, a push after a `git switch` in the same command, or one whose destination your git config picks. A push of your own branch or a tag goes through. It also asks before a pull or merge request is opened or merged with `gh`, `glab` or `tea`, and before a merge into a protected branch, even with `git.guard_bypass` set. What it never sees is the unattended close above, whose push, open and merge run through `git-publish.mjs`, and the verification publish, which a repository authorizes for itself in `.git/config`.
 
 ## Privacy
 

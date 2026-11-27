@@ -19,6 +19,7 @@ import { isModelId } from './lib/model-id.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { cursorPhase, declaredPhaseFiles, declaredPlanFiles } from './lib/phase-plans.mjs';
+import { onAgilePath } from './lib/project-homes.mjs';
 import { scanDeclared } from './lib/risk-diff.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { manifestPath, schemaPath } from './lib/test-seam.mjs';
@@ -457,6 +458,12 @@ function tracePhaseFor(opts, planningRoot) {
   return tracePhase;
 }
 
+// The record's phase alone: an agile project has no cursor and runs on phase 0. The floor keeps `tracePhaseFor`'s.
+function recordPhaseFor(tracePhase, planningRoot) {
+  if (tracePhase !== null) return tracePhase;
+  try { return onAgilePath(planningRoot) ? 0 : null; } catch { return null; }
+}
+
 // The dispatch half of the worker's lifecycle bracket, written before any resolution because the caller dispatches on
 // every arm, degraded ones included.
 // Gated on ok:true it would leave those unpaired. The close half stays with the caller, which alone sees the return
@@ -837,10 +844,11 @@ function resolve(opts) {
   // still says which config is read. A scratch config copy would otherwise move the floor's tree with it.
   const planningRoot = opts.planningRoot || dirname(opts.file);
   const tracePhase = tracePhaseFor(opts, planningRoot);
+  const recordPhase = recordPhaseFor(tracePhase, planningRoot);
 
   // `--no-record` skips both appends whatever `--phase` or `--bracket-read` say: a preview resolves twice and writes nothing.
   const record = !opts.noRecord;
-  recordDispatchBracket(opts, planningRoot, tracePhase, record);
+  recordDispatchBracket(opts, planningRoot, recordPhase, record);
 
   // Read before the role check so a mistyped role still reports a retired key that is redirecting every other dispatch.
   const cfg = readConfig(opts.file);
@@ -888,7 +896,7 @@ function resolve(opts) {
   const pinned = false;
 
   const picked = { agent, model, modelSource, effort, review, reviewers, reviewerTiers, reviewerEfforts, surfaces, surfacesAnswered, verify, escalated, pinned };
-  recordResolve(opts, planningRoot, tracePhase, record, picked, warnings);
+  recordResolve(opts, planningRoot, recordPhase, record, picked, warnings);
   emitEnvelope(opts, cfg, picked, reason, warnings);
 }
 

@@ -9,7 +9,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import {
   ARGV, DISPATCH_WINDOW_DEFAULTS, RECORD_TOKEN, argRefusal, fail, intFlag, listPlanFiles, ok,
-  phaseGuard, read, readReadsRecords, routeLadder,
+  phaseGuard, read, readReadsRecords, realChain, routeLadder,
 } from './core.mjs';
 import { deriveCounts, recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS, evaluateFlag } from '../lib/arg-contract.mjs';
@@ -17,6 +17,7 @@ import { mergeLayers } from '../lib/config-merge.mjs';
 import { unfixedFromEntries } from '../lib/filing-decision.mjs';
 import { planTaskTitles } from '../lib/planning-files.mjs';
 import { ensureRecordsDir, ensureRecordsIgnore, makeDir, phaseRecordsDir, recordsPath } from '../lib/planning-store.mjs';
+import { onAgilePath, tasksHome } from '../lib/project-homes.mjs';
 import { planFileFor } from '../lib/phase-plans.mjs';
 import {
   READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
@@ -26,7 +27,7 @@ import { requirePhaseArg } from '../lib/require-int.mjs';
 import { RUNG_ORDER } from '../lib/rung-agent.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
-import { FAMILIES, ROTATED_TRACE_FILE, TRACE_FILE, appendEvent, correlationId, renderTrace } from '../lib/trace.mjs';
+import { FAMILIES, ROTATED_TRACE_FILE, TRACE_FILE, appendEvent, correlationId, ownCorr, renderTrace } from '../lib/trace.mjs';
 import { windowBudget } from '../lib/window-budget.mjs';
 
 // prose writes the lifecycle and outcome events through this seam; scripts with code call lib/trace.mjs directly
@@ -556,9 +557,13 @@ function cmdTrace(dir, sub, opts) {
     // it carries that window's anchor SHA, never a whole correlation id, so a receipt only names its own phase's window
     // no key when the flag is absent, so existing calls derive as before
     const anchor = trimmed('--anchor');
-    const corr = anchor === undefined
-      ? undefined
-      : correlationId(dir, parsedPhase.raw, anchor);
+    // every agile run is phase 0, so the newest one is often another piece of work's; a close joins its own dispatch
+    const own = anchor === undefined && sub === 'close' && flags['--plan'] !== undefined && onAgilePath(dir)
+      ? ownCorr(dir, parsedPhase.raw, flags['--plan'], trimmed('--role'), agentId)
+      : null;
+    const corr = anchor !== undefined
+      ? correlationId(dir, parsedPhase.raw, anchor)
+      : own ?? undefined;
 
     // the human answer this receipt descends from: one authorization over two ranges is two receipts, now linked
     // minted by the coordinator, not hashed from the reason text: grouping by exact --detail missed distinct wordings
@@ -587,7 +592,7 @@ function cmdTrace(dir, sub, opts) {
       phase: parsedPhase.raw,
       family,
       event,
-      // present only when --anchor named an earlier window; absent, renderEvent derives as always
+      // present only when --anchor named a window or an agile close found its dispatch; absent, renderEvent derives as always
       ...(corr === undefined ? {} : { corr }),
       // no guard here: the loop above already applied each disposition, so absent and fallback both arrive undefined
       ...(flags['--plan'] === undefined ? {} : { plan: flags['--plan'] }),
@@ -775,7 +780,7 @@ const RANGE_DISCRIMINATOR = /^([0-9a-f]{7,40})-([0-9a-f]{7,40})$/;
  * Finding none, it falls back to the legacy names (D-13): `plan-<k>` with its round for a per-plan fire, a head-sha
  * tail for every other. A `plan-<k>` record storing its ids is only this receipt's when both ends agree with them.
  * Two candidates answer '', not a guess: a check that might read another fire's rulings refuses a correct receipt.
- * Homes by phase: `phases/<N>/records/`, or every `.planning/tasks/<slug>/` for a task's 0, since a receipt carries no slug.
+ * Homes by phase: `phases/<N>/records/`, or every folder under `tasksHome` for a task's 0, since a receipt carries no slug.
  * `deferred/<N>/` is deliberately left out (see fireHome); `trigger` goes through RECORD_TOKEN before `join`.
  * @param {string} dir @param {string|number} phaseRaw
  * @param {string|undefined} trigger @param {any} plan @param {any} sha
@@ -789,12 +794,10 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round, base) {
   if (String(phaseRaw) !== '0') {
     homes = [phaseRecordsDir(join(dir, 'phases', String(phaseRaw)))];
   } else {
-    // lstat tasks/ first, as fireHome does: readdirSync follows a symlink and would walk outside the planning tree
+    // judged first, as fireHome does: readdirSync follows a symlink and would walk outside the planning tree
     // each entry's isDirectory reads as lstat does, so a symlink to a directory is false
-    const troot = join(dir, 'tasks');
-    let root = null;
-    try { root = lstatSync(troot); } catch { /* no tasks/ is no candidate */ }
-    if (root && root.isDirectory()) {
+    const { path: troot, rel } = tasksHome(dir);
+    if (realChain(dir, rel)) {
       try {
         homes = readdirSync(troot, { withFileTypes: true })
           .filter((d) => d.isDirectory()).map((d) => join(troot, d.name));

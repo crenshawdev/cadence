@@ -22,6 +22,10 @@ Edit the phase list in ROADMAP.md: add, insert, remove or edit a phase.
 </execution_context>
 
 <process>
+On an agile project (`.planning/agile/` exists and `.planning/PROJECT.md`
+doesn't), stop before anything else, with this line and nothing after it: "This
+project is on the agile path. /cad-agile shows what comes next."
+
 Route on `$ARGUMENTS` (add | insert N | remove N | edit N) and run the phase
 workflow. For insert/remove, do the full renumber-and-repair pass - never edit
 ROADMAP alone, and never hand-shift a requirement row the seam left as written.

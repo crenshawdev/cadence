@@ -82,33 +82,11 @@ function manifestDeps(name, text) {
 }
 
 /**
+ * What the tree under `root` evidences, or the errno its listing failed with.
  * @param {string} root
- * @param {string | true | undefined} answeredArg the `--answered` value: the
- *   set a config layer already holds, comma-separated, or absent when nobody
- *   has answered
+ * @returns {{error: string} | {scan: ReturnType<typeof scanTree>, manifests: string[], warnings: string[]}}
  */
-function cmdDetectSurfaces(root, answeredArg) {
-  // the already-answered set is read the way `risk-check run` reads --surfaces, by parseSurfaceList, then refused
-  // it arrives as a flag, never from config, so /cad-config's re-entrant arm hands over the value it resolved
-  // a token outside the eight is refused, not dropped: a mistyped set would get a list built from an answer nobody gave
-  /** @type {string[]} */
-  let answered = [];
-  if (answeredArg !== undefined) {
-    const { tokens, unknown } = parseSurfaceList(answeredArg);
-    if (!tokens.length) {
-      return fail('bad-args', 'detect-surfaces --answered needs a comma-separated list after it: --answered <a,b,c>',
-        'list the surfaces already answered as one comma-separated value, or leave --answered off'
-        + ' entirely when none have been');
-    }
-    if (unknown.length) {
-      return fail('bad-args',
-        `detect-surfaces --answered names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`,
-        'correct the token(s) the detail names against the list beside them, then re-run - dropping'
-        + ' one instead would offer a narrower option list built from an answer nobody gave');
-    }
-    answered = tokens;
-  }
-
+export function scanSurfaces(root) {
   /** @type {string[]} */
   const warnings = [];
   /** @type {string[]} */
@@ -167,14 +145,46 @@ function cmdDetectSurfaces(root, answeredArg) {
   };
 
   const roots = level(root, '');
-  if (roots === null) {
-    return fail('no-root', `${root} cannot be listed (${rootError})`,
+  if (roots === null) return { error: rootError };
+  for (const sub of roots) level(join(root, sub), sub);
+  return { scan: scanTree({ dirs, files, extensions: [...extensions], dependencies }), manifests, warnings };
+}
+
+/**
+ * @param {string} root
+ * @param {string | true | undefined} answeredArg the `--answered` value: the
+ *   set a config layer already holds, comma-separated, or absent when nobody
+ *   has answered
+ */
+function cmdDetectSurfaces(root, answeredArg) {
+  // the already-answered set is read the way `risk-check run` reads --surfaces, by parseSurfaceList, then refused
+  // it arrives as a flag, never from config, so /cad-config's re-entrant arm hands over the value it resolved
+  // a token outside the eight is refused, not dropped: a mistyped set would get a list built from an answer nobody gave
+  /** @type {string[]} */
+  let answered = [];
+  if (answeredArg !== undefined) {
+    const { tokens, unknown } = parseSurfaceList(answeredArg);
+    if (!tokens.length) {
+      return fail('bad-args', 'detect-surfaces --answered needs a comma-separated list after it: --answered <a,b,c>',
+        'list the surfaces already answered as one comma-separated value, or leave --answered off'
+        + ' entirely when none have been');
+    }
+    if (unknown.length) {
+      return fail('bad-args',
+        `detect-surfaces --answered names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`,
+        'correct the token(s) the detail names against the list beside them, then re-run - dropping'
+        + ' one instead would offer a narrower option list built from an answer nobody gave');
+    }
+    answered = tokens;
+  }
+
+  const scanned = scanSurfaces(root);
+  if ('error' in scanned) {
+    return fail('no-root', `${root} cannot be listed (${scanned.error})`,
       'point --root at a directory this process can list - the surface scan walks the tree down'
       + ' from there');
   }
-  for (const sub of roots) level(join(root, sub), sub);
-
-  const scan = scanTree({ dirs, files, extensions: [...extensions], dependencies });
+  const { scan, manifests, warnings } = scanned;
   ok({
     root,
     // every field is always present, even empty, so "the structure evidences nothing" differs from "did not look"

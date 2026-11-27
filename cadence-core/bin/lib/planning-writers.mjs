@@ -30,6 +30,11 @@ export const FS_WRITE_EXCEPTIONS = Object.freeze([
     reason: 'the copy never touches the project tree, and the real config is written through the module',
   }),
   Object.freeze({
+    path: 'cadence-core/bin/lib/git-signing.mjs',
+    writes: 'a scratch folder for one test signature, made and removed under the operating system temp directory',
+    reason: 'git writes the test commit there so the project gains nothing, and the folder is gone when the call answers',
+  }),
+  Object.freeze({
     path: 'cadence-core/bin/lib/codemap-launch.mjs',
     writes: 'removes a stale refresh entry or diff from the code-map scratch directory (the writes there go through the module)',
     reason: 'the scratch directory is the run\'s own output directory outside .planning, and the remove is a force-remove that the module\'s unlinkFile, which throws on a missing file, does not do',

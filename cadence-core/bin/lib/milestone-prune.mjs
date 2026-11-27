@@ -111,7 +111,8 @@ export function archiveRequirements(text, completed, label, rows = parseRequirem
     let body = lines.slice(activeAt + 1, activeEnd);
     for (const { id } of shipped) {
       // the tracker suffix is `(#<digits>)` and nothing else, so prose bullets still can't match
-      const bulletRe = new RegExp(`^- \\*\\*${escapeRe(id)}\\*\\*(?: \\((#\\d+)\\))?:\\s*(.*)$`);
+      // the checkbox is ACTIVE_BULLET's: the template writes it, and a bullet left behind keeps its id shipping with no wording
+      const bulletRe = new RegExp(`^- (?:\\[[ xX]\\] )?\\*\\*${escapeRe(id)}\\*\\*(?: \\((#\\d+)\\))?:\\s*(.*)$`);
       const kept = [];
       for (let i = 0; i < body.length; i++) {
         const m = body[i].match(bulletRe);

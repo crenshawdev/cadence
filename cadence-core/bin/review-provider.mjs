@@ -35,6 +35,7 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { measure } from './lib/surface-weight.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
+import { onAgilePath } from './lib/project-homes.mjs';
 import { redactUrl, redactCredentials, redactOutbound, redactAndCap, REDACTION_MARK } from './lib/redact-url.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { isModelId } from './lib/model-id.mjs';
@@ -325,8 +326,8 @@ function traceProvider(meta, outcome, detail) {
   traceRecorded = true;
   try {
     const root = '.planning';
-    const phase = cursorPhase(root);
-    // no cursor means no phase, an event keyed to none joins nothing and its id would be empty, so record nothing
+    // an agile project has no cursor and runs on phase 0; anywhere else no cursor means no phase, so record nothing
+    const phase = cursorPhase(root) ?? (onAgilePath(root) ? 0 : null);
     if (phase === null) return;
     const { warnings } = reviewConfig();
     appendEvent(root, {

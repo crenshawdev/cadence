@@ -15,6 +15,13 @@ Every reviewer returns the same shape:
 
 ## fire(trigger)
 
+**On an agile project** (`.planning/agile/` exists and `.planning/PROJECT.md`
+doesn't) there are no phases and `<N>` is 0. The fire's files go in
+`.planning/agile/tasks/<slug>/`, made for them, wherever a step says
+`.planning/phases/<N>/records/`; `review-file` and `adjudication` pass
+`--task <slug>`, and `records-dir` isn't run. A `plan` fire's re-arm is counted
+and recorded with `<slug>` as its `<k>`, and its other receipts pass no `--plan`.
+
 ### 1. Gate
 Resolve the bundle ONCE through the routing seam:
 
@@ -163,7 +170,8 @@ presents it as the same numbered multi-select.
 reports its findings as raised: its reviewer writes them and nothing rules them.
 If `gate == "adjudicated"`, adjudicate regardless of `review.mode` (the gate is
 the stronger signal), and a `blocking` `risk_surface` fire on the workflow path
-runs every reviewer with a checker per voice whatever `review.mode` says.
+runs every reviewer with a checker per voice whatever `review.mode` says, and
+with none on an agile project (`references/review-workflow.md` step 1).
 You own the merge, the triage and the record, and the verdict on any finding a
 checker left.
 

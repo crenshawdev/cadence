@@ -1,5 +1,6 @@
 // @ts-check
 // the pure core of git-publish: decides from config and git facts the seam supplies whether a mutating action may run
+// decideRequest returns the forge CLI's whole argv, since gh, glab and tea take no -C
 // and returns the argv minus the -C <dir> prefix. Total functions, no git, no I/O, nothing throws
 // decideReap lives here for the same SAFE_BRANCH rule, and a security regex copied across two modules is how they drift
 
@@ -142,6 +143,64 @@ function branchPush({ currentBranch, protectedBranches, remote, configuredRemote
     remote: rem,
     reason: okReason,
   };
+}
+
+// each forge's own CLI, which opens and merges its requests; the seam never names another program
+/** @type {Readonly<Record<string, string>>} */
+const FORGE_CLI = Object.freeze({ github: 'gh', gitlab: 'glab', forgejo: 'tea' });
+const HEAD_SHA = /^[0-9a-f]{7,40}$/;
+const PR_INDEX = /^[1-9][0-9]*$/;
+
+/**
+ * Decide whether the seam may open or merge the current branch's request, and build the forge CLI's argv.
+ * Total, like decidePublish, and gate 1 is the same both-layer opt-in, since this is the unattended land's own call.
+ * Gates run first-failing-wins, and every refuse has `program:null, argv:[]`:
+ *   1. 'auto-close-off', the one gate with a `detail`
+ *   2-5. 'bad-forge', 'no-branch', 'bad-branch', 'protected-branch'
+ *   6. open: 'bad-base'. merge: 'bad-sha' (GitHub's alone takes one), 'bad-index' (Forgejo's alone needs one)
+ *   7. else run.
+ *
+ * The argv is the one cad-land ran in Bash before, so moving it here changed where it runs and nothing it does.
+ * A flag a forge doesn't take refuses rather than being dropped, so a merge never quietly loses its head check.
+ *
+ * @param {{ op?: unknown, forge?: unknown, autoClose?: unknown, currentBranch?: unknown,
+ *   protectedBranches?: unknown, base?: unknown, sha?: unknown, index?: unknown }} args
+ * @returns {{ action:'run'|'refuse', program:string|null, argv:string[], branch:string|null, reason:string, detail?:string }}
+ */
+export function decideRequest({ op, forge, autoClose, currentBranch, protectedBranches, base, sha, index } = {}) {
+  const branch = typeof currentBranch === 'string' ? currentBranch : null;
+  /** @param {string} reason @param {string} [detail] */
+  const refuse = (reason, detail) => ({ action: /** @type {const} */ ('refuse'), program: null, argv: [], branch, reason,
+    ...(detail ? { detail } : {}) });
+
+  const missing = authorizationDetail(/** @type {any} */ (autoClose));
+  if (missing !== null) return refuse('auto-close-off', missing);
+  const program = typeof forge === 'string' && Object.hasOwn(FORGE_CLI, forge) ? FORGE_CLI[forge] : null;
+  if (!program) return refuse('bad-forge');
+  if (!branch || branch === 'HEAD') return refuse('no-branch');
+  if (!SAFE_BRANCH.test(branch)) return refuse('bad-branch');
+  if ((Array.isArray(protectedBranches) ? protectedBranches : []).includes(branch)) return refuse('protected-branch');
+
+  /** @param {string[]} argv */
+  const run = (argv) => ({ action: /** @type {const} */ ('run'), program, argv, branch,
+    reason: `sanctioned unattended request ${op}` });
+
+  if (op === 'open') {
+    if (typeof base !== 'string' || !SAFE_BRANCH.test(base)) return refuse('bad-base');
+    if (program === 'glab') return run(['mr', 'create', '--source-branch', branch, '--target-branch', base, '--fill']);
+    return run(program === 'gh'
+      ? ['pr', 'create', '--base', base, '--head', branch, '--fill']
+      : ['pr', 'create', '--base', base, '--head', branch]);
+  }
+  if (op !== 'merge') return refuse('bad-op');
+  if (sha != null && (program !== 'gh' || typeof sha !== 'string' || !HEAD_SHA.test(sha))) return refuse('bad-sha');
+  if (program === 'tea' ? !(typeof index === 'string' && PR_INDEX.test(index)) : index != null) return refuse('bad-index');
+  if (program === 'gh') {
+    return run(['pr', 'merge', branch, '--merge', '--delete-branch',
+      ...(typeof sha === 'string' ? ['--match-head-commit', sha] : [])]);
+  }
+  if (program === 'glab') return run(['mr', 'merge', branch, '--yes', '--remove-source-branch', '--auto-merge=false']);
+  return run(['pr', 'merge', '--style', 'merge', /** @type {string} */ (index)]);
 }
 
 /**

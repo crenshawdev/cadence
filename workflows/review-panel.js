@@ -1,10 +1,11 @@
 export const meta = {
   name: 'review-panel',
-  description: 'Run the review panel for one fire: one reviewer agent per local voice, then one checker per raising voice over that voice\'s findings, and return per voice whether it ran and counts of what it raised and how its checker ruled. The findings and rulings stay in the run\'s journal. Started by the review fire with args, never by hand.',
+  description: 'Run the review panel for one fire: one reviewer agent per local voice, then one checker per raising voice over that voice\'s findings unless checkers is false, and return per voice whether it ran and counts of what it raised and how its checker ruled. The findings and rulings stay in the run\'s journal. Started by the review fire with args, never by hand.',
 };
 
 // args: { trigger, instruction, artifact, checker_artifact, reviewers: ['claude-subagent', <provider>...], agent_type, model: string|null,
-//         wrapper_agent_type, providers: { <name>: { line, envelope, timeout_ms, model } }, plans: [{ plan, path, input? }], cross_agent_type }
+//         wrapper_agent_type, providers: { <name>: { line, envelope, timeout_ms, model } }, plans: [{ plan, path, input? }], cross_agent_type, checkers? }
+//   checkers false runs no checker, so every finding comes back unruled and the main session proves each one itself. Absent, every voice has one.
 //   plans and cross_agent_type are a plan fire's over more than one plan: plan is the plan's number and path its file as artifact writes it.
 //   input, when an entry has it, is the absolute path of that plan's composed review input: its reviewer is checked against that alone
 //   and its checkers open path and input in place of checker_artifact. An entry without it reads as if the field never existed.
@@ -31,7 +32,8 @@ const text = (v) => typeof v === 'string' && v.trim() !== '';
 const usable = a && typeof a === 'object'
   && text(a.trigger) && text(a.instruction) && text(a.artifact) && text(a.checker_artifact) && text(a.agent_type)
   && Array.isArray(a.reviewers) && a.reviewers.length > 0 && a.reviewers.every(text)
-  && (a.model === null || a.model === undefined || text(a.model));
+  && (a.model === null || a.model === undefined || text(a.model))
+  && (a.checkers === undefined || typeof a.checkers === 'boolean');
 // a plan path the artifact doesn't hold can't be cut from the other reviewers' prompts, so it's refused rather than leaked
 const plansOk = usable && (a.plans === undefined || (Array.isArray(a.plans)
   && a.plans.every((p) => p && typeof p === 'object' && Number.isSafeInteger(p.plan) && p.plan > 0 && text(p.path) && a.artifact.includes(p.path)
@@ -223,7 +225,7 @@ const check = async (entry) => {
   const reads = readsOf.get(entry.voice) ?? a.checker_artifact;
   const { found, ...kept } = entry;
   const list = entry.ran && Array.isArray(found) ? found : [];
-  const got = list.length
+  const got = list.length && a.checkers !== false
     ? await ask(checkPrompt(list, reads), { ...base, schema: BATCH_SCHEMA, label: `checker ${entry.voice}`, disallowedTools: ['Bash'] }, `checker ${entry.voice}`)
     : null;
   const rulings = got && Array.isArray(got.rulings) ? got.rulings : [];

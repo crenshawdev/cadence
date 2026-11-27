@@ -7,6 +7,125 @@ Releases 1.0.0 through 2.7.0 are in [docs/history/CHANGELOG-v1-v2.md](./docs/his
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-11-27
+
+### Added
+
+- **`/cadence:cad-agile`, the new path's one command.** Each run reads
+  `.planning/agile/` and does the release's next step: start it, refine an epic
+  into stories, build the next story, ask you to accept a finished epic, or close
+  the release. Tests: `tests/agile-next.test.mjs`, `tests/agile-runs.test.mjs`.
+- **A release starts from a design, with its setup asked first.** `--brief
+  <folder>` takes a Seldon design; without one, six questions are asked and
+  written as a design in Seldon's format once you say yes. Before anything is
+  written, the start asks about the forge, the testing policy, the risk surfaces,
+  any outside reviewer that can't run, and a branch if you're on a protected one.
+  A start with no git name and email, or with signing on and a key that can't
+  sign, is refused with nothing written. Tests: `tests/agile-start.test.mjs`,
+  `tests/agile-design.test.mjs`, `tests/agile-setup.test.mjs`.
+- **Refine, build and accept.** Refinement cuts an epic into small stories whose
+  acceptance lines are checks Cadence runs, and asks only about choices costly to
+  undo. A build sizes the story, commits each task, records a command for each
+  check, has the change reviewed, and marks the story done only when every check
+  passes, with one fix round. How findings are handled is asked once per epic.
+  Acceptance shows the epic's evidence, read from git, the review records and the
+  run record with no model, beside a drafted retrospective, and "Not yet" cuts
+  the epic again for what's missing. Tests: `tests/agile-refine.test.mjs`,
+  `tests/agile-build.test.mjs`, `tests/agile-checks.test.mjs`,
+  `tests/agile-accept.test.mjs`, `tests/agile-evidence.test.mjs`.
+- **Every reviewer reviews a story.** A story whose risk check matches nothing is
+  reviewed by every reviewer `review.reviewers` names, a cross-model one through
+  its provider, instead of one Claude reviewer. A match still goes to the
+  risk-surface review. Tests: `tests/agile-build.test.mjs`.
+- **Close and land.** The close asks the version, defers or stops on a
+  requirement still open, and moves the release into
+  `.planning/agile/releases/<version>/`. On a plugin project it also sets
+  `.claude-plugin/plugin.json`'s version and turns the CHANGELOG's Unreleased
+  section into the release's entry. The next release starts beside it, its IDs
+  numbered past it. `/cad-land` on a new-path project checks each story's review
+  rulings and tags the closed version, and with `git.auto_close` on in both config
+  layers the close goes on to land. Tests: `tests/agile-close.test.mjs`,
+  `tests/agile-land.test.mjs`.
+- **`/cad-task`, `/cad-debug`, `/cad-capture`, `/cad-spike`,
+  `/cad-decision-review` and `/cad-minimalism-review` run on a new-path
+  project**, keeping their records under `.planning/agile/`, captures in its
+  `backlog.md`. Tests: `tests/agile-tasks.test.mjs`, `tests/agile-calls.test.mjs`.
+
+### Changed
+
+- **git-guard asks before a pull or merge request is opened or merged.** A
+  `gh pr create` or `merge`, `glab mr create` or `merge`, or `tea pr create` or
+  `merge` run through Bash in a Cadence project asks first. So does a
+  `git merge` onto a protected branch, which follows `git.on_protected` the way
+  a commit there does; `git merge --abort` and `--quit` go through. Both ask
+  with `git.guard_bypass` on too, which now turns off only the push and commit
+  rails. Tests: `tests/git-guard.test.mjs`.
+- **git-guard asks on a push only when it can reach a protected branch.**
+  Pushing your own branch or a tag goes through. A push naming a protected
+  branch, `--all`, `--branches` or `--mirror`, or one with no refspec while a
+  protected branch is checked out, still asks. So does a push the hook can't
+  rule clear: a quote, `$` or glob in its words, a global option other than a
+  plain `-C`, a command before it in the same call other than git `add`,
+  `commit`, `status`, `diff`, `log`, `show`, `tag`, `fetch` or `pull`, or git
+  config that picks where it lands. A commit on a protected branch still asks.
+  Tests: `tests/git-guard.test.mjs`.
+- **`/cad-land`'s unattended close opens and merges through `git-publish.mjs`.**
+  With `git.auto_close` on in both config layers, the request is opened and
+  merged by `git-publish.mjs open` and `merge`, which the hook doesn't see, so
+  the new ask doesn't stop the chain. Both refuse unless `git.auto_close` is on
+  in both layers and the head branch isn't protected. Picking "Open a pull or
+  merge request" in `/cad-land` yourself still asks once. Tests:
+  `tests/git-publish.test.mjs`.
+- **Old-path projects keep working, and a new-path project is closed to the old
+  commands.** A start marks the project as on the new path. Every old-path
+  `planning.mjs` call then refuses it naming `/cad-agile`, and `/cad-new-project`
+  and `/cad-adopt` stop before they write anything. A project that never runs
+  `/cad-agile` is never marked. Tests: `tests/agile-stops.test.mjs`,
+  `tests/agile-calls.test.mjs`.
+- **A landed old-path project can move to the new path.** `/cad-agile --brief
+  <folder>` on it lists what moves and asks first. The old files go to
+  `.planning/_archive-old-path/` as they are, its open work is copied into the
+  new release, and the old commands stop working there. Commits made on the old
+  path still join their phase and task through the archive. Tests:
+  `tests/agile-switch.test.mjs`.
+- **A fix can be marked on a finding of any severity.** The review workflow no
+  longer limits it to a blocker or high. Tests: `tests/issue-filing.test.mjs`.
+- **The milestone's CHANGELOG step cuts a claim with no source.** Each claim it
+  writes cites a file, a test or a measured run. Source:
+  `cadence-core/workflows/milestone.md`.
+- **The README walks the new path**, design to land, with testing in one
+  paragraph that links the guide and a Foundation section listing the
+  marketplace's plugins. Source: `README.md`.
+
+None of these has a switch; they apply when you upgrade.
+
+### Fixed
+
+- **A commit or merge after `git switch` in the same command asks.** git-guard
+  judged a commit or a merge by the branch checked out before the command ran,
+  so `git switch main && git commit` went through. Now a commit or merge asks
+  after an earlier git, `gh`, `glab` or `tea` command other than git `add`,
+  `rm`, `mv`, `restore`, `status`, `diff`, `log`, `show`, `tag`, `fetch` or
+  `pull`, or after a `cd` it can't follow. A `cd` to an absolute path that
+  surely ran and is joined to what follows by `&&` is followed, and other
+  commands, such as `set` or `npm test`, pass. Tests:
+  `tests/git-guard.test.mjs`.
+- **A refused commit is no longer hidden by an ask in the same command.** A
+  deny from any git-guard rail now beats an ask from another, so a push or a
+  request in the same command can't turn a refused protected-branch commit into
+  a prompt. Tests: `tests/git-guard.test.mjs`.
+- **A plan over the byte ceiling no longer runs the planner again.** The planner
+  is told the ceiling beside the task ceiling, and a plan over it is reported
+  with its figure while the run goes on. Source: `cadence-core/workflows/plan.md`.
+- **An executor whose suite is red only where its base is red finishes the
+  plan.** It proves that by running only those tests on a checkout of the base,
+  writes the plan complete with each test as an open item carrying that proof,
+  and doesn't run the full suite a second time. Source:
+  `skills/cad-executor-contract/SKILL.md`.
+- **The milestone close keeps a checkbox requirement's wording.** A `- [ ]
+  **ID**:` bullet moves into Shipped with its text, as one without a checkbox
+  does. Tests: `tests/milestone-prune.test.mjs`.
+
 ## [4.4.4] - 2026-11-24
 
 Cadence hands the model less text before it starts work. This release changes
@@ -3758,6 +3877,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[4.5.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.5.0
 [4.4.4]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.4
 [4.4.3]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.3
 [4.4.2]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.2

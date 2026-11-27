@@ -149,6 +149,8 @@ export const BULK_OUTPUT = Object.freeze([
     'the step writes it to `<plandir>/records/reports/plan-<k>-risk.diff` and fires with that path; the destination is on the next line of the same sentence, which is why the row settles the occurrence and the scan does not'),
   gitDiffSite('cadence-core/workflows/task.md', 'git diff <the echoed start sha>..HEAD', 'file',
     'the step writes it to `.planning/tasks/{slug}/risk-task-{slug}.diff` and fires with that path, exactly as execute.md does'),
+  gitDiffSite('cadence-core/workflows/agile-build.md', 'git diff {Base}..HEAD', 'file',
+    'both the risk fire and the one reviewer write it to a file under `.planning/agile/tasks/{story}/` and hand on that path, as task.md does'),
 
   // --- git diff: the three that describe a call another agent runs -----------
   // a Task-dispatched reviewer inherits the cwd and re-runs the command in

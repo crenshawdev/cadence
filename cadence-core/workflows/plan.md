@@ -161,6 +161,7 @@ Goal: {goal line from ROADMAP.md}
 Requirements: {phase requirement IDs}
 Plan shape (from CONTEXT, directive): {one plan | multiple plans | split - deferred slice | not specified}
 Task ceiling: {workflow.max_plan_tasks} tasks per plan.
+Byte ceiling: {workflow.max_plan_bytes} bytes across the files a plan's `files:` declares.
 
 Read before planning:
 - {the phase input path}
@@ -316,13 +317,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-size --phase {N}
 "PLAN.md carries 8 tasks against a ceiling of 4" - and re-dispatch ONCE
 instructed to split this plan's tasks across more plans.
 
-`plan-too-many-bytes`, the BYTES that plan's `files:` frontmatter declares, gets
-the same treatment - "PLAN-1.md declares 712,004 bytes against a ceiling of
-675,000" - and the same split. Read the `absent` count beside the figure first:
-a low byte count beside a non-zero `absent` is a plan whose declared files are
-not on disk yet, not a cheap dispatch.
+`plan-too-many-bytes`, the BYTES that plan's `files:` frontmatter declares, is
+reported and the run goes on: say the figure - "PLAN-1.md declares 712,004
+bytes against a ceiling of 675,000" - with no re-dispatch. Read the `absent`
+count beside it first: a low byte count beside a non-zero `absent` is a plan
+whose declared files are not on disk yet, not a cheap dispatch.
 
-Not a hard halt: one re-dispatch, or the user's word (option 3 at `too_big` is
+The task ceiling is not a hard halt: one re-dispatch, or the user's word (option 3 at `too_big` is
 one), then continue.
 </step>
 

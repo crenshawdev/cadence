@@ -10,9 +10,9 @@ import { isRequirementId } from './planning-files.mjs';
 /** The four documents a design folder holds, in the order the chain builds them; anything else there is ignored. */
 export const DESIGN_FILES = Object.freeze(['brief.md', 'prd.md', 'spine.md', 'epics.md']);
 
-const BRIEF_SECTIONS = ['Problem', 'Solution', 'Who it serves', "What's different", 'Success criteria', 'Scope',
+export const BRIEF_SECTIONS = ['Problem', 'Solution', 'Who it serves', "What's different", 'Success criteria', 'Scope',
   'What it refuses', 'Vision'];
-const PRD_SECTIONS = ['Requirements', 'Non-functional requirements', 'User journeys', 'Non-goals', 'MVP scope'];
+export const PRD_SECTIONS = ['Requirements', 'Non-functional requirements', 'User journeys', 'Non-goals', 'MVP scope'];
 const REQUIREMENT_SECTIONS = ['Requirements', 'Non-functional requirements'];
 
 // the ID alone first, so a bullet whose ID is good declares it even when the rest of the line is wrong
@@ -110,15 +110,20 @@ function keptBody(body) {
   return body.slice(start, end).join('\n');
 }
 
+/** A brief's title, its first non-blank line less the `# `, or '' when that line isn't a title. @param {string} text */
+export function briefTitle(text) {
+  const first = split(text).lines.find((l) => l.trim() !== '');
+  return first !== undefined && first.startsWith('# ') ? first.slice(2).trim() : '';
+}
+
 /**
  * The brief: the design's title and its eight sections by exact name. Order isn't checked.
  * @param {string} text @param {Issue[]} issues
  * @returns {{title: string, brief: Record<string, string>}}
  */
 function readBrief(text, issues) {
-  const { lines, sections } = split(text);
-  const first = lines.find((l) => l.trim() !== '');
-  const title = first !== undefined && first.startsWith('# ') ? first.slice(2).trim() : '';
+  const { sections } = split(text);
+  const title = briefTitle(text);
   if (!title) issues.push(issue('brief.md', null, { section: 'title' }, 'the first non-blank line is not a "# " title'));
   const found = namedSections('brief.md', sections, BRIEF_SECTIONS, issues);
   /** @type {Record<string, string>} */
@@ -220,7 +225,8 @@ function readSpine(text, issues) {
 
 /**
  * @typedef {{epic: string, number: number, name: string, description: string, goal: string, success_criteria: string[],
- *   depends_on: string, requirements: string[], spine_decisions: Decision[]}} Phase
+ *   depends_on: string, requirements: string[], spine_decisions: Decision[], boundaries: string, builds_on: string[]}} Phase
+ * `boundaries` and `builds_on` are the epic's own words and E- IDs, for the agile path; the old path reads `goal` and `depends_on`.
  */
 
 /**
@@ -262,11 +268,25 @@ function criteria(value) {
 }
 
 /**
+ * The done-when lines `criteria` keeps nothing of: text on the label line, and a line that neither opens an item nor
+ * is indented under one.
+ * @param {string[]} value @returns {string[]}
+ */
+function lostCriteria(value) {
+  let open = false;
+  return value.filter((line, i) => {
+    if (blankLine(line)) return false;
+    if (i > 0 && line.startsWith('- ')) { open = true; return false; }
+    return i === 0 || !open || !/^\s/.test(line);
+  }).map((line) => line.trim());
+}
+
+/**
  * The epics in file order, each one phase numbered by its position from `first`, never by its E- number.
  * A null `requirements` or `decisions` set means that document couldn't be read, so nothing is checked against it.
  * @param {string} text @param {Issue[]} issues
  * @param {{first: number, title: string, requirements: Set<string>|null, declared: Set<string>|null,
- *   decisions: Map<string, Decision>}} ctx
+ *   decisions: Map<string, Decision>, lost: {epic: string, line: string}[]}} ctx `lost` gets each done-when line no item holds
  * @returns {Phase[]}
  */
 function readEpics(text, issues, ctx) {
@@ -329,6 +349,7 @@ function readEpics(text, issues, ctx) {
     const decisions = idList('Spine decisions', (x) => SPINE_REF.test(x), true,
       (x) => (!ctx.declared || ctx.declared.has(x) ? null : `${quote(x)} is not a decision spine.md declares`),
       'a spine ID');
+    ctx.lost.push(...lostCriteria(doneWhen ?? []).map((line) => ({ epic: id, line })));
     const description = oneLine(outcome ?? []);
     phases.push({
       epic: id,
@@ -339,6 +360,8 @@ function readEpics(text, issues, ctx) {
       success_criteria: criteria(doneWhen ?? []),
       depends_on: depends.length ? depends.map((x) => `Phase ${position.get(x)}`).join(', ') : 'Nothing',
       requirements,
+      boundaries: oneLine(boundaries ?? []),
+      builds_on: depends,
       // repeated in full in every phase that names one; a declared decision that didn't parse already has its issue
       spine_decisions: decisions.flatMap((x) => (ctx.decisions.has(x) ? [{ ...ctx.decisions.get(x) }] : [])),
     });
@@ -352,8 +375,9 @@ function readEpics(text, issues, ctx) {
  * Staleness is never checked, so a stamp that no longer matches its parent changes nothing.
  * @param {Record<string, string|null>} texts file name -> its text, or null
  * @param {number} [first] the number the first epic's phase takes
- * `decisions` is held for the phases that name them and never answered as a list of its own.
- * @returns {{issues: Issue[], decisions: Map<string, Decision>, design: {title: string, brief: Record<string, string>,
+ * `decisions` is held for the phases that name them and never answered as a list of its own. `lost` is what the done-when
+ * reading dropped, which the agile path refuses and the old path reads past as it always has.
+ * @returns {{issues: Issue[], decisions: Map<string, Decision>, lost: {epic: string, line: string}[], design: {title: string, brief: Record<string, string>,
  *   requirements: Requirement[], phases: Phase[], uncovered: string[]}}}
  */
 export function readDesign(texts, first = 1) {
@@ -363,10 +387,12 @@ export function readDesign(texts, first = 1) {
   const prd = texts['prd.md'] === null ? null : readPrd(texts['prd.md'], issues);
   const spine = texts['spine.md'] === null ? null : readSpine(texts['spine.md'], issues);
   const decisions = spine ? spine.decisions : new Map();
+  /** @type {{epic: string, line: string}[]} */
+  const lost = [];
   const phases = texts['epics.md'] === null ? [] : readEpics(texts['epics.md'], issues, { first, title,
-    requirements: prd ? prd.declared : null, declared: spine ? spine.declared : null, decisions });
+    requirements: prd ? prd.declared : null, declared: spine ? spine.declared : null, decisions, lost });
   const requirements = prd ? prd.requirements : [];
   const named = new Set(phases.flatMap((p) => p.requirements));
-  return { issues, decisions,
+  return { issues, decisions, lost,
     design: { title, brief, requirements, phases, uncovered: requirements.filter((q) => !named.has(q.id)).map((q) => q.id) } };
 }

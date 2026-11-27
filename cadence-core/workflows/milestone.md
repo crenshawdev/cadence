@@ -48,7 +48,8 @@ when absent. Otherwise it bumps the manifest `version` to the shipping release
 (and any versioned sibling), scaffolds the dated `## [<version>]` CHANGELOG
 heading + link reference, and PROMOTES whatever was staged under
 `## [Unreleased]` into that dated section. Then YOU author bullet prose only
-for what the promotion did NOT already move.
+for what the promotion did NOT already move. Each claim a bullet makes cites a
+file, a test or a measured run, or it is cut.
 
 Four halts, each before the bump commit:
 

@@ -19,13 +19,14 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSyn
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fail, ok } from './core.mjs';
-import { importState, invalidHint, loadState, writeViews } from './state-import.mjs';
+import { importState, invalidHint, invalidReason, loadState, writeViews } from './state-import.mjs';
+import { OLD_PATH, agileDir } from '../lib/agile-paths.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   archivePath, codemapDir, declinedPath, deferredDir, ensurePhaseRecordsDir, ensureRecordsDir, ensureRecordsIgnore,
   filedPath, movePath, phaseRecordsDir, phaseReportsDir, recordsDir, recordsPath, riskCarryDir, unlinkFile, withPlanningFileLock,
 } from '../lib/planning-store.mjs';
-import { readState, rebuildState, STATE_LAYOUT, statePath, writeState } from '../lib/project-state.mjs';
+import { readState, rebuildState, REBUILDABLE, STATE_LAYOUT, statePath, writeState } from '../lib/project-state.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 /** The run record, the read record, their rotated generation, claim sidecars and rotation temps. */
@@ -343,6 +344,23 @@ function convert(dir, moves) {
 }
 
 /**
+ * Is this an agile project whose marker is gone or too damaged to read? Its folder is all that still says so, and a stamp
+ * or a rebuild would hand the release to the old path. An old-path project may keep a folder of that name for itself.
+ * @param {string} dir @param {import('../lib/project-state.mjs').StateRead} got
+ */
+function strayAgile(dir, got) {
+  if (got.kind === 'valid' || (got.kind === 'invalid' && !REBUILDABLE.includes(got.reason))) return false;
+  const there = (/** @type {string} */ path) => lstatSync(path, { throwIfNoEntry: false }) !== undefined;
+  return there(agileDir(dir)) && !OLD_PATH.some((name) => there(join(dir, name)));
+}
+
+/** @param {string} dir */
+function failStray(dir) {
+  fail('agile-path', `${agileDir(dir)} is there but ${statePath(dir)} does not say the project is on the agile path`,
+    'run /cad-agile here, which says how to put it right; nothing was changed');
+}
+
+/**
  * `state-rebuild`: a state file that is there and does not parse is replaced, under its lock, with what the importer reads
  * from the project as it stands, stamped at this layout, and the views are rendered from it. Nothing moves: a rebuild is
  * not a conversion. A valid state is left alone, since it may hold what no artifact does.
@@ -354,9 +372,10 @@ export function cmdStateRebuild(dir) {
   // an unstamped project was converted before this ran, so absent here is the linked planning directory nothing stamps
   if (got.kind === 'absent') return loadState(dir);
   if (got.kind === 'valid') return ok({ rebuilt: false, file, detail: 'the state file is valid, so nothing was rebuilt' });
-  if (got.reason === 'newer-layout' || got.reason === 'unreadable') {
-    return fail('invalid-state', `${file}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
+  if (got.reason === 'newer-layout' || got.reason === 'agile-path' || got.reason === 'unreadable') {
+    return fail(invalidReason(got.reason), `${file}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
   }
+  if (strayAgile(dir, got)) return failStray(dir);
   const imported = importState(dir);
   if (imported.ok === false) {
     const { reason, detail, issues, hint } = imported;
@@ -368,8 +387,8 @@ export function cmdStateRebuild(dir) {
     writeViews(dir, state, VIEWS.filter((v) => existsSync(join(dir, v))), views);
   });
   if (wrote.ok === false) {
-    if (wrote.reason === 'newer-layout' || wrote.reason === 'unreadable') {
-      return fail('invalid-state', wrote.detail, invalidHint(wrote.reason));
+    if (wrote.reason === 'newer-layout' || wrote.reason === 'agile-path' || wrote.reason === 'unreadable') {
+      return fail(invalidReason(wrote.reason), wrote.detail, invalidHint(wrote.reason));
     }
     const written = 'stateWritten' in wrote && wrote.stateWritten;
     return fail('state-write-failed', `${file}: ${wrote.reason} - ${wrote.detail}`, written
@@ -386,8 +405,9 @@ export function cmdStateRebuild(dir) {
 /**
  * Make sure the planning directory has a valid state file before a handler runs, converting an unstamped project once.
  * @param {string} dir the planning directory the call resolved
- * @param {'now' | 'before' | 'after' | 'rebuild'} [mode] 'now' judges and converts; 'before' judges only; 'after' converts
- *   with no refusal emitted; 'rebuild' is 'now' that lets a state file that is there but not valid through to `state-rebuild`
+ * @param {'now' | 'before' | 'after' | 'rebuild' | 'shared'} [mode] 'now' judges and converts; 'before' judges only; 'after' converts
+ *   with no refusal emitted; 'rebuild' is 'now' that lets a state file that is there but not valid through to `state-rebuild`;
+ *   'shared' is 'now' that lets the agile marker through
  * @returns {boolean} true when the handler may run; false when a refusal has been emitted and the handler must not
  */
 export function ensureState(dir, mode = 'now') {
@@ -397,18 +417,25 @@ export function ensureState(dir, mode = 'now') {
   let st = null;
   try { st = statSync(dir); } catch { /* absent */ }
   if (!st || !st.isDirectory()) return true;
+  // the agile path is judged before the link below, or a seam that never loads the state would run on its project
+  const got = readState(dir);
+  if (got.kind === 'valid') return true;
+  if (strayAgile(dir, got)) {
+    if (!quiet) failStray(dir);
+    return false;
+  }
+  const marked = got.kind === 'invalid' && got.reason === 'agile-path';
+  if (marked && mode === 'shared') return true;
   // a planning directory that is itself a link may be a repository's way of pointing writes out of the tree, so nothing
   // is stamped through it; the handler keeps whatever refusal it has for that
   // resolve drops a trailing slash, which would make lstat follow the link it is asking about
-  try { if (lstatSync(resolve(dir)).isSymbolicLink()) return true; } catch { return true; }
-  const got = readState(dir);
-  if (got.kind === 'valid') return true;
+  try { if (!marked && lstatSync(resolve(dir)).isSymbolicLink()) return true; } catch { return true; }
 
   if (got.kind === 'invalid') {
     // the rebuild judges the file again under its own lock, newer layouts and unreadable files included
     if (mode === 'rebuild') return true;
     if (quiet) return false;
-    fail('invalid-state', `${statePath(dir)}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
+    fail(invalidReason(got.reason), `${statePath(dir)}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
     return false;
   }
 

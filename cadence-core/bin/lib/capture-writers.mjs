@@ -52,6 +52,13 @@ export const CAPTURE_WRITERS = Object.freeze([
     reason: 'the --cadence sibling writes a different file entirely, in the global config directory rather than this project, and is the same one-bullet-per-deliberate-act write as its sibling above',
   }),
   Object.freeze({
+    surface: 'cadence-core/workflows/agile-build.md',
+    subcommand: 'capture',
+    writes: "an agile project's .planning/agile/backlog.md, never CAPTURE.md",
+    durable: false,
+    reason: "one bullet for each thing a story's build finds that the story doesn't need, so it isn't built; the next refinement reads the whole backlog and takes what its epic delivers, which is what empties it",
+  }),
+  Object.freeze({
     surface: 'cadence-core/workflows/execute.md',
     subcommand: 'debt-harvest',
     writes: "the .planning/CAPTURE.md `## Debt markers` section",

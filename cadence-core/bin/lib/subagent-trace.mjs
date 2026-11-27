@@ -111,6 +111,49 @@ function currentRun(rows, clocks) {
   return { corr, rows: rows.filter((row) => key(row.corr) === key(corr)) };
 }
 
+/** The instant the worker's first assistant entry names, or null. @param {any[]} entries @returns {number|null} */
+function startedAt(entries) {
+  for (const e of entries) {
+    const t = millis(e && e.timestamp);
+    if (t !== null) return t;
+  }
+  return null;
+}
+
+/**
+ * This worker's dispatch on an agile project, where every run is phase 0 and several can be live, so "the newest run"
+ * scopes nothing. It's the newest of its role sent before the worker started, open or already closed, so a dead run's
+ * leftover or a reused id's old bracket is never it. With no start known, only a lone open one, or this id's own close.
+ * @param {any} render @param {string} role @param {string|null} id @param {number|null} started
+ * @returns {{row: any, open: boolean}|null} `open` false says don't adopt it, only file the figures there; null when
+ * none fits, two runs tie, or the newest is another worker's close
+ */
+function agileDispatch(render, role, id, started) {
+  const open = (render && Array.isArray(render.unpaired) ? render.unpaired : []).filter((r) => r && r.role === role);
+  const closed = (render && Array.isArray(render.brackets) ? render.brackets : []).filter((r) => r && r.role === role);
+  if (started === null) {
+    const done = id ? closed.filter((r) => r.agent_id === id).pop() : undefined;
+    if (done) return { row: done, open: false };
+    return open.length === 1 ? { row: open[0], open: true } : null;
+  }
+  const sent = [...open.map((row) => ({ row, open: true })), ...closed.map((row) => ({ row, open: false }))]
+    .map((c) => ({ ...c, t: millis(c.row.ts) }))
+    .filter((c) => c.t !== null && c.t <= started);
+  if (!sent.length) return null;
+  const newest = Math.max(...sent.map((c) => c.t));
+  const at = sent.filter((c) => c.t === newest);
+  if (at.length > 1) {
+    const one = at.every((c) => key(c.row.corr) === key(at[0].row.corr));
+    return one ? { row: at[0].row, open: false } : null;
+  }
+  const [own] = at;
+  // two open in one run were sent in one message, so either could be this worker's (TRC-06); the figures still have
+  // their run, and the fold keys them on it and the id alone
+  if (own.open && open.some((r) => r !== own.row && key(r.corr) === key(own.row.corr))) return { row: own.row, open: false };
+  if (!own.open && own.row.agent_id && own.row.agent_id !== id) return null;
+  return own;
+}
+
 /**
  * Does this transcript path sit under a `subagents/workflows/` directory? That is where the host keeps the transcript of an
  * agent a workflow script spawned. Any other value, and no value, is no.
@@ -126,7 +169,8 @@ function inWorkflowDir(path) {
  * disk half's one loop covers both.
  * @param {any} payload the host's `SubagentStop` JSON
  * @param {any} render the result of `renderTrace(planningRoot)`, unscoped because the payload carries no phase
- * @param {{transcript?: any}} [evidence] the worker's own JSONL as a string; without it the gate answers `unknown`
+ * @param {{transcript?: any, agile?: boolean}} [evidence] the worker's own JSONL as a string, without which the gate
+ * answers `unknown`, and whether the project is on the agile path
  * @returns {{corr: any, phase: any, plan?: any, family: string, event: string, role: string, agent_id?: string, ts?: string, cache_creation_input_tokens?: number, cache_read_input_tokens?: number, effort?: string, rung?: string}[]}
  * Either the single `return` an unambiguous terminal stop closes with, or the single `WORKER_CACHE` fact a
  * withholding gate states instead, or nothing. `effort` and `rung` ride both and are omitted together when the
@@ -148,6 +192,14 @@ export function closeForStop(payload, render, evidence) {
   const effort = effortOf(entries);
   // both keys or neither; gate 1 already refused every type with no rung file, so a role means a rung
   const ran = effort ? { effort, rung: rungOfAgent(payload && payload.agent_type) } : {};
+  if (evidence && evidence.agile) {
+    const own = agileDispatch(render, role, id, startedAt(entries));
+    if (stopped.state === STOP_STATE.NOT_TERMINAL || !own || !own.open
+      || inWorkflowDir(payload && payload.agent_transcript_path)) {
+      return cacheFact(id, role, cache, stopped.ts, own ? own.row : null, ran);
+    }
+    return [adopt(own.row, role, id, stopped, cache, ran)];
+  }
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
   // named once so gates 2a and 2b share one notion of now; a bracket can name it when no unpaired row of the role
   // survives, which is where a stop arriving after its own close sits
@@ -178,8 +230,16 @@ export function closeForStop(payload, render, evidence) {
   if (mine.length !== 1) return withheld();
   const best = mine[0];
 
-  // gate 3: identity quoted off the adopted row, no return figures (the hook never sees any), and the cache sums
-  return [{
+  return [adopt(best, role, id, stopped, cache, ran)];
+}
+
+/**
+ * Gate 3: identity quoted off the adopted row, no return figures (the hook never sees any), and the cache sums.
+ * @param {any} best @param {string} role @param {string|null} id @param {{ts: any}} stopped
+ * @param {Record<string, number>} cache @param {{effort?: string, rung?: string}} ran
+ */
+function adopt(best, role, id, stopped, cache, ran) {
+  return {
     corr: best.corr,
     phase: best.phase,
     plan: best.plan,
@@ -193,5 +253,5 @@ export function closeForStop(payload, render, evidence) {
     ...(stopped.ts ? { ts: stopped.ts } : {}),
     ...cache,
     ...ran,
-  }];
+  };
 }

@@ -85,7 +85,8 @@ function gapLines(g) {
     lines.push('git records no paths touched by this commit');
   }
   if (g.archive && g.archive.length) {
-    lines.push(`${archivePath('.planning').split(sep).join('/')} keeps ${g.archive.length} residue row(s) under that label, `
+    // a switched project's rows come from the archive's copy, which the gap names; otherwise they're the live file's
+    lines.push(`${g.archiveFile || archivePath('.planning').split(sep).join('/')} keeps ${g.archive.length} residue row(s) under that label, `
       + 'bound to the label and to no commit (D-04):',
     ...capped(g.archive.map((/** @type {any} */ r) => `${r.origin}: ${r.text}`), GAP_ROWS));
   }

@@ -15,7 +15,8 @@ import { recordName } from './adjudication-record.mjs';
 import { phaseDirsIn } from './phase-plans.mjs';
 import { parseArchiveRows } from './planning-files.mjs';
 import { archivePath, phaseRecordsDir } from './planning-store.mjs';
-import { RECORD_FILE, TASKS_DIR, taskRecordsIn } from './task-record.mjs';
+import { TASKS_DIR } from './project-homes.mjs';
+import { RECORD_FILE, taskRecordsIn } from './task-record.mjs';
 import { parseAdjudication, parseCommitRows, shaMatches } from './why-record.mjs';
 
 /**
@@ -71,25 +72,28 @@ export function readArtifact(file) {
 /**
  * Split phaseDirsIn's `<group>/<name>` label into the milestone this record belongs to and the phase number in it.
  * `phases` is the open milestone, named as such; an archived group reports its bare version, like v3.4.0.
- * @param {{label: string, path: string}} d @returns {PhaseDir}
+ * `under` is the folder the root sits in under `.planning`, put in front of the label so two roots never share one.
+ * @param {{label: string, path: string}} d @param {string} under @returns {PhaseDir}
  */
-function describe(d) {
+function describe(d, under) {
   const cut = d.label.indexOf('/');
   const group = cut === -1 ? d.label : d.label.slice(0, cut);
   const phase = cut === -1 ? '' : d.label.slice(cut + 1);
-  const milestone = group === 'phases' ? 'the open milestone' : group.replace(/^_archive-/, '');
-  return { label: d.label, path: d.path, group, phase, milestone };
+  // the old path's archive was switched after its last milestone landed, so its phases/ isn't open any more
+  const open = under ? "the old path's last milestone" : 'the open milestone';
+  const milestone = group === 'phases' ? open : group.replace(/^_archive-/, '');
+  return { label: under ? `${under}/${d.label}` : d.label, path: d.path, group, phase, milestone };
 }
 
 /**
  * The commit-to-phase index over both on-disk tiers, in one pass.
  * `rows` keep a fixed order, directory label then the table's own: a reshuffled match list is a reshuffled answer.
  *
- * @param {string} planningRoot
+ * @param {string} planningRoot @param {string} [under] the root's folder under `.planning`, for the old path's archive
  * @returns {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[]}}
  */
-export function buildCommitIndex(planningRoot) {
-  const dirs = phaseDirsIn(planningRoot).map(describe);
+export function buildCommitIndex(planningRoot, under = '') {
+  const dirs = phaseDirsIn(planningRoot).map((d) => describe(d, under));
   /** @type {IndexRow[]} */
   const rows = [];
   /** @type {string[]} */
@@ -122,20 +126,20 @@ export function buildCommitIndex(planningRoot) {
  * Widening it would make describe() render `tasks phase <slug>`, a wrong join instead of a missing one.
  * Records come from taskRecordsIn, which the writer and the recall walk share; never walk `tasks/` a second time here.
  *
- * @param {string} planningRoot
+ * @param {string} planningRoot @param {string} [under] the root's folder under `.planning`, for the old path's archive
  * @returns {{dirs: TaskDir[], rows: IndexRow[], warnings: string[]}}
  */
-export function buildTaskIndex(planningRoot) {
+export function buildTaskIndex(planningRoot, under = '') {
   /** @type {TaskDir[]} */
   const dirs = [];
   /** @type {IndexRow[]} */
   const rows = [];
   /** @type {string[]} */
   const warnings = [];
-  for (const { slug, path } of taskRecordsIn(planningRoot)) {
+  for (const { slug, path, label } of taskRecordsIn(planningRoot)) {
     /** @type {TaskDir} */
     const dir = {
-      label: `${TASKS_DIR}/${slug}`,
+      label: under ? `${under}/${label}` : label,
       path: dirname(path),
       group: TASKS_DIR,
       phase: null,
@@ -584,23 +588,26 @@ export function buildRecoveredIndex(repoDir) {
 }
 
 /**
- * The one index a caller asks, over ordered tiers: on-disk phases, then task records, then git-recovered.
+ * The one index a caller asks, over ordered tiers: on-disk phases, then task records, then the old path's archived
+ * phases and tasks on a switched project, then git-recovered.
  * The phase spine wins when both name a commit: that's where the work was planned, reviewed and verified.
- * Tasks beat recovered because both can be opened, while recovered reconstructs a directory that no longer exists.
- * `prunes` comes from the recovered argument alone, since neither on-disk tier produces close history.
+ * Tasks and the archive beat recovered because they can be opened, while recovered reconstructs a directory that no
+ * longer exists. `prunes` comes from the recovered argument alone, since no on-disk tier produces close history.
  *
  * @param {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[]}} disk
  * @param {{dirs: TaskDir[], rows: IndexRow[], warnings: string[]}} tasks
  * @param {any} recovered
+ * @param {Array<{dirs: any[], rows: IndexRow[], warnings: string[]}>} [archived]
  * @returns {any}
  */
-export function mergeCommitIndexes(disk, tasks, recovered) {
+export function mergeCommitIndexes(disk, tasks, recovered, archived = []) {
+  const tiers = [disk, tasks, ...archived, recovered];
   return {
-    dirs: [...disk.dirs, ...tasks.dirs, ...recovered.dirs],
-    rows: [...disk.rows, ...tasks.rows, ...recovered.rows],
-    tiers: [disk, tasks, recovered],
+    dirs: tiers.flatMap((t) => t.dirs),
+    rows: tiers.flatMap((t) => t.rows),
+    tiers,
     prunes: /** @type {any} */ (recovered).prunes || [],
-    warnings: [...disk.warnings, ...tasks.warnings, ...recovered.warnings],
+    warnings: tiers.flatMap((t) => t.warnings),
   };
 }
 

@@ -20,6 +20,10 @@ Commit the in-flight changes as WIP and write the STATE cursor, which
 </execution_context>
 
 <process>
+On an agile project (`.planning/agile/` exists and `.planning/PROJECT.md`
+doesn't), stop before anything else, with this line and nothing after it: "This
+project is on the agile path. /cad-agile shows what comes next."
+
 1. **WIP commit.** If the tree has changes, stage exactly what the user was
    working on and commit `wip: <short description>` (protected-branch guard
    applies - references/git-guard.md). If the tree is clean, skip this.

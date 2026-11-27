@@ -35,7 +35,7 @@ function opensSentence(body, i) {
  * is the declaration only if it agrees with the first token or its line opens a sentence. One on a wrapped continuation
  * line is layout, and reading it as a declaration failed the ship gate on a correct section.
  * With no candidate the first token anywhere stands.
- * Shared with `git-branch.mjs decide`, since a second comparand for the audit alone is the drift this module prevents.
+ * Shared with `branch-advice.mjs`, since a second comparand for the audit alone is the drift this module prevents.
  * @param {string} projectText
  */
 export function activeVersion(projectText) {
@@ -118,18 +118,40 @@ export function configuredNameProblem(configured) {
 }
 
 /**
- * The integration branch name: the configured one when set, otherwise `cadence/<version>` from prose
- * (`PROJECT.md ### Active` first, the `ROADMAP.md` title as fallback).
- * Returns null when there is nothing to name it from, and null for a configured name that fails the grammar:
- * null, never an invented name, lets the caller surface a naming problem.
+ * The configured name when set, otherwise `cadence/<own>`. Null when there is nothing to name it from, and null for a
+ * configured name that fails the grammar: null, never an invented name, lets the caller surface a naming problem.
+ * @param {string | null} own @param {unknown} configured
+ * @returns {string | null}
+ */
+function branchName(own, configured) {
+  if (configuredNameProblem(configured) !== null) return null;
+  if (typeof configured === 'string') return configured;
+  return own ? `cadence/${own}` : null;
+}
+
+/**
+ * The integration branch name: the configured one, or `cadence/<version>` from prose (`PROJECT.md ### Active` first,
+ * the `ROADMAP.md` title as fallback).
  * @param {string} projectText @param {string} roadmapText @param {unknown} [configured]
  * @returns {string | null}
  */
 export function integrationBranchName(projectText, roadmapText, configured) {
-  if (configuredNameProblem(configured) !== null) return null;
-  if (typeof configured === 'string') return configured;
-  const version = milestoneVersion(projectText, roadmapText);
-  return version ? `cadence/${version}` : null;
+  return branchName(milestoneVersion(projectText, roadmapText), configured);
+}
+
+/**
+ * The same branch on the agile path: the configured one, or `cadence/` and the release's name in lowercase letters,
+ * digits and dashes. It takes the title because a start suggests the name before the release is on disk.
+ * @param {string} title @param {unknown} [configured]
+ * @returns {string | null}
+ */
+export function releaseBranchName(title, configured) {
+  return branchName(slugOf(title), configured);
+}
+
+/** A title as lowercase letters, digits and hyphens, for a branch or a folder; '' when it holds neither. @param {string} title */
+export function slugOf(title) {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 /**
@@ -147,19 +169,20 @@ export function milestoneVersion(projectText, roadmapText) {
  * Total: an unknown mode or auto_branch yields `stay`, never a throw.
  * - trunk mode: never create an integration branch; commits land on the base.
  * - milestone on a protected base: auto -> create, off -> stay, ask -> ask. With no derivable name, or a configured
- *   one that failed its grammar (`nameProblem`), auto and ask downgrade to a naming-problem `ask`.
+ *   one that failed its grammar (`nameProblem`), auto and ask downgrade to a naming-problem `ask`. `noName` says what
+ *   had nothing to name it from, where that isn't the old path's two files.
  * - milestone off a protected base: stay. Creation is once per cycle, so this branch is the merge target.
  * - auto/ask where `publishedVersions` carries `version`, the milestone version the caller read from prose: `ask`, since an already-tagged version is the
  *   v2.4.0 collision (#87).
  *
  * @param {{ mode?: string, autoBranch?: string, currentBranch?: string,
  *   protectedBranches?: string[], integrationName?: string | null, nameProblem?: string | null,
- *   version?: string | null,
+ *   noName?: string, version?: string | null,
  *   publishedVersions?: string[] | null }} args
  * @returns {{ action: 'create'|'stay'|'ask', branch: string|null, reason: string }}
  */
 export function decideBranch({ mode, autoBranch, currentBranch, protectedBranches, integrationName,
-  nameProblem, version, publishedVersions }) {
+  nameProblem, noName, version, publishedVersions }) {
   const protectedList = Array.isArray(protectedBranches) ? protectedBranches : [];
   const name = integrationName ?? null;
 
@@ -177,7 +200,7 @@ export function decideBranch({ mode, autoBranch, currentBranch, protectedBranche
       return { action: 'ask', branch: null,
         reason: nameProblem
           ? `naming-problem: ${nameProblem} - fix or clear it with config.mjs set, or stay on the base / abort`
-          : 'naming-problem: no version in PROJECT.md ### Active or ROADMAP title, cannot name the integration branch - set the milestone version, or stay on the base / abort' };
+          : `naming-problem: ${noName ?? 'no version in PROJECT.md ### Active or ROADMAP title, cannot name the integration branch - set the milestone version'}, or stay on the base / abort` };
     }
     // a published version must not be offered as a new integration branch (the v2.4.0 collision, #87)
     // no tag carrying it means "nothing published this", which covers the next cycle and out-of-grammar input alike

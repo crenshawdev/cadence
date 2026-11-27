@@ -161,10 +161,10 @@ function readLines(planningRoot) {
 }
 
 /**
- * The newest `lifecycle` event called `name` that `want` accepts, and its line index, or null. Walks backwards, a line
- * that isn't a JSON object is skipped. A `lifecycle` event called `stop` ends the walk with null.
+ * The newest `lifecycle` event called `name` (any, for null) that `want` accepts, and its line index, or null. Walks
+ * backwards, a line that isn't a JSON object is skipped. A `lifecycle` event called `stop` ends the walk with null.
  * @param {string[]} lines
- * @param {string} name
+ * @param {string|null} name
  * @param {(e: any) => boolean} [want]
  * @param {string} [stop]
  * @returns {{e: any, at: number}|null}
@@ -177,7 +177,7 @@ function newestLifecycle(lines, name, want, stop) {
     try { e = JSON.parse(line); } catch { continue; }
     if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
     if (stop !== undefined && e.family === 'lifecycle' && e.event === stop) return null;
-    if (e.family !== 'lifecycle' || e.event !== name) continue;
+    if (e.family !== 'lifecycle' || (name !== null && e.event !== name)) continue;
     if (want && !want(e)) continue;
     return { e, at: i };
   }
@@ -222,6 +222,37 @@ export function correlationId(planningRoot, phase, ownSha) {
   // cycle's, and readEvents drops it at the same line (D-22), or the re-arm cap misses the rearm it just wrote
   const found = newestLifecycle(lines, ANCHOR, (e) => key(e.phase) === p, CYCLE);
   return found && typeof found.e.sha === 'string' && found.e.sha ? `${p}-${found.e.sha}` : p;
+}
+
+/**
+ * The run a close belongs to, or null to derive as ever. An event carrying this worker's id names it, since the stop
+ * hook files its worker before the hand-written close, when it follows that run's dispatch of this plan and role and
+ * no hand close has shut it. Otherwise the newest such dispatch's run while nothing has closed it.
+ * @param {string} planningRoot @param {any} phase @param {any} plan @param {string} [role] @param {string} [agentId]
+ * @returns {string|null}
+ */
+export function ownCorr(planningRoot, phase, plan, role, agentId) {
+  const lines = readLines(planningRoot);
+  if (lines === null) return null;
+  const p = key(phase);
+  const isKey = (e) => key(e.phase) === p && key(e.plan) === key(plan) && (role === undefined || key(e.role) === role);
+  const shutAfter = (d, hand) => {
+    const t = newestLifecycle(lines, null, (e) => TERMINAL.includes(e.event) && key(e.corr) === d.e.corr
+      && key(e.phase) === p && key(e.plan) === key(plan) && (!hand || e.tokens !== undefined), CYCLE);
+    return t !== null && t.at > d.at;
+  };
+  // the hook's cache fact names no plan, so a plan only rules out an event that names another
+  const filed = agentId ? newestLifecycle(lines, null, (e) => key(e.phase) === p && e.agent_id === agentId
+    && (e.plan === undefined || key(e.plan) === key(plan)), CYCLE) : null;
+  if (filed && typeof filed.e.corr === 'string' && filed.e.corr) {
+    // its own dispatch is the newest of the key before it, which another session's later one can't displace; a
+    // dispatch a hand close already shut (the hook never writes tokens) is a finished run's, and the id a reused one
+    const own = newestLifecycle(lines.slice(0, filed.at), DISPATCH, isKey, CYCLE);
+    if (own && own.e.corr === filed.e.corr && !shutAfter(own, true)) return filed.e.corr;
+  }
+  const sent = newestLifecycle(lines, DISPATCH, isKey, CYCLE);
+  if (!sent || typeof sent.e.corr !== 'string' || !sent.e.corr) return null;
+  return shutAfter(sent, false) ? null : sent.e.corr;
 }
 
 /**

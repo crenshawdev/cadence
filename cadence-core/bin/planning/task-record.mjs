@@ -10,8 +10,9 @@ import { insideRoot } from '../lib/contained.mjs';
 import { atomicWrite, makeDir } from '../lib/planning-store.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { emit } from '../lib/seam-io.mjs';
+import { missingRelease, tasksHome } from '../lib/project-homes.mjs';
 import {
-  MAX_SLUG_LENGTH, RECORD_FILE, TASKS_DIR, isTaskSlug, renderTaskRecord,
+  MAX_SLUG_LENGTH, RECORD_FILE, isTaskSlug, renderTaskRecord,
 } from '../lib/task-record.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { appendEvent } from '../lib/trace.mjs';
@@ -87,7 +88,7 @@ function cmdTaskRecord(dir, opts) {
     }
   }
 
-  const recordDir = join(dir, TASKS_DIR, slug);
+  const recordDir = join(tasksHome(dir).path, slug);
   const recordPath = join(recordDir, RECORD_FILE);
   let written = false;
   let reason;
@@ -100,6 +101,8 @@ function cmdTaskRecord(dir, opts) {
     reason = 'the range did not resolve, so no record could be derived from it';
   } else if (!rootIsDir) {
     reason = `no planning root at ${dir}, and this command creates neither it nor tasks/`;
+  } else if (missingRelease(dir) !== null) {
+    reason = missingRelease(dir);
   } else {
     try {
       makeDir(recordDir);

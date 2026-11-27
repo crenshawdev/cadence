@@ -27,7 +27,13 @@ get` chained in a single script that echoes a marker when it wrote the config,
 for item 4's one line):
 
 1. If `.planning/PROJECT.md` exists, stop: "Project already initialized.
-   /cad-progress shows where you are."
+   /cad-progress shows where you are." Then, when `.planning/agile/` exists or
+   the call below, which writes nothing, answers reason `agile-path`, stop: "This
+   project is on the agile path. /cad-agile shows what comes next."
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --check --root .
+   ```
 2. If not in a git repo (`git rev-parse --git-dir` fails), run `git init`.
 3. `mkdir -p .planning`, then keep the run record out of git:
 

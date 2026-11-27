@@ -17,8 +17,9 @@ allowed-tools:
 <objective>
 Debug a symptom by the scientific method: form hypotheses, run the cheapest
 discriminating test for each, confirm a root cause, fix it and verify the
-symptom is gone. The state file at `.planning/debug/<slug>.md` lets a new
-session resume it.
+symptom is gone. The state file at `.planning/debug/<slug>.md`, or
+`.planning/agile/debug/<slug>.md` on an agile project, lets a new session resume
+it.
 </objective>
 
 <execution_context>

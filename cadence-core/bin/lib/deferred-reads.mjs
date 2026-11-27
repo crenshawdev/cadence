@@ -64,6 +64,8 @@ export const DEFERRED_READS = Object.freeze([
     ['Roles interview (`--roles`)', 'Stakes migration (a retired routing key is still on disk)'], 2, 'cadence-core/workflows/config.md'),
   row('cad-new-project', 'workflows/config-roles.md', ['setup(4)'], 1, 'cadence-core/workflows/new-project.md'),
   row('cad-adopt', 'workflows/config-roles.md', ['setup(3)'], 1, 'cadence-core/workflows/adopt.md'),
+  // the review step reaches a cross-model reviewer's procedure only when review.reviewers names one
+  row('cad-agile', 'references/review-cross-model.md', ['5. Review'], 1, 'cadence-core/workflows/agile-build.md'),
 ]);
 
 /** Sentences split on a terminator plus whitespace, a heuristic: one before markup (.** or .md) does not split. */

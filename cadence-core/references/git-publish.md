@@ -12,11 +12,21 @@ policy `/cad-verify` pushes a non-protected branch so CI can run on it, through
 (set by `/cad-config --testing` on an explicit yes). Nothing else authorizes it:
 not the user-global config, `.planning/config.json` or `git.auto_close`. The
 other: under `git.auto_close`, `/cad-land` 3(b) publishes the branch and opens
-and merges its request. Any other publishing is a human decision made through
-`/cad-land`.
+and merges its request through `git-publish.mjs publish`, `open` and `merge`.
+Any other publishing is a human decision made through `/cad-land`.
 
-Every Bash `git push` the guard sees asks, with no per-push exemption; only
-`git.guard_bypass` true in both config layers turns the rail off.
+A Bash `git push` the guard sees asks when it can reach a protected branch
+(`git.protected_branches`): a refspec naming one (`main`, `heads/main`,
+`refs/heads/main`, or `HEAD` with it checked out), `--all`, `--branches` or
+`--mirror`, or no refspec while one is checked out. It stays quiet only when what
+it reads is what git will run, so it also asks on a word the shell can change (a
+quote, `$`, a glob), a global option other than a plain `-C`, a command before it
+in the same call other than git `add`, `commit`, `status`, `diff`, `log`, `show`,
+`tag`, `fetch` or `pull`, and, where git config picks the destination, a
+`remote.<name>.push` or `.mirror` or a `push.default` other than `simple`,
+`current` or `nothing`. A torn config layer asks on every push. Any other push, a
+work branch or a tag, goes through. Only `git.guard_bypass` true in both config
+layers turns the rail off.
 
 ### What the guard does NOT see (rail 3)
 

@@ -1,8 +1,9 @@
 // @ts-check
-// everything git-guard.mjs sees; it replaced a shell tokenizer and a model of git's option grammar
+// everything git-guard.mjs sees, git's verbs and the forge CLIs' request calls; it replaced a shell tokenizer
+// and a model of git's option grammar
 // the guard's adversary is the model, not an attacker: being wrong costs a prompt, never a bypass
 // predicting the shell has an unbounded escape surface, and every patch added grammar
-// so a segment counts only when its command word is git, and everything else is silent by construction
+// so a segment counts only when its command word is git (or gh, glab, tea for a request), the rest silent by construction
 // also holds the .planning/ scope walk that git-guard, read-trace and subagent-trace share
 'use strict';
 
@@ -16,6 +17,7 @@ const GLOBAL_OPT_WITH_ARG = new Set([
 
 /** `;`, a newline, `|`, `||`, `&&` and `&` each end a command. The two-character forms lead so they aren't split. */
 const SEPARATOR = /&&|\|\||[;|&\n]/;
+const SEPARATOR_KEPT = /(&&|\|\||[;|&\n])/;
 
 /**
  * Every git verb this command runs, in order: `git add . && git push` reads
@@ -38,35 +40,96 @@ export function gitVerbs(text) {
 }
 
 /**
- * The same scan as `gitVerbs`, keeping each segment's `-C` arguments: `git -C /tmp/x commit` reads
- * `[{verb: 'commit', dirs: ['/tmp/x']}]`. The commit rail needs `-C` to know which repo is hit.
- * Words are raw, and a bare `-C` keeps `''`.
+ * The same scan as `gitVerbs`, keeping each segment's `-C` arguments, its other global options, the words after its
+ * verb and its place among the command's segments: `git -C /tmp/x merge --abort` reads
+ * `[{verb: 'merge', dirs: ['/tmp/x'], opts: [], args: ['--abort'], at: 0}]`. The branch rails need `-C` to know
+ * which repo is hit and the words to tell a merge from backing one out; the push rail needs the options and `at` to
+ * know nothing else can move where it lands. `at` counts every non-empty segment, git or not. Words are raw, and a
+ * bare `-C` keeps `''`.
  *
  * @param {unknown} text the raw command string from the hook payload
- * @returns {{verb: string, dirs: string[]}[]}
+ * @returns {{verb: string, dirs: string[], opts: string[], args: string[], at: number}[]}
  */
 export function gitInvocations(text) {
-  if (typeof text !== 'string' || !text) return [];
-
   const out = [];
-  for (const segment of text.split(SEPARATOR)) {
-    const words = segment.trim().split(/\s+/).filter(Boolean);
+  for (const [at, { words }] of segments(text).entries()) {
     const head = words[0];
     // anchored: only the command word admits a segment
-    if (head !== 'git' && !(head !== undefined && head.endsWith('/git'))) continue;
+    if (head !== 'git' && !head.endsWith('/git')) continue;
 
     const dirs = [];
+    const opts = [];
     for (let i = 1; i < words.length; i++) {
       const word = words[i];
       if (GLOBAL_OPT_WITH_ARG.has(word)) { // skip it AND its argument
         if (word === '-C') dirs.push(words[i + 1] ?? '');
+        else opts.push(word, words[i + 1] ?? '');
         i++;
         continue;
       }
-      if (word.startsWith('-')) continue;
-      out.push({ verb: word, dirs });
+      if (word.startsWith('-')) { opts.push(word); continue; }
+      out.push({ verb: word, dirs, opts, args: words.slice(i + 1), at });
       break; // the first non-flag word is the verb; the rest are its operands
     }
+  }
+  return out;
+}
+
+/**
+ * Every non-empty segment's words, raw and in order, with the separators that join it to the next one:
+ * `cd x && git push` reads `[{words: ['cd', 'x'], join: '&&'}, {words: ['git', 'push'], join: ''}]`. A segment's
+ * index here is the `at` gitInvocations gives it. Total and linear, like the rest.
+ *
+ * @param {unknown} text the raw command string from the hook payload
+ * @returns {{words: string[], join: string}[]}
+ */
+export function segments(text) {
+  if (typeof text !== 'string' || !text) return [];
+  const parts = text.split(SEPARATOR_KEPT);
+  /** @type {{words: string[], join: string}[]} */
+  const out = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    const words = parts[i].trim().split(/\s+/).filter(Boolean);
+    if (words.length) out.push({ words, join: '' });
+    if (out.length && i + 1 < parts.length) out[out.length - 1].join += parts[i + 1];
+  }
+  return out;
+}
+
+/** Each forge CLI's request noun and the verbs that open or merge one, aliases included, as each CLI's docs list them.
+ * @type {Readonly<Record<string, {nouns: string[], create: string[], merge: string[]}>>} */
+const REQUEST_CLI = Object.freeze({
+  gh: { nouns: ['pr'], create: ['create', 'new'], merge: ['merge'] },
+  glab: { nouns: ['mr'], create: ['create', 'new'], merge: ['merge', 'accept'] },
+  tea: { nouns: ['pulls', 'pull', 'pr'], create: ['create', 'c'], merge: ['merge', 'm'] },
+});
+
+/**
+ * Every pull or merge request this command opens or merges, in order: `gh pr create && glab mr merge 5` reads
+ * `[{cli: 'gh', verb: 'create'}, {cli: 'glab', verb: 'merge'}]`.
+ *
+ * The same anchor as `gitInvocations`: the command word has to be gh, glab or tea (or end in `/gh` and so on), so
+ * `echo "gh pr merge"` is silent. The first request noun after it names the subcommand, and the next non-flag word is
+ * its verb, so a flag's argument sitting between the two hides the call, the same cost as the git reader's.
+ *
+ * @param {unknown} text the raw command string from the hook payload
+ * @returns {{cli: string, verb: 'create'|'merge'}[]}
+ */
+export function forgeRequests(text) {
+  if (typeof text !== 'string' || !text) return [];
+
+  /** @type {{cli: string, verb: 'create'|'merge'}[]} */
+  const out = [];
+  for (const segment of text.split(SEPARATOR)) {
+    const words = segment.trim().split(/\s+/).filter(Boolean);
+    const cli = words.length ? words[0].slice(words[0].lastIndexOf('/') + 1) : '';
+    if (!Object.hasOwn(REQUEST_CLI, cli)) continue;
+    const spec = REQUEST_CLI[cli];
+    const at = words.findIndex((w, i) => i > 0 && spec.nouns.includes(w));
+    if (at < 0) continue;
+    const verb = words.slice(at + 1).find((w) => !w.startsWith('-')) ?? '';
+    if (spec.create.includes(verb)) out.push({ cli, verb: 'create' });
+    else if (spec.merge.includes(verb)) out.push({ cli, verb: 'merge' });
   }
   return out;
 }

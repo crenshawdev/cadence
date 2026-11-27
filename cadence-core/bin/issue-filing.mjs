@@ -8,15 +8,14 @@
 'use strict';
 
 import { lstatSync, readFileSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { basename, join } from 'node:path';
 import { boundedRun as run } from './lib/bounded-run.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
+import { atomicWrite, withPlanningFileLock } from './lib/planning-store.mjs';
 import {
-  atomicWrite, declinedPath, ensureRecordsDir, filedPath, makeDir, withPlanningFileLock,
-} from './lib/planning-store.mjs';
-import {
-  appendDeclinedRow, appendFiledRow, parseDeclinedRows, parseFiledRows,
+  AGILE_DECLINED_PREAMBLE, AGILE_FILED_PREAMBLE, appendDeclinedRow, appendFiledRow, parseDeclinedRows, parseFiledRows,
 } from './lib/planning-files.mjs';
+import { declinedHome, ensureLedgerDir, filedHome, fromRoot, missingRelease, onAgilePath } from './lib/project-homes.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
@@ -126,8 +125,11 @@ function readPayload(file) {
   }
 }
 
-/** The filed ledger's path as a hint spells it, from the write module so the folder's name lives in one place. */
-const FILED_AT = filedPath('.planning').split(sep).join('/');
+/** The filed ledger's path as a hint spells it. @param {string} dir */
+function filedAt(dir) {
+  const planning = join(dir, '.planning');
+  return `.planning/${fromRoot(planning, filedHome(planning))}`;
+}
 
 /** The decline set, read off the DECLINED.md ledger under the records folder, as fingerprints or a refusal.
  *
@@ -138,7 +140,7 @@ const FILED_AT = filedPath('.planning').split(sep).join('/');
  * @returns {{ok: true, fingerprints: Set<string>}
  *   | {ok: false, reason: string, detail: string, hint: string}} */
 function readDeclines(dir) {
-  const got = readLedger(declinedPath(join(dir, '.planning')), {
+  const got = readLedger(declinedHome(join(dir, '.planning')), {
     unreadable: { reason: 'declines-unreadable',
       hint: 'this fire cannot tell which findings were already declined, so it refuses rather '
         + 'than re-asking about them: make that file readable - a wrong mode and a dangling '
@@ -189,7 +191,7 @@ function readLedger(file, refusals) {
  * @returns {{ok: true, rows: Map<string, {date: string, unconfirmed: boolean}>}
  *   | {ok: false, reason: string, detail: string, hint: string}} */
 function readFiled(dir) {
-  const got = readLedger(filedPath(join(dir, '.planning')), {
+  const got = readLedger(filedHome(join(dir, '.planning')), {
     unreadable: { reason: 'filed-unreadable',
       hint: 'this fire cannot tell which findings it already filed, so it refuses rather than '
         + 'risking a second issue for one of them: make that file readable - a wrong mode and '
@@ -322,21 +324,21 @@ function markUnconfirmed(text, print) {
  */
 function mirrorFiled(dir, provider, repo, filed) {
   const date = new Date().toISOString().slice(0, 10);
+  const planning = join(dir, '.planning');
+  const agile = onAgilePath(planning);
   for (const arm of [
-    { name: 'FILED.md', pathOf: filedPath, want: 'accept', append: appendFiledRow, lock: 'filed-locked', dedup: true },
-    { name: 'DECLINED.md', pathOf: declinedPath, want: 'decline', append: appendDeclinedRow, lock: 'declined-locked',
-      dedup: false },
+    { file: filedHome(planning), want: 'accept', append: appendFiledRow, lock: 'filed-locked', dedup: true,
+      preamble: agile ? AGILE_FILED_PREAMBLE : undefined },
+    { file: declinedHome(planning), want: 'decline', append: appendDeclinedRow, lock: 'declined-locked', dedup: false,
+      preamble: agile ? AGILE_DECLINED_PREAMBLE : undefined },
   ]) {
     const rows = filed.filter((f) => f.disposition === arm.want);
     if (!rows.length) continue;
-    const file = arm.pathOf(join(dir, '.planning'));
+    const { file } = arm;
     try {
       // before the lock: the lock is a sibling of the target, so its create and atomicWrite's rename need the directory
-      makeDir(join(dir, '.planning'));
-      const records = ensureRecordsDir(join(dir, '.planning'));
-      if (!records.ok) {
-        return { ok: false, reason: 'write-failed', detail: `${file}: the records folder is not usable (${records.reason})` };
-      }
+      const ready = ensureLedgerDir(planning);
+      if (ready.ok === false) return { ok: false, reason: 'write-failed', detail: `${file}: ${ready.reason}` };
       const guarded = withPlanningFileLock(file, () => {
         // an unreadable file isn't an empty one: catching every read error into `text = ''` erased the rows on write
         let text = '';
@@ -357,10 +359,10 @@ function mirrorFiled(dir, provider, repo, filed) {
           const before = text;
           text = arm.append(text, { date, provider, slug: repo,
             fingerprint: row.fingerprint, title: row.title,
-            ...(row.unconfirmed === true ? { unconfirmed: true } : {}) });
+            ...(row.unconfirmed === true ? { unconfirmed: true } : {}) }, arm.preamble);
           // the appender refuses by returning the text unchanged, so a rejected row would otherwise report recorded
           if (text === before) {
-            throw new Error(`the row for ${row.fingerprint} does not fit ${arm.name}'s grammar `
+            throw new Error(`the row for ${row.fingerprint} does not fit ${basename(file)}'s grammar `
               + `and was not written (slug ${JSON.stringify(repo)})`);
           }
         }
@@ -606,7 +608,7 @@ function emitCreateFailed(dir, forge, entries, i, filed, suppressed, ledgerStood
     + `${failed} is AMBIGUOUS rather than known-failed: a timeout, a kill on this step's `
     + 'own bound and a dropped connection all look here exactly like a refusal, and the '
     + `forge may have created that issue anyway. You do not have to resolve that by hand: `
-    + `${failed} now has an \`unconfirmed\` row in ${FILED_AT}, and this seam asks `
+    + `${failed} now has an \`unconfirmed\` row in ${filedAt(dir)}, and this seam asks `
     + `${forge.repo} for the titles carrying a fire's own fingerprints before it creates `
     + 'anything. So re-run this step with ONLY the unfiled entries this envelope names - '
     + 'the row and the lookup between them suppress the duplicate, and they are still in '
@@ -615,9 +617,9 @@ function emitCreateFailed(dir, forge, entries, i, filed, suppressed, ledgerStood
   const lostPointer = mirror.ok === false
     ? ` AND the recall pointer was NOT written (${mirror.reason}: ${mirror.detail}), so the `
       + `${filed.length} entries this envelope lists as \`filed\` are on ${forge.repo} with `
-      + `NOTHING in ${FILED_AT} pointing at them, and the ambiguous one got no `
+      + `NOTHING in ${filedAt(dir)} pointing at them, and the ambiguous one got no `
       + `\`unconfirmed\` row either - so re-running is NOT safe until this is fixed. Fix `
-      + `the write that detail names (a stale ${FILED_AT}.lock is the usual answer) `
+      + `the write that detail names (a stale ${filedAt(dir)}.lock is the usual answer) `
       + 'and add one `- ` row per ACCEPTED filed entry by hand, plus one carrying '
       + `\`${failed} unconfirmed:\` for the ambiguous one. Do not re-file them - they `
       + 'already exist.'
@@ -708,8 +710,8 @@ function cmdFile(dir, payloadFile) {
       detail: `every issue was created on ${forge.repo}, but the recall pointer could `
         + `not be written: ${mirror.detail}`,
       hint: 'the issues are FILED and must not be filed again - fix the write the detail '
-        + `names (a stale ${FILED_AT}.lock is the usual answer) and add one \`- \` `
-        + `row per accepted issue to ${FILED_AT} by hand, or re-run only the `
+        + `names (a stale ${filedAt(dir)}.lock is the usual answer) and add one \`- \` `
+        + `row per accepted issue to ${filedAt(dir)} by hand, or re-run only the `
         + 'mirror once the path is writable' });
     return;
   }
@@ -734,7 +736,12 @@ try {
   if (cmd === 'unfixed' || cmd === 'file') {
     const dir = arg(cmd, '--dir') || process.cwd();
     const payload = arg(cmd, '--payload');
-    if (cmd === 'unfixed') cmdUnfixed(dir, payload);
+    // before the tracker is asked for anything: an issue filed with nowhere to record it would be filed again
+    const missing = missingRelease(join(dir, '.planning'));
+    if (missing !== null) {
+      emit({ ok: false, reason: 'no-release', detail: missing,
+        hint: 'finish the start, then re-run this step - nothing has been filed and no finding is lost' });
+    } else if (cmd === 'unfixed') cmdUnfixed(dir, payload);
     else cmdFile(dir, payload);
   } else {
     emit({ ok: false, reason: 'usage',

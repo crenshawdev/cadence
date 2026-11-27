@@ -9,11 +9,9 @@
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { insideRoot } from './contained.mjs';
+import { tasksHome } from './project-homes.mjs';
 
-/** Beside `phases/`, not in it, or the next milestone close archives it and `phaseDirsIn` lists it as a phase. */
-export const TASKS_DIR = 'tasks';
-
-/** The record file in `<planningRoot>/tasks/<slug>/`. No plan beside it, so /cad-why reaches it by its own tier. */
+/** The record file in a task's own folder. No plan beside it, so /cad-why reaches it by its own tier. */
 export const RECORD_FILE = 'RECORD.md';
 
 /** Slug length ceiling: too long a name fails the write after the caller was told the argument was fine. */
@@ -39,7 +37,7 @@ export function isTaskSlug(raw) {
 }
 
 /**
- * Every `<planningRoot>/tasks/<slug>/RECORD.md` on disk, sorted by slug.
+ * Every task's RECORD.md on disk, sorted by slug. `label` is its folder as it reads from the planning root.
  *
  * Fails open like phaseDirsIn in phase-plans.mjs: a missing root or `tasks/` is an empty list, not an ENOENT that
  * becomes `fail('internal')` on a tree that hasn't run a task yet.
@@ -47,11 +45,11 @@ export function isTaskSlug(raw) {
  * symlinked out of the tree would surface any readable file. It is resolved and must land inside the root.
  * An entry that isn't a slug this module would write is skipped first, since the slug travels on as rendered text.
  * @param {string} planningRoot
- * @returns {Array<{slug: string, path: string}>}
+ * @returns {Array<{slug: string, path: string, label: string}>}
  */
 export function taskRecordsIn(planningRoot) {
   const inside = (/** @type {string} */ p) => insideRoot(planningRoot, p);
-  const group = join(planningRoot, TASKS_DIR);
+  const { path: group, rel } = tasksHome(planningRoot);
   if (!inside(group)) return [];
   let names;
   try {
@@ -75,7 +73,7 @@ export function taskRecordsIn(planningRoot) {
     } catch {
       continue;
     }
-    found.push({ slug, path });
+    found.push({ slug, path, label: `${rel}/${slug}` });
   }
   // slug order, not directory order: readdirSync promises none, and the same query has to emit the same bytes
   return found.sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));

@@ -9,12 +9,18 @@
 'use strict';
 
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
-import { atomicWrite, ensureRecordsDir, recordsDir, statePath, withPlanningFileLock } from './planning-store.mjs';
+import { atomicWrite, durableWrite, ensureRecordsDir, recordsDir, statePath, withPlanningFileLock } from './planning-store.mjs';
 
 export { statePath };
 
 /** The layout this code writes and reads. Bump it when the file's shape changes. */
 export const STATE_LAYOUT = 1;
+
+/** The layout the agile path's marker carries. Only `markAgile` writes it, so `STATE_LAYOUT` skips this number when it's bumped. */
+export const AGILE_LAYOUT = 2;
+
+/** What the marker names, so a newer old-path layout that reuses the number can't read as the marker. */
+const AGILE_PATH = 'agile';
 
 /** The key the stamp sits under. Not `version`, not `generation`. */
 export const STAMP_KEY = 'layout';
@@ -118,7 +124,7 @@ function serialize(state) {
 
 /**
  * @typedef {{kind: 'absent'} | {kind: 'valid', state: ProjectState}
- *   | {kind: 'invalid', reason: 'not-json' | 'no-stamp' | 'newer-layout' | 'bad-shape' | 'unreadable', detail: string}} StateRead
+ *   | {kind: 'invalid', reason: 'not-json' | 'no-stamp' | 'newer-layout' | 'agile-path' | 'bad-shape' | 'unreadable', detail: string}} StateRead
  */
 
 /**
@@ -138,6 +144,9 @@ function judge(text) {
   const layout = raw[STAMP_KEY];
   if (!Number.isInteger(layout) || layout < 1) {
     return { kind: 'invalid', reason: 'bad-shape', detail: `\`${STAMP_KEY}\` is not a positive whole number` };
+  }
+  if (layout === AGILE_LAYOUT && raw.path === AGILE_PATH) {
+    return { kind: 'invalid', reason: 'agile-path', detail: 'this project is on the agile path' };
   }
   if (layout > STATE_LAYOUT) {
     return { kind: 'invalid', reason: 'newer-layout',
@@ -165,7 +174,8 @@ export function readState(planningRoot) {
 }
 
 /**
- * May a log writer append under `records/`? Only in a project stamped with a valid state, and never through a link.
+ * May a log writer append under `records/`? Only in a project stamped with a valid state or marked as on the agile path,
+ * since the logs are both paths' own, and never through a link.
  * It creates nothing: hooks and route.mjs call the log writers, and neither may convert a project (D-10). A folder
  * that is a link or not a folder keeps the reason it always had, ahead of the state's.
  * @param {string} planningRoot
@@ -181,18 +191,20 @@ export function recordsReady(planningRoot) {
   }
   if (st.isSymbolicLink()) return { ok: false, reason: 'symlinked-records' };
   if (!st.isDirectory()) return { ok: false, reason: 'ENOTDIR' };
-  return readState(planningRoot).kind === 'valid' ? { ok: true } : { ok: false, reason: 'no-valid-state' };
+  const got = readState(planningRoot);
+  if (got.kind === 'valid' || (got.kind === 'invalid' && got.reason === 'agile-path')) return { ok: true };
+  return { ok: false, reason: 'no-valid-state' };
 }
 
 /**
- * @typedef {{ok: true, changed: boolean} | {ok: false, reason: 'bad-shape' | 'newer-layout' | 'records-unwritable'
- *   | 'state-locked' | 'write-failed', detail: string}} StateWrite
+ * @typedef {{ok: true, changed: boolean} | {ok: false, reason: 'bad-shape' | 'newer-layout' | 'agile-path' | 'state-present'
+ *   | 'cycle-open' | 'records-unwritable' | 'state-locked' | 'write-failed', detail: string}} StateWrite
  */
 
 /**
  * Write the state to disk while the lock is held. An unchanged state writes nothing, so a second identical write
- * leaves the same bytes and the same mtime. A newer layout on disk is never replaced; any other invalid file is,
- * since that is how a damaged one is rebuilt.
+ * leaves the same bytes and the same mtime. A newer layout or the agile marker on disk is never replaced; any other
+ * invalid file is, since that is how a damaged one is rebuilt.
  * @param {string} file @param {ProjectState} state
  * @returns {StateWrite}
  */
@@ -202,7 +214,9 @@ function commit(file, state) {
   try { prior = readFileSync(file, 'utf8'); } catch { /* absent, the first write */ }
   if (prior !== null) {
     const was = judge(prior);
-    if (was.kind === 'invalid' && was.reason === 'newer-layout') return { ok: false, reason: 'newer-layout', detail: was.detail };
+    if (was.kind === 'invalid' && (was.reason === 'newer-layout' || was.reason === 'agile-path')) {
+      return { ok: false, reason: was.reason, detail: was.detail };
+    }
     if (prior === next) return { ok: true, changed: false };
   }
   atomicWrite(file, next);
@@ -237,8 +251,39 @@ export function writeState(planningRoot, state) {
   return locked(planningRoot, (file) => commit(file, shaped.state));
 }
 
+/**
+ * Does a state hold nothing at all? A seam call in a folder with no project stamps one, so it says nothing about the old path.
+ * @param {ProjectState} s
+ */
+export function emptyState(s) {
+  return !s.cycleOpen && s.cursor === null && s.phases.length === 0 && s.requirements.length === 0;
+}
+
+/**
+ * Mark a project as on the agile path, which every old-path command then refuses. A marked project is left as it is, and
+ * a project with a state that holds anything is refused untouched, since only a switch may replace an old-path state. A
+ * switch passes `copyTo`: the old state is written there from the bytes this lock read, synced, and only then replaced.
+ * @param {string} planningRoot @param {string} [copyTo] where a switch keeps the old state
+ * @returns {StateWrite}
+ */
+export function markAgile(planningRoot, copyTo) {
+  return locked(planningRoot, (file) => {
+    const was = readState(planningRoot);
+    // marked already, so whatever copy a first start left is the old state's and nothing here touches it
+    if (was.kind === 'invalid' && was.reason === 'agile-path') return { ok: true, changed: false };
+    const switching = copyTo !== undefined && was.kind === 'valid';
+    if (!switching && (was.kind === 'invalid' || (was.kind === 'valid' && !emptyState(was.state)))) return { ok: false, reason: 'state-present', detail: `${file} is already there` };
+    // the switch judged it landed under a lock old-path writers don't take, so a cycle they opened since shows here first
+    if (switching && was.state.cycleOpen) return { ok: false, reason: 'cycle-open', detail: `${file} holds a cycle opened since the switch judged it landed` };
+    // under the lock every old-path writer takes, so the copy is the state the marker replaces, byte for byte
+    if (switching) durableWrite(copyTo, readFileSync(file));
+    atomicWrite(file, `${JSON.stringify({ [STAMP_KEY]: AGILE_LAYOUT, path: AGILE_PATH }, null, 2)}\n`);
+    return { ok: true, changed: true };
+  });
+}
+
 /** The invalid states a rebuild may replace: ones it read and judged. A newer layout or a file it could not read is not one. */
-const REBUILDABLE = ['not-json', 'no-stamp', 'bad-shape'];
+export const REBUILDABLE = ['not-json', 'no-stamp', 'bad-shape'];
 
 /**
  * Replace a state file that is there and does not parse with `state`, the look and the write under one lock, so a state
@@ -246,18 +291,18 @@ const REBUILDABLE = ['not-json', 'no-stamp', 'bad-shape'];
  * valid one may hold what no artifact does. `afterWrite` renders the views under the same lock, as in `updateState`.
  * @param {string} planningRoot @param {ProjectState} state @param {(state: ProjectState) => void} [afterWrite]
  * @returns {(StateWrite & {ok: true, was: StateRead['kind'] | string}) | (Exclude<StateWrite, {ok: true}> & {stateWritten?: boolean})
- *   | {ok: false, reason: 'newer-layout' | 'unreadable', detail: string}}
+ *   | {ok: false, reason: 'newer-layout' | 'agile-path' | 'unreadable', detail: string}}
  */
 export function rebuildState(planningRoot, state, afterWrite) {
   const shaped = shapeOf(state);
   if (shaped.ok === false) return { ok: false, reason: 'bad-shape', detail: shaped.detail };
-  const box = /** @type {{was: string, refused: {reason: 'newer-layout' | 'unreadable', detail: string} | null, committed: boolean}} */ ({ was: 'absent', refused: null, committed: false });
+  const box = /** @type {{was: string, refused: {reason: 'newer-layout' | 'agile-path' | 'unreadable', detail: string} | null, committed: boolean}} */ ({ was: 'absent', refused: null, committed: false });
   const wrote = locked(planningRoot, (file) => {
     const now = readState(planningRoot);
     box.was = now.kind === 'invalid' ? now.reason : now.kind;
     if (now.kind !== 'invalid') return { ok: true, changed: false };
     if (!REBUILDABLE.includes(now.reason)) {
-      box.refused = { reason: /** @type {'newer-layout' | 'unreadable'} */ (now.reason), detail: `${file}: ${now.detail}` };
+      box.refused = { reason: /** @type {'newer-layout' | 'agile-path' | 'unreadable'} */ (now.reason), detail: `${file}: ${now.detail}` };
       return { ok: true, changed: false };
     }
     const done = commit(file, shaped.state);

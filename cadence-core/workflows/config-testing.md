@@ -1,7 +1,8 @@
 # cad-config testing policy (cold branch)
 
 Loaded from config.md's **Testing policy** arm, and opened directly by
-`/cad-new-project` and `/cad-adopt` at their `testing_policy` step.
+`/cad-new-project` and `/cad-adopt` at their `testing_policy` step and by
+`/cad-agile` at its `setup` step.
 
 ## Testing policy (`--testing`)
 

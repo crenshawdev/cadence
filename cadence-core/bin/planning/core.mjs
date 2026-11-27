@@ -17,6 +17,7 @@ import { isQueueName, queueIdentity } from '../lib/deferred-queue.mjs';
 import { PLAN_FILE, planFilesIn, planFilesOf, planNumber } from '../lib/phase-plans.mjs';
 import { classifyPhaseList, parseRequirements, parseUat, uatComplete } from '../lib/planning-files.mjs';
 import { codemapDir, deferredDir, phaseRecordsDir, phaseReportsDir, recordsPath } from '../lib/planning-store.mjs';
+import { onAgilePath, tasksHome } from '../lib/project-homes.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
@@ -556,7 +557,7 @@ function fireIdentity(face, dir, opts) {
         + 'only, opening with a letter or a digit and at most 64 characters - got '
         + `${typeof opts.task === 'string' ? JSON.stringify(opts.task) : 'nothing'}`,
         're-send --task with the task slug spelled with those characters only - it addresses'
-        + ' .planning/tasks/<slug>/ verbatim; nothing was written');
+        + ` .planning/${tasksHome(dir).rel}/<slug>/ verbatim; nothing was written`);
       return null;
     }
     task = opts.task;
@@ -567,10 +568,10 @@ function fireIdentity(face, dir, opts) {
   if (n === '0' && task === undefined) {
     fail('bad-args',
       `${face} --phase 0 is a TASK's number and resolves no phase home - a task keeps its `
-      + 'record beside the sibling REVIEW file under .planning/tasks/<slug>/',
-      'pass --task <slug> naming the task directory. `deferred record` does not take it: the '
-      + 'queue enumeration reads the two phase homes only, so a member written under a slug '
-      + 'would never be found, and a blocking gate is the one that has to be');
+      + `record beside the sibling REVIEW file under .planning/${tasksHome(dir).rel}/<slug>/`,
+      'pass --task <slug> naming the task directory. `deferred record` takes it for an agile '
+      + 'story only: the old path\'s queue reads the two phase homes, so a member written under a '
+      + 'slug there would never be found');
     return null;
   }
 
@@ -591,20 +592,9 @@ function fireIdentity(face, dir, opts) {
 }
 
 /**
- * Is `<dir>/<name>` a real directory, present and not a symlink?
- * lstat follows a symlinked parent in passing, so the parent gets the same test as the leaf.
- * @param {string} dir @param {string} name @returns {boolean}
- */
-function realDir(dir, name) {
-  let stat = null;
-  try { stat = lstatSync(join(dir, name)); } catch { return false; }
-  return stat.isDirectory();
-}
-
-/**
  * The directory a fire's artifact is written into, or null once the refusal is out.
  * It sits beside the sibling REVIEW file, never in `<plandir>/records/reports/`, where lease-check exempts only one path.
- * A task names its own home (`.planning/tasks/<slug>/`), the only one tried; else `phases/<N>/records/`, then the carried queue's `<N>/`.
+ * A task names its own home (`tasksHome`'s), the only one tried; else `phases/<N>/records/`, then the carried queue's `<N>/`.
  * The phase must exist; its records folder need not, and nothing is created here: the writer makes it on its first write.
  * @param {string} dir @param {string} n the phase as the caller spelled it
  * @param {string} what the artifact, for the refusal's wording
@@ -613,17 +603,18 @@ function realDir(dir, name) {
  */
 function fireHome(dir, n, what, task) {
   if (task) {
-    const tdir = join(dir, 'tasks', task);
+    const { path, rel } = tasksHome(dir);
+    const tdir = join(path, task);
     let tstat = null;
-    if (realDir(dir, 'tasks')) {
+    if (realChain(dir, rel)) {
       try { tstat = lstatSync(tdir); } catch { /* absent is the answer, never a throw */ }
     }
     if (tstat && tstat.isDirectory()) return tdir;
     fail('no-task-dir',
-      `tasks/${task}/ is not a directory under ${dir} - the ${what} is written BESIDE the `
+      `${rel}/${task}/ is not a directory under ${dir} - the ${what} is written BESIDE the `
       + 'sibling REVIEW file, and a task keeps both under its own slug, so that directory has '
       + 'to exist already',
-      `check the --task spelling first - it addresses tasks/${task}/ verbatim. A task that `
+      `check the --task spelling first - it addresses ${rel}/${task}/ verbatim. A task that `
       + 'never wrote a PLAN.md has no directory: the inline path writes no plan, so a blocking '
       + 'gate there is settled by the user rather than recorded here');
     return null;
@@ -752,13 +743,16 @@ const DEFERRED_REL = posixRel(deferredDir('.'));
 const PHASE_RECORDS_REL = posixRel(phaseRecordsDir('.'));
 
 /**
- * The two directories a queue member may live in: `rel` is how an answer names it, `path` where it is on disk.
+ * The directories a queue member may live in: `rel` is how an answer names it, `path` where it is on disk.
  * Each holds one directory per phase; `inner` is the folder inside a phase's directory that holds its members, empty
- * for the carried queue, whose phase directory holds them directly.
+ * for the carried queue, whose phase directory holds them directly. On the agile path the one home is the tasks
+ * folder, one directory per task, and `task` says so.
  * @param {string} dir the planning directory
- * @returns {{rel: string, path: string, inner: string}[]}
+ * @returns {{rel: string, path: string, inner: string, task?: boolean}[]}
  */
 function queueHomes(dir) {
+  // the agile path has no phases: a story's deferred fire leaves its member beside its review, in its task's folder
+  if (onAgilePath(dir)) { const home = tasksHome(dir); return [{ rel: home.rel, path: home.path, inner: '', task: true }]; }
   return [{ rel: 'phases', path: join(dir, 'phases'), inner: PHASE_RECORDS_REL },
     { rel: DEFERRED_REL, path: deferredDir(dir), inner: '' }];
 }
@@ -859,8 +853,9 @@ function readQueue(dir, wantPhase) {
           unreadable.push({ path, detail: id.detail });
           continue;
         }
-        // a member's phase must match its directory, or a hand move makes --phase narrow to a phase it doesn't claim
-        if (id.phase !== ent.name) {
+        // a member's phase must match its directory, or a hand move makes --phase narrow to a phase it doesn't claim;
+        // a task's member is a phase 0 fire, in the folder of the task it was fired for
+        if (home.task ? id.phase !== '0' : id.phase !== ent.name) {
           unreadable.push({ path, detail: `queue member says phase ${id.phase} but sits in ${where}/` });
           continue;
         }
@@ -1143,6 +1138,7 @@ export {
   readProject,
   readQueue,
   readReadsRecords,
+  realChain,
   readStoredMap,
   resolveIndex,
   resolveRange,

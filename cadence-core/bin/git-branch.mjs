@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // @ts-check
-// git-branch.mjs - the workflow-facing seam over lib/branch-decision.mjs. It advises whether to create, switch, stay
+// git-branch.mjs - the workflow-facing seam over lib/branch-advice.mjs. It advises whether to create, switch, stay
 // or ask on the integration branch, and never runs `checkout -b` itself. One JSON line.
 //   decide [--dir <path>] [--branch <name>]
 //     --dir is the planning root: absent means cwd, an empty or valueless one refuses (true of `tags` too).
 //     It reads the tag list because no integration branch may be named after a published version.
+//     On an agile project the branch carries the release's name, and no version is read.
 //     --branch overrides the current branch.
 //   tags [--dir <path>]
 //     Prints `tags[]` for that root, read-only. Any failure is an empty list, not an enclosing repo's releases.
@@ -13,40 +14,17 @@
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
-import { integrationBranchName, configuredNameProblem, milestoneVersion, decideBranch } from './lib/branch-decision.mjs';
+import { adviseBranch } from './lib/branch-advice.mjs';
 // shared with the audit so the two can't drift apart
 import { readTags } from './lib/git-tags.mjs';
-import { resolveProtectedBranches } from './lib/protected-branches.mjs';
-// reads '' on failure
-import { readText } from './lib/seam-input.mjs';
 // no flag rule here: arg-contract declares them. `--dir` refuses though this seam mutates nothing, since an advisory
 // reader answering about the wrong tree is the same quiet wrong answer (`tags --dir ''` did exactly that)
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
-// degrades to "", which reads as not-on-a-base
-import { readCurrentBranch } from './lib/git-head.mjs';
 
 function decide(dir, branchOverride) {
   // warnings[] rides every result: a torn layer means the advice came from defaults, and the caller has to see that
   const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
-  const git = config.git || {};
-  const mode = git.integration_branch || 'milestone';
-  const autoBranch = git.auto_branch || 'ask';
-  // one coercion for protected_branches, or this advises a named branch unprotected while git-guard honors it
-  const protectedBranches = resolveProtectedBranches(git);
-  const branch = branchOverride !== undefined ? branchOverride : readCurrentBranch(dir);
-  const projectText = readText(join(dir, '.planning', 'PROJECT.md'));
-  const roadmapText = readText(join(dir, '.planning', 'ROADMAP.md'));
-  // the configured name wins; one failing the grammar on read is a naming problem, never a `create` under it
-  const configured = git.integration_branch_name;
-  const nameProblem = configuredNameProblem(configured);
-  const integrationName = integrationBranchName(projectText, roadmapText, configured);
-  // the guard reads the version itself, so it holds under any branch name
-  const version = milestoneVersion(projectText, roadmapText);
-  // the whole tag list, unranked: `decideBranch` only tests membership
-  // `dir` is the project root, so it's both where the question is asked and the root the answer must belong to
-  const d = decideBranch({ mode, autoBranch, currentBranch: branch, protectedBranches, integrationName, nameProblem,
-    version, publishedVersions: readTags(dir, dir) });
-  emit({ ok: true, action: d.action, branch: d.branch, mode, currentBranch: branch, reason: d.reason, warnings });
+  emit({ ok: true, ...adviseBranch(dir, config.git || {}, { branch: branchOverride }), warnings });
 }
 
 /**

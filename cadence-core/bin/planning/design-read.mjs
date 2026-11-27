@@ -13,7 +13,7 @@ import { parseActiveIds, phaseRequirements, phaseSpineDecisions, sectionSpan } f
 import { readState, statePath } from '../lib/project-state.mjs';
 import { DESIGN_FILES, readDesign } from '../lib/seldon-design.mjs';
 import { unreadable } from './phase-entry.mjs';
-import { invalidHint } from './state-import.mjs';
+import { invalidHint, invalidReason } from './state-import.mjs';
 
 // a stand-in for the other value, so the judge's verdict on one value is about that value alone
 const PLAIN = 'plain';
@@ -35,6 +35,34 @@ function readDocument(file) {
     const code = /** @type {any} */ (err)?.code;
     return { text: null, problem: code === 'ENOENT' ? 'missing file' : `cannot read (${code || 'no error code'})` };
   }
+}
+
+/**
+ * A design folder's four documents read and parsed, with every problem in them: a file that can't be read, a line break
+ * only some readers see, and what `readDesign` finds. Both paths read a design through this.
+ * @param {string} folder @param {number} [first] the number the first epic's phase takes
+ * @returns {{read: ReturnType<typeof readDesign>, issues: import('../lib/seldon-design.mjs').Issue[], texts: Record<string, string|null>}}
+ */
+export function readDesignFolder(folder, first = 1) {
+  /** @type {import('../lib/seldon-design.mjs').Issue[]} */
+  const issues = [];
+  /** @type {Record<string, string|null>} */
+  const texts = {};
+  for (const name of DESIGN_FILES) {
+    const got = readDocument(join(folder, name));
+    const text = got.text;
+    texts[name] = text;
+    if (got.problem !== null) issues.push({ file: name, problem: got.problem });
+    const lines = text === null ? []
+      : [...new Set([...text.matchAll(LINE_BREAK_G)].map((m) => text.slice(0, m.index).split('\n').length))];
+    if (lines.length) {
+      issues.push({ file: name, problem: `a carriage return with no newline after it, or a U+2028 or U+2029 separator, on`
+        + ` line${lines.length === 1 ? '' : 's'} ${lines.join(', ')} - Cadence's readers take each as a line break, so take it out` });
+    }
+  }
+  const read = readDesign(texts, first);
+  issues.push(...read.issues);
+  return { read, issues, texts };
 }
 
 /**
@@ -88,7 +116,7 @@ function judgeProject(title, brief, phases, date, issues) {
  * Not planning-files' REQ_ID_TOKEN, which needs a leading letter where isRequirementId admits a digit.
  * @param {string} text @param {string} id
  */
-function holdsToken(text, id) {
+export function holdsToken(text, id) {
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(?<![A-Za-z0-9_-])${escaped}(?![A-Za-z0-9_])`).test(text);
 }
@@ -102,7 +130,7 @@ function holdsToken(text, id) {
 function readProject(dir) {
   const got = readState(dir);
   if (got.kind === 'invalid') {
-    fail('invalid-state', `${statePath(dir)}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
+    fail(invalidReason(got.reason), `${statePath(dir)}: ${got.reason} - ${got.detail}`, invalidHint(got.reason));
     return null;
   }
   if (got.kind === 'absent') {
@@ -176,24 +204,7 @@ function cmdDesignRead(dir, opts) {
   if (add && project === null) return;
   if (project) first = project.first;
 
-  /** @type {import('../lib/seldon-design.mjs').Issue[]} */
-  const issues = [];
-  /** @type {Record<string, string|null>} */
-  const texts = {};
-  for (const name of DESIGN_FILES) {
-    const got = readDocument(join(design.abs, name));
-    const text = got.text;
-    texts[name] = text;
-    if (got.problem !== null) issues.push({ file: name, problem: got.problem });
-    const lines = text === null ? []
-      : [...new Set([...text.matchAll(LINE_BREAK_G)].map((m) => text.slice(0, m.index).split('\n').length))];
-    if (lines.length) {
-      issues.push({ file: name, problem: `a carriage return with no newline after it, or a U+2028 or U+2029 separator, on`
-        + ` line${lines.length === 1 ? '' : 's'} ${lines.join(', ')} - Cadence's readers take each as a line break, so take it out` });
-    }
-  }
-  const read = readDesign(texts, first);
-  issues.push(...read.issues);
+  const { read, issues } = readDesignFolder(design.abs, first);
   judgePhases(read.design.phases, issues);
   // judgePhases covers the phase list line; this covers the Requirements line, read back the way the planner reads it
   const sections = renderSections(read.design.phases);

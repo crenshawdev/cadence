@@ -98,6 +98,23 @@ function comparePreIds(a, b) {
  * @returns {-1|0|1|null}
  */
 export function compareVersions(a, b) {
+  return compareParsed(a, b);
+}
+
+/**
+ * Two closed releases, newest first: a semver one by its version and above any that isn't, and the rest by mtime, since a
+ * name like release-9 says nothing about order. One order for the start and the land, so the two never pick differently.
+ * @param {{version: string, at: number}} a @param {{version: string, at: number}} b @returns {number}
+ */
+export function newerRelease(a, b) {
+  const [x, y] = [normalizeTargetVersion(a.version), normalizeTargetVersion(b.version)];
+  const [sa, sb] = [parseVersion(x) !== null, parseVersion(y) !== null];
+  if (sa && sb) return -(compareParsed(x, y) ?? 0) || b.at - a.at;
+  return sa !== sb ? (sa ? -1 : 1) : b.at - a.at;
+}
+
+/** @param {string|null|undefined} a @param {string|null|undefined} b @returns {-1|0|1|null} */
+function compareParsed(a, b) {
   const x = parseVersion(a);
   const y = parseVersion(b);
   if (!x || !y) return null;

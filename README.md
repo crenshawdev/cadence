@@ -1,4 +1,4 @@
-# Cadence
+![Cadence](https://raw.githubusercontent.com/crenshawdev/foundation/main/assets/cadence/cadence-banner.png)
 
 [![Test](https://github.com/crenshawdev/cadence/actions/workflows/test.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/test.yml)
 [![Latest release](https://img.shields.io/github/v/release/crenshawdev/cadence?label=release)](https://github.com/crenshawdev/cadence/releases/latest)
@@ -10,7 +10,7 @@ Cadence is a Claude Code plugin that brings engineering practices to software yo
 
 Getting an agent to write code is usually the easy part. Keeping it working toward the thing you actually asked for takes more attention. Decisions get lost between sessions. A small change grows an abstraction nobody needed. The tests pass, but you still have to work out what they established.
 
-Cadence gives that work a structure. Requirements, decisions, plans and results stay in your repository under `.planning/`. Planning, implementation and review happen in separate contexts. A new session reads where the project stands and picks up from there.
+Cadence gives that work a structure. Requirements, decisions, plans and results stay in your repository under `.planning/`. Reviews run in a fresh context, apart from the work they check. A new session reads where the project stands and picks up from there.
 
 You decide what you're building and the constraints it needs to respect. Cadence carries those decisions through the work.
 
@@ -23,59 +23,63 @@ You'll need Claude Code with plugin support, Node.js, Git, and a signed-in forge
 /plugin install cadence@foundation
 ```
 
-In an existing repository:
+Then, in a new or existing repository:
 
 ```text
-/cadence:cad-adopt
+/cadence:cad-agile
 ```
 
-For a new project:
+That one command runs the whole release. Each time you run it, it reads `.planning/agile/` and does the next step: start a release, refine an epic, build a story, accept an epic or close the release. Each step's record is on disk, so you can clear the session between any two runs.
 
-```text
-/cadence:cad-new-project
-```
-
-Already worked through the idea? Pass your brief with `/cadence:cad-new-project --brief <file>`. Cadence reads what's settled and asks about what's still open. A Seldon design folder after `--brief` starts the project from the design and asks nothing the design answers. The forge, roles and testing-policy questions remain, and there's no approval gate.
+A project on the old path, started with `/cadence:cad-new-project` or `/cadence:cad-adopt` and worked a phase at a time, keeps working as it did, and the [guide](https://crenshawdev.github.io/cadence/) covers it. Once its release has landed, `/cadence:cad-agile --brief <design folder>` moves it to the new path: the old files go to `.planning/_archive-old-path/`, and the old commands stop working there.
 
 Update with `/plugin update cadence@foundation`.
 
-## Testing needs a stopping point
+## How a release runs
 
-An agent can find a reason to write another test almost indefinitely. Each suggestion may sound reasonable on its own. Taken together, they can cost more to build and maintain than the behavior they protect.
+A release is a set of epics, built in order, and each epic is a set of stories.
 
-More testing has to earn its place.
+### Design the release
 
-Cadence's testing policy sets the scope before implementation. Planning checks what the existing tests cover, chooses the smallest set of additional checks needed, and states what evidence is enough to finish. Fixtures, mocks and test infrastructure count toward that effort too.
+A release starts from a design: the problem, the requirements, the architecture decisions and the epics in build order. [Seldon](https://github.com/crenshawdev/seldon) writes one with you and hands you the command that starts it. Without a design, `/cadence:cad-agile` asks six questions and writes a short one in the same format. Nothing is written until you say yes to the draft.
 
-Under an accepted policy:
+### Start it
 
-- Required tests run unattended in **GitHub Actions**, including setup, services and cleanup.
-- Coverage starts at a recommended **85% for lines and branches**, preserving higher existing thresholds. Unsupported metrics are made explicit; Go has a separate statement threshold.
-- Existing tests are reused when they adequately cover the behavior. Bug fixes need a reproducer that fails for the defect and passes after the fix.
-- Testing stops when the agreed behavior is covered and the required checks pass. Expanding it needs a demonstrated defect, an uncovered acceptance requirement or a measured coverage shortfall.
+`/cadence:cad-agile --brief <design folder>` turns the design into `.planning/agile/`: the project, its requirements, the release and one file per epic. Everything that could stop the release later is settled first, before anything is written. You're asked about the forge, the testing policy, the parts of the code risky enough for a blocking review, any outside reviewer that can't run, and a branch if you're on a protected one, and the start stops if git has no name and email to commit with. The release is committed unless `planning.commit_docs` is off.
 
-A passing coverage percentage doesn't establish that the assertions mean anything. The policy requires both meaningful checks and the accepted thresholds. You shouldn't have to approve every test to keep testing under control.
+### Refine an epic
 
-Setup offers the policy, or you can accept one for an existing Cadence project with `/cadence:cad-config --testing`. It's opt-in per repository. CI-only checks stay pending until they run, and a phase is called CI-verified only for a commit whose required jobs passed.
+Before an epic is built, Cadence reads it and the code it changes, then cuts it into stories. A story is one change or a short plan of two or three tasks, and anything bigger is split. Each says what it delivers and how it's accepted, and every acceptance line is a check Cadence can run, never one left for you. You're asked only about choices that would be costly to undo. The rest are picked and shown with the list, and the stories are saved when you say to build them.
 
-Read the [testing chapter](https://crenshawdev.github.io/cadence/testing/policy.html) for the rules, supported coverage tools and enforcement limits.
+### Build a story
 
-## The working loop
+Each run builds the next story: its short plan when it has one, the change, and a commit per task. Then every reviewer `review.reviewers` names reviews the story's diff, and a diff that touches one of your risk surfaces goes to the risk-surface review instead, which blocks by default (`review.triggers.risk_surface.gate`). Reviewers are Claude agents with a fresh context, plus any outside model you've set up with `/cadence:cad-config`. An outside reviewer isn't required. How findings are handled is asked once per epic: fix everything at medium and up and bring you the lows, or bring you each one. Then the story's checks run, and it's done when they pass. A failing check gets one fix round.
 
-Commands below use the short names. In Claude Code, use the `/cadence:` prefix, as above.
+An agent can find a reason to write another test almost indefinitely. Cadence's testing policy, opt-in per repository, sets the scope before implementation: reuse existing tests that cover the behavior, add the fewest checks that prove the rest, and stop when the agreed behavior is covered and the required checks pass in GitHub Actions. Going past that needs a demonstrated defect, an uncovered acceptance requirement or a measured coverage shortfall. The [testing chapter](https://crenshawdev.github.io/cadence/testing/policy.html) has the rules, thresholds and supported tools.
 
-| Command | What it does |
-|---|---|
-| `/cad-context <phase>` | Settle the decisions and acceptance criteria. |
-| `/cad-plan <phase>` | Turn them into a plan with a bounded testing scope when a policy is active. |
-| `/cad-map` | Build or refresh the code map the planner reads. It runs only with `planning.code_map` on, after a typed yes. |
-| `/cad-execute <phase>` | Build the plan and run its checks. |
-| `/cad-verify <phase>` | Check whether the phase delivered what it promised. |
-| `/cad-progress` | Read the project state and find the next step. |
+### Accept the epic
 
-Review findings come back for triage. You can use fresh-context Claude reviewers or explicitly enable other providers. Publishing for verification and unattended landing each need their own authorization.
+When an epic's last story is done, Cadence shows what it took, from the stories, commits and review findings to the recorded agent tokens, with a drafted retrospective: what went well, what could be better, and what to change next. Accept it, change the retrospective, or say what's missing and the epic is cut again for it. Each thing to change next is applied, made a standing rule or dropped when the next epic is refined.
+
+### Close the release
+
+When every epic is done, you pick the version, and a requirement still open is either deferred or the close stops. Cadence moves the release into `.planning/agile/releases/<version>/` and commits it. On a Claude Code plugin it also sets the version in `.claude-plugin/plugin.json` and turns the CHANGELOG's Unreleased section into the release's entry. With `git.auto_close` set in both config layers, the close then lands the release as below; otherwise it pushes nothing.
+
+### Land it
+
+`/cadence:cad-land` reports the git state and asks how to publish: push, open a pull or merge request, tag, or leave it local. With `git.auto_close` set in both config layers, it opens the request, merges it and tags without stopping, and asks once, before the tag push.
 
 The record stays with the project, so you can end a session without making the next one reconstruct your decisions from chat.
+
+## Foundation
+
+Cadence is one of the Claude Code plugins in Foundation, the marketplace you installed it from. Each lives in its own repository, and each installs the same way: `/plugin install <name>@foundation`.
+
+| | Plugin | What it does |
+|---|---|---|
+| [![Cadence](https://raw.githubusercontent.com/crenshawdev/foundation/main/assets/cadence/cadence-avatar-128.png)](https://github.com/crenshawdev/cadence) | [cadence](https://github.com/crenshawdev/cadence) | Brings engineering practices to software you'll keep running after the session ends. |
+| | [burnrate](https://github.com/crenshawdev/burnrate) | Builds a local, self-contained dashboard of your own Claude Code token usage from your transcripts, and answers quick usage questions in chat. |
+| [![Headroom](https://raw.githubusercontent.com/crenshawdev/foundation/main/assets/headroom/headroom-avatar-128.png)](https://github.com/crenshawdev/headroom) | [headroom](https://github.com/crenshawdev/headroom) | Reminds you to `/clear` with a toast when your session's context fills past a point you choose, then again each step after. |
 
 ## Documentation
 

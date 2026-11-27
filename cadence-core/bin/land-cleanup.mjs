@@ -8,13 +8,17 @@
 // bad stdin is named, never collapsed to [], and halts under auto_close; unruled reviews halt too
 'use strict';
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
-import { integrationBranchName, configuredNameProblem } from './lib/branch-decision.mjs';
+import { integrationBranchName, configuredNameProblem, releaseBranchName } from './lib/branch-decision.mjs';
+import { agileDir, releaseFile, releasesDir, tagSafeVersion } from './lib/agile-paths.mjs';
+import { newerRelease } from './lib/release-decision.mjs';
+import { readReleaseFile } from './lib/agile-read.mjs';
+import { onAgilePath } from './lib/project-homes.mjs';
 import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-decision.mjs';
 // the one statement of what an entry means to a settling fire; here because lib/close-decision.mjs has no deps or I/O
 import { unfixedFromEntries } from './lib/filing-decision.mjs';
@@ -107,7 +111,10 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
   if (nameProblem !== null) warnings.push(`${nameProblem}; cleanup treats it as unset`);
   const configured = nameProblem === null && typeof git.integration_branch_name === 'string'
     ? git.integration_branch_name : null;
+  const agile = onAgilePath(join(dir, '.planning')) ? agileDir(join(dir, '.planning')) : null;
+  const closed = agile === null ? null : newestClosed(agile, warnings);
   const derived = branchArg !== undefined ? branchArg
+    : agile !== null ? agileBranch(agile, closed)
     : integrationBranchName(
       readText(join(dir, '.planning', 'PROJECT.md')),
       readText(join(dir, '.planning', 'ROADMAP.md')),
@@ -119,7 +126,37 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
   // any value in the key counts as set, a bad one included: it should stop applying too
   const nameSet = git.integration_branch_name !== undefined && git.integration_branch_name !== null;
   const decision = decideCleanup({ onLandCleanup, mergedIntoBase, branch, nameSet });
-  emit({ ok: true, ...decision, base, warnings });
+  emit({ ok: true, ...decision, base, warnings, ...(agile !== null ? { release: closed } : {}) });
+}
+
+/**
+ * The newest closed release, `{version, title}`, for the land's tag and branch, or null before any close. The highest
+ * version wins, since a fresh clone gives every folder one mtime; mtime only orders folders that aren't semver.
+ * A folder name is untrusted, so one git wouldn't take as a tag is passed over and named.
+ * @param {string} agile @param {string[]} warnings
+ */
+function newestClosed(agile, warnings) {
+  /** @type {string[]} */
+  let names = [];
+  try { names = readdirSync(releasesDir(agile)).filter((n) => !n.startsWith('.')); } catch { /* no close yet */ }
+  const candidates = [];
+  for (const v of names) {
+    if (!tagSafeVersion(v)) { warnings.push(`releases/${JSON.stringify(v)} is not a version git takes as a tag, so the land neither tags nor names a branch from it`); continue; }
+    try { candidates.push({ version: v, at: statSync(join(releasesDir(agile), v)).mtimeMs }); } catch { /* gone since the read */ }
+  }
+  const newest = candidates.sort(newerRelease)[0];
+  if (!newest) return null;
+  return { version: newest.version, title: readReleaseFile(readText(releaseFile(join(releasesDir(agile), newest.version))) ?? '')?.title ?? null };
+}
+
+/**
+ * The branch an agile release was built on, the name its start suggested: the open release's title, else the newest
+ * closed one's, or null when neither reads.
+ * @param {string} agile @param {{title: string|null}|null} closed
+ */
+function agileBranch(agile, closed) {
+  const title = readReleaseFile(readText(releaseFile(agile)) ?? '')?.title ?? closed?.title;
+  return title ? releaseBranchName(title) : null;
 }
 
 function gate(dir) {

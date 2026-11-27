@@ -1,0 +1,235 @@
+// @ts-check
+// agile-read.mjs - the agile path's own files read back: what release.md lists, an epic's status and a story whole
+// pure: text in, values out, and null for anything agile-render.mjs wouldn't have written
+'use strict';
+
+import { FRONTMATTER_RE } from './frontmatter.mjs';
+import { isRequirementId, sectionSpan } from './planning-files.mjs';
+
+/** The words a story's or an epic's status can be, in the order they happen. */
+export const STATUSES = Object.freeze(['backlog', 'in-progress', 'review', 'done']);
+
+/**
+ * The release's title and its epics in build order. Every line under Epics has to be one, or a bad edit would drop an
+ * epic and the release would close without it.
+ * `commitHere` is the branch the start was told to commit on though it's protected, and null without that exact line.
+ * @param {string} text @returns {{title: string, epics: {id: string, name: string}[], commitHere: string | null} | null}
+ */
+export function readReleaseFile(text) {
+  const lines = text.split(/\r?\n/);
+  const title = /^# Release: (.+)$/.exec(lines[0])?.[1];
+  const span = sectionSpan(lines, '## Epics');
+  if (!title || span.start < 0) return null;
+  const epics = [];
+  for (const line of lines.slice(span.start + 1, span.end)) {
+    if (line.trim() === '') continue;
+    const m = /^- (E-\d{2,}): (.+)$/.exec(line);
+    if (!m) return null;
+    epics.push({ id: m[1], name: m[2] });
+  }
+  // anything but the line the start writes reads as no answer, so a bad edit means asking again, never not asking
+  // and only right after the epics: a design's goal can hold the heading indented, and that's no answer anyone gave
+  const after = lines.slice(span.end);
+  const kept = after[0] === '## Branch' ? after.slice(1).filter((l) => l.trim() !== '') : [];
+  const commitHere = kept.length === 1 ? /^- Commit here anyway: (\S+)$/.exec(kept[0])?.[1] ?? null : null;
+  return epics.length ? { title, epics, commitHere } : null;
+}
+
+/** @typedef {{id: string, category: string, text: string}} Requirement */
+
+/** Where an ID's number starts: `CAT-` of `CAT-03`, `#` of `#41`. @param {string} id */
+export function requirementPrefix(id) {
+  return /^(.+-|#)\d+$/.exec(id)?.[1] ?? null;
+}
+
+/** The heading over the highest ID of each prefix the closed releases used, which the next ID of a prefix counts too. */
+export const EARLIER_IDS = '## Highest IDs of earlier releases';
+
+/** One requirement however its number is padded: CAT-1 and CAT-01 are one key. @param {string} id */
+export function requirementKey(id) {
+  const prefix = requirementPrefix(id);
+  return prefix === null ? id : `${prefix}${Number(id.slice(prefix.length))}`;
+}
+
+/**
+ * The highest of `ids` for each prefix, one per prefix, in the order the prefixes first come.
+ * @param {string[]} ids @returns {string[]}
+ */
+export function highestIds(ids) {
+  /** @type {Map<string, {id: string, n: number}>} */
+  const top = new Map();
+  for (const id of ids) {
+    const prefix = requirementPrefix(id);
+    const n = prefix === null ? NaN : Number(id.slice(prefix.length));
+    if (prefix !== null && n >= (top.get(prefix)?.n ?? -1)) top.set(prefix, { id, n });
+  }
+  return [...top.values()].map((t) => t.id);
+}
+
+/**
+ * REQUIREMENTS.md's requirements under their categories, then the deferred, then the earlier releases' highest IDs when
+ * there were any. Deferred ones stay in the file, since the next ID of a prefix counts them. A line agile-render.mjs
+ * wouldn't write is passed over, and `whole` says there was none, since rewriting the file would lose it.
+ * @param {string} text
+ * @returns {{title: string | null, requirements: Requirement[], deferred: {id: string, text: string}[], earlier: string[], whole: boolean}}
+ */
+export function readRequirementsFile(text) {
+  const lines = text.split(/\r?\n/);
+  const title = /^# Requirements: (.+)$/.exec(lines[0])?.[1] ?? null;
+  let whole = title !== null;
+  /** @type {Requirement[]} */
+  const requirements = [];
+  /** @type {{id: string, text: string}[]} */
+  const deferred = [];
+  const seen = new Set();
+  /** @type {string[]} */
+  const earlier = [];
+  const prefixes = new Set();
+  /** @type {string | null} */
+  let part = null;
+  /** @type {string | null} */
+  let category = null;
+  let none = false;
+  for (const line of lines.slice(1)) {
+    if (line.trim() === '') continue;
+    if (line === '## Requirements' && part === null) part = 'held';
+    else if (line === '## Deferred' && part === 'held') part = 'deferred';
+    else if (line === EARLIER_IDS && part === 'deferred') part = 'earlier';
+    else if (part === 'earlier') {
+      const id = /^- (\S+)$/.exec(line)?.[1] ?? '';
+      const prefix = isRequirementId(id) ? requirementPrefix(id) : null;
+      if (prefix === null || prefixes.has(prefix)) whole = false;
+      else { prefixes.add(prefix); earlier.push(id); }
+    }
+    // Seldon keeps a category it trimmed to nothing, so a bare heading is still one
+    else if (part === 'held' && line.startsWith('### ')) category = line.slice(4);
+    else if (part === 'deferred' && line === 'None.' && !none) none = true;
+    else {
+      const m = /^- \*\*([^*]+)\*\*: (.+)$/.exec(line);
+      if (!m || !isRequirementId(m[1]) || seen.has(m[1]) || part === null || (part === 'held' && category === null)) {
+        whole = false;
+        continue;
+      }
+      seen.add(m[1]);
+      if (part === 'held') requirements.push({ id: m[1], category: /** @type {string} */ (category), text: m[2] });
+      else deferred.push({ id: m[1], text: m[2] });
+    }
+  }
+  return { title, requirements, deferred, earlier,
+    whole: whole && (part === 'deferred' || (part === 'earlier' && earlier.length > 0)) && none !== deferred.length > 0 };
+}
+
+/** An epic's status, or a story's from a file too broken to read whole. @param {string} text @returns {string | null} */
+export function readEpicStatus(text) {
+  const status = /^status:[ \t]*(\S+)[ \t]*$/m.exec(FRONTMATTER_RE.exec(text)?.[1] ?? '')?.[1] ?? '';
+  return STATUSES.includes(status) ? status : null;
+}
+
+/** How big a story is; an L is never built. */
+export const SIZES = Object.freeze(['S', 'M', 'L']);
+
+/** @typedef {{id: string, title: string, size: string, status: string, builds_on: string[], requirements: string[], delivers: string, accepted_when: string[]}} Story */
+
+/** A frontmatter block's fields, or null when there's no block or a line that isn't one field once. @param {string} text */
+function fields(text) {
+  const block = FRONTMATTER_RE.exec(text)?.[1];
+  if (block === undefined) return null;
+  /** @type {Map<string, string>} */
+  const found = new Map();
+  for (const line of block.split(/\r?\n/)) {
+    const at = line.indexOf(':');
+    if (at < 1 || found.has(line.slice(0, at))) return null;
+    found.set(line.slice(0, at), line.slice(at + 1).trim());
+  }
+  return found;
+}
+
+/** @param {string | undefined} value @returns {string[]} */
+const listed = (value) => (value && value !== 'None' ? value.split(',').map((v) => v.trim()) : []);
+
+/** A section's text, or null when the file doesn't have it. @param {string} text @param {string} heading */
+function section(text, heading) {
+  const lines = text.split(/\r?\n/);
+  const { start, end } = sectionSpan(lines, heading);
+  return start < 0 ? null : lines.slice(start + 1, end).join('\n').trim();
+}
+
+/**
+ * What the user said is missing at acceptance, while no cut again has followed it, else null.
+ * @param {string} text an epic's file
+ */
+export function readNotYet(text) {
+  let open = null;
+  for (const line of (section(text, '## Decisions') ?? '').split('\n')) {
+    const said = /^- Not yet: (.+)$/.exec(line.trim());
+    if (said) open = said[1];
+    else if (line.trim().startsWith('- Cut again')) open = null;
+  }
+  return open;
+}
+
+/** How a refinement records a Change next line under its epic's Decisions. */
+export const LESSON_RECORD = /^- Change next from (E-\d{2,}), ([1-9]\d*): (applied|applied, standing|dropped) - (.+)$/;
+
+/** The numbered lines under a retrospective's Change next, or null when it has no such section. @param {string} text */
+export function readChangeNext(text) {
+  const held = section(text, '## Change next');
+  if (held === null) return null;
+  return held.split('\n').map((l) => /^([1-9]\d*)\. (.+)$/.exec(l.trim())).filter((m) => m !== null)
+    .map((m) => ({ line: Number(m[1]), text: m[2].trim() }));
+}
+
+/** The Change next lines an epic's Decisions record, each as "E-04 1". @param {string} text an epic's file */
+export function readLessonRecords(text) {
+  return (section(text, '## Decisions') ?? '').split('\n').map((l) => LESSON_RECORD.exec(l.trim())).filter((m) => m !== null).map((m) => `${m[1]} ${m[2]}`);
+}
+
+/** @typedef {{requirements: string[], title: string, split_from: string | null, outcome: string, boundaries: string, done_when: string[], spine: string}} EpicRead */
+
+/** What a refinement needs of an epic's file. @param {string} text @returns {EpicRead | null} */
+export function readEpicFile(text) {
+  const f = fields(text);
+  const requirements = listed(f?.get('requirements'));
+  if (readEpicStatus(text) === null || !requirements.length || section(text, '## Decisions') === null) return null;
+  return { requirements, title: f?.get('title') ?? '', split_from: f?.get('split_from') || null, outcome: section(text, '## Outcome') ?? '',
+    boundaries: section(text, '## Boundaries') ?? '', spine: section(text, '## Spine decisions') ?? '',
+    done_when: (section(text, '## Done when') ?? '').split('\n').filter((l) => /^[-*] /.test(l)).map((l) => l.slice(2).trim()) };
+}
+
+/** @param {string} text @returns {Story | null} */
+export function readStoryFile(text) {
+  const f = fields(text);
+  const at = (/** @type {string} */ key) => f?.get(key) ?? '';
+  const delivers = section(text, '## Delivers');
+  const checks = section(text, '## Accepted when')?.split('\n').filter((l) => l.trim() !== '');
+  if (!f || !delivers || !checks?.length || !checks.every((l) => l.startsWith('- '))) return null;
+  if (!/^E-\d{2,}-[1-9]\d*$/.test(at('story')) || !at('title') || !SIZES.includes(at('size')) || !STATUSES.includes(at('status'))) return null;
+  const requirements = listed(at('requirements'));
+  if (!requirements.length || section(text, '## Result') === null) return null;
+  return { id: at('story'), title: at('title'), size: at('size'), status: at('status'), builds_on: listed(at('builds_on')), requirements,
+    delivers, accepted_when: checks.map((l) => l.slice(2)) };
+}
+
+/** One recorded check: its Accepted when line's number, its command and what its last run showed. */
+export const CHECK_LINE = /^- Check ([1-9]\d*): `([^`\n]+)` - (.+)$/;
+
+/** @typedef {{n: number, command: string, result: string}} Check */
+
+/** The checks a story's Result records, in the order they're written. @param {string} text @returns {Check[]} */
+export function readStoryChecks(text) {
+  return (section(text, '## Result') ?? '').split('\n').map((l) => CHECK_LINE.exec(l))
+    .filter((m) => m !== null).map((m) => ({ n: Number(m[1]), command: m[2], result: m[3] }));
+}
+
+/** What a story's Result says of its build: where it began and what's been noted, each null until it is. @param {string} text */
+export function readStoryResult(text) {
+  const lines = (section(text, '## Result') ?? '').split('\n');
+  const of = (/** @type {string} */ kind) => lines.find((l) => l.startsWith(`- ${kind}: `))?.slice(kind.length + 4) ?? null;
+  return { base: of('Base'), commits: of('Commits'), resized: of('Resized'), review: of('Review'), fix_round: of('Fix round'), differently: of('Done differently') };
+}
+
+/** A story's plan, one line per task, or null until one is written. @param {string} text */
+export function readStoryPlan(text) {
+  const held = section(text, '## Plan');
+  return held === null || held === '' || held === 'None yet.' ? null : held.split('\n').filter((l) => l.trim() !== '');
+}
