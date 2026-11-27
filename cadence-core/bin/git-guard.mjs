@@ -3,7 +3,7 @@
 // PreToolUse hook: the inviolable git rails, enforced by the harness instead of prose, for Bash tool calls
 // acts only inside a Cadence project (a .planning/ dir in the cwd or above) and stays silent elsewhere
 // the push rail's walk climbs past a .git file (linked worktree, submodule), so a push from one under the project counts
-// git push asks when it can reach a protected branch; cad-land's unattended publish is a subprocess, never seen here
+// git push asks when it can reach a protected branch or the rail can't rule that out; cad-land's publish is never seen
 // a pull or merge request opened or merged with gh, glab or tea always asks; cad-land's own go through that seam too
 // git commit or git merge on a protected branch follows git.on_protected: ask (default), refuse (alias "deny") or allow
 // git.guard_bypass true in both config layers turns the push and commit rails off; the request and merge rails stay
@@ -15,35 +15,72 @@ import { join, resolve } from 'node:path';
 import { forgeRequests, gitInvocations, planningRoot } from './lib/git-segments.mjs';
 
 // the rails' modules load only when the command pushes, commits or merges, since this hook runs on every Bash call
-let mergeLayers, bothLayers, resolveProtectedBranches, readCurrentBranch;
+let mergeLayers, bothLayers, resolveProtectedBranches, readCurrentBranch, readPushConfig;
 
 // push options taking a separate argument, skipped with it so the remote and the refspecs read right
 const PUSH_OPT_WITH_ARG = new Set(['-o', '--push-option', '--receive-pack', '--exec', '--repo']);
+// git takes any unambiguous prefix of a long option, so --mirr is --mirror
+const EVERY_BRANCH = ['--all', '--branches', '--mirror'];
+// a ref name the rail can rule on; a glob, @, ~, an expansion or a leftover quote it can't, so those ask
+const PLAIN_REF = /^[A-Za-z0-9._/-]+$/;
+
+/** One pair of matching quotes off a word, as the shell takes them; anything subtler stays for the caller to refuse. */
+const unquote = (w) => (w.length >= 2 && /^(["']).*\1$/s.test(w) ? w.slice(1, -1) : w);
 
 /**
- * The protected branch a push can reach, read off its own words, or null. Wrong costs a prompt, never a bypass.
+ * What a push can reach, read off its own words. Wrong costs a prompt, never a bypass, so what it can't read asks.
+ * `fromConfig` is whether git config picks a destination: no refspec, or one with no `:dst`.
  * @param {string[]} args the words after `push`
  * @param {string} branch the branch checked out where the push runs
  * @param {string[]} protectedBranches
- * @returns {string | null} the branch name, or 'every branch' for --all and --mirror
+ * @returns {{reach: string | null, fromConfig: boolean}} reach says what protected ref it can land on, or null
  */
 function pushTarget(args, branch, protectedBranches) {
-  if (args.includes('--all') || args.includes('--mirror')) return 'every branch';
+  const opts = args.map((w) => w.split('=')[0]).filter((o) => o.length > 2);
+  if (opts.some((o) => EVERY_BRANCH.some((e) => e.startsWith(o)))) {
+    return { reach: 'can reach every branch, the protected ones included', fromConfig: false };
+  }
   const operands = [];
   for (let i = 0; i < args.length; i++) {
     if (PUSH_OPT_WITH_ARG.has(args[i])) { i++; continue; }
-    if (!args[i].startsWith('-')) operands.push(args[i]);
+    if (!args[i].startsWith('-')) operands.push(unquote(args[i]));
   }
   // the first operand is the remote; with no refspec git pushes the branch checked out, and --tags pushes only tags
   const refspecs = operands.slice(1);
-  if (!refspecs.length) return !args.includes('--tags') && protectedBranches.includes(branch) ? branch : null;
-  for (const spec of refspecs) {
-    const [src, dst] = spec.replace(/^\+/, '').split(':');
-    const name = (dst || src).replace(/^refs\/heads\//, '');
-    const reached = name === 'HEAD' ? branch : name;
-    if (protectedBranches.includes(reached)) return reached;
+  if (!refspecs.length) {
+    if (args.includes('--tags')) return { reach: null, fromConfig: false };
+    const reach = protectedBranches.includes(branch) ? `can reach protected branch "${branch}"` : null;
+    return { reach, fromConfig: true };
   }
-  return null;
+  let fromConfig = false;
+  for (const spec of refspecs) {
+    const parts = spec.replace(/^\+/, '').split(':');
+    const name = (parts[1] || parts[0]).replace(/^refs\/heads\//, '');
+    if (parts.length > 2 || !PLAIN_REF.test(name)) {
+      return { reach: `names a ref the rail can't read (${spec}), so it may reach a protected branch`, fromConfig };
+    }
+    if (parts.length === 1) fromConfig = true;
+    const reached = name === 'HEAD' ? branch : name;
+    if (protectedBranches.includes(reached)) return { reach: `can reach protected branch "${reached}"`, fromConfig };
+  }
+  return { reach: null, fromConfig };
+}
+
+/**
+ * The git config that can land a push somewhere its words don't name, or null. push.default simple, current and
+ * nothing keep a branch's own name; the rest, and any remote.<name>.push, can send it to main.
+ * @param {string[] | null} lines readPushConfig's answer
+ * @returns {string | null}
+ */
+function configRedirect(lines) {
+  if (lines === null) return 'git config the rail could not read';
+  let pushDefault = '';
+  for (const line of lines) {
+    const [key, value = ''] = line.split(/ (.*)/s);
+    if (key.endsWith('.push')) return key;
+    pushDefault = value; // the last scope git lists is the one in force
+  }
+  return pushDefault && !['simple', 'current', 'nothing'].includes(pushDefault) ? `push.default=${pushDefault}` : null;
 }
 
 const BYPASS_KEY = 'git.guard_bypass';
@@ -124,7 +161,7 @@ function branchDecision(root, cwd, verb) {
 const has = (dir, name) => existsSync(join(dir, name));
 
 // the push decision, in the repository a literal -C names or the session directory; the bypass turns it off
-function pushFor(dirs, args, cwd) {
+function pushFor({ dirs, configs, args }, cwd) {
   let target = cwd;
   for (const raw of dirs) {
     const dir = literalDir(raw);
@@ -140,10 +177,12 @@ function pushFor(dirs, args, cwd) {
   if (tornLayers.length) {
     return { decision: 'ask', reason: `Cadence rail: ${warnings[0]} - the push rail is deciding with DEFAULTS, so it asks. ${publishing}` };
   }
-  const reached = pushTarget(args, readCurrentBranch(target), resolveProtectedBranches(config.git || {}));
-  if (!reached) return null;
-  const where = reached === 'every branch' ? 'every branch, the protected ones included' : `protected branch "${reached}"`;
-  return { decision: 'ask', reason: `Cadence rail: this push can reach ${where} (git.protected_branches). ${publishing}` };
+  const { reach, fromConfig } = pushTarget(args, readCurrentBranch(target), resolveProtectedBranches(config.git || {}));
+  if (reach) return { decision: 'ask', reason: `Cadence rail: this push ${reach} (git.protected_branches). ${publishing}` };
+  if (!fromConfig) return null;
+  const redirect = configs.length ? 'a -c on the command' : configRedirect(readPushConfig(target));
+  return redirect && { decision: 'ask', reason: `Cadence rail: where this push lands is up to ${redirect}, `
+    + `so it may reach a protected branch (git.protected_branches). ${publishing}` };
 }
 
 /** The push rail's probe: .git counts only as a directory; a worktree's or submodule's is a file, so climb on. */
@@ -155,8 +194,7 @@ const hasForPush = (dir, name) => {
 // a -C argument as a path, or null when it can't be known: empty, $ or backtick, ~, or quoting that isn't one pair.
 // the command text arrives before the shell expands it, so -C "$S" is the literal "$S" here
 function literalDir(raw) {
-  let w = raw;
-  if (/^(["']).*\1$/s.test(w) && w.length >= 2) w = w.slice(1, -1);
+  const w = unquote(raw);
   if (!w || /[$`"'\\]/.test(w) || w.startsWith('~')) return null;
   return w;
 }
@@ -210,11 +248,11 @@ async function main() {
   if (verbs.some((v) => v === 'push' || v === 'commit' || v === 'merge')) {
     ({ mergeLayers, bothLayers } = await import('./lib/config-merge.mjs'));
     ({ resolveProtectedBranches } = await import('./lib/protected-branches.mjs'));
-    ({ readCurrentBranch } = await import('./lib/git-head.mjs'));
+    ({ readCurrentBranch, readPushConfig } = await import('./lib/git-head.mjs'));
     // each push, commit or merge is judged in its own repo
     for (const call of calls) {
       if (call.verb === 'push') {
-        const d = pushFor(call.dirs, call.args, cwd);
+        const d = pushFor(call, cwd);
         if (d) picks.push(d);
         continue;
       }

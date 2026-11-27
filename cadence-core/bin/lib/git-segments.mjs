@@ -39,13 +39,14 @@ export function gitVerbs(text) {
 }
 
 /**
- * The same scan as `gitVerbs`, keeping each segment's `-C` arguments and the words after its verb:
- * `git -C /tmp/x merge --abort` reads `[{verb: 'merge', dirs: ['/tmp/x'], args: ['--abort']}]`. The branch rails need
- * `-C` to know which repo is hit, and the words to tell a merge from backing one out.
- * Words are raw, and a bare `-C` keeps `''`.
+ * The same scan as `gitVerbs`, keeping each segment's `-C` arguments, its `-c` and `--config-env` values and the
+ * words after its verb: `git -C /tmp/x merge --abort` reads
+ * `[{verb: 'merge', dirs: ['/tmp/x'], configs: [], args: ['--abort']}]`. The branch rails need `-C` to know which
+ * repo is hit, the push rail `-c` to know git config may pick where it lands, and the words to tell a merge from
+ * backing one out. Words are raw, and a bare `-C` keeps `''`.
  *
  * @param {unknown} text the raw command string from the hook payload
- * @returns {{verb: string, dirs: string[], args: string[]}[]}
+ * @returns {{verb: string, dirs: string[], configs: string[], args: string[]}[]}
  */
 export function gitInvocations(text) {
   if (typeof text !== 'string' || !text) return [];
@@ -58,15 +59,18 @@ export function gitInvocations(text) {
     if (head !== 'git' && !(head !== undefined && head.endsWith('/git'))) continue;
 
     const dirs = [];
+    const configs = [];
     for (let i = 1; i < words.length; i++) {
       const word = words[i];
       if (GLOBAL_OPT_WITH_ARG.has(word)) { // skip it AND its argument
         if (word === '-C') dirs.push(words[i + 1] ?? '');
+        else if (word === '-c' || word === '--config-env') configs.push(words[i + 1] ?? '');
         i++;
         continue;
       }
+      if (word.startsWith('--config-env=')) configs.push(word.slice('--config-env='.length));
       if (word.startsWith('-')) continue;
-      out.push({ verb: word, dirs, args: words.slice(i + 1) });
+      out.push({ verb: word, dirs, configs, args: words.slice(i + 1) });
       break; // the first non-flag word is the verb; the rest are its operands
     }
   }
