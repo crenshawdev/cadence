@@ -146,9 +146,10 @@ with the record. Remove that `.diff` file once the fire is done. A gate of
 
 **No match**, or the gate `off`: every reviewer the resolve below prints under
 `reviewers.diff`, started together over one diff. Write `git diff {Base}..HEAD`
-to `.planning/agile/tasks/{story}/review-{story}.diff`, then resolve it with its
-bracket and relay each `warnings[]` entry to the user. `claude-subagent` is the
-`agent_type` and `model` it prints, dispatched through
+to `.planning/agile/tasks/{story}/review-{story}.diff`, then resolve it and
+relay each `warnings[]` entry to the user. `claude-subagent` is the
+`agent_type` and `model` it prints, bracketed by the append below, since the
+resolve fires for a set without it too, and dispatched through
 `references/seam-spawn-agent.md` with the prompt below. Any other name is a
 cross-model reviewer: Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-cross-model.md` (one
@@ -159,7 +160,12 @@ artifact's top. One answering `ok:false` is named with its reason and dropped,
 and with none left `claude-subagent` runs.
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-reviewer --phase 0 --bracket-read ".planning/agile/tasks/{story}/review-{story}.diff,.planning/agile/epics/{id}/{story}.md" --bracket-plan {story}-review
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-reviewer --phase 0
+```
+
+```
+printf '%s' ".planning/agile/tasks/{story}/review-{story}.diff,.planning/agile/epics/{id}/{story}.md" > "<the folder>/review-read.txt"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event dispatch --plan {story}-review --role cad-reviewer --reviewer claude-subagent --read-file "<the folder>/review-read.txt"
 ```
 
 ```
@@ -170,7 +176,7 @@ Close the `claude-subagent` bracket the moment it's back, with
 `--detail-file <path>` naming what failed when it did:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0 --plan {story}-review --role cad-reviewer --agent-id <the id on the subagent return> --tokens <the token count on it> --turns <the tool-call count on it> --duration-ms <the wall clock on it>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0 --plan {story}-review --role cad-reviewer --reviewer claude-subagent --agent-id <the id on the subagent return> --tokens <the token count on it> --turns <the tool-call count on it> --duration-ms <the wall clock on it>
 ```
 
 **Its findings.** Prove each one before anything is fixed: open the code it
