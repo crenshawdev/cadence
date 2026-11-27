@@ -51,7 +51,7 @@ import { readCurrentBranch } from './lib/git-head.mjs';
 import { READS_FILE, ROTATED_READS_FILE } from './lib/read-trace.mjs';
 import { ROTATED_TRACE_FILE, TRACE_FILE } from './lib/trace.mjs';
 import { signingProblem } from './lib/git-signing.mjs';
-import { atomicWrite, ensureRecordsIgnore, makeDir, movePath, removeTree, riskCarryDir, unlinkFile, withPlanningFileLock, writeFileNew } from './lib/planning-store.mjs';
+import { atomicWrite, ensureRecordsIgnore, makeDir, movePath, recordsPath, removeTree, riskCarryDir, unlinkFile, withPlanningFileLock, writeFileNew } from './lib/planning-store.mjs';
 import { fromRoot, onAgilePath } from './lib/project-homes.mjs';
 import { REBUILDABLE, emptyState, markAgile, readState, recordsReady, statePath } from './lib/project-state.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
@@ -1416,16 +1416,20 @@ function stageSwitch(dir) {
   const root = dirname(resolve(dir));
   const planning = fromRoot(root, resolve(dir));
   const archive = fromRoot(root, oldPathArchive(resolve(dir)));
-  const git = (/** @type {string[]} */ args) => boundedRun('git', args, { cwd: root, timeout: CHILD_TIMEOUT_MS });
+  // the names come from the repository, so a `*` in one is a name, never a pattern that sweeps up its neighbours
+  const git = (/** @type {string[]} */ args) => boundedRun('git', ['--literal-pathspecs', ...args], { cwd: root, timeout: CHILD_TIMEOUT_MS });
   const failed = (/** @type {string} */ what) => refuse({ reason: 'git-failed', detail: `git couldn't ${what}`,
     hint: 'run it at the top of the project, inside its repository, then re-run' });
   const listed = git(['ls-files', '-z', '--', planning]);
   if (!listed.ok) return failed(`list what it tracks under ${planning}`);
-  // the marker and the new ignore file keep their old places, so a copy HEAD already holds is a switch committed; no HEAD holds none
+  // moved means gone from where git tracks it, so a file the user writes later under an archived name is theirs; the
+  // marker and the new ignore file take their old places, so those two copies count until HEAD holds them
+  const rewritten = [statePath(resolve(dir)), recordsPath(resolve(dir), '.gitignore')].map((f) => fromRoot(root, f));
   const committed = new Set(git(['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', archive]).stdout.split('\0'));
   const moved = listed.stdout.split('\0').filter((p) => p && !p.startsWith(`${archive}/`))
     .map((old) => ({ old, copy: `${archive}/${old.slice(planning.length + 1)}` }))
-    .filter(({ copy }) => !committed.has(copy) && lstatOf(join(root, copy))?.isFile());
+    .filter(({ old, copy }) => lstatOf(join(root, copy))?.isFile()
+      && (rewritten.includes(old) ? !committed.has(copy) : lstatOf(join(root, old)) === null));
   if (!moved.length) return emit({ ok: true, staged: 0, paths: [] });
   const ledgers = [agileBacklogFile, agileDeclinedFile, agileFiledFile].map((f) => fromRoot(root, f(agileDir(resolve(dir)))))
     .filter((p) => lstatOf(join(root, p))?.isFile());

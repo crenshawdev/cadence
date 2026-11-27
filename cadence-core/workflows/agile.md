@@ -81,7 +81,7 @@ start the release":
 set -- .planning/agile/project.md .planning/agile/REQUIREMENTS.md .planning/agile/release.md .planning/agile/epics .planning/records/state.json .planning/records/.gitignore
 for f in .planning/config.json .github/cadence/coverage-policy.json; do [ -f "$f" ] && ! git check-ignore -q "$f" && set -- "$@" "$f"; done
 git add -- "$@"
-git commit -m "docs: start the release" -- "$@" '<each path stage-switch named>'
+git --literal-pathspecs commit -m "docs: start the release" -- "$@" '<each path stage-switch named>'
 ```
 
 Nothing here ends the run: when the guard stops the commit or git refuses it,
