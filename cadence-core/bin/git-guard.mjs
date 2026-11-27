@@ -21,15 +21,14 @@ let mergeLayers, bothLayers, resolveProtectedBranches, readCurrentBranch, readPu
 const PUSH_OPT_WITH_ARG = new Set(['-o', '--push-option', '--receive-pack', '--exec', '--repo']);
 // git takes any unambiguous prefix of a long option, so --mirr is --mirror
 const EVERY_BRANCH = ['--all', '--branches', '--mirror'];
-// a ref name the rail can rule on; a glob, @, ~, an expansion or a leftover quote it can't, so those ask
-const PLAIN_REF = /^[A-Za-z0-9._/-]+$/;
-
-/** One pair of matching quotes off a word, as the shell takes them; anything subtler stays for the caller to refuse. */
-const unquote = (w) => (w.length >= 2 && /^(["']).*\1$/s.test(w) ? w.slice(1, -1) : w);
+// a word no quoting, expansion or globbing can change, so what the rail reads is what git gets
+const PLAIN_WORD = /^[A-Za-z0-9._/:+=@,-]+$/;
+// git verbs that can run before a push in one command without moving its branch, its repository or its config
+const SAFE_BEFORE = new Set(['add', 'commit', 'status', 'diff', 'log', 'show', 'tag', 'fetch', 'pull']);
 
 /**
- * What a push can reach, read off its own words. Wrong costs a prompt, never a bypass, so what it can't read asks.
- * `fromConfig` is whether git config picks a destination: no refspec, or one with no `:dst`.
+ * What a push can reach, read off its own plain words. Wrong costs a prompt, never a bypass, so what it can't read
+ * asks. `fromConfig` is whether git config picks a destination: no refspec, or one with no `:dst`.
  * @param {string[]} args the words after `push`
  * @param {string} branch the branch checked out where the push runs
  * @param {string[]} protectedBranches
@@ -43,25 +42,28 @@ function pushTarget(args, branch, protectedBranches) {
   const operands = [];
   for (let i = 0; i < args.length; i++) {
     if (PUSH_OPT_WITH_ARG.has(args[i])) { i++; continue; }
-    if (!args[i].startsWith('-')) operands.push(unquote(args[i]));
+    if (!args[i].startsWith('-')) operands.push(args[i]);
   }
   // the first operand is the remote; with no refspec git pushes the branch checked out, and --tags pushes only tags
   const refspecs = operands.slice(1);
   if (!refspecs.length) {
     if (args.includes('--tags')) return { reach: null, fromConfig: false };
-    const reach = protectedBranches.includes(branch) ? `can reach protected branch "${branch}"` : null;
+    const reach = protectedBranches.includes(branch) ? `can reach protected branch "${branch}" (git.protected_branches)` : null;
     return { reach, fromConfig: true };
   }
   let fromConfig = false;
   for (const spec of refspecs) {
     const parts = spec.replace(/^\+/, '').split(':');
-    const name = (parts[1] || parts[0]).replace(/^refs\/heads\//, '');
-    if (parts.length > 2 || !PLAIN_REF.test(name)) {
-      return { reach: `names a ref the rail can't read (${spec}), so it may reach a protected branch`, fromConfig };
+    // git reads heads/main and refs/heads/main as main, and @ as HEAD
+    const name = (parts[1] || parts[0]).replace(/^(refs\/)?heads\//, '');
+    if (parts.length > 2 || !name) {
+      return { reach: `names a refspec the hook can't read (${spec}), so it may reach a protected branch`, fromConfig };
     }
     if (parts.length === 1) fromConfig = true;
-    const reached = name === 'HEAD' ? branch : name;
-    if (protectedBranches.includes(reached)) return { reach: `can reach protected branch "${reached}"`, fromConfig };
+    const reached = name === 'HEAD' || name === '@' ? branch : name;
+    if (protectedBranches.includes(reached)) {
+      return { reach: `can reach protected branch "${reached}" (git.protected_branches)`, fromConfig };
+    }
   }
   return { reach: null, fromConfig };
 }
@@ -160,14 +162,12 @@ function branchDecision(root, cwd, verb) {
 
 const has = (dir, name) => existsSync(join(dir, name));
 
-// the push decision, in the repository a literal -C names or the session directory; the bypass turns it off
-function pushFor({ dirs, configs, args }, cwd) {
-  let target = cwd;
-  for (const raw of dirs) {
-    const dir = literalDir(raw);
-    if (dir === null) { target = cwd; break; }
-    target = resolve(target, dir);
-  }
+// the push decision, in the repository a plain -C names or the session directory; the bypass turns it off
+// it stays quiet only when what it read is what git will run, so the shell, an earlier command or a global option
+// that could change where the push lands makes it ask
+function pushFor({ dirs, opts, args, at }, calls, cwd) {
+  const plainDirs = dirs.every((d) => PLAIN_WORD.test(d));
+  const target = plainDirs ? dirs.reduce((dir, d) => resolve(dir, d), cwd) : cwd;
   const root = planningRoot(target, hasForPush);
   if (!root || bypassed(root)) return null;
   const { config, warnings, tornLayers } = readLayers(root);
@@ -177,12 +177,21 @@ function pushFor({ dirs, configs, args }, cwd) {
   if (tornLayers.length) {
     return { decision: 'ask', reason: `Cadence rail: ${warnings[0]} - the push rail is deciding with DEFAULTS, so it asks. ${publishing}` };
   }
+  const ask = (why) => ({ decision: 'ask', reason: `Cadence rail: this push ${why}. ${publishing}` });
+  const unclear = 'so it may reach a protected branch';
+  if (!plainDirs) return ask(`runs in a repository the hook can't tell (-C ${dirs.find((d) => !PLAIN_WORD.test(d))}), ${unclear}`);
+  const odd = [...opts, ...args].find((w) => !PLAIN_WORD.test(w));
+  if (odd !== undefined) return ask(`has a word the shell can change before git sees it (${odd}), ${unclear}`);
+  if (opts.length) return ask(`carries git ${opts[0]}, which can change its repository or its config, ${unclear}`);
+  const before = calls.filter((c) => c.at < at);
+  if (before.length !== at || before.some((c) => !SAFE_BEFORE.has(c.verb))) {
+    return ask(`comes after a command that can change its branch, its repository or its config, ${unclear}`);
+  }
   const { reach, fromConfig } = pushTarget(args, readCurrentBranch(target), resolveProtectedBranches(config.git || {}));
-  if (reach) return { decision: 'ask', reason: `Cadence rail: this push ${reach} (git.protected_branches). ${publishing}` };
+  if (reach) return ask(reach);
   if (!fromConfig) return null;
-  const redirect = configs.length ? 'a -c on the command' : configRedirect(readPushConfig(target));
-  return redirect && { decision: 'ask', reason: `Cadence rail: where this push lands is up to ${redirect}, `
-    + `so it may reach a protected branch (git.protected_branches). ${publishing}` };
+  const redirect = configRedirect(readPushConfig(target));
+  return redirect && ask(`lands where ${redirect} says, ${unclear}`);
 }
 
 /** The push rail's probe: .git counts only as a directory; a worktree's or submodule's is a file, so climb on. */
@@ -194,7 +203,8 @@ const hasForPush = (dir, name) => {
 // a -C argument as a path, or null when it can't be known: empty, $ or backtick, ~, or quoting that isn't one pair.
 // the command text arrives before the shell expands it, so -C "$S" is the literal "$S" here
 function literalDir(raw) {
-  const w = unquote(raw);
+  let w = raw;
+  if (/^(["']).*\1$/s.test(w) && w.length >= 2) w = w.slice(1, -1);
   if (!w || /[$`"'\\]/.test(w) || w.startsWith('~')) return null;
   return w;
 }
@@ -252,7 +262,7 @@ async function main() {
     // each push, commit or merge is judged in its own repo
     for (const call of calls) {
       if (call.verb === 'push') {
-        const d = pushFor(call, cwd);
+        const d = pushFor(call, calls, cwd);
         if (d) picks.push(d);
         continue;
       }

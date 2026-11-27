@@ -39,38 +39,41 @@ export function gitVerbs(text) {
 }
 
 /**
- * The same scan as `gitVerbs`, keeping each segment's `-C` arguments, its `-c` and `--config-env` values and the
- * words after its verb: `git -C /tmp/x merge --abort` reads
- * `[{verb: 'merge', dirs: ['/tmp/x'], configs: [], args: ['--abort']}]`. The branch rails need `-C` to know which
- * repo is hit, the push rail `-c` to know git config may pick where it lands, and the words to tell a merge from
- * backing one out. Words are raw, and a bare `-C` keeps `''`.
+ * The same scan as `gitVerbs`, keeping each segment's `-C` arguments, its other global options, the words after its
+ * verb and its place among the command's segments: `git -C /tmp/x merge --abort` reads
+ * `[{verb: 'merge', dirs: ['/tmp/x'], opts: [], args: ['--abort'], at: 0}]`. The branch rails need `-C` to know
+ * which repo is hit and the words to tell a merge from backing one out; the push rail needs the options and `at` to
+ * know nothing else can move where it lands. `at` counts every non-empty segment, git or not. Words are raw, and a
+ * bare `-C` keeps `''`.
  *
  * @param {unknown} text the raw command string from the hook payload
- * @returns {{verb: string, dirs: string[], configs: string[], args: string[]}[]}
+ * @returns {{verb: string, dirs: string[], opts: string[], args: string[], at: number}[]}
  */
 export function gitInvocations(text) {
   if (typeof text !== 'string' || !text) return [];
 
   const out = [];
+  let at = -1;
   for (const segment of text.split(SEPARATOR)) {
     const words = segment.trim().split(/\s+/).filter(Boolean);
     const head = words[0];
+    if (head === undefined) continue;
+    at++;
     // anchored: only the command word admits a segment
-    if (head !== 'git' && !(head !== undefined && head.endsWith('/git'))) continue;
+    if (head !== 'git' && !head.endsWith('/git')) continue;
 
     const dirs = [];
-    const configs = [];
+    const opts = [];
     for (let i = 1; i < words.length; i++) {
       const word = words[i];
       if (GLOBAL_OPT_WITH_ARG.has(word)) { // skip it AND its argument
         if (word === '-C') dirs.push(words[i + 1] ?? '');
-        else if (word === '-c' || word === '--config-env') configs.push(words[i + 1] ?? '');
+        else opts.push(word, words[i + 1] ?? '');
         i++;
         continue;
       }
-      if (word.startsWith('--config-env=')) configs.push(word.slice('--config-env='.length));
-      if (word.startsWith('-')) continue;
-      out.push({ verb: word, dirs, configs, args: words.slice(i + 1) });
+      if (word.startsWith('-')) { opts.push(word); continue; }
+      out.push({ verb: word, dirs, opts, args: words.slice(i + 1), at });
       break; // the first non-flag word is the verb; the rest are its operands
     }
   }
