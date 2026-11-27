@@ -151,8 +151,8 @@ bracket and relay each `warnings[]` entry to the user. `claude-subagent` is the
 `agent_type` and `model` it prints, dispatched through
 `references/seam-spawn-agent.md` with the prompt below. Any other name is a
 cross-model reviewer: Read
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-cross-model.md` and run it
-there with trigger `diff` at `reviewer_tiers.diff` and `reviewer_efforts.diff`,
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-cross-model.md` (one
+consult site - this step) and run it there with trigger `diff` at `reviewer_tiers.diff` and `reviewer_efforts.diff`,
 its artifact a file in this run's folder holding the story file and then the
 diff, and its instruction the prompt below with the story file named as the
 artifact's top. One answering `ok:false` is named with its reason and dropped,
