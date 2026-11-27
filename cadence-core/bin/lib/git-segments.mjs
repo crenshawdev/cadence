@@ -50,15 +50,9 @@ export function gitVerbs(text) {
  * @returns {{verb: string, dirs: string[], opts: string[], args: string[], at: number}[]}
  */
 export function gitInvocations(text) {
-  if (typeof text !== 'string' || !text) return [];
-
   const out = [];
-  let at = -1;
-  for (const segment of text.split(SEPARATOR)) {
-    const words = segment.trim().split(/\s+/).filter(Boolean);
+  for (const [at, words] of segments(text).entries()) {
     const head = words[0];
-    if (head === undefined) continue;
-    at++;
     // anchored: only the command word admits a segment
     if (head !== 'git' && !head.endsWith('/git')) continue;
 
@@ -78,6 +72,18 @@ export function gitInvocations(text) {
     }
   }
   return out;
+}
+
+/**
+ * Every non-empty segment's words, raw and in order: `cd x && git push` reads `[['cd', 'x'], ['git', 'push']]`. A
+ * segment's index here is the `at` gitInvocations gives it. Total and linear, like the rest.
+ *
+ * @param {unknown} text the raw command string from the hook payload
+ * @returns {string[][]}
+ */
+export function segments(text) {
+  if (typeof text !== 'string' || !text) return [];
+  return text.split(SEPARATOR).map((s) => s.trim().split(/\s+/).filter(Boolean)).filter((w) => w.length);
 }
 
 /** Each forge CLI's request noun and the verbs that open or merge one, aliases included, as each CLI's docs list them.

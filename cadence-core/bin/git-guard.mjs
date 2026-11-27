@@ -12,7 +12,7 @@
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { forgeRequests, gitInvocations, planningRoot } from './lib/git-segments.mjs';
+import { forgeRequests, gitInvocations, planningRoot, segments } from './lib/git-segments.mjs';
 
 // the rails' modules load only when the command pushes, commits or merges, since this hook runs on every Bash call
 let mergeLayers, bothLayers, resolveProtectedBranches, readCurrentBranch, readPushConfig;
@@ -25,6 +25,8 @@ const EVERY_BRANCH = ['--all', '--branches', '--mirror'];
 const PLAIN_WORD = /^[A-Za-z0-9._/:+=@,-]+$/;
 // git verbs that can run before a push in one command without moving its branch, its repository or its config
 const SAFE_BEFORE = new Set(['add', 'commit', 'status', 'diff', 'log', 'show', 'tag', 'fetch', 'pull']);
+// the commit and merge rails' list: these stage or read, so a commit or merge after one lands where it would have
+const STAGES_OR_READS = new Set(['add', 'rm', 'mv', 'restore', 'status', 'diff', 'log', 'show', 'tag', 'fetch', 'pull']);
 
 /**
  * What a push can reach, read off its own plain words. Wrong costs a prompt, never a bypass, so what it can't read
@@ -209,6 +211,38 @@ function literalDir(raw) {
   return w;
 }
 
+/**
+ * Where the commands before segment `at` leave a commit or merge: the directory a plain cd moved it to, or null when
+ * one can switch its branch or repository past what the rail follows. Cadence's own commits run set, [ and for first,
+ * so anything that isn't git, a forge CLI or a directory change passes.
+ * @param {string[][]} segs @param {{verb: string, at: number}[]} calls @param {number} at @param {string} cwd
+ * @returns {string | null}
+ */
+function landsFrom(segs, calls, at, cwd) {
+  let dir = cwd;
+  for (let i = 0; i < at; i++) {
+    const [head, ...rest] = segs[i];
+    const name = head.slice(head.lastIndexOf('/') + 1);
+    if (head === 'cd') {
+      if (rest.length !== 1 || rest[0].startsWith('-') || !PLAIN_WORD.test(rest[0])) return null; // cd - and cd -P aren't paths
+      dir = resolve(dir, rest[0]);
+    } else if (head === 'pushd' || head === 'popd' || name === 'gh' || name === 'glab' || name === 'tea') {
+      return null;
+    } else if (name === 'git' && !STAGES_OR_READS.has(calls.find((c) => c.at === i)?.verb ?? '')) {
+      return null;
+    }
+  }
+  return dir;
+}
+
+// a commit or merge after a command the rail can't follow asks in the session's project, unless its rail is off there
+function movedDecision(verb, root) {
+  if (!root || (verb === 'commit' && bypassed(root))) return null;
+  if (readLayers(root).config.git?.on_protected === 'allow') return null;
+  return { decision: 'ask', reason: `Cadence rail: this ${verb} comes after a command that can change its branch or `
+    + `its repository, so it may land on a protected branch (git.protected_branches). Approve only if it lands where you mean.` };
+}
+
 // the protected-branch decision for one git commit or merge, in the repository it lands in
 // no -C means the session directory; a literal -C is followed cumulatively and policed only if it's a Cadence project
 // a -C it can't resolve falls back to the session directory and says which value it couldn't follow
@@ -241,6 +275,7 @@ async function main() {
   // walk up from cwd, since the hook can run below the root (a session in src/)
   const root = planningRoot(cwd, has);
   const calls = gitInvocations(command);
+  const segs = segments(command);
   const verbs = calls.map((c) => c.verb);
 
   /** @type {{decision: string, reason: string}[]} */
@@ -269,7 +304,10 @@ async function main() {
       if (call.verb !== 'commit' && call.verb !== 'merge') continue;
       // --abort and --quit back a merge out and land nothing; --continue makes the merge commit, so it's judged
       if (call.verb === 'merge' && call.args.some((w) => w === '--abort' || w === '--quit')) continue;
-      const d = branchFor(call.verb, call.dirs, cwd, root);
+      const from = landsFrom(segs, calls, call.at, cwd);
+      let d = branchFor(call.verb, call.dirs, from ?? cwd, from === null || from === cwd ? root : planningRoot(from, has));
+      // the moved-branch ask only adds one: a deny the branch checked out earns stays a deny
+      if (from === null && d?.decision !== 'deny') d = movedDecision(call.verb, root) ?? d;
       if (d) picks.push(d);
     }
   }

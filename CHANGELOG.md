@@ -37,6 +37,14 @@ None of these has a switch; they apply when you upgrade.
 
 ### Fixed
 
+- **A commit or merge after `git switch` in the same command asks.** git-guard
+  judged a commit or a merge by the branch checked out before the command ran,
+  so `git switch main && git commit` went through. Now a commit or merge asks
+  after an earlier git, `gh`, `glab` or `tea` command other than git `add`,
+  `rm`, `mv`, `restore`, `status`, `diff`, `log`, `show`, `tag`, `fetch` or
+  `pull`, or after a `cd` it can't follow. A `cd` to a plain path is followed,
+  and other commands, such as `set` or `npm test`, pass. Tests:
+  `tests/git-guard.test.mjs`.
 - **A refused commit is no longer hidden by an ask in the same command.** A
   deny from any git-guard rail now beats an ask from another, so a push or a
   request in the same command can't turn a refused protected-branch commit into
