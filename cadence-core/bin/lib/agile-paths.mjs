@@ -10,6 +10,14 @@ const AGILE_DIR = 'agile';
 /** What an old-path project keeps at the top of its planning folder; any one of them means the old path owns it. */
 export const OLD_PATH = Object.freeze(['PROJECT.md', 'REQUIREMENTS.md', 'ROADMAP.md', 'STATE.md', 'phases']);
 
+/** The old path's own names at the top of its planning folder, which a switch archives; a name not here isn't Cadence's to move. */
+export const OLD_PATH_ARCHIVED = Object.freeze([...OLD_PATH, 'CAPTURE.md', 'ARCHIVE.md', 'state.json', 'tasks', 'spikes', 'debug', 'research']);
+
+/** Where a switch puts the old path's files, names and layout unchanged. @param {string} planningRoot */
+export function oldPathArchive(planningRoot) {
+  return join(planningRoot, '_archive-old-path');
+}
+
 /** @param {string} planningRoot */
 export function agileDir(planningRoot) {
   return join(planningRoot, AGILE_DIR);

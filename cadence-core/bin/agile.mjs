@@ -28,7 +28,7 @@ import { readDesignFolder } from './planning/design-read.mjs';
 import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
-import { readJsonPayload } from './planning/core.mjs';
+import { readJsonPayload, readQueue } from './planning/core.mjs';
 import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, closingVersion, epicFile, tagSafeVersion as tagSafe, projectFile, releaseFile, releasesDir, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
 import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStandingRules, withStatus } from './lib/agile-render.mjs';
 import { epicEvidence, renderEvidence } from './lib/agile-evidence.mjs';
@@ -46,7 +46,7 @@ import { captureLines, removeCaptures } from './lib/capture-file.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { readCurrentBranch } from './lib/git-head.mjs';
 import { signingProblem } from './lib/git-signing.mjs';
-import { atomicWrite, ensureRecordsIgnore, makeDir, movePath, removeTree, unlinkFile, writeFileNew } from './lib/planning-store.mjs';
+import { atomicWrite, ensureRecordsIgnore, makeDir, movePath, removeTree, riskCarryDir, unlinkFile, writeFileNew } from './lib/planning-store.mjs';
 import { REBUILDABLE, emptyState, markAgile, readState, statePath } from './lib/project-state.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { interviewOptions } from './lib/surface-scan.mjs';
@@ -130,10 +130,49 @@ function refusal(dir) {
   }
   if (state.kind === 'valid' && !emptyState(state.state)) old.push(statePath(dir));
   if (old.length) {
-    return { reason: 'old-path', detail: `${dir} belongs to an old-path project: ${old.join(', ')}`,
-      hint: 'close that project\'s release with /cad-milestone and land it with /cad-land before it can leave the old path; nothing was written' };
+    if (!marked && state.kind === 'absent') {
+      return { reason: 'old-path', detail: `${dir} belongs to an old-path project with no state file yet: ${old.join(', ')}`,
+        hint: 'run /cad-progress once, which writes the old path\'s state file, then re-run; nothing was written' };
+    }
+    return !marked && state.kind === 'valid' ? landed(dir, old, state.state) : openOldRelease(dir, old);
   }
   return release && !marked ? unmarked(dir) : null;
+}
+
+/** @param {string} dir @param {string[]} old @returns {Refusal} */
+function openOldRelease(dir, old) {
+  return { reason: 'old-path', detail: `${dir} belongs to an old-path project: ${old.join(', ')}`,
+    hint: 'close that project\'s release with /cad-milestone and land it with /cad-land before it can leave the old path; nothing was written' };
+}
+
+/**
+ * Whether an old-path project's release has landed, so a start may move it to this path: no cycle open, no deferred
+ * finding left unruled and no risk rulings carried for a land still to run. A land left local clears neither of the
+ * last two, so each refusal names the files to clear by hand.
+ * @param {string} dir @param {string[]} old @param {import('./lib/project-state.mjs').ProjectState} s @returns {Refusal}
+ */
+function landed(dir, old, s) {
+  const blocked = (/** @type {string} */ detail, /** @type {string} */ hint) => ({ reason: 'old-path', detail, hint: `${hint}; nothing was written` });
+  if (s.cycleOpen) return openOldRelease(dir, old);
+  // the old path may keep a folder of its own by that name, and the switch's release goes there
+  if (lstatOf(agileDir(dir)) !== null) {
+    return blocked(`${agileDir(dir)} is there, and moving this old-path project puts the new path's release in that folder`, 'move that folder aside, then re-run');
+  }
+  const queue = readQueue(dir, null);
+  if (queue.unreadable.length) {
+    return blocked(`the old release's deferred findings can't all be read, so none can be shown left unruled: ${queue.unreadable.map((u) => `${u.path} (${u.detail})`).join(', ')}`,
+      'make them readable, then re-run');
+  }
+  if (queue.members.length) {
+    return blocked(`the old release left ${queue.members.length} deferred finding file${queue.members.length === 1 ? '' : 's'} unruled: ${queue.members.map((m) => join(dir, m.path)).join(', ')}`,
+      'rule them with /cad-land; if that release was landed by hand, remove those files, then re-run');
+  }
+  if (lstatOf(riskCarryDir(dir)) !== null) {
+    return blocked(`${riskCarryDir(dir)} holds risk rulings carried for a land that hasn't run`,
+      'land the release with /cad-land; if it was landed by hand, remove that folder, then re-run');
+  }
+  return { reason: 'switch', detail: `${dir} belongs to an old-path project whose release has landed: ${old.join(', ')}`,
+    hint: 'run /cad-agile --brief <design>, which moves it to the new path; nothing was written' };
 }
 
 /**
@@ -1046,8 +1085,8 @@ function ready(dir, design) {
       hint: 'point --design at the folder Seldon wrote the design into, then re-run; nothing was written' });
   }
   const early = refusal(dir);
-  // a closed release is where the next one starts
-  if (early && early.reason !== 'release-closed') return no(early);
+  // a closed release is where the next one starts, and a landed old-path release is where a switch does
+  if (early && early.reason !== 'release-closed' && early.reason !== 'switch') return no(early);
   const { read, issues, texts } = readDesignFolder(folder);
   const decisions = [...read.decisions.values()];
   // a design with a document missing has no text to judge, and its own issue says so
@@ -1064,7 +1103,7 @@ function ready(dir, design) {
     return no({ reason: 'config-unreadable', detail: warnings.join('; '),
       hint: 'repair the config file the detail names, then re-run; nothing was written' });
   }
-  const closed = early === null ? null : closedRelease(dir);
+  const closed = early?.reason === 'release-closed' ? closedRelease(dir) : null;
   if (closed !== null && 'refusal' in closed) return no(closed.refusal);
   const carried = closed !== null && 'value' in closed ? closed.value : null;
   const named = new Set(read.design.requirements.map((q) => requirementKey(q.id)));
@@ -1076,7 +1115,7 @@ function ready(dir, design) {
   const epics = carried === null ? { epics: read.design.phases } : renumbered(read.design.phases, carried.top);
   if ('refusal' in epics) return no(epics.refusal);
   // one the design names again is taken up, with the design's words
-  return { design: { ...read.design, phases: epics.epics }, decisions, config,
+  return { design: { ...read.design, phases: epics.epics }, decisions, config, switching: early?.reason === 'switch',
     closed: carried === null ? null : { ...carried, deferred: carried.deferred.filter((q) => !named.has(requirementKey(q.id))) } };
 }
 
@@ -1209,7 +1248,7 @@ function check(dir, design) {
     ask.surfaces = interviewOptions(scanned.scan);
   }
   if (open.includes('testing')) ask.constraints = limits(got.decisions);
-  emit({ ok: true, release: got.design.title, epics: got.design.phases.length, unanswered: open, ...ask,
+  emit({ ok: true, release: got.design.title, epics: got.design.phases.length, unanswered: open, ...ask, ...(got.switching ? { switch: true } : {}),
     decide: adviseBranch(root, got.config.git || {}, { title: got.design.title }),
     reviewers: reviewersOf(dir, got.config) });
 }
@@ -1218,6 +1257,10 @@ function check(dir, design) {
 function start(dir, design, commitHere) {
   const got = ready(dir, design);
   if ('refusal' in got) return refuse(got.refusal);
+  if (got.switching) {
+    return refuse({ reason: 'switch', detail: `${dir} belongs to an old-path project whose release has landed`,
+      hint: 'this Cadence names what moving it to the new path would move but doesn\'t move it yet; nothing was written' });
+  }
   const open = unanswered(got.config);
   if (open.length) {
     return refuse({ reason: 'setup-unanswered', detail: `this project's setup still has ${open.join(', ')} to answer`,
