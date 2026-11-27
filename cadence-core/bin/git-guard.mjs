@@ -211,32 +211,47 @@ function literalDir(raw) {
   return w;
 }
 
+// a git switch or checkout inside (, {, a prefix or a quote: the segment's head isn't git, but the branch still moves
+const switchesInside = (words) => words.some((w, i) => /(^|[^\w-])git$/.test(w)
+  && words.slice(i + 1).some((v) => /^["'(]?(switch|checkout)["')]*$/.test(v)));
+
 /**
- * Where the commands before segment `at` leave a commit or merge: the directory a plain cd moved it to, or null when
- * one can switch its branch or repository past what the rail follows. Cadence's own commits run set, [ and for first,
- * so anything that isn't git, a forge CLI or a directory change passes.
- * @param {string[][]} segs @param {{verb: string, at: number}[]} calls @param {number} at @param {string} cwd
- * @returns {string | null}
+ * Where the commands before segment `at` leave a commit or merge: the directory an absolute cd moved it to, and
+ * whether one can switch its branch or repository past what the rail follows. Cadence's own commits run set, [ and
+ * for first, so anything that isn't git, a forge CLI or a directory change passes.
+ * @param {{words: string[], join: string}[]} segs @param {{verb: string, at: number}[]} calls @param {number} at
+ * @param {string} cwd
+ * @returns {{dir: string, moved: boolean}}
  */
 function landsFrom(segs, calls, at, cwd) {
   let dir = cwd;
+  let moved = false;
   for (let i = 0; i < at; i++) {
-    const [head, ...rest] = segs[i];
+    const { words, join } = segs[i];
+    const [head, ...rest] = words;
     const name = head.slice(head.lastIndexOf('/') + 1);
     if (head === 'cd') {
-      if (rest.length !== 1 || rest[0].startsWith('-') || !PLAIN_WORD.test(rest[0])) return null; // cd - and cd -P aren't paths
-      dir = resolve(dir, rest[0]);
+      // followed only when it surely ran here and && runs the rest after it: after || or | it may not have, ; runs on
+      // past a failed cd, & or | is a subshell, and a relative path goes wherever a CDPATH the hook can't see says
+      const ran = ['', ';', '\n', '&&', '&'].includes(i ? segs[i - 1].join : '');
+      const path = rest.length === 1 && rest[0].startsWith('/') && PLAIN_WORD.test(rest[0]);
+      if (ran && join === '&&' && path) dir = resolve(dir, rest[0]);
+      else moved = true;
     } else if (head === 'pushd' || head === 'popd' || name === 'gh' || name === 'glab' || name === 'tea') {
-      return null;
-    } else if (name === 'git' && !STAGES_OR_READS.has(calls.find((c) => c.at === i)?.verb ?? '')) {
-      return null;
+      moved = true;
+    } else if (name === 'git') {
+      if (!STAGES_OR_READS.has(calls.find((c) => c.at === i)?.verb ?? '')) moved = true;
+    } else if (switchesInside(words)) {
+      moved = true;
     }
   }
-  return dir;
+  return { dir, moved };
 }
 
-// a commit or merge after a command the rail can't follow asks in the session's project, unless its rail is off there
-function movedDecision(verb, root) {
+// a commit or merge after a command the rail can't follow asks in the project it lands in, unless its rail is off there
+function movedDecision(verb, dirs, dir) {
+  const lits = dirs.map(literalDir);
+  const root = planningRoot(lits.includes(null) ? dir : lits.reduce((t, d) => resolve(t, /** @type {string} */ (d)), dir), has);
   if (!root || (verb === 'commit' && bypassed(root))) return null;
   if (readLayers(root).config.git?.on_protected === 'allow') return null;
   return { decision: 'ask', reason: `Cadence rail: this ${verb} comes after a command that can change its branch or `
@@ -304,10 +319,10 @@ async function main() {
       if (call.verb !== 'commit' && call.verb !== 'merge') continue;
       // --abort and --quit back a merge out and land nothing; --continue makes the merge commit, so it's judged
       if (call.verb === 'merge' && call.args.some((w) => w === '--abort' || w === '--quit')) continue;
-      const from = landsFrom(segs, calls, call.at, cwd);
-      let d = branchFor(call.verb, call.dirs, from ?? cwd, from === null || from === cwd ? root : planningRoot(from, has));
+      const { dir, moved } = landsFrom(segs, calls, call.at, cwd);
+      let d = branchFor(call.verb, call.dirs, dir, dir === cwd ? root : planningRoot(dir, has));
       // the moved-branch ask only adds one: a deny the branch checked out earns stays a deny
-      if (from === null && d?.decision !== 'deny') d = movedDecision(call.verb, root) ?? d;
+      if (moved && d?.decision !== 'deny') d = movedDecision(call.verb, call.dirs, dir) ?? d;
       if (d) picks.push(d);
     }
   }

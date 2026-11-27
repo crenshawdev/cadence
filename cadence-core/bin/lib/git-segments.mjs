@@ -17,6 +17,7 @@ const GLOBAL_OPT_WITH_ARG = new Set([
 
 /** `;`, a newline, `|`, `||`, `&&` and `&` each end a command. The two-character forms lead so they aren't split. */
 const SEPARATOR = /&&|\|\||[;|&\n]/;
+const SEPARATOR_KEPT = /(&&|\|\||[;|&\n])/;
 
 /**
  * Every git verb this command runs, in order: `git add . && git push` reads
@@ -51,7 +52,7 @@ export function gitVerbs(text) {
  */
 export function gitInvocations(text) {
   const out = [];
-  for (const [at, words] of segments(text).entries()) {
+  for (const [at, { words }] of segments(text).entries()) {
     const head = words[0];
     // anchored: only the command word admits a segment
     if (head !== 'git' && !head.endsWith('/git')) continue;
@@ -75,15 +76,24 @@ export function gitInvocations(text) {
 }
 
 /**
- * Every non-empty segment's words, raw and in order: `cd x && git push` reads `[['cd', 'x'], ['git', 'push']]`. A
- * segment's index here is the `at` gitInvocations gives it. Total and linear, like the rest.
+ * Every non-empty segment's words, raw and in order, with the separators that join it to the next one:
+ * `cd x && git push` reads `[{words: ['cd', 'x'], join: '&&'}, {words: ['git', 'push'], join: ''}]`. A segment's
+ * index here is the `at` gitInvocations gives it. Total and linear, like the rest.
  *
  * @param {unknown} text the raw command string from the hook payload
- * @returns {string[][]}
+ * @returns {{words: string[], join: string}[]}
  */
 export function segments(text) {
   if (typeof text !== 'string' || !text) return [];
-  return text.split(SEPARATOR).map((s) => s.trim().split(/\s+/).filter(Boolean)).filter((w) => w.length);
+  const parts = text.split(SEPARATOR_KEPT);
+  /** @type {{words: string[], join: string}[]} */
+  const out = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    const words = parts[i].trim().split(/\s+/).filter(Boolean);
+    if (words.length) out.push({ words, join: '' });
+    if (out.length && i + 1 < parts.length) out[out.length - 1].join += parts[i + 1];
+  }
+  return out;
 }
 
 /** Each forge CLI's request noun and the verbs that open or merge one, aliases included, as each CLI's docs list them.
