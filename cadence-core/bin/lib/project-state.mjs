@@ -198,7 +198,7 @@ export function recordsReady(planningRoot) {
 
 /**
  * @typedef {{ok: true, changed: boolean} | {ok: false, reason: 'bad-shape' | 'newer-layout' | 'agile-path' | 'state-present'
- *   | 'records-unwritable' | 'state-locked' | 'write-failed', detail: string}} StateWrite
+ *   | 'cycle-open' | 'records-unwritable' | 'state-locked' | 'write-failed', detail: string}} StateWrite
  */
 
 /**
@@ -273,6 +273,8 @@ export function markAgile(planningRoot, copyTo) {
     if (was.kind === 'invalid' && was.reason === 'agile-path') return { ok: true, changed: false };
     const switching = copyTo !== undefined && was.kind === 'valid';
     if (!switching && (was.kind === 'invalid' || (was.kind === 'valid' && !emptyState(was.state)))) return { ok: false, reason: 'state-present', detail: `${file} is already there` };
+    // the switch judged it landed under a lock old-path writers don't take, so a cycle they opened since shows here first
+    if (switching && was.state.cycleOpen) return { ok: false, reason: 'cycle-open', detail: `${file} holds a cycle opened since the switch judged it landed` };
     // under the lock every old-path writer takes, so the copy is the state the marker replaces, byte for byte
     if (switching) durableWrite(copyTo, readFileSync(file));
     atomicWrite(file, `${JSON.stringify({ [STAMP_KEY]: AGILE_LAYOUT, path: AGILE_PATH }, null, 2)}\n`);

@@ -158,8 +158,11 @@ function onlyStateCopy(archive) {
   const names = (/** @type {string} */ f) => { const st = lstatOf(f); return st?.isDirectory() && !st.isSymbolicLink() ? readdirSync(f) : null; };
   const top = names(archive);
   const records = names(join(archive, 'records'));
-  return top !== null && top.every((n) => n === 'records') && (records === null ? !top.length : records.every((n) => n === 'state.json'));
+  return top !== null && top.every((n) => n === 'records') && (records === null ? !top.length : records.every((n) => n === 'state.json' || STATE_COPY_TEMP.test(n)));
 }
+
+/** The temp durableWrite stages the old state's copy in, which a start killed inside that write leaves. */
+const STATE_COPY_TEMP = /^state\.json\.\d+\.\d+\.tmp$/;
 
 /**
  * Whether an old-path project's release has landed, so a start may move it to this path: no cycle open, no deferred
@@ -1240,7 +1243,11 @@ function moveLocked(dir) {
   }
   if (!marked) atomicWrite(switchListFile(dir), `${paths.join('\n')}\n`);
   makeDir(join(archive, 'records'));
+  // a dead start's half-written copy: under this lock no other start is writing one, and old-path writers never write here
+  if (!marked) for (const n of readdirSync(join(archive, 'records'))) if (STATE_COPY_TEMP.test(n)) unlinkFile(join(archive, 'records', n));
   const mark = markAgile(dir, join(archive, 'records', 'state.json'));
+  // an old-path command opened a cycle after this start judged the project landed: judged again, it's an open release
+  if (mark.ok === false && mark.reason === 'cycle-open') return { refusal: refusal(dir) ?? releaseOpen(dir) };
   if (mark.ok === false) {
     return { refusal: { reason: mark.reason, detail: `${statePath(dir)}: ${mark.detail}`,
       hint: mark.reason === 'state-locked'
