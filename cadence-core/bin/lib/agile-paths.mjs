@@ -13,6 +13,11 @@ export const OLD_PATH = Object.freeze(['PROJECT.md', 'REQUIREMENTS.md', 'ROADMAP
 /** The old path's own names at the top of its planning folder, which a switch archives; a name not here isn't Cadence's to move. */
 export const OLD_PATH_ARCHIVED = Object.freeze([...OLD_PATH, 'CAPTURE.md', 'ARCHIVE.md', 'state.json', 'tasks', 'spikes', 'debug', 'research']);
 
+/** Every path a switch moves, one a line, written before its first move, so a run stopped partway is finished by the next. @param {string} planningRoot */
+export function switchListFile(planningRoot) {
+  return join(planningRoot, 'agile.switch');
+}
+
 /** Where a switch puts the old path's files, names and layout unchanged. @param {string} planningRoot */
 export function oldPathArchive(planningRoot) {
   return join(planningRoot, '_archive-old-path');

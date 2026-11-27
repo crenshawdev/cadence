@@ -29,7 +29,7 @@ import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload, readQueue } from './planning/core.mjs';
-import { OLD_PATH, OLD_PATH_ARCHIVED, oldPathArchive, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, closingVersion, epicFile, tagSafeVersion as tagSafe, projectFile, releaseFile, releasesDir, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
+import { OLD_PATH, OLD_PATH_ARCHIVED, oldPathArchive, switchListFile, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, closingVersion, epicFile, tagSafeVersion as tagSafe, projectFile, releaseFile, releasesDir, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
 import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStandingRules, withStatus } from './lib/agile-render.mjs';
 import { epicEvidence, renderEvidence } from './lib/agile-evidence.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
@@ -48,7 +48,7 @@ import { readCurrentBranch } from './lib/git-head.mjs';
 import { READS_FILE, ROTATED_READS_FILE } from './lib/read-trace.mjs';
 import { ROTATED_TRACE_FILE, TRACE_FILE } from './lib/trace.mjs';
 import { signingProblem } from './lib/git-signing.mjs';
-import { atomicWrite, ensureRecordsIgnore, makeDir, movePath, removeTree, riskCarryDir, unlinkFile, writeFileNew } from './lib/planning-store.mjs';
+import { atomicWrite, copyFile, ensureRecordsIgnore, makeDir, movePath, removeTree, riskCarryDir, unlinkFile, writeFileNew } from './lib/planning-store.mjs';
 import { REBUILDABLE, emptyState, markAgile, readState, recordsReady, statePath } from './lib/project-state.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { interviewOptions } from './lib/surface-scan.mjs';
@@ -123,6 +123,11 @@ function refusal(dir) {
     const { closing, closed } = closes(agileDir(dir));
     return closing === null && closed.length && lstatOf(releaseFile(agileDir(dir))) === null ? releaseClosed(dir, closed) : releaseOpen(dir);
   }
+  // the marker goes down before the old files move, so a marked project still holding the list is a move stopped partway
+  if (marked && lstatOf(switchListFile(dir)) !== null) {
+    return { reason: 'switch', detail: `${dir} was being moved to the new path, and the move stopped partway`,
+      hint: 'run agile.mjs start --design <folder> with the same design to finish it; nothing was written' };
+  }
   // a marker too damaged to read is still this path's, and the old path's hint for one rebuilds it as an old-path state
   if (release && state.kind === 'invalid' && REBUILDABLE.includes(state.reason)) return unmarked(dir);
   // a marked project keeps its own archives there, so only an unmarked one's archives are the old path's
@@ -156,6 +161,10 @@ function openOldRelease(dir, old) {
 function landed(dir, old, s) {
   const blocked = (/** @type {string} */ detail, /** @type {string} */ hint) => ({ reason: 'old-path', detail, hint: `${hint}; nothing was written` });
   if (s.cycleOpen) return openOldRelease(dir, old);
+  // a stopped switch writes its list before anything goes in the archive, so an archive with no list isn't one of ours
+  if (lstatOf(oldPathArchive(dir)) !== null && lstatOf(switchListFile(dir)) === null) {
+    return blocked(`${oldPathArchive(dir)} is already there, and the switch puts the old path's files in that folder`, 'move that folder aside, then re-run');
+  }
   // the state was read through it, and the old path itself refuses a records folder that is a link or a file
   const records = recordsReady(dir);
   if (records.ok === false && (records.reason === 'symlinked-records' || records.reason === 'ENOTDIR')) {
@@ -180,7 +189,7 @@ function landed(dir, old, s) {
       'land the release with /cad-land; if it was landed by hand, remove that folder, then re-run');
   }
   return { reason: 'switch', detail: `${dir} belongs to an old-path project whose release has landed: ${old.join(', ')}`,
-    hint: 'this Cadence can say what moving it to the new path would move, with agile.mjs check --design <folder>, and doesn\'t move it yet; nothing was written' };
+    hint: 'agile.mjs start --design <folder> moves it to the new path, and /cad-agile doesn\'t take it there yet; nothing was written' };
 }
 
 /**
@@ -1106,7 +1115,8 @@ function oldPathName(name) {
  * @param {string} dir @returns {{text: string} | {refusal: Refusal}}
  */
 function oldRequirements(dir) {
-  const file = join(dir, 'REQUIREMENTS.md');
+  // a switch stopped after its moves has it in the archive
+  const file = [join(dir, 'REQUIREMENTS.md'), join(oldPathArchive(dir), 'REQUIREMENTS.md')].find((f) => lstatOf(f) !== null) ?? join(dir, 'REQUIREMENTS.md');
   const st = lstatOf(file);
   if (st === null) return { text: '' };
   if (!st.isFile()) {
@@ -1135,6 +1145,67 @@ function closedDesigns(dir, oldText) {
 }
 
 /**
+ * The list a stopped switch left, read as a record another run wrote: each line has to be a path the plan could name, a
+ * top-level name of the old path's, or one entry under records/ or seldon/.
+ * @param {string} dir @returns {{value: string[]} | {refusal: Refusal}}
+ */
+function heldList(dir) {
+  const file = switchListFile(dir);
+  const bad = (/** @type {string} */ why) => ({ refusal: { reason: 'switch-list', detail: `${file} ${why}, so what the stopped move still has to move isn't known`,
+    hint: 'put it back from your backup, or finish the move by hand into _archive-old-path/ and remove it, then re-run; nothing was moved' } });
+  const st = lstatOf(file);
+  if (!st?.isFile()) return bad('is not a plain file');
+  const lines = readFileSync(file, 'utf8').split('\n').filter((l) => l !== '');
+  const own = [basename(oldPathArchive(dir)), basename(switchListFile(dir))];
+  const named = (/** @type {string} */ rel) => {
+    const parts = rel.split('/');
+    if (parts.length === 1) return oldPathName(rel) && !own.includes(rel);
+    const [home, name] = parts;
+    return parts.length === 2 && ['records', 'seldon'].includes(home) && name !== '' && name !== '.' && name !== '..'
+      && !(home === 'records' && KEPT_RECORDS.includes(name));
+  };
+  const wrong = lines.filter((l) => !named(l));
+  if (!lines.length) return bad('names no path');
+  if (wrong.length) return bad(`names ${wrong.map((l) => JSON.stringify(l)).join(', ')}, which no switch moves`);
+  return { value: lines };
+}
+
+/**
+ * Move the old path's files into the archive: the list first, then a copy of the old state, then the marker in its place,
+ * then each listed path. A path whose twin is already in the archive went in an earlier run, and a log a hook wrote since
+ * is the new path's own, so both are passed over. A refusal, or null once everything listed is in.
+ * @param {string} dir @param {string[]} paths
+ */
+function moveOldPath(dir, paths) {
+  const archive = oldPathArchive(dir);
+  const copy = join(archive, 'records', 'state.json');
+  // before the marker nothing has moved, so the list is written fresh from this run's plan
+  if (readState(dir).kind === 'valid') {
+    atomicWrite(switchListFile(dir), `${paths.join('\n')}\n`);
+    makeDir(dirname(copy));
+    copyFile(statePath(dir), copy);
+  }
+  const marked = markAgile(dir, copy);
+  if (marked.ok === false) {
+    return { ok: false, reason: marked.reason, detail: `${statePath(dir)}: ${marked.detail}`,
+      hint: marked.reason === 'state-locked'
+        ? 'another command is writing the state file, or one was killed doing it - re-run in two minutes; nothing was moved'
+        : 'an old-path command changed the state since the start read it - re-run, which copies it again; nothing was moved' };
+  }
+  for (const rel of paths) {
+    if (rel === 'records/state.json') continue;
+    const from = join(dir, rel);
+    const to = join(archive, rel);
+    if (lstatOf(to) !== null || lstatOf(from) === null) continue;
+    makeDir(dirname(to));
+    movePath(from, to);
+  }
+  // its ignore file moved with the logs, and the new path's records need their own
+  ensureRecordsIgnore(dir);
+  return null;
+}
+
+/**
  * What moving this old-path project to the agile path does, by path under the planning folder: what it archives into
  * _archive-old-path/, which of those it copies open work from, and what it leaves. A name the old path doesn't write
  * stays, so the user's own files are never swept up.
@@ -1143,7 +1214,7 @@ function closedDesigns(dir, oldText) {
 function switchPlan(dir, oldText) {
   const archive = [];
   const leave = [];
-  const own = basename(oldPathArchive(dir));
+  const own = [basename(oldPathArchive(dir)), basename(switchListFile(dir))];
   const closed = closedDesigns(dir, oldText);
   for (const name of readdirSync(dir).sort()) {
     if (name === 'records' && lstatOf(join(dir, name))?.isDirectory()) {
@@ -1152,7 +1223,7 @@ function switchPlan(dir, oldText) {
       archive.push(...closed);
       leave.push(...readdirSync(join(dir, name)).sort().map((inner) => `seldon/${inner}`).filter((rel) => !closed.includes(rel)));
     } else {
-      (name !== own && oldPathName(name) ? archive : leave).push(name);
+      if (!own.includes(name)) (oldPathName(name) ? archive : leave).push(name);
     }
   }
   return { archive, copy: COPIED.filter((rel) => archive.includes(rel)), leave };
@@ -1214,6 +1285,12 @@ function ready(dir, design) {
   try { switching = old === null ? null : switchPlan(dir, old); } catch (e) {
     return no({ reason: 'old-path', detail: `a folder moving this project has to list can't be read: ${/** @type {any} */ (e).message ?? e}`,
       hint: 'make it readable, then re-run; nothing was written' });
+  }
+  // once the marker is down some paths may have moved, so the list the first run wrote is the one to finish
+  if (switching !== null && readState(dir).kind === 'invalid' && /** @type {any} */ (readState(dir)).reason === 'agile-path') {
+    const held = heldList(dir);
+    if ('refusal' in held) return no(held.refusal);
+    switching = { ...switching, archive: held.value, copy: COPIED.filter((rel) => held.value.includes(rel)) };
   }
   return { design: { ...read.design, phases: epics.epics }, decisions, config, switching,
     closed: carried === null ? null : { ...carried, deferred: carried.deferred.filter((q) => !named.has(requirementKey(q.id))) } };
@@ -1356,10 +1433,15 @@ function check(dir, design) {
 /** @param {string} dir @param {string} design @param {string} [commitHere] the user's "Commit here anyway" */
 function start(dir, design, commitHere) {
   const got = ready(dir, design);
-  if ('refusal' in got) return refuse(got.refusal);
-  if (got.switching) {
-    return refuse({ reason: 'switch', detail: `${dir} belongs to an old-path project whose release has landed`,
-      hint: 'this Cadence names what moving it to the new path would move but doesn\'t move it yet; nothing was written' });
+  if ('refusal' in got) {
+    // a switch whose release was renamed into place and stopped before its list went
+    if (got.refusal.reason === 'release-open' && lstatOf(switchListFile(dir)) !== null) {
+      const held = heldList(dir);
+      if ('refusal' in held) return refuse(held.refusal);
+      unlinkFile(switchListFile(dir));
+      return emit({ ok: true, folder: agileDir(dir), switched: { archive: held.value }, finished: true });
+    }
+    return refuse(got.refusal);
   }
   const open = unanswered(got.config);
   if (open.length) {
@@ -1380,6 +1462,10 @@ function start(dir, design, commitHere) {
   makeDir(dir);
   // part of the start, so one that died before it gets it written by the next
   writePolicy(dirname(resolve(dir)), got.config.testing);
+  if (got.switching) {
+    const stopped = moveOldPath(dir, got.switching.archive);
+    if (stopped !== null) return emit(stopped);
+  }
   // of the release, the marker goes first: a run that dies after it leaves a project the old path refuses, and the next start finishes
   const marked = markAgile(dir);
   if (marked.ok === false) {
@@ -1426,7 +1512,10 @@ function start(dir, design, commitHere) {
     // emptied, so a start begun meanwhile may have cleared it already
     clear(building);
   }
+  // last, so a run stopped before it is told apart from a start that never moved anything
+  if (got.switching) unlinkFile(switchListFile(dir));
   emit({ ok: true, release: title, folder: agileDir(dir), epics: epics.map((e) => ({ id: e.epic, name: e.name })), uncovered,
+    ...(got.switching ? { switched: { archive: got.switching.archive } } : {}),
     next: { id: epics[0].epic, name: epics[0].name, status: 'backlog', step: 'refine' } });
 }
 
