@@ -2,8 +2,8 @@
 // @ts-check
 // PreToolUse hook: the inviolable git rails, enforced by the harness instead of prose, for Bash tool calls
 // acts only inside a Cadence project (a .planning/ dir in the cwd or above) and stays silent elsewhere
-// the push rail's walk climbs past a .git file (linked worktree, submodule), so a push from one under the project asks
-// git push always asks: cad-land's unattended publish is a subprocess in the git-publish seam, so never seen here
+// the push rail's walk climbs past a .git file (linked worktree, submodule), so a push from one under the project counts
+// git push asks when it can reach a protected branch; cad-land's unattended publish is a subprocess, never seen here
 // a pull or merge request opened or merged with gh, glab or tea always asks; cad-land's own go through that seam too
 // git commit or git merge on a protected branch follows git.on_protected: ask (default), refuse (alias "deny") or allow
 // git.guard_bypass true in both config layers turns the push and commit rails off; the request and merge rails stay
@@ -17,6 +17,35 @@ import { forgeRequests, gitInvocations, planningRoot } from './lib/git-segments.
 // the rails' modules load only when the command pushes, commits or merges, since this hook runs on every Bash call
 let mergeLayers, bothLayers, resolveProtectedBranches, readCurrentBranch;
 
+// push options taking a separate argument, skipped with it so the remote and the refspecs read right
+const PUSH_OPT_WITH_ARG = new Set(['-o', '--push-option', '--receive-pack', '--exec', '--repo']);
+
+/**
+ * The protected branch a push can reach, read off its own words, or null. Wrong costs a prompt, never a bypass.
+ * @param {string[]} args the words after `push`
+ * @param {string} branch the branch checked out where the push runs
+ * @param {string[]} protectedBranches
+ * @returns {string | null} the branch name, or 'every branch' for --all and --mirror
+ */
+function pushTarget(args, branch, protectedBranches) {
+  if (args.includes('--all') || args.includes('--mirror')) return 'every branch';
+  const operands = [];
+  for (let i = 0; i < args.length; i++) {
+    if (PUSH_OPT_WITH_ARG.has(args[i])) { i++; continue; }
+    if (!args[i].startsWith('-')) operands.push(args[i]);
+  }
+  // the first operand is the remote; with no refspec git pushes the branch checked out, and --tags pushes only tags
+  const refspecs = operands.slice(1);
+  if (!refspecs.length) return !args.includes('--tags') && protectedBranches.includes(branch) ? branch : null;
+  for (const spec of refspecs) {
+    const [src, dst] = spec.replace(/^\+/, '').split(':');
+    const name = (dst || src).replace(/^refs\/heads\//, '');
+    const reached = name === 'HEAD' ? branch : name;
+    if (protectedBranches.includes(reached)) return reached;
+  }
+  return null;
+}
+
 const BYPASS_KEY = 'git.guard_bypass';
 const bypassed = (root) => bothLayers(root, [BYPASS_KEY]).keys[BYPASS_KEY].on;
 
@@ -26,6 +55,13 @@ function decide(decision, reason) {
     ? { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason }
     : { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: reason };
   process.stdout.write(JSON.stringify({ hookSpecificOutput }) + '\n');
+}
+
+// the push and branch rails read the project's layers here, and each acts on a torn one
+function readLayers(root) {
+  // mergeLayers warnings[]: acted on by both callers; a layer that failed to parse is what decides protected_branches
+  const { config, warnings, tornLayers } = mergeLayers(join(root, '.planning', 'config.json'));
+  return { config, warnings, tornLayers };
 }
 
 // the protected-branch decision for a git commit or merge, or null; it returns so main can order the rails
@@ -38,9 +74,7 @@ function decide(decision, reason) {
  */
 function branchDecision(root, cwd, verb) {
   if (verb === 'commit' && bypassed(root)) return null;
-  const repoLayer = join(root, '.planning', 'config.json');
-  // mergeLayers warnings[]: acted on below; a layer that failed to parse is what decides protected_branches here
-  const { config, warnings, tornLayers } = mergeLayers(repoLayer);
+  const { config, warnings, tornLayers } = readLayers(root);
   const git = config.git || {};
 
   // keyed on a layer failing to parse, not a protected-branch hit, or it would only fire on main and miss a lost list
@@ -88,6 +122,29 @@ function branchDecision(root, cwd, verb) {
 }
 
 const has = (dir, name) => existsSync(join(dir, name));
+
+// the push decision, in the repository a literal -C names or the session directory; the bypass turns it off
+function pushFor(dirs, args, cwd) {
+  let target = cwd;
+  for (const raw of dirs) {
+    const dir = literalDir(raw);
+    if (dir === null) { target = cwd; break; }
+    target = resolve(target, dir);
+  }
+  const root = planningRoot(target, hasForPush);
+  if (!root || bypassed(root)) return null;
+  const { config, warnings, tornLayers } = readLayers(root);
+  const publishing = 'Workflows never push - publishing is /cad-land\'s call (references/git-publish.md rail 3). '
+    + 'Approve only if you are deliberately publishing.';
+  // a lost protected list can't say which branch is safe, so a torn layer asks on every push
+  if (tornLayers.length) {
+    return { decision: 'ask', reason: `Cadence rail: ${warnings[0]} - the push rail is deciding with DEFAULTS, so it asks. ${publishing}` };
+  }
+  const reached = pushTarget(args, readCurrentBranch(target), resolveProtectedBranches(config.git || {}));
+  if (!reached) return null;
+  const where = reached === 'every branch' ? 'every branch, the protected ones included' : `protected branch "${reached}"`;
+  return { decision: 'ask', reason: `Cadence rail: this push can reach ${where} (git.protected_branches). ${publishing}` };
+}
 
 /** The push rail's probe: .git counts only as a directory; a worktree's or submodule's is a file, so climb on. */
 const hasForPush = (dir, name) => {
@@ -150,22 +207,17 @@ async function main() {
       + `Approve only if you mean to ${merges ? 'merge' : 'open'} it yourself now.` });
   }
 
-  // a push asks unless the bypass is on
-  const pushRoot = verbs.includes('push') ? planningRoot(cwd, hasForPush) : null;
-  if (pushRoot) {
-    ({ bothLayers } = await import('./lib/config-merge.mjs'));
-    if (!bypassed(pushRoot)) {
-      picks.push({ decision: 'ask', reason: 'Cadence rail: workflows never push - publishing is /cad-land\'s '
-        + 'call (references/git-publish.md rail 3). Approve only if you are deliberately publishing.' });
-    }
-  }
-
-  if (verbs.includes('commit') || verbs.includes('merge')) {
+  if (verbs.some((v) => v === 'push' || v === 'commit' || v === 'merge')) {
     ({ mergeLayers, bothLayers } = await import('./lib/config-merge.mjs'));
     ({ resolveProtectedBranches } = await import('./lib/protected-branches.mjs'));
     ({ readCurrentBranch } = await import('./lib/git-head.mjs'));
-    // each commit or merge is judged in its own repo
+    // each push, commit or merge is judged in its own repo
     for (const call of calls) {
+      if (call.verb === 'push') {
+        const d = pushFor(call.dirs, call.args, cwd);
+        if (d) picks.push(d);
+        continue;
+      }
       if (call.verb !== 'commit' && call.verb !== 'merge') continue;
       // --abort and --quit back a merge out and land nothing; --continue makes the merge commit, so it's judged
       if (call.verb === 'merge' && call.args.some((w) => w === '--abort' || w === '--quit')) continue;
