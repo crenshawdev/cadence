@@ -113,6 +113,13 @@ file `PLAN COMPLETE`, list each of those tests with the plan that rewrites it as
 an open item, and return the digest; that plan's own suite run is their check.
 Any other failure in the same run makes it RED below.
 
+RED only on tests that also fail at the base commit, the parent of your first
+task commit -> they were red before you. Prove it by running only those tests
+against a checkout of the base (`git archive` it into a scratch folder), never
+the full suite a second time. Each fails there too: rewrite the file
+`PLAN COMPLETE`, list each test as an open item carrying that proof, and return
+the digest. One that passes there, or any other failure, makes it RED below.
+
 RED -> ONE repair round, then a checkpoint. Fix the regression under the same
 lease and commit protocol, and re-run the suite ONCE to confirm - the only
 widening of the allowance above, and never a probe. Green now: `PLAN COMPLETE`,
