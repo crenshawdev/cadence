@@ -24,12 +24,12 @@ import { spawn } from 'node:child_process';
 import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readDesignFolder } from './planning/design-read.mjs';
+import { holdsToken, readDesignFolder } from './planning/design-read.mjs';
 import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload, readQueue } from './planning/core.mjs';
-import { OLD_PATH, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, closingVersion, epicFile, tagSafeVersion as tagSafe, projectFile, releaseFile, releasesDir, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
+import { OLD_PATH, OLD_PATH_ARCHIVED, oldPathArchive, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, closingVersion, epicFile, tagSafeVersion as tagSafe, projectFile, releaseFile, releasesDir, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
 import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStandingRules, withStatus } from './lib/agile-render.mjs';
 import { epicEvidence, renderEvidence } from './lib/agile-evidence.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
@@ -45,6 +45,8 @@ import { briefTitle } from './lib/seldon-design.mjs';
 import { captureLines, removeCaptures } from './lib/capture-file.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { readCurrentBranch } from './lib/git-head.mjs';
+import { READS_FILE, ROTATED_READS_FILE } from './lib/read-trace.mjs';
+import { ROTATED_TRACE_FILE, TRACE_FILE } from './lib/trace.mjs';
 import { signingProblem } from './lib/git-signing.mjs';
 import { atomicWrite, ensureRecordsIgnore, makeDir, movePath, removeTree, riskCarryDir, unlinkFile, writeFileNew } from './lib/planning-store.mjs';
 import { REBUILDABLE, emptyState, markAgile, readState, statePath } from './lib/project-state.mjs';
@@ -1077,6 +1079,80 @@ async function runChecks(dir) {
  * The design and the project's settings, or why no start can go ahead here. It writes nothing.
  * @param {string} dir @param {string} design
  */
+/** The run and read records' names; a rotation's claim and temps start with them. */
+const LOGS = [TRACE_FILE, ROTATED_TRACE_FILE, READS_FILE, ROTATED_READS_FILE];
+
+/** What a review fire or a milestone's own fire leaves at the top of the planning folder. */
+const FIRE_FILES = ['REVIEW-', 'ADJUDICATION-', 'DEFERRED-'];
+
+/** What a switch leaves in records/: the code map both paths share, and the ignore file a start writes anyway. */
+const KEPT_RECORDS = ['codemap', '.gitignore'];
+
+/** The old path's files whose open work a switch copies into the new path's, each archived as well. */
+const COPIED = ['PROJECT.md', 'REQUIREMENTS.md', 'CAPTURE.md', 'records/DECLINED.md', 'records/FILED.md'];
+
+/** Is that name at the top of the planning folder the old path's own? A lock goes with the file it locks. @param {string} name */
+function oldPathName(name) {
+  const base = name.endsWith('.lock') ? name.slice(0, -'.lock'.length) : name;
+  return OLD_PATH_ARCHIVED.includes(base) || base.startsWith('_archive-') || FIRE_FILES.some((p) => base.startsWith(p))
+    || LOGS.some((log) => base === log || base.startsWith(`${log}.`));
+}
+
+/**
+ * The old REQUIREMENTS.md's text, '' when there's none. A hand edit or another run may have made it anything, and the
+ * IDs it holds can't be judged from a link.
+ * @param {string} dir @returns {{text: string} | {refusal: Refusal}}
+ */
+function oldRequirements(dir) {
+  const file = join(dir, 'REQUIREMENTS.md');
+  const st = lstatOf(file);
+  if (st === null) return { text: '' };
+  if (!st.isFile()) {
+    return { refusal: { reason: 'old-requirements', detail: `${file} is not a plain file, so the IDs the old path used can't be read`,
+      hint: 'put it back as a plain file from git or your backup, then re-run; nothing was written' } };
+  }
+  return { text: readFileSync(file, 'utf8') };
+}
+
+/**
+ * The designs the old path started from: a folder under .planning/seldon/ with a brief.md whose prd.md holds an ID the old
+ * REQUIREMENTS.md holds, which the old path would refuse to take again. The top one is its own files, a named one its
+ * folder. A link is never walked, and a design that doesn't read names no ID, so it stays.
+ * @param {string} dir @param {string} oldText @returns {string[]}
+ */
+function closedDesigns(dir, oldText) {
+  const top = join(dir, 'seldon');
+  if (!lstatOf(top)?.isDirectory()) return [];
+  const folders = [top, ...readdirSync(top).sort().map((name) => join(top, name)).filter((f) => lstatOf(f)?.isDirectory())];
+  return folders.filter((f) => lstatOf(join(f, 'brief.md'))?.isFile()
+    && readDesignFolder(f).read.design.requirements.some((q) => holdsToken(oldText, q.id)))
+    .flatMap((f) => (f === top ? SELDON_FILES.filter((name) => lstatOf(join(top, name)) !== null).map((name) => `seldon/${name}`) : [`seldon/${basename(f)}`]));
+}
+
+/**
+ * What moving this old-path project to the agile path does, by path under the planning folder: what it archives into
+ * _archive-old-path/, which of those it copies open work from, and what it leaves. A name the old path doesn't write
+ * stays, so the user's own files are never swept up.
+ * @param {string} dir @param {string} oldText @returns {{archive: string[], copy: string[], leave: string[]}}
+ */
+function switchPlan(dir, oldText) {
+  const archive = [];
+  const leave = [];
+  const own = basename(oldPathArchive(dir));
+  const closed = closedDesigns(dir, oldText);
+  for (const name of readdirSync(dir).sort()) {
+    if (name === 'records' && lstatOf(join(dir, name))?.isDirectory()) {
+      for (const inner of readdirSync(join(dir, name)).sort()) (KEPT_RECORDS.includes(inner) ? leave : archive).push(`records/${inner}`);
+    } else if (name === 'seldon' && closed.length) {
+      archive.push(...closed);
+      leave.push(...readdirSync(join(dir, name)).sort().map((inner) => `seldon/${inner}`).filter((rel) => !closed.includes(rel)));
+    } else {
+      (name !== own && oldPathName(name) ? archive : leave).push(name);
+    }
+  }
+  return { archive, copy: COPIED.filter((rel) => archive.includes(rel)), leave };
+}
+
 function ready(dir, design) {
   const no = (/** @type {Refusal} */ refusal) => ({ refusal });
   const folder = resolve(design);
@@ -1104,6 +1180,15 @@ function ready(dir, design) {
       hint: 'repair the config file the detail names, then re-run; nothing was written' });
   }
   const closed = early?.reason === 'release-closed' ? closedRelease(dir) : null;
+  const oldRead = early?.reason === 'switch' ? oldRequirements(dir) : null;
+  if (oldRead !== null && 'refusal' in oldRead) return no(oldRead.refusal);
+  const old = oldRead === null ? null : /** @type {{text: string}} */ (oldRead).text;
+  // the old path's own rule: an ID anywhere in its REQUIREMENTS.md is taken, whatever section or fence it's in
+  const reused = old === null ? [] : read.design.requirements.map((q) => q.id).filter((id) => holdsToken(old, id));
+  if (reused.length) {
+    return no({ reason: 'requirement-ids-used', detail: `${reused.join(', ')} ${reused.length === 1 ? 'is' : 'are'} already in ${join(dir, 'REQUIREMENTS.md')}, and an ID names one requirement for good`,
+      hint: 'rename each in the design\'s prd.md and in every epics.md Requirements line that names it, by a Seldon rerun or by hand, then re-run; nothing was written' });
+  }
   if (closed !== null && 'refusal' in closed) return no(closed.refusal);
   const carried = closed !== null && 'value' in closed ? closed.value : null;
   const named = new Set(read.design.requirements.map((q) => requirementKey(q.id)));
@@ -1115,7 +1200,7 @@ function ready(dir, design) {
   const epics = carried === null ? { epics: read.design.phases } : renumbered(read.design.phases, carried.top);
   if ('refusal' in epics) return no(epics.refusal);
   // one the design names again is taken up, with the design's words
-  return { design: { ...read.design, phases: epics.epics }, decisions, config, switching: early?.reason === 'switch',
+  return { design: { ...read.design, phases: epics.epics }, decisions, config, switching: old === null ? null : switchPlan(dir, old),
     closed: carried === null ? null : { ...carried, deferred: carried.deferred.filter((q) => !named.has(requirementKey(q.id))) } };
 }
 
@@ -1248,7 +1333,7 @@ function check(dir, design) {
     ask.surfaces = interviewOptions(scanned.scan);
   }
   if (open.includes('testing')) ask.constraints = limits(got.decisions);
-  emit({ ok: true, release: got.design.title, epics: got.design.phases.length, unanswered: open, ...ask, ...(got.switching ? { switch: true } : {}),
+  emit({ ok: true, release: got.design.title, epics: got.design.phases.length, unanswered: open, ...ask, ...(got.switching ? { switch: got.switching } : {}),
     decide: adviseBranch(root, got.config.git || {}, { title: got.design.title }),
     reviewers: reviewersOf(dir, got.config) });
 }
@@ -1331,6 +1416,9 @@ function start(dir, design, commitHere) {
 }
 
 const DESIGN_FILES = ['brief.md', 'prd.md', 'spine.md', 'epics.md'];
+
+/** Every file Seldon writes in a design's folder (its SKILL.md), the architecture document written only on request among them. */
+const SELDON_FILES = [...DESIGN_FILES, 'architecture.md'];
 
 /** Seldon reads a bare reply of one of these as its step or its architecture document, so no design is named one. */
 const SELDON_WORDS = ['brief', 'prd', 'spine', 'epics', 'architecture'];

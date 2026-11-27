@@ -116,7 +116,7 @@ function judgeProject(title, brief, phases, date, issues) {
  * Not planning-files' REQ_ID_TOKEN, which needs a leading letter where isRequirementId admits a digit.
  * @param {string} text @param {string} id
  */
-function holdsToken(text, id) {
+export function holdsToken(text, id) {
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(?<![A-Za-z0-9_-])${escaped}(?![A-Za-z0-9_])`).test(text);
 }
