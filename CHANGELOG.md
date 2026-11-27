@@ -18,10 +18,13 @@ Releases 1.0.0 through 2.7.0 are in [docs/history/CHANGELOG-v1-v2.md](./docs/his
   rails. Tests: `tests/git-guard.test.mjs`.
 - **git-guard asks on a push only when it can reach a protected branch.**
   Pushing your own branch or a tag goes through. A push naming a protected
-  branch, `--all`, `--branches` or `--mirror`, a push with no refspec while one
-  is checked out, and a push the hook can't rule clear, such as a glob refspec
-  or one whose destination your git config picks, still ask. A commit on a
-  protected branch still asks. Tests: `tests/git-guard.test.mjs`.
+  branch, `--all`, `--branches` or `--mirror`, or one with no refspec while a
+  protected branch is checked out, still asks. So does a push the hook can't
+  rule clear: a quote, `$` or glob in its words, a global option other than a
+  plain `-C`, a command before it in the same call other than git `add`,
+  `commit`, `status`, `diff`, `log`, `show`, `tag`, `fetch` or `pull`, or git
+  config that picks where it lands. A commit on a protected branch still asks.
+  Tests: `tests/git-guard.test.mjs`.
 - **`/cad-land`'s unattended close opens and merges through `git-publish.mjs`.**
   With `git.auto_close` on in both config layers, the request is opened and
   merged by `git-publish.mjs open` and `merge`, which the hook doesn't see, so
