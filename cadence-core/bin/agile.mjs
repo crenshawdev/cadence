@@ -49,7 +49,7 @@ import { READS_FILE, ROTATED_READS_FILE } from './lib/read-trace.mjs';
 import { ROTATED_TRACE_FILE, TRACE_FILE } from './lib/trace.mjs';
 import { signingProblem } from './lib/git-signing.mjs';
 import { atomicWrite, ensureRecordsIgnore, makeDir, movePath, removeTree, riskCarryDir, unlinkFile, writeFileNew } from './lib/planning-store.mjs';
-import { REBUILDABLE, emptyState, markAgile, readState, statePath } from './lib/project-state.mjs';
+import { REBUILDABLE, emptyState, markAgile, readState, recordsReady, statePath } from './lib/project-state.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { interviewOptions } from './lib/surface-scan.mjs';
 
@@ -156,6 +156,12 @@ function openOldRelease(dir, old) {
 function landed(dir, old, s) {
   const blocked = (/** @type {string} */ detail, /** @type {string} */ hint) => ({ reason: 'old-path', detail, hint: `${hint}; nothing was written` });
   if (s.cycleOpen) return openOldRelease(dir, old);
+  // the state was read through it, and the old path itself refuses a records folder that is a link or a file
+  const records = recordsReady(dir);
+  if (records.ok === false && (records.reason === 'symlinked-records' || records.reason === 'ENOTDIR')) {
+    return blocked(`${join(dir, 'records')} is not a real folder (${records.reason}), so what the old path keeps there can't be moved`,
+      'put the records folder back as a real folder, then re-run');
+  }
   // the old path may keep a folder of its own by that name, and the switch's release goes there
   if (lstatOf(agileDir(dir)) !== null) {
     return blocked(`${agileDir(dir)} is there, and moving this old-path project puts the new path's release in that folder`, 'move that folder aside, then re-run');
@@ -174,7 +180,7 @@ function landed(dir, old, s) {
       'land the release with /cad-land; if it was landed by hand, remove that folder, then re-run');
   }
   return { reason: 'switch', detail: `${dir} belongs to an old-path project whose release has landed: ${old.join(', ')}`,
-    hint: 'run /cad-agile --brief <design>, which moves it to the new path; nothing was written' };
+    hint: 'this Cadence can say what moving it to the new path would move, with agile.mjs check --design <folder>, and doesn\'t move it yet; nothing was written' };
 }
 
 /**
@@ -1075,18 +1081,14 @@ async function runChecks(dir) {
     failed: failed.map((c) => ({ check: c.n, line: lines[c.n - 1], result: c.result })) });
 }
 
-/**
- * The design and the project's settings, or why no start can go ahead here. It writes nothing.
- * @param {string} dir @param {string} design
- */
 /** The run and read records' names; a rotation's claim and temps start with them. */
 const LOGS = [TRACE_FILE, ROTATED_TRACE_FILE, READS_FILE, ROTATED_READS_FILE];
 
 /** What a review fire or a milestone's own fire leaves at the top of the planning folder. */
 const FIRE_FILES = ['REVIEW-', 'ADJUDICATION-', 'DEFERRED-'];
 
-/** What a switch leaves in records/: the code map both paths share, and the ignore file a start writes anyway. */
-const KEPT_RECORDS = ['codemap', '.gitignore'];
+/** What a switch leaves in records/: the code map both paths share. Its ignore file goes with the logs it ignores, and the start writes a new one. */
+const KEPT_RECORDS = ['codemap'];
 
 /** The old path's files whose open work a switch copies into the new path's, each archived as well. */
 const COPIED = ['PROJECT.md', 'REQUIREMENTS.md', 'CAPTURE.md', 'records/DECLINED.md', 'records/FILED.md'];
@@ -1111,7 +1113,10 @@ function oldRequirements(dir) {
     return { refusal: { reason: 'old-requirements', detail: `${file} is not a plain file, so the IDs the old path used can't be read`,
       hint: 'put it back as a plain file from git or your backup, then re-run; nothing was written' } };
   }
-  return { text: readFileSync(file, 'utf8') };
+  try { return { text: readFileSync(file, 'utf8') }; } catch (e) {
+    return { refusal: { reason: 'old-requirements', detail: `${file} can't be read (${/** @type {any} */ (e).code ?? e}), so the IDs the old path used aren't known`,
+      hint: 'make it readable, then re-run; nothing was written' } };
+  }
 }
 
 /**
@@ -1153,6 +1158,10 @@ function switchPlan(dir, oldText) {
   return { archive, copy: COPIED.filter((rel) => archive.includes(rel)), leave };
 }
 
+/**
+ * The design and the project's settings, or why no start can go ahead here. It writes nothing.
+ * @param {string} dir @param {string} design
+ */
 function ready(dir, design) {
   const no = (/** @type {Refusal} */ refusal) => ({ refusal });
   const folder = resolve(design);
@@ -1200,7 +1209,13 @@ function ready(dir, design) {
   const epics = carried === null ? { epics: read.design.phases } : renumbered(read.design.phases, carried.top);
   if ('refusal' in epics) return no(epics.refusal);
   // one the design names again is taken up, with the design's words
-  return { design: { ...read.design, phases: epics.epics }, decisions, config, switching: old === null ? null : switchPlan(dir, old),
+  let switching = null;
+  // the folders it lists were written by the old path or by hand, and one that can't be listed can't be moved
+  try { switching = old === null ? null : switchPlan(dir, old); } catch (e) {
+    return no({ reason: 'old-path', detail: `a folder moving this project has to list can't be read: ${/** @type {any} */ (e).message ?? e}`,
+      hint: 'make it readable, then re-run; nothing was written' });
+  }
+  return { design: { ...read.design, phases: epics.epics }, decisions, config, switching,
     closed: carried === null ? null : { ...carried, deferred: carried.deferred.filter((q) => !named.has(requirementKey(q.id))) } };
 }
 
