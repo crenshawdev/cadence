@@ -41,24 +41,7 @@ Update with `/plugin update cadence@foundation`.
 
 ## Testing needs a stopping point
 
-An agent can find a reason to write another test almost indefinitely. Each suggestion may sound reasonable on its own. Taken together, they can cost more to build and maintain than the behavior they protect.
-
-More testing has to earn its place.
-
-Cadence's testing policy sets the scope before implementation. Planning checks what the existing tests cover, chooses the smallest set of additional checks needed, and states what evidence is enough to finish. Fixtures, mocks and test infrastructure count toward that effort too.
-
-Under an accepted policy:
-
-- Required tests run unattended in **GitHub Actions**, including setup, services and cleanup.
-- Coverage starts at a recommended **85% for lines and branches**, preserving higher existing thresholds. Unsupported metrics are made explicit; Go has a separate statement threshold.
-- Existing tests are reused when they adequately cover the behavior. Bug fixes need a reproducer that fails for the defect and passes after the fix.
-- Testing stops when the agreed behavior is covered and the required checks pass. Expanding it needs a demonstrated defect, an uncovered acceptance requirement or a measured coverage shortfall.
-
-A passing coverage percentage doesn't establish that the assertions mean anything. The policy requires both meaningful checks and the accepted thresholds. You shouldn't have to approve every test to keep testing under control.
-
-Setup offers the policy, or you can accept one for an existing Cadence project with `/cadence:cad-config --testing`. It's opt-in per repository. CI-only checks stay pending until they run, and a phase is called CI-verified only for a commit whose required jobs passed.
-
-Read the [testing chapter](https://crenshawdev.github.io/cadence/testing/policy.html) for the rules, supported coverage tools and enforcement limits.
+An agent can find a reason to write another test almost indefinitely. Cadence's testing policy, opt-in per repository, sets the scope before implementation: reuse existing tests that cover the behavior, add the fewest checks that prove the rest, and stop when the agreed behavior is covered and the required checks pass in GitHub Actions. Going past that needs a demonstrated defect, an uncovered acceptance requirement or a measured coverage shortfall. The [testing chapter](https://crenshawdev.github.io/cadence/testing/policy.html) has the rules, thresholds and supported tools.
 
 ## The working loop
 
