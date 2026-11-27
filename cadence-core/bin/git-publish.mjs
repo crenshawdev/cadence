@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // @ts-check
-// the one seam that mutates: publish, verify-publish and reap run git, authorized only answers
-// a subprocess push, not a Bash call, so git-guard's push ask never fires on an unattended close
+// the one seam that mutates: publish, verify-publish and reap run git, open and merge run the forge's CLI,
+// authorized only answers
+// a subprocess push, open or merge, not a Bash call, so git-guard never asks on an unattended close
 // an empty or valueless --dir refuses instead of acting on the cwd
 // publish needs git.auto_close true in both the repo and user-global config; either half alone authorizes nothing
 // verify-publish is authorized only by cadence.publishForVerification in this repo's own .git/config
@@ -14,7 +15,7 @@ import { mergeLayers } from './lib/config-merge.mjs';
 // both layers, never the merged value: each half is a raw read that fails closed
 import { autoCloseLayers } from './lib/repo-auto-close.mjs';
 import { emit } from './lib/seam-io.mjs';
-import { authorizationDetail, decidePublish, decideReap, decideVerificationPublish, tornLayerRefusal } from './lib/publish-decision.mjs';
+import { authorizationDetail, decidePublish, decideReap, decideRequest, decideVerificationPublish, tornLayerRefusal } from './lib/publish-decision.mjs';
 // the verification publish's authorization read and the env scrub its git calls run under
 import { localGitEnv, publishAuthorized } from './lib/publish-authorization.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
@@ -81,9 +82,19 @@ const GATE_HINTS = Object.freeze({
     'protected-branch': 'this repository protects that branch: take the name off `git.protected_branches` if it was never meant to be protected, or delete it by hand',
     'current-branch': 'switch to another branch first - this one cannot be deleted while it is checked out',
   }),
+  request: Object.freeze({
+    'auto-close-off': 'the unattended land needs `git.auto_close` true in BOTH this repository\'s `.planning/config.json` and the user-global config - the detail names which file to fix - or open and merge the request by hand',
+    'bad-forge': 'pass --forge github, gitlab or forgejo, the host the remote is on',
+    'no-branch': 'check out the branch the request is for - a detached HEAD names no request',
+    'bad-branch': 'rename the branch to plain characters (no leading `-`, no `:`, no shell metacharacters) and re-run',
+    'protected-branch': 'check out the integration branch - a request from a protected branch is never opened or merged unattended',
+    'bad-base': 'pass --base the plainly-named branch the request merges into',
+    'bad-sha': 'pass --sha only on GitHub, as the 7 to 40 hex characters `git rev-parse` printed for the head',
+    'bad-index': 'pass --index on Forgejo alone, the request number `open` printed',
+  }),
 });
 
-/** @param {'publish'|'verify-publish'|'reap'} arm @param {string} reason */
+/** @param {'publish'|'verify-publish'|'reap'|'request'} arm @param {string} reason */
 const gateHint = (arm, reason) => (GATE_HINTS[arm] || {})[reason]
   || 'the reason names the gate that stopped this - put the repository into a state that gate accepts, then re-run';
 
@@ -221,6 +232,39 @@ function authorized(dir) {
     hint: gateHint('publish', 'auto-close-off'), warnings });
 }
 
+/** Open or merge the current branch's request with the forge's own CLI, under publish's opt-in and branch gates.
+ *
+ * The CLI runs in `dir` by argument vector, so the hook sees no Bash call. Its output can carry a URL, so it's redacted. */
+function request(op, dir, flags) {
+  const currentBranch = readCurrentBranch(dir);
+  const { branches: protectedBranches, warnings, tornLayers } = readProtectedBranches(dir);
+  // checked first for publish's reason: a torn layer would read as a missing opt-in at gate 1
+  const torn = tornLayerRefusal({ warnings, tornLayers });
+  if (torn) {
+    refuseTorn({ branch: currentBranch }, torn, warnings, op === 'open' ? 'no request is opened' : 'nothing is merged');
+    return;
+  }
+  const decision = decideRequest({ op, autoClose: autoCloseLayers(dir), currentBranch, protectedBranches, ...flags });
+  if (decision.action !== 'run') {
+    emit({ ok: false, reason: decision.reason, branch: decision.branch, detail: decision.detail,
+      hint: gateHint('request', decision.reason), warnings });
+    return;
+  }
+  try {
+    const out = execFileSync(/** @type {string} */ (decision.program), decision.argv,
+      { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    emit({ ok: true, action: op === 'open' ? 'opened' : 'merged', forge: flags.forge, branch: decision.branch,
+      output: redactAndCap(out.trim()), warnings });
+  } catch (e) {
+    emit({ ok: false, reason: `${op}-failed`, branch: decision.branch,
+      detail: redactAndCap(e && e.message ? e.message : String(e)),
+      hint: op === 'open'
+        ? 'the forge CLI refused: check it is installed and signed in, then re-run'
+        : 'the merge did not land: the detail says why (checks pending, not mergeable, protected) - nothing is reaped',
+      warnings });
+  }
+}
+
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -239,10 +283,17 @@ try {
     reap(arg('reap', '--dir') || process.cwd(), arg('reap', '--branch'));
   } else if (cmd === 'authorized') {
     authorized(arg('authorized', '--dir') || process.cwd());
+  } else if (cmd === 'open') {
+    request('open', arg('open', '--dir') || process.cwd(),
+      { forge: arg('open', '--forge'), base: arg('open', '--base') });
+  } else if (cmd === 'merge') {
+    request('merge', arg('merge', '--dir') || process.cwd(),
+      { forge: arg('merge', '--forge'), sha: arg('merge', '--sha'), index: arg('merge', '--index') });
   } else {
     emit({ ok: false, reason: 'usage',
       detail: 'subcommands: publish [--dir <path>] [--remote <name>] | verify-publish [--dir <path>] [--remote <name>] | reap [--dir <path>] --branch <name>'
-        + ' | authorized [--dir <path>]' });
+        + ' | authorized [--dir <path>] | open [--dir <path>] --forge <github|gitlab|forgejo> --base <branch>'
+        + ' | merge [--dir <path>] --forge <github|gitlab|forgejo> [--sha <head>] [--index <n>]' });
   }
 } catch (e) {
   // a refusal carries no message, so without this a valueless --dir surfaces as internal "[object Object]"

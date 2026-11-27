@@ -732,6 +732,16 @@ export const CONTRACTS = {
       '--branch': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
     },
     authorized: {},
+    // a required flag missing or valueless refuses here by name; a value of the wrong shape is decideRequest's to refuse
+    open: {
+      '--forge': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    merge: {
+      '--forge': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--sha': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--index': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
   },
   'land-cleanup.mjs': {
     '*': {
