@@ -108,7 +108,7 @@ The confirmed Forgejo web/API hostname, optionally with a port. It is asked sepa
 
 **Default:** `false` · **Type:** boolean · **Scope:** repository or user-global.
 
-Turn the git-guard hook off, the first step to retiring it. It counts only when both the repository and user-global configuration set it to `true`; with either one unset the hook works as before. New projects get the repository half from the config template, so setting the user-global half turns the hook off there. Existing projects keep the hook until both halves are set.
+Turn off the git-guard hook's push and commit rails. The hook still asks before a pull or merge request is opened or merged with `gh`, `glab` or `tea`, and before a merge into a protected branch. It counts only when both the repository and user-global configuration set it to `true`; with either one unset the hook works as before. New projects get the repository half from the config template, so setting the user-global half turns those two rails off there. Existing projects keep them until both halves are set.
 
 ### `git.auto_close`
 
