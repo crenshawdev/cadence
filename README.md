@@ -1,4 +1,4 @@
-# Cadence
+![Cadence](https://raw.githubusercontent.com/crenshawdev/foundation/main/assets/cadence/cadence-banner.png)
 
 [![Test](https://github.com/crenshawdev/cadence/actions/workflows/test.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/test.yml)
 [![Latest release](https://img.shields.io/github/v/release/crenshawdev/cadence?label=release)](https://github.com/crenshawdev/cadence/releases/latest)
@@ -70,6 +70,16 @@ When every epic is done, you pick the version, and a requirement still open is e
 `/cadence:cad-land` reports the git state and asks how to publish: push, open a pull or merge request, tag, or leave it local. With `git.auto_close` set in both config layers, it opens the request, merges it and tags without stopping, and asks once, before the tag push.
 
 The record stays with the project, so you can end a session without making the next one reconstruct your decisions from chat.
+
+## Foundation
+
+Cadence is one of the Claude Code plugins in Foundation, the marketplace you installed it from. Each lives in its own repository, and each installs the same way: `/plugin install <name>@foundation`.
+
+| | Plugin | What it does |
+|---|---|---|
+| [![Cadence](https://raw.githubusercontent.com/crenshawdev/foundation/main/assets/cadence/cadence-avatar-128.png)](https://github.com/crenshawdev/cadence) | [cadence](https://github.com/crenshawdev/cadence) | Brings engineering practices to software you'll keep running after the session ends. |
+| | [burnrate](https://github.com/crenshawdev/burnrate) | Builds a local, self-contained dashboard of your own Claude Code token usage from your transcripts, and answers quick usage questions in chat. |
+| [![Headroom](https://raw.githubusercontent.com/crenshawdev/foundation/main/assets/headroom/headroom-avatar-128.png)](https://github.com/crenshawdev/headroom) | [headroom](https://github.com/crenshawdev/headroom) | Reminds you to `/clear` with a toast when your session's context fills past a point you choose, then again each step after. |
 
 ## Documentation
 
