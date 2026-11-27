@@ -167,6 +167,8 @@ async function main() {
     // each commit or merge is judged in its own repo
     for (const call of calls) {
       if (call.verb !== 'commit' && call.verb !== 'merge') continue;
+      // --abort and --quit back a merge out and land nothing; --continue makes the merge commit, so it's judged
+      if (call.verb === 'merge' && call.args.some((w) => w === '--abort' || w === '--quit')) continue;
       const d = branchFor(call.verb, call.dirs, cwd, root);
       if (d) picks.push(d);
     }

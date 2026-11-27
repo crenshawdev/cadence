@@ -39,12 +39,13 @@ export function gitVerbs(text) {
 }
 
 /**
- * The same scan as `gitVerbs`, keeping each segment's `-C` arguments: `git -C /tmp/x commit` reads
- * `[{verb: 'commit', dirs: ['/tmp/x']}]`. The commit rail needs `-C` to know which repo is hit.
+ * The same scan as `gitVerbs`, keeping each segment's `-C` arguments and the words after its verb:
+ * `git -C /tmp/x merge --abort` reads `[{verb: 'merge', dirs: ['/tmp/x'], args: ['--abort']}]`. The branch rails need
+ * `-C` to know which repo is hit, and the words to tell a merge from backing one out.
  * Words are raw, and a bare `-C` keeps `''`.
  *
  * @param {unknown} text the raw command string from the hook payload
- * @returns {{verb: string, dirs: string[]}[]}
+ * @returns {{verb: string, dirs: string[], args: string[]}[]}
  */
 export function gitInvocations(text) {
   if (typeof text !== 'string' || !text) return [];
@@ -65,7 +66,7 @@ export function gitInvocations(text) {
         continue;
       }
       if (word.startsWith('-')) continue;
-      out.push({ verb: word, dirs });
+      out.push({ verb: word, dirs, args: words.slice(i + 1) });
       break; // the first non-flag word is the verb; the rest are its operands
     }
   }
