@@ -240,7 +240,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
    - **Read the publish rails first.** Read
      `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
      consult site - step 3a or 3b, never both) before the
-     first bullet below that publishes anything, GitLab's `glab mr create`
+     first bullet below that publishes anything, GitLab's request open
      included: rail 3 governs from here on.
    - **Publish the branch (GitHub and Forgejo arms).** On either host publish
      the branch first through the git-publish seam. Run it on its own physical
@@ -260,12 +260,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      ahead of the whole bullet and not beside the create.
      Then reuse an existing open one when
      `gh pr view <branch>` / `glab mr view <branch>` / `tea pr list --state
-     open` (filtered by head branch) finds it, else create: GitHub
-     `gh pr create --base <base> --head <branch> --fill`,
-     GitLab
-     `glab mr create --source-branch <branch> --target-branch <base> --fill`,
-     Forgejo `tea pr create --base <base> --head <branch>` (record the index
-     it prints).
+     open` (filtered by head branch) finds it, else open it on its own line
+     (`<forge>`: `github`, `gitlab` or `forgejo`; Forgejo's index is in `output`):
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" open --dir <root> --forge <forge> --base <base>`
+     `ok:false` stops here; never retry it in Bash.
    - **Under a policy, the required jobs gate the merge (GitHub arm).** With
      `testing.scope` set, once the PR exists and before the merge, run
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy check --root . --base <base>`.
@@ -277,17 +275,17 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <
      branch head with a Bash timeout of 600000. Resolve the head sha ONCE with
      `git rev-parse <branch>` and use that same sha for the read and the merge:
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" test-policy ci-status --commit <sha> --wait 540 --root .`
-     Only `answer:"pass"` reaches `gh pr merge`, and that merge adds
-     `--match-head-commit <sha>`. `fail` stops and names each failing job.
+     Only `answer:"pass"` reaches the merge, and that merge passes
+     `--sha <sha>`. `fail` stops and names each failing job.
      `pending` after the wait stops with nothing landed, and a re-run resumes
      here.
-   - **Merge on the platform.** GitHub `gh pr merge <branch> --merge
-     --delete-branch`, GitLab
-     `glab mr merge <branch> --yes --remove-source-branch --auto-merge=false`,
-     Forgejo `tea pr merge --style merge <index>`.
+   - **Merge on the platform**, on its own line:
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" merge --dir <root> --forge <forge>`,
+     with `--sha <sha>` on GitHub under a policy and `--index <index>` on
+     Forgejo.
    - **Confirm it landed before any cleanup.** `gh pr view <branch> --json
      state,mergedAt` must show MERGED, `glab mr view <branch>` must show
-     merged, or `tea pr <index>` must show state merged. A non-zero exit
+     merged, or `tea pr <index>` must show state merged. The merge's `ok:false`
      (protected-branch / not-mergeable) or a still-open
      PR/MR (auto-merge only enabled, CI pending) means the merge did NOT land:
      stop, surface the reason, and do NOT reap.
