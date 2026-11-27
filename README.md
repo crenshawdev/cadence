@@ -80,6 +80,7 @@ Cadence is one of the Claude Code plugins in Foundation, the marketplace you ins
 | [![Cadence](https://raw.githubusercontent.com/crenshawdev/foundation/main/assets/cadence/cadence-avatar-128.png)](https://github.com/crenshawdev/cadence) | [cadence](https://github.com/crenshawdev/cadence) | Brings engineering practices to software you'll keep running after the session ends. |
 | | [burnrate](https://github.com/crenshawdev/burnrate) | Builds a local, self-contained dashboard of your own Claude Code token usage from your transcripts, and answers quick usage questions in chat. |
 | [![Headroom](https://raw.githubusercontent.com/crenshawdev/foundation/main/assets/headroom/headroom-avatar-128.png)](https://github.com/crenshawdev/headroom) | [headroom](https://github.com/crenshawdev/headroom) | Reminds you to `/clear` with a toast when your session's context fills past a point you choose, then again each step after. |
+| | [seldon](https://github.com/crenshawdev/seldon) | Does the design work before Cadence builds. It interviews you, then writes a brief, a PRD, an architecture spine and a set of epics. |
 
 ## Documentation
 
