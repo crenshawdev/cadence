@@ -68,7 +68,7 @@ function pushTarget(args, branch, protectedBranches) {
 
 /**
  * The git config that can land a push somewhere its words don't name, or null. push.default simple, current and
- * nothing keep a branch's own name; the rest, and any remote.<name>.push, can send it to main.
+ * nothing keep a branch's own name; the rest, any remote.<name>.push and a remote.<name>.mirror can send it to main.
  * @param {string[] | null} lines readPushConfig's answer
  * @returns {string | null}
  */
@@ -77,7 +77,7 @@ function configRedirect(lines) {
   let pushDefault = '';
   for (const line of lines) {
     const [key, value = ''] = line.split(/ (.*)/s);
-    if (key.endsWith('.push')) return key;
+    if (key.endsWith('.push') || key.endsWith('.mirror')) return key;
     pushDefault = value; // the last scope git lists is the one in force
   }
   return pushDefault && !['simple', 'current', 'nothing'].includes(pushDefault) ? `push.default=${pushDefault}` : null;

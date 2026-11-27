@@ -22,14 +22,14 @@ export function readCurrentBranch(dir) {
 }
 
 /**
- * The push.default and remote.<name>.push lines git config holds for the repo containing `dir`, every scope, in
- * git's order: `['push.default upstream']`. `[]` when none is set, and null when git can't answer, which git-guard
- * reads as a push it can't rule clear.
+ * The push.default, remote.<name>.push and remote.<name>.mirror lines git config holds for the repo containing
+ * `dir`, every scope, in git's order: `['push.default upstream']`. `[]` when none is set, and null when git can't
+ * answer, which git-guard reads as a push it can't rule clear.
  * @param {string} dir @returns {string[] | null}
  */
 export function readPushConfig(dir) {
   try {
-    return execFileSync('git', ['-C', dir, 'config', '--get-regexp', '^(push\\.default|remote\\..*\\.push)$'],
+    return execFileSync('git', ['-C', dir, 'config', '--get-regexp', '^(push\\.default|remote\\..*\\.(push|mirror))$'],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').filter(Boolean);
   } catch (e) {
     return /** @type {{status?: number}} */ (e).status === 1 ? [] : null; // 1 is git config's "no match"
