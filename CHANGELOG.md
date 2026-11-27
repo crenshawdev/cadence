@@ -7,6 +7,38 @@ Releases 1.0.0 through 2.7.0 are in [docs/history/CHANGELOG-v1-v2.md](./docs/his
 
 ## [Unreleased]
 
+### Changed
+
+- **git-guard asks before a pull or merge request is opened or merged.** A
+  `gh pr create` or `merge`, `glab mr create` or `merge`, or `tea pr create` or
+  `merge` run through Bash in a Cadence project asks first. So does a
+  `git merge` onto a protected branch, which follows `git.on_protected` the way
+  a commit there does; `git merge --abort` and `--quit` go through. Both ask
+  with `git.guard_bypass` on too, which now turns off only the push and commit
+  rails. Tests: `tests/git-guard.test.mjs`.
+- **git-guard asks on a push only when it can reach a protected branch.**
+  Pushing your own branch or a tag goes through. A push naming a protected
+  branch, `--all`, `--branches` or `--mirror`, a push with no refspec while one
+  is checked out, and a push the hook can't rule clear, such as a glob refspec
+  or one whose destination your git config picks, still ask. A commit on a
+  protected branch still asks. Tests: `tests/git-guard.test.mjs`.
+- **`/cad-land`'s unattended close opens and merges through `git-publish.mjs`.**
+  With `git.auto_close` on in both config layers, the request is opened and
+  merged by `git-publish.mjs open` and `merge`, which the hook doesn't see, so
+  the new ask doesn't stop the chain. Both refuse unless `git.auto_close` is on
+  in both layers and the head branch isn't protected. Picking "Open a pull or
+  merge request" in `/cad-land` yourself still asks once. Tests:
+  `tests/git-publish.test.mjs`.
+
+None of these has a switch; they apply when you upgrade.
+
+### Fixed
+
+- **A refused commit is no longer hidden by an ask in the same command.** A
+  deny from any git-guard rail now beats an ask from another, so a push or a
+  request in the same command can't turn a refused protected-branch commit into
+  a prompt. Tests: `tests/git-guard.test.mjs`.
+
 ## [4.4.4] - 2026-11-24
 
 Cadence hands the model less text before it starts work. This release changes
