@@ -137,7 +137,7 @@ export function epicEvidence({ planning, root, epic, stories }) {
 
 const n = (/** @type {number} */ v) => v.toLocaleString('en-US');
 /** The nonzero counts in their order, as "1 high, 2 low". @param {Record<string, number>} counts @param {readonly string[]} order */
-const listed = (counts, order) => [...order, ...Object.keys(counts).filter((k) => !order.includes(k)).sort()]
+const listed = (counts, order) => [...order, ...Object.keys(counts).filter((k) => !order.includes(k)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))]
   .filter((k) => counts[k]).map((k) => `${counts[k]} ${k}`).join(', ');
 
 /** The Evidence as `retro.md` holds it, one line each. @param {Evidence} e @returns {string[]} */

@@ -1449,7 +1449,8 @@ function stageSwitch(dir) {
     const parts = old.slice(planning.length + 1).split('/');
     return `${planning}/${parts.slice(0, (parts[0] === 'records' || parts[0] === 'seldon') && parts.length > 1 ? 2 : 1).join('/')}`;
   };
-  const paths = [...new Set(moved.map((m) => top(m.old)))].sort();
+  // code-unit order, so the list doesn't shift with the machine's locale
+  const paths = [...new Set(moved.map((m) => top(m.old)))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   if (moved.some((m) => add.includes(m.copy))) paths.push(archive);
   emit({ ok: true, staged: add.length, paths: [...paths, ...ledgers.filter((p) => add.includes(p))] });
 }
