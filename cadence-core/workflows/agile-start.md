@@ -6,7 +6,8 @@ ask is asked before it writes anything, in this order: check, ask, write.
 
 ## 1. Check
 
-There is no confirm step: typing the command is the consent. The path goes in
+Typing the command is the consent, except on a switch, which asks first in
+**Ask**. The path goes in
 as one single-quoted word, a leading `~` written out as the home folder. Double
 quotes would run a `$(...)` or a backtick in it, and a path holding a single
 quote is refused here, never escaped. One Bash step, which writes nothing:
@@ -31,6 +32,27 @@ the files named below make after one. Ask only what the check left open. An
 answer the user didn't give is never filled in for them: a start still waiting
 on one ends the turn there. Questions that don't wait on each other go in one
 call.
+
+**The switch**, when the check printed `switch`: an old-path project whose
+release has landed. Print what moves, one line each, a line left out when its
+list is empty:
+
+```
+Archived into .planning/_archive-old-path/: {switch.archive, comma-separated}
+Open work copied from: {switch.copy, comma-separated}
+Left where it is: {switch.leave, comma-separated}
+```
+
+Then ask, first in the first question call this section makes, or in a call of
+its own when nothing else is asked, with no option recommended:
+
+- header: "Switch"
+- question: "Move this project to the new path and start {release}? The old path's files go to .planning/_archive-old-path/ as they are, and the old path's commands stop working here."
+- options:
+  - "Switch - move them as listed and start {release}"
+  - "Stop - nothing is written"
+
+On Stop the start stops there, and every other answer in that call is dropped.
 
 **Outside reviewers.** For every name in `reviewers.outside`, all in one message:
 

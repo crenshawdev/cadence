@@ -14,7 +14,12 @@ Seldon design. Then ask:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" next
 ```
 
-- `ok:false` -> print `detail` and `hint`, one line each, and stop.
+- `ok:false` with reason `switch`, with `--brief` -> an old-path project whose
+  release has landed, or one whose move stopped partway: Read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/agile-start.md` and follow it,
+  then go to `commit`.
+- Any other `ok:false`, and `switch` without `--brief` -> print `detail` and
+  `hint`, one line each, and stop.
 - `release` is a name -> that release is open: go to `commit`. With `--brief`,
   say in one line that the design wasn't read because {release} is still open.
 - `release` is null -> first, a close stopped after its move and before its
@@ -59,14 +64,24 @@ settled its branch. On a release that was already open, unless it printed
 `NO_COMMITS` (there is nothing to branch from), Read
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` and apply section 1.
 
-Then commit the release, its setup and nothing else the user has staged, and
-push nothing:
+Then commit the release, its setup, a switch's moves and nothing else the user
+has staged, and push nothing. First stage the switch, which writes only git's
+index and answers `paths: []` on any other start:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/agile.mjs" stage-switch
+```
+
+On its `ok:false`, go on to `report` with its `detail`. Otherwise add each of
+its `paths`, in single quotes, at the end of the `git commit` line, never the
+`git add` line, and with any, the message is "docs: move to the new path and
+start the release":
 
 ```
 set -- .planning/agile/project.md .planning/agile/REQUIREMENTS.md .planning/agile/release.md .planning/agile/epics .planning/records/state.json .planning/records/.gitignore
 for f in .planning/config.json .github/cadence/coverage-policy.json; do [ -f "$f" ] && ! git check-ignore -q "$f" && set -- "$@" "$f"; done
 git add -- "$@"
-git commit -m "docs: start the release" -- "$@"
+git commit -m "docs: start the release" -- "$@" '<each path stage-switch named>'
 ```
 
 Nothing here ends the run: when the guard stops the commit or git refuses it,
@@ -140,6 +155,7 @@ After a start:
 
 ```
 Release: {release}, {N} epics in .planning/agile/
+Switched: {N of start's switched.archive} paths archived into .planning/_archive-old-path/, the line left out unless this run's start switched
 Setup: {each answer this run wrote, the line left out when it asked nothing}
 Repository: {created, or "not created - " and why, the line left out unless it was asked for}
 Commit: {hash, or "none - " and why}

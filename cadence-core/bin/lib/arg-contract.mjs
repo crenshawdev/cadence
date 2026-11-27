@@ -929,6 +929,7 @@ export const CONTRACTS = {
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     'run-checks': {},
+    'stage-switch': {},
     move: {
       '--to': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },

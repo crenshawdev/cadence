@@ -9,6 +9,7 @@
 //        agile.mjs design-folder [--title <title>] [--dir <.planning>]
 //        agile.mjs check --design <folder> [--dir <.planning>]
 //        agile.mjs start --design <folder> [--commit-here <branch>] [--dir <.planning>]
+//        agile.mjs stage-switch [--dir <.planning>]
 //        agile.mjs answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>]
 //        agile.mjs accept|close [--payload <file>] [--dir <.planning>]
 //        agile.mjs run-checks [--dir <.planning>]
@@ -51,7 +52,7 @@ import { READS_FILE, ROTATED_READS_FILE } from './lib/read-trace.mjs';
 import { ROTATED_TRACE_FILE, TRACE_FILE } from './lib/trace.mjs';
 import { signingProblem } from './lib/git-signing.mjs';
 import { atomicWrite, ensureRecordsIgnore, makeDir, movePath, removeTree, riskCarryDir, unlinkFile, withPlanningFileLock, writeFileNew } from './lib/planning-store.mjs';
-import { onAgilePath } from './lib/project-homes.mjs';
+import { fromRoot, onAgilePath } from './lib/project-homes.mjs';
 import { REBUILDABLE, emptyState, markAgile, readState, recordsReady, statePath } from './lib/project-state.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { interviewOptions } from './lib/surface-scan.mjs';
@@ -129,7 +130,7 @@ function refusal(dir) {
   // the marker goes down before the old files move, so a marked project still holding the list is a move stopped partway
   if (marked && lstatOf(switchListFile(dir)) !== null) {
     return { reason: 'switch', detail: `${dir} was being moved to the new path, and the move stopped partway`,
-      hint: 'run agile.mjs start --design <folder> with the same design to finish it; nothing was written' };
+      hint: 'run /cad-agile --brief <folder> with the same design to finish it; nothing was written' };
   }
   // a marker too damaged to read is still this path's, and the old path's hint for one rebuilds it as an old-path state
   if (release && state.kind === 'invalid' && REBUILDABLE.includes(state.reason)) return unmarked(dir);
@@ -203,7 +204,7 @@ function landed(dir, old, s) {
       'land the release with /cad-land; if it was landed by hand, remove that folder, then re-run');
   }
   return { reason: 'switch', detail: `${dir} belongs to an old-path project whose release has landed: ${old.join(', ')}`,
-    hint: 'agile.mjs start --design <folder> moves it to the new path, and /cad-agile doesn\'t take it there yet; nothing was written' };
+    hint: 'run /cad-agile --brief <folder> with a finished Seldon design, which shows what moves to the new path and asks first; nothing was written' };
 }
 
 /**
@@ -1405,6 +1406,51 @@ function switchPlan(dir, oldText) {
 }
 
 /**
+ * Stage a switch for its commit: the archive's copy of every file git tracks under the planning folder, unless git
+ * ignores it there, and the ledgers the switch wrote. What git didn't track stays untracked, a log ignored only by an
+ * anchored line included. Only git's index is written, so a run stopped before the commit stages the same again, and
+ * once it's committed git tracks nothing at the old places and this stages nothing.
+ * @param {string} dir
+ */
+function stageSwitch(dir) {
+  const root = dirname(resolve(dir));
+  const planning = fromRoot(root, resolve(dir));
+  const archive = fromRoot(root, oldPathArchive(resolve(dir)));
+  const git = (/** @type {string[]} */ args) => boundedRun('git', args, { cwd: root, timeout: CHILD_TIMEOUT_MS });
+  const failed = (/** @type {string} */ what) => refuse({ reason: 'git-failed', detail: `git couldn't ${what}`,
+    hint: 'run it at the top of the project, inside its repository, then re-run' });
+  const listed = git(['ls-files', '-z', '--', planning]);
+  if (!listed.ok) return failed(`list what it tracks under ${planning}`);
+  // the marker and the new ignore file keep their old places, so a copy HEAD already holds is a switch committed; no HEAD holds none
+  const committed = new Set(git(['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', archive]).stdout.split('\0'));
+  const moved = listed.stdout.split('\0').filter((p) => p && !p.startsWith(`${archive}/`))
+    .map((old) => ({ old, copy: `${archive}/${old.slice(planning.length + 1)}` }))
+    .filter(({ copy }) => !committed.has(copy) && lstatOf(join(root, copy))?.isFile());
+  if (!moved.length) return emit({ ok: true, staged: 0, paths: [] });
+  const ledgers = [agileBacklogFile, agileDeclinedFile, agileFiledFile].map((f) => fromRoot(root, f(agileDir(resolve(dir)))))
+    .filter((p) => lstatOf(join(root, p))?.isFile());
+  const wanted = [...moved.map((m) => m.copy), ...ledgers];
+  /** @type {Set<string>} */
+  const ignored = new Set();
+  // git answers each ignored one, and exits 1 with none
+  for (let i = 0; i < wanted.length; i += 200) {
+    for (const p of git(['check-ignore', '-z', '--', ...wanted.slice(i, i + 200)]).stdout.split('\0')) if (p) ignored.add(p);
+  }
+  const add = wanted.filter((p) => !ignored.has(p));
+  for (let i = 0; i < add.length; i += 200) {
+    if (!git(['add', '--', ...add.slice(i, i + 200)]).ok) return failed(`stage the archive's copies under ${archive}`);
+  }
+  // records/ and seldon/ keep what a switch leaves, so they're named by the entry that moved
+  const top = (/** @type {string} */ old) => {
+    const parts = old.slice(planning.length + 1).split('/');
+    return `${planning}/${parts.slice(0, (parts[0] === 'records' || parts[0] === 'seldon') && parts.length > 1 ? 2 : 1).join('/')}`;
+  };
+  const paths = [...new Set(moved.map((m) => top(m.old)))].sort();
+  if (moved.some((m) => add.includes(m.copy))) paths.push(archive);
+  emit({ ok: true, staged: add.length, paths: [...paths, ...ledgers.filter((p) => add.includes(p))] });
+}
+
+/**
  * The design and the project's settings, or why no start can go ahead here. It writes nothing.
  * @param {string} dir @param {string} design
  */
@@ -1819,6 +1865,7 @@ try {
   else if (argv[0] === 'check') check(planningDir(arg('check', '--dir')), arg('check', '--design'));
   // read first, so its own refusal names it even with --design missing
   else if (argv[0] === 'start') { const commitHere = arg('start', '--commit-here'); start(planningDir(arg('start', '--dir')), arg('start', '--design'), commitHere); }
+  else if (argv[0] === 'stage-switch') stageSwitch(planningDir(arg('stage-switch', '--dir')));
   else if (argv[0] === 'answer') answer(planningDir(arg('answer', '--dir')), arg('answer', '--payload'));
   else if (argv[0] === 'propose') propose(planningDir(arg('propose', '--dir')), arg('propose', '--payload'));
   else if (argv[0] === 'refine') refine(planningDir(arg('refine', '--dir')), arg('refine', '--payload'));
@@ -1831,7 +1878,7 @@ try {
   else if (argv[0] === 'not-yet') notYet(planningDir(arg('not-yet', '--dir')), arg('not-yet', '--payload'));
   else if (argv[0] === 'evidence') evidence(planningDir(arg('evidence', '--dir')));
   else if (argv[0] === 'close') close(planningDir(arg('close', '--dir')), arg('close', '--payload'));
-  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | design-folder [--title <title>] [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>] | accept|close [--payload <file>] [--dir <.planning>] | evidence [--dir <.planning>]' });
+  else emit({ ok: false, reason: 'usage', detail: 'subcommand: next [--dir <.planning>] | design-folder [--title <title>] [--dir <.planning>] | check|start --design <folder> [--commit-here <branch>, start only] [--dir <.planning>] | stage-switch [--dir <.planning>] | answer|propose|refine|size|check-commands|note|not-yet --payload <file> [--dir <.planning>] | run-checks [--dir <.planning>] | move --to in-progress|review [--dir <.planning>] | accept|close [--payload <file>] [--dir <.planning>] | evidence [--dir <.planning>]' });
 } catch (e) {
   emitCaught(e);
 }
