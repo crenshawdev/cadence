@@ -1199,6 +1199,23 @@ function oldSection(lines, heading) {
 }
 
 /**
+ * A carried body with any code fence it opens closed, by fenceScanner's rule (text-util.mjs): left open, it would fence
+ * every heading after it in project.md, the Standing rules a close appends among them.
+ * @param {string} body
+ */
+function fenceClosed(body) {
+  /** @type {string | null} */
+  let open = null;
+  for (const line of body.split('\n')) {
+    const f = /^ {0,3}(`{3,}|~{3,})\s*(.*)$/.exec(line);
+    if (!f) continue;
+    if (open === null) open = f[1];
+    else if (f[1][0] === open[0] && f[1].length >= open.length && !f[2].trim()) open = null;
+  }
+  return open === null ? body : `${body}\n${open}`;
+}
+
+/**
  * What a switch carries into the new path's files, read the way the old path reads each: the PROJECT.md sections, the
  * v2 requirements as Deferred, the highest ID of each prefix the old REQUIREMENTS.md holds anywhere (the rule a reused ID
  * is refused by), the open todos, seeds and notes as a backlog, and the two ledgers as they are.
@@ -1206,7 +1223,7 @@ function oldSection(lines, heading) {
  */
 function oldCarry(requirements, work) {
   const project = (work['PROJECT.md'] ?? '').split(/\r?\n/);
-  const sections = OLD_SECTIONS.map((h) => ({ name: h.replace(/^#+ /, ''), body: oldSection(project, h) })).filter((x) => x.body !== '');
+  const sections = OLD_SECTIONS.map((h) => ({ name: h.replace(/^#+ /, ''), body: fenceClosed(oldSection(project, h)) })).filter((x) => x.body !== '');
   const lines = requirements.split(/\r?\n/);
   const { start, end } = sectionSpan(lines, '## v2 Requirements');
   /** @type {{id: string, text: string}[]} */
@@ -1280,7 +1297,7 @@ function logName(name) {
  * the project again from disk first, since the start's look may be minutes old: an unmarked one must still be landed and
  * gets a list written fresh, a marked one finishes the list on disk. Then the marker takes the old state's place, with
  * its copy in the archive, and each listed path goes in. The list or a refusal comes back.
- * @param {string} dir @returns {{archive: string[]} | {refusal: Refusal}}
+ * @param {string} dir @returns {Moved | {refusal: Refusal}}
  */
 function moveOldPath(dir) {
   const run = withPlanningFileLock(switchListFile(dir), () => moveLocked(dir), 'switch-locked');
@@ -1291,7 +1308,9 @@ function moveOldPath(dir) {
   return run.value;
 }
 
-/** @param {string} dir @returns {{archive: string[]} | {refusal: Refusal}} */
+/** @typedef {{archive: string[], carry: ReturnType<typeof oldCarry>}} Moved */
+
+/** @param {string} dir @returns {Moved | {refusal: Refusal}} */
 function moveLocked(dir) {
   const archive = oldPathArchive(dir);
   const old = oldRequirements(dir);
@@ -1348,7 +1367,12 @@ function moveLocked(dir) {
   }
   // its ignore file moved with the logs, and the new path's records need their own
   ensureRecordsIgnore(dir);
-  return { archive: paths };
+  // read once it's all in the archive, so what's carried is what's kept, a capture an old-path command wrote meanwhile too
+  const work = oldWork(dir);
+  if ('refusal' in work) return work;
+  const req = oldRequirements(dir);
+  if ('refusal' in req) return req;
+  return { archive: paths, carry: oldCarry(req.text, work.value) };
 }
 
 /** Remove the switch's list, which another start finishing the same move may have done first. @param {string} dir */
@@ -1448,7 +1472,6 @@ function ready(dir, design) {
     switching = { ...switching, archive: held.value, copy: COPIED.filter((rel) => held.value.includes(rel)) };
   }
   return { design: { ...read.design, phases: epics.epics }, decisions, config, switching,
-    carry: work === null || 'refusal' in work ? null : oldCarry(/** @type {string} */ (old), work.value),
     closed: carried === null ? null : { ...carried, deferred: carried.deferred.filter((q) => !named.has(requirementKey(q.id))) } };
 }
 
@@ -1586,8 +1609,22 @@ function check(dir, design) {
     reviewers: reviewersOf(dir, got.config) });
 }
 
-/** @param {string} dir @param {string} design @param {string} [commitHere] the user's "Commit here anyway" */
+/**
+ * A switch is judged, moved and built under its own lock, so a second start never judges a project the first is moving,
+ * and is told to wait instead. Any other start needs none: its build folder and one rename keep two apart.
+ * @param {string} dir @param {string} design @param {string} [commitHere] the user's "Commit here anyway"
+ */
 function start(dir, design, commitHere) {
+  if (lstatOf(switchListFile(dir)) === null && refusal(dir)?.reason !== 'switch') return startHere(dir, design, commitHere, false);
+  const run = withPlanningFileLock(switchListFile(dir), () => startHere(dir, design, commitHere, true), 'switch-locked');
+  if (run.ok === false) {
+    refuse({ reason: 'switch-locked', detail: run.detail,
+      hint: 'another start is moving this project to the new path - let it finish, or if none is running re-run in two minutes; nothing was written by this run' });
+  }
+}
+
+/** @param {string} dir @param {string} design @param {string | undefined} commitHere @param {boolean} locked holding the switch's lock */
+function startHere(dir, design, commitHere, locked) {
   const got = ready(dir, design);
   if ('refusal' in got) {
     // a switch whose release was renamed into place and stopped before its list went
@@ -1613,17 +1650,20 @@ function start(dir, design, commitHere) {
       hint: 'pass the branch the start is on, the one the user said to commit on anyway; nothing was written' });
   }
 
-  const { decisions, closed, carry, design: { title, brief, requirements, phases: epics, uncovered } } = got;
+  const { decisions, closed, design: { title, brief, requirements, phases: epics, uncovered } } = got;
   // another start is moving its files in, and the leftover epics/ cleared below may be its
   const running = closed === null ? null : otherStart(dir);
   if (running !== null) return refuse(running);
   /** @type {string[] | null} */
   let switched = null;
-  // first, so a move it refuses leaves the project as it was
+  /** @type {Moved['carry'] | null} */
+  let carry = null;
+  // first, so a move it refuses leaves the project as it was; a project that turned into a switch since the first look takes the lock here
   if (got.switching) {
-    const moved = moveOldPath(dir);
+    const moved = locked ? moveLocked(dir) : moveOldPath(dir);
     if ('refusal' in moved) return refuse(moved.refusal);
     switched = moved.archive;
+    carry = moved.carry;
   }
   makeDir(dir);
   // part of the start, so one that died before it gets it written by the next
