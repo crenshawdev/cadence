@@ -142,12 +142,21 @@ you can neither prove nor kill goes to the user. At `blocking` and
 round is the gate's. `advisory` reports and goes on. `deferred` fixes nothing:
 its `deferred record` takes `--task {story}` too, and the member is committed
 with the record. Remove that `.diff` file once the fire is done. A gate of
-`off` reviews nothing, so the story takes the one reviewer below.
+`off` reviews nothing, so the story takes the reviewers below.
 
-**No match**, or the gate `off`: one reviewer. Write `git diff {Base}..HEAD` to
-`.planning/agile/tasks/{story}/review-{story}.diff`, then resolve it with its
-bracket, relay each `warnings[]` entry to the user, and dispatch the
-`agent_type` and `model` it prints through `references/seam-spawn-agent.md`:
+**No match**, or the gate `off`: every reviewer the resolve below prints under
+`reviewers.diff`, started together over one diff. Write `git diff {Base}..HEAD`
+to `.planning/agile/tasks/{story}/review-{story}.diff`, then resolve it with its
+bracket and relay each `warnings[]` entry to the user. `claude-subagent` is the
+`agent_type` and `model` it prints, dispatched through
+`references/seam-spawn-agent.md` with the prompt below. Any other name is a
+cross-model reviewer: Read
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-cross-model.md` and run it
+there with trigger `diff` at `reviewer_tiers.diff` and `reviewer_efforts.diff`,
+its artifact a file in this run's folder holding the story file and then the
+diff, and its instruction the prompt below with the story file named as the
+artifact's top. One answering `ok:false` is named with its reason and dropped,
+and with none left `claude-subagent` runs.
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-reviewer --phase 0 --bracket-read ".planning/agile/tasks/{story}/review-{story}.diff,.planning/agile/epics/{id}/{story}.md" --bracket-plan {story}-review
@@ -157,8 +166,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-revie
 Refute this change. {story} {title} is to deliver: {its Delivers}. Its Accepted when lines, its plan when it has one, and the command recorded to check each one, are in .planning/agile/epics/{id}/{story}.md. The change is the diff at .planning/agile/tasks/{story}/review-{story}.diff. Find what breaks it, what it misses of Delivers or of a line, and any command that would pass with its line untrue. {With a testing policy: the test-finding sentence of references/review-triggers.md step 2.} Follow your output format exactly.
 ```
 
-Close its bracket the moment it's back, with `--detail-file <path>` naming what
-failed when it did:
+Close the `claude-subagent` bracket the moment it's back, with
+`--detail-file <path>` naming what failed when it did:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0 --plan {story}-review --role cad-reviewer --agent-id <the id on the subagent return> --tokens <the token count on it> --turns <the tool-call count on it> --duration-ms <the wall clock on it>
@@ -181,8 +190,9 @@ and committing the story file as section 3 commits; it isn't reviewed again. A
 fix's own range gets `risk-check run` from the review's HEAD, and its fire on a
 match. Then write `.planning/agile/tasks/{story}/payload-{reviewed}-{HEAD}.json`,
 `{reviewed}` being the head the reviewer read and `{HEAD}` the one now, both
-short, as references/review-record.md composes it, with the reviewer's return
-verbatim and one ruling for each finding, and record it. It stays there until
+short, as references/review-record.md composes it, with each reviewer that ran
+as its own voice, its return verbatim, and one ruling for each finding, and
+record it. It stays there until
 section 8 has settled the lows, so a cleared run still has them, and
 `record-exists` means a run cut short recorded it already:
 
