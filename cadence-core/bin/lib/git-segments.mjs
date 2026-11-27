@@ -1,8 +1,9 @@
 // @ts-check
-// everything git-guard.mjs sees; it replaced a shell tokenizer and a model of git's option grammar
+// everything git-guard.mjs sees, git's verbs and the forge CLIs' request calls; it replaced a shell tokenizer
+// and a model of git's option grammar
 // the guard's adversary is the model, not an attacker: being wrong costs a prompt, never a bypass
 // predicting the shell has an unbounded escape surface, and every patch added grammar
-// so a segment counts only when its command word is git, and everything else is silent by construction
+// so a segment counts only when its command word is git (or gh, glab, tea for a request), the rest silent by construction
 // also holds the .planning/ scope walk that git-guard, read-trace and subagent-trace share
 'use strict';
 
@@ -67,6 +68,44 @@ export function gitInvocations(text) {
       out.push({ verb: word, dirs });
       break; // the first non-flag word is the verb; the rest are its operands
     }
+  }
+  return out;
+}
+
+/** Each forge CLI's request noun and the verbs that open or merge one, aliases included, as each CLI's docs list them.
+ * @type {Readonly<Record<string, {nouns: string[], create: string[], merge: string[]}>>} */
+const REQUEST_CLI = Object.freeze({
+  gh: { nouns: ['pr'], create: ['create', 'new'], merge: ['merge'] },
+  glab: { nouns: ['mr'], create: ['create', 'new'], merge: ['merge', 'accept'] },
+  tea: { nouns: ['pulls', 'pull', 'pr'], create: ['create', 'c'], merge: ['merge', 'm'] },
+});
+
+/**
+ * Every pull or merge request this command opens or merges, in order: `gh pr create && glab mr merge 5` reads
+ * `[{cli: 'gh', verb: 'create'}, {cli: 'glab', verb: 'merge'}]`.
+ *
+ * The same anchor as `gitInvocations`: the command word has to be gh, glab or tea (or end in `/gh` and so on), so
+ * `echo "gh pr merge"` is silent. The first request noun after it names the subcommand, and the next non-flag word is
+ * its verb, so a flag's argument sitting between the two hides the call, the same cost as the git reader's.
+ *
+ * @param {unknown} text the raw command string from the hook payload
+ * @returns {{cli: string, verb: 'create'|'merge'}[]}
+ */
+export function forgeRequests(text) {
+  if (typeof text !== 'string' || !text) return [];
+
+  /** @type {{cli: string, verb: 'create'|'merge'}[]} */
+  const out = [];
+  for (const segment of text.split(SEPARATOR)) {
+    const words = segment.trim().split(/\s+/).filter(Boolean);
+    const cli = words.length ? words[0].slice(words[0].lastIndexOf('/') + 1) : '';
+    if (!Object.hasOwn(REQUEST_CLI, cli)) continue;
+    const spec = REQUEST_CLI[cli];
+    const at = words.findIndex((w, i) => i > 0 && spec.nouns.includes(w));
+    if (at < 0) continue;
+    const verb = words.slice(at + 1).find((w) => !w.startsWith('-')) ?? '';
+    if (spec.create.includes(verb)) out.push({ cli, verb: 'create' });
+    else if (spec.merge.includes(verb)) out.push({ cli, verb: 'merge' });
   }
   return out;
 }
