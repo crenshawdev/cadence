@@ -187,7 +187,7 @@ export function setReqStatus(text, ids, status) {
 // REQUIREMENTS.md: the Active grammar and the Traceability insert path
 
 // the `## Active` bullet grammar, as before the classifier: it reports lines outside it and never widens it
-const ACTIVE_BULLET = /^-\s+(?:\[[ xX]\]\s+)?\*\*([^*]+)\*\*/;
+export const ACTIVE_BULLET = /^-\s+(?:\[[ xX]\]\s+)?\*\*([^*]+)\*\*/;
 
 // a requirement id in both shipped forms (`PREFIX-N`, `#41`). Unanchored to scan prose, unlike isRequirementId
 const REQ_ID_TOKEN = /\b[A-Z][A-Z0-9]{1,7}-\d+\b|(?:^|[^\w#])#\d+\b/;
@@ -403,7 +403,7 @@ export function planName(text) {
 }
 
 /** Every requirement-id token in `s`, its leading delimiter stripped. */
-function idTokensIn(s) {
+export function idTokensIn(s) {
   return [...s.matchAll(REQ_ID_TOKEN_G)].map((m) => m[0].slice(m[0].search(/[A-Z#]/)));
 }
 

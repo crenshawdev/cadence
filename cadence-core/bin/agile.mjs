@@ -29,8 +29,8 @@ import { scanSurfaces } from './planning/detect-surfaces.mjs';
 import { invalidHint } from './planning/state-import.mjs';
 import { writePolicy } from './planning/testing-policy.mjs';
 import { readJsonPayload, readQueue } from './planning/core.mjs';
-import { OLD_PATH, OLD_PATH_ARCHIVED, oldPathArchive, switchListFile, agileBacklogFile, agileDir, buildDir, buildPid, closingDir, closingVersion, epicFile, tagSafeVersion as tagSafe, projectFile, releaseFile, releasesDir, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
-import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withSize, withStandingRules, withStatus } from './lib/agile-render.mjs';
+import { OLD_PATH, OLD_PATH_ARCHIVED, oldPathArchive, switchListFile, agileBacklogFile, agileDeclinedFile, agileFiledFile, agileDir, buildDir, buildPid, closingDir, closingVersion, epicFile, tagSafeVersion as tagSafe, projectFile, releaseFile, releasesDir, requirementsFile, retroFile, storyFile, storyNumber } from './lib/agile-paths.mjs';
+import { limits, lessonRecord, renderAnswers, renderAskChanged, renderEpicFile, renderNotYet, renderProjectFile, renderRefinedEpic, renderReleaseFile, renderReleaseSplit, renderRequirementsFile, renderRetro, renderSplitEpic, renderOldPath, renderStandingRules, renderStoryFile, renderStoryPlan, renderStoryResult, checkLines, withKept, withSize, withStatus } from './lib/agile-render.mjs';
 import { epicEvidence, renderEvidence } from './lib/agile-evidence.mjs';
 import { judgeDesign } from './lib/agile-judge.mjs';
 import { STATUSES, highestIds, readChangeNext, requirementKey, readEpicFile, readEpicStatus, readLessonRecords, readNotYet, readReleaseFile, readRequirementsFile, readStoryChecks, readStoryFile, readStoryPlan, readStoryResult } from './lib/agile-read.mjs';
@@ -42,7 +42,9 @@ import { boundedRun } from './lib/bounded-run.mjs';
 import { adviseBranch } from './lib/branch-advice.mjs';
 import { slugOf } from './lib/branch-decision.mjs';
 import { briefTitle } from './lib/seldon-design.mjs';
-import { captureLines, removeCaptures } from './lib/capture-file.mjs';
+import { CAPTURE_HEADINGS, EMPTY_CAPTURE, captureLines, removeCaptures, replaceSection } from './lib/capture-file.mjs';
+import { ACTIVE_BULLET, idTokensIn, isRequirementId, parseCaptureSnippets, sectionSpan } from './lib/planning-files.mjs';
+import { fenceScanner } from './lib/text-util.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { readCurrentBranch } from './lib/git-head.mjs';
 import { READS_FILE, ROTATED_READS_FILE } from './lib/read-trace.mjs';
@@ -1156,6 +1158,89 @@ function closedDesigns(dir, oldText) {
 }
 
 /**
+ * The old path's files whose open work a switch carries, from the top or, once moved, the archive; null for one in
+ * neither. The old path or a hand wrote each, so one that isn't a plain file is refused by name.
+ * @param {string} dir @returns {{value: Record<string, string | null>} | {refusal: Refusal}}
+ */
+function oldWork(dir) {
+  /** @type {Record<string, string | null>} */
+  const value = {};
+  for (const rel of COPIED.filter((r) => r !== 'REQUIREMENTS.md')) {
+    const file = [join(dir, rel), join(oldPathArchive(dir), rel)].find((f) => lstatOf(f) !== null);
+    if (file === undefined) { value[rel] = null; continue; }
+    const no = (/** @type {string} */ why) => ({ refusal: { reason: 'old-file', detail: `${file} ${why}, so the open work it holds can't be carried`,
+      hint: 'put it back as a plain, readable file from git or your backup, or remove it, then re-run; nothing was written' } });
+    if (!lstatOf(file)?.isFile()) return no('is not a plain file');
+    try { value[rel] = readFileSync(file, 'utf8'); } catch (e) { return no(`can't be read (${/** @type {any} */ (e).code ?? e})`); }
+  }
+  return { value };
+}
+
+/** The old PROJECT.md's sections a switch carries, by the old template's headings. */
+const OLD_SECTIONS = ['## What This Is', '## Core Value', '### Out of Scope', '## Constraints', '## Key Decisions'];
+
+/**
+ * A section's body in the old PROJECT.md, blank lines trimmed: to the next `## ` as the old path's reader ends one, and a
+ * `### ` one at the next `### ` too, since Out of Scope sits inside Requirements. '' when it isn't there.
+ * @param {string[]} lines @param {string} heading
+ */
+function oldSection(lines, heading) {
+  const fenced = fenceScanner();
+  let start = -1;
+  let end = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    if (fenced(lines[i])) continue;
+    if (start < 0) { if (lines[i].trim() === heading) start = i; continue; }
+    if (/^## /.test(lines[i]) || (heading.startsWith('### ') && /^### /.test(lines[i]))) { end = i; break; }
+  }
+  if (start < 0) return '';
+  // the template's footer, which closes the file and not Key Decisions
+  return lines.slice(start + 1, end).join('\n').replace(/\n-{3,}\s*\n\*Last updated:[^\n]*\*\s*$/, '').replace(/^\s*\n|\s+$/g, '');
+}
+
+/**
+ * What a switch carries into the new path's files, read the way the old path reads each: the PROJECT.md sections, the
+ * v2 requirements as Deferred, the highest ID of each prefix the old REQUIREMENTS.md holds anywhere (the rule a reused ID
+ * is refused by), the open todos, seeds and notes as a backlog, and the two ledgers as they are.
+ * @param {string} requirements the old REQUIREMENTS.md, '' when there's none @param {Record<string, string | null>} work
+ */
+function oldCarry(requirements, work) {
+  const project = (work['PROJECT.md'] ?? '').split(/\r?\n/);
+  const sections = OLD_SECTIONS.map((h) => ({ name: h.replace(/^#+ /, ''), body: oldSection(project, h) })).filter((x) => x.body !== '');
+  const lines = requirements.split(/\r?\n/);
+  const { start, end } = sectionSpan(lines, '## v2 Requirements');
+  /** @type {{id: string, text: string}[]} */
+  const deferred = [];
+  const seen = new Set();
+  const fenced = fenceScanner();
+  for (let i = 0; i < end; i++) {
+    // fed every line from the top, so the fence state inside the section is the document's
+    if (fenced(lines[i]) || i <= start) continue;
+    const m = ACTIVE_BULLET.exec(lines[i]);
+    const id = m?.[1].trim() ?? '';
+    const text = m ? lines[i].slice(m[0].length).replace(/^:?\s*/, '').trim() : '';
+    if (!isRequirementId(id) || text === '' || seen.has(requirementKey(id))) continue;
+    seen.add(requirementKey(id));
+    deferred.push({ id, text });
+  }
+  const capture = (work['CAPTURE.md'] ?? '').split(/\r?\n/);
+  let backlog = EMPTY_CAPTURE;
+  let items = 0;
+  for (const [kind, heading] of Object.entries(CAPTURE_HEADINGS)) {
+    const span = sectionSpan(capture, heading);
+    if (span.start < 0) continue;
+    const open = parseCaptureSnippets(capture.slice(span.start, span.end).join('\n')).map((x) => x.text)
+      .filter((x) => !x.startsWith('[closed] ') && x !== 'None.');
+    if (!open.length) continue;
+    items += open.length;
+    backlog = replaceSection(backlog, heading, `${open.map((x) => (kind === 'todo' ? `- [ ] ${x}` : `- ${x}`)).join('\n')}\n`);
+  }
+  return { project: sections.length ? renderOldPath(sections) : null, deferred,
+    earlier: highestIds(idTokensIn(requirements).filter(isRequirementId)), backlog: items ? backlog : null,
+    declined: work['records/DECLINED.md'], filed: work['records/FILED.md'] };
+}
+
+/**
  * The list a stopped switch left, read as a record another run wrote: each line has to be a top-level name of the old
  * path's, one entry under records/, or a design under seldon/ that is closed or already archived, which never names the
  * design being started. `missing` when it's gone, which another start finishing the move does.
@@ -1335,6 +1420,8 @@ function ready(dir, design) {
     return no({ reason: 'requirement-ids-used', detail: `${reused.join(', ')} ${reused.length === 1 ? 'is' : 'are'} already in ${/** @type {{file: string}} */ (oldRead).file}, and an ID names one requirement for good`,
       hint: 'rename each in the design\'s prd.md and in every epics.md Requirements line that names it, by a Seldon rerun or by hand, then re-run; nothing was written' });
   }
+  const work = old === null ? null : oldWork(dir);
+  if (work !== null && 'refusal' in work) return no(work.refusal);
   if (closed !== null && 'refusal' in closed) return no(closed.refusal);
   const carried = closed !== null && 'value' in closed ? closed.value : null;
   const named = new Set(read.design.requirements.map((q) => requirementKey(q.id)));
@@ -1361,6 +1448,7 @@ function ready(dir, design) {
     switching = { ...switching, archive: held.value, copy: COPIED.filter((rel) => held.value.includes(rel)) };
   }
   return { design: { ...read.design, phases: epics.epics }, decisions, config, switching,
+    carry: work === null || 'refusal' in work ? null : oldCarry(/** @type {string} */ (old), work.value),
     closed: carried === null ? null : { ...carried, deferred: carried.deferred.filter((q) => !named.has(requirementKey(q.id))) } };
 }
 
@@ -1525,7 +1613,7 @@ function start(dir, design, commitHere) {
       hint: 'pass the branch the start is on, the one the user said to commit on anyway; nothing was written' });
   }
 
-  const { decisions, closed, design: { title, brief, requirements, phases: epics, uncovered } } = got;
+  const { decisions, closed, carry, design: { title, brief, requirements, phases: epics, uncovered } } = got;
   // another start is moving its files in, and the leftover epics/ cleared below may be its
   const running = closed === null ? null : otherStart(dir);
   if (running !== null) return refuse(running);
@@ -1568,8 +1656,12 @@ function start(dir, design, commitHere) {
     makeDir(dirname(epicFile(building, e.epic)));
     writeFileNew(epicFile(building, e.epic), renderEpicFile(e));
   }
-  writeFileNew(projectFile(building), withStandingRules(renderProjectFile(title, brief, epics, decisions), closed?.project ?? null));
-  writeFileNew(requirementsFile(building), renderRequirementsFile(title, requirements, closed?.deferred ?? [], closed?.earlier ?? []));
+  writeFileNew(projectFile(building), withKept(renderProjectFile(title, brief, epics, decisions), closed?.project ?? null, carry?.project));
+  writeFileNew(requirementsFile(building), renderRequirementsFile(title, requirements, closed?.deferred ?? carry?.deferred ?? [], closed?.earlier ?? carry?.earlier ?? []));
+  // a switch's open work, which lands with the release's rename
+  if (carry?.backlog) writeFileNew(agileBacklogFile(building), carry.backlog);
+  if (typeof carry?.declined === 'string') writeFileNew(agileDeclinedFile(building), carry.declined);
+  if (typeof carry?.filed === 'string') writeFileNew(agileFiledFile(building), carry.filed);
   writeFileNew(releaseFile(building), renderReleaseFile(title, brief, epics, commitHere));
   // after a close agile/ holds the releases, ledgers and tasks, so the new files go in one by one and release.md opens it last
   const [from, to] = closed === null ? [building, agileDir(dir)] : [join(building, 'epics'), join(agileDir(dir), 'epics')];

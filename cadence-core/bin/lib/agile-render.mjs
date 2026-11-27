@@ -232,30 +232,44 @@ export const lessonRecord = (l) => `Change next from ${l.from}, ${l.line}: ${l.o
 
 const STANDING = '## Standing rules';
 
-/** The Standing rules heading's line, -1 when there's none, and the line its section ends before. @param {string[]} lines */
-function standingSpan(lines) {
+/** What a switch carried from the old path's PROJECT.md, which every later start keeps. */
+const FROM_OLD = '## From the old path';
+
+/** That heading's line, -1 when there's none, and the line its section ends before. @param {string[]} lines @param {string} heading */
+function spanOf(lines, heading) {
   const fenced = fenceScanner();
   let start = -1;
   let end = lines.length;
   for (let i = 0; i < lines.length; i++) {
     if (fenced(lines[i])) continue;
     // whole and unindented, so a heading a design planted in the brief, indented or fenced, is never taken for this one
-    if (start < 0) { if (lines[i] === STANDING) start = i; } else if (/^## /.test(lines[i])) { end = i; break; }
+    if (start < 0) { if (lines[i] === heading) start = i; } else if (/^## /.test(lines[i])) { end = i; break; }
   }
   return { start, end };
 }
 
+/** The From the old path block: each section the old PROJECT.md had, one level down. @param {{name: string, body: string}[]} sections */
+export function renderOldPath(sections) {
+  return sections.map((s) => `### ${s.name}\n\n${s.body}`).join('\n\n');
+}
+
 /**
- * A new release's project.md with the Standing rules of the one it replaces, as they stand: the rest comes from the new
- * design, and the rules are what the earlier releases learned.
+ * A new release's project.md with what the one it replaces kept, as it stands: what a switch carried from the old path,
+ * then the Standing rules. The rest comes from the new design, and the rules are what the earlier releases learned.
  * @param {string} text the new project.md @param {string | null} was the one it replaces, or null when there's none
+ * @param {string | null} [fromOld] a switch's own block, for the first release, which replaces nothing
  * @returns {string}
  */
-export function withStandingRules(text, was) {
+export function withKept(text, was, fromOld = null) {
   const lines = (was ?? '').split(/\r?\n/);
-  const { start, end } = standingSpan(lines);
-  const block = start < 0 ? '' : lines.slice(start + 1, end).join('\n').trim();
-  return block === '' ? text : page([text.trimEnd(), STANDING, block]);
+  const kept = (/** @type {string} */ heading) => {
+    const { start, end } = spanOf(lines, heading);
+    return start < 0 ? '' : lines.slice(start + 1, end).join('\n').trim();
+  };
+  const old = fromOld ?? kept(FROM_OLD);
+  const rules = kept(STANDING);
+  if (old === '' && rules === '') return text;
+  return page([text.trimEnd(), ...(old === '' ? [] : [FROM_OLD, old]), ...(rules === '' ? [] : [STANDING, rules])]);
 }
 
 /**
@@ -265,7 +279,7 @@ export function withStandingRules(text, was) {
  */
 export function renderStandingRules(text, lessons) {
   const lines = text.split(/\r?\n/);
-  const { start, end } = standingSpan(lines);
+  const { start, end } = spanOf(lines, STANDING);
   const tag = (/** @type {Lesson} */ l) => ` (${l.from}, Change next ${l.line})`;
   const block = start < 0 ? '' : lines.slice(start + 1, end).join('\n').trim();
   const held = block === '' || block === 'None yet.' ? [] : block.split('\n');
